@@ -500,11 +500,21 @@ class Procedure(SmartScript.SmartScript):
         """Main execution method."""
         self.output_log = []
 
-        if varDict is None:
-            varDict = self._show_gui()
+        try:
             if varDict is None:
-                self.statusBarMsg("Build cancelled", "S")
-                return
+                varDict = self._show_gui()
+                if varDict is None:
+                    self.statusBarMsg("Build cancelled", "S")
+                    return
+        except Exception as e:
+            # If GUI fails to open, surface the traceback in the status bar and console.
+            import traceback
+            tb = traceback.format_exc()
+            self.statusBarMsg(f"Populate_ModelWx GUI failed: {e}", "S")
+            print(tb)
+            self.output_log.append(tb)
+            self._show_results_popup()
+            return
 
         models = varDict["models"]
         build_mode = varDict.get("build_mode", "Build New (Replace All)")

@@ -13,6 +13,7 @@ Uses shared utilities for model configuration, grid fetching, and thresholds.
 from __future__ import annotations
 
 import tkinter as tk
+from tkinter import messagebox
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -260,7 +261,7 @@ class WindWaveGustGUI:
         wind_weights = {alias: var.get() for alias, var in self.wind_weights.items()}
 
         if sum(wind_weights.values()) == 0:
-            tk.messagebox.showerror("Error", "Select at least one wind model")
+            messagebox.showerror("Error", "Select at least one wind model")
             return
 
         self.callback({
@@ -298,11 +299,21 @@ class Procedure(SmartScript.SmartScript):
         """Main execution method."""
         self.output_log = []
 
-        if varDict is None:
-            varDict = self._show_gui()
+        try:
             if varDict is None:
-                self.statusBarMsg("Tool cancelled", "S")
-                return
+                varDict = self._show_gui()
+                if varDict is None:
+                    self.statusBarMsg("Tool cancelled", "S")
+                    return
+        except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            try:
+                self.statusBarMsg(f"Populate_WindWaveGust GUI failed: {e}", "S")
+            except Exception:
+                pass
+            print(tb)
+            return
 
         wind_weights = varDict["wind_weights"]
         create_waves = varDict["create_waves"]
