@@ -81,15 +81,25 @@ def _pick_default_level(dataset: str, defaults: dict, explicit: Optional[str]) -
 def _dataset_view(config: ModelAliasConfig, dataset: str) -> _DatasetView:
     dataset_norm = dataset.lower()
     if dataset_norm == "wave":
+        # Two supported shapes:
+        # 1) Atmospheric alias with a paired wave config (e.g., GFS with config.wave set)
+        # 2) Wave-only alias (e.g., GFSWAVE) where the wave dataset info lives directly on config
         wave: Optional[WaveModelConfig] = config.wave
-        if wave is None:
-            raise ValueError(f"Alias '{config.key}' does not define a paired wave dataset.")
-        return _DatasetView(
-            location=wave.dal_location,
-            defaults=wave.default_levels,
-            overrides=wave.parameter_overrides,
-            kind="wave",
-        )
+        if wave is not None:
+            return _DatasetView(
+                location=wave.dal_location,
+                defaults=wave.default_levels,
+                overrides=wave.parameter_overrides,
+                kind="wave",
+            )
+        if "wave" in getattr(config, "tags", ()):
+            return _DatasetView(
+                location=config.dal_location,
+                defaults=config.default_levels,
+                overrides=config.parameter_overrides,
+                kind="wave",
+            )
+        raise ValueError(f"Alias '{config.key}' does not define a wave dataset.")
     return _DatasetView(
         location=config.dal_location,
         defaults=config.default_levels,
@@ -142,6 +152,35 @@ def _time_range_start_unix(time_range) -> Optional[int]:
             if callable(unix):
                 return int(unix())
     return None
+
+
+def _time_range_end_unix(time_range) -> Optional[int]:
+    if time_range is None:
+        return None
+    end_attr = getattr(time_range, "endTime", None)
+    if callable(end_attr):
+        end = end_attr()
+        if end is not None:
+            unix = getattr(end, "unixTime", None)
+            if callable(unix):
+                return int(unix())
+    return None
+
+
+def _filter_datatimes_in_range(times: Iterable, start_unix: Optional[int], end_unix: Optional[int]) -> List:
+    if start_unix is None and end_unix is None:
+        return list(times)
+    selected: List = []
+    for data_time in times:
+        t0 = _extract_start_unix(data_time)
+        if t0 is None:
+            continue
+        if start_unix is not None and t0 < start_unix:
+            continue
+        if end_unix is not None and t0 > end_unix:
+            continue
+        selected.append(data_time)
+    return selected
 
 
 def _filter_datatimes_by_tolerance(times: Iterable, target_unix: Optional[int], tolerance: int) -> List:
@@ -314,11 +353,69 @@ def fetch_point_series(
     )
 
 
+def fetch_geometry_for_timerange(
+    alias: str,
+    parameters: ParameterInput,
+    time_range,
+    *,
+    dataset: str = "atmo",
+    level: Optional[str] = None,
+    envelope=None,
+    refresh_cache: bool = False,
+    max_samples: Optional[int] = 48,
+):
+    """
+    Fetch geometry data for *all* available times that fall within ``time_range``.
+
+    This is useful for time-series products (spot forecasts, meteograms, etc.)
+    where callers want the entire period rather than a single time match.
+
+    Args:
+        max_samples: If no times fall inside ``time_range``, fall back to the last N samples.
+    """
+
+    if time_range is None:
+        raise ValueError("time_range must be provided.")
+
+    request, resolved_params, level_to_use, location = build_data_request(
+        alias, parameters, dataset=dataset, level=level, envelope=envelope
+    )
+    key = _AvailableTimeKey(location, resolved_params, level_to_use, _envelope_signature(envelope))
+    if refresh_cache and key in _AVAILABLE_TIMES_CACHE:
+        del _AVAILABLE_TIMES_CACHE[key]
+
+    available = get_available_times(
+        alias,
+        parameters,
+        dataset=dataset,
+        level=level_to_use,
+        envelope=envelope,
+        refresh_cache=refresh_cache,
+    )
+
+    start_unix = _time_range_start_unix(time_range)
+    end_unix = _time_range_end_unix(time_range)
+    selected = _filter_datatimes_in_range(available, start_unix, end_unix)
+
+    if not selected and available:
+        if max_samples:
+            selected = list(available)[-max_samples:]
+        else:
+            selected = list(available)
+
+    if not selected:
+        return []
+
+    _require_dal()
+    return DataAccessLayer.getGeometryData(request, selected)
+
+
 __all__ = [
     "build_data_request",
     "get_available_times",
     "clear_available_times_cache",
     "fetch_geometry",
+    "fetch_geometry_for_timerange",
     "fetch_point_series",
 ]
 

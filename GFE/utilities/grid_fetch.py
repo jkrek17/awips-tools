@@ -49,7 +49,13 @@ def _unique(seq: Iterable[str]) -> List[str]:
     return out
 
 
-def _iter_database_ids(smart_script, alias: str, run_depth: int) -> Generator[str, None, None]:
+def _iter_database_ids(
+    smart_script,
+    alias: str,
+    run_depth: int,
+    *,
+    element: Optional[str] = None,
+) -> Generator[str, None, None]:
     """
     Yield model identifiers for the requested alias by searching the
     configured database names and walking back ``run_depth`` cycles.
@@ -82,8 +88,14 @@ def _iter_database_ids(smart_script, alias: str, run_depth: int) -> Generator[st
             pass
         return
 
-    config = model_aliases.get_model_config(alias_norm)
-    candidates: Iterable[str] = config.gfe_databases or ()
+    try:
+        if element:
+            candidates: Iterable[str] = model_aliases.get_database_candidates_for_element(alias_norm, element) or ()
+        else:
+            candidates = model_aliases.get_database_candidates(alias_norm) or ()
+    except Exception:
+        # Preserve legacy behavior: if alias resolution fails, just yield nothing.
+        candidates = ()
 
     for base in candidates:
         for offset in range(0, -run_depth, -1):
@@ -118,7 +130,7 @@ def get_grid(
     older cycles when necessary.
     """
 
-    for model_id in _iter_database_ids(smart_script, alias, run_depth):
+    for model_id in _iter_database_ids(smart_script, alias, run_depth, element=element):
         if not model_id:
             continue
         try:
@@ -164,8 +176,7 @@ def get_grid_with_fallback(
     should_log = alias.upper() in ["ECMWF", "CMC"]
     if should_log:
         try:
-            cfg = model_aliases.get_model_config(alias)
-            db_names = cfg.gfe_databases
+            db_names = model_aliases.get_gfe_databases(alias)
             smart_script.log(f"    {alias} databases: {db_names}")
         except Exception:
             pass

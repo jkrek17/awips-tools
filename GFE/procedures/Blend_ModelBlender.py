@@ -263,8 +263,7 @@ class Tool(SmartScript.SmartScript):
     def _find_model_database(self, alias: str, offset: int = 0):
         """Find database for a model alias."""
         try:
-            cfg = model_aliases.get_model_config(alias)
-            for db_name in cfg.gfe_databases:
+            for db_name in model_aliases.get_database_candidates(alias):
                 db = self.findDatabase(db_name, offset)
                 if db is not None:
                     return db
