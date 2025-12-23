@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
-from typing import Dict, Iterable, List, Mapping, MutableMapping, Optional, Tuple
+from typing import Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence, Tuple
 
 ALIAS_OVERRIDE_FILENAME = "model_aliases.overrides.json"
 
@@ -74,6 +74,72 @@ def _normalize_key(key: str) -> str:
     return key.strip().upper()
 
 
+def _coerce_str_tuple(value: object, *, field_name: str, alias_key: str) -> Tuple[str, ...]:
+    """
+    Coerce override/default payload values into a tuple of strings.
+
+    Notes:
+        JSON overrides often use lists. This helper also avoids the common
+        pitfall of ``tuple("D2D_GFS")`` turning into a tuple of characters.
+    """
+
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        text = value.strip()
+        return (text,) if text else ()
+    if isinstance(value, (list, tuple, set)):
+        out: List[str] = []
+        for item in value:
+            if item is None:
+                continue
+            text = str(item).strip()
+            if not text:
+                continue
+            out.append(text)
+        return tuple(out)
+    raise TypeError(f"{alias_key}.{field_name} must be a string or sequence of strings; got {type(value)!r}")
+
+
+def _coerce_optional_str(value: object, *, field_name: str, alias_key: str) -> Optional[str]:
+    """Coerce optional string fields (also supports single-item sequences)."""
+
+    if value is None:
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        return text or None
+    if isinstance(value, (list, tuple)) and value:
+        for item in value:
+            if item is None:
+                continue
+            text = str(item).strip()
+            if text:
+                return text
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _coerce_str_dict(value: object, *, field_name: str, alias_key: str) -> Dict[str, str]:
+    """Coerce mapping-like payloads into a dict[str, str]."""
+
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping):
+        raise TypeError(f"{alias_key}.{field_name} must be a mapping/dict; got {type(value)!r}")
+    out: Dict[str, str] = {}
+    for k, v in value.items():
+        if k is None or v is None:
+            continue
+        key = str(k).strip()
+        val = str(v).strip()
+        if not key or not val:
+            continue
+        out[key] = val
+    return out
+
+
 def _load_override_payload(path: Path) -> Mapping[str, Mapping]:
     if not path.exists():
         return {}
@@ -106,44 +172,74 @@ def _build_config(alias_key: str, data: Mapping[str, object]) -> ModelAliasConfi
     if isinstance(data.get("wave"), Mapping):
         wave_dict: Mapping[str, object] = data["wave"]  # type: ignore[assignment]
         wave_cfg = WaveModelConfig(
-            dal_location=wave_dict.get("dal_location"),
-            gfe_databases=tuple(wave_dict.get("gfe_databases", ())),
-            default_levels=dict(wave_dict.get("default_levels", {})),
-            parameter_overrides=dict(wave_dict.get("parameter_overrides", {})),
+            dal_location=_coerce_optional_str(wave_dict.get("dal_location"), field_name="wave.dal_location", alias_key=alias_key),
+            gfe_databases=_coerce_str_tuple(wave_dict.get("gfe_databases"), field_name="wave.gfe_databases", alias_key=alias_key),
+            default_levels=_coerce_str_dict(wave_dict.get("default_levels"), field_name="wave.default_levels", alias_key=alias_key),
+            parameter_overrides=_coerce_str_dict(
+                wave_dict.get("parameter_overrides"), field_name="wave.parameter_overrides", alias_key=alias_key
+            ),
         )
 
     return ModelAliasConfig(
         key=alias_key,
-        gfe_databases=tuple(data.get("gfe_databases", ())),  # type: ignore[arg-type]
+        gfe_databases=_coerce_str_tuple(data.get("gfe_databases"), field_name="gfe_databases", alias_key=alias_key),
         display_name=str(data.get("display_name", "")),
-        dal_location=data.get("dal_location"),
-        default_levels=dict(data.get("default_levels", {})),
-        parameter_overrides=dict(data.get("parameter_overrides", {})),
-        tags=tuple(data.get("tags", ())),  # type: ignore[arg-type]
-        synonyms=tuple(data.get("synonyms", ())),  # type: ignore[arg-type]
+        dal_location=_coerce_optional_str(data.get("dal_location"), field_name="dal_location", alias_key=alias_key),
+        default_levels=_coerce_str_dict(data.get("default_levels"), field_name="default_levels", alias_key=alias_key),
+        parameter_overrides=_coerce_str_dict(data.get("parameter_overrides"), field_name="parameter_overrides", alias_key=alias_key),
+        tags=_coerce_str_tuple(data.get("tags"), field_name="tags", alias_key=alias_key),
+        synonyms=_coerce_str_tuple(data.get("synonyms"), field_name="synonyms", alias_key=alias_key),
         wave=wave_cfg,
         max_runs=int(data.get("max_runs", 4)),
     )
 
 
 def _build_alias_table() -> Dict[str, ModelAliasConfig]:
-    raw_data: Dict[str, Dict] = {key: value.copy() for key, value in _DEFAULT_ALIAS_DATA.items()}
+    raw_data: Dict[str, Dict] = {_normalize_key(key): value.copy() for key, value in _DEFAULT_ALIAS_DATA.items()}
     override_path = Path(__file__).with_name(ALIAS_OVERRIDE_FILENAME)
     overrides = _load_override_payload(override_path)
     _apply_overrides(raw_data, overrides)
 
     table: Dict[str, ModelAliasConfig] = {}
     for key, payload in raw_data.items():
-        table[key] = _build_config(key, payload)
+        canonical_key = _normalize_key(key)
+        table[canonical_key] = _build_config(canonical_key, payload)
     return table
 
 
 def _build_lookup(table: Mapping[str, ModelAliasConfig]) -> Dict[str, str]:
     lookup: Dict[str, str] = {}
+
+    def register(value: Optional[str], canonical_key: str) -> None:
+        if not value:
+            return
+        try:
+            norm = _normalize_key(value)
+        except ValueError:
+            return
+        lookup[norm] = canonical_key
+
+    def register_many(values: Sequence[str], canonical_key: str) -> None:
+        for value in values or ():
+            register(value, canonical_key)
+
     for key, config in table.items():
-        lookup[_normalize_key(key)] = key
-        for synonym in config.synonyms:
-            lookup[_normalize_key(synonym)] = key
+        canonical_key = _normalize_key(key)
+
+        # Canonical name
+        register(canonical_key, canonical_key)
+
+        # Explicit synonyms (operators, legacy scripts)
+        register_many(config.synonyms, canonical_key)
+
+        # Also treat GFE/D2D database identifiers and DAL locationNames as aliases.
+        register_many(config.gfe_databases, canonical_key)
+        register(config.dal_location, canonical_key)
+
+        # Paired wave dataset identifiers (for passing "ECMWFwave" etc.)
+        if config.wave is not None:
+            register_many(config.wave.gfe_databases, canonical_key)
+            register(config.wave.dal_location, canonical_key)
     return lookup
 
 
@@ -157,6 +253,54 @@ def get_model_config(alias: str) -> ModelAliasConfig:
 
     canonical = _ALIAS_LOOKUP[_normalize_key(alias)]
     return _ALIAS_TABLE[canonical]
+
+
+def resolve_alias(alias: str) -> str:
+    """Resolve any alias/synonym to the canonical key (e.g., ``D2D_GFS`` -> ``GFS``)."""
+
+    return _ALIAS_LOOKUP[_normalize_key(alias)]
+
+
+def get_dal_location(alias: str, *, dataset: str = "atmo") -> Optional[str]:
+    """
+    Return the DAL ``locationNames`` string for the alias.
+
+    Args:
+        alias: Canonical key, synonym, DB id (e.g. ``D2D_GFS``), or DAL location (e.g. ``gfs0p25``).
+        dataset: ``"atmo"`` (default) or ``"wave"``.
+    """
+
+    cfg = get_model_config(alias)
+    dataset_norm = dataset.lower()
+    if dataset_norm not in {"atmo", "wave"}:
+        raise ValueError("dataset must be 'atmo' or 'wave'")
+    if dataset_norm == "wave":
+        if cfg.wave is not None:
+            return cfg.wave.dal_location
+        if "wave" in cfg.tags:
+            return cfg.dal_location
+        return None
+    return cfg.dal_location
+
+
+def get_gfe_databases(alias: str, *, dataset: str = "atmo") -> Tuple[str, ...]:
+    """
+    Return the candidate database names for the alias.
+
+    Intended for SmartScript ``findDatabase`` lookups (GFE/D2D).
+    """
+
+    cfg = get_model_config(alias)
+    dataset_norm = dataset.lower()
+    if dataset_norm not in {"atmo", "wave"}:
+        raise ValueError("dataset must be 'atmo' or 'wave'")
+    if dataset_norm == "wave":
+        if cfg.wave is not None:
+            return cfg.wave.gfe_databases
+        if "wave" in cfg.tags:
+            return cfg.gfe_databases
+        return ()
+    return cfg.gfe_databases
 
 
 def list_models(kind: str = "all") -> List[str]:
@@ -541,6 +685,9 @@ __all__ = [
     "ModelAliasConfig",
     "WaveModelConfig",
     "get_model_config",
+    "resolve_alias",
+    "get_dal_location",
+    "get_gfe_databases",
     "list_models",
     "list_models_for_gui",
     "resolve_wave_from_atmo",
