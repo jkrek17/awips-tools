@@ -394,20 +394,14 @@ def get_database_candidates_for_element(
     """
 
     elem = (element or "").strip().upper()
-    gfe_first = {
-        "WIND",
-        "WAVEHEIGHT",
-        "WAVEDIRECTION",
-        "WAVEPERIOD",
-        "SWELLHEIGHT",
-        "SWELLDIRECTION",
-        "SWELLPERIOD",
-    }
-    # Wave elements live in wave databases for most models.
-    # Even if caller passes dataset="atmo", infer wave when element is a wave parameter.
-    inferred_dataset = "wave" if elem in gfe_first and elem != "WIND" else dataset
+    # Dataset inference: wave parameters live in wave databases.
+    wave_elements = {"WAVEHEIGHT", "WAVEDIRECTION", "WAVEPERIOD", "SWELLHEIGHT", "SWELLDIRECTION", "SWELLPERIOD"}
+    inferred_dataset = "wave" if elem in wave_elements else dataset
 
-    if elem in gfe_first:
+    # Source preference (based on legacy tool behavior):
+    # - Wind and WaveHeight prefer local GFE databases
+    # - Everything else prefers D2D
+    if elem in {"WIND", "WAVEHEIGHT"}:
         preference = ("gfe", "d2d")
     else:
         preference = ("d2d", "gfe")
