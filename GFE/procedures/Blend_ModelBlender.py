@@ -242,7 +242,7 @@ class Tool(SmartScript.SmartScript):
             if not model_aliases.has_alias(alias):
                 continue
             for run_offset in range(0, -3, -1):
-                db = self._find_model_database(alias, run_offset)
+                db = self._find_model_database(alias, run_offset, element=WEname)
                 if db is None:
                     continue
                 mod_time = db.modelTime()
@@ -260,10 +260,14 @@ class Tool(SmartScript.SmartScript):
         root.mainloop()
         self.cancel()
 
-    def _find_model_database(self, alias: str, offset: int = 0):
-        """Find database for a model alias."""
+    def _find_model_database(self, alias: str, offset: int = 0, *, element: Optional[str] = None):
+        """Find database for a model alias (prefers appropriate source per element)."""
         try:
-            for db_name in model_aliases.get_database_candidates(alias):
+            if element:
+                candidates = model_aliases.get_database_candidates_for_element(alias, element)
+            else:
+                candidates = model_aliases.get_database_candidates(alias)
+            for db_name in candidates:
                 db = self.findDatabase(db_name, offset)
                 if db is not None:
                     return db

@@ -403,11 +403,15 @@ def get_database_candidates_for_element(
         "SWELLDIRECTION",
         "SWELLPERIOD",
     }
+    # Wave elements live in wave databases for most models.
+    # Even if caller passes dataset="atmo", infer wave when element is a wave parameter.
+    inferred_dataset = "wave" if elem in gfe_first and elem != "WIND" else dataset
+
     if elem in gfe_first:
         preference = ("gfe", "d2d")
     else:
         preference = ("d2d", "gfe")
-    return get_database_candidates(alias, dataset=dataset, preference=preference)
+    return get_database_candidates(alias, dataset=inferred_dataset, preference=preference)
 
 def list_alias_conflicts() -> List[Tuple[str, str, str]]:
     """

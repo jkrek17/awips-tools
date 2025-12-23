@@ -40,10 +40,10 @@ class Tool(SmartScript.SmartScript):
     def __init__(self, dbss):
         SmartScript.SmartScript.__init__(self, dbss)
 
-    def _get_model_database(self, alias: str, run: str):
+    def _get_model_database(self, alias: str, run: str, element: str):
         """Resolve model alias to database, with fallback."""
         try:
-            candidates = model_aliases.get_database_candidates(alias)
+            candidates = model_aliases.get_database_candidates_for_element(alias, element)
             gfe_db = candidates[0] if candidates else f"D2D_{model_aliases.resolve_alias(alias)}"
         except Exception:
             gfe_db = f"D2D_{alias}"
@@ -61,13 +61,13 @@ class Tool(SmartScript.SmartScript):
         sst_run = varDict["Model Run for SST:"]
 
         # Get temperature model database
-        temp_db = self._get_model_database(temp_alias, temp_run)
+        temp_db = self._get_model_database(temp_alias, temp_run, "T")
         if temp_db is None:
             self.statusBarMsg(f"Could not find temperature model {temp_alias}", "S")
             return IceAccretion
 
         # Get SST model database
-        sst_db = self._get_model_database(sst_alias, sst_run)
+        sst_db = self._get_model_database(sst_alias, sst_run, "SST")
         if sst_db is None:
             self.statusBarMsg(f"Could not find SST model {sst_alias}", "S")
             return IceAccretion
@@ -80,7 +80,7 @@ class Tool(SmartScript.SmartScript):
             temp_f = self.getGrids(temp_db, "T", "SFC", GridTimeRange)
         except Exception:
             # Fallback to previous run
-            temp_db = self._get_model_database(temp_alias, "Previous")
+            temp_db = self._get_model_database(temp_alias, "Previous", "T")
             temp_f = self.getGrids(temp_db, "T", "SFC", GridTimeRange)
             self.statusBarMsg("Previous model run used for temperature grids", "R")
 
