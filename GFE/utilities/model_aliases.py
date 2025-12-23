@@ -377,6 +377,38 @@ def get_database_candidates(
     return tuple(out)
 
 
+def get_database_candidates_for_element(
+    alias: str,
+    element: str,
+    *,
+    dataset: str = "atmo",
+) -> Tuple[str, ...]:
+    """
+    Return ordered database candidates for a specific GFE element.
+
+    Policy:
+      - Wind/Wave parameters typically come from local GFE databases.
+      - Most other parameters are generally better sourced from D2D.
+
+    This still falls back to the other source if the preferred one is missing.
+    """
+
+    elem = (element or "").strip().upper()
+    gfe_first = {
+        "WIND",
+        "WAVEHEIGHT",
+        "WAVEDIRECTION",
+        "WAVEPERIOD",
+        "SWELLHEIGHT",
+        "SWELLDIRECTION",
+        "SWELLPERIOD",
+    }
+    if elem in gfe_first:
+        preference = ("gfe", "d2d")
+    else:
+        preference = ("d2d", "gfe")
+    return get_database_candidates(alias, dataset=dataset, preference=preference)
+
 def list_alias_conflicts() -> List[Tuple[str, str, str]]:
     """
     Return collisions detected while building the alias lookup table.
@@ -796,6 +828,7 @@ __all__ = [
     "get_gfe_databases",
     "get_d2d_databases",
     "get_database_candidates",
+    "get_database_candidates_for_element",
     "list_alias_conflicts",
     "validate_aliases",
     "list_models",

@@ -49,7 +49,13 @@ def _unique(seq: Iterable[str]) -> List[str]:
     return out
 
 
-def _iter_database_ids(smart_script, alias: str, run_depth: int) -> Generator[str, None, None]:
+def _iter_database_ids(
+    smart_script,
+    alias: str,
+    run_depth: int,
+    *,
+    element: Optional[str] = None,
+) -> Generator[str, None, None]:
     """
     Yield model identifiers for the requested alias by searching the
     configured database names and walking back ``run_depth`` cycles.
@@ -83,7 +89,10 @@ def _iter_database_ids(smart_script, alias: str, run_depth: int) -> Generator[st
         return
 
     try:
-        candidates: Iterable[str] = model_aliases.get_database_candidates(alias_norm) or ()
+        if element:
+            candidates: Iterable[str] = model_aliases.get_database_candidates_for_element(alias_norm, element) or ()
+        else:
+            candidates = model_aliases.get_database_candidates(alias_norm) or ()
     except Exception:
         # Preserve legacy behavior: if alias resolution fails, just yield nothing.
         candidates = ()
@@ -121,7 +130,7 @@ def get_grid(
     older cycles when necessary.
     """
 
-    for model_id in _iter_database_ids(smart_script, alias, run_depth):
+    for model_id in _iter_database_ids(smart_script, alias, run_depth, element=element):
         if not model_id:
             continue
         try:
