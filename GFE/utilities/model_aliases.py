@@ -23,12 +23,17 @@ class WaveModelConfig:
     """Metadata describing the paired wave/ocean dataset for an alias."""
 
     dal_location: Optional[str] = None
+    # Database names used with SmartScript.findDatabase (may be GFE-local or D2D-backed)
     gfe_databases: Tuple[str, ...] = ()
+    d2d_databases: Tuple[str, ...] = ()
     default_levels: Dict[str, str] = field(default_factory=dict)
     parameter_overrides: Dict[str, str] = field(default_factory=dict)
 
     def preferred_gfe(self) -> Optional[str]:
         return self.gfe_databases[0] if self.gfe_databases else None
+
+    def preferred_d2d(self) -> Optional[str]:
+        return self.d2d_databases[0] if self.d2d_databases else None
 
 
 @dataclass(frozen=True)
@@ -50,7 +55,11 @@ class ModelAliasConfig:
     """
 
     key: str
-    gfe_databases: Tuple[str, ...]
+    # Separate database identifiers by source to keep naming clear.
+    # - gfe_databases: local GFE databases (e.g., "GFS")
+    # - d2d_databases: D2D/MDL databases (e.g., "D2D_GFS", "nECMWF0p25")
+    gfe_databases: Tuple[str, ...] = ()
+    d2d_databases: Tuple[str, ...] = ()
     display_name: str = ""
     dal_location: Optional[str] = None
     default_levels: Dict[str, str] = field(default_factory=dict)
@@ -62,6 +71,9 @@ class ModelAliasConfig:
 
     def preferred_gfe(self) -> Optional[str]:
         return self.gfe_databases[0] if self.gfe_databases else None
+
+    def preferred_d2d(self) -> Optional[str]:
+        return self.d2d_databases[0] if self.d2d_databases else None
 
     def get_display_name(self) -> str:
         """Return display name, falling back to key if not set."""
@@ -174,6 +186,7 @@ def _build_config(alias_key: str, data: Mapping[str, object]) -> ModelAliasConfi
         wave_cfg = WaveModelConfig(
             dal_location=_coerce_optional_str(wave_dict.get("dal_location"), field_name="wave.dal_location", alias_key=alias_key),
             gfe_databases=_coerce_str_tuple(wave_dict.get("gfe_databases"), field_name="wave.gfe_databases", alias_key=alias_key),
+            d2d_databases=_coerce_str_tuple(wave_dict.get("d2d_databases"), field_name="wave.d2d_databases", alias_key=alias_key),
             default_levels=_coerce_str_dict(wave_dict.get("default_levels"), field_name="wave.default_levels", alias_key=alias_key),
             parameter_overrides=_coerce_str_dict(
                 wave_dict.get("parameter_overrides"), field_name="wave.parameter_overrides", alias_key=alias_key
@@ -183,6 +196,7 @@ def _build_config(alias_key: str, data: Mapping[str, object]) -> ModelAliasConfi
     return ModelAliasConfig(
         key=alias_key,
         gfe_databases=_coerce_str_tuple(data.get("gfe_databases"), field_name="gfe_databases", alias_key=alias_key),
+        d2d_databases=_coerce_str_tuple(data.get("d2d_databases"), field_name="d2d_databases", alias_key=alias_key),
         display_name=str(data.get("display_name", "")),
         dal_location=_coerce_optional_str(data.get("dal_location"), field_name="dal_location", alias_key=alias_key),
         default_levels=_coerce_str_dict(data.get("default_levels"), field_name="default_levels", alias_key=alias_key),
@@ -240,11 +254,13 @@ def _build_lookup(table: Mapping[str, ModelAliasConfig]) -> Dict[str, str]:
 
         # Also treat GFE/D2D database identifiers and DAL locationNames as aliases.
         register_many(config.gfe_databases, canonical_key)
+        register_many(config.d2d_databases, canonical_key)
         register(config.dal_location, canonical_key)
 
         # Paired wave dataset identifiers (for passing "ECMWFwave" etc.)
         if config.wave is not None:
             register_many(config.wave.gfe_databases, canonical_key)
+            register_many(config.wave.d2d_databases, canonical_key)
             register(config.wave.dal_location, canonical_key)
 
     # Stash conflict list for introspection (do not raise at import time).
@@ -311,6 +327,54 @@ def get_gfe_databases(alias: str, *, dataset: str = "atmo") -> Tuple[str, ...]:
             return cfg.gfe_databases
         return ()
     return cfg.gfe_databases
+
+
+def get_d2d_databases(alias: str, *, dataset: str = "atmo") -> Tuple[str, ...]:
+    """Return the candidate D2D database names for the alias."""
+
+    cfg = get_model_config(alias)
+    dataset_norm = dataset.lower()
+    if dataset_norm not in {"atmo", "wave"}:
+        raise ValueError("dataset must be 'atmo' or 'wave'")
+    if dataset_norm == "wave":
+        if cfg.wave is not None:
+            return cfg.wave.d2d_databases
+        if "wave" in cfg.tags:
+            return cfg.d2d_databases
+        return ()
+    return cfg.d2d_databases
+
+
+def get_database_candidates(
+    alias: str,
+    *,
+    dataset: str = "atmo",
+    preference: Tuple[str, ...] = ("gfe", "d2d"),
+) -> Tuple[str, ...]:
+    """
+    Return ordered database-name candidates for SmartScript findDatabase/getGrids.
+
+    Most tools want to "just get the best available database", so this helper
+    merges gfe + d2d candidates in a predictable order.
+    """
+
+    dataset_norm = dataset.lower()
+    if dataset_norm not in {"atmo", "wave"}:
+        raise ValueError("dataset must be 'atmo' or 'wave'")
+
+    buckets = {
+        "gfe": get_gfe_databases(alias, dataset=dataset_norm),
+        "d2d": get_d2d_databases(alias, dataset=dataset_norm),
+    }
+    seen = set()
+    out: List[str] = []
+    for key in preference:
+        for name in buckets.get(key, ()):
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            out.append(name)
+    return tuple(out)
 
 
 def list_alias_conflicts() -> List[Tuple[str, str, str]]:
@@ -430,7 +494,8 @@ def list_models_for_gui(kind: str = "atmo") -> List[Tuple[str, str, int]]:
 _DEFAULT_ALIAS_DATA: Dict[str, Dict] = {
     "GFS": {
         "display_name": "Global Forecast System",
-        "gfe_databases": ("D2D_GFS", "GFS"),
+        "gfe_databases": ("GFS",),
+        "d2d_databases": ("D2D_GFS",),
         "dal_location": "gfs0p25",
         "default_levels": {
             "wind": "10FHAG",
@@ -459,7 +524,8 @@ _DEFAULT_ALIAS_DATA: Dict[str, Dict] = {
     },
     "ECMWF": {
         "display_name": "European Centre",
-        "gfe_databases": ("D2D_ECMWF", "nECMWF0p25"),
+        "gfe_databases": (),
+        "d2d_databases": ("D2D_ECMWF", "nECMWF0p25"),
         "dal_location": "ecmwf0p25",
         "default_levels": {
             "wind": "10FHAG",
@@ -488,7 +554,8 @@ _DEFAULT_ALIAS_DATA: Dict[str, Dict] = {
     },
     "CMC": {
         "display_name": "Canadian Global",
-        "gfe_databases": ("D2D_CMC", "CMCnh"),
+        "gfe_databases": (),
+        "d2d_databases": ("D2D_CMC", "CMCnh"),
         "dal_location": "Canadian-NH",
         "default_levels": {
             "wind": "10FHAG",
@@ -517,7 +584,8 @@ _DEFAULT_ALIAS_DATA: Dict[str, Dict] = {
     },
     "UKMET": {
         "display_name": "UK Met Office",
-        "gfe_databases": ("D2D_UKMET", "UKMEThires4"),
+        "gfe_databases": (),
+        "d2d_databases": ("D2D_UKMET", "UKMEThires4"),
         "dal_location": None,
         "default_levels": {
             "wind": "10FHAG",
@@ -558,7 +626,8 @@ _DEFAULT_ALIAS_DATA: Dict[str, Dict] = {
     },
     "GEFS": {
         "display_name": "GEFS Ensemble",
-        "gfe_databases": ("D2D_GEFS", "GEFSMEAN"),
+        "gfe_databases": ("GEFSMEAN",),
+        "d2d_databases": ("D2D_GEFS",),
         "dal_location": "gefs0p50",
         "default_levels": {
             "wind": "10FHAG",
@@ -605,7 +674,8 @@ _DEFAULT_ALIAS_DATA: Dict[str, Dict] = {
     },
     "RTOFS": {
         "display_name": "Real-Time Ocean Forecast",
-        "gfe_databases": ("D2D_RTOFS",),
+        "gfe_databases": (),
+        "d2d_databases": ("D2D_RTOFS",),
         "dal_location": "rtofs",
         "default_levels": {"sst": "SFC"},
         "parameter_overrides": {"Temperature": "SST"},
@@ -724,6 +794,8 @@ __all__ = [
     "resolve_alias",
     "get_dal_location",
     "get_gfe_databases",
+    "get_d2d_databases",
+    "get_database_candidates",
     "list_alias_conflicts",
     "validate_aliases",
     "list_models",

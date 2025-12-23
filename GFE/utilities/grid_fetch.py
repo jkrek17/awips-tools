@@ -83,7 +83,7 @@ def _iter_database_ids(smart_script, alias: str, run_depth: int) -> Generator[st
         return
 
     try:
-        candidates: Iterable[str] = model_aliases.get_gfe_databases(alias_norm) or ()
+        candidates: Iterable[str] = model_aliases.get_database_candidates(alias_norm) or ()
     except Exception:
         # Preserve legacy behavior: if alias resolution fails, just yield nothing.
         candidates = ()
