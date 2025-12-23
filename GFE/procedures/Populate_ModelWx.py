@@ -344,36 +344,47 @@ class Procedure(SmartScript.SmartScript):
         try:
             # Collect all log messages
             output_text = "\n".join(self.output_log) if self.output_log else "No output generated."
-            
-            # Create window - use Toplevel if root exists, otherwise Tk
-            root = None
+
+            # Create a closeable window.
+            # In AWIPS/GFE, tk._default_root may exist but not be running a mainloop,
+            # so we use wait_window() to ensure events are processed until close.
+            parent = getattr(tk, "_default_root", None)
+            owns_root = False
+
             try:
-                if tk._default_root is not None:
-                    root = tk.Toplevel(tk._default_root)
+                if parent is not None and int(parent.winfo_exists()):
+                    win = tk.Toplevel(parent)
                 else:
-                    root = tk.Tk()
-            except:
-                root = tk.Tk()
-            
-            root.title("Tool Execution Results")
-            
-            # Create popup
-            popup = gui.ResultsPopup(root, "Tool Execution Results", output_text, readonly=True)
-            
-            # Ensure window is properly configured and closeable
-            root.protocol("WM_DELETE_WINDOW", root.destroy)
-            root.resizable(True, True)
-            root.lift()
-            root.focus_force()
-            root.update()
-            
-            # Only start mainloop if we created a new Tk root (not Toplevel)
-            if isinstance(root, tk.Tk) and tk._default_root is None:
-                # Start mainloop in a way that doesn't block if possible
+                    raise RuntimeError("No valid Tk root available")
+            except Exception:
+                win = tk.Tk()
+                owns_root = True
+
+            def _close():
                 try:
-                    root.mainloop()
-                except:
+                    win.destroy()
+                except Exception:
                     pass
+
+            win.title("Tool Execution Results")
+            win.protocol("WM_DELETE_WINDOW", _close)
+            win.bind("<Escape>", lambda e: _close())
+
+            # Create popup content
+            gui.ResultsPopup(win, "Tool Execution Results", output_text, readonly=True)
+
+            # Bring to front
+            try:
+                win.lift()
+                win.focus_force()
+            except Exception:
+                pass
+
+            # Run a local event loop until closed.
+            if owns_root:
+                win.mainloop()
+            else:
+                win.wait_window()
         except Exception as e:
             self.statusBarMsg(f"Could not create results popup: {e}", "S")
             print(f"Could not create results popup: {e}")
