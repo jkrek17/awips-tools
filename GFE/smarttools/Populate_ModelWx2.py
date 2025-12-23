@@ -260,7 +260,7 @@ class Tool(SmartScript.SmartScript):
 
             # Apply smoothing
             if smoothing > 0:
-                sigma = smoothing * thresholds.SMOOTHING_DEFAULTS["SIGMA"]
+                sigma = smoothing * thresholds.SMOOTHING_DEFAULTS["sigma"]
                 if qpf_in is not None:
                     qpf_in = ndimage.gaussian_filter(qpf_in, sigma=sigma, mode="nearest")
                 if vis_nm is not None:
@@ -271,9 +271,13 @@ class Tool(SmartScript.SmartScript):
                 self._create_diagnostics(grid_tr, temp_c, rh, qpf_in, vis_nm, cape, wind)
 
             # Determine weather conditions
-            has_precip = qpf_in > thresholds.PRECIP_INTENSITY_INCHES["MINIMUM"] if qpf_in is not None else None
+            has_precip = qpf_in > thresholds.PRECIP_INTENSITY_INCHES["minimum"] if qpf_in is not None else None
             has_thunder = (cape > thunder_thresh) & (qpf_in > 0.01) if cape is not None and qpf_in is not None else None
-            has_fog = (vis_nm < fog_thresh) & (rh > thresholds.FOG_THRESHOLDS["RH_MIN"]) if vis_nm is not None and rh is not None else None
+            has_fog = (
+                (vis_nm < fog_thresh) & (rh > thresholds.FOG_THRESHOLDS["relative_humidity_min"])
+                if vis_nm is not None and rh is not None
+                else None
+            )
 
             # Get existing Wx grid
             wx_grid = self.getGrids("Fcst", "Wx", "SFC", grid_tr, noDataError=0)
@@ -405,24 +409,24 @@ class Tool(SmartScript.SmartScript):
 
         if qpf_in is not None:
             self.createGrid("Fcst", "modelQPF", "SCALAR",
-                            np.clip(qpf_in, 0, clip["QPF_MAX_INCHES"]), grid_tr)
+                            np.clip(qpf_in, 0, clip["qpf_max_in"]), grid_tr)
 
         if cape is not None:
             self.createGrid("Fcst", "modelCAPE", "SCALAR",
-                            np.clip(cape, 0, clip["CAPE_MAX_J_KG"]), grid_tr)
+                            np.clip(cape, 0, clip["cape_max"]), grid_tr)
 
         if temp_c is not None:
             temp_f = thresholds.c_to_f(temp_c)
             self.createGrid("Fcst", "modelT", "SCALAR",
-                            np.clip(temp_f, clip["TEMP_MIN_F"], clip["TEMP_MAX_F"]), grid_tr)
+                            np.clip(temp_f, clip["temp_min_f"], clip["temp_max_f"]), grid_tr)
 
         if rh is not None:
             self.createGrid("Fcst", "modelRH", "SCALAR",
-                            np.clip(rh, clip["RH_MIN_PERCENT"], clip["RH_MAX_PERCENT"]), grid_tr)
+                            np.clip(rh, clip["rh_min_pct"], clip["rh_max_pct"]), grid_tr)
 
         if vis_nm is not None:
             self.createGrid("Fcst", "modelVsby", "SCALAR",
-                            np.clip(vis_nm, clip["VIS_MIN_NM"], clip["VIS_MAX_NM"]), grid_tr)
+                            np.clip(vis_nm, clip["vis_min_nm"], clip["vis_max_nm"]), grid_tr)
 
     def _determine_weather(self, ii, jj, has_precip, has_thunder, has_fog,
                             qpf, cape, temp, wind, thunder_thresh, qualifier_type):
@@ -430,12 +434,12 @@ class Tool(SmartScript.SmartScript):
         # Thunder
         if has_thunder is not None and has_thunder[ii, jj]:
             cape_val = cape[ii, jj]
-            if cape_val > thresholds.CAPE_THRESHOLDS["HIGH"]:
+            if cape_val > thresholds.CAPE_THRESHOLDS["high"]:
                 cov = "Sct"
             else:
                 cov = "Iso"
 
-            is_severe = cape_val > thresholds.CAPE_THRESHOLDS["SEVERE_MIN"]
+            is_severe = cape_val > thresholds.CAPE_THRESHOLDS["severe_min"]
             intensity = "+" if is_severe else "<NoInten>"
             return f"{cov}:T:{intensity}:<NoVis>:"
 
@@ -445,10 +449,14 @@ class Tool(SmartScript.SmartScript):
             cape_val = cape[ii, jj] if cape is not None else 0
 
             # Get wind speed in m/s for convective index
-            wind_ms = 0
+            wind_ms = 0.0
             if wind is not None:
-                wind_kt = np.sqrt(wind[0][ii, jj]**2 + wind[1][ii, jj]**2)
-                wind_ms = thresholds.to_mps(wind_kt)
+                # GFE Wind grids are (magnitude_knots, direction_degrees)
+                try:
+                    wind_mag_kt = float(wind[0][ii, jj])
+                    wind_ms = thresholds.to_mps(wind_mag_kt)
+                except Exception:
+                    wind_ms = 0.0
 
             conv_idx = (cape_val / 1000.0) + (wind_ms / 20.0)
 
@@ -458,32 +466,32 @@ class Tool(SmartScript.SmartScript):
             elif qualifier_type == "Probability":
                 is_conv = False
             else:  # Auto
-                is_conv = conv_idx > thresholds.CAPE_THRESHOLDS["CONVECTIVE_INDEX_THRESHOLD"]
+                is_conv = conv_idx > thresholds.MODEL_WX_CONVECTION["convective_index_threshold"]
 
             # Coverage/probability
             if is_conv:
-                if qpf_val > thresholds.PRECIP_COVERAGE_INCHES["WIDE_COVERAGE"]:
+                if qpf_val > thresholds.PRECIP_COVERAGE_INCHES["wide"]:
                     cov = "Wide"
-                elif qpf_val > thresholds.PRECIP_COVERAGE_INCHES["NUMEROUS"]:
+                elif qpf_val > thresholds.PRECIP_COVERAGE_INCHES["numerous"]:
                     cov = "Num"
-                elif qpf_val > thresholds.PRECIP_COVERAGE_INCHES["SCATTERED"]:
+                elif qpf_val > thresholds.PRECIP_COVERAGE_INCHES["scattered"]:
                     cov = "Sct"
                 else:
                     cov = "Iso"
             else:
-                if qpf_val > thresholds.PRECIP_PROBABILITY_INCHES["DEFINITE"]:
+                if qpf_val > thresholds.PRECIP_PROBABILITY_INCHES["definite"]:
                     cov = "Def"
-                elif qpf_val > thresholds.PRECIP_PROBABILITY_INCHES["LIKELY"]:
+                elif qpf_val > thresholds.PRECIP_PROBABILITY_INCHES["likely"]:
                     cov = "Lkly"
-                elif qpf_val > thresholds.PRECIP_PROBABILITY_INCHES["CHANCE"]:
+                elif qpf_val > thresholds.PRECIP_PROBABILITY_INCHES["chance"]:
                     cov = "Chc"
                 else:
                     cov = "SChc"
 
             # Intensity
-            if qpf_val > thresholds.PRECIP_INTENSITY_INCHES["HEAVY"]:
+            if qpf_val > thresholds.PRECIP_INTENSITY_INCHES["heavy"]:
                 intensity = "+"
-            elif qpf_val > thresholds.PRECIP_INTENSITY_INCHES["MODERATE"]:
+            elif qpf_val > thresholds.PRECIP_INTENSITY_INCHES["moderate"]:
                 intensity = "m"
             else:
                 intensity = "-"

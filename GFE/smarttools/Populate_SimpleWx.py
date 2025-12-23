@@ -219,7 +219,7 @@ class Procedure(SmartScript.SmartScript):
 
             # Apply smoothing
             if smoothing > 0:
-                sigma = smoothing * thresholds.SMOOTHING_DEFAULTS["SIGMA"]
+                sigma = smoothing * thresholds.SMOOTHING_DEFAULTS["sigma"]
                 if qpf_in is not None:
                     qpf_in = ndimage.gaussian_filter(qpf_in, sigma=sigma, mode="nearest")
                 if vis_nm is not None:
@@ -230,11 +230,11 @@ class Procedure(SmartScript.SmartScript):
                 self._create_diagnostics(grid_tr, qpf_in, cape, temp_c)
 
             # Determine conditions
-            has_precip = qpf_in > thresholds.PRECIP_INTENSITY_INCHES["MINIMUM"] if qpf_in is not None else None
-            has_thunder = (cape > thresholds.CAPE_THRESHOLDS["THUNDER_MIN"]) if cape is not None else None
+            has_precip = qpf_in > thresholds.PRECIP_INTENSITY_INCHES["minimum"] if qpf_in is not None else None
+            has_thunder = (cape > thresholds.CAPE_THRESHOLDS["thunder_min"]) if cape is not None else None
             has_fog = None
             if vis_nm is not None and rh is not None:
-                has_fog = (vis_nm < fog_thresh) & (rh > thresholds.FOG_THRESHOLDS["RH_MIN"])
+                has_fog = (vis_nm < fog_thresh) & (rh > thresholds.FOG_THRESHOLDS["relative_humidity_min"])
 
             # Get existing Wx grid
             wx_grid = self.getGrids("Fcst", "Wx", "SFC", grid_tr, noDataError=0)
@@ -341,16 +341,16 @@ class Procedure(SmartScript.SmartScript):
 
         if qpf is not None:
             self.createGrid("Fcst", "modelQPF", "SCALAR",
-                            np.clip(qpf, 0, clip["QPF_MAX_INCHES"]), grid_tr)
+                            np.clip(qpf, 0, clip["qpf_max_in"]), grid_tr)
 
         if cape is not None:
             self.createGrid("Fcst", "modelCAPE", "SCALAR",
-                            np.clip(cape, 0, clip["CAPE_MAX_J_KG"]), grid_tr)
+                            np.clip(cape, 0, clip["cape_max"]), grid_tr)
 
         if temp is not None:
             temp_f = thresholds.c_to_f(temp)
             self.createGrid("Fcst", "modelT", "SCALAR",
-                            np.clip(temp_f, clip["TEMP_MIN_F"], clip["TEMP_MAX_F"]), grid_tr)
+                            np.clip(temp_f, clip["temp_min_f"], clip["temp_max_f"]), grid_tr)
 
     def _determine_weather(self, ii, jj, has_precip, has_thunder, has_fog, qpf, cape, temp):
         """Determine weather string for grid point."""
@@ -361,8 +361,8 @@ class Procedure(SmartScript.SmartScript):
         if has_thunder is not None and has_precip is not None:
             if has_thunder[ii, jj] and has_precip[ii, jj]:
                 cape_val = cape[ii, jj]
-                cov = "Sct" if cape_val > cape_thresh["HIGH"] else "Iso"
-                intensity = "+" if cape_val > cape_thresh["SEVERE_MIN"] else "<NoInten>"
+                cov = "Sct" if cape_val > cape_thresh["high"] else "Iso"
+                intensity = "+" if cape_val > cape_thresh["severe_min"] else "<NoInten>"
                 return f"{cov}:T:{intensity}:<NoVis>:"
 
         # Precipitation
@@ -370,17 +370,17 @@ class Procedure(SmartScript.SmartScript):
             qpf_val = qpf[ii, jj]
 
             # Coverage
-            if qpf_val > prec_thresh["HEAVY"]:
+            if qpf_val > prec_thresh["heavy"]:
                 cov = "Wide"
-            elif qpf_val > prec_thresh["MODERATE"]:
+            elif qpf_val > prec_thresh["moderate"]:
                 cov = "Sct"
             else:
                 cov = "Iso"
 
             # Intensity
-            if qpf_val > prec_thresh["HEAVY"]:
+            if qpf_val > prec_thresh["heavy"]:
                 intensity = "+"
-            elif qpf_val > prec_thresh["MODERATE"]:
+            elif qpf_val > prec_thresh["moderate"]:
                 intensity = "m"
             else:
                 intensity = "-"
