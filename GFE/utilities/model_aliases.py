@@ -397,11 +397,6 @@ def get_database_candidates_for_element(
     gfe_first = {
         "WIND",
         "WAVEHEIGHT",
-        "WAVEDIRECTION",
-        "WAVEPERIOD",
-        "SWELLHEIGHT",
-        "SWELLDIRECTION",
-        "SWELLPERIOD",
     }
     if elem in gfe_first:
         preference = ("gfe", "d2d")
@@ -837,4 +832,5 @@ __all__ = [
     "has_alias",
     "ALIAS_OVERRIDE_FILENAME",
 ]
+
 
