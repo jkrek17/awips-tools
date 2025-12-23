@@ -48,6 +48,8 @@ class ModelSelectionFrame(tk.LabelFrame):
         super().__init__(master, text=title, padx=10, pady=10)
         self._on_change = on_change
 
+        validate_aliases = models is None
+
         # Safe model list retrieval
         if models is None:
             try:
@@ -63,12 +65,15 @@ class ModelSelectionFrame(tk.LabelFrame):
         for display, key in models:
             normalized = key.upper()
             try:
-                if not model_aliases.has_alias(normalized):
+                if validate_aliases and not model_aliases.has_alias(normalized):
                     _logger.debug(f"Skipping unknown alias: {normalized}")
                     continue
             except Exception as e:
+                # If we can't validate aliases (or the registry isn't available),
+                # still render explicitly provided options so the GUI isn't empty.
                 _logger.warning(f"Error checking alias {normalized}: {e}")
-                continue
+                if validate_aliases:
+                    continue
 
             var = tk.StringVar(value="Yes" if normalized in defaults else "No")
             chk = tk.Checkbutton(
