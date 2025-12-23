@@ -394,6 +394,7 @@ def get_database_candidates_for_element(
     """
 
     elem = (element or "").strip().upper()
+
     # Dataset inference: wave parameters live in wave databases.
     wave_elements = {"WAVEHEIGHT", "WAVEDIRECTION", "WAVEPERIOD", "SWELLHEIGHT", "SWELLDIRECTION", "SWELLPERIOD"}
     inferred_dataset = "wave" if elem in wave_elements else dataset
@@ -405,6 +406,7 @@ def get_database_candidates_for_element(
         preference = ("gfe", "d2d")
     else:
         preference = ("d2d", "gfe")
+
     return get_database_candidates(alias, dataset=inferred_dataset, preference=preference)
 
 def list_alias_conflicts() -> List[Tuple[str, str, str]]:
@@ -813,9 +815,11 @@ _DEFAULT_ALIAS_DATA: Dict[str, Dict] = {
     },
 }
 
+# Global conflict registry populated during lookup build.
+_ALIAS_CONFLICTS: Tuple[Tuple[str, str, str], ...] = ()
+
 _ALIAS_TABLE = _build_alias_table()
 _ALIAS_LOOKUP = _build_lookup(_ALIAS_TABLE)
-_ALIAS_CONFLICTS: Tuple[Tuple[str, str, str], ...] = ()
 
 __all__ = [
     "ModelAliasConfig",
@@ -835,4 +839,5 @@ __all__ = [
     "has_alias",
     "ALIAS_OVERRIDE_FILENAME",
 ]
+
 
