@@ -517,9 +517,28 @@ class Procedure(SmartScript.SmartScript):
             if weight <= 0:
                 continue
 
-            grid = grid_fetch.get_grid(
-                self, cfg.alias, "WaveHeight", "SFC", tr,
-                run_depth=1, noDataError=0  # Use current run
+            # Wave databases vary by level (SFC vs 0.0SFC vs 0.0MSL).
+            # Use alias-registry defaults first, then fall back to common levels.
+            level_candidates = ["SFC", "0.0SFC", "0.0MSL"]
+            try:
+                cfg_alias = model_aliases.get_model_config(cfg.alias)
+                wave_cfg = cfg_alias.wave
+                if wave_cfg is not None:
+                    preferred = wave_cfg.default_levels.get("wave")
+                    if preferred:
+                        level_candidates.insert(0, preferred)
+            except Exception:
+                pass
+
+            grid = grid_fetch.get_grid_with_fallback(
+                self,
+                cfg.alias,
+                element_candidates=["WaveHeight"],
+                level_candidates=level_candidates,
+                time_range=tr,
+                run_depth=1,
+                mode="First",
+                noDataError=0,
             )
             if grid is None:
                 continue
