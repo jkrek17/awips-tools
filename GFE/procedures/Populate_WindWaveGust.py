@@ -503,9 +503,26 @@ class Procedure(SmartScript.SmartScript):
             if weight <= 0:
                 continue
 
-            grid = grid_fetch.get_vector_grid(
-                self, cfg.alias, "Wind", "SFC", tr,
-                run_depth=1, noDataError=0  # Use current run
+            # D2D wind often lives at 10FHAG; GFE wind often uses SFC.
+            # Try alias default wind level first, then common fallbacks.
+            level_candidates = ["SFC", "10FHAG", "0.0SFC"]
+            try:
+                cfg_alias = model_aliases.get_model_config(cfg.alias)
+                preferred = cfg_alias.default_levels.get("wind")
+                if preferred:
+                    level_candidates.insert(0, preferred)
+            except Exception:
+                pass
+
+            grid = grid_fetch.get_grid_with_fallback(
+                self,
+                cfg.alias,
+                element_candidates=["Wind"],
+                level_candidates=level_candidates,
+                time_range=tr,
+                run_depth=1,
+                mode="First",
+                noDataError=0,
             )
             if grid is None:
                 continue

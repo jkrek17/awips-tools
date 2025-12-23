@@ -606,14 +606,41 @@ class Procedure(SmartScript.SmartScript):
             f"{qpf_cfg.get('prob_definite_in', 0.25):.2f}"
         )
 
-        # Get forecast grid times
-        gridinfos = self.getGridInfo("Fcst", "Wx", "SFC", timeRange)
-        if not gridinfos:
-            self.statusBarMsg("No Wx grids found", "S")
-            return
+        def _get_wx_keys() -> Optional[List[str]]:
+            # Try to discover the discrete weather keys even if no grids exist yet.
+            try:
+                parm = self.getParm("Fcst", "Wx", "SFC")
+            except Exception:
+                parm = None
+            for obj in (parm, getattr(parm, "getGridInfo", lambda: None)()):
+                if obj is None:
+                    continue
+                for attr in ("getKeys", "getDiscreteKeys", "getWeatherKeys", "getWxKeys"):
+                    func = getattr(obj, attr, None)
+                    if callable(func):
+                        try:
+                            keys = func()
+                            if keys:
+                                return list(keys)
+                        except Exception:
+                            continue
+            return None
+
+        # Build time slices to process:
+        # Prefer existing Fcst Wx grids; otherwise fall back to Fcst Wind grids; otherwise use the selection itself.
+        time_slices: List = []
+        gridinfos = self.getGridInfo("Fcst", "Wx", "SFC", timeRange) or []
+        if gridinfos:
+            time_slices = [gi.gridTime() for gi in gridinfos]
+        else:
+            wind_infos = self.getGridInfo("Fcst", "Wind", "SFC", timeRange) or []
+            if wind_infos:
+                time_slices = [gi.gridTime() for gi in wind_infos]
+            else:
+                time_slices = [timeRange]
 
         periods_processed = 0
-        total_periods = len(gridinfos)
+        total_periods = len(time_slices)
 
         # Build edit-area mask once (same grid shape as Fcst Wx/Wind)
         edit_mask = None
@@ -629,8 +656,7 @@ class Procedure(SmartScript.SmartScript):
         except Exception:
             edit_mask = None
 
-        for i, gridinfo in enumerate(gridinfos):
-            grid_tr = gridinfo.gridTime()
+        for i, grid_tr in enumerate(time_slices):
             self.statusBarMsg(f"Processing {i+1}/{total_periods}", "R")
             self.log(f"\nPeriod {i+1}/{total_periods}: {grid_tr}")
             # Per-model data availability/logging is emitted inside _get_ensemble_data
@@ -696,9 +722,26 @@ class Procedure(SmartScript.SmartScript):
             # Get existing Wx grid
             wx_grid = self.getGrids("Fcst", "Wx", "SFC", grid_tr, noDataError=0)
             if wx_grid is None:
-                continue
+                # No existing Wx grid: create a baseline using keys from the weather element definition.
+                keys = _get_wx_keys()
+                if not keys:
+                    self.log("  ✗ No Wx keys available; cannot create Wx grid.")
+                    continue
+                # Infer shape from any available model field
+                shape_src = None
+                for candidate in (qpf_in, temp_c, rh, vis_nm, cape):
+                    if candidate is not None:
+                        shape_src = candidate
+                        break
+                if shape_src is None and wind is not None:
+                    shape_src = wind[0]
+                if shape_src is None:
+                    self.log("  ✗ No data available to infer grid shape; skipping.")
+                    continue
+                wx_values = np.zeros(np.array(shape_src).shape, dtype=np.int16)
+            else:
+                wx_values, keys = wx_grid
 
-            wx_values, keys = wx_grid
             # Use int16 to avoid overflow if key index > 127
             updated_wx = np.array(wx_values, dtype=np.int16, copy=True)
             no_wx = "<NoCov>:<NoWx>:<NoInten>:<NoVis>:"
