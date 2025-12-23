@@ -381,6 +381,10 @@ class Procedure(SmartScript.SmartScript):
             blended_wind = self._blend_wind(active_wind, wind_weights, tr)
             if blended_wind is None:
                 self.log("  No wind data available")
+                try:
+                    self.statusBarMsg("No wind data available for this period", "S")
+                except Exception:
+                    pass
                 continue
 
             mag, direc = blended_wind
@@ -462,6 +466,12 @@ class Procedure(SmartScript.SmartScript):
         gridinfos = self.getGridInfo("Fcst", "Wind", "SFC", selection)
         for info in gridinfos or []:
             ranges.append(info.gridTime())
+        # If no existing Fcst Wind grids, fall back to the selection itself.
+        if not ranges:
+            try:
+                ranges = [selection]
+            except Exception:
+                ranges = []
         return ranges
 
     def _normalize_weights(self, weights: Dict[str, int]) -> Dict[str, float]:
