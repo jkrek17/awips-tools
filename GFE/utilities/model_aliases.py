@@ -209,6 +209,7 @@ def _build_alias_table() -> Dict[str, ModelAliasConfig]:
 
 def _build_lookup(table: Mapping[str, ModelAliasConfig]) -> Dict[str, str]:
     lookup: Dict[str, str] = {}
+    conflicts: List[Tuple[str, str, str]] = []
 
     def register(value: Optional[str], canonical_key: str) -> None:
         if not value:
@@ -216,6 +217,11 @@ def _build_lookup(table: Mapping[str, ModelAliasConfig]) -> Dict[str, str]:
         try:
             norm = _normalize_key(value)
         except ValueError:
+            return
+        existing = lookup.get(norm)
+        if existing is not None and existing != canonical_key:
+            conflicts.append((norm, existing, canonical_key))
+            # Keep the first registration to avoid surprising overrides.
             return
         lookup[norm] = canonical_key
 
@@ -240,6 +246,10 @@ def _build_lookup(table: Mapping[str, ModelAliasConfig]) -> Dict[str, str]:
         if config.wave is not None:
             register_many(config.wave.gfe_databases, canonical_key)
             register(config.wave.dal_location, canonical_key)
+
+    # Stash conflict list for introspection (do not raise at import time).
+    global _ALIAS_CONFLICTS
+    _ALIAS_CONFLICTS = tuple(conflicts)
     return lookup
 
 
@@ -301,6 +311,31 @@ def get_gfe_databases(alias: str, *, dataset: str = "atmo") -> Tuple[str, ...]:
             return cfg.gfe_databases
         return ()
     return cfg.gfe_databases
+
+
+def list_alias_conflicts() -> List[Tuple[str, str, str]]:
+    """
+    Return collisions detected while building the alias lookup table.
+
+    Each entry is: (alias_token, first_canonical, conflicting_canonical)
+    """
+
+    return list(_ALIAS_CONFLICTS)
+
+
+def validate_aliases(*, raise_on_conflict: bool = False) -> bool:
+    """
+    Validate the alias registry.
+
+    Returns:
+        True if no conflicts were detected; False otherwise.
+    """
+
+    ok = not _ALIAS_CONFLICTS
+    if not ok and raise_on_conflict:
+        examples = "; ".join(f"{a} -> {first} (conflicts with {other})" for a, first, other in _ALIAS_CONFLICTS[:10])
+        raise ValueError(f"Alias conflicts detected: {examples}")
+    return ok
 
 
 def list_models(kind: str = "all") -> List[str]:
@@ -680,6 +715,7 @@ _DEFAULT_ALIAS_DATA: Dict[str, Dict] = {
 
 _ALIAS_TABLE = _build_alias_table()
 _ALIAS_LOOKUP = _build_lookup(_ALIAS_TABLE)
+_ALIAS_CONFLICTS: Tuple[Tuple[str, str, str], ...] = ()
 
 __all__ = [
     "ModelAliasConfig",
@@ -688,6 +724,8 @@ __all__ = [
     "resolve_alias",
     "get_dal_location",
     "get_gfe_databases",
+    "list_alias_conflicts",
+    "validate_aliases",
     "list_models",
     "list_models_for_gui",
     "resolve_wave_from_atmo",

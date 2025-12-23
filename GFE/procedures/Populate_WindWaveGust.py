@@ -329,27 +329,15 @@ class Procedure(SmartScript.SmartScript):
                     # Use same weight as wind model
                     wind_weight = wind_weights.get(wind_cfg.alias, 0.0)
                     if wind_weight > 0:
-                        # Get wave model database name (first one)
+                        # Prefer canonical wave alias when possible (registry resolves DB ids).
                         wave_db = wave_cfg.gfe_databases[0] if wave_cfg.gfe_databases else None
                         if wave_db:
-                            # Prefer canonical wave alias when possible
-                            wave_alias = None
-                            wave_label = wave_db
                             try:
-                                for alias_key in model_aliases.list_models(kind="wave"):
-                                    try:
-                                        cfg = model_aliases.get_model_config(alias_key)
-                                        if wave_db in cfg.gfe_databases:
-                                            wave_alias = alias_key
-                                            wave_label = cfg.get_display_name()
-                                            break
-                                    except (KeyError, AttributeError):
-                                        continue
+                                wave_alias = model_aliases.resolve_alias(wave_db)
+                                wave_label = model_aliases.get_model_config(wave_alias).get_display_name()
                             except Exception:
-                                pass
-                            # Fallback: use database name if no alias found
-                            if wave_alias is None:
                                 wave_alias = wave_db
+                                wave_label = wave_db
                             
                             wave_weights[wave_alias] = wind_weight
                             wave_model_config = ModelConfig(

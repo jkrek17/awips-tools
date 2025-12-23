@@ -19,7 +19,6 @@ import numpy as np
 from shapely.geometry import Point
 
 import SmartScript
-from ufpy.dataaccess import DataAccessLayer
 
 import dal
 import grid_fetch
@@ -260,15 +259,9 @@ class Procedure(SmartScript.SmartScript):
             self.statusBarMsg(f"Retrieving {alias}...", "R")
             self.log(f"\nProcessing model: {alias}")
 
-            try:
-                cfg = model_aliases.get_model_config(alias)
-            except KeyError:
-                self.log(f"  Unknown alias: {alias}")
-                continue
-
-            # Get atmospheric data via DAL
-            if cfg.dal_location:
-                atmo_data = self._fetch_atmo_point(cfg, point, time_range)
+            # Get atmospheric data via DAL (alias registry resolves canonical/db/dal ids)
+            if model_aliases.get_dal_location(alias, dataset="atmo"):
+                atmo_data = self._fetch_atmo_point(alias, point, time_range)
                 if atmo_data:
                     for key in ["wind_speed", "wind_dir", "wind_gust"]:
                         if key in atmo_data:
@@ -278,8 +271,8 @@ class Procedure(SmartScript.SmartScript):
                     self.log(f"  ✓ Atmospheric data retrieved")
 
             # Get wave data if available
-            if cfg.wave and cfg.wave.dal_location:
-                wave_data = self._fetch_wave_point(cfg.wave, point, time_range)
+            if model_aliases.get_dal_location(alias, dataset="wave"):
+                wave_data = self._fetch_wave_point(alias, point, time_range)
                 if wave_data:
                     for key in ["wave_height", "wave_dir", "wave_period"]:
                         if key in wave_data:
@@ -291,24 +284,17 @@ class Procedure(SmartScript.SmartScript):
         self.log(f"\nModels used: {', '.join(models_used)}")
         return ensemble
 
-    def _fetch_atmo_point(self, cfg, point: Point, time_range) -> Optional[Dict]:
-        """Fetch atmospheric data for a point using DAL."""
+    def _fetch_atmo_point(self, alias: str, point: Point, time_range) -> Optional[Dict]:
+        """Fetch atmospheric data for a point using DAL (via shared wrapper)."""
         try:
-            req = DataAccessLayer.newDataRequest()
-            req.setDatatype("grid")
-            req.setLocationNames(cfg.dal_location)
-            req.setParameters("uW", "vW")
-
-            level = cfg.default_levels.get("wind") or "10FHAG"
-            req.setLevels(level)
-            req.setEnvelope(point)
-
-            times = DataAccessLayer.getAvailableTimes(req)
-            if not times:
-                return None
-
-            # Get last 2 cycles worth of data
-            data = DataAccessLayer.getGeometryData(req, times[-48:] if len(times) > 48 else times)
+            data = dal.fetch_geometry_for_timerange(
+                alias,
+                ("uW", "vW"),
+                time_range,
+                dataset="atmo",
+                envelope=point,
+                max_samples=48,
+            )
 
             result: Dict[str, Dict] = {
                 "wind_speed": {"values": [], "times": []},
@@ -360,23 +346,18 @@ class Procedure(SmartScript.SmartScript):
             self.log(f"  Error fetching atmospheric data: {e}")
             return None
 
-    def _fetch_wave_point(self, wave_cfg, point: Point, time_range) -> Optional[Dict]:
-        """Fetch wave data for a point using DAL."""
+    def _fetch_wave_point(self, alias: str, point: Point, time_range) -> Optional[Dict]:
+        """Fetch wave data for a point using DAL (via shared wrapper)."""
         try:
-            req = DataAccessLayer.newDataRequest()
-            req.setDatatype("grid")
-            req.setLocationNames(wave_cfg.dal_location)
-            req.setParameters("HTSGW", "DIRPW", "PERPW")
-
-            level = wave_cfg.default_levels.get("wave") or "0.0SFC"
-            req.setLevels(level)
-            req.setEnvelope(point)
-
-            times = DataAccessLayer.getAvailableTimes(req)
-            if not times:
-                return None
-
-            data = DataAccessLayer.getGeometryData(req, times[-48:] if len(times) > 48 else times)
+            # Request logical names so alias registry can apply per-model overrides.
+            data = dal.fetch_geometry_for_timerange(
+                alias,
+                ("WaveHeight", "WaveDirection", "WavePeriod"),
+                time_range,
+                dataset="wave",
+                envelope=point,
+                max_samples=48,
+            )
 
             result: Dict[str, Dict] = {
                 "wave_height": {"values": [], "times": []},
@@ -397,13 +378,13 @@ class Procedure(SmartScript.SmartScript):
 
                     value = float(value)
 
-                    if param == "HTSGW":
+                    if param in {"WaveHeight", "HTSGW"}:
                         result["wave_height"]["values"].append(value)
                         result["wave_height"]["times"].append(valid_dt)
-                    elif param == "DIRPW":
+                    elif param in {"WaveDirection", "DIRPW"}:
                         result["wave_dir"]["values"].append(value)
                         result["wave_dir"]["times"].append(valid_dt)
-                    elif param == "PERPW":
+                    elif param in {"WavePeriod", "PERPW"}:
                         result["wave_period"]["values"].append(value)
                         result["wave_period"]["times"].append(valid_dt)
 

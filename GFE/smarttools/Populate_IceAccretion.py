@@ -43,9 +43,9 @@ class Tool(SmartScript.SmartScript):
     def _get_model_database(self, alias: str, run: str):
         """Resolve model alias to database, with fallback."""
         try:
-            cfg = model_aliases.get_model_config(alias)
-            gfe_db = cfg.gfe_databases[0] if cfg.gfe_databases else f"D2D_{alias}"
-        except KeyError:
+            candidates = model_aliases.get_gfe_databases(alias)
+            gfe_db = candidates[0] if candidates else f"D2D_{model_aliases.resolve_alias(alias)}"
+        except Exception:
             gfe_db = f"D2D_{alias}"
 
         offset = 0 if run == "Current" else -1
