@@ -396,25 +396,13 @@ class Procedure(SmartScript.SmartScript):
                 return
 
         models = varDict["models"]
+        build_mode = varDict.get("build_mode", "Build New (Replace All)")
         smoothing = varDict["smoothing"]
         thunder_thresh = varDict["thunder_thresh"]
         fog_thresh = varDict["fog_thresh"]
         model_run = varDict["model_run"]
         create_diag = varDict["create_diagnostics"] == "Yes"
 
-        fallback_qpf = {
-            "minimum_in": 0.01,
-            "light_in": 0.05,
-            "moderate_in": 0.25,
-            "heavy_in": 0.50,
-            "coverage_wide_in": 0.25,
-            "coverage_numerous_in": 0.10,
-            "coverage_scattered_in": 0.03,
-            "prob_definite_in": 0.25,
-            "prob_likely_in": 0.10,
-            "prob_chance_in": 0.03,
-            "severe_with_thunder_in": 1.0,
-        }
         qpf_cfg = _get_safe_qpf_cfg()
         conv_cfg = _get_safe_convection_cfg()
         cape_cfg = _get_safe_cape_cfg(thunder_thresh)
@@ -436,6 +424,7 @@ class Procedure(SmartScript.SmartScript):
         self.log("MARINE WEATHER GRID BUILDER")
         self.log("="*80)
         self.log(f"Models: {', '.join(models)}")
+        self.log(f"Build Mode: {build_mode}")
         self.log(f"Thunder Threshold: {thunder_thresh} J/kg")
         self.log(f"Fog Threshold: {fog_thresh} NM")
         self.log(f"Convective Index Threshold: {conv_idx_thresh}")
@@ -449,6 +438,20 @@ class Procedure(SmartScript.SmartScript):
         periods_processed = 0
         total_periods = len(gridinfos)
 
+        # Build edit-area mask once (same grid shape as Fcst Wx/Wind)
+        edit_mask = None
+        try:
+            ea = editArea if editArea is not None else self.getActiveEditArea()
+            if ea is None:
+                edit_mask = None
+            elif hasattr(ea, "isEmpty") and ea.isEmpty():
+                # Empty edit area in GFE usually means "all points"
+                edit_mask = None
+            else:
+                edit_mask = ea.getGrid().getNDArray().astype(bool)
+        except Exception:
+            edit_mask = None
+
         for i, gridinfo in enumerate(gridinfos):
             grid_tr = gridinfo.gridTime()
             self.statusBarMsg(f"Processing {i+1}/{total_periods}", "R")
@@ -456,7 +459,7 @@ class Procedure(SmartScript.SmartScript):
             # Per-model data availability/logging is emitted inside _get_ensemble_data
 
             # Get model data
-            model_data = self._get_ensemble_data(models, grid_tr, run_depth)
+            model_data = self._get_ensemble_data(models, grid_tr, run_depth, create_diag=create_diag)
             if model_data is None:
                 continue
 
@@ -502,7 +505,12 @@ class Procedure(SmartScript.SmartScript):
                     vis_fcst = self.getGrids("Fcst", "Visibility", "SFC", grid_tr, mode="First", noDataError=0)
                     if vis_fcst is not None:
                         vis_fcst_out = np.copy(vis_fcst)
-                        vis_fcst_out[has_fog] = np.minimum(vis_fcst_out[has_fog], fog_thresh)
+                        if edit_mask is not None:
+                            fog_points = has_fog & edit_mask
+                        else:
+                            fog_points = has_fog
+                        if np.any(fog_points):
+                            vis_fcst_out[fog_points] = np.minimum(vis_fcst_out[fog_points], fog_thresh)
                         self.createGrid("Fcst", "Visibility", "SCALAR", vis_fcst_out, grid_tr)
                 except Exception:
                     # Non-fatal; continue building Wx
@@ -514,39 +522,188 @@ class Procedure(SmartScript.SmartScript):
                 continue
 
             wx_values, keys = wx_grid
-            # Wx WEATHER grids must use 8-bit integer indices
-            new_wx = np.zeros(wx_values.shape, dtype=np.int8)
+            # Use int16 to avoid overflow if key index > 127
+            updated_wx = np.array(wx_values, dtype=np.int16, copy=True)
             no_wx = "<NoCov>:<NoWx>:<NoInten>:<NoVis>:"
+            no_idx = self.getIndex(no_wx, keys)
 
-            # Build weather grid point by point
-            for ii in range(wx_values.shape[0]):
-                for jj in range(wx_values.shape[1]):
-                    wx_str = self._determine_weather(
-                        ii,
-                        jj,
-                        has_precip,
-                        has_thunder,
-                        has_fog,
-                        qpf_in,
-                        cape,
-                        temp_c,
-                        wind,
-                        qpf_cfg,
-                        conv_idx_thresh,
-                        cape_cfg,
-                    )
+            # Scope output to edit area; outside editArea remains unchanged
+            if edit_mask is not None:
+                active = edit_mask
+            else:
+                active = None
 
-                    if wx_str:
-                        try:
-                            new_wx[ii, jj] = self.getIndex(wx_str, keys)
-                        except Exception:
-                            new_wx[ii, jj] = self.getIndex(no_wx, keys)
+            # Build mode baseline inside the active area
+            if build_mode.startswith("Build New"):
+                if active is None:
+                    updated_wx[:, :] = no_idx
+                else:
+                    updated_wx[active] = no_idx
+
+            # Cache indices for the small set of Wx strings we emit
+            idx_cache = {no_wx: no_idx}
+
+            def _idx(wx_str: str) -> int:
+                val = idx_cache.get(wx_str)
+                if val is not None:
+                    return val
+                idx_cache[wx_str] = self.getIndex(wx_str, keys)
+                return idx_cache[wx_str]
+
+            # Build masks for decisioning
+            if has_thunder is not None:
+                thunder_mask = has_thunder.copy()
+            else:
+                thunder_mask = np.zeros(wx_values.shape, dtype=bool)
+
+            if has_precip is not None:
+                precip_mask = has_precip.copy()
+            else:
+                precip_mask = np.zeros(wx_values.shape, dtype=bool)
+
+            if has_fog is not None:
+                fog_mask = has_fog.copy()
+            else:
+                fog_mask = np.zeros(wx_values.shape, dtype=bool)
+
+            if active is not None:
+                thunder_mask &= active
+                precip_mask &= active
+                fog_mask &= active
+
+            # Precedence: thunder > precip > fog
+            precip_mask &= ~thunder_mask
+            fog_mask &= ~(thunder_mask | precip_mask)
+
+            # --- Fog assignment
+            if np.any(fog_mask):
+                updated_wx[fog_mask] = _idx("Patchy:F:<NoInten>:<NoVis>:")
+
+            # --- Thunder assignment
+            if np.any(thunder_mask) and cape is not None:
+                cape_val = cape
+                cape_high = float(cape_cfg.get("high", 2000.0))
+                cape_severe = float(cape_cfg.get("severe_min", 3000.0))
+                severe_with_qpf = float(qpf_cfg.get("severe_with_thunder_in", 1.0))
+
+                cov_sct = thunder_mask & (cape_val > cape_high)
+                cov_iso = thunder_mask & ~cov_sct
+
+                severe = thunder_mask & (cape_val > cape_severe)
+                if qpf_in is not None:
+                    severe |= thunder_mask & (qpf_in > severe_with_qpf)
+
+                # Note: Wx encoding uses '+' intensity for severe; otherwise <NoInten>
+                if np.any(cov_sct & severe):
+                    updated_wx[cov_sct & severe] = _idx("Sct:T:+:<NoVis>:")
+                if np.any(cov_sct & ~severe):
+                    updated_wx[cov_sct & ~severe] = _idx("Sct:T:<NoInten>:<NoVis>:")
+                if np.any(cov_iso & severe):
+                    updated_wx[cov_iso & severe] = _idx("Iso:T:+:<NoVis>:")
+                if np.any(cov_iso & ~severe):
+                    updated_wx[cov_iso & ~severe] = _idx("Iso:T:<NoInten>:<NoVis>:")
+
+            # --- Precip assignment (rain/snow + convective coverage/prob + intensity)
+            if np.any(precip_mask) and qpf_in is not None:
+                # Compute convective index where possible
+                if cape is not None and wind is not None:
+                    # Wind is (magnitude_knots, direction_degrees)
+                    wind_mag_kt = wind[0]
+                    try:
+                        wind_ms = thresholds.to_mps(wind_mag_kt)
+                    except AttributeError:
+                        wind_ms = wind_mag_kt * 0.514444
+                    conv_idx = (cape / 1000.0) + (wind_ms / 20.0)
+                else:
+                    conv_idx = None
+
+                if conv_idx is None:
+                    is_conv = np.zeros(wx_values.shape, dtype=bool)
+                else:
+                    is_conv = conv_idx > conv_idx_thresh
+
+                # Precip type by temperature (Celsius)
+                if temp_c is not None:
+                    is_snow = temp_c < FREEZING_C
+                else:
+                    is_snow = np.zeros(wx_values.shape, dtype=bool)
+
+                # Thresholds
+                precip_wide = float(qpf_cfg.get("coverage_wide_in", 0.25))
+                precip_numerous = float(qpf_cfg.get("coverage_numerous_in", 0.10))
+                precip_scattered = float(qpf_cfg.get("coverage_scattered_in", 0.03))
+                precip_definite = float(qpf_cfg.get("prob_definite_in", 0.25))
+                precip_likely = float(qpf_cfg.get("prob_likely_in", 0.10))
+                precip_chance = float(qpf_cfg.get("prob_chance_in", 0.03))
+                precip_heavy = float(qpf_cfg.get("heavy_in", 0.50))
+                precip_moderate = float(qpf_cfg.get("moderate_in", 0.25))
+                precip_light = float(qpf_cfg.get("light_in", 0.05))
+
+                # Intensity masks
+                inten_plus = precip_mask & (qpf_in > precip_heavy)
+                inten_m = precip_mask & ~inten_plus & (qpf_in > precip_moderate)
+                inten_minus = precip_mask & ~(inten_plus | inten_m)  # keep '-' as default
+
+                # Coverage/probability masks
+                conv_points = precip_mask & is_conv
+                strat_points = precip_mask & ~is_conv
+
+                cov_wide = conv_points & (qpf_in > precip_wide)
+                cov_num = conv_points & ~cov_wide & (qpf_in > precip_numerous)
+                cov_sct = conv_points & ~(cov_wide | cov_num) & (qpf_in > precip_scattered)
+                cov_iso = conv_points & ~(cov_wide | cov_num | cov_sct)
+
+                cov_def = strat_points & (qpf_in > precip_definite)
+                cov_lkly = strat_points & ~cov_def & (qpf_in > precip_likely)
+                cov_chc = strat_points & ~(cov_def | cov_lkly) & (qpf_in > precip_chance)
+                cov_schc = strat_points & ~(cov_def | cov_lkly | cov_chc)
+
+                # Pre-build Wx strings with fixed fields
+                # Format: "<Cov>:<WxType>:<Inten>:<NoVis>:"
+                def wx(cov, typ, inten):
+                    return f"{cov}:{typ}:{inten}:<NoVis>:"
+
+                def assign_cov(cov_mask, cov_code, convective: bool):
+                    # Determine precip weather type string per-point (snow/rain + convective flag)
+                    if convective:
+                        rain_type = "RW"
+                        snow_type = "SW"
                     else:
-                        new_wx[ii, jj] = self.getIndex(no_wx, keys)
+                        rain_type = "R"
+                        snow_type = "S"
+
+                    snow_mask = cov_mask & is_snow
+                    rain_mask = cov_mask & ~is_snow
+
+                    if np.any(rain_mask & inten_plus):
+                        updated_wx[rain_mask & inten_plus] = _idx(wx(cov_code, rain_type, "+"))
+                    if np.any(rain_mask & inten_m):
+                        updated_wx[rain_mask & inten_m] = _idx(wx(cov_code, rain_type, "m"))
+                    if np.any(rain_mask & inten_minus):
+                        updated_wx[rain_mask & inten_minus] = _idx(wx(cov_code, rain_type, "-"))
+
+                    if np.any(snow_mask & inten_plus):
+                        updated_wx[snow_mask & inten_plus] = _idx(wx(cov_code, snow_type, "+"))
+                    if np.any(snow_mask & inten_m):
+                        updated_wx[snow_mask & inten_m] = _idx(wx(cov_code, snow_type, "m"))
+                    if np.any(snow_mask & inten_minus):
+                        updated_wx[snow_mask & inten_minus] = _idx(wx(cov_code, snow_type, "-"))
+
+                # Convective coverage
+                assign_cov(cov_wide, "Wide", convective=True)
+                assign_cov(cov_num, "Num", convective=True)
+                assign_cov(cov_sct, "Sct", convective=True)
+                assign_cov(cov_iso, "Iso", convective=True)
+
+                # Stratiform probability
+                assign_cov(cov_def, "Def", convective=False)
+                assign_cov(cov_lkly, "Lkly", convective=False)
+                assign_cov(cov_chc, "Chc", convective=False)
+                assign_cov(cov_schc, "SChc", convective=False)
 
             # Save weather grid
             try:
-                self.createGrid("Fcst", "Wx", "WEATHER", (new_wx, keys), grid_tr)
+                self.createGrid("Fcst", "Wx", "WEATHER", (updated_wx, keys), grid_tr)
                 periods_processed += 1
                 self.log(f"✓ Weather grid saved")
             except Exception as e:
@@ -570,7 +727,7 @@ class Procedure(SmartScript.SmartScript):
         root.mainloop()
         return result[0]
 
-    def _get_ensemble_data(self, models: List[str], grid_tr, run_depth: int):
+    def _get_ensemble_data(self, models: List[str], grid_tr, run_depth: int, *, create_diag: bool = False):
         """Get averaged model data using alias configuration."""
         temp_sum, rh_sum, qpf_sum, vis_min, cape_max = None, None, None, None, None
         temp_cnt, rh_cnt, qpf_cnt = 0, 0, 0
@@ -704,23 +861,24 @@ class Procedure(SmartScript.SmartScript):
                 qpf_cnt += 1
                 qpf_stats = (float(np.nanmin(qpf_in)), float(np.nanmean(qpf_in)), float(np.nanmax(qpf_in)))
 
-                # Per-model diagnostic QPF (inches), clipped to 0-1 for display
-                try:
-                    qpf_clip = np.clip(qpf_in, 0.0, 1.0)
-                    elem_name = f"modelQPF{alias.upper()}"
-                    self.createGrid(
-                        "Fcst",
-                        elem_name,
-                        "SCALAR",
-                        qpf_clip,
-                        grid_tr,
-                        minAllowedValue=0.0,
-                        maxAllowedValue=1.0,
-                        units="in",
-                        descriptiveName=f"{alias} QPF (in)",
-                    )
-                except Exception:
-                    pass
+                if create_diag:
+                    # Per-model diagnostic QPF (inches), clipped to 0-1 for display
+                    try:
+                        qpf_clip = np.clip(qpf_in, 0.0, 1.0)
+                        elem_name = f"modelQPF{alias.upper()}"
+                        self.createGrid(
+                            "Fcst",
+                            elem_name,
+                            "SCALAR",
+                            qpf_clip,
+                            grid_tr,
+                            minAllowedValue=0.0,
+                            maxAllowedValue=1.0,
+                            units="in",
+                            descriptiveName=f"{alias} QPF (in)",
+                        )
+                    except Exception:
+                        pass
 
             # Visibility - log what we're trying
             if alias in ["ECMWF", "CMC"]:
@@ -854,7 +1012,8 @@ class Procedure(SmartScript.SmartScript):
             )
 
         if cape is not None and wind is not None:
-            wind_speed_kt = np.sqrt(wind[0] ** 2 + wind[1] ** 2)
+            # Fcst Wind is (magnitude_knots, direction_degrees)
+            wind_speed_kt = wind[0]
             try:
                 wind_speed_ms = thresholds.to_mps(wind_speed_kt)
             except AttributeError:
@@ -914,7 +1073,8 @@ class Procedure(SmartScript.SmartScript):
             # Get wind speed in m/s for convective index
             wind_ms = 0
             if wind is not None:
-                wind_kt = np.sqrt(wind[0][ii, jj]**2 + wind[1][ii, jj]**2)
+                # Fcst Wind is (magnitude_knots, direction_degrees)
+                wind_kt = wind[0][ii, jj]
                 try:
                     wind_ms = thresholds.to_mps(wind_kt)
                 except AttributeError:
