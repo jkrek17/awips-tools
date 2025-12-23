@@ -82,8 +82,11 @@ def _iter_database_ids(smart_script, alias: str, run_depth: int) -> Generator[st
             pass
         return
 
-    config = model_aliases.get_model_config(alias_norm)
-    candidates: Iterable[str] = config.gfe_databases or ()
+    try:
+        candidates: Iterable[str] = model_aliases.get_gfe_databases(alias_norm) or ()
+    except Exception:
+        # Preserve legacy behavior: if alias resolution fails, just yield nothing.
+        candidates = ()
 
     for base in candidates:
         for offset in range(0, -run_depth, -1):
@@ -164,8 +167,7 @@ def get_grid_with_fallback(
     should_log = alias.upper() in ["ECMWF", "CMC"]
     if should_log:
         try:
-            cfg = model_aliases.get_model_config(alias)
-            db_names = cfg.gfe_databases
+            db_names = model_aliases.get_gfe_databases(alias)
             smart_script.log(f"    {alias} databases: {db_names}")
         except Exception:
             pass

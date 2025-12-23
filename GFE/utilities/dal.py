@@ -81,15 +81,25 @@ def _pick_default_level(dataset: str, defaults: dict, explicit: Optional[str]) -
 def _dataset_view(config: ModelAliasConfig, dataset: str) -> _DatasetView:
     dataset_norm = dataset.lower()
     if dataset_norm == "wave":
+        # Two supported shapes:
+        # 1) Atmospheric alias with a paired wave config (e.g., GFS with config.wave set)
+        # 2) Wave-only alias (e.g., GFSWAVE) where the wave dataset info lives directly on config
         wave: Optional[WaveModelConfig] = config.wave
-        if wave is None:
-            raise ValueError(f"Alias '{config.key}' does not define a paired wave dataset.")
-        return _DatasetView(
-            location=wave.dal_location,
-            defaults=wave.default_levels,
-            overrides=wave.parameter_overrides,
-            kind="wave",
-        )
+        if wave is not None:
+            return _DatasetView(
+                location=wave.dal_location,
+                defaults=wave.default_levels,
+                overrides=wave.parameter_overrides,
+                kind="wave",
+            )
+        if "wave" in getattr(config, "tags", ()):
+            return _DatasetView(
+                location=config.dal_location,
+                defaults=config.default_levels,
+                overrides=config.parameter_overrides,
+                kind="wave",
+            )
+        raise ValueError(f"Alias '{config.key}' does not define a wave dataset.")
     return _DatasetView(
         location=config.dal_location,
         defaults=config.default_levels,
