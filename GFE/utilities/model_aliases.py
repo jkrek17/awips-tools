@@ -450,7 +450,8 @@ def list_models(kind: str = "all") -> List[str]:
         return "wave" in config.tags or config.wave is not None
 
     def is_atmo(config: ModelAliasConfig) -> bool:
-        return "atmo" in config.tags or config.dal_location is not None
+        # Avoid classifying wave-only aliases as atmo simply because they have a DAL location.
+        return "atmo" in config.tags or (config.dal_location is not None and "wave" not in config.tags)
 
     keys: Iterable[str] = _ALIAS_TABLE.keys()
     if kind_norm == "wave":
