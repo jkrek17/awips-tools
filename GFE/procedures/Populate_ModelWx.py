@@ -262,6 +262,99 @@ class MarineWeatherGUI:
         )
         self.fog_slider.pack(anchor=tk.W, pady=(10, 0))
 
+        # QPF thresholds (inches / 3-hr)
+        qpf_defaults = _get_safe_qpf_cfg()
+        tk.Label(frame, text="QPF Thresholds (inches / ~3hr):", font=("Arial", 10, "bold")).pack(
+            anchor=tk.W, pady=(12, 0)
+        )
+        tk.Label(
+            frame,
+            text="These thresholds control stratiform probability (Chc/Lkly/Def) and convective coverage (Iso/Sct/Num/Wide).",
+            font=("Arial", 9),
+            fg="gray",
+            wraplength=520,
+            justify=tk.LEFT,
+        ).pack(anchor=tk.W, pady=(2, 6))
+
+        qpf_layout = gui.TwoColumnLayout(frame, padx=18)
+        qpf_layout.pack(fill=tk.X)
+
+        # Left: convective coverage thresholds
+        tk.Label(qpf_layout.left, text="Convective coverage", font=("Arial", 9, "bold")).pack(anchor=tk.W)
+        self.qpf_min_slider = gui.ThresholdSlider(
+            qpf_layout.left,
+            label="Minimum precip (has_precip):",
+            min_value=0.0,
+            max_value=0.10,
+            default=float(qpf_defaults.get("minimum_in", 0.01)),
+            resolution=0.01,
+            var_type=float,
+        )
+        self.qpf_min_slider.pack(anchor=tk.W)
+        self.qpf_cov_scattered_slider = gui.ThresholdSlider(
+            qpf_layout.left,
+            label="Scattered (Sct) ≥",
+            min_value=0.0,
+            max_value=0.50,
+            default=float(qpf_defaults.get("coverage_scattered_in", 0.03)),
+            resolution=0.01,
+            var_type=float,
+        )
+        self.qpf_cov_scattered_slider.pack(anchor=tk.W, pady=(6, 0))
+        self.qpf_cov_numerous_slider = gui.ThresholdSlider(
+            qpf_layout.left,
+            label="Numerous (Num) ≥",
+            min_value=0.0,
+            max_value=1.00,
+            default=float(qpf_defaults.get("coverage_numerous_in", 0.10)),
+            resolution=0.01,
+            var_type=float,
+        )
+        self.qpf_cov_numerous_slider.pack(anchor=tk.W, pady=(6, 0))
+        self.qpf_cov_wide_slider = gui.ThresholdSlider(
+            qpf_layout.left,
+            label="Widespread (Wide) ≥",
+            min_value=0.0,
+            max_value=2.00,
+            default=float(qpf_defaults.get("coverage_wide_in", 0.25)),
+            resolution=0.01,
+            var_type=float,
+        )
+        self.qpf_cov_wide_slider.pack(anchor=tk.W, pady=(6, 0))
+
+        # Right: stratiform probability thresholds
+        tk.Label(qpf_layout.right, text="Stratiform probability", font=("Arial", 9, "bold")).pack(anchor=tk.W)
+        self.qpf_prob_chance_slider = gui.ThresholdSlider(
+            qpf_layout.right,
+            label="Chance (Chc) ≥",
+            min_value=0.0,
+            max_value=0.50,
+            default=float(qpf_defaults.get("prob_chance_in", 0.03)),
+            resolution=0.01,
+            var_type=float,
+        )
+        self.qpf_prob_chance_slider.pack(anchor=tk.W)
+        self.qpf_prob_likely_slider = gui.ThresholdSlider(
+            qpf_layout.right,
+            label="Likely (Lkly) ≥",
+            min_value=0.0,
+            max_value=1.00,
+            default=float(qpf_defaults.get("prob_likely_in", 0.10)),
+            resolution=0.01,
+            var_type=float,
+        )
+        self.qpf_prob_likely_slider.pack(anchor=tk.W, pady=(6, 0))
+        self.qpf_prob_definite_slider = gui.ThresholdSlider(
+            qpf_layout.right,
+            label="Definite (Def) ≥",
+            min_value=0.0,
+            max_value=2.00,
+            default=float(qpf_defaults.get("prob_definite_in", 0.25)),
+            resolution=0.01,
+            var_type=float,
+        )
+        self.qpf_prob_definite_slider.pack(anchor=tk.W, pady=(6, 0))
+
         # Model Run - use RadioGroup from gui.py
         tk.Label(frame, text="Model Run:", font=("Arial", 10, "bold")).pack(anchor=tk.W, pady=(10, 0))
         self.model_run_group = gui.RadioGroup(
@@ -322,6 +415,13 @@ class MarineWeatherGUI:
             "smoothing": self.smoothing_slider.get_value(),
             "thunder_thresh": int(self.thunder_slider.get_value()),
             "fog_thresh": self.fog_slider.get_value(),
+            "qpf_minimum_in": float(self.qpf_min_slider.get_value()),
+            "qpf_cov_scattered_in": float(self.qpf_cov_scattered_slider.get_value()),
+            "qpf_cov_numerous_in": float(self.qpf_cov_numerous_slider.get_value()),
+            "qpf_cov_wide_in": float(self.qpf_cov_wide_slider.get_value()),
+            "qpf_prob_chance_in": float(self.qpf_prob_chance_slider.get_value()),
+            "qpf_prob_likely_in": float(self.qpf_prob_likely_slider.get_value()),
+            "qpf_prob_definite_in": float(self.qpf_prob_definite_slider.get_value()),
             "model_run": self.model_run_group.get_value(),
             "create_diagnostics": self.diagnostics_group.get_value(),
         })
@@ -344,36 +444,47 @@ class Procedure(SmartScript.SmartScript):
         try:
             # Collect all log messages
             output_text = "\n".join(self.output_log) if self.output_log else "No output generated."
-            
-            # Create window - use Toplevel if root exists, otherwise Tk
-            root = None
+
+            # Create a closeable window.
+            # In AWIPS/GFE, tk._default_root may exist but not be running a mainloop,
+            # so we use wait_window() to ensure events are processed until close.
+            parent = getattr(tk, "_default_root", None)
+            owns_root = False
+
             try:
-                if tk._default_root is not None:
-                    root = tk.Toplevel(tk._default_root)
+                if parent is not None and int(parent.winfo_exists()):
+                    win = tk.Toplevel(parent)
                 else:
-                    root = tk.Tk()
-            except:
-                root = tk.Tk()
-            
-            root.title("Tool Execution Results")
-            
-            # Create popup
-            popup = gui.ResultsPopup(root, "Tool Execution Results", output_text, readonly=True)
-            
-            # Ensure window is properly configured and closeable
-            root.protocol("WM_DELETE_WINDOW", root.destroy)
-            root.resizable(True, True)
-            root.lift()
-            root.focus_force()
-            root.update()
-            
-            # Only start mainloop if we created a new Tk root (not Toplevel)
-            if isinstance(root, tk.Tk) and tk._default_root is None:
-                # Start mainloop in a way that doesn't block if possible
+                    raise RuntimeError("No valid Tk root available")
+            except Exception:
+                win = tk.Tk()
+                owns_root = True
+
+            def _close():
                 try:
-                    root.mainloop()
-                except:
+                    win.destroy()
+                except Exception:
                     pass
+
+            win.title("Tool Execution Results")
+            win.protocol("WM_DELETE_WINDOW", _close)
+            win.bind("<Escape>", lambda e: _close())
+
+            # Create popup content
+            gui.ResultsPopup(win, "Tool Execution Results", output_text, readonly=True)
+
+            # Bring to front
+            try:
+                win.lift()
+                win.focus_force()
+            except Exception:
+                pass
+
+            # Run a local event loop until closed.
+            if owns_root:
+                win.mainloop()
+            else:
+                win.wait_window()
         except Exception as e:
             self.statusBarMsg(f"Could not create results popup: {e}", "S")
             print(f"Could not create results popup: {e}")
@@ -404,6 +515,52 @@ class Procedure(SmartScript.SmartScript):
         create_diag = varDict["create_diagnostics"] == "Yes"
 
         qpf_cfg = _get_safe_qpf_cfg()
+        # Apply user overrides from GUI (if present)
+        for key, cfg_key in (
+            ("qpf_minimum_in", "minimum_in"),
+            ("qpf_cov_scattered_in", "coverage_scattered_in"),
+            ("qpf_cov_numerous_in", "coverage_numerous_in"),
+            ("qpf_cov_wide_in", "coverage_wide_in"),
+            ("qpf_prob_chance_in", "prob_chance_in"),
+            ("qpf_prob_likely_in", "prob_likely_in"),
+            ("qpf_prob_definite_in", "prob_definite_in"),
+        ):
+            if key in varDict and varDict[key] is not None:
+                try:
+                    qpf_cfg[cfg_key] = float(varDict[key])
+                except Exception:
+                    pass
+
+        # Enforce monotonic ordering to avoid impossible qualifier thresholds.
+        # - Convective coverage: scattered <= numerous <= wide
+        cov_sorted = sorted(
+            [
+                float(qpf_cfg.get("coverage_scattered_in", 0.03)),
+                float(qpf_cfg.get("coverage_numerous_in", 0.10)),
+                float(qpf_cfg.get("coverage_wide_in", 0.25)),
+            ]
+        )
+        qpf_cfg["coverage_scattered_in"], qpf_cfg["coverage_numerous_in"], qpf_cfg["coverage_wide_in"] = cov_sorted
+
+        # - Stratiform probability: chance <= likely <= definite
+        prob_sorted = sorted(
+            [
+                float(qpf_cfg.get("prob_chance_in", 0.03)),
+                float(qpf_cfg.get("prob_likely_in", 0.10)),
+                float(qpf_cfg.get("prob_definite_in", 0.25)),
+            ]
+        )
+        qpf_cfg["prob_chance_in"], qpf_cfg["prob_likely_in"], qpf_cfg["prob_definite_in"] = prob_sorted
+
+        # - Minimum precip should not exceed the smallest qualifier threshold.
+        try:
+            qpf_cfg["minimum_in"] = min(
+                float(qpf_cfg.get("minimum_in", 0.01)),
+                float(qpf_cfg["coverage_scattered_in"]),
+                float(qpf_cfg["prob_chance_in"]),
+            )
+        except Exception:
+            pass
         conv_cfg = _get_safe_convection_cfg()
         cape_cfg = _get_safe_cape_cfg(thunder_thresh)
         cape_cfg["thunder_min"] = max(thunder_thresh, cape_cfg.get("thunder_min", thunder_thresh))
@@ -415,7 +572,7 @@ class Procedure(SmartScript.SmartScript):
         conv_idx_thresh = conv_cfg.get("convective_index_threshold", 7.0)
         smoothing_cfg = _get_safe_smoothing_cfg()
         sigma_base = smoothing_cfg.get("sigma", 0.7)
-        precip_min = qpf_cfg.get("minimum_in", 0.01)
+        precip_min = float(qpf_cfg.get("minimum_in", 0.01))
         diag_clip = _get_safe_clip_cfg()
 
         run_depth = 1 if model_run == "Current" else 2
@@ -428,6 +585,16 @@ class Procedure(SmartScript.SmartScript):
         self.log(f"Thunder Threshold: {thunder_thresh} J/kg")
         self.log(f"Fog Threshold: {fog_thresh} NM")
         self.log(f"Convective Index Threshold: {conv_idx_thresh}")
+        self.log(
+            "QPF thresholds (in): "
+            f"min={qpf_cfg.get('minimum_in', 0.01):.2f}, "
+            f"cov(Sct/Num/Wide)={qpf_cfg.get('coverage_scattered_in', 0.03):.2f}/"
+            f"{qpf_cfg.get('coverage_numerous_in', 0.10):.2f}/"
+            f"{qpf_cfg.get('coverage_wide_in', 0.25):.2f}, "
+            f"prob(Chc/Lkly/Def)={qpf_cfg.get('prob_chance_in', 0.03):.2f}/"
+            f"{qpf_cfg.get('prob_likely_in', 0.10):.2f}/"
+            f"{qpf_cfg.get('prob_definite_in', 0.25):.2f}"
+        )
 
         # Get forecast grid times
         gridinfos = self.getGridInfo("Fcst", "Wx", "SFC", timeRange)

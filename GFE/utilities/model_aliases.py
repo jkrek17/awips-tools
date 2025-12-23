@@ -394,15 +394,20 @@ def get_database_candidates_for_element(
     """
 
     elem = (element or "").strip().upper()
-    gfe_first = {
-        "WIND",
-        "WAVEHEIGHT",
-    }
-    if elem in gfe_first:
+
+    # Dataset inference: wave parameters live in wave databases.
+    wave_elements = {"WAVEHEIGHT", "WAVEDIRECTION", "WAVEPERIOD", "SWELLHEIGHT", "SWELLDIRECTION", "SWELLPERIOD"}
+    inferred_dataset = "wave" if elem in wave_elements else dataset
+
+    # Source preference (based on legacy tool behavior):
+    # - Wind and WaveHeight prefer local GFE databases
+    # - Everything else prefers D2D
+    if elem in {"WIND", "WAVEHEIGHT"}:
         preference = ("gfe", "d2d")
     else:
         preference = ("d2d", "gfe")
-    return get_database_candidates(alias, dataset=dataset, preference=preference)
+
+    return get_database_candidates(alias, dataset=inferred_dataset, preference=preference)
 
 def list_alias_conflicts() -> List[Tuple[str, str, str]]:
     """
@@ -810,9 +815,11 @@ _DEFAULT_ALIAS_DATA: Dict[str, Dict] = {
     },
 }
 
+# Global conflict registry populated during lookup build.
+_ALIAS_CONFLICTS: Tuple[Tuple[str, str, str], ...] = ()
+
 _ALIAS_TABLE = _build_alias_table()
 _ALIAS_LOOKUP = _build_lookup(_ALIAS_TABLE)
-_ALIAS_CONFLICTS: Tuple[Tuple[str, str, str], ...] = ()
 
 __all__ = [
     "ModelAliasConfig",
