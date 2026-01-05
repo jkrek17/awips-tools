@@ -3,7 +3,7 @@ Populate_ConsensusWind - Pattern-Based Multi-Model Wind Consensus.
 
 Creates wind grids using:
 1. PATTERN (Direction): Multi-model circular mean for consensus flow
-2. MAGNITUDE: Individual model speeds combined using one of seven strategies
+2. MAGNITUDE: Individual model speeds combined using one of the supported strategies
 
 The key insight: Models often agree on synoptic patterns (direction) better
 than on exact speeds. By using consensus direction with agreement-weighted
@@ -26,42 +26,7 @@ MAGNITUDE STRATEGIES:
    Best for: Safety-critical operations, marine warnings, when conservative
              forecasts are preferred.
 
-3. Pattern-Weighted
-   Weights each model's speed by how well its direction agrees with the
-   consensus direction. Models with directions close to consensus get full
-   weight; weight decays exponentially for models that disagree.
-   Pros: Combines pattern agreement with magnitude, giving more weight to
-         models that "fit" the consensus flow pattern.
-   Cons: Requires tuning of direction tolerance and decay rate parameters.
-   Best for: When you want to emphasize models that agree on both direction
-             and magnitude patterns.
-
-4. Confidence-Weighted
-   Weights speeds by inverse of model spread. Models clustered together
-   (low spread) get higher weight than outliers.
-   Pros: Automatically down-weights outlier models, emphasizes agreement.
-   Cons: May still wash out features if models cluster around wrong values.
-   Best for: When model spread varies significantly across the domain.
-
-5. Pattern-Matched Max
-   Takes the MAXIMUM speed from only those models whose direction agrees
-   with the consensus (within tolerance). Filters out outlier directions
-   while preserving strong wind features.
-   Pros: Best of both worlds - uses pattern consensus to filter outliers,
-         but preserves strong features (fronts, jets) from agreeing models.
-   Cons: Requires direction tolerance tuning.
-   Best for: Most operational use - preserves important features while
-             maintaining pattern consistency. RECOMMENDED DEFAULT.
-
-6. Feature-Preserving
-   Identifies local wind maxima (features like fronts, jets) and preserves
-   them using maximum values from agreeing models. Uses pattern-weighted
-   blend for background flow.
-   Pros: Preserves important meteorological features while blending background.
-   Cons: More complex, may create artificial gradients at feature boundaries.
-   Best for: When preserving specific wind features (fronts, jets) is critical.
-
-7. Median
+3. Median
    The middle value of all model winds at each grid point.
    Pros: Highly robust to outliers. If one model has crazy high winds,
          Median ignores it (unlike Mean, which gets skewed).
@@ -69,7 +34,7 @@ MAGNITUDE STRATEGIES:
    Best for: General forecasting when you want to filter out rogue models
              without any manual tuning.
 
-8. 90th Percentile
+4. 90th Percentile
    The value below which 90% of the models fall. "Reasonable Worst Case".
    Pros: Standard statistical approach for safety/risk assessment. Captures
          high-end potential without using the absolute single-point maximum
@@ -78,7 +43,7 @@ MAGNITUDE STRATEGIES:
    Best for: Marine warnings and safety-critical forecasts where under-
              forecasting is more dangerous than over-forecasting.
 
-9. Spread-Adjusted
+5. Spread-Adjusted
     Mean + (Standard Deviation × Factor). Dynamically pads the forecast
     based on model uncertainty.
     Method: Calculates mean and standard deviation across all models at each
@@ -88,59 +53,6 @@ MAGNITUDE STRATEGIES:
     Cons: Can over-pad if one outlier creates large spread.
     Best for: When you want a single field that implicitly captures risk.
               The spread factor (default 0.5) can be tuned.
-
-10. Pattern-Blended
-   Blends the spatial patterns (wind vectors) from all models, then scales
-   the magnitude to match consensus. Solves the problem where models agree
-   on magnitude but disagree on spatial placement.
-   Method: Converts winds to u/v components, creates weighted blend (models
-           with better direction agreement get higher weight), then scales
-           the blended magnitude to match consensus while preserving the
-           blended spatial pattern.
-   Pros: Smooths out spatial disagreements while preserving magnitude agreement.
-         Creates realistic blended wind field that accounts for all model patterns.
-   Cons: May smooth out important features if models strongly disagree on placement.
-         Creates winds in multiple areas rather than a single consensus point.
-   Best for: When models agree on magnitude but disagree on where winds occur.
-             Creates a blended field that captures winds in both areas.
-
-11. Spatial-Consensus
-    Finds the centroid (middle point) of wind maxima from all models, then
-    places the maximum magnitude at that single consensus location.
-    Solves the problem where models agree on magnitude but disagree on location,
-    and you need ONE consensus location (not winds in multiple areas).
-    Method: For each model, finds locations where winds exceed 80% of that
-            model's maximum. Calculates the weighted centroid of these locations.
-            Creates a distance-weighted field with maximum magnitude at the centroid,
-            decreasing with distance (Gaussian decay).
-    Pros: Creates a single consensus location for the storm/wind feature.
-          Uses 90th percentile magnitude (reasonable worst case) at consensus point,
-          which is more realistic than absolute maximum.
-          Ideal for: Two models both show 65 kt winds 300 miles apart - this
-          places 90th percentile winds at the midpoint (150 miles from each).
-    Cons: May not be realistic if models truly show separate features.
-          The decay radius is based on model separation, which may need tuning.
-    Best for: When you know there's ONE storm/feature but models disagree on
-              exact location. RECOMMENDED for single-storm scenarios with
-              spatial displacement uncertainty.
-
-12. Hybrid Consensus
-    Combines direction filtering + spatial consensus + 90th percentile magnitude.
-    The "best of all worlds" strategy that addresses multiple sources of uncertainty.
-    Method:
-    1. Filters models by direction agreement (only uses models within tolerance of consensus)
-    2. Finds centroid of wind maxima from agreeing models only
-    3. Uses 90th percentile magnitude (reasonable worst case) at consensus location
-    4. Creates distance-weighted field with Gaussian decay
-    Pros: Removes outlier models (direction filtering), creates single consensus location
-          (spatial consensus), uses conservative but realistic magnitude (90th percentile).
-          Ideal for: Models show 65 kt winds 300 miles apart, but one model has wrong
-          direction - this filters the bad direction, finds centroid of good models,
-          places 90th percentile winds there.
-    Cons: More complex than individual strategies. Requires good consensus direction.
-    Best for: Operational use when you want robust, conservative consensus that
-              handles both spatial displacement AND direction outliers.
-              RECOMMENDED DEFAULT for complex multi-model scenarios.
 """
 
 from __future__ import annotations
@@ -171,18 +83,11 @@ CONSENSUS_MODELS = [
 
 # Magnitude strategies
 MAG_STRATEGIES = [
-    "Mean",                    # Simple average (washes out features)
+    "Mean",                    # Simple average
     "Median",                  # Robust central tendency (ignores outliers)
     "Maximum",                 # Highest model (conservative)
-    "90th Percentile",         # Reasonable Worst Case (safety standard)
+    "90th Percentile",         # Reasonable worst case
     "Spread-Adjusted",         # Mean + (spread × factor) for uncertainty padding
-    "Pattern-Weighted",        # Weight by direction agreement
-    "Confidence-Weighted",     # Weight by inverse spread
-    "Pattern-Matched Max",     # MAX of models agreeing with consensus (preserves features!)
-    "Feature-Preserving",      # Blend that preserves local maxima
-    "Pattern-Blended",         # Blend spatial patterns, match consensus magnitude
-    "Spatial-Consensus",       # Centroid of wind maxima - single consensus location
-    "Hybrid Consensus",        # Direction-filtered + spatial consensus + flexible magnitude
 ]
 
 # Centralized tunables for GUI defaults and method parameters
@@ -270,8 +175,7 @@ class ConsensusWindGUI:
         self._build_model_frame(left_column)
         self._build_strategy_frame(left_column)
 
-        # Right column: Pattern Agreement, Boost, and Output Options
-        self._build_pattern_frame(right_column)
+        # Right column: Boost and Output Options
         self._build_boost_frame(right_column)
         self._build_output_frame(right_column)
 
@@ -328,7 +232,7 @@ class ConsensusWindGUI:
         tk.Label(frame, text="How to combine individual model wind speeds:",
                  font=("Arial", 9), fg="gray").pack(anchor=tk.W, pady=(0, 5))
 
-        self.mag_strategy = tk.StringVar(value="Pattern-Matched Max")
+        self.mag_strategy = tk.StringVar(value="Spread-Adjusted")
 
         strategies_info = [
             ("Mean", "Simple average of all models"),
@@ -336,13 +240,6 @@ class ConsensusWindGUI:
             ("Maximum", "Highest model speed"),
             ("90th Percentile", "Reasonable worst case"),
             ("Spread-Adjusted", "Mean plus uncertainty padding"),
-            ("Pattern-Weighted", "Weight by direction agreement"),
-            ("Confidence-Weighted", "Weight by model clustering"),
-            ("Pattern-Matched Max", "Max from agreeing models"),
-            ("Feature-Preserving", "Preserves local maxima"),
-            ("Pattern-Blended", "Blend patterns, match magnitude"),
-            ("Spatial-Consensus", "Centroid location with max magnitude"),
-            ("Hybrid Consensus", "Filter by direction, find centroid, use 90th percentile"),
         ]
 
         for strategy, description in strategies_info:
@@ -352,32 +249,6 @@ class ConsensusWindGUI:
                            value=strategy, font=("Arial", 9, "bold")).pack(side=tk.LEFT)
             tk.Label(row, text=f"- {description}",
                      font=("Arial", 8), fg="darkblue").pack(side=tk.LEFT, padx=(5, 0))
-
-    def _build_pattern_frame(self, parent):
-        frame = tk.LabelFrame(parent, text="Pattern Agreement Settings", padx=15, pady=10)
-        frame.pack(fill=tk.X, pady=(0, 10))
-
-        # Direction tolerance for "agreement"
-        tk.Label(frame, text="Direction Agreement Tolerance:",
-                 font=("Arial", 10, "bold")).pack(anchor=tk.W)
-        self.dir_tolerance = tk.IntVar(value=int(CONFIG["gui_defaults"]["dir_tolerance_deg"]))
-        row = tk.Frame(frame)
-        row.pack(fill=tk.X)
-        tk.Scale(row, from_=10, to=90, orient=tk.HORIZONTAL,
-                 variable=self.dir_tolerance, length=200).pack(side=tk.LEFT)
-        tk.Label(row, text="degrees (models within this range get full weight)",
-                 font=("Arial", 8), fg="gray").pack(side=tk.LEFT, padx=(10, 0))
-
-            # Weight decay
-        tk.Label(frame, text="Weight Decay Rate:",
-                 font=("Arial", 10, "bold")).pack(anchor=tk.W, pady=(10, 0))
-        self.weight_decay = tk.DoubleVar(value=float(CONFIG["gui_defaults"]["weight_decay"]))
-        row2 = tk.Frame(frame)
-        row2.pack(fill=tk.X)
-        tk.Scale(row2, from_=0.1, to=1.0, resolution=0.1, orient=tk.HORIZONTAL,
-                 variable=self.weight_decay, length=200).pack(side=tk.LEFT)
-        tk.Label(row2, text="(how fast weight drops off with disagreement)",
-                 font=("Arial", 8), fg="gray").pack(side=tk.LEFT, padx=(10, 0))
 
     def _build_boost_frame(self, parent):
         frame = tk.LabelFrame(parent, text="Instability Boost (applies to all strategies)", padx=15, pady=10)
@@ -475,8 +346,6 @@ class ConsensusWindGUI:
         self.callback({
             "selected_models": selected,
             "mag_strategy": self.mag_strategy.get(),
-            "dir_tolerance": self.dir_tolerance.get(),
-            "weight_decay": self.weight_decay.get(),
             "enable_boost": self.enable_boost.get(),
             "max_boost": self.max_boost.get(),
             "apply_smoothing": self.apply_smoothing.get(),
@@ -514,9 +383,7 @@ class Procedure(SmartScript.SmartScript):
                 return
 
         selected_models = varDict["selected_models"]
-        mag_strategy = varDict["mag_strategy"]
-        dir_tolerance = varDict["dir_tolerance"]
-        weight_decay = varDict["weight_decay"]
+        mag_strategy = varDict.get("mag_strategy", "Spread-Adjusted")
         enable_boost = varDict["enable_boost"]
         max_boost = varDict["max_boost"]
         apply_smoothing = varDict["apply_smoothing"]
@@ -524,6 +391,10 @@ class Procedure(SmartScript.SmartScript):
         create_diagnostics = varDict["create_diagnostics"]
         create_gusts = varDict["create_gusts"]
         gust_multiplier = varDict["gust_multiplier"]
+
+        # Guard against removed/legacy strategy names.
+        if mag_strategy not in MAG_STRATEGIES:
+            mag_strategy = "Spread-Adjusted"
 
         self.log("=" * 70)
         self.log("PATTERN-BASED CONSENSUS WIND")
@@ -535,7 +406,6 @@ class Procedure(SmartScript.SmartScript):
         self.log(f"Models: {', '.join(model_list)}")
         self.log(f"Total ensemble members: {total_runs}")
         self.log(f"Magnitude Strategy: {mag_strategy}")
-        self.log(f"Direction Tolerance: {dir_tolerance}°")
 
         # Validate models
         valid_models = self._validate_models(selected_models, timeRange)
@@ -576,7 +446,9 @@ class Procedure(SmartScript.SmartScript):
             consensus_dir, dir_agreement = self._calc_consensus_direction(model_winds)
             self.log(f"  Pattern agreement: {np.mean(dir_agreement):.1f}%")
 
-            # Calculate ALL magnitude strategies for diagnostic comparison
+            # Calculate the supported magnitude strategies (and optionally create
+            # diagnostics for them). Pattern/feature/spatial strategies were removed
+            # from the UI because they can introduce discontinuities.
             all_strategies = {}
             
             # Mean
@@ -606,49 +478,6 @@ class Procedure(SmartScript.SmartScript):
             )
             all_strategies["SpreadAdjusted"] = spread_adjusted_mag
             self.log("  Calculated: Spread-Adjusted")
-            
-            # Pattern-Weighted
-            pattern_weighted_mag = self._calc_pattern_weighted_magnitude(
-                model_winds, consensus_dir, dir_tolerance, weight_decay
-            )
-            all_strategies["PatternWeighted"] = pattern_weighted_mag
-            self.log("  Calculated: Pattern-Weighted")
-            
-            # Confidence-Weighted
-            confidence_weighted_mag = self._calc_confidence_weighted_magnitude(model_winds)
-            all_strategies["ConfidenceWeighted"] = confidence_weighted_mag
-            self.log("  Calculated: Confidence-Weighted")
-            
-            # Pattern-Matched Max
-            pattern_matched_mag, agreeing_count = self._calc_pattern_matched_max(
-                model_winds, consensus_dir, dir_tolerance
-            )
-            all_strategies["PatternMatchedMax"] = pattern_matched_mag
-            self.log(f"  Calculated: Pattern-Matched Max (avg {np.mean(agreeing_count):.1f} models agreeing)")
-            
-            # Feature-Preserving
-            feature_preserving_mag = self._calc_feature_preserving(model_winds, consensus_dir, dir_tolerance)
-            all_strategies["FeaturePreserving"] = feature_preserving_mag
-            self.log("  Calculated: Feature-Preserving")
-            
-            # Pattern-Blended: Blend spatial patterns, then match consensus magnitude
-            pattern_blended_mag = self._calc_pattern_blended(
-                model_winds, consensus_dir, mean_mag, dir_tolerance
-            )
-            all_strategies["PatternBlended"] = pattern_blended_mag
-            self.log("  Calculated: Pattern-Blended")
-            
-            # Spatial-Consensus: Find centroid of wind maxima, place max magnitude there
-            spatial_consensus_mag = self._calc_spatial_consensus(model_winds)
-            all_strategies["SpatialConsensus"] = spatial_consensus_mag
-            self.log("  Calculated: Spatial-Consensus")
-            
-            # Hybrid Consensus: Direction-filtered + spatial consensus + 90th percentile
-            hybrid_consensus_mag = self._calc_hybrid_consensus(
-                model_winds, consensus_dir, dir_tolerance
-            )
-            all_strategies["HybridConsensus"] = hybrid_consensus_mag
-            self.log("  Calculated: Hybrid Consensus")
 
             # Apply instability boost if enabled (for all strategies and diagnostic grids)
             if enable_boost:
@@ -670,13 +499,6 @@ class Procedure(SmartScript.SmartScript):
                 "Maximum": "Maximum",
                 "90th Percentile": "90thPercentile",
                 "Spread-Adjusted": "SpreadAdjusted",
-                "Pattern-Weighted": "PatternWeighted",
-                "Confidence-Weighted": "ConfidenceWeighted",
-                "Pattern-Matched Max": "PatternMatchedMax",
-                "Feature-Preserving": "FeaturePreserving",
-                "Pattern-Blended": "PatternBlended",
-                "Spatial-Consensus": "SpatialConsensus",
-                "Hybrid Consensus": "HybridConsensus",
             }
             final_mag = all_strategies[strategy_map[mag_strategy]]
             self.log(f"  Using strategy: {mag_strategy} for final Wind grid")
@@ -721,13 +543,6 @@ class Procedure(SmartScript.SmartScript):
                     "Maximum": "WindMagMaximum",
                     "90thPercentile": "WindMag90thPercentile",
                     "SpreadAdjusted": "WindMagSpreadAdjusted",
-                    "PatternWeighted": "WindMagPatternWeighted",
-                    "ConfidenceWeighted": "WindMagConfidenceWeighted",
-                    "PatternMatchedMax": "WindMagPatternMatchedMax",
-                    "FeaturePreserving": "WindMagFeaturePreserving",
-                    "PatternBlended": "WindMagPatternBlended",
-                    "SpatialConsensus": "WindMagSpatialConsensus",
-                    "HybridConsensus": "WindMagHybridConsensus",
                 }
                 
                 for strategy_name, strategy_mag in all_strategies.items():
