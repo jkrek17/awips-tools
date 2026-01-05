@@ -1341,20 +1341,31 @@ class Procedure(SmartScript.SmartScript):
         return self._get_air_temp(valid_models, tr)
 
     def _get_air_temp(self, valid_models: Dict, grid_tr) -> Optional[np.ndarray]:
-        """Get average air temperature from models."""
+        """Get average air temperature from models.
+
+        For marine instability boosting we prefer **925 mb temperature** (T925) over
+        surface temperature to better represent the low-level air mass over water.
+        Falls back to MB1000/SFC if MB925 is unavailable.
+        """
         temp_sum = None
         count = 0
 
         for alias in valid_models.keys():
-            temp = grid_fetch.get_grid(
-                self, alias, "T", "SFC", grid_tr,
-                run_depth=1, noDataError=0
-            )
-            if temp is None:
+            # Prefer 925 mb temperature. Try a few common element/level variants.
+            temp = None
+            for elem, level in (
+                ("T", "MB925"),
+                ("t", "MB925"),
+                ("T", "MB1000"),
+                ("t", "MB1000"),
+                ("T", "SFC"),
+                ("t", "SFC"),
+            ):
                 temp = grid_fetch.get_grid(
-                    self, alias, "t", "MB1000", grid_tr,
-                    run_depth=1, noDataError=0
+                    self, alias, elem, level, grid_tr, run_depth=1, noDataError=0
                 )
+                if temp is not None:
+                    break
 
             if temp is not None:
                 # Convert from Kelvin if needed
