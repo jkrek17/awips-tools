@@ -738,35 +738,33 @@ class Procedure(SmartScript.SmartScript):
         periods_processed = 0
         total_periods = len(gridinfos)
 
-        # Build edit-area mask once (same grid shape as Fcst Wx/Wind)
-        # Priority: 1) explicit editArea, 2) OPC_AOR, 3) Water, 4) all points
+        # Build edit-area mask for general weather processing
         edit_mask = None
-        edit_area_name = None
-        
-        # First try the explicitly passed edit area
         try:
             ea = editArea if editArea is not None else self.getActiveEditArea()
             if ea is not None and not (hasattr(ea, "isEmpty") and ea.isEmpty()):
                 edit_mask = ea.getGrid().getNDArray().astype(bool)
-                edit_area_name = "active selection"
+                self.log(f"Using active edit area mask ({np.sum(edit_mask)} points)")
         except (AttributeError, ValueError, RuntimeError):
             pass
         
-        # If no explicit edit area, try marine AOR edit areas
         if edit_mask is None:
-            for aor_name in ("OPC_AOR", "Water"):
-                try:
-                    aor_ea = self.getEditArea(aor_name)
-                    edit_mask = self.encodeEditArea(aor_ea)
-                    edit_area_name = aor_name
-                    break
-                except (KeyError, ValueError, RuntimeError, AttributeError):
-                    continue
-        
-        if edit_mask is not None:
-            self.log(f"Using edit area mask: {edit_area_name} ({np.sum(edit_mask)} points)")
-        else:
             self.log("No edit area mask - processing all grid points")
+        
+        # Build separate AOR mask for freezing spray (ZR/IP) - marine areas only
+        # Priority: OPC_AOR, then Water
+        aor_mask = None
+        for aor_name in ("OPC_AOR", "Water"):
+            try:
+                aor_ea = self.getEditArea(aor_name)
+                aor_mask = self.encodeEditArea(aor_ea)
+                self.log(f"Using {aor_name} mask for freezing spray ({np.sum(aor_mask)} points)")
+                break
+            except (KeyError, ValueError, RuntimeError, AttributeError):
+                continue
+        
+        if aor_mask is None:
+            self.log("No AOR mask found for freezing spray - ZR/IP will use full grid")
 
         for i, gridinfo in enumerate(gridinfos):
             grid_tr = gridinfo.gridTime()
@@ -1108,6 +1106,13 @@ class Procedure(SmartScript.SmartScript):
                     snow_mask = cov_mask & is_snow
                     fzra_mask = cov_mask & is_fzra
                     sleet_mask = cov_mask & is_sleet
+                    
+                    # Apply AOR mask to freezing spray types (ZR/IP) only
+                    # This constrains freezing precip to marine areas
+                    if aor_mask is not None:
+                        fzra_mask = fzra_mask & aor_mask
+                        sleet_mask = sleet_mask & aor_mask
+                    
                     # Rain is everything else (not snow, not fzra, not sleet)
                     rain_mask = cov_mask & ~is_snow & ~is_fzra & ~is_sleet
 
@@ -1127,7 +1132,7 @@ class Procedure(SmartScript.SmartScript):
                     if np.any(snow_mask & inten_minus):
                         updated_wx[snow_mask & inten_minus] = _idx(wx(cov_code, snow_type, "-"))
 
-                    # Assign freezing rain (ZR) - no convective variant
+                    # Assign freezing rain (ZR) - only within AOR mask
                     if np.any(fzra_mask & inten_plus):
                         updated_wx[fzra_mask & inten_plus] = _idx(wx(cov_code, "ZR", "+"))
                     if np.any(fzra_mask & inten_m):
@@ -1135,7 +1140,7 @@ class Procedure(SmartScript.SmartScript):
                     if np.any(fzra_mask & inten_minus):
                         updated_wx[fzra_mask & inten_minus] = _idx(wx(cov_code, "ZR", "-"))
 
-                    # Assign sleet/ice pellets (IP) - no convective variant
+                    # Assign sleet/ice pellets (IP) - only within AOR mask
                     if np.any(sleet_mask & inten_plus):
                         updated_wx[sleet_mask & inten_plus] = _idx(wx(cov_code, "IP", "+"))
                     if np.any(sleet_mask & inten_m):
