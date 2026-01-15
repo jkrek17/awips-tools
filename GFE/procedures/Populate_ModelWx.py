@@ -827,9 +827,18 @@ class Procedure(SmartScript.SmartScript):
         if ice_area_name:
             try:
                 ice_area = self.getEditArea(ice_area_name)
-                ice_area_mask = self.encodeEditArea(ice_area)
+                if ice_area is not None:
+                    ice_area_mask = ice_area.getGrid().getNDArray().astype(bool)
+                else:
+                    ice_area_mask = None
             except Exception:
-                ice_area_mask = None
+                try:
+                    ice_area = self.getEditArea(ice_area_name)
+                    ice_area_mask = self.encodeEditArea(ice_area) if ice_area is not None else None
+                except Exception:
+                    ice_area_mask = None
+            if ice_area_mask is None:
+                self.log(f"⚠ Ice accretion edit area '{ice_area_name}' not available; no mask applied")
 
         for i, gridinfo in enumerate(gridinfos):
             grid_tr = gridinfo.gridTime()
