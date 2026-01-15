@@ -136,14 +136,23 @@ class Tool(SmartScript.SmartScript):
         da = self.TF_CELSIUS - temp_c  # Air temperature departure from freezing
         dw = sst_c - self.TF_CELSIUS  # Water temperature departure from freezing
 
-        ppr = (mag_ms * da) / (1.0 + 0.3 * dw)
+        # Avoid division by zero/negative denominators in cold water
+        denominator = 1.0 + 0.3 * dw
+        denominator = np.where(denominator < 0.1, 0.1, denominator)
+        
+        ppr = (mag_ms * da) / denominator
 
-        # Clear grid outside the AOR mask, then apply calculated values inside mask
-        # This ensures areas outside the AOR don't retain stale values
-        IceAccretion[~valid_mask] = 0.0
-        IceAccretion[valid_mask] = ppr[valid_mask]
+        # Apply mask using np.where to create a new grid
+        # This ensures areas outside the AOR are set to 0, not stale values
+        result = np.where(valid_mask, ppr, 0.0)
+        
+        # Copy result back to IceAccretion grid (in-place update)
+        IceAccretion[:] = result
 
-        self.log(f"Applied to {np.sum(valid_mask)} grid points within AOR")
+        valid_count = np.sum(valid_mask)
+        self.log(f"Applied to {valid_count} grid points within AOR")
+        if valid_count > 0:
+            self.log(f"Ice accretion range: {np.min(result[valid_mask]):.2f} to {np.max(result[valid_mask]):.2f}")
         self.log("Completed Populate_IceAccretion")
         return IceAccretion
 
