@@ -322,36 +322,50 @@ class MarineWeatherGUI:
         self.master = master
         self.callback = callback
         self.master.title("Marine Weather Grid Builder")
-        self.master.geometry("700x900")
+        self.master.geometry("1050x620")
 
         self._build_ui()
 
     def _build_ui(self):
-        main = tk.Frame(self.master, padx=15, pady=15)
+        main = tk.Frame(self.master, padx=10, pady=8)
         main.pack(fill=tk.BOTH, expand=True)
 
-        # Title
-        tk.Label(main, text="Marine Weather Grid Builder",
-                 font=("Arial", 16, "bold")).pack(pady=(0, 5))
-        tk.Label(main, text="Precipitation • Thunderstorms • Fog",
-                 font=("Arial", 10), fg="gray").pack(pady=(0, 5))
-        tk.Label(
-            main,
-            text="Pick 1–4 models, choose build mode, set thresholds, then Run.",
-            font=("Arial", 9),
-            fg="gray",
-        ).pack(pady=(0, 15))
+        # Title row
+        title_frame = tk.Frame(main)
+        title_frame.pack(fill=tk.X, pady=(0, 8))
+        tk.Label(title_frame, text="Marine Weather Grid Builder",
+                 font=("Arial", 14, "bold")).pack(side=tk.LEFT)
+        tk.Label(title_frame, text="  •  Precipitation • Thunderstorms • Fog",
+                 font=("Arial", 10), fg="gray").pack(side=tk.LEFT)
 
-        # Model Selection
-        self._build_model_frame(main)
+        # Main content: 3-column layout
+        content = tk.Frame(main)
+        content.pack(fill=tk.BOTH, expand=True)
 
-        # Build Mode
-        self._build_mode_frame(main)
+        # Left column: Models + Build Mode + Options
+        left_col = tk.Frame(content)
+        left_col.pack(side=tk.LEFT, fill=tk.BOTH, padx=(0, 8))
 
-        # Parameters
-        self._build_params_frame(main)
+        # Middle column: QPF thresholds
+        mid_col = tk.Frame(content)
+        mid_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 8))
 
-        # Buttons
+        # Right column: Other parameters
+        right_col = tk.Frame(content)
+        right_col.pack(side=tk.LEFT, fill=tk.BOTH)
+
+        # Build left column
+        self._build_model_frame(left_col)
+        self._build_mode_frame(left_col)
+        self._build_options_frame(left_col)
+
+        # Build middle column (QPF thresholds)
+        self._build_qpf_frame(mid_col)
+
+        # Build right column (other params)
+        self._build_other_params_frame(right_col)
+
+        # Buttons at bottom
         self._build_buttons(main)
 
         self._update_selection()
@@ -361,245 +375,156 @@ class MarineWeatherGUI:
         model_list = [(alias, alias) for alias in ATMOSPHERIC_MODELS]
         self.model_frame = gui.ModelSelectionFrame(
             parent,
-            title="Select Atmospheric Models",
+            title="Models",
             models=model_list,
             default_selected=["GFS"],
             on_change=self._update_selection,
         )
-        self.model_frame.pack(fill=tk.X, pady=(0, 10))
-
-        # Add tip label
-        tk.Label(
-            self.model_frame,
-            text="Tip: Start with GFS + one other global; add ECMWF for heavier events.",
-            font=("Arial", 9),
-            fg="gray",
-            wraplength=420,
-            justify=tk.LEFT,
-        ).pack(anchor=tk.W, pady=(4, 0))
+        self.model_frame.pack(fill=tk.X, pady=(0, 6))
 
         # Use StatusBanner from gui.py
         self.status_banner = gui.StatusBanner(self.model_frame)
-        self.status_banner.pack(pady=(10, 0))
+        self.status_banner.pack(pady=(4, 0))
 
     def _build_mode_frame(self, parent):
-        frame = tk.LabelFrame(parent, text="Build Mode", padx=15, pady=10)
-        frame.pack(fill=tk.X, pady=(0, 10))
+        frame = tk.LabelFrame(parent, text="Build Mode", padx=8, pady=6)
+        frame.pack(fill=tk.X, pady=(0, 6))
         
         self.build_mode_group = gui.RadioGroup(
             frame,
             options=[
-                ("Build New (Replace All)", "Build New (Replace All)"),
-                ("Enhance Existing", "Enhance Existing"),
+                ("Build New", "Build New (Replace All)"),
+                ("Enhance", "Enhance Existing"),
             ],
             default="Build New (Replace All)",
         )
         self.build_mode_group.pack(anchor=tk.W)
-        
-        tk.Label(
+
+    def _build_options_frame(self, parent):
+        """Build options frame with model run, diagnostics, visibility options."""
+        frame = tk.LabelFrame(parent, text="Options", padx=8, pady=6)
+        frame.pack(fill=tk.X, pady=(0, 6))
+
+        # Model Run
+        tk.Label(frame, text="Model Run:", font=("Arial", 9, "bold")).pack(anchor=tk.W)
+        self.model_run_group = gui.RadioGroup(
             frame,
-            text="Build New overwrites Wx; Enhance tweaks existing Wx while preserving other types.",
-            font=("Arial", 9),
-            fg="gray",
-            wraplength=420,
-            justify=tk.LEFT,
-        ).pack(anchor=tk.W, pady=(4, 0))
+            options=[("Current", "Current"), ("Previous", "Previous")],
+            default="Current",
+            orientation="horizontal",
+        )
+        self.model_run_group.pack(anchor=tk.W)
 
-    def _build_params_frame(self, parent):
-        frame = tk.LabelFrame(parent, text="Analysis Parameters", padx=15, pady=10)
-        frame.pack(fill=tk.X, pady=(0, 10))
+        # Diagnostics
+        tk.Label(frame, text="Diagnostics:", font=("Arial", 9, "bold")).pack(anchor=tk.W, pady=(6, 0))
+        self.diagnostics_group = gui.RadioGroup(
+            frame,
+            options=[("No", "No"), ("Yes", "Yes")],
+            default="No",
+            orientation="horizontal",
+        )
+        self.diagnostics_group.pack(anchor=tk.W)
 
-        # Smoothing - use SmoothingSlider from gui.py
+        # Update visibility
+        self.update_vis_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(
+            frame, text="Update Vis for Fog", variable=self.update_vis_var,
+        ).pack(anchor=tk.W, pady=(6, 0))
+
+    def _build_qpf_frame(self, parent):
+        """Build QPF thresholds frame (middle column)."""
+        frame = tk.LabelFrame(parent, text="QPF Thresholds (in/~3hr)", padx=8, pady=6)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        qpf_defaults = _get_safe_qpf_cfg()
+
+        # Two-column layout for convective/stratiform
+        qpf_layout = gui.TwoColumnLayout(frame, padx=4)
+        qpf_layout.pack(fill=tk.BOTH, expand=True)
+
+        # Left: convective coverage thresholds
+        tk.Label(qpf_layout.left, text="Convective Coverage", font=("Arial", 9, "bold")).pack(anchor=tk.W)
+        self.qpf_min_slider = gui.ThresholdSlider(
+            qpf_layout.left, label="Min precip:", min_value=0.0, max_value=0.10,
+            default=float(qpf_defaults.get("minimum_in", 0.01)), resolution=0.01, var_type=float,
+        )
+        self.qpf_min_slider.pack(anchor=tk.W)
+        self.qpf_cov_scattered_slider = gui.ThresholdSlider(
+            qpf_layout.left, label="Sct ≥", min_value=0.0, max_value=0.50,
+            default=float(qpf_defaults.get("coverage_scattered_in", 0.03)), resolution=0.01, var_type=float,
+        )
+        self.qpf_cov_scattered_slider.pack(anchor=tk.W, pady=(4, 0))
+        self.qpf_cov_numerous_slider = gui.ThresholdSlider(
+            qpf_layout.left, label="Num ≥", min_value=0.0, max_value=1.00,
+            default=float(qpf_defaults.get("coverage_numerous_in", 0.10)), resolution=0.01, var_type=float,
+        )
+        self.qpf_cov_numerous_slider.pack(anchor=tk.W, pady=(4, 0))
+        self.qpf_cov_wide_slider = gui.ThresholdSlider(
+            qpf_layout.left, label="Wide ≥", min_value=0.0, max_value=2.00,
+            default=float(qpf_defaults.get("coverage_wide_in", 0.25)), resolution=0.01, var_type=float,
+        )
+        self.qpf_cov_wide_slider.pack(anchor=tk.W, pady=(4, 0))
+
+        # Right: stratiform probability thresholds
+        tk.Label(qpf_layout.right, text="Stratiform Probability", font=("Arial", 9, "bold")).pack(anchor=tk.W)
+        self.qpf_prob_chance_slider = gui.ThresholdSlider(
+            qpf_layout.right, label="Chc ≥", min_value=0.0, max_value=0.50,
+            default=float(qpf_defaults.get("prob_chance_in", 0.03)), resolution=0.01, var_type=float,
+        )
+        self.qpf_prob_chance_slider.pack(anchor=tk.W)
+        self.qpf_prob_likely_slider = gui.ThresholdSlider(
+            qpf_layout.right, label="Lkly ≥", min_value=0.0, max_value=1.00,
+            default=float(qpf_defaults.get("prob_likely_in", 0.10)), resolution=0.01, var_type=float,
+        )
+        self.qpf_prob_likely_slider.pack(anchor=tk.W, pady=(4, 0))
+        self.qpf_prob_definite_slider = gui.ThresholdSlider(
+            qpf_layout.right, label="Def ≥", min_value=0.0, max_value=2.00,
+            default=float(qpf_defaults.get("prob_definite_in", 0.25)), resolution=0.01, var_type=float,
+        )
+        self.qpf_prob_definite_slider.pack(anchor=tk.W, pady=(4, 0))
+
+    def _build_other_params_frame(self, parent):
+        """Build other parameters frame (right column)."""
+        frame = tk.LabelFrame(parent, text="Thresholds", padx=8, pady=6)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        # Smoothing
         try:
             smoothing_defaults = _get_safe_smoothing_cfg()
             default_val = int(round(smoothing_defaults.get("recommended", 10.0)))
             min_val = int(round(smoothing_defaults.get("min", 0.0)))
             max_val = int(round(smoothing_defaults.get("max", 20.0)))
         except (AttributeError, KeyError):
-            default_val = 10
-            min_val = 0
-            max_val = 20
+            default_val, min_val, max_val = 10, 0, 20
         self.smoothing_slider = gui.SmoothingSlider(
-            frame,
-            min_value=min_val,
-            max_value=max_val,
-            default=default_val,
-            label="Spatial Smoothing:",
+            frame, min_value=min_val, max_value=max_val, default=default_val, label="Smoothing:",
         )
         self.smoothing_slider.pack(anchor=tk.W)
 
-        # Thunder CAPE threshold - use ThresholdSlider from gui.py
+        # Thunder CAPE threshold
         try:
             thunder_default = int(getattr(thresholds, "CAPE_THRESHOLDS", {}).get("thunder_min", 500.0))
         except (AttributeError, KeyError):
             thunder_default = 500
         self.thunder_slider = gui.ThresholdSlider(
-            frame,
-            label="Thunder CAPE Threshold (J/kg):",
-            min_value=100,
-            max_value=1500,
-            default=thunder_default,
-            resolution=50,
-            var_type=int,
+            frame, label="Thunder CAPE (J/kg):", min_value=100, max_value=1500,
+            default=thunder_default, resolution=50, var_type=int,
         )
-        self.thunder_slider.pack(anchor=tk.W, pady=(10, 0))
+        self.thunder_slider.pack(anchor=tk.W, pady=(8, 0))
 
-        # Fog threshold - use ThresholdSlider from gui.py
+        # Fog threshold
         try:
             fog_defaults = _get_safe_fog_cfg()
             vis_default_nm = fog_defaults.get("visibility_default_nm", 2.6)
             vis_min_nm = fog_defaults.get("visibility_min_nm", 0.4)
             vis_max_nm = fog_defaults.get("visibility_max_nm", 5.2)
         except (AttributeError, KeyError):
-            vis_default_nm = 2.6
-            vis_min_nm = 0.4
-            vis_max_nm = 5.2
+            vis_default_nm, vis_min_nm, vis_max_nm = 2.6, 0.4, 5.2
         self.fog_slider = gui.ThresholdSlider(
-            frame,
-            label="Fog Visibility Threshold (NM):",
-            min_value=vis_min_nm,
-            max_value=vis_max_nm,
-            default=vis_default_nm,
-            resolution=0.5,
-            var_type=float,
+            frame, label="Fog Vis (NM):", min_value=vis_min_nm, max_value=vis_max_nm,
+            default=vis_default_nm, resolution=0.5, var_type=float,
         )
-        self.fog_slider.pack(anchor=tk.W, pady=(10, 0))
-
-        # QPF thresholds (inches / 3-hr)
-        qpf_defaults = _get_safe_qpf_cfg()
-        tk.Label(frame, text="QPF Thresholds (inches / ~3hr):", font=("Arial", 10, "bold")).pack(
-            anchor=tk.W, pady=(12, 0)
-        )
-        tk.Label(
-            frame,
-            text="These thresholds control stratiform probability (Chc/Lkly/Def) and convective coverage (Iso/Sct/Num/Wide).",
-            font=("Arial", 9),
-            fg="gray",
-            wraplength=520,
-            justify=tk.LEFT,
-        ).pack(anchor=tk.W, pady=(2, 6))
-
-        qpf_layout = gui.TwoColumnLayout(frame, padx=18)
-        qpf_layout.pack(fill=tk.X)
-
-        # Left: convective coverage thresholds
-        tk.Label(qpf_layout.left, text="Convective coverage", font=("Arial", 9, "bold")).pack(anchor=tk.W)
-        self.qpf_min_slider = gui.ThresholdSlider(
-            qpf_layout.left,
-            label="Minimum precip (has_precip):",
-            min_value=0.0,
-            max_value=0.10,
-            default=float(qpf_defaults.get("minimum_in", 0.01)),
-            resolution=0.01,
-            var_type=float,
-        )
-        self.qpf_min_slider.pack(anchor=tk.W)
-        self.qpf_cov_scattered_slider = gui.ThresholdSlider(
-            qpf_layout.left,
-            label="Scattered (Sct) ≥",
-            min_value=0.0,
-            max_value=0.50,
-            default=float(qpf_defaults.get("coverage_scattered_in", 0.03)),
-            resolution=0.01,
-            var_type=float,
-        )
-        self.qpf_cov_scattered_slider.pack(anchor=tk.W, pady=(6, 0))
-        self.qpf_cov_numerous_slider = gui.ThresholdSlider(
-            qpf_layout.left,
-            label="Numerous (Num) ≥",
-            min_value=0.0,
-            max_value=1.00,
-            default=float(qpf_defaults.get("coverage_numerous_in", 0.10)),
-            resolution=0.01,
-            var_type=float,
-        )
-        self.qpf_cov_numerous_slider.pack(anchor=tk.W, pady=(6, 0))
-        self.qpf_cov_wide_slider = gui.ThresholdSlider(
-            qpf_layout.left,
-            label="Widespread (Wide) ≥",
-            min_value=0.0,
-            max_value=2.00,
-            default=float(qpf_defaults.get("coverage_wide_in", 0.25)),
-            resolution=0.01,
-            var_type=float,
-        )
-        self.qpf_cov_wide_slider.pack(anchor=tk.W, pady=(6, 0))
-
-        # Right: stratiform probability thresholds
-        tk.Label(qpf_layout.right, text="Stratiform probability", font=("Arial", 9, "bold")).pack(anchor=tk.W)
-        self.qpf_prob_chance_slider = gui.ThresholdSlider(
-            qpf_layout.right,
-            label="Chance (Chc) ≥",
-            min_value=0.0,
-            max_value=0.50,
-            default=float(qpf_defaults.get("prob_chance_in", 0.03)),
-            resolution=0.01,
-            var_type=float,
-        )
-        self.qpf_prob_chance_slider.pack(anchor=tk.W)
-        self.qpf_prob_likely_slider = gui.ThresholdSlider(
-            qpf_layout.right,
-            label="Likely (Lkly) ≥",
-            min_value=0.0,
-            max_value=1.00,
-            default=float(qpf_defaults.get("prob_likely_in", 0.10)),
-            resolution=0.01,
-            var_type=float,
-        )
-        self.qpf_prob_likely_slider.pack(anchor=tk.W, pady=(6, 0))
-        self.qpf_prob_definite_slider = gui.ThresholdSlider(
-            qpf_layout.right,
-            label="Definite (Def) ≥",
-            min_value=0.0,
-            max_value=2.00,
-            default=float(qpf_defaults.get("prob_definite_in", 0.25)),
-            resolution=0.01,
-            var_type=float,
-        )
-        self.qpf_prob_definite_slider.pack(anchor=tk.W, pady=(6, 0))
-
-        # Model Run - use RadioGroup from gui.py
-        tk.Label(frame, text="Model Run:", font=("Arial", 10, "bold")).pack(anchor=tk.W, pady=(10, 0))
-        self.model_run_group = gui.RadioGroup(
-            frame,
-            options=[
-                ("Current", "Current"),
-                ("Previous", "Previous"),
-            ],
-            default="Current",
-            orientation="horizontal",
-        )
-        self.model_run_group.pack(anchor=tk.W)
-
-        # Diagnostics - use RadioGroup from gui.py
-        tk.Label(frame, text="Create Diagnostic Grids:", font=("Arial", 10, "bold")).pack(anchor=tk.W, pady=(10, 0))
-        self.diagnostics_group = gui.RadioGroup(
-            frame,
-            options=[
-                ("No", "No"),
-                ("Yes", "Yes"),
-            ],
-            default="No",
-            orientation="horizontal",
-        )
-        self.diagnostics_group.pack(anchor=tk.W)
-
-        # Update visibility grid option
-        tk.Label(frame, text="Update Visibility Grid for Fog:", font=("Arial", 10, "bold")).pack(anchor=tk.W, pady=(10, 0))
-        self.update_vis_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(
-            frame,
-            text="Lower Visibility grid where fog is detected",
-            variable=self.update_vis_var,
-        ).pack(anchor=tk.W)
-        tk.Label(
-            frame,
-            text="When enabled, the Fcst Visibility grid will be lowered to the fog threshold where fog is detected.",
-            font=("Arial", 9),
-            fg="gray",
-            wraplength=420,
-            justify=tk.LEFT,
-        ).pack(anchor=tk.W, pady=(2, 0))
+        self.fog_slider.pack(anchor=tk.W, pady=(8, 0))
 
     def _build_buttons(self, parent):
         self.button_frame = gui.ButtonFrame(
@@ -609,7 +534,7 @@ class MarineWeatherGUI:
             cancel_command=self._cancel,
             run_color="lightblue",
         )
-        self.button_frame.pack(fill=tk.X, pady=(15, 0))
+        self.button_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(10, 0))
 
     def _update_selection(self, selected_models=None):
         if selected_models is None:
