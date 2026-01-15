@@ -739,19 +739,34 @@ class Procedure(SmartScript.SmartScript):
         total_periods = len(gridinfos)
 
         # Build edit-area mask once (same grid shape as Fcst Wx/Wind)
+        # Priority: 1) explicit editArea, 2) OPC_AOR, 3) Water, 4) all points
         edit_mask = None
+        edit_area_name = None
+        
+        # First try the explicitly passed edit area
         try:
             ea = editArea if editArea is not None else self.getActiveEditArea()
-            if ea is None:
-                edit_mask = None
-            elif hasattr(ea, "isEmpty") and ea.isEmpty():
-                # Empty edit area in GFE usually means "all points"
-                edit_mask = None
-            else:
+            if ea is not None and not (hasattr(ea, "isEmpty") and ea.isEmpty()):
                 edit_mask = ea.getGrid().getNDArray().astype(bool)
+                edit_area_name = "active selection"
         except (AttributeError, ValueError, RuntimeError):
-            # Edit area unavailable or invalid; process all grid points
-            edit_mask = None
+            pass
+        
+        # If no explicit edit area, try marine AOR edit areas
+        if edit_mask is None:
+            for aor_name in ("OPC_AOR", "Water"):
+                try:
+                    aor_ea = self.getEditArea(aor_name)
+                    edit_mask = self.encodeEditArea(aor_ea)
+                    edit_area_name = aor_name
+                    break
+                except (KeyError, ValueError, RuntimeError, AttributeError):
+                    continue
+        
+        if edit_mask is not None:
+            self.log(f"Using edit area mask: {edit_area_name} ({np.sum(edit_mask)} points)")
+        else:
+            self.log("No edit area mask - processing all grid points")
 
         for i, gridinfo in enumerate(gridinfos):
             grid_tr = gridinfo.gridTime()
