@@ -585,6 +585,46 @@ class Procedure(SmartScript.SmartScript):
         SmartScript.SmartScript.__init__(self, dbss)
         self.output_log: List[str] = []
 
+    def _run_ice_accretion(self, timeRange, varDict):
+        """
+        Run Populate_IceAccretion smart tool to create ice accretion grids.
+        
+        The ice accretion tool applies its own AOR mask (OPC_AOR or Water)
+        to constrain calculations to marine areas.
+        """
+        try:
+            self.log("\nRunning Populate_IceAccretion...")
+            
+            # Get model settings from varDict to pass to ice accretion tool
+            models = varDict.get("models", ["GFS"])
+            model_run = varDict.get("model_run", "Current")
+            
+            # Use first selected model for temperature
+            temp_model = models[0] if models else "GFS"
+            
+            # Build varDict for ice accretion tool
+            ice_varDict = {
+                "Model for Temps:": temp_model,
+                "Model Run for Temps:": model_run,
+                "Model for SST:": "RTOFS",
+                "Model Run for SST:": "Current",
+            }
+            
+            # Call the smart tool
+            self.callSmartTool(
+                "Populate_IceAccretion",
+                "IceAccretion",
+                editArea=None,  # Tool will use its own AOR mask
+                timeRange=timeRange,
+                varDict=ice_varDict,
+                missingDataMode="Skip",
+            )
+            
+            self.log("Populate_IceAccretion completed")
+        except Exception as e:
+            self.log(f"WARNING: Could not run Populate_IceAccretion: {e}")
+            self.statusBarMsg("Ice accretion calculation skipped", "A")
+
     def _show_results_popup(self):
         """
         Show results popup with all log output after execution.
@@ -738,7 +778,7 @@ class Procedure(SmartScript.SmartScript):
         periods_processed = 0
         total_periods = len(gridinfos)
 
-        # Build edit-area mask for general weather processing
+        # Build edit-area mask for weather processing
         edit_mask = None
         try:
             ea = editArea if editArea is not None else self.getActiveEditArea()
@@ -750,21 +790,6 @@ class Procedure(SmartScript.SmartScript):
         
         if edit_mask is None:
             self.log("No edit area mask - processing all grid points")
-        
-        # Build separate AOR mask for freezing spray (ZR/IP) - marine areas only
-        # Priority: OPC_AOR, then Water
-        aor_mask = None
-        for aor_name in ("OPC_AOR", "Water"):
-            try:
-                aor_ea = self.getEditArea(aor_name)
-                aor_mask = self.encodeEditArea(aor_ea)
-                self.log(f"Using {aor_name} mask for freezing spray ({np.sum(aor_mask)} points)")
-                break
-            except (KeyError, ValueError, RuntimeError, AttributeError):
-                continue
-        
-        if aor_mask is None:
-            self.log("No AOR mask found for freezing spray - ZR/IP will use full grid")
 
         for i, gridinfo in enumerate(gridinfos):
             grid_tr = gridinfo.gridTime()
@@ -1106,13 +1131,6 @@ class Procedure(SmartScript.SmartScript):
                     snow_mask = cov_mask & is_snow
                     fzra_mask = cov_mask & is_fzra
                     sleet_mask = cov_mask & is_sleet
-                    
-                    # Apply AOR mask to freezing spray types (ZR/IP) only
-                    # This constrains freezing precip to marine areas
-                    if aor_mask is not None:
-                        fzra_mask = fzra_mask & aor_mask
-                        sleet_mask = sleet_mask & aor_mask
-                    
                     # Rain is everything else (not snow, not fzra, not sleet)
                     rain_mask = cov_mask & ~is_snow & ~is_fzra & ~is_sleet
 
@@ -1171,6 +1189,10 @@ class Procedure(SmartScript.SmartScript):
         self.log("\n" + "="*80)
         self.log(f"Complete: {periods_processed}/{total_periods} periods")
         self.statusBarMsg(f"Complete: {periods_processed} periods", "R")
+        
+        # Run Populate_IceAccretion tool to create ice accretion grids
+        # This applies the AOR mask for marine areas
+        self._run_ice_accretion(timeRange, varDict)
         
         # Show results popup after execution
         self._show_results_popup()
