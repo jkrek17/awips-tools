@@ -180,8 +180,8 @@ class MarineWeatherGUI:
         self.master = master
         self.callback = callback
         self.master.title("Marine Weather Grid Builder")
-        self.master.geometry("1250x900")
-        self.master.minsize(1100, 820)
+        self.master.geometry("1250x1020")
+        self.master.minsize(1100, 900)
 
         self._build_ui()
 
@@ -449,6 +449,62 @@ class MarineWeatherGUI:
         )
         self.diagnostics_group.pack(anchor=tk.W)
 
+        # QPF texture controls
+        texture_defaults = _get_safe_texture_cfg()
+        tk.Label(frame, text="QPF Texture (Uniform vs Noisy):", font=("Arial", 10, "bold")).pack(
+            anchor=tk.W, pady=(12, 0)
+        )
+        tk.Label(
+            frame,
+            text="Lower texture favors stratiform (probability); higher texture favors convective (coverage).",
+            font=("Arial", 9),
+            fg="gray",
+            wraplength=520,
+            justify=tk.LEFT,
+        ).pack(anchor=tk.W, pady=(2, 6))
+        self.texture_window_slider = gui.ThresholdSlider(
+            frame,
+            label="Texture window (odd grid points):",
+            min_value=3,
+            max_value=21,
+            default=float(texture_defaults.get("window", 9)),
+            resolution=2,
+            var_type=int,
+        )
+        self.texture_window_slider.pack(anchor=tk.W)
+        self.texture_strat_slider = gui.ThresholdSlider(
+            frame,
+            label="Stratiform max (uniform):",
+            min_value=0.1,
+            max_value=1.0,
+            default=float(texture_defaults.get("stratiform_max", 0.4)),
+            resolution=0.05,
+            var_type=float,
+        )
+        self.texture_strat_slider.pack(anchor=tk.W, pady=(6, 0))
+        self.texture_conv_slider = gui.ThresholdSlider(
+            frame,
+            label="Convective min (noisy):",
+            min_value=0.2,
+            max_value=1.5,
+            default=float(texture_defaults.get("convective_min", 0.8)),
+            resolution=0.05,
+            var_type=float,
+        )
+        self.texture_conv_slider.pack(anchor=tk.W, pady=(6, 0))
+
+        # Output options
+        self.output_options = gui.CheckboxGroup(
+            frame,
+            title="Output Options",
+            options=[
+                ("COPY_FOG_VIS", "Copy fog into Visibility grid"),
+                ("CREATE_ICE_GRID", "Create IceAccretion grid"),
+            ],
+            default_selected=["COPY_FOG_VIS", "CREATE_ICE_GRID"],
+        )
+        self.output_options.pack(fill=tk.X, pady=(10, 0))
+
     def _build_buttons(self, parent):
         self.button_frame = gui.ButtonFrame(
             parent,
@@ -492,6 +548,11 @@ class MarineWeatherGUI:
             "qpf_prob_definite_in": float(self.qpf_prob_definite_slider.get_value()),
             "model_run": self.model_run_group.get_value(),
             "create_diagnostics": self.diagnostics_group.get_value(),
+            "texture_window": int(self.texture_window_slider.get_value()),
+            "texture_strat_max": float(self.texture_strat_slider.get_value()),
+            "texture_conv_min": float(self.texture_conv_slider.get_value()),
+            "copy_fog_visibility": self.output_options.get_value("COPY_FOG_VIS"),
+            "create_ice_grid": self.output_options.get_value("CREATE_ICE_GRID"),
         })
         self.master.destroy()
 
@@ -581,6 +642,8 @@ class Procedure(SmartScript.SmartScript):
         fog_thresh = varDict["fog_thresh"]
         model_run = varDict["model_run"]
         create_diag = varDict["create_diagnostics"] == "Yes"
+        copy_fog_visibility = bool(varDict.get("copy_fog_visibility", True))
+        create_ice_grid = bool(varDict.get("create_ice_grid", True))
 
         qpf_cfg = _get_safe_qpf_cfg()
         # Apply user overrides from GUI (if present)
@@ -646,6 +709,29 @@ class Procedure(SmartScript.SmartScript):
         cape_strat_max = float(texture_cfg.get("cape_stratiform_max", 300.0))
         cape_conv_min = float(texture_cfg.get("cape_convective_min", 800.0))
         texture_eps = float(texture_cfg.get("eps", 1e-6))
+        if varDict.get("texture_window") is not None:
+            try:
+                texture_window = int(varDict["texture_window"])
+            except Exception:
+                pass
+        if varDict.get("texture_strat_max") is not None:
+            try:
+                texture_strat_max = float(varDict["texture_strat_max"])
+            except Exception:
+                pass
+        if varDict.get("texture_conv_min") is not None:
+            try:
+                texture_conv_min = float(varDict["texture_conv_min"])
+            except Exception:
+                pass
+        if texture_window < 3:
+            texture_window = 3
+        if texture_window % 2 == 0:
+            texture_window += 1
+        if texture_strat_max < 0.0:
+            texture_strat_max = 0.0
+        if texture_conv_min < texture_strat_max:
+            texture_conv_min = texture_strat_max
         ice_light_min = float(ice_cfg.get("light_min", 0.1))
         ice_moderate_min = float(ice_cfg.get("moderate_min", 0.7))
         ice_heavy_min = float(ice_cfg.get("heavy_min", 2.0))
@@ -772,31 +858,32 @@ class Procedure(SmartScript.SmartScript):
                     ice_moderate_mask = ice_mask & ~ice_heavy_mask & (ice_ppr >= ice_moderate_min)
                     ice_light_mask = ice_mask & ~(ice_heavy_mask | ice_moderate_mask)
 
-                    try:
-                        ice_grid = self.getGrids(
-                            "Fcst", "IceAccretion", "SFC", grid_tr, mode="First", noDataError=0
-                        )
-                    except Exception:
-                        ice_grid = None
+                    if create_ice_grid:
+                        try:
+                            ice_grid = self.getGrids(
+                                "Fcst", "IceAccretion", "SFC", grid_tr, mode="First", noDataError=0
+                            )
+                        except Exception:
+                            ice_grid = None
 
-                    if ice_grid is None:
-                        ice_out = np.zeros_like(ice_ppr)
-                    else:
-                        ice_out = np.array(ice_grid, copy=True)
+                        if ice_grid is None:
+                            ice_out = np.zeros_like(ice_ppr)
+                        else:
+                            ice_out = np.array(ice_grid, copy=True)
 
-                    if np.any(valid_mask):
-                        ice_out[valid_mask] = ice_ppr[valid_mask]
-                    try:
-                        self.createGrid(
-                            "Fcst",
-                            "IceAccretion",
-                            "SCALAR",
-                            ice_out,
-                            grid_tr,
-                            minAllowedValue=0.0,
-                        )
-                    except Exception as e:
-                        self.log(f"✗ Error saving IceAccretion grid: {e}")
+                        if np.any(valid_mask):
+                            ice_out[valid_mask] = ice_ppr[valid_mask]
+                        try:
+                            self.createGrid(
+                                "Fcst",
+                                "IceAccretion",
+                                "SCALAR",
+                                ice_out,
+                                grid_tr,
+                                minAllowedValue=0.0,
+                            )
+                        except Exception as e:
+                            self.log(f"✗ Error saving IceAccretion grid: {e}")
 
             # Create diagnostic grids
             if create_diag:
@@ -822,7 +909,7 @@ class Procedure(SmartScript.SmartScript):
             has_fog = (vis_nm < fog_thresh) & (rh > fog_rh_min) if vis_nm is not None and rh is not None else None
 
             # If fog is present, lower the Fcst Visibility grid accordingly (in NM)
-            if has_fog is not None and np.any(has_fog):
+            if copy_fog_visibility and has_fog is not None and np.any(has_fog):
                 try:
                     vis_fcst = self.getGrids("Fcst", "Visibility", "SFC", grid_tr, mode="First", noDataError=0)
                     if vis_fcst is not None:
