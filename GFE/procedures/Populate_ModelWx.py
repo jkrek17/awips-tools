@@ -136,18 +136,17 @@ def _compute_ice_accretion(
     return (wind_ms * da) / denom
 
 
-def _smooth_mask(mask: np.ndarray, sigma: float, *, limit: Optional[np.ndarray] = None) -> np.ndarray:
-    """Smooth a boolean mask with a Gaussian filter."""
-    if sigma <= 0:
-        return mask
-    work = mask.astype(float)
-    if limit is not None:
-        work = work * limit
-    smoothed = ndimage.gaussian_filter(work, sigma=sigma, mode="nearest")
-    out = smoothed >= 0.5
-    if limit is not None:
-        out &= limit
-    return out
+def _mode_filter(values: np.ndarray, size: int) -> np.ndarray:
+    """Apply a simple neighborhood mode filter to integer grids."""
+    if size <= 1:
+        return values
+
+    def _mode_func(window):
+        vals, counts = np.unique(window.astype(int), return_counts=True)
+        return vals[np.argmax(counts)]
+
+    filtered = ndimage.generic_filter(values, _mode_func, size=size, mode="nearest")
+    return filtered.astype(values.dtype)
 
 
 def _get_safe_smoothing_cfg() -> Dict[str, float]:
@@ -775,7 +774,6 @@ class Procedure(SmartScript.SmartScript):
         sigma_base = smoothing_cfg.get("sigma", 0.7)
         precip_min = float(qpf_cfg.get("minimum_in", 0.01))
         diag_clip = _get_safe_clip_cfg()
-        mask_sigma = smoothing * sigma_base if smoothing and smoothing > 0 else 0.0
 
         run_depth = 1 if model_run == "Current" else 2
 
@@ -1120,12 +1118,6 @@ class Procedure(SmartScript.SmartScript):
                 precip_mask &= active
                 fog_mask &= active
 
-            # Smooth masks to reduce speckle in Wx output
-            if mask_sigma > 0:
-                thunder_mask = _smooth_mask(thunder_mask, mask_sigma, limit=active)
-                precip_mask = _smooth_mask(precip_mask, mask_sigma, limit=active)
-                fog_mask = _smooth_mask(fog_mask, mask_sigma, limit=active)
-
             # Precedence: thunder > precip > fog
             precip_mask &= ~thunder_mask
             fog_mask &= ~(thunder_mask | precip_mask)
@@ -1201,8 +1193,6 @@ class Procedure(SmartScript.SmartScript):
                 inten_minus = precip_mask & ~(inten_plus | inten_m)  # keep '-' as default
 
                 # Coverage/probability masks
-                if mask_sigma > 0:
-                    is_conv = _smooth_mask(is_conv, mask_sigma, limit=active)
                 conv_points = precip_mask & is_conv
                 strat_points = precip_mask & ~is_conv
 
@@ -1215,24 +1205,6 @@ class Procedure(SmartScript.SmartScript):
                 cov_lkly = strat_points & ~cov_def & (qpf_eff > precip_likely)
                 cov_chc = strat_points & ~(cov_def | cov_lkly) & (qpf_eff > precip_chance)
                 cov_schc = strat_points & ~(cov_def | cov_lkly | cov_chc)
-
-                if mask_sigma > 0:
-                    cov_wide = _smooth_mask(cov_wide, mask_sigma, limit=precip_mask)
-                    cov_num = _smooth_mask(cov_num, mask_sigma, limit=precip_mask)
-                    cov_sct = _smooth_mask(cov_sct, mask_sigma, limit=precip_mask)
-                    cov_iso = _smooth_mask(cov_iso, mask_sigma, limit=precip_mask)
-                    cov_def = _smooth_mask(cov_def, mask_sigma, limit=precip_mask)
-                    cov_lkly = _smooth_mask(cov_lkly, mask_sigma, limit=precip_mask)
-                    cov_chc = _smooth_mask(cov_chc, mask_sigma, limit=precip_mask)
-                    cov_schc = _smooth_mask(cov_schc, mask_sigma, limit=precip_mask)
-
-                    # Re-enforce exclusivity after smoothing
-                    cov_num &= ~cov_wide
-                    cov_sct &= ~(cov_wide | cov_num)
-                    cov_iso &= ~(cov_wide | cov_num | cov_sct)
-                    cov_lkly &= ~cov_def
-                    cov_chc &= ~(cov_def | cov_lkly)
-                    cov_schc &= ~(cov_def | cov_lkly | cov_chc)
 
                 # Pre-build Wx strings with fixed fields
                 # Format: "<Cov>:<WxType>:<Inten>:<NoVis>:"
@@ -1292,6 +1264,18 @@ class Procedure(SmartScript.SmartScript):
                     _append_wx(ice_moderate_mask, ice_wx_moderate)
                 if ice_heavy_mask is not None and np.any(ice_heavy_mask) and ice_wx_heavy:
                     _append_wx(ice_heavy_mask, ice_wx_heavy)
+
+            # Smooth Wx output via neighborhood mode filter
+            if smoothing and smoothing > 0:
+                wx_window = 3
+                if smoothing >= 10:
+                    wx_window = 5
+                if wx_window > 1:
+                    filtered = _mode_filter(updated_wx, wx_window)
+                    if active is None:
+                        updated_wx = filtered
+                    else:
+                        updated_wx[active] = filtered[active]
 
             # Save weather grid
             try:
