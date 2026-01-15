@@ -43,6 +43,7 @@ ICE_ACCRETION_CFG = {
     "light_min": 0.1,
     "moderate_min": 0.7,
     "heavy_min": 2.0,
+    "max": 5.0,
     "wx_coverage": "Areas",
     "wx_type": "FZSPR",
 }
@@ -735,6 +736,7 @@ class Procedure(SmartScript.SmartScript):
         ice_light_min = float(ice_cfg.get("light_min", 0.1))
         ice_moderate_min = float(ice_cfg.get("moderate_min", 0.7))
         ice_heavy_min = float(ice_cfg.get("heavy_min", 2.0))
+        ice_max = float(ice_cfg.get("max", 5.0))
         ice_sst_min_f = float(ice_cfg.get("sst_valid_f", 25.0))
         ice_cov = str(ice_cfg.get("wx_coverage", "Areas"))
         ice_type = str(ice_cfg.get("wx_type", "FZSPR"))
@@ -776,6 +778,7 @@ class Procedure(SmartScript.SmartScript):
             f"light>={ice_light_min:.2f}, "
             f"moderate>={ice_moderate_min:.2f}, "
             f"heavy>={ice_heavy_min:.2f}, "
+            f"max={ice_max:.2f}, "
             f"Wx={ice_cov}:{ice_type}"
         )
 
@@ -871,8 +874,9 @@ class Procedure(SmartScript.SmartScript):
                         else:
                             ice_out = np.array(ice_grid, copy=True)
 
-                        if np.any(valid_mask):
-                            ice_out[valid_mask] = ice_ppr[valid_mask]
+                    if np.any(valid_mask):
+                        ice_out[valid_mask] = np.minimum(ice_ppr[valid_mask], ice_max)
+                    ice_out = np.clip(ice_out, 0.0, ice_max)
                         try:
                             self.createGrid(
                                 "Fcst",
@@ -881,6 +885,7 @@ class Procedure(SmartScript.SmartScript):
                                 ice_out,
                                 grid_tr,
                                 minAllowedValue=0.0,
+                            maxAllowedValue=ice_max,
                             )
                         except Exception as e:
                             self.log(f"✗ Error saving IceAccretion grid: {e}")
@@ -959,6 +964,12 @@ class Procedure(SmartScript.SmartScript):
                 idx_cache[wx_str] = self.getIndex(wx_str, keys)
                 return idx_cache[wx_str]
 
+            def _safe_idx(wx_str: str) -> Optional[int]:
+                try:
+                    return _idx(wx_str)
+                except Exception:
+                    return None
+
             def _combine_wx(existing: str, addition: str) -> str:
                 if existing == no_wx:
                     return addition
@@ -970,7 +981,9 @@ class Procedure(SmartScript.SmartScript):
             def _append_wx(mask: np.ndarray, addition: str):
                 if not np.any(mask):
                     return
-                add_idx = _idx(addition)
+                add_idx = _safe_idx(addition)
+                if add_idx is None:
+                    return
                 no_mask = mask & (updated_wx == no_idx)
                 if np.any(no_mask):
                     updated_wx[no_mask] = add_idx
@@ -983,8 +996,24 @@ class Procedure(SmartScript.SmartScript):
                         continue
                     ex_str = keys[ex_idx]
                     combined = _combine_wx(ex_str, addition)
-                    combined_idx = _idx(combined)
+                    combined_idx = _safe_idx(combined)
+                    if combined_idx is None:
+                        continue
                     updated_wx[(updated_wx == ex_idx) & combo_mask] = combined_idx
+
+            def _pick_ice_wx(inten: str) -> Optional[str]:
+                coverages = [ice_cov, "Sct", "Iso", "Patchy"]
+                types = [ice_type, "FZSPR", "ZR"]
+                for cov in coverages:
+                    for typ in types:
+                        candidate = f"{cov}:{typ}:{inten}:<NoVis>:"
+                        if _safe_idx(candidate) is not None:
+                            return candidate
+                        if inten != "<NoInten>":
+                            fallback = f"{cov}:{typ}:<NoInten>:<NoVis>:"
+                            if _safe_idx(fallback) is not None:
+                                return fallback
+                return None
 
             # Build masks for decisioning
             if has_thunder is not None:
@@ -1135,15 +1164,18 @@ class Procedure(SmartScript.SmartScript):
 
             # --- Ice accretion (freezing spray)
             if ice_mask is not None and np.any(ice_mask):
-                ice_wx_light = f"{ice_cov}:{ice_type}:-:<NoVis>:"
-                ice_wx_moderate = f"{ice_cov}:{ice_type}:m:<NoVis>:"
-                ice_wx_heavy = f"{ice_cov}:{ice_type}:+:<NoVis>:"
+                ice_wx_light = _pick_ice_wx("-")
+                ice_wx_moderate = _pick_ice_wx("m")
+                ice_wx_heavy = _pick_ice_wx("+")
 
-                if ice_light_mask is not None and np.any(ice_light_mask):
+                if not any([ice_wx_light, ice_wx_moderate, ice_wx_heavy]):
+                    self.log("⚠ No valid Wx key found for ice accretion; skipping Wx add")
+
+                if ice_light_mask is not None and np.any(ice_light_mask) and ice_wx_light:
                     _append_wx(ice_light_mask, ice_wx_light)
-                if ice_moderate_mask is not None and np.any(ice_moderate_mask):
+                if ice_moderate_mask is not None and np.any(ice_moderate_mask) and ice_wx_moderate:
                     _append_wx(ice_moderate_mask, ice_wx_moderate)
-                if ice_heavy_mask is not None and np.any(ice_heavy_mask):
+                if ice_heavy_mask is not None and np.any(ice_heavy_mask) and ice_wx_heavy:
                     _append_wx(ice_heavy_mask, ice_wx_heavy)
 
             # Save weather grid
