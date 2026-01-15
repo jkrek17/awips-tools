@@ -888,9 +888,9 @@ class Procedure(SmartScript.SmartScript):
                         else:
                             ice_out = np.array(ice_grid, copy=True)
 
-                    if np.any(valid_mask):
-                        ice_out[valid_mask] = np.minimum(ice_ppr[valid_mask], ice_max)
-                    ice_out = np.clip(ice_out, 0.0, ice_max)
+                        if np.any(valid_mask):
+                            ice_out[valid_mask] = np.minimum(ice_ppr[valid_mask], ice_max)
+                        ice_out = np.clip(ice_out, 0.0, ice_max)
                         try:
                             self.createGrid(
                                 "Fcst",
@@ -899,7 +899,7 @@ class Procedure(SmartScript.SmartScript):
                                 ice_out,
                                 grid_tr,
                                 minAllowedValue=0.0,
-                            maxAllowedValue=ice_max,
+                                maxAllowedValue=ice_max,
                             )
                         except Exception as e:
                             self.log(f"✗ Error saving IceAccretion grid: {e}")
