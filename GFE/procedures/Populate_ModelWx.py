@@ -44,6 +44,7 @@ ICE_ACCRETION_CFG = {
     "moderate_min": 0.7,
     "heavy_min": 2.0,
     "max": 5.0,
+    "edit_area": "OPC_AOR",
     "wx_coverage": "Sct",
     "wx_type": "ZY",
 }
@@ -738,8 +739,9 @@ class Procedure(SmartScript.SmartScript):
         ice_heavy_min = float(ice_cfg.get("heavy_min", 2.0))
         ice_max = float(ice_cfg.get("max", 5.0))
         ice_sst_min_f = float(ice_cfg.get("sst_valid_f", 25.0))
-        ice_cov = str(ice_cfg.get("wx_coverage", "Areas"))
-        ice_type = str(ice_cfg.get("wx_type", "FZSPR"))
+        ice_area_name = str(ice_cfg.get("edit_area", "OPC_AOR"))
+        ice_cov = str(ice_cfg.get("wx_coverage", "Sct"))
+        ice_type = str(ice_cfg.get("wx_type", "ZY"))
         # Try to honor IceAccretion element bounds if available
         try:
             parm = self.getParm("Fcst", "IceAccretion", "SFC")
@@ -793,7 +795,8 @@ class Procedure(SmartScript.SmartScript):
             f"moderate>={ice_moderate_min:.2f}, "
             f"heavy>={ice_heavy_min:.2f}, "
             f"max={ice_max:.2f}, "
-            f"Wx={ice_cov}:{ice_type}"
+            f"Wx={ice_cov}:{ice_type}, "
+            f"area={ice_area_name or 'None'}"
         )
 
         # Get forecast grid times
@@ -818,6 +821,15 @@ class Procedure(SmartScript.SmartScript):
                 edit_mask = ea.getGrid().getNDArray().astype(bool)
         except Exception:
             edit_mask = None
+
+        # Ice accretion area mask (e.g., OPC_AOR) to avoid inland lakes
+        ice_area_mask = None
+        if ice_area_name:
+            try:
+                ice_area = self.getEditArea(ice_area_name)
+                ice_area_mask = self.encodeEditArea(ice_area)
+            except Exception:
+                ice_area_mask = None
 
         for i, gridinfo in enumerate(gridinfos):
             grid_tr = gridinfo.gridTime()
@@ -867,6 +879,8 @@ class Procedure(SmartScript.SmartScript):
 
                 if ice_ppr is not None:
                     valid_mask = sst_f > ice_sst_min_f
+                    if ice_area_mask is not None:
+                        valid_mask &= ice_area_mask
                     if edit_mask is not None:
                         valid_mask &= edit_mask
 
