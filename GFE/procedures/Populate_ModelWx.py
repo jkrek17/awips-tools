@@ -148,7 +148,8 @@ class MarineWeatherGUI:
         self.master = master
         self.callback = callback
         self.master.title("Marine Weather Grid Builder")
-        self.master.geometry("1050x750")
+        self.master.geometry("1250x800")
+        self.master.minsize(1100, 750)
 
         self._build_ui()
 
@@ -171,12 +172,14 @@ class MarineWeatherGUI:
         content = gui.TwoColumnLayout(main, padx=20)
         content.pack(fill=tk.BOTH, expand=True)
 
-        # Left column
+        # Left column: model selection
         self._build_model_frame(content.left)
-        self._build_mode_frame(content.left)
 
-        # Right column
+        # Right column: tuners/parameters
         self._build_params_frame(content.right)
+
+        # Build Mode (full width below columns)
+        self._build_mode_frame(main)
 
         # Buttons
         self._build_buttons(main)
