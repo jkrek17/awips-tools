@@ -1032,23 +1032,54 @@ class Procedure(SmartScript.SmartScript):
                     is_conv = conv_idx > conv_idx_thresh
                     self.log(f"  Using CAPE-based convective index (fallback)")
 
-                # Precip type determination using 850mb temperature when available
-                # 850mb temp is more reliable for rain/snow line than surface temp
-                # especially in cold air damming or warm nose situations
-                if t850_c is not None:
-                    # Use 850mb temp: if T850 > 0C, likely rain; if < -4C, likely snow
-                    # Between 0 and -4C is transition zone
+                # Precip type determination using both surface and 850mb temperature
+                # This enables detection of freezing rain and sleet (warm nose scenarios)
+                #
+                # Decision matrix:
+                # | Sfc Temp | T850    | Precip Type |
+                # |----------|---------|-------------|
+                # | > 0°C    | any     | Rain (R/RW) |
+                # | < 0°C    | < -4°C  | Snow (S/SW) |
+                # | < 0°C    | > 0°C   | Freezing Rain (ZR) - warm nose |
+                # | < 0°C    | -4 to 0 | Sleet (IP) - partial warm nose |
+                
+                # Initialize precip type masks
+                is_snow = np.zeros(wx_values.shape, dtype=bool)
+                is_fzra = np.zeros(wx_values.shape, dtype=bool)  # Freezing rain
+                is_sleet = np.zeros(wx_values.shape, dtype=bool)  # Ice pellets
+                
+                if temp_c is not None and t850_c is not None:
+                    # Full winter precip type logic using both levels
+                    sfc_below_freezing = temp_c < FREEZING_C
+                    sfc_above_freezing = ~sfc_below_freezing
+                    
+                    # Snow: surface below freezing AND 850mb cold (< -4°C)
+                    is_snow = sfc_below_freezing & (t850_c < -4.0)
+                    
+                    # Freezing rain: surface below freezing BUT 850mb warm (> 0°C)
+                    # This is the classic "warm nose" profile
+                    is_fzra = sfc_below_freezing & (t850_c > 0.0)
+                    
+                    # Sleet: surface below freezing, 850mb in transition zone (-4 to 0°C)
+                    # Partial warm nose - refreezes before reaching surface
+                    is_sleet = sfc_below_freezing & (t850_c >= -4.0) & (t850_c <= 0.0)
+                    
+                    # Rain: surface above freezing (any 850mb temp)
+                    # is_rain is implicit - anything not snow/fzra/sleet with sfc > 0C
+                    
+                    self.log(f"  Using T850+Sfc for precip type: "
+                             f"Snow={np.sum(is_snow & precip_mask)}, "
+                             f"ZR={np.sum(is_fzra & precip_mask)}, "
+                             f"IP={np.sum(is_sleet & precip_mask)} pts")
+                             
+                elif t850_c is not None:
+                    # Only have T850 - use it for snow determination
                     is_snow = t850_c < -4.0
-                    is_rain = t850_c > 0.0
-                    # Transition zone could be freezing rain or sleet - treat as rain for now
-                    # but could be enhanced later for ZR detection
-                    self.log(f"  Using T850 for precip type (snow where T850 < -4C)")
+                    self.log(f"  Using T850 only for precip type (snow where T850 < -4C)")
                 elif temp_c is not None:
-                    # Fallback to surface temperature
+                    # Fallback to surface temperature only
                     is_snow = temp_c < FREEZING_C
                     self.log(f"  Using surface temp for precip type (fallback)")
-                else:
-                    is_snow = np.zeros(wx_values.shape, dtype=bool)
 
                 # Thresholds
                 precip_wide = float(qpf_cfg.get("coverage_wide_in", 0.25))
@@ -1086,7 +1117,11 @@ class Procedure(SmartScript.SmartScript):
                     return f"{cov}:{typ}:{inten}:<NoVis>:"
 
                 def assign_cov(cov_mask, cov_code, convective: bool):
-                    # Determine precip weather type string per-point (snow/rain + convective flag)
+                    # Determine precip weather type per-point:
+                    # - Snow (S/SW), Rain (R/RW), Freezing Rain (ZR), Sleet (IP)
+                    # Convective flag determines showers (RW/SW) vs steady (R/S)
+                    # Note: ZR and IP don't have convective variants in GFE Wx encoding
+                    
                     if convective:
                         rain_type = "RW"
                         snow_type = "SW"
@@ -1094,9 +1129,14 @@ class Procedure(SmartScript.SmartScript):
                         rain_type = "R"
                         snow_type = "S"
 
+                    # Determine masks for each precip type within this coverage
                     snow_mask = cov_mask & is_snow
-                    rain_mask = cov_mask & ~is_snow
+                    fzra_mask = cov_mask & is_fzra
+                    sleet_mask = cov_mask & is_sleet
+                    # Rain is everything else (not snow, not fzra, not sleet)
+                    rain_mask = cov_mask & ~is_snow & ~is_fzra & ~is_sleet
 
+                    # Assign rain
                     if np.any(rain_mask & inten_plus):
                         updated_wx[rain_mask & inten_plus] = _idx(wx(cov_code, rain_type, "+"))
                     if np.any(rain_mask & inten_m):
@@ -1104,12 +1144,29 @@ class Procedure(SmartScript.SmartScript):
                     if np.any(rain_mask & inten_minus):
                         updated_wx[rain_mask & inten_minus] = _idx(wx(cov_code, rain_type, "-"))
 
+                    # Assign snow
                     if np.any(snow_mask & inten_plus):
                         updated_wx[snow_mask & inten_plus] = _idx(wx(cov_code, snow_type, "+"))
                     if np.any(snow_mask & inten_m):
                         updated_wx[snow_mask & inten_m] = _idx(wx(cov_code, snow_type, "m"))
                     if np.any(snow_mask & inten_minus):
                         updated_wx[snow_mask & inten_minus] = _idx(wx(cov_code, snow_type, "-"))
+
+                    # Assign freezing rain (ZR) - no convective variant
+                    if np.any(fzra_mask & inten_plus):
+                        updated_wx[fzra_mask & inten_plus] = _idx(wx(cov_code, "ZR", "+"))
+                    if np.any(fzra_mask & inten_m):
+                        updated_wx[fzra_mask & inten_m] = _idx(wx(cov_code, "ZR", "m"))
+                    if np.any(fzra_mask & inten_minus):
+                        updated_wx[fzra_mask & inten_minus] = _idx(wx(cov_code, "ZR", "-"))
+
+                    # Assign sleet/ice pellets (IP) - no convective variant
+                    if np.any(sleet_mask & inten_plus):
+                        updated_wx[sleet_mask & inten_plus] = _idx(wx(cov_code, "IP", "+"))
+                    if np.any(sleet_mask & inten_m):
+                        updated_wx[sleet_mask & inten_m] = _idx(wx(cov_code, "IP", "m"))
+                    if np.any(sleet_mask & inten_minus):
+                        updated_wx[sleet_mask & inten_minus] = _idx(wx(cov_code, "IP", "-"))
 
                 # Convective coverage
                 assign_cov(cov_wide, "Wide", convective=True)
