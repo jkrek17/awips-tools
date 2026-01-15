@@ -944,11 +944,10 @@ class Procedure(SmartScript.SmartScript):
                 )
 
             # Determine weather conditions
-            qpf_detect = qpf_raw if qpf_raw is not None else qpf_in
-            has_precip = qpf_detect > precip_min if qpf_detect is not None else None
+            has_precip = qpf_in > precip_min if qpf_in is not None else None
             has_thunder = (
-                (cape > cape_cfg.get("thunder_min", thunder_thresh)) & (qpf_detect > precip_min)
-                if (cape is not None and qpf_detect is not None)
+                (cape > cape_cfg.get("thunder_min", thunder_thresh)) & (qpf_in > precip_min)
+                if (cape is not None and qpf_in is not None)
                 else None
             )
             has_fog = (vis_nm < fog_thresh) & (rh > fog_rh_min) if vis_nm is not None and rh is not None else None
