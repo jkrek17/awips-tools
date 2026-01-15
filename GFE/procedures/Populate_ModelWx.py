@@ -47,6 +47,154 @@ FREEZING_C = 0.0
 
 
 # ---------------------------------------------------------------------------
+# Thermodynamic calculation functions
+# ---------------------------------------------------------------------------
+
+def compute_dewpoint_c(temp_c: np.ndarray, rh_pct: np.ndarray) -> np.ndarray:
+    """
+    Compute dew point temperature from temperature and relative humidity.
+    
+    Uses the Magnus-Tetens approximation:
+    Td = (b * alpha) / (a - alpha)
+    where alpha = (a * T) / (b + T) + ln(RH/100)
+    
+    Args:
+        temp_c: Temperature in Celsius
+        rh_pct: Relative humidity in percent (0-100)
+        
+    Returns:
+        Dew point temperature in Celsius
+    """
+    # Magnus-Tetens constants
+    a = 17.27
+    b = 237.7  # degrees C
+    
+    # Clamp RH to avoid log(0)
+    rh_safe = np.clip(rh_pct, 0.1, 100.0)
+    
+    alpha = (a * temp_c) / (b + temp_c) + np.log(rh_safe / 100.0)
+    td = (b * alpha) / (a - alpha)
+    
+    return td
+
+
+def compute_lcl_temp_c(temp_c: np.ndarray, td_c: np.ndarray) -> np.ndarray:
+    """
+    Compute Lifting Condensation Level (LCL) temperature.
+    
+    Uses Espy's equation approximation:
+    T_LCL ≈ Td - (0.125 * (T - Td))
+    
+    More accurate formula:
+    T_LCL = 1 / (1/(Td - 56) + ln(T/Td)/800) + 56
+    
+    Args:
+        temp_c: Surface temperature in Celsius
+        td_c: Surface dew point in Celsius
+        
+    Returns:
+        LCL temperature in Celsius
+    """
+    # Use Bolton's formula for better accuracy
+    # Avoid division by zero
+    td_safe = np.where(td_c < -55, -55, td_c)
+    t_safe = np.where(temp_c < td_safe, td_safe + 0.1, temp_c)
+    
+    term1 = 1.0 / (td_safe - 56.0 + 1e-10)
+    term2 = np.log(t_safe / (td_safe + 1e-10)) / 800.0
+    
+    t_lcl = 1.0 / (term1 + term2 + 1e-10) + 56.0
+    
+    return t_lcl
+
+
+def compute_lifted_index(temp_sfc_c: np.ndarray, td_sfc_c: np.ndarray, 
+                          temp_500_c: np.ndarray) -> np.ndarray:
+    """
+    Compute Lifted Index (LI).
+    
+    LI = T500_env - T500_parcel
+    
+    Simplified calculation that lifts a parcel from the surface to 500mb.
+    Negative values indicate instability.
+    
+    Args:
+        temp_sfc_c: Surface temperature in Celsius
+        td_sfc_c: Surface dew point in Celsius
+        temp_500_c: 500mb environmental temperature in Celsius
+        
+    Returns:
+        Lifted Index (negative = unstable, positive = stable)
+    """
+    # Compute LCL temperature
+    t_lcl = compute_lcl_temp_c(temp_sfc_c, td_sfc_c)
+    
+    # Estimate parcel temperature at 500mb
+    # Dry adiabatic lapse rate: ~9.8 C/km
+    # Moist adiabatic lapse rate: ~6.0 C/km (varies with temperature)
+    # Surface to LCL: dry adiabatic
+    # LCL to 500mb: moist adiabatic
+    
+    # Approximate heights: surface ~1000mb, LCL varies, 500mb ~5.5km
+    # This is a simplified calculation
+    
+    # Dry adiabatic cooling to LCL (roughly 1-2 km typically)
+    # Then moist adiabatic from LCL to 500mb
+    
+    # Simplified: use average lapse rate based on moisture
+    # Drier air (larger T-Td spread) = more dry adiabatic cooling
+    spread = temp_sfc_c - td_sfc_c
+    
+    # Effective lapse rate (C/km) - interpolate between dry and moist
+    # based on moisture (spread)
+    dry_rate = 9.8
+    moist_rate = 6.0
+    # More spread = drier = closer to dry rate
+    spread_factor = np.clip(spread / 20.0, 0, 1)  # normalize 0-20C spread
+    eff_rate = moist_rate + spread_factor * (dry_rate - moist_rate)
+    
+    # Approximate lift from surface to 500mb (~5.5 km)
+    lift_height_km = 5.5
+    
+    # Parcel temperature at 500mb
+    t_parcel_500 = temp_sfc_c - (eff_rate * lift_height_km)
+    
+    # Lifted Index
+    li = temp_500_c - t_parcel_500
+    
+    return li
+
+
+def compute_k_index(temp_850_c: np.ndarray, temp_700_c: np.ndarray, 
+                    temp_500_c: np.ndarray, td_850_c: np.ndarray,
+                    td_700_c: np.ndarray) -> np.ndarray:
+    """
+    Compute K-Index for thunderstorm potential.
+    
+    K = (T850 - T500) + Td850 - (T700 - Td700)
+    
+    Interpretation:
+    - K < 20: No thunderstorm potential
+    - K 20-25: Isolated thunderstorms possible
+    - K 26-30: Scattered thunderstorms
+    - K 31-35: Numerous thunderstorms
+    - K > 35: Widespread thunderstorms
+    
+    Args:
+        temp_850_c: 850mb temperature in Celsius
+        temp_700_c: 700mb temperature in Celsius
+        temp_500_c: 500mb temperature in Celsius
+        td_850_c: 850mb dew point in Celsius
+        td_700_c: 700mb dew point in Celsius
+        
+    Returns:
+        K-Index value
+    """
+    k_index = (temp_850_c - temp_500_c) + td_850_c - (temp_700_c - td_700_c)
+    return k_index
+
+
+# ---------------------------------------------------------------------------
 # Configuration helpers with safe fallbacks
 # ---------------------------------------------------------------------------
 # These provide thresholds from the shared module when available, falling back
@@ -691,12 +839,37 @@ class Procedure(SmartScript.SmartScript):
             if model_data is None:
                 continue
 
-            temp_c, rh, qpf_in, vis_nm, cape = model_data
+            (temp_c, rh, qpf_in, vis_nm, cape, 
+             t850_c, t700_c, t500_c, rh850, rh700) = model_data
 
             # Get forecast wind from Fcst database
             # Returns tuple: (magnitude_knots, direction_degrees) where each is a 2D numpy array
             # wind[0] = magnitude in knots, wind[1] = direction in degrees from north
             wind = self.getGrids("Fcst", "Wind", "SFC", grid_tr, mode="First", noDataError=0)
+            
+            # ----------------------------------------------------------------
+            # Compute stability indices from upper-air data
+            # ----------------------------------------------------------------
+            lifted_index = None
+            k_index = None
+            
+            # Compute surface dew point for Lifted Index
+            if temp_c is not None and rh is not None:
+                td_sfc_c = compute_dewpoint_c(temp_c, rh)
+            else:
+                td_sfc_c = None
+            
+            # Compute Lifted Index if we have required data
+            if temp_c is not None and td_sfc_c is not None and t500_c is not None:
+                lifted_index = compute_lifted_index(temp_c, td_sfc_c, t500_c)
+                self.log(f"  Lifted Index: min={np.nanmin(lifted_index):.1f}, mean={np.nanmean(lifted_index):.1f}, max={np.nanmax(lifted_index):.1f}")
+            
+            # Compute K-Index if we have required data
+            if t850_c is not None and t700_c is not None and t500_c is not None and rh850 is not None and rh700 is not None:
+                td850_c = compute_dewpoint_c(t850_c, rh850)
+                td700_c = compute_dewpoint_c(t700_c, rh700)
+                k_index = compute_k_index(t850_c, t700_c, t500_c, td850_c, td700_c)
+                self.log(f"  K-Index: min={np.nanmin(k_index):.1f}, mean={np.nanmean(k_index):.1f}, max={np.nanmax(k_index):.1f}")
 
             # Apply smoothing
             if smoothing > 0:
@@ -718,6 +891,9 @@ class Procedure(SmartScript.SmartScript):
                     wind,
                     diag_clip,
                     conv_idx_thresh,
+                    lifted_index=lifted_index,
+                    k_index=k_index,
+                    t850_c=t850_c,
                 )
 
             # Determine weather conditions
@@ -832,26 +1008,45 @@ class Procedure(SmartScript.SmartScript):
 
             # --- Precip assignment (rain/snow + convective coverage/prob + intensity)
             if np.any(precip_mask) and qpf_in is not None:
-                # Compute convective index where possible
-                if cape is not None and wind is not None:
-                    # Wind is (magnitude_knots, direction_degrees)
+                # Determine convective vs stratiform using stability indices
+                # Priority: Lifted Index > K-Index > CAPE-based convective index
+                is_conv = np.zeros(wx_values.shape, dtype=bool)
+                
+                if lifted_index is not None:
+                    # Lifted Index: negative = unstable/convective
+                    # LI < -2 indicates convective potential
+                    is_conv = lifted_index < -2.0
+                    self.log(f"  Using Lifted Index for convective determination")
+                elif k_index is not None:
+                    # K-Index: > 25 indicates convective potential
+                    is_conv = k_index > 25.0
+                    self.log(f"  Using K-Index for convective determination")
+                elif cape is not None and wind is not None:
+                    # Fallback to original CAPE-based convective index
                     wind_mag_kt = wind[0]
                     try:
                         wind_ms = thresholds.to_mps(wind_mag_kt)
                     except AttributeError:
                         wind_ms = wind_mag_kt * 0.514444
                     conv_idx = (cape / 1000.0) + (wind_ms / 20.0)
-                else:
-                    conv_idx = None
-
-                if conv_idx is None:
-                    is_conv = np.zeros(wx_values.shape, dtype=bool)
-                else:
                     is_conv = conv_idx > conv_idx_thresh
+                    self.log(f"  Using CAPE-based convective index (fallback)")
 
-                # Precip type by temperature (Celsius)
-                if temp_c is not None:
+                # Precip type determination using 850mb temperature when available
+                # 850mb temp is more reliable for rain/snow line than surface temp
+                # especially in cold air damming or warm nose situations
+                if t850_c is not None:
+                    # Use 850mb temp: if T850 > 0C, likely rain; if < -4C, likely snow
+                    # Between 0 and -4C is transition zone
+                    is_snow = t850_c < -4.0
+                    is_rain = t850_c > 0.0
+                    # Transition zone could be freezing rain or sleet - treat as rain for now
+                    # but could be enhanced later for ZR detection
+                    self.log(f"  Using T850 for precip type (snow where T850 < -4C)")
+                elif temp_c is not None:
+                    # Fallback to surface temperature
                     is_snow = temp_c < FREEZING_C
+                    self.log(f"  Using surface temp for precip type (fallback)")
                 else:
                     is_snow = np.zeros(wx_values.shape, dtype=bool)
 
@@ -955,10 +1150,19 @@ class Procedure(SmartScript.SmartScript):
         return result[0]
 
     def _get_ensemble_data(self, models: List[str], grid_tr, run_depth: int, *, create_diag: bool = False):
-        """Get averaged model data using alias configuration."""
+        """
+        Get averaged model data using alias configuration.
+        
+        Returns:
+            Tuple of (temp_c, rh, qpf_in, vis_nm, cape, t850_c, t700_c, t500_c, rh850, rh700)
+            or None if insufficient data.
+        """
         temp_sum, rh_sum, qpf_sum, vis_min, cape_max = None, None, None, None, None
+        t850_sum, t700_sum, t500_sum = None, None, None
+        rh850_sum, rh700_sum = None, None
         temp_cnt, rh_cnt, qpf_cnt = 0, 0, 0
-        # Log which model_aliases module is actually imported (placed with per-period logging)
+        t850_cnt, t700_cnt, t500_cnt = 0, 0, 0
+        rh850_cnt, rh700_cnt = 0, 0
 
         def _cand_list(*vals):
             """Return list of unique, truthy candidates preserving order."""
@@ -1131,6 +1335,53 @@ class Procedure(SmartScript.SmartScript):
                 cape_max = cape if cape_max is None else np.maximum(cape_max, cape)
                 cape_stats = (float(np.nanmin(cape)), float(np.nanmean(cape)), float(np.nanmax(cape)))
 
+            # ----------------------------------------------------------------
+            # Upper-air data for stability indices (LI, K-Index) and precip type
+            # ----------------------------------------------------------------
+            
+            # 850mb Temperature (for K-Index and precipitation type)
+            t850 = grid_fetch.get_grid_with_fallback(
+                self, alias, temp_elems, ["MB850"], grid_tr, run_depth=run_depth, noDataError=0
+            )
+            if t850 is not None:
+                _, t850_c = _to_f_and_c(t850)
+                t850_sum = t850_c if t850_sum is None else t850_sum + t850_c
+                t850_cnt += 1
+
+            # 700mb Temperature (for K-Index)
+            t700 = grid_fetch.get_grid_with_fallback(
+                self, alias, temp_elems, ["MB700"], grid_tr, run_depth=run_depth, noDataError=0
+            )
+            if t700 is not None:
+                _, t700_c = _to_f_and_c(t700)
+                t700_sum = t700_c if t700_sum is None else t700_sum + t700_c
+                t700_cnt += 1
+
+            # 500mb Temperature (for Lifted Index and K-Index)
+            t500 = grid_fetch.get_grid_with_fallback(
+                self, alias, temp_elems, ["MB500"], grid_tr, run_depth=run_depth, noDataError=0
+            )
+            if t500 is not None:
+                _, t500_c = _to_f_and_c(t500)
+                t500_sum = t500_c if t500_sum is None else t500_sum + t500_c
+                t500_cnt += 1
+
+            # 850mb RH (for K-Index dew point)
+            rh850 = grid_fetch.get_grid_with_fallback(
+                self, alias, rh_elems, ["MB850"], grid_tr, run_depth=run_depth, noDataError=0
+            )
+            if rh850 is not None:
+                rh850_sum = rh850 if rh850_sum is None else rh850_sum + rh850
+                rh850_cnt += 1
+
+            # 700mb RH (for K-Index dew point)
+            rh700 = grid_fetch.get_grid_with_fallback(
+                self, alias, rh_elems, ["MB700"], grid_tr, run_depth=run_depth, noDataError=0
+            )
+            if rh700 is not None:
+                rh700_sum = rh700 if rh700_sum is None else rh700_sum + rh700
+                rh700_cnt += 1
+
             if temp is not None:
                 temp_stats = (float(np.nanmin(temp_c)), float(np.nanmean(temp_c)), float(np.nanmax(temp_c)))
 
@@ -1141,6 +1392,16 @@ class Procedure(SmartScript.SmartScript):
             parts.append(f"QPF {qpf_stats[0]:.2f}/{qpf_stats[1]:.2f}/{qpf_stats[2]:.2f}\"" if qpf_stats else "QPF missing")
             parts.append(f"Vsby {vis_stats[0]:.2f}/{vis_stats[1]:.2f}/{vis_stats[2]:.2f} nm" if vis_stats else "Vsby missing")
             parts.append(f"CAPE {cape_stats[0]:.0f}/{cape_stats[1]:.0f}/{cape_stats[2]:.0f} J/kg" if cape_stats else "CAPE missing")
+            # Log upper-air availability
+            ua_parts = []
+            if t850_cnt > 0:
+                ua_parts.append("T850")
+            if t700_cnt > 0:
+                ua_parts.append("T700")
+            if t500_cnt > 0:
+                ua_parts.append("T500")
+            if ua_parts:
+                parts.append(f"UA: {'/'.join(ua_parts)}")
             per_model_reports.append(" | ".join(parts))
 
         if temp_cnt == 0 and qpf_cnt == 0:
@@ -1159,11 +1420,20 @@ class Procedure(SmartScript.SmartScript):
         temp_avg = temp_sum / temp_cnt if temp_cnt > 0 else None
         rh_avg = rh_sum / rh_cnt if rh_cnt > 0 else None
         qpf_avg = qpf_sum / qpf_cnt if qpf_cnt > 0 else None
+        
+        # Upper-air averages
+        t850_avg = t850_sum / t850_cnt if t850_cnt > 0 else None
+        t700_avg = t700_sum / t700_cnt if t700_cnt > 0 else None
+        t500_avg = t500_sum / t500_cnt if t500_cnt > 0 else None
+        rh850_avg = rh850_sum / rh850_cnt if rh850_cnt > 0 else None
+        rh700_avg = rh700_sum / rh700_cnt if rh700_cnt > 0 else None
 
-        return temp_avg, rh_avg, qpf_avg, vis_min, cape_max
+        return (temp_avg, rh_avg, qpf_avg, vis_min, cape_max, 
+                t850_avg, t700_avg, t500_avg, rh850_avg, rh700_avg)
 
-    def _create_diagnostics(self, grid_tr, temp_c, rh, qpf_in, vis_nm, cape, wind, clip, conv_idx_thresh):
-        """Create diagnostic grids."""
+    def _create_diagnostics(self, grid_tr, temp_c, rh, qpf_in, vis_nm, cape, wind, clip, conv_idx_thresh,
+                             *, lifted_index=None, k_index=None, t850_c=None):
+        """Create diagnostic grids including stability indices."""
         # Use fixed, predictable ranges for diagnostics to ensure display limits stick
         qpf_max = 1.0
         cape_max = 5000.0
@@ -1171,6 +1441,8 @@ class Procedure(SmartScript.SmartScript):
         rh_min, rh_max = 0.0, 100.0
         vis_min, vis_max = 0.0, 10.0
         conv_clip_min, conv_clip_max = 0.0, 10.0
+        li_min, li_max = -15.0, 15.0  # Lifted Index range
+        k_min, k_max = 0.0, 50.0      # K-Index range
 
         if qpf_in is not None:
             qpf_clipped = np.clip(qpf_in, 0, qpf_max)
@@ -1255,6 +1527,52 @@ class Procedure(SmartScript.SmartScript):
                 grid_tr,
                 minAllowedValue=conv_clip_min,
                 maxAllowedValue=conv_clip_max,
+            )
+
+        # Stability indices
+        if lifted_index is not None:
+            li_clipped = np.clip(lifted_index, li_min, li_max)
+            self.createGrid(
+                "Fcst",
+                "modelLI",
+                "SCALAR",
+                li_clipped,
+                grid_tr,
+                minAllowedValue=li_min,
+                maxAllowedValue=li_max,
+                units="C",
+                descriptiveName="Lifted Index",
+            )
+
+        if k_index is not None:
+            k_clipped = np.clip(k_index, k_min, k_max)
+            self.createGrid(
+                "Fcst",
+                "modelKIndex",
+                "SCALAR",
+                k_clipped,
+                grid_tr,
+                minAllowedValue=k_min,
+                maxAllowedValue=k_max,
+                descriptiveName="K-Index",
+            )
+
+        if t850_c is not None:
+            try:
+                t850_f = thresholds.c_to_f(t850_c)
+            except AttributeError:
+                t850_f = t850_c * 9.0/5.0 + 32.0
+            t850_f_clipped = np.clip(t850_f, temp_min_f, temp_max_f)
+            self.createGrid(
+                "Fcst",
+                "modelT850",
+                "SCALAR",
+                t850_f_clipped,
+                grid_tr,
+                minAllowedValue=temp_min_f,
+                maxAllowedValue=temp_max_f,
+                units="F",
+                descriptiveName="850mb Temperature",
             )
 
 __all__ = ["Procedure"]
