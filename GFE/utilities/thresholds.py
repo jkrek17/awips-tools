@@ -90,15 +90,6 @@ MODEL_WX_CONVECTION: Dict[str, float] = {
     "convective_index_threshold": 7.0,
 }
 
-MODEL_WX_TEXTURE: Dict[str, float] = {
-    "window": 9,
-    "stratiform_max": 0.4,
-    "convective_min": 0.8,
-    "cape_stratiform_max": 300.0,
-    "cape_convective_min": 800.0,
-    "eps": 1e-6,
-}
-
 MODEL_WX_SMOOTHING_DEFAULTS: Dict[str, float] = {
     "recommended": 10.0,
     "min": 0.0,
@@ -262,12 +253,6 @@ def get_model_wx_convection() -> Dict[str, float]:
     return deepcopy(MODEL_WX_CONVECTION)
 
 
-def get_model_wx_texture() -> Dict[str, float]:
-    """Return ModelWx QPF texture thresholds."""
-
-    return deepcopy(MODEL_WX_TEXTURE)
-
-
 def get_model_wx_smoothing_defaults() -> Dict[str, float]:
     """Return smoothing defaults for ModelWx (legacy values)."""
 
@@ -310,12 +295,10 @@ __all__ = [
     "get_gfs_alt_wind_levels",
     "MODEL_WX_QPF_THRESHOLDS",
     "MODEL_WX_CONVECTION",
-    "MODEL_WX_TEXTURE",
     "MODEL_WX_SMOOTHING_DEFAULTS",
     "MODEL_WX_FOG_THRESHOLDS_NM",
     "get_model_wx_qpf_thresholds",
     "get_model_wx_convection",
-    "get_model_wx_texture",
     "get_model_wx_smoothing_defaults",
     "get_model_wx_fog_thresholds_nm",
 ]

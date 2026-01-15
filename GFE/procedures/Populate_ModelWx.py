@@ -29,6 +29,14 @@ VariableList = []
 # Available atmospheric models
 ATMOSPHERIC_MODELS = ["GFS", "ECMWF", "CMC", "UKMET"]
 FREEZING_C = 0.0
+MODEL_WX_TEXTURE = {
+    "window": 9,
+    "stratiform_max": 0.4,
+    "convective_min": 0.8,
+    "cape_stratiform_max": 300.0,
+    "cape_convective_min": 800.0,
+    "eps": 1e-6,
+}
 
 
 def _get_safe_qpf_cfg() -> Dict[str, float]:
@@ -60,18 +68,7 @@ def _get_safe_convection_cfg() -> Dict[str, float]:
 
 
 def _get_safe_texture_cfg() -> Dict[str, float]:
-    return getattr(
-        thresholds,
-        "get_model_wx_texture",
-        lambda: {
-            "window": 9,
-            "stratiform_max": 0.4,
-            "convective_min": 0.8,
-            "cape_stratiform_max": 300.0,
-            "cape_convective_min": 800.0,
-            "eps": 1e-6,
-        },
-    )()
+    return dict(MODEL_WX_TEXTURE)
 
 
 def _get_safe_fog_cfg() -> Dict[str, float]:
