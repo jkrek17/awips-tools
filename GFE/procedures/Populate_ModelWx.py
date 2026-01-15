@@ -59,6 +59,21 @@ def _get_safe_convection_cfg() -> Dict[str, float]:
     )()
 
 
+def _get_safe_texture_cfg() -> Dict[str, float]:
+    return getattr(
+        thresholds,
+        "get_model_wx_texture",
+        lambda: {
+            "window": 9,
+            "stratiform_max": 0.4,
+            "convective_min": 0.8,
+            "cape_stratiform_max": 300.0,
+            "cape_convective_min": 800.0,
+            "eps": 1e-6,
+        },
+    )()
+
+
 def _get_safe_fog_cfg() -> Dict[str, float]:
     return getattr(
         thresholds,
@@ -70,6 +85,23 @@ def _get_safe_fog_cfg() -> Dict[str, float]:
             "relative_humidity_min_pct": 85.0,
         },
     )()
+
+
+def _compute_qpf_texture(
+    qpf_raw: np.ndarray, window: int, eps: float
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Return (texture, mean) from unsmoothed QPF (higher texture = noisier)."""
+    if window < 3:
+        window = 3
+    if window % 2 == 0:
+        window += 1
+    qpf_clip = np.maximum(qpf_raw, 0.0)
+    mean = ndimage.uniform_filter(qpf_clip, size=window, mode="nearest")
+    mean_sq = ndimage.uniform_filter(qpf_clip * qpf_clip, size=window, mode="nearest")
+    var = np.maximum(mean_sq - mean * mean, 0.0)
+    std = np.sqrt(var)
+    texture = std / (mean + eps)
+    return texture, mean
 
 
 def _get_safe_smoothing_cfg() -> Dict[str, float]:
@@ -563,6 +595,7 @@ class Procedure(SmartScript.SmartScript):
         except Exception:
             pass
         conv_cfg = _get_safe_convection_cfg()
+        texture_cfg = _get_safe_texture_cfg()
         cape_cfg = _get_safe_cape_cfg(thunder_thresh)
         cape_cfg["thunder_min"] = max(thunder_thresh, cape_cfg.get("thunder_min", thunder_thresh))
         fog_cfg = _get_safe_fog_cfg()
@@ -571,6 +604,12 @@ class Procedure(SmartScript.SmartScript):
             getattr(thresholds, "FOG_THRESHOLDS", {}).get("relative_humidity_min", 85.0),
         )
         conv_idx_thresh = conv_cfg.get("convective_index_threshold", 7.0)
+        texture_window = int(texture_cfg.get("window", 9))
+        texture_strat_max = float(texture_cfg.get("stratiform_max", 0.4))
+        texture_conv_min = float(texture_cfg.get("convective_min", 0.8))
+        cape_strat_max = float(texture_cfg.get("cape_stratiform_max", 300.0))
+        cape_conv_min = float(texture_cfg.get("cape_convective_min", 800.0))
+        texture_eps = float(texture_cfg.get("eps", 1e-6))
         smoothing_cfg = _get_safe_smoothing_cfg()
         sigma_base = smoothing_cfg.get("sigma", 0.7)
         precip_min = float(qpf_cfg.get("minimum_in", 0.01))
@@ -595,6 +634,13 @@ class Procedure(SmartScript.SmartScript):
             f"prob(Chc/Lkly/Def)={qpf_cfg.get('prob_chance_in', 0.03):.2f}/"
             f"{qpf_cfg.get('prob_likely_in', 0.10):.2f}/"
             f"{qpf_cfg.get('prob_definite_in', 0.25):.2f}"
+        )
+        self.log(
+            "QPF texture: "
+            f"window={texture_window}, "
+            f"strat<= {texture_strat_max:.2f}, "
+            f"conv>= {texture_conv_min:.2f}, "
+            f"CAPE tie-break <= {cape_strat_max:.0f} / >= {cape_conv_min:.0f} J/kg"
         )
 
         # Get forecast grid times
@@ -632,17 +678,25 @@ class Procedure(SmartScript.SmartScript):
                 continue
 
             temp_c, rh, qpf_in, vis_nm, cape = model_data
+            qpf_raw = np.array(qpf_in, copy=True) if qpf_in is not None else None
 
             # Get forecast wind (in knots)
             wind = self.getGrids("Fcst", "Wind", "SFC", grid_tr, mode="First", noDataError=0)
 
-            # Apply smoothing
+            # Apply smoothing (QPF texture is computed from unsmoothed QPF)
             if smoothing > 0:
                 sigma = smoothing * sigma_base
                 if qpf_in is not None:
                     qpf_in = ndimage.gaussian_filter(qpf_in, sigma=sigma, mode="nearest")
                 if vis_nm is not None:
                     vis_nm = ndimage.gaussian_filter(vis_nm, sigma=sigma, mode="nearest")
+
+            qpf_texture = None
+            if qpf_raw is not None:
+                try:
+                    qpf_texture, _ = _compute_qpf_texture(qpf_raw, texture_window, texture_eps)
+                except Exception:
+                    qpf_texture = None
 
             # Create diagnostic grids
             if create_diag:
@@ -773,22 +827,18 @@ class Procedure(SmartScript.SmartScript):
 
             # --- Precip assignment (rain/snow + convective coverage/prob + intensity)
             if np.any(precip_mask) and qpf_in is not None:
-                # Compute convective index where possible
-                if cape is not None and wind is not None:
-                    # Wind is (magnitude_knots, direction_degrees)
-                    wind_mag_kt = wind[0]
-                    try:
-                        wind_ms = thresholds.to_mps(wind_mag_kt)
-                    except AttributeError:
-                        wind_ms = wind_mag_kt * 0.514444
-                    conv_idx = (cape / 1000.0) + (wind_ms / 20.0)
+                # Convective vs stratiform using QPF texture + CAPE
+                if qpf_texture is not None:
+                    is_conv = qpf_texture >= texture_conv_min
+                    is_conv = np.where(qpf_texture <= texture_strat_max, False, is_conv)
+                    if cape is not None:
+                        is_conv = np.where(cape <= cape_strat_max, False, is_conv)
+                        is_conv = np.where(cape >= cape_conv_min, True, is_conv)
                 else:
-                    conv_idx = None
-
-                if conv_idx is None:
-                    is_conv = np.zeros(wx_values.shape, dtype=bool)
-                else:
-                    is_conv = conv_idx > conv_idx_thresh
+                    if cape is not None:
+                        is_conv = cape >= cape_conv_min
+                    else:
+                        is_conv = np.zeros(wx_values.shape, dtype=bool)
 
                 # Precip type by temperature (Celsius)
                 if temp_c is not None:
