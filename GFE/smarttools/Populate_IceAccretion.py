@@ -138,9 +138,12 @@ class Tool(SmartScript.SmartScript):
 
         ppr = (mag_ms * da) / (1.0 + 0.3 * dw)
 
-        # Apply result to masked areas
+        # Clear grid outside the AOR mask, then apply calculated values inside mask
+        # This ensures areas outside the AOR don't retain stale values
+        IceAccretion[~valid_mask] = 0.0
         IceAccretion[valid_mask] = ppr[valid_mask]
 
+        self.log(f"Applied to {np.sum(valid_mask)} grid points within AOR")
         self.log("Completed Populate_IceAccretion")
         return IceAccretion
 
