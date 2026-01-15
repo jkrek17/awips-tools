@@ -37,6 +37,15 @@ MODEL_WX_TEXTURE = {
     "cape_convective_min": 800.0,
     "eps": 1e-6,
 }
+ICE_ACCRETION_CFG = {
+    "seawater_freezing_c": -1.7,
+    "sst_valid_f": 25.0,
+    "light_min": 0.1,
+    "moderate_min": 0.7,
+    "heavy_min": 2.0,
+    "wx_coverage": "Areas",
+    "wx_type": "FZSPR",
+}
 
 
 def _get_safe_qpf_cfg() -> Dict[str, float]:
@@ -99,6 +108,29 @@ def _compute_qpf_texture(
     std = np.sqrt(var)
     texture = std / (mean + eps)
     return texture, mean
+
+
+def _compute_ice_accretion(
+    temp_c: np.ndarray,
+    sst_f: np.ndarray,
+    wind_kt: np.ndarray,
+    cfg: Dict[str, float],
+) -> np.ndarray:
+    """Compute ice accretion potential (Overland algorithm)."""
+    tf_c = float(cfg.get("seawater_freezing_c", -1.7))
+    try:
+        sst_c = thresholds.f_to_c(sst_f)
+    except AttributeError:
+        sst_c = (sst_f - 32.0) * 5.0 / 9.0
+    try:
+        wind_ms = thresholds.to_mps(wind_kt)
+    except AttributeError:
+        wind_ms = wind_kt * 0.514444
+    da = tf_c - temp_c
+    dw = sst_c - tf_c
+    denom = 1.0 + (0.3 * dw)
+    denom = np.where(np.abs(denom) < 1e-6, 1e-6, denom)
+    return (wind_ms * da) / denom
 
 
 def _get_safe_smoothing_cfg() -> Dict[str, float]:
@@ -599,6 +631,7 @@ class Procedure(SmartScript.SmartScript):
             pass
         conv_cfg = _get_safe_convection_cfg()
         texture_cfg = _get_safe_texture_cfg()
+        ice_cfg = dict(ICE_ACCRETION_CFG)
         cape_cfg = _get_safe_cape_cfg(thunder_thresh)
         cape_cfg["thunder_min"] = max(thunder_thresh, cape_cfg.get("thunder_min", thunder_thresh))
         fog_cfg = _get_safe_fog_cfg()
@@ -613,6 +646,12 @@ class Procedure(SmartScript.SmartScript):
         cape_strat_max = float(texture_cfg.get("cape_stratiform_max", 300.0))
         cape_conv_min = float(texture_cfg.get("cape_convective_min", 800.0))
         texture_eps = float(texture_cfg.get("eps", 1e-6))
+        ice_light_min = float(ice_cfg.get("light_min", 0.1))
+        ice_moderate_min = float(ice_cfg.get("moderate_min", 0.7))
+        ice_heavy_min = float(ice_cfg.get("heavy_min", 2.0))
+        ice_sst_min_f = float(ice_cfg.get("sst_valid_f", 25.0))
+        ice_cov = str(ice_cfg.get("wx_coverage", "Areas"))
+        ice_type = str(ice_cfg.get("wx_type", "FZSPR"))
         smoothing_cfg = _get_safe_smoothing_cfg()
         sigma_base = smoothing_cfg.get("sigma", 0.7)
         precip_min = float(qpf_cfg.get("minimum_in", 0.01))
@@ -644,6 +683,14 @@ class Procedure(SmartScript.SmartScript):
             f"strat<= {texture_strat_max:.2f}, "
             f"conv>= {texture_conv_min:.2f}, "
             f"CAPE tie-break <= {cape_strat_max:.0f} / >= {cape_conv_min:.0f} J/kg"
+        )
+        self.log(
+            "Ice accretion: "
+            f"SST>{ice_sst_min_f:.0f}F, "
+            f"light>={ice_light_min:.2f}, "
+            f"moderate>={ice_moderate_min:.2f}, "
+            f"heavy>={ice_heavy_min:.2f}, "
+            f"Wx={ice_cov}:{ice_type}"
         )
 
         # Get forecast grid times
@@ -685,6 +732,8 @@ class Procedure(SmartScript.SmartScript):
 
             # Get forecast wind (in knots)
             wind = self.getGrids("Fcst", "Wind", "SFC", grid_tr, mode="First", noDataError=0)
+            # Get forecast SST (in F) for ice accretion
+            sst_f = self.getGrids("Fcst", "SST", "SFC", grid_tr, mode="First", noDataError=0)
 
             # Apply smoothing (QPF texture is computed from unsmoothed QPF)
             if smoothing > 0:
@@ -700,6 +749,54 @@ class Procedure(SmartScript.SmartScript):
                     qpf_texture, _ = _compute_qpf_texture(qpf_raw, texture_window, texture_eps)
                 except Exception:
                     qpf_texture = None
+
+            ice_ppr = None
+            ice_mask = None
+            ice_light_mask = None
+            ice_moderate_mask = None
+            ice_heavy_mask = None
+            if sst_f is not None and temp_c is not None and wind is not None:
+                try:
+                    ice_ppr = _compute_ice_accretion(temp_c, sst_f, wind[0], ice_cfg)
+                    ice_ppr = np.maximum(ice_ppr, 0.0)
+                except Exception:
+                    ice_ppr = None
+
+                if ice_ppr is not None:
+                    valid_mask = sst_f > ice_sst_min_f
+                    if edit_mask is not None:
+                        valid_mask &= edit_mask
+
+                    ice_mask = valid_mask & (ice_ppr >= ice_light_min)
+                    ice_heavy_mask = ice_mask & (ice_ppr >= ice_heavy_min)
+                    ice_moderate_mask = ice_mask & ~ice_heavy_mask & (ice_ppr >= ice_moderate_min)
+                    ice_light_mask = ice_mask & ~(ice_heavy_mask | ice_moderate_mask)
+
+                    try:
+                        ice_grid = self.getGrids(
+                            "Fcst", "IceAccretion", "SFC", grid_tr, mode="First", noDataError=0
+                        )
+                    except Exception:
+                        ice_grid = None
+
+                    if ice_grid is None:
+                        ice_out = np.zeros_like(ice_ppr)
+                    else:
+                        ice_out = np.array(ice_grid, copy=True)
+
+                    if np.any(valid_mask):
+                        ice_out[valid_mask] = ice_ppr[valid_mask]
+                    try:
+                        self.createGrid(
+                            "Fcst",
+                            "IceAccretion",
+                            "SCALAR",
+                            ice_out,
+                            grid_tr,
+                            minAllowedValue=0.0,
+                        )
+                    except Exception as e:
+                        self.log(f"✗ Error saving IceAccretion grid: {e}")
 
             # Create diagnostic grids
             if create_diag:
@@ -774,6 +871,33 @@ class Procedure(SmartScript.SmartScript):
                     return val
                 idx_cache[wx_str] = self.getIndex(wx_str, keys)
                 return idx_cache[wx_str]
+
+            def _combine_wx(existing: str, addition: str) -> str:
+                if existing == no_wx:
+                    return addition
+                parts = existing.split("^")
+                if addition in parts:
+                    return existing
+                return "^".join(parts + [addition])
+
+            def _append_wx(mask: np.ndarray, addition: str):
+                if not np.any(mask):
+                    return
+                add_idx = _idx(addition)
+                no_mask = mask & (updated_wx == no_idx)
+                if np.any(no_mask):
+                    updated_wx[no_mask] = add_idx
+                combo_mask = mask & (updated_wx != no_idx)
+                if not np.any(combo_mask):
+                    return
+                existing_vals = np.unique(updated_wx[combo_mask])
+                for ex_idx in existing_vals:
+                    if ex_idx == no_idx:
+                        continue
+                    ex_str = keys[ex_idx]
+                    combined = _combine_wx(ex_str, addition)
+                    combined_idx = _idx(combined)
+                    updated_wx[(updated_wx == ex_idx) & combo_mask] = combined_idx
 
             # Build masks for decisioning
             if has_thunder is not None:
@@ -921,6 +1045,19 @@ class Procedure(SmartScript.SmartScript):
                 assign_cov(cov_lkly, "Lkly", convective=False)
                 assign_cov(cov_chc, "Chc", convective=False)
                 assign_cov(cov_schc, "SChc", convective=False)
+
+            # --- Ice accretion (freezing spray)
+            if ice_mask is not None and np.any(ice_mask):
+                ice_wx_light = f"{ice_cov}:{ice_type}:-:<NoVis>:"
+                ice_wx_moderate = f"{ice_cov}:{ice_type}:m:<NoVis>:"
+                ice_wx_heavy = f"{ice_cov}:{ice_type}:+:<NoVis>:"
+
+                if ice_light_mask is not None and np.any(ice_light_mask):
+                    _append_wx(ice_light_mask, ice_wx_light)
+                if ice_moderate_mask is not None and np.any(ice_moderate_mask):
+                    _append_wx(ice_moderate_mask, ice_wx_moderate)
+                if ice_heavy_mask is not None and np.any(ice_heavy_mask):
+                    _append_wx(ice_heavy_mask, ice_wx_heavy)
 
             # Save weather grid
             try:
