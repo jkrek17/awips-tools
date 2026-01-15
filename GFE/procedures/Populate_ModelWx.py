@@ -148,8 +148,8 @@ class MarineWeatherGUI:
         self.master = master
         self.callback = callback
         self.master.title("Marine Weather Grid Builder")
-        self.master.geometry("1250x800")
-        self.master.minsize(1100, 750)
+        self.master.geometry("1250x900")
+        self.master.minsize(1100, 820)
 
         self._build_ui()
 
@@ -172,14 +172,13 @@ class MarineWeatherGUI:
         content = gui.TwoColumnLayout(main, padx=20)
         content.pack(fill=tk.BOTH, expand=True)
 
-        # Left column: model selection
+        # Left column: model selection + tuners
         self._build_model_frame(content.left)
+        self._build_mode_frame(content.left)
+        self._build_basic_params_frame(content.left)
 
-        # Right column: tuners/parameters
-        self._build_params_frame(content.right)
-
-        # Build Mode (full width below columns)
-        self._build_mode_frame(main)
+        # Right column: QPF + run/diagnostics
+        self._build_precip_frame(content.right)
 
         # Buttons
         self._build_buttons(main)
@@ -235,7 +234,7 @@ class MarineWeatherGUI:
             justify=tk.LEFT,
         ).pack(anchor=tk.W, pady=(4, 0))
 
-    def _build_params_frame(self, parent):
+    def _build_basic_params_frame(self, parent):
         frame = tk.LabelFrame(parent, text="Analysis Parameters", padx=15, pady=10)
         frame.pack(fill=tk.X, pady=(0, 10))
 
@@ -294,6 +293,10 @@ class MarineWeatherGUI:
             var_type=float,
         )
         self.fog_slider.pack(anchor=tk.W, pady=(10, 0))
+
+    def _build_precip_frame(self, parent):
+        frame = tk.LabelFrame(parent, text="Precipitation Parameters", padx=15, pady=10)
+        frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
 
         # QPF thresholds (inches / 3-hr)
         qpf_defaults = _get_safe_qpf_cfg()
