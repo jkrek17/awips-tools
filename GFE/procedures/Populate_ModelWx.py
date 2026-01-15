@@ -44,8 +44,8 @@ ICE_ACCRETION_CFG = {
     "moderate_min": 0.7,
     "heavy_min": 2.0,
     "max": 5.0,
-    "wx_coverage": "Areas",
-    "wx_type": "FZSPR",
+    "wx_coverage": "Sct",
+    "wx_type": "ZY",
 }
 
 
@@ -1029,8 +1029,8 @@ class Procedure(SmartScript.SmartScript):
                     updated_wx[(updated_wx == ex_idx) & combo_mask] = combined_idx
 
             def _pick_ice_wx(inten: str) -> Optional[str]:
-                coverages = [ice_cov, "Sct", "Iso", "Patchy"]
-                types = [ice_type, "FZSPR", "ZR"]
+                coverages = [ice_cov, "Sct", "Num", "Wide", "Areas", "Iso", "Patchy"]
+                types = [ice_type, "ZY", "FZSPR", "ZR"]
                 for cov in coverages:
                     for typ in types:
                         candidate = f"{cov}:{typ}:{inten}:<NoVis>:"
