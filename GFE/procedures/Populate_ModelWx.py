@@ -393,8 +393,8 @@ class MarineWeatherGUI:
         self.build_mode_group = gui.RadioGroup(
             frame,
             options=[
-                ("Build New", "Build New (Replace All)"),
-                ("Enhance", "Enhance Existing"),
+                ("Build New (Replace All)", "Build New"),
+                ("Enhance Existing", "Enhance"),
             ],
             default="Build New (Replace All)",
         )
