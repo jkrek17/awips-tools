@@ -136,19 +136,6 @@ def _compute_ice_accretion(
     return (wind_ms * da) / denom
 
 
-def _mode_filter(values: np.ndarray, size: int) -> np.ndarray:
-    """Apply a simple neighborhood mode filter to integer grids."""
-    if size <= 1:
-        return values
-
-    def _mode_func(window):
-        vals, counts = np.unique(window.astype(int), return_counts=True)
-        return vals[np.argmax(counts)]
-
-    filtered = ndimage.generic_filter(values, _mode_func, size=size, mode="nearest")
-    return filtered.astype(values.dtype)
-
-
 def _get_safe_smoothing_cfg() -> Dict[str, float]:
     return getattr(
         thresholds,
@@ -956,12 +943,11 @@ class Procedure(SmartScript.SmartScript):
                     conv_idx_thresh,
                 )
 
-            # Determine weather conditions (use raw QPF for decisioning)
-            qpf_calc = qpf_raw if qpf_raw is not None else qpf_in
-            has_precip = qpf_calc > precip_min if qpf_calc is not None else None
+            # Determine weather conditions
+            has_precip = qpf_in > precip_min if qpf_in is not None else None
             has_thunder = (
-                (cape > cape_cfg.get("thunder_min", thunder_thresh)) & (qpf_calc > precip_min)
-                if (cape is not None and qpf_calc is not None)
+                (cape > cape_cfg.get("thunder_min", thunder_thresh)) & (qpf_in > precip_min)
+                if (cape is not None and qpf_in is not None)
                 else None
             )
             has_fog = (vis_nm < fog_thresh) & (rh > fog_rh_min) if vis_nm is not None and rh is not None else None
@@ -1137,8 +1123,8 @@ class Procedure(SmartScript.SmartScript):
                 cov_iso = thunder_mask & ~cov_sct
 
                 severe = thunder_mask & (cape_val > cape_severe)
-                if qpf_calc is not None:
-                    severe |= thunder_mask & (qpf_calc > severe_with_qpf)
+                if qpf_in is not None:
+                    severe |= thunder_mask & (qpf_in > severe_with_qpf)
 
                 # Note: Wx encoding uses '+' intensity for severe; otherwise <NoInten>
                 if np.any(cov_sct & severe):
@@ -1172,9 +1158,9 @@ class Procedure(SmartScript.SmartScript):
                     is_snow = np.zeros(wx_values.shape, dtype=bool)
 
                 if SNOW_QPF_SCALE != 1.0:
-                    qpf_eff = np.where(is_snow, qpf_calc * SNOW_QPF_SCALE, qpf_calc)
+                    qpf_eff = np.where(is_snow, qpf_in * SNOW_QPF_SCALE, qpf_in)
                 else:
-                    qpf_eff = qpf_calc
+                    qpf_eff = qpf_in
 
                 # Thresholds
                 precip_wide = float(qpf_cfg.get("coverage_wide_in", 0.25))
@@ -1264,18 +1250,6 @@ class Procedure(SmartScript.SmartScript):
                     _append_wx(ice_moderate_mask, ice_wx_moderate)
                 if ice_heavy_mask is not None and np.any(ice_heavy_mask) and ice_wx_heavy:
                     _append_wx(ice_heavy_mask, ice_wx_heavy)
-
-            # Smooth Wx output via neighborhood mode filter
-            if smoothing and smoothing > 0:
-                wx_window = 3
-                if smoothing >= 10:
-                    wx_window = 5
-                if wx_window > 1:
-                    filtered = _mode_filter(updated_wx, wx_window)
-                    if active is None:
-                        updated_wx = filtered
-                    else:
-                        updated_wx[active] = filtered[active]
 
             # Save weather grid
             try:
