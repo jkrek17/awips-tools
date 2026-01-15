@@ -983,20 +983,55 @@ class Procedure(SmartScript.SmartScript):
                 updated_wx[fog_mask] = _idx("Patchy:F:<NoInten>:<NoVis>:")
 
             # --- Thunder assignment
-            if np.any(thunder_mask) and cape is not None:
-                cape_val = cape
+            # Thunder coverage now considers BOTH CAPE and QPF:
+            # - High QPF + thunder = more organized/widespread convection
+            # - High CAPE alone = scattered convection potential
+            # - Moderate indicators = isolated
+            if np.any(thunder_mask):
+                cape_val = cape if cape is not None else np.zeros(wx_values.shape)
                 cape_high = float(cape_cfg.get("high", 2000.0))
+                cape_moderate = float(cape_cfg.get("moderate", 1000.0))
                 cape_severe = float(cape_cfg.get("severe_min", 3000.0))
                 severe_with_qpf = float(qpf_cfg.get("severe_with_thunder_in", 1.0))
-
-                cov_sct = thunder_mask & (cape_val > cape_high)
-                cov_iso = thunder_mask & ~cov_sct
+                
+                # QPF thresholds for thunder coverage (reuse precip thresholds)
+                qpf_wide = float(qpf_cfg.get("coverage_wide_in", 0.25))
+                qpf_num = float(qpf_cfg.get("coverage_numerous_in", 0.10))
+                qpf_sct = float(qpf_cfg.get("coverage_scattered_in", 0.03))
+                
+                # Get QPF values (use zeros if not available)
+                qpf_val = qpf_in if qpf_in is not None else np.zeros(wx_values.shape)
+                
+                # Coverage determination using CAPE and QPF together:
+                # Wide: High CAPE AND high QPF (both strong indicators)
+                # Num:  High CAPE OR high QPF (one strong indicator) 
+                # Sct:  Moderate CAPE or moderate QPF
+                # Iso:  Everything else with thunder
+                
+                high_cape = cape_val > cape_high
+                mod_cape = cape_val > cape_moderate
+                high_qpf = qpf_val > qpf_wide
+                mod_qpf = qpf_val > qpf_num
+                low_qpf = qpf_val > qpf_sct
+                
+                cov_wide = thunder_mask & high_cape & high_qpf
+                cov_num = thunder_mask & ~cov_wide & (high_cape | high_qpf)
+                cov_sct = thunder_mask & ~(cov_wide | cov_num) & (mod_cape | mod_qpf)
+                cov_iso = thunder_mask & ~(cov_wide | cov_num | cov_sct)
 
                 severe = thunder_mask & (cape_val > cape_severe)
                 if qpf_in is not None:
                     severe |= thunder_mask & (qpf_in > severe_with_qpf)
 
                 # Note: Wx encoding uses '+' intensity for severe; otherwise <NoInten>
+                if np.any(cov_wide & severe):
+                    updated_wx[cov_wide & severe] = _idx("Wide:T:+:<NoVis>:")
+                if np.any(cov_wide & ~severe):
+                    updated_wx[cov_wide & ~severe] = _idx("Wide:T:<NoInten>:<NoVis>:")
+                if np.any(cov_num & severe):
+                    updated_wx[cov_num & severe] = _idx("Num:T:+:<NoVis>:")
+                if np.any(cov_num & ~severe):
+                    updated_wx[cov_num & ~severe] = _idx("Num:T:<NoInten>:<NoVis>:")
                 if np.any(cov_sct & severe):
                     updated_wx[cov_sct & severe] = _idx("Sct:T:+:<NoVis>:")
                 if np.any(cov_sct & ~severe):
