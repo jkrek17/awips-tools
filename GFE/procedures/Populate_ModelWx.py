@@ -29,6 +29,7 @@ VariableList = []
 # Available atmospheric models
 ATMOSPHERIC_MODELS = ["GFS", "ECMWF", "CMC", "UKMET"]
 FREEZING_C = 0.0
+SNOW_QPF_SCALE = 1.5
 MODEL_WX_TEXTURE = {
     "window": 9,
     "stratiform_max": 0.4,
@@ -798,6 +799,7 @@ class Procedure(SmartScript.SmartScript):
             f"Wx={ice_cov}:{ice_type}, "
             f"area={ice_area_name or 'None'}"
         )
+        self.log(f"Snow QPF scale: {SNOW_QPF_SCALE:.2f}x")
 
         # Get forecast grid times
         gridinfos = self.getGridInfo("Fcst", "Wx", "SFC", timeRange)
@@ -942,10 +944,11 @@ class Procedure(SmartScript.SmartScript):
                 )
 
             # Determine weather conditions
-            has_precip = qpf_in > precip_min if qpf_in is not None else None
+            qpf_detect = qpf_raw if qpf_raw is not None else qpf_in
+            has_precip = qpf_detect > precip_min if qpf_detect is not None else None
             has_thunder = (
-                (cape > cape_cfg.get("thunder_min", thunder_thresh)) & (qpf_in > precip_min)
-                if (cape is not None and qpf_in is not None)
+                (cape > cape_cfg.get("thunder_min", thunder_thresh)) & (qpf_detect > precip_min)
+                if (cape is not None and qpf_detect is not None)
                 else None
             )
             has_fog = (vis_nm < fog_thresh) & (rh > fog_rh_min) if vis_nm is not None and rh is not None else None
@@ -1155,6 +1158,11 @@ class Procedure(SmartScript.SmartScript):
                 else:
                     is_snow = np.zeros(wx_values.shape, dtype=bool)
 
+                if SNOW_QPF_SCALE != 1.0:
+                    qpf_eff = np.where(is_snow, qpf_in * SNOW_QPF_SCALE, qpf_in)
+                else:
+                    qpf_eff = qpf_in
+
                 # Thresholds
                 precip_wide = float(qpf_cfg.get("coverage_wide_in", 0.25))
                 precip_numerous = float(qpf_cfg.get("coverage_numerous_in", 0.10))
@@ -1167,22 +1175,22 @@ class Procedure(SmartScript.SmartScript):
                 precip_light = float(qpf_cfg.get("light_in", 0.05))
 
                 # Intensity masks
-                inten_plus = precip_mask & (qpf_in > precip_heavy)
-                inten_m = precip_mask & ~inten_plus & (qpf_in > precip_moderate)
+                inten_plus = precip_mask & (qpf_eff > precip_heavy)
+                inten_m = precip_mask & ~inten_plus & (qpf_eff > precip_moderate)
                 inten_minus = precip_mask & ~(inten_plus | inten_m)  # keep '-' as default
 
                 # Coverage/probability masks
                 conv_points = precip_mask & is_conv
                 strat_points = precip_mask & ~is_conv
 
-                cov_wide = conv_points & (qpf_in > precip_wide)
-                cov_num = conv_points & ~cov_wide & (qpf_in > precip_numerous)
-                cov_sct = conv_points & ~(cov_wide | cov_num) & (qpf_in > precip_scattered)
+                cov_wide = conv_points & (qpf_eff > precip_wide)
+                cov_num = conv_points & ~cov_wide & (qpf_eff > precip_numerous)
+                cov_sct = conv_points & ~(cov_wide | cov_num) & (qpf_eff > precip_scattered)
                 cov_iso = conv_points & ~(cov_wide | cov_num | cov_sct)
 
-                cov_def = strat_points & (qpf_in > precip_definite)
-                cov_lkly = strat_points & ~cov_def & (qpf_in > precip_likely)
-                cov_chc = strat_points & ~(cov_def | cov_lkly) & (qpf_in > precip_chance)
+                cov_def = strat_points & (qpf_eff > precip_definite)
+                cov_lkly = strat_points & ~cov_def & (qpf_eff > precip_likely)
+                cov_chc = strat_points & ~(cov_def | cov_lkly) & (qpf_eff > precip_chance)
                 cov_schc = strat_points & ~(cov_def | cov_lkly | cov_chc)
 
                 # Pre-build Wx strings with fixed fields
