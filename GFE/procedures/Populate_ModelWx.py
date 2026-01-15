@@ -4,6 +4,21 @@ Marine Weather Grid Builder - Comprehensive Wx grid creation tool.
 Builds weather grids from atmospheric model data including precipitation,
 thunderstorms, and fog. Uses shared utilities for model access.
 
+Features:
+    - Multi-model ensemble support (GFS, ECMWF, CMC, UKMET)
+    - Automatic qualifier determination (convective vs stratiform)
+    - GUI-adjustable QPF thresholds for coverage and probability
+    - Spatial smoothing and configurable thresholds
+    - Diagnostic grid output (QPF, CAPE, Temperature, RH, Visibility)
+    - Optional Fcst Visibility grid updates for fog detection
+
+Data Structures:
+    - Wind grids from Fcst database are tuples: (magnitude_knots, direction_degrees)
+      where wind[0] is the magnitude array in knots and wind[1] is direction in degrees
+    - Temperature is processed in Celsius internally, converted from K or F as needed
+    - QPF is processed in inches, converted from mm as needed
+    - Visibility is processed in nautical miles, converted from meters as needed
+
 Modular rewrite using shared utilities for model aliases and thresholds.
 """
 
@@ -31,83 +46,123 @@ ATMOSPHERIC_MODELS = ["GFS", "ECMWF", "CMC", "UKMET"]
 FREEZING_C = 0.0
 
 
+# ---------------------------------------------------------------------------
+# Configuration helpers with safe fallbacks
+# ---------------------------------------------------------------------------
+# These provide thresholds from the shared module when available, falling back
+# to sensible defaults if the thresholds module is incomplete or unavailable.
+
+_DEFAULT_QPF_CFG: Dict[str, float] = {
+    "minimum_in": 0.01,
+    "light_in": 0.05,
+    "moderate_in": 0.25,
+    "heavy_in": 0.50,
+    "coverage_wide_in": 0.25,
+    "coverage_numerous_in": 0.10,
+    "coverage_scattered_in": 0.03,
+    "prob_definite_in": 0.25,
+    "prob_likely_in": 0.10,
+    "prob_chance_in": 0.03,
+    "severe_with_thunder_in": 1.0,
+}
+
+_DEFAULT_CONVECTION_CFG: Dict[str, float] = {
+    "convective_index_threshold": 2.0,  # Lowered from 7.0 for better convective detection
+}
+
+_DEFAULT_FOG_CFG: Dict[str, float] = {
+    "visibility_default_nm": 2.6,
+    "visibility_min_nm": 0.4,
+    "visibility_max_nm": 5.2,
+    "relative_humidity_min_pct": 85.0,
+}
+
+_DEFAULT_SMOOTHING_CFG: Dict[str, float] = {
+    "recommended": 10.0,
+    "min": 0.0,
+    "max": 20.0,
+    "sigma": 0.7,
+}
+
+_DEFAULT_CLIP_CFG: Dict[str, float] = {
+    "qpf_max_in": 10.0,
+    "cape_max": 8000.0,
+    "temp_min_f": -50.0,
+    "temp_max_f": 150.0,
+    "rh_min_pct": 0.0,
+    "rh_max_pct": 100.0,
+    "vis_min_nm": 0.0,
+    "vis_max_nm": 8.0,
+    "wind_min_kt": 0.0,
+    "wind_max_kt": 150.0,
+    "conv_index_min": 0.0,
+    "conv_index_max": 10.0,
+}
+
+_DEFAULT_CAPE_CFG: Dict[str, float] = {
+    "thunder_min": 500.0,
+    "severe_min": 3000.0,
+    "high": 2000.0,
+    "moderate": 1000.0,
+}
+
+
+def _get_threshold_config(getter_name: str, fallback: Dict[str, float]) -> Dict[str, float]:
+    """
+    Retrieve configuration from thresholds module with fallback.
+    
+    Args:
+        getter_name: Name of the getter function in thresholds module
+        fallback: Default dict to return if getter is unavailable
+        
+    Returns:
+        Configuration dictionary from thresholds module or fallback
+    """
+    try:
+        getter = getattr(thresholds, getter_name, None)
+        if getter is not None and callable(getter):
+            return getter()
+    except (AttributeError, TypeError):
+        pass
+    return fallback.copy()
+
+
 def _get_safe_qpf_cfg() -> Dict[str, float]:
-    return getattr(
-        thresholds,
-        "get_model_wx_qpf_thresholds",
-        lambda: {
-            "minimum_in": 0.01,
-            "light_in": 0.05,
-            "moderate_in": 0.25,
-            "heavy_in": 0.50,
-            "coverage_wide_in": 0.25,
-            "coverage_numerous_in": 0.10,
-            "coverage_scattered_in": 0.03,
-            "prob_definite_in": 0.25,
-            "prob_likely_in": 0.10,
-            "prob_chance_in": 0.03,
-            "severe_with_thunder_in": 1.0,
-        },
-    )()
+    """Get QPF thresholds with safe fallback."""
+    return _get_threshold_config("get_model_wx_qpf_thresholds", _DEFAULT_QPF_CFG)
 
 
 def _get_safe_convection_cfg() -> Dict[str, float]:
-    return getattr(
-        thresholds,
-        "get_model_wx_convection",
-        lambda: {"convective_index_threshold": 7.0},
-    )()
+    """Get convection thresholds with safe fallback."""
+    return _get_threshold_config("get_model_wx_convection", _DEFAULT_CONVECTION_CFG)
 
 
 def _get_safe_fog_cfg() -> Dict[str, float]:
-    return getattr(
-        thresholds,
-        "get_model_wx_fog_thresholds_nm",
-        lambda: {
-            "visibility_default_nm": 2.6,
-            "visibility_min_nm": 0.4,
-            "visibility_max_nm": 5.2,
-            "relative_humidity_min_pct": 85.0,
-        },
-    )()
+    """Get fog thresholds with safe fallback."""
+    return _get_threshold_config("get_model_wx_fog_thresholds_nm", _DEFAULT_FOG_CFG)
 
 
 def _get_safe_smoothing_cfg() -> Dict[str, float]:
-    return getattr(
-        thresholds,
-        "get_model_wx_smoothing_defaults",
-        lambda: {"recommended": 10.0, "min": 0.0, "max": 20.0, "sigma": 0.7},
-    )()
+    """Get smoothing parameters with safe fallback."""
+    return _get_threshold_config("get_model_wx_smoothing_defaults", _DEFAULT_SMOOTHING_CFG)
 
 
 def _get_safe_clip_cfg() -> Dict[str, float]:
-    try:
-        return thresholds.get_diagnostic_clipping()
-    except Exception:
-        return {
-            "qpf_max_in": 10.0,
-            "cape_max": 8000.0,
-            "temp_min_f": -50.0,
-            "temp_max_f": 150.0,
-            "rh_min_pct": 0.0,
-            "rh_max_pct": 100.0,
-            "vis_min_nm": 0.0,
-            "vis_max_nm": 8.0,
-            "wind_min_kt": 0.0,
-            "wind_max_kt": 150.0,
-            "conv_index_min": 0.0,
-            "conv_index_max": 10.0,
-        }
+    """Get diagnostic clipping bounds with safe fallback."""
+    return _get_threshold_config("get_diagnostic_clipping", _DEFAULT_CLIP_CFG)
 
 
 def _get_safe_cape_cfg(thunder_override: float) -> Dict[str, float]:
-    default_cape = {
-        "thunder_min": 500.0,
-        "severe_min": 3000.0,
-        "high": 2000.0,
-        "moderate": 1000.0,
-    }
-    cape_cfg = getattr(thresholds, "get_cape_thresholds", lambda: default_cape)()
+    """
+    Get CAPE thresholds with user override for thunder minimum.
+    
+    Args:
+        thunder_override: User-specified minimum CAPE for thunder detection
+        
+    Returns:
+        CAPE configuration with thunder_min adjusted to user override
+    """
+    cape_cfg = _get_threshold_config("get_cape_thresholds", _DEFAULT_CAPE_CFG)
     cape_cfg["thunder_min"] = max(thunder_override, cape_cfg.get("thunder_min", thunder_override))
     return cape_cfg
 
@@ -381,6 +436,23 @@ class MarineWeatherGUI:
         )
         self.diagnostics_group.pack(anchor=tk.W)
 
+        # Update visibility grid option
+        tk.Label(frame, text="Update Visibility Grid for Fog:", font=("Arial", 10, "bold")).pack(anchor=tk.W, pady=(10, 0))
+        self.update_vis_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(
+            frame,
+            text="Lower Visibility grid where fog is detected",
+            variable=self.update_vis_var,
+        ).pack(anchor=tk.W)
+        tk.Label(
+            frame,
+            text="When enabled, the Fcst Visibility grid will be lowered to the fog threshold where fog is detected.",
+            font=("Arial", 9),
+            fg="gray",
+            wraplength=420,
+            justify=tk.LEFT,
+        ).pack(anchor=tk.W, pady=(2, 0))
+
     def _build_buttons(self, parent):
         self.button_frame = gui.ButtonFrame(
             parent,
@@ -424,6 +496,7 @@ class MarineWeatherGUI:
             "qpf_prob_definite_in": float(self.qpf_prob_definite_slider.get_value()),
             "model_run": self.model_run_group.get_value(),
             "create_diagnostics": self.diagnostics_group.get_value(),
+            "update_vis_for_fog": self.update_vis_var.get(),
         })
         self.master.destroy()
 
@@ -440,56 +513,42 @@ class Procedure(SmartScript.SmartScript):
         self.output_log: List[str] = []
 
     def _show_results_popup(self):
-        """Show results popup with all log output after execution."""
+        """
+        Show results popup with all log output after execution.
+        
+        Creates a Tk window to display execution results. Handles both cases
+        where a Tk root already exists (AWIPS environment) and standalone mode.
+        """
+        output_text = "\n".join(self.output_log) if self.output_log else "No output generated."
+        
+        # Try to find existing Tk root, create one if needed
+        parent = getattr(tk, "_default_root", None)
+        owns_root = False
+        
         try:
-            # Collect all log messages
-            output_text = "\n".join(self.output_log) if self.output_log else "No output generated."
-
-            # Create a closeable window.
-            # In AWIPS/GFE, tk._default_root may exist but not be running a mainloop,
-            # so we use wait_window() to ensure events are processed until close.
-            parent = getattr(tk, "_default_root", None)
-            owns_root = False
-
-            try:
-                if parent is not None and int(parent.winfo_exists()):
-                    win = tk.Toplevel(parent)
-                else:
-                    raise RuntimeError("No valid Tk root available")
-            except Exception:
+            if parent is not None and parent.winfo_exists():
+                win = tk.Toplevel(parent)
+            else:
                 win = tk.Tk()
                 owns_root = True
+        except (tk.TclError, RuntimeError):
+            win = tk.Tk()
+            owns_root = True
 
-            def _close():
-                try:
-                    win.destroy()
-                except Exception:
-                    pass
-
-            win.title("Tool Execution Results")
-            win.protocol("WM_DELETE_WINDOW", _close)
-            win.bind("<Escape>", lambda e: _close())
-
-            # Create popup content
-            gui.ResultsPopup(win, "Tool Execution Results", output_text, readonly=True)
-
-            # Bring to front
-            try:
-                win.lift()
-                win.focus_force()
-            except Exception:
-                pass
-
-            # Run a local event loop until closed.
-            if owns_root:
-                win.mainloop()
-            else:
-                win.wait_window()
-        except Exception as e:
-            self.statusBarMsg(f"Could not create results popup: {e}", "S")
-            print(f"Could not create results popup: {e}")
-            import traceback
-            traceback.print_exc()
+        win.title("Marine Weather Builder - Results")
+        
+        # Use shared ResultsPopup widget
+        gui.ResultsPopup(win, "Execution Results", output_text, readonly=True)
+        
+        # Bring window to front
+        win.lift()
+        win.focus_force()
+        
+        # Run event loop appropriately
+        if owns_root:
+            win.mainloop()
+        else:
+            win.wait_window()
 
     def log(self, message: str):
         """Log message to console and collector."""
@@ -513,6 +572,7 @@ class Procedure(SmartScript.SmartScript):
         fog_thresh = varDict["fog_thresh"]
         model_run = varDict["model_run"]
         create_diag = varDict["create_diagnostics"] == "Yes"
+        update_vis_for_fog = varDict.get("update_vis_for_fog", False)
 
         qpf_cfg = _get_safe_qpf_cfg()
         # Apply user overrides from GUI (if present)
@@ -528,8 +588,8 @@ class Procedure(SmartScript.SmartScript):
             if key in varDict and varDict[key] is not None:
                 try:
                     qpf_cfg[cfg_key] = float(varDict[key])
-                except Exception:
-                    pass
+                except (ValueError, TypeError):
+                    pass  # Invalid value, keep default
 
         # Enforce monotonic ordering to avoid impossible qualifier thresholds.
         # - Convective coverage: scattered <= numerous <= wide
@@ -559,8 +619,8 @@ class Procedure(SmartScript.SmartScript):
                 float(qpf_cfg["coverage_scattered_in"]),
                 float(qpf_cfg["prob_chance_in"]),
             )
-        except Exception:
-            pass
+        except (ValueError, TypeError, KeyError):
+            pass  # Invalid values, keep existing minimum_in
         conv_cfg = _get_safe_convection_cfg()
         cape_cfg = _get_safe_cape_cfg(thunder_thresh)
         cape_cfg["thunder_min"] = max(thunder_thresh, cape_cfg.get("thunder_min", thunder_thresh))
@@ -616,7 +676,8 @@ class Procedure(SmartScript.SmartScript):
                 edit_mask = None
             else:
                 edit_mask = ea.getGrid().getNDArray().astype(bool)
-        except Exception:
+        except (AttributeError, ValueError, RuntimeError):
+            # Edit area unavailable or invalid; process all grid points
             edit_mask = None
 
         for i, gridinfo in enumerate(gridinfos):
@@ -632,7 +693,9 @@ class Procedure(SmartScript.SmartScript):
 
             temp_c, rh, qpf_in, vis_nm, cape = model_data
 
-            # Get forecast wind (in knots)
+            # Get forecast wind from Fcst database
+            # Returns tuple: (magnitude_knots, direction_degrees) where each is a 2D numpy array
+            # wind[0] = magnitude in knots, wind[1] = direction in degrees from north
             wind = self.getGrids("Fcst", "Wind", "SFC", grid_tr, mode="First", noDataError=0)
 
             # Apply smoothing
@@ -666,22 +729,19 @@ class Procedure(SmartScript.SmartScript):
             )
             has_fog = (vis_nm < fog_thresh) & (rh > fog_rh_min) if vis_nm is not None and rh is not None else None
 
-            # If fog is present, lower the Fcst Visibility grid accordingly (in NM)
-            if has_fog is not None and np.any(has_fog):
+            # Optionally update Fcst Visibility grid where fog is detected
+            if update_vis_for_fog and has_fog is not None and np.any(has_fog):
                 try:
                     vis_fcst = self.getGrids("Fcst", "Visibility", "SFC", grid_tr, mode="First", noDataError=0)
                     if vis_fcst is not None:
                         vis_fcst_out = np.copy(vis_fcst)
-                        if edit_mask is not None:
-                            fog_points = has_fog & edit_mask
-                        else:
-                            fog_points = has_fog
+                        fog_points = has_fog & edit_mask if edit_mask is not None else has_fog
                         if np.any(fog_points):
                             vis_fcst_out[fog_points] = np.minimum(vis_fcst_out[fog_points], fog_thresh)
-                        self.createGrid("Fcst", "Visibility", "SCALAR", vis_fcst_out, grid_tr)
-                except Exception:
-                    # Non-fatal; continue building Wx
-                    pass
+                            self.createGrid("Fcst", "Visibility", "SCALAR", vis_fcst_out, grid_tr)
+                            self.log(f"  Updated Visibility grid for fog ({np.sum(fog_points)} points)")
+                except (ValueError, TypeError) as e:
+                    self.log(f"  Warning: Could not update Visibility grid: {e}")
 
             # Get existing Wx grid
             wx_grid = self.getGrids("Fcst", "Wx", "SFC", grid_tr, noDataError=0)
@@ -1196,114 +1256,6 @@ class Procedure(SmartScript.SmartScript):
                 minAllowedValue=conv_clip_min,
                 maxAllowedValue=conv_clip_max,
             )
-
-    def _determine_weather(
-        self,
-        ii,
-        jj,
-        has_precip,
-        has_thunder,
-        has_fog,
-        qpf,
-        cape,
-        temp_c,
-        wind,
-        qpf_cfg,
-        conv_idx_thresh,
-        cape_cfg,
-    ):
-        """Determine weather string for a grid point."""
-        # Thunder
-        if has_thunder is not None and has_thunder[ii, jj]:
-            cape_val = cape[ii, jj] if cape is not None else 0.0
-            cape_high = cape_cfg.get("high", 2000.0)
-            cape_severe = cape_cfg.get("severe_min", 3000.0)
-            if cape_val > cape_high:
-                cov = "Sct"
-            else:
-                cov = "Iso"
-
-            is_severe = cape_val > cape_severe
-            if qpf is not None and qpf_cfg:
-                if qpf[ii, jj] > qpf_cfg.get("severe_with_thunder_in", 1.0):
-                    is_severe = True
-            intensity = "+" if is_severe else "<NoInten>"
-            return f"{cov}:T:{intensity}:<NoVis>:"
-
-        # Precipitation
-        if has_precip is not None and has_precip[ii, jj]:
-            if qpf is None:
-                return None
-            qpf_val = qpf[ii, jj]
-            cape_val = cape[ii, jj] if cape is not None else 0
-
-            # Get wind speed in m/s for convective index
-            wind_ms = 0
-            if wind is not None:
-                # Fcst Wind is (magnitude_knots, direction_degrees)
-                wind_kt = wind[0][ii, jj]
-                try:
-                    wind_ms = thresholds.to_mps(wind_kt)
-                except AttributeError:
-                    # Fallback: knots to m/s (1 kt = 0.514444 m/s)
-                    wind_ms = wind_kt * 0.514444
-
-            conv_idx = (cape_val / 1000.0) + (wind_ms / 20.0)
-            is_conv = conv_idx > conv_idx_thresh
-
-            precip_wide = qpf_cfg.get("coverage_wide_in", 0.25)
-            precip_numerous = qpf_cfg.get("coverage_numerous_in", 0.10)
-            precip_scattered = qpf_cfg.get("coverage_scattered_in", 0.03)
-            precip_definite = qpf_cfg.get("prob_definite_in", 0.25)
-            precip_likely = qpf_cfg.get("prob_likely_in", 0.10)
-            precip_chance = qpf_cfg.get("prob_chance_in", 0.03)
-            precip_heavy = qpf_cfg.get("heavy_in", 0.50)
-            precip_moderate = qpf_cfg.get("moderate_in", 0.25)
-            precip_light = qpf_cfg.get("light_in", 0.05)
-            
-            if is_conv:
-                if qpf_val > precip_wide:
-                    cov = "Wide"
-                elif qpf_val > precip_numerous:
-                    cov = "Num"
-                elif qpf_val > precip_scattered:
-                    cov = "Sct"
-                else:
-                    cov = "Iso"
-            else:
-                if qpf_val > precip_definite:
-                    cov = "Def"
-                elif qpf_val > precip_likely:
-                    cov = "Lkly"
-                elif qpf_val > precip_chance:
-                    cov = "Chc"
-                else:
-                    cov = "SChc"
-
-            # Intensity
-            if qpf_val > precip_heavy:
-                intensity = "+"
-            elif qpf_val > precip_moderate:
-                intensity = "m"
-            elif qpf_val > precip_light:
-                intensity = "-"
-            else:
-                intensity = "-"
-
-            # Type (rain vs snow) - freezing point is 32°F
-            if temp_c is not None and temp_c[ii, jj] < FREEZING_C:
-                wx_type = "SW" if is_conv else "S"
-            else:
-                wx_type = "RW" if is_conv else "R"
-
-            return f"{cov}:{wx_type}:{intensity}:<NoVis>:"
-
-        # Fog
-        if has_fog is not None and has_fog[ii, jj]:
-            return "Patchy:F:<NoInten>:<NoVis>:"
-
-        return None
-
 
 __all__ = ["Procedure"]
 
