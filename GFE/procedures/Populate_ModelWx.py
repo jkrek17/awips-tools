@@ -740,6 +740,20 @@ class Procedure(SmartScript.SmartScript):
         ice_sst_min_f = float(ice_cfg.get("sst_valid_f", 25.0))
         ice_cov = str(ice_cfg.get("wx_coverage", "Areas"))
         ice_type = str(ice_cfg.get("wx_type", "FZSPR"))
+        # Try to honor IceAccretion element bounds if available
+        try:
+            parm = self.getParm("Fcst", "IceAccretion", "SFC")
+            info = parm.getGridInfo()
+            for attr in ("getMaxValue", "maxValue", "getMaxAllowedValue"):
+                getter = getattr(info, attr, None)
+                if callable(getter):
+                    val = getter()
+                    if val is not None:
+                        ice_max = float(val)
+                        break
+            del parm
+        except Exception:
+            pass
         smoothing_cfg = _get_safe_smoothing_cfg()
         sigma_base = smoothing_cfg.get("sigma", 0.7)
         precip_min = float(qpf_cfg.get("minimum_in", 0.01))
@@ -978,6 +992,19 @@ class Procedure(SmartScript.SmartScript):
                     return existing
                 return "^".join(parts + [addition])
 
+            def _normalize_wx_string(wx_str: str) -> str:
+                components = wx_str.split("^")
+                normalized = []
+                for comp in components:
+                    comp = comp.rstrip(":")
+                    fields = comp.split(":")
+                    if len(fields) > 4:
+                        fields = fields[:4]
+                    while len(fields) < 4:
+                        fields.append("<NoVis>")
+                    normalized.append(":".join(fields) + ":")
+                return "^".join(normalized)
+
             def _append_wx(mask: np.ndarray, addition: str):
                 if not np.any(mask):
                     return
@@ -995,7 +1022,7 @@ class Procedure(SmartScript.SmartScript):
                     if ex_idx == no_idx:
                         continue
                     ex_str = keys[ex_idx]
-                    combined = _combine_wx(ex_str, addition)
+                    combined = _normalize_wx_string(_combine_wx(ex_str, addition))
                     combined_idx = _safe_idx(combined)
                     if combined_idx is None:
                         continue
@@ -1013,6 +1040,22 @@ class Procedure(SmartScript.SmartScript):
                             fallback = f"{cov}:{typ}:<NoInten>:<NoVis>:"
                             if _safe_idx(fallback) is not None:
                                 return fallback
+                # Final fallback: pick any existing key with matching type/intensity
+                for key in keys:
+                    parts = key.rstrip(":").split(":")
+                    if len(parts) < 4:
+                        continue
+                    _, wx_type, wx_inten, _ = parts[:4]
+                    if wx_type in {"FZSPR", "ZR", ice_type} and wx_inten == inten:
+                        return ":".join(parts[:4]) + ":"
+                if inten != "<NoInten>":
+                    for key in keys:
+                        parts = key.rstrip(":").split(":")
+                        if len(parts) < 4:
+                            continue
+                        _, wx_type, wx_inten, _ = parts[:4]
+                        if wx_type in {"FZSPR", "ZR", ice_type} and wx_inten == "<NoInten>":
+                            return ":".join(parts[:4]) + ":"
                 return None
 
             # Build masks for decisioning
