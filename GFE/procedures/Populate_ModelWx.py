@@ -29,6 +29,26 @@ VariableList = []
 # Available atmospheric models
 ATMOSPHERIC_MODELS = ["GFS", "ECMWF", "CMC", "UKMET"]
 FREEZING_C = 0.0
+SNOW_QPF_SCALE = 1.5
+MODEL_WX_TEXTURE = {
+    "window": 9,
+    "stratiform_max": 0.4,
+    "convective_min": 0.8,
+    "cape_stratiform_max": 300.0,
+    "cape_convective_min": 800.0,
+    "eps": 1e-6,
+}
+ICE_ACCRETION_CFG = {
+    "seawater_freezing_c": -1.7,
+    "sst_valid_f": 25.0,
+    "light_min": 0.1,
+    "moderate_min": 0.7,
+    "heavy_min": 2.0,
+    "max": 5.0,
+    "edit_area": "OPC_AOR",
+    "wx_coverage": "Sct",
+    "wx_type": "ZY",
+}
 
 
 def _get_safe_qpf_cfg() -> Dict[str, float]:
@@ -59,6 +79,10 @@ def _get_safe_convection_cfg() -> Dict[str, float]:
     )()
 
 
+def _get_safe_texture_cfg() -> Dict[str, float]:
+    return dict(MODEL_WX_TEXTURE)
+
+
 def _get_safe_fog_cfg() -> Dict[str, float]:
     return getattr(
         thresholds,
@@ -70,6 +94,46 @@ def _get_safe_fog_cfg() -> Dict[str, float]:
             "relative_humidity_min_pct": 85.0,
         },
     )()
+
+
+def _compute_qpf_texture(
+    qpf_raw: np.ndarray, window: int, eps: float
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Return (texture, mean) from unsmoothed QPF (higher texture = noisier)."""
+    if window < 3:
+        window = 3
+    if window % 2 == 0:
+        window += 1
+    qpf_clip = np.maximum(qpf_raw, 0.0)
+    mean = ndimage.uniform_filter(qpf_clip, size=window, mode="nearest")
+    mean_sq = ndimage.uniform_filter(qpf_clip * qpf_clip, size=window, mode="nearest")
+    var = np.maximum(mean_sq - mean * mean, 0.0)
+    std = np.sqrt(var)
+    texture = std / (mean + eps)
+    return texture, mean
+
+
+def _compute_ice_accretion(
+    temp_c: np.ndarray,
+    sst_f: np.ndarray,
+    wind_kt: np.ndarray,
+    cfg: Dict[str, float],
+) -> np.ndarray:
+    """Compute ice accretion potential (Overland algorithm)."""
+    tf_c = float(cfg.get("seawater_freezing_c", -1.7))
+    try:
+        sst_c = thresholds.f_to_c(sst_f)
+    except AttributeError:
+        sst_c = (sst_f - 32.0) * 5.0 / 9.0
+    try:
+        wind_ms = thresholds.to_mps(wind_kt)
+    except AttributeError:
+        wind_ms = wind_kt * 0.514444
+    da = tf_c - temp_c
+    dw = sst_c - tf_c
+    denom = 1.0 + (0.3 * dw)
+    denom = np.where(np.abs(denom) < 1e-6, 1e-6, denom)
+    return (wind_ms * da) / denom
 
 
 def _get_safe_smoothing_cfg() -> Dict[str, float]:
@@ -119,7 +183,8 @@ class MarineWeatherGUI:
         self.master = master
         self.callback = callback
         self.master.title("Marine Weather Grid Builder")
-        self.master.geometry("700x900")
+        self.master.geometry("1250x1020")
+        self.master.minsize(1100, 900)
 
         self._build_ui()
 
@@ -139,14 +204,16 @@ class MarineWeatherGUI:
             fg="gray",
         ).pack(pady=(0, 15))
 
-        # Model Selection
-        self._build_model_frame(main)
+        content = gui.TwoColumnLayout(main, padx=20)
+        content.pack(fill=tk.BOTH, expand=True)
 
-        # Build Mode
-        self._build_mode_frame(main)
+        # Left column: model selection + tuners
+        self._build_model_frame(content.left)
+        self._build_mode_frame(content.left)
+        self._build_basic_params_frame(content.left)
 
-        # Parameters
-        self._build_params_frame(main)
+        # Right column: QPF + run/diagnostics
+        self._build_precip_frame(content.right)
 
         # Buttons
         self._build_buttons(main)
@@ -202,7 +269,7 @@ class MarineWeatherGUI:
             justify=tk.LEFT,
         ).pack(anchor=tk.W, pady=(4, 0))
 
-    def _build_params_frame(self, parent):
+    def _build_basic_params_frame(self, parent):
         frame = tk.LabelFrame(parent, text="Analysis Parameters", padx=15, pady=10)
         frame.pack(fill=tk.X, pady=(0, 10))
 
@@ -261,6 +328,10 @@ class MarineWeatherGUI:
             var_type=float,
         )
         self.fog_slider.pack(anchor=tk.W, pady=(10, 0))
+
+    def _build_precip_frame(self, parent):
+        frame = tk.LabelFrame(parent, text="Precipitation Parameters", padx=15, pady=10)
+        frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
 
         # QPF thresholds (inches / 3-hr)
         qpf_defaults = _get_safe_qpf_cfg()
@@ -381,6 +452,62 @@ class MarineWeatherGUI:
         )
         self.diagnostics_group.pack(anchor=tk.W)
 
+        # QPF texture controls
+        texture_defaults = _get_safe_texture_cfg()
+        tk.Label(frame, text="QPF Texture (Uniform vs Noisy):", font=("Arial", 10, "bold")).pack(
+            anchor=tk.W, pady=(12, 0)
+        )
+        tk.Label(
+            frame,
+            text="Lower texture favors stratiform (probability); higher texture favors convective (coverage).",
+            font=("Arial", 9),
+            fg="gray",
+            wraplength=520,
+            justify=tk.LEFT,
+        ).pack(anchor=tk.W, pady=(2, 6))
+        self.texture_window_slider = gui.ThresholdSlider(
+            frame,
+            label="Texture window (odd grid points):",
+            min_value=3,
+            max_value=21,
+            default=float(texture_defaults.get("window", 9)),
+            resolution=2,
+            var_type=int,
+        )
+        self.texture_window_slider.pack(anchor=tk.W)
+        self.texture_strat_slider = gui.ThresholdSlider(
+            frame,
+            label="Stratiform max (uniform):",
+            min_value=0.1,
+            max_value=1.0,
+            default=float(texture_defaults.get("stratiform_max", 0.4)),
+            resolution=0.05,
+            var_type=float,
+        )
+        self.texture_strat_slider.pack(anchor=tk.W, pady=(6, 0))
+        self.texture_conv_slider = gui.ThresholdSlider(
+            frame,
+            label="Convective min (noisy):",
+            min_value=0.2,
+            max_value=1.5,
+            default=float(texture_defaults.get("convective_min", 0.8)),
+            resolution=0.05,
+            var_type=float,
+        )
+        self.texture_conv_slider.pack(anchor=tk.W, pady=(6, 0))
+
+        # Output options
+        self.output_options = gui.CheckboxGroup(
+            frame,
+            title="Output Options",
+            options=[
+                ("COPY_FOG_VIS", "Copy fog into Visibility grid"),
+                ("CREATE_ICE_GRID", "Create IceAccretion grid"),
+            ],
+            default_selected=["COPY_FOG_VIS", "CREATE_ICE_GRID"],
+        )
+        self.output_options.pack(fill=tk.X, pady=(10, 0))
+
     def _build_buttons(self, parent):
         self.button_frame = gui.ButtonFrame(
             parent,
@@ -424,6 +551,11 @@ class MarineWeatherGUI:
             "qpf_prob_definite_in": float(self.qpf_prob_definite_slider.get_value()),
             "model_run": self.model_run_group.get_value(),
             "create_diagnostics": self.diagnostics_group.get_value(),
+            "texture_window": int(self.texture_window_slider.get_value()),
+            "texture_strat_max": float(self.texture_strat_slider.get_value()),
+            "texture_conv_min": float(self.texture_conv_slider.get_value()),
+            "copy_fog_visibility": self.output_options.get_value("COPY_FOG_VIS"),
+            "create_ice_grid": self.output_options.get_value("CREATE_ICE_GRID"),
         })
         self.master.destroy()
 
@@ -513,6 +645,8 @@ class Procedure(SmartScript.SmartScript):
         fog_thresh = varDict["fog_thresh"]
         model_run = varDict["model_run"]
         create_diag = varDict["create_diagnostics"] == "Yes"
+        copy_fog_visibility = bool(varDict.get("copy_fog_visibility", True))
+        create_ice_grid = bool(varDict.get("create_ice_grid", True))
 
         qpf_cfg = _get_safe_qpf_cfg()
         # Apply user overrides from GUI (if present)
@@ -562,6 +696,8 @@ class Procedure(SmartScript.SmartScript):
         except Exception:
             pass
         conv_cfg = _get_safe_convection_cfg()
+        texture_cfg = _get_safe_texture_cfg()
+        ice_cfg = dict(ICE_ACCRETION_CFG)
         cape_cfg = _get_safe_cape_cfg(thunder_thresh)
         cape_cfg["thunder_min"] = max(thunder_thresh, cape_cfg.get("thunder_min", thunder_thresh))
         fog_cfg = _get_safe_fog_cfg()
@@ -570,6 +706,57 @@ class Procedure(SmartScript.SmartScript):
             getattr(thresholds, "FOG_THRESHOLDS", {}).get("relative_humidity_min", 85.0),
         )
         conv_idx_thresh = conv_cfg.get("convective_index_threshold", 7.0)
+        texture_window = int(texture_cfg.get("window", 9))
+        texture_strat_max = float(texture_cfg.get("stratiform_max", 0.4))
+        texture_conv_min = float(texture_cfg.get("convective_min", 0.8))
+        cape_strat_max = float(texture_cfg.get("cape_stratiform_max", 300.0))
+        cape_conv_min = float(texture_cfg.get("cape_convective_min", 800.0))
+        texture_eps = float(texture_cfg.get("eps", 1e-6))
+        if varDict.get("texture_window") is not None:
+            try:
+                texture_window = int(varDict["texture_window"])
+            except Exception:
+                pass
+        if varDict.get("texture_strat_max") is not None:
+            try:
+                texture_strat_max = float(varDict["texture_strat_max"])
+            except Exception:
+                pass
+        if varDict.get("texture_conv_min") is not None:
+            try:
+                texture_conv_min = float(varDict["texture_conv_min"])
+            except Exception:
+                pass
+        if texture_window < 3:
+            texture_window = 3
+        if texture_window % 2 == 0:
+            texture_window += 1
+        if texture_strat_max < 0.0:
+            texture_strat_max = 0.0
+        if texture_conv_min < texture_strat_max:
+            texture_conv_min = texture_strat_max
+        ice_light_min = float(ice_cfg.get("light_min", 0.1))
+        ice_moderate_min = float(ice_cfg.get("moderate_min", 0.7))
+        ice_heavy_min = float(ice_cfg.get("heavy_min", 2.0))
+        ice_max = float(ice_cfg.get("max", 5.0))
+        ice_sst_min_f = float(ice_cfg.get("sst_valid_f", 25.0))
+        ice_area_name = str(ice_cfg.get("edit_area", "OPC_AOR"))
+        ice_cov = str(ice_cfg.get("wx_coverage", "Sct"))
+        ice_type = str(ice_cfg.get("wx_type", "ZY"))
+        # Try to honor IceAccretion element bounds if available
+        try:
+            parm = self.getParm("Fcst", "IceAccretion", "SFC")
+            info = parm.getGridInfo()
+            for attr in ("getMaxValue", "maxValue", "getMaxAllowedValue"):
+                getter = getattr(info, attr, None)
+                if callable(getter):
+                    val = getter()
+                    if val is not None:
+                        ice_max = float(val)
+                        break
+            del parm
+        except Exception:
+            pass
         smoothing_cfg = _get_safe_smoothing_cfg()
         sigma_base = smoothing_cfg.get("sigma", 0.7)
         precip_min = float(qpf_cfg.get("minimum_in", 0.01))
@@ -595,6 +782,24 @@ class Procedure(SmartScript.SmartScript):
             f"{qpf_cfg.get('prob_likely_in', 0.10):.2f}/"
             f"{qpf_cfg.get('prob_definite_in', 0.25):.2f}"
         )
+        self.log(
+            "QPF texture: "
+            f"window={texture_window}, "
+            f"strat<= {texture_strat_max:.2f}, "
+            f"conv>= {texture_conv_min:.2f}, "
+            f"CAPE tie-break <= {cape_strat_max:.0f} / >= {cape_conv_min:.0f} J/kg"
+        )
+        self.log(
+            "Ice accretion: "
+            f"SST>{ice_sst_min_f:.0f}F, "
+            f"light>={ice_light_min:.2f}, "
+            f"moderate>={ice_moderate_min:.2f}, "
+            f"heavy>={ice_heavy_min:.2f}, "
+            f"max={ice_max:.2f}, "
+            f"Wx={ice_cov}:{ice_type}, "
+            f"area={ice_area_name or 'None'}"
+        )
+        self.log(f"Snow QPF scale: {SNOW_QPF_SCALE:.2f}x")
 
         # Get forecast grid times
         gridinfos = self.getGridInfo("Fcst", "Wx", "SFC", timeRange)
@@ -619,6 +824,24 @@ class Procedure(SmartScript.SmartScript):
         except Exception:
             edit_mask = None
 
+        # Ice accretion area mask (e.g., OPC_AOR) to avoid inland lakes
+        ice_area_mask = None
+        if ice_area_name:
+            try:
+                ice_area = self.getEditArea(ice_area_name)
+                if ice_area is not None:
+                    ice_area_mask = ice_area.getGrid().getNDArray().astype(bool)
+                else:
+                    ice_area_mask = None
+            except Exception:
+                try:
+                    ice_area = self.getEditArea(ice_area_name)
+                    ice_area_mask = self.encodeEditArea(ice_area) if ice_area is not None else None
+                except Exception:
+                    ice_area_mask = None
+            if ice_area_mask is None:
+                self.log(f"⚠ Ice accretion edit area '{ice_area_name}' not available; no mask applied")
+
         for i, gridinfo in enumerate(gridinfos):
             grid_tr = gridinfo.gridTime()
             self.statusBarMsg(f"Processing {i+1}/{total_periods}", "R")
@@ -631,17 +854,80 @@ class Procedure(SmartScript.SmartScript):
                 continue
 
             temp_c, rh, qpf_in, vis_nm, cape = model_data
+            qpf_raw = np.array(qpf_in, copy=True) if qpf_in is not None else None
 
             # Get forecast wind (in knots)
             wind = self.getGrids("Fcst", "Wind", "SFC", grid_tr, mode="First", noDataError=0)
+            # Get forecast SST (in F) for ice accretion
+            sst_f = self.getGrids("Fcst", "SST", "SFC", grid_tr, mode="First", noDataError=0)
 
-            # Apply smoothing
+            # Apply smoothing (QPF texture is computed from unsmoothed QPF)
             if smoothing > 0:
                 sigma = smoothing * sigma_base
                 if qpf_in is not None:
                     qpf_in = ndimage.gaussian_filter(qpf_in, sigma=sigma, mode="nearest")
                 if vis_nm is not None:
                     vis_nm = ndimage.gaussian_filter(vis_nm, sigma=sigma, mode="nearest")
+
+            qpf_texture = None
+            if qpf_raw is not None:
+                try:
+                    qpf_texture, _ = _compute_qpf_texture(qpf_raw, texture_window, texture_eps)
+                except Exception:
+                    qpf_texture = None
+
+            ice_ppr = None
+            ice_mask = None
+            ice_light_mask = None
+            ice_moderate_mask = None
+            ice_heavy_mask = None
+            if sst_f is not None and temp_c is not None and wind is not None:
+                try:
+                    ice_ppr = _compute_ice_accretion(temp_c, sst_f, wind[0], ice_cfg)
+                    ice_ppr = np.maximum(ice_ppr, 0.0)
+                except Exception:
+                    ice_ppr = None
+
+                if ice_ppr is not None:
+                    valid_mask = sst_f > ice_sst_min_f
+                    if ice_area_mask is not None:
+                        valid_mask &= ice_area_mask
+                    if edit_mask is not None:
+                        valid_mask &= edit_mask
+
+                    ice_mask = valid_mask & (ice_ppr >= ice_light_min)
+                    ice_heavy_mask = ice_mask & (ice_ppr >= ice_heavy_min)
+                    ice_moderate_mask = ice_mask & ~ice_heavy_mask & (ice_ppr >= ice_moderate_min)
+                    ice_light_mask = ice_mask & ~(ice_heavy_mask | ice_moderate_mask)
+
+                    if create_ice_grid:
+                        try:
+                            ice_grid = self.getGrids(
+                                "Fcst", "IceAccretion", "SFC", grid_tr, mode="First", noDataError=0
+                            )
+                        except Exception:
+                            ice_grid = None
+
+                        if ice_grid is None:
+                            ice_out = np.zeros_like(ice_ppr)
+                        else:
+                            ice_out = np.array(ice_grid, copy=True)
+
+                        if np.any(valid_mask):
+                            ice_out[valid_mask] = np.minimum(ice_ppr[valid_mask], ice_max)
+                        ice_out = np.clip(ice_out, 0.0, ice_max)
+                        try:
+                            self.createGrid(
+                                "Fcst",
+                                "IceAccretion",
+                                "SCALAR",
+                                ice_out,
+                                grid_tr,
+                                minAllowedValue=0.0,
+                                maxAllowedValue=ice_max,
+                            )
+                        except Exception as e:
+                            self.log(f"✗ Error saving IceAccretion grid: {e}")
 
             # Create diagnostic grids
             if create_diag:
@@ -667,7 +953,7 @@ class Procedure(SmartScript.SmartScript):
             has_fog = (vis_nm < fog_thresh) & (rh > fog_rh_min) if vis_nm is not None and rh is not None else None
 
             # If fog is present, lower the Fcst Visibility grid accordingly (in NM)
-            if has_fog is not None and np.any(has_fog):
+            if copy_fog_visibility and has_fog is not None and np.any(has_fog):
                 try:
                     vis_fcst = self.getGrids("Fcst", "Visibility", "SFC", grid_tr, mode="First", noDataError=0)
                     if vis_fcst is not None:
@@ -716,6 +1002,86 @@ class Procedure(SmartScript.SmartScript):
                     return val
                 idx_cache[wx_str] = self.getIndex(wx_str, keys)
                 return idx_cache[wx_str]
+
+            def _safe_idx(wx_str: str) -> Optional[int]:
+                try:
+                    return _idx(wx_str)
+                except Exception:
+                    return None
+
+            def _combine_wx(existing: str, addition: str) -> str:
+                if existing == no_wx:
+                    return addition
+                parts = existing.split("^")
+                if addition in parts:
+                    return existing
+                return "^".join(parts + [addition])
+
+            def _normalize_wx_string(wx_str: str) -> str:
+                components = wx_str.split("^")
+                normalized = []
+                for comp in components:
+                    comp = comp.rstrip(":")
+                    fields = comp.split(":")
+                    if len(fields) > 4:
+                        fields = fields[:4]
+                    while len(fields) < 4:
+                        fields.append("<NoVis>")
+                    normalized.append(":".join(fields) + ":")
+                return "^".join(normalized)
+
+            def _append_wx(mask: np.ndarray, addition: str):
+                if not np.any(mask):
+                    return
+                add_idx = _safe_idx(addition)
+                if add_idx is None:
+                    return
+                no_mask = mask & (updated_wx == no_idx)
+                if np.any(no_mask):
+                    updated_wx[no_mask] = add_idx
+                combo_mask = mask & (updated_wx != no_idx)
+                if not np.any(combo_mask):
+                    return
+                existing_vals = np.unique(updated_wx[combo_mask])
+                for ex_idx in existing_vals:
+                    if ex_idx == no_idx:
+                        continue
+                    ex_str = keys[ex_idx]
+                    combined = _normalize_wx_string(_combine_wx(ex_str, addition))
+                    combined_idx = _safe_idx(combined)
+                    if combined_idx is None:
+                        continue
+                    updated_wx[(updated_wx == ex_idx) & combo_mask] = combined_idx
+
+            def _pick_ice_wx(inten: str) -> Optional[str]:
+                coverages = [ice_cov, "Sct", "Num", "Wide", "Areas", "Iso", "Patchy"]
+                types = [ice_type, "ZY", "FZSPR", "ZR"]
+                for cov in coverages:
+                    for typ in types:
+                        candidate = f"{cov}:{typ}:{inten}:<NoVis>:"
+                        if _safe_idx(candidate) is not None:
+                            return candidate
+                        if inten != "<NoInten>":
+                            fallback = f"{cov}:{typ}:<NoInten>:<NoVis>:"
+                            if _safe_idx(fallback) is not None:
+                                return fallback
+                # Final fallback: pick any existing key with matching type/intensity
+                for key in keys:
+                    parts = key.rstrip(":").split(":")
+                    if len(parts) < 4:
+                        continue
+                    _, wx_type, wx_inten, _ = parts[:4]
+                    if wx_type in {"FZSPR", "ZR", ice_type} and wx_inten == inten:
+                        return ":".join(parts[:4]) + ":"
+                if inten != "<NoInten>":
+                    for key in keys:
+                        parts = key.rstrip(":").split(":")
+                        if len(parts) < 4:
+                            continue
+                        _, wx_type, wx_inten, _ = parts[:4]
+                        if wx_type in {"FZSPR", "ZR", ice_type} and wx_inten == "<NoInten>":
+                            return ":".join(parts[:4]) + ":"
+                return None
 
             # Build masks for decisioning
             if has_thunder is not None:
@@ -772,28 +1138,29 @@ class Procedure(SmartScript.SmartScript):
 
             # --- Precip assignment (rain/snow + convective coverage/prob + intensity)
             if np.any(precip_mask) and qpf_in is not None:
-                # Compute convective index where possible
-                if cape is not None and wind is not None:
-                    # Wind is (magnitude_knots, direction_degrees)
-                    wind_mag_kt = wind[0]
-                    try:
-                        wind_ms = thresholds.to_mps(wind_mag_kt)
-                    except AttributeError:
-                        wind_ms = wind_mag_kt * 0.514444
-                    conv_idx = (cape / 1000.0) + (wind_ms / 20.0)
+                # Convective vs stratiform using QPF texture + CAPE
+                if qpf_texture is not None:
+                    is_conv = qpf_texture >= texture_conv_min
+                    is_conv = np.where(qpf_texture <= texture_strat_max, False, is_conv)
+                    if cape is not None:
+                        is_conv = np.where(cape <= cape_strat_max, False, is_conv)
+                        is_conv = np.where(cape >= cape_conv_min, True, is_conv)
                 else:
-                    conv_idx = None
-
-                if conv_idx is None:
-                    is_conv = np.zeros(wx_values.shape, dtype=bool)
-                else:
-                    is_conv = conv_idx > conv_idx_thresh
+                    if cape is not None:
+                        is_conv = cape >= cape_conv_min
+                    else:
+                        is_conv = np.zeros(wx_values.shape, dtype=bool)
 
                 # Precip type by temperature (Celsius)
                 if temp_c is not None:
                     is_snow = temp_c < FREEZING_C
                 else:
                     is_snow = np.zeros(wx_values.shape, dtype=bool)
+
+                if SNOW_QPF_SCALE != 1.0:
+                    qpf_eff = np.where(is_snow, qpf_in * SNOW_QPF_SCALE, qpf_in)
+                else:
+                    qpf_eff = qpf_in
 
                 # Thresholds
                 precip_wide = float(qpf_cfg.get("coverage_wide_in", 0.25))
@@ -807,22 +1174,22 @@ class Procedure(SmartScript.SmartScript):
                 precip_light = float(qpf_cfg.get("light_in", 0.05))
 
                 # Intensity masks
-                inten_plus = precip_mask & (qpf_in > precip_heavy)
-                inten_m = precip_mask & ~inten_plus & (qpf_in > precip_moderate)
+                inten_plus = precip_mask & (qpf_eff > precip_heavy)
+                inten_m = precip_mask & ~inten_plus & (qpf_eff > precip_moderate)
                 inten_minus = precip_mask & ~(inten_plus | inten_m)  # keep '-' as default
 
                 # Coverage/probability masks
                 conv_points = precip_mask & is_conv
                 strat_points = precip_mask & ~is_conv
 
-                cov_wide = conv_points & (qpf_in > precip_wide)
-                cov_num = conv_points & ~cov_wide & (qpf_in > precip_numerous)
-                cov_sct = conv_points & ~(cov_wide | cov_num) & (qpf_in > precip_scattered)
+                cov_wide = conv_points & (qpf_eff > precip_wide)
+                cov_num = conv_points & ~cov_wide & (qpf_eff > precip_numerous)
+                cov_sct = conv_points & ~(cov_wide | cov_num) & (qpf_eff > precip_scattered)
                 cov_iso = conv_points & ~(cov_wide | cov_num | cov_sct)
 
-                cov_def = strat_points & (qpf_in > precip_definite)
-                cov_lkly = strat_points & ~cov_def & (qpf_in > precip_likely)
-                cov_chc = strat_points & ~(cov_def | cov_lkly) & (qpf_in > precip_chance)
+                cov_def = strat_points & (qpf_eff > precip_definite)
+                cov_lkly = strat_points & ~cov_def & (qpf_eff > precip_likely)
+                cov_chc = strat_points & ~(cov_def | cov_lkly) & (qpf_eff > precip_chance)
                 cov_schc = strat_points & ~(cov_def | cov_lkly | cov_chc)
 
                 # Pre-build Wx strings with fixed fields
@@ -867,6 +1234,22 @@ class Procedure(SmartScript.SmartScript):
                 assign_cov(cov_lkly, "Lkly", convective=False)
                 assign_cov(cov_chc, "Chc", convective=False)
                 assign_cov(cov_schc, "SChc", convective=False)
+
+            # --- Ice accretion (freezing spray)
+            if ice_mask is not None and np.any(ice_mask):
+                ice_wx_light = _pick_ice_wx("-")
+                ice_wx_moderate = _pick_ice_wx("m")
+                ice_wx_heavy = _pick_ice_wx("+")
+
+                if not any([ice_wx_light, ice_wx_moderate, ice_wx_heavy]):
+                    self.log("⚠ No valid Wx key found for ice accretion; skipping Wx add")
+
+                if ice_light_mask is not None and np.any(ice_light_mask) and ice_wx_light:
+                    _append_wx(ice_light_mask, ice_wx_light)
+                if ice_moderate_mask is not None and np.any(ice_moderate_mask) and ice_wx_moderate:
+                    _append_wx(ice_moderate_mask, ice_wx_moderate)
+                if ice_heavy_mask is not None and np.any(ice_heavy_mask) and ice_wx_heavy:
+                    _append_wx(ice_heavy_mask, ice_wx_heavy)
 
             # Save weather grid
             try:
