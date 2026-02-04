@@ -421,6 +421,13 @@ class Procedure(SmartScript.SmartScript):
             self._process_summary(summary, domain, grid_tr, config)
             self._process_ensemble_stats(storm_stats, domain, grid_tr, config)
 
+            # Create ensemble spread grids
+            if config["output_spread"] and ensemble_wind:
+                wind_thresholds = [34.0, 48.0, 64.0]  # Gale, Storm, Hurricane
+                self._create_ensemble_spread_grids(
+                    ensemble_wind, "WindSpeed", grid_tr, thresholds=wind_thresholds
+                )
+
     def _get_grid_coordinates(self) -> Tuple[np.ndarray, np.ndarray]:
         """Get lat/lon grids from GFE."""
         # Get a reference grid to determine shape
@@ -518,6 +525,7 @@ class Procedure(SmartScript.SmartScript):
         # Create output grids
         if config["output_storm_mask"]:
             self._create_storm_mask_grid(summary, grid_tr)
+            self._create_storm_center_grid(summary, grid_tr)
 
         if config["output_risk"]:
             self._create_risk_grid(summary, grid_tr)
@@ -545,7 +553,7 @@ class Procedure(SmartScript.SmartScript):
         mask = self.newGrid(0.0)
 
         for i, storm in enumerate(summary.storms):
-            if storm.extent_mask is not None:
+            if storm.extent_mask is not None and storm.extent_mask.shape == mask.shape:
                 # Add storm ID to mask (1, 2, 3, etc.)
                 mask = np.where(storm.extent_mask, float(i + 1), mask)
 
@@ -561,7 +569,7 @@ class Procedure(SmartScript.SmartScript):
 
         # Add storm-specific risk
         for storm in summary.storms:
-            if storm.extent_mask is not None:
+            if storm.extent_mask is not None and storm.extent_mask.shape == risk.shape:
                 storm_risk = base_risk
                 if storm.max_wind:
                     if storm.max_wind >= 64:
@@ -577,6 +585,74 @@ class Procedure(SmartScript.SmartScript):
         self.createGrid("Fcst", "MarineRisk", "SCALAR", risk, grid_tr,
                        minAllowedValue=0.0, maxAllowedValue=10.0,
                        units="index")
+
+    def _create_ensemble_spread_grids(
+        self,
+        ensemble_fields: List[np.ndarray],
+        field_name: str,
+        grid_tr,
+        thresholds: Optional[List[float]] = None
+    ):
+        """
+        Create ensemble spread and probability grids.
+        
+        Args:
+            ensemble_fields: List of 2D arrays from ensemble members.
+            field_name: Base name for output grids (e.g., 'WindSpeed').
+            grid_tr: Time range for grid creation.
+            thresholds: List of thresholds for probability grids.
+        """
+        if len(ensemble_fields) < 2:
+            return
+
+        stack = np.stack(ensemble_fields, axis=0)
+        n_members = stack.shape[0]
+
+        # Ensemble mean
+        ens_mean = np.mean(stack, axis=0)
+        self.createGrid("Fcst", f"{field_name}EnsMean", "SCALAR", ens_mean, grid_tr,
+                       minAllowedValue=0.0, maxAllowedValue=150.0)
+
+        # Ensemble spread (standard deviation)
+        ens_spread = np.std(stack, axis=0)
+        self.createGrid("Fcst", f"{field_name}Spread", "SCALAR", ens_spread, grid_tr,
+                       minAllowedValue=0.0, maxAllowedValue=50.0)
+
+        # Ensemble range (max - min)
+        ens_range = np.max(stack, axis=0) - np.min(stack, axis=0)
+        self.createGrid("Fcst", f"{field_name}Range", "SCALAR", ens_range, grid_tr,
+                       minAllowedValue=0.0, maxAllowedValue=75.0)
+
+        # Probability of exceedance grids
+        if thresholds:
+            for thresh in thresholds:
+                prob = np.mean(stack >= thresh, axis=0) * 100.0  # Percentage
+                thresh_name = f"{field_name}Prob{int(thresh)}"
+                self.createGrid("Fcst", thresh_name, "SCALAR", prob, grid_tr,
+                               minAllowedValue=0.0, maxAllowedValue=100.0,
+                               units="%")
+
+    def _create_storm_center_grid(self, summary: MultiStormSummary, grid_tr):
+        """
+        Create grid marking storm centers with intensity.
+        
+        Grid value at storm center = max wind (or 1000 - pressure).
+        """
+        centers = self.newGrid(0.0)
+        
+        for storm in summary.storms:
+            i, j = storm.grid_indices
+            if 0 <= i < centers.shape[0] and 0 <= j < centers.shape[1]:
+                # Use max wind as intensity marker, or pressure anomaly
+                if storm.max_wind:
+                    centers[i, j] = storm.max_wind
+                elif storm.min_pressure:
+                    centers[i, j] = 1020.0 - storm.min_pressure  # Anomaly from standard
+                else:
+                    centers[i, j] = 10.0  # Just mark presence
+        
+        self.createGrid("Fcst", "StormCenters", "SCALAR", centers, grid_tr,
+                       minAllowedValue=0.0, maxAllowedValue=150.0)
 
     def _generate_summary(self):
         """Generate final summary output."""
