@@ -119,7 +119,11 @@ class MarineWeatherGUI:
         self.master = master
         self.callback = callback
         self.master.title("Marine Weather Grid Builder")
-        self.master.geometry("700x900")
+        # Default to a wider, shorter layout so the full form fits on typical screens.
+        # (The window remains resizable for smaller/larger displays.)
+        self.master.geometry("1100x720")
+        self.master.minsize(950, 650)
+        self.master.resizable(True, True)
 
         self._build_ui()
 
@@ -127,28 +131,90 @@ class MarineWeatherGUI:
         main = tk.Frame(self.master, padx=15, pady=15)
         main.pack(fill=tk.BOTH, expand=True)
 
-        # Title
-        tk.Label(main, text="Marine Weather Grid Builder",
-                 font=("Arial", 16, "bold")).pack(pady=(0, 5))
-        tk.Label(main, text="Precipitation • Thunderstorms • Fog",
-                 font=("Arial", 10), fg="gray").pack(pady=(0, 5))
+        # Title/header (kept at top, spanning full width)
+        header = tk.Frame(main)
+        header.pack(fill=tk.X)
         tk.Label(
-            main,
+            header,
+            text="Marine Weather Grid Builder",
+            font=("Arial", 16, "bold"),
+        ).pack(pady=(0, 5))
+        tk.Label(
+            header,
+            text="Precipitation • Thunderstorms • Fog",
+            font=("Arial", 10),
+            fg="gray",
+        ).pack(pady=(0, 5))
+        tk.Label(
+            header,
             text="Pick 1–4 models, choose build mode, set thresholds, then Run.",
             font=("Arial", 9),
             fg="gray",
         ).pack(pady=(0, 15))
 
-        # Model Selection
-        self._build_model_frame(main)
+        # Scrollable body: keeps buttons visible while allowing overflow content
+        # to scroll (useful on smaller displays).
+        scroll_container = tk.Frame(main)
+        scroll_container.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
 
-        # Build Mode
-        self._build_mode_frame(main)
+        canvas = tk.Canvas(scroll_container, highlightthickness=0)
+        vscroll = tk.Scrollbar(scroll_container, orient=tk.VERTICAL, command=canvas.yview)
+        canvas.configure(yscrollcommand=vscroll.set)
 
-        # Parameters
-        self._build_params_frame(main)
+        vscroll.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        # Buttons
+        scrollable = tk.Frame(canvas)
+        window_id = canvas.create_window((0, 0), window=scrollable, anchor="nw")
+
+        def _on_frame_configure(_event=None):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def _on_canvas_configure(event):
+            # Keep the embedded frame the same width as the canvas so the
+            # two-column layout expands and wraps naturally.
+            canvas.itemconfigure(window_id, width=event.width)
+
+        scrollable.bind("<Configure>", _on_frame_configure)
+        canvas.bind("<Configure>", _on_canvas_configure)
+
+        # Enable mouse wheel scrolling when the cursor is over the canvas.
+        def _on_mousewheel(event):
+            # Windows/macOS use event.delta; many Linux builds use Button-4/5.
+            if getattr(event, "num", None) == 4:
+                canvas.yview_scroll(-1, "units")
+            elif getattr(event, "num", None) == 5:
+                canvas.yview_scroll(1, "units")
+            else:
+                delta = int(getattr(event, "delta", 0))
+                if delta:
+                    canvas.yview_scroll(int(-1 * (delta / 120)), "units")
+
+        def _bind_wheel():
+            canvas.bind_all("<MouseWheel>", _on_mousewheel)
+            canvas.bind_all("<Button-4>", _on_mousewheel)
+            canvas.bind_all("<Button-5>", _on_mousewheel)
+
+        def _unbind_wheel():
+            canvas.unbind_all("<MouseWheel>")
+            canvas.unbind_all("<Button-4>")
+            canvas.unbind_all("<Button-5>")
+
+        canvas.bind("<Enter>", lambda _e: _bind_wheel())
+        canvas.bind("<Leave>", lambda _e: _unbind_wheel())
+
+        # Main content: two-column layout to reduce vertical scrolling.
+        body = gui.TwoColumnLayout(scrollable, padx=18)
+        body.pack(fill=tk.BOTH, expand=True)
+
+        # Left column: model selection + build mode
+        self._build_model_frame(body.left)
+        self._build_mode_frame(body.left)
+
+        # Right column: parameters and thresholds
+        self._build_params_frame(body.right)
+
+        # Buttons (bottom, spanning full width)
         self._build_buttons(main)
 
         self._update_selection()
