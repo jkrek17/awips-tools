@@ -107,13 +107,23 @@ class Tool(SmartScript.SmartScript):
 
         self.log(f"Max SST: {np.max(sst_f):.1f}F, Air Temp: {np.max(temp_f):.1f}F, Wind: {np.max(Wind[0]):.1f}kt")
 
-        # Create mask for valid water areas (SST > 25F means valid data)
-        try:
-            run_edit_area = self.getEditArea("OPC_AOR")
-            run_mask = self.encodeEditArea(run_edit_area)
-        except Exception:
+        # Create mask for valid water areas using AOR edit area
+        # OPC_AOR defines the area of responsibility; fall back to "Water" or all points
+        run_mask = None
+        for edit_area_name in ("OPC_AOR", "Water"):
+            try:
+                run_edit_area = self.getEditArea(edit_area_name)
+                run_mask = self.encodeEditArea(run_edit_area)
+                self.log(f"Using edit area: {edit_area_name}")
+                break
+            except (KeyError, ValueError, RuntimeError):
+                continue
+        
+        if run_mask is None:
+            self.log("WARNING: No AOR edit area found (OPC_AOR or Water), using SST > 25F only")
             run_mask = np.ones_like(sst_f, dtype=bool)
 
+        # SST > 25F indicates valid water data (default/missing values are 25F)
         valid_mask = run_mask & (sst_f > 25)
 
         # Get wind magnitude and convert to m/s
@@ -128,9 +138,11 @@ class Tool(SmartScript.SmartScript):
 
         ppr = (mag_ms * da) / (1.0 + 0.3 * dw)
 
-        # Apply result to masked areas
+        # Apply calculated values only within the valid mask
+        # This matches legacy behavior - only updates masked areas
         IceAccretion[valid_mask] = ppr[valid_mask]
 
+        self.log(f"Applied to {np.sum(valid_mask)} grid points within AOR")
         self.log("Completed Populate_IceAccretion")
         return IceAccretion
 
