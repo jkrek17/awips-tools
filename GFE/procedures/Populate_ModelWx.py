@@ -22,6 +22,7 @@ import grid_fetch
 import gui
 import model_aliases
 import thresholds
+import TimeRange
 
 MenuItems = ["Populate"]
 VariableList = []
@@ -29,6 +30,10 @@ VariableList = []
 # Available atmospheric models
 ATMOSPHERIC_MODELS = ["GFS", "ECMWF", "CMC", "UKMET"]
 FREEZING_C = 0.0
+
+# Ice accretion
+SST_MODELS = ["RTOFS", "Fcst"]
+ICE_ACCRETION_TF_CELSIUS = -1.7  # Freezing point of sea water (Celsius)
 
 
 def _get_safe_qpf_cfg() -> Dict[str, float]:
@@ -119,7 +124,7 @@ class MarineWeatherGUI:
         self.master = master
         self.callback = callback
         self.master.title("Marine Weather Grid Builder")
-        self.master.geometry("700x900")
+        self.master.geometry("700x1050")
 
         self._build_ui()
 
@@ -130,7 +135,7 @@ class MarineWeatherGUI:
         # Title
         tk.Label(main, text="Marine Weather Grid Builder",
                  font=("Arial", 16, "bold")).pack(pady=(0, 5))
-        tk.Label(main, text="Precipitation • Thunderstorms • Fog",
+        tk.Label(main, text="Precipitation • Thunderstorms • Fog • Ice Accretion",
                  font=("Arial", 10), fg="gray").pack(pady=(0, 5))
         tk.Label(
             main,
@@ -147,6 +152,9 @@ class MarineWeatherGUI:
 
         # Parameters
         self._build_params_frame(main)
+
+        # Ice Accretion
+        self._build_ice_accretion_frame(main)
 
         # Buttons
         self._build_buttons(main)
@@ -381,6 +389,52 @@ class MarineWeatherGUI:
         )
         self.diagnostics_group.pack(anchor=tk.W)
 
+    def _build_ice_accretion_frame(self, parent):
+        frame = tk.LabelFrame(parent, text="Ice Accretion (Overland Algorithm)", padx=15, pady=10)
+        frame.pack(fill=tk.X, pady=(0, 10))
+
+        tk.Label(
+            frame,
+            text="Populate the IceAccretion grid alongside Wx using model air temps and SST.",
+            font=("Arial", 9),
+            fg="gray",
+            wraplength=420,
+            justify=tk.LEFT,
+        ).pack(anchor=tk.W, pady=(0, 6))
+
+        self.ice_accretion_group = gui.RadioGroup(
+            frame,
+            options=[
+                ("No", "No"),
+                ("Yes", "Yes"),
+            ],
+            default="No",
+            orientation="horizontal",
+        )
+        self.ice_accretion_group.pack(anchor=tk.W)
+
+        tk.Label(frame, text="SST Model:", font=("Arial", 10, "bold")).pack(anchor=tk.W, pady=(8, 0))
+        sst_model_list = [(m, m) for m in SST_MODELS]
+        self.sst_model_group = gui.RadioGroup(
+            frame,
+            options=sst_model_list,
+            default="RTOFS",
+            orientation="horizontal",
+        )
+        self.sst_model_group.pack(anchor=tk.W)
+
+        tk.Label(frame, text="SST Model Run:", font=("Arial", 10, "bold")).pack(anchor=tk.W, pady=(8, 0))
+        self.sst_run_group = gui.RadioGroup(
+            frame,
+            options=[
+                ("Current", "Current"),
+                ("Previous", "Previous"),
+            ],
+            default="Current",
+            orientation="horizontal",
+        )
+        self.sst_run_group.pack(anchor=tk.W)
+
     def _build_buttons(self, parent):
         self.button_frame = gui.ButtonFrame(
             parent,
@@ -424,6 +478,9 @@ class MarineWeatherGUI:
             "qpf_prob_definite_in": float(self.qpf_prob_definite_slider.get_value()),
             "model_run": self.model_run_group.get_value(),
             "create_diagnostics": self.diagnostics_group.get_value(),
+            "populate_ice_accretion": self.ice_accretion_group.get_value(),
+            "sst_model": self.sst_model_group.get_value(),
+            "sst_run": self.sst_run_group.get_value(),
         })
         self.master.destroy()
 
@@ -576,6 +633,10 @@ class Procedure(SmartScript.SmartScript):
         diag_clip = _get_safe_clip_cfg()
 
         run_depth = 1 if model_run == "Current" else 2
+
+        populate_ice = varDict.get("populate_ice_accretion", "No") == "Yes"
+        sst_alias = varDict.get("sst_model", "RTOFS")
+        sst_run = varDict.get("sst_run", "Current")
 
         self.log("="*80)
         self.log("MARINE WEATHER GRID BUILDER")
@@ -875,6 +936,10 @@ class Procedure(SmartScript.SmartScript):
                 self.log(f"✓ Weather grid saved")
             except Exception as e:
                 self.log(f"✗ Error saving grid: {e}")
+
+            # Populate IceAccretion grid if requested
+            if populate_ice and temp_c is not None and wind is not None:
+                self._populate_ice_accretion(grid_tr, temp_c, wind, sst_alias, sst_run)
 
         self.log("\n" + "="*80)
         self.log(f"Complete: {periods_processed}/{total_periods} periods")
@@ -1303,6 +1368,144 @@ class Procedure(SmartScript.SmartScript):
             return "Patchy:F:<NoInten>:<NoVis>:"
 
         return None
+
+
+    def _populate_ice_accretion(
+        self,
+        grid_tr,
+        temp_c: np.ndarray,
+        wind: Tuple,
+        sst_alias: str,
+        sst_run: str,
+    ):
+        """Populate the IceAccretion grid using the Overland algorithm.
+
+        PPR = (V * Da) / (1 + 0.3 * Dw)
+        where:
+            V   = wind speed (m/s)
+            Da  = Tf - Ta  (air temperature departure below sea-water freezing)
+            Dw  = Tw - Tf  (SST departure above sea-water freezing)
+            Tf  = -1.7 °C  (freezing point of sea water)
+
+        Negative PPR (air warmer than -1.7 °C) is clamped to zero.
+        """
+        try:
+            # ----------------------------------------------------------------
+            # Resolve SST database
+            # ----------------------------------------------------------------
+            if sst_alias == "Fcst":
+                sst_db = "Fcst"
+            else:
+                try:
+                    candidates = model_aliases.get_database_candidates_for_element(sst_alias, "SST")
+                    sst_db_name = candidates[0] if candidates else f"D2D_{sst_alias}"
+                except Exception:
+                    sst_db_name = f"D2D_{sst_alias}"
+                offset = 0 if sst_run == "Current" else -1
+                sst_db = self.findDatabase(sst_db_name, offset)
+                if sst_db is None:
+                    self.log(f"  IceAccretion: could not find SST database for {sst_alias}")
+                    return
+
+            # ----------------------------------------------------------------
+            # Fetch SST — use a wide time window because SST is an analysis
+            # field that may not align exactly with each forecast period.
+            # ----------------------------------------------------------------
+            current_time = self._gmtime()
+            four_days_ago = current_time - (4 * 24 * 3600)
+            ten_days_from_now = current_time + (10 * 24 * 3600)
+            all_times = TimeRange.TimeRange(four_days_ago, ten_days_from_now)
+
+            try:
+                grid_info = self.getGridInfo(sst_db, "SST", "SFC", all_times)
+                overlap_trs = [
+                    info.gridTime()
+                    for info in grid_info
+                    if info.gridTime().overlaps(grid_tr)
+                ]
+            except Exception:
+                overlap_trs = []
+
+            sst_f = None
+            try:
+                if overlap_trs:
+                    sst_f = self.getGrids(
+                        sst_db, "SST", "SFC", grid_tr, mode="First", noDataError=0
+                    )
+                if sst_f is None:
+                    sst_f = self.getGrids(
+                        sst_db, "SST", "SFC", all_times, mode="First", noDataError=0
+                    )
+            except Exception:
+                pass
+
+            if sst_f is None:
+                self.log(f"  IceAccretion: no SST data from {sst_alias}; skipping")
+                return
+
+            # ----------------------------------------------------------------
+            # Convert SST from °F to °C
+            # ----------------------------------------------------------------
+            try:
+                sst_c = thresholds.f_to_c(sst_f)
+            except AttributeError:
+                sst_c = (sst_f - 32.0) * 5.0 / 9.0
+
+            # ----------------------------------------------------------------
+            # Valid-water mask: OPC_AOR edit area AND SST > 25 °F (not land/missing)
+            # ----------------------------------------------------------------
+            try:
+                run_edit_area = self.getEditArea("OPC_AOR")
+                run_mask = self.encodeEditArea(run_edit_area)
+            except Exception:
+                run_mask = np.ones(sst_f.shape, dtype=bool)
+
+            valid_mask = run_mask & (sst_f > 25.0)
+
+            # ----------------------------------------------------------------
+            # Wind magnitude in m/s
+            # ----------------------------------------------------------------
+            mag_kt, _ = wind
+            try:
+                mag_ms = thresholds.to_mps(mag_kt)
+            except AttributeError:
+                mag_ms = mag_kt * 0.514444
+
+            # ----------------------------------------------------------------
+            # Overland algorithm
+            # ----------------------------------------------------------------
+            da = ICE_ACCRETION_TF_CELSIUS - temp_c          # positive → icing conditions
+            dw = sst_c - ICE_ACCRETION_TF_CELSIUS            # positive → SST above sea-water Tf
+
+            # Guard denominator: at valid_mask boundary (SST ~25 °F ≈ -3.9 °C),
+            # dw ≈ -2.2 and denominator ≈ 0.34 (still positive), but protect
+            # the full-grid computation from div-by-zero over land/missing points.
+            denom = np.where((1.0 + 0.3 * dw) > 0.0, 1.0 + 0.3 * dw, 0.01)
+            ppr = (mag_ms * da) / denom
+            ppr = np.maximum(0.0, ppr)   # no negative icing rates
+
+            # ----------------------------------------------------------------
+            # Write result into the IceAccretion grid
+            # ----------------------------------------------------------------
+            ice_grid = self.getGrids(
+                "Fcst", "IceAccretion", "SFC", grid_tr, mode="First", noDataError=0
+            )
+            if ice_grid is None:
+                ice_grid = np.zeros(sst_f.shape, dtype=np.float32)
+            else:
+                ice_grid = np.array(ice_grid, dtype=np.float32, copy=True)
+
+            ice_grid[valid_mask] = ppr[valid_mask].astype(np.float32)
+            self.createGrid("Fcst", "IceAccretion", "SCALAR", ice_grid, grid_tr)
+
+            if np.any(valid_mask):
+                max_ppr = float(np.max(ppr[valid_mask]))
+                self.log(f"  ✓ IceAccretion: populated (max PPR={max_ppr:.2f} cm/hr over water)")
+            else:
+                self.log("  IceAccretion: no valid water points in mask")
+
+        except Exception as e:
+            self.log(f"  IceAccretion error: {e}")
 
 
 __all__ = ["Procedure"]
