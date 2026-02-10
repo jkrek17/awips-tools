@@ -1,9 +1,11 @@
 """
-Marine Tools -- storm identification for GFE grid editing.
+Marine Tools -- storm identification and area-based grid editing for GFE.
 
-Provides:
-- Storm detection from MSLP and wind-speed grids
-- Geographic distance utilities for storm separation checks
+Package contents:
+    domains              - Spherical distance and coordinate utilities
+    storm_identification - Detect storms from MSLP / wind grids
+    Analyze_MarineStorms - GFE procedure: find storms, create edit areas
+    Blend_StormArea      - GFE smart tool: blend models inside an edit area
 """
 
 from __future__ import annotations
@@ -21,11 +23,13 @@ from .storm_identification import (
 )
 
 __all__ = [
+    # domain utilities
     "EARTH_RADIUS_KM",
     "DEG_TO_KM",
     "haversine_distance",
     "degrees_to_km",
     "km_to_degrees",
+    # storm identification
     "StormFeature",
     "identify_storms",
 ]

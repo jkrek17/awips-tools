@@ -33,12 +33,7 @@ import SmartScript
 import grid_fetch
 import model_aliases
 
-# Import marine tools
-import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
-    os.path.abspath(__file__)))))
-
-from marine_tools import identify_storms, StormFeature
+from .storm_identification import identify_storms, StormFeature
 
 MenuItems = ["Edit"]
 VariableList = []
