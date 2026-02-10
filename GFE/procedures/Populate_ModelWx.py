@@ -758,19 +758,19 @@ class Procedure(SmartScript.SmartScript):
                     updated_wx[fog_mask] = _idx("Patchy:F:<NoInten>:<NoVis>:")
 
             # --- ZY (freezing spray) assignment mapped to Overland PPR thresholds
-            #   Light:    0  < PPR ≤ 22.4  →  Patchy:ZY:-
-            #   Moderate: 22.4 < PPR ≤ 53.3 →  Sct:ZY:m
-            #   Heavy:    PPR > 53.3         →  Wide:ZY:+
+            #   Light:    0  < PPR ≤ 22.4  →  Def:ZY:-
+            #   Moderate: 22.4 < PPR ≤ 53.3 →  Def:ZY:m
+            #   Heavy:    PPR > 53.3         →  Def:ZY:+
             if np.any(zy_mask) and ppr_for_wx is not None:
                 zy_light    = zy_mask & (ppr_for_wx <= 22.4)
                 zy_moderate = zy_mask & (ppr_for_wx > 22.4) & (ppr_for_wx <= 53.3)
                 zy_heavy    = zy_mask & (ppr_for_wx > 53.3)
                 if np.any(zy_light):
-                    updated_wx[zy_light] = _idx("Patchy:ZY:-:<NoVis>:")
+                    updated_wx[zy_light] = _idx("Def:ZY:-:<NoVis>:")
                 if np.any(zy_moderate):
-                    updated_wx[zy_moderate] = _idx("Sct:ZY:m:<NoVis>:")
+                    updated_wx[zy_moderate] = _idx("Def:ZY:m:<NoVis>:")
                 if np.any(zy_heavy):
-                    updated_wx[zy_heavy] = _idx("Wide:ZY:+:<NoVis>:")
+                    updated_wx[zy_heavy] = _idx("Def:ZY:+:<NoVis>:")
 
             # --- Thunder assignment
             if np.any(thunder_mask) and cape is not None:
