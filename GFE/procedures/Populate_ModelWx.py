@@ -281,7 +281,7 @@ class MarineWeatherGUI:
         self.sst_model_group = gui.RadioGroup(
             ice_row,
             options=[(m, m) for m in SST_MODELS],
-            default="RTOFS",
+            default="Fcst",
             orientation="horizontal",
         )
         self.sst_model_group.pack(side=tk.LEFT, padx=(0, 14))
@@ -551,7 +551,7 @@ class Procedure(SmartScript.SmartScript):
         run_depth = 1 if model_run == "Current" else 2
 
         populate_ice = varDict.get("populate_ice_accretion", "No") == "Yes"
-        sst_alias = varDict.get("sst_model", "RTOFS")
+        sst_alias = varDict.get("sst_model", "Fcst")
         sst_run = varDict.get("sst_run", "Current")
 
         self.log("="*80)
@@ -643,6 +643,15 @@ class Procedure(SmartScript.SmartScript):
             )
             has_fog = (vis_nm < fog_thresh) & (rh > fog_rh_min) if vis_nm is not None and rh is not None else None
 
+            # Compute ice accretion PPR now so it feeds both the IceAccretion scalar
+            # grid and the ZY Wx assignment later in this period's loop body.
+            ppr_for_wx = None
+            ice_water_mask = None
+            if populate_ice and temp_c is not None and wind is not None:
+                ppr_for_wx, ice_water_mask = self._populate_ice_accretion(
+                    grid_tr, temp_c, wind, sst_alias, sst_run
+                )
+
             # If fog is present, lower the Fcst Visibility grid accordingly (in NM)
             if has_fog is not None and np.any(has_fog):
                 try:
@@ -715,18 +724,52 @@ class Procedure(SmartScript.SmartScript):
             else:
                 fog_mask = np.zeros(wx_values.shape, dtype=bool)
 
+            # ZY (freezing spray) – over valid water points where PPR > 0
+            if ppr_for_wx is not None and ice_water_mask is not None:
+                zy_base = (ppr_for_wx > 0.0) & ice_water_mask
+            else:
+                zy_base = np.zeros(wx_values.shape, dtype=bool)
+
             if active is not None:
                 thunder_mask &= active
                 precip_mask &= active
                 fog_mask &= active
+                zy_mask = zy_base & active
+            else:
+                zy_mask = zy_base.copy()
 
-            # Precedence: thunder > precip > fog
+            # Precedence: thunder > precip > ZY > fog
             precip_mask &= ~thunder_mask
-            fog_mask &= ~(thunder_mask | precip_mask)
+            zy_mask &= ~(thunder_mask | precip_mask)
+            fog_mask &= ~(thunder_mask | precip_mask | zy_mask)
 
-            # --- Fog assignment
+            # --- Fog assignment (graded by actual model visibility)
             if np.any(fog_mask):
-                updated_wx[fog_mask] = _idx("Patchy:F:<NoInten>:<NoVis>:")
+                if vis_nm is not None:
+                    # Dense fog (< 0.5 NM) → Areas of Fog; lighter fog → Patchy
+                    dense_fog = fog_mask & (vis_nm < 0.5)
+                    patchy_fog = fog_mask & ~dense_fog
+                    if np.any(dense_fog):
+                        updated_wx[dense_fog] = _idx("Areas:F:<NoInten>:<NoVis>:")
+                    if np.any(patchy_fog):
+                        updated_wx[patchy_fog] = _idx("Patchy:F:<NoInten>:<NoVis>:")
+                else:
+                    updated_wx[fog_mask] = _idx("Patchy:F:<NoInten>:<NoVis>:")
+
+            # --- ZY (freezing spray) assignment mapped to Overland PPR thresholds
+            #   Light:    0  < PPR ≤ 22.4  →  Patchy:ZY:-
+            #   Moderate: 22.4 < PPR ≤ 53.3 →  Sct:ZY:m
+            #   Heavy:    PPR > 53.3        →  Wide:ZY:+
+            if np.any(zy_mask) and ppr_for_wx is not None:
+                zy_light    = zy_mask & (ppr_for_wx <= 22.4)
+                zy_moderate = zy_mask & (ppr_for_wx > 22.4) & (ppr_for_wx <= 53.3)
+                zy_heavy    = zy_mask & (ppr_for_wx > 53.3)
+                if np.any(zy_light):
+                    updated_wx[zy_light] = _idx("Patchy:ZY:-:<NoVis>:")
+                if np.any(zy_moderate):
+                    updated_wx[zy_moderate] = _idx("Sct:ZY:m:<NoVis>:")
+                if np.any(zy_heavy):
+                    updated_wx[zy_heavy] = _idx("Wide:ZY:+:<NoVis>:")
 
             # --- Thunder assignment
             if np.any(thunder_mask) and cape is not None:
@@ -857,10 +900,6 @@ class Procedure(SmartScript.SmartScript):
                 self.log(f"✓ Weather grid saved")
             except Exception as e:
                 self.log(f"✗ Error saving grid: {e}")
-
-            # Populate IceAccretion grid if requested
-            if populate_ice and temp_c is not None and wind is not None:
-                self._populate_ice_accretion(grid_tr, temp_c, wind, sst_alias, sst_run)
 
         self.log("\n" + "="*80)
         self.log(f"Complete: {periods_processed}/{total_periods} periods")
@@ -1326,7 +1365,7 @@ class Procedure(SmartScript.SmartScript):
                 sst_db = self.findDatabase(sst_db_name, offset)
                 if sst_db is None:
                     self.log(f"  IceAccretion: could not find SST database for {sst_alias}")
-                    return
+                    return None, None
 
             # ----------------------------------------------------------------
             # Fetch SST — use a wide time window because SST is an analysis
@@ -1362,7 +1401,7 @@ class Procedure(SmartScript.SmartScript):
 
             if sst_f is None:
                 self.log(f"  IceAccretion: no SST data from {sst_alias}; skipping")
-                return
+                return None, None
 
             # ----------------------------------------------------------------
             # Convert SST from °F to °C
@@ -1431,8 +1470,11 @@ class Procedure(SmartScript.SmartScript):
             else:
                 self.log("  IceAccretion: no valid water points in mask")
 
+            return ppr, valid_mask
+
         except Exception as e:
             self.log(f"  IceAccretion error: {e}")
+            return None, None
 
 
 __all__ = ["Procedure"]
