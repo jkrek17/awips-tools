@@ -33,7 +33,10 @@ FREEZING_C = 0.0
 
 # Ice accretion
 SST_MODELS = ["RTOFS", "Fcst"]
-ICE_ACCRETION_TF_CELSIUS = -1.7  # Freezing point of sea water (Celsius)
+ICE_ACCRETION_TF_CELSIUS = -1.7   # Freezing point of sea water (Celsius)
+# Overland index → cm/hr conversion coefficient (empirical, ≈ 0.02)
+ICE_ACCRETION_RATE_COEFF = 0.02
+ICE_ACCRETION_MAX_CM_HR  = 10.0   # practical ceiling for the GFE element
 
 
 def _get_safe_qpf_cfg() -> Dict[str, float]:
@@ -724,9 +727,9 @@ class Procedure(SmartScript.SmartScript):
             else:
                 fog_mask = np.zeros(wx_values.shape, dtype=bool)
 
-            # ZY (freezing spray) – over valid water points where PPR > 0
+            # ZY (freezing spray) – over valid water points where icing rate >= 0.5 cm/hr (light threshold)
             if ppr_for_wx is not None and ice_water_mask is not None:
-                zy_base = (ppr_for_wx > 0.0) & ice_water_mask
+                zy_base = (ppr_for_wx >= 0.5) & ice_water_mask
             else:
                 zy_base = np.zeros(wx_values.shape, dtype=bool)
 
@@ -746,8 +749,8 @@ class Procedure(SmartScript.SmartScript):
             # --- Fog assignment (graded by actual model visibility)
             if np.any(fog_mask):
                 if vis_nm is not None:
-                    # Dense fog (< 0.5 NM) → Areas of Fog; lighter fog → Patchy
-                    dense_fog = fog_mask & (vis_nm < 0.5)
+                    # Dense fog (< 1.0 NM) → Areas of Fog; lighter fog → Patchy
+                    dense_fog = fog_mask & (vis_nm < 1.0)
                     patchy_fog = fog_mask & ~dense_fog
                     if np.any(dense_fog):
                         updated_wx[dense_fog] = _idx("Areas:F:<NoInten>:<NoVis>:")
@@ -756,14 +759,14 @@ class Procedure(SmartScript.SmartScript):
                 else:
                     updated_wx[fog_mask] = _idx("Patchy:F:<NoInten>:<NoVis>:")
 
-            # --- ZY (freezing spray) assignment mapped to Overland PPR thresholds
-            #   Light:    0  < PPR ≤ 22.4  →  Patchy:ZY:-
-            #   Moderate: 22.4 < PPR ≤ 53.3 →  Sct:ZY:m
-            #   Heavy:    PPR > 53.3        →  Wide:ZY:+
+            # --- ZY (freezing spray) assignment mapped to Overland icing rate (cm/hr)
+            #   Light:    0.5 ≤ rate < 0.7  →  Patchy:ZY:-
+            #   Moderate: 0.7 ≤ rate < 2.0  →  Sct:ZY:m
+            #   Heavy:    rate ≥ 2.0         →  Wide:ZY:+
             if np.any(zy_mask) and ppr_for_wx is not None:
-                zy_light    = zy_mask & (ppr_for_wx <= 22.4)
-                zy_moderate = zy_mask & (ppr_for_wx > 22.4) & (ppr_for_wx <= 53.3)
-                zy_heavy    = zy_mask & (ppr_for_wx > 53.3)
+                zy_light    = zy_mask & (ppr_for_wx < 0.7)
+                zy_moderate = zy_mask & (ppr_for_wx >= 0.7) & (ppr_for_wx < 2.0)
+                zy_heavy    = zy_mask & (ppr_for_wx >= 2.0)
                 if np.any(zy_light):
                     updated_wx[zy_light] = _idx("Patchy:ZY:-:<NoVis>:")
                 if np.any(zy_moderate):
@@ -1441,11 +1444,11 @@ class Procedure(SmartScript.SmartScript):
             # dw ≈ -2.2 and denominator ≈ 0.34 (still positive), but protect
             # the full-grid computation from div-by-zero over land/missing points.
             denom = np.where((1.0 + 0.3 * dw) > 0.0, 1.0 + 0.3 * dw, 0.01)
-            ppr = (mag_ms * da) / denom
-            # Overland PPR is a dimensionless index (units: m/s × °C).
-            # Clamp to [0, 100]: negative means no icing; the GFE IceAccretion
-            # element's maxAllowedValue is 100, so values above that cause errors.
-            ppr = np.clip(ppr, 0.0, 100.0)
+            # Apply empirical coefficient to convert the raw Overland index
+            # (m/s × °C) to an icing rate in cm/hr.  Without the coefficient
+            # the raw values easily exceed 100, overflowing the GFE element.
+            ppr = ICE_ACCRETION_RATE_COEFF * (mag_ms * da) / denom
+            ppr = np.clip(ppr, 0.0, ICE_ACCRETION_MAX_CM_HR)
 
             # ----------------------------------------------------------------
             # Write result into the IceAccretion grid
@@ -1461,12 +1464,12 @@ class Procedure(SmartScript.SmartScript):
             ice_grid[valid_mask] = ppr[valid_mask].astype(np.float32)
             self.createGrid(
                 "Fcst", "IceAccretion", "SCALAR", ice_grid, grid_tr,
-                minAllowedValue=0.0, maxAllowedValue=100.0,
+                minAllowedValue=0.0, maxAllowedValue=ICE_ACCRETION_MAX_CM_HR,
             )
 
             if np.any(valid_mask):
-                max_ppr = float(np.max(ppr[valid_mask]))
-                self.log(f"  ✓ IceAccretion: populated (max PPR={max_ppr:.1f} over water)")
+                max_rate = float(np.max(ppr[valid_mask]))
+                self.log(f"  ✓ IceAccretion: populated (max={max_rate:.2f} cm/hr over water)")
             else:
                 self.log("  IceAccretion: no valid water points in mask")
 
