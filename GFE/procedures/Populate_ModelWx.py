@@ -124,7 +124,7 @@ class MarineWeatherGUI:
         self.master = master
         self.callback = callback
         self.master.title("Marine Weather Grid Builder")
-        self.master.geometry("950x590")
+        self.master.geometry("1050x750")
 
         self._build_ui()
 
@@ -1403,7 +1403,10 @@ class Procedure(SmartScript.SmartScript):
             # the full-grid computation from div-by-zero over land/missing points.
             denom = np.where((1.0 + 0.3 * dw) > 0.0, 1.0 + 0.3 * dw, 0.01)
             ppr = (mag_ms * da) / denom
-            ppr = np.maximum(0.0, ppr)   # no negative icing rates
+            # Overland PPR is a dimensionless index (units: m/s × °C).
+            # Clamp to [0, 100]: negative means no icing; the GFE IceAccretion
+            # element's maxAllowedValue is 100, so values above that cause errors.
+            ppr = np.clip(ppr, 0.0, 100.0)
 
             # ----------------------------------------------------------------
             # Write result into the IceAccretion grid
@@ -1417,11 +1420,14 @@ class Procedure(SmartScript.SmartScript):
                 ice_grid = np.array(ice_grid, dtype=np.float32, copy=True)
 
             ice_grid[valid_mask] = ppr[valid_mask].astype(np.float32)
-            self.createGrid("Fcst", "IceAccretion", "SCALAR", ice_grid, grid_tr)
+            self.createGrid(
+                "Fcst", "IceAccretion", "SCALAR", ice_grid, grid_tr,
+                minAllowedValue=0.0, maxAllowedValue=100.0,
+            )
 
             if np.any(valid_mask):
                 max_ppr = float(np.max(ppr[valid_mask]))
-                self.log(f"  ✓ IceAccretion: populated (max PPR={max_ppr:.2f} cm/hr over water)")
+                self.log(f"  ✓ IceAccretion: populated (max PPR={max_ppr:.1f} over water)")
             else:
                 self.log("  IceAccretion: no valid water points in mask")
 
