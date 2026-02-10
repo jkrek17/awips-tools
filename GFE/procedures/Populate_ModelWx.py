@@ -738,7 +738,12 @@ class Procedure(SmartScript.SmartScript):
                         else:
                             fog_points = has_fog
                         if np.any(fog_points):
-                            vis_fcst_out[fog_points] = np.minimum(vis_fcst_out[fog_points], fog_thresh)
+                            # Use the actual model visibility (which can be well below 1 NM
+                            # in dense fog), not the detection threshold.  Fog_thresh is
+                            # only the trigger; the real value drives the grid.
+                            vis_fcst_out[fog_points] = np.minimum(
+                                vis_fcst_out[fog_points], vis_nm[fog_points]
+                            )
                         self.createGrid("Fcst", "Visibility", "SCALAR", vis_fcst_out, grid_tr)
                 except Exception:
                     # Non-fatal; continue building Wx
