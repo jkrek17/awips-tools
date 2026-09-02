@@ -196,6 +196,45 @@
             speed wrong matters most.</li>
         </ul>
       </div>
+      <div class="finding warn">
+        <span class="tag">Storm size &middot; caveat</span>
+        <h3>Falls apart for transitioning storms</h3>
+        <ul>
+          <li>We split the size formula's accuracy by IBTrACS' own
+            storm-type flag: purely tropical vs. undergoing extratropical
+            transition or a mixed structure.</li>
+          <li>For purely tropical storms, the average miss is about
+            9&nbsp;nm and the tool tracks storm-to-storm size reasonably
+            well. For transitioning or mixed-structure storms, the
+            average miss roughly triples (20 to 25&nbsp;nm) and the tool
+            barely tracks any individual storm's size at all.</li>
+          <li>This isn't a rare edge case picked at random - it's the
+            same failure pattern (fast-moving, transitioning storms) that
+            originally surfaced the motion-asymmetry bug fixed earlier in
+            this project. The tool's assumptions fit a steady tropical
+            circulation; transitioning storms often aren't one.</li>
+        </ul>
+      </div>
+      <div class="finding caution">
+        <span class="tag">Data coverage &middot; caveat</span>
+        <h3>Full radii reporting is newer than "2001-2024" suggests</h3>
+        <ul>
+          <li>The 2001-2024 coverage window (see "Where this data comes
+            from") is accurate for basic wind radii/RMW presence, but
+            JTWC's reporting of the finer 50 and 64&nbsp;kt radii - not
+            just 34&nbsp;kt - was inconsistent through the early part of
+            that window.</li>
+          <li>From 2000-2004, only about 26% of typhoon-strength records
+            had a 64&nbsp;kt radius reported at all, even for major
+            typhoons. From 2005 onward, that jumps to 86-94%.</li>
+          <li>A storm with only its 34&nbsp;kt radius reported gives the
+            tool far less to work with - the whole profile from the core
+            out to that radius rests on a single, coarser curve instead
+            of being anchored by multiple rings. If an older, strong
+            typhoon in Archived Cases shows only a 34&nbsp;kt ring, that's
+            this reporting gap, not a display bug.</li>
+        </ul>
+      </div>
     </div>
   </section>
 

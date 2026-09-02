@@ -85,7 +85,12 @@ def build_storm_records(rows):
     dicts: iso, epoch, lat, lon, vmax, rmw, roci, pres, radii (full
     per-quadrant dict per threshold reported), motionDir/motionSpd (filled
     in from consecutive positions, same convention parseJTWC() uses: the
-    last point inherits the previous motion)."""
+    last point inherits the previous motion), nature (IBTrACS' own storm-
+    type flag - "TS" tropical, "ET" extratropical transition, "SS"
+    subtropical, "MX" mixture, "DS" disturbance, "NR" not reported) and
+    dist2land (km to the nearest coastline, IBTrACS' own field - used to
+    check whether the tool's accuracy holds up for landfalling/near-shore
+    storms, which is not tested anywhere else in this suite)."""
     recs = []
     for row in rows:
         lat = to_float(row["USA_LAT"]) or to_float(row["LAT"])
@@ -107,6 +112,8 @@ def build_storm_records(rows):
             "roci": to_float(row["USA_ROCI"]),
             "pres": to_float(row["USA_PRES"]),
             "radii": radii,
+            "nature": (row.get("NATURE") or "").strip(),
+            "dist2land": to_float(row.get("DIST2LAND")),
         })
 
     for i, rec in enumerate(recs):
