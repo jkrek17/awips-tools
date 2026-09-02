@@ -126,6 +126,22 @@ function destPoint(clat, clon, brgDeg, distNm) {
   return [l2 * r2d, o2 * r2d];
 }
 
+// Web Mercator forward/inverse, in radians-of-projected-y. L.imageOverlay
+// stretches its raster linearly in pixel space between two corner LatLngs,
+// which is only correct if the raster's rows are evenly spaced in Mercator
+// y. The wind field is sampled on a plain equirectangular (equal-degree)
+// grid, so rows must be picked at the latitudes that land back on an even
+// Mercator spacing - otherwise the overlay drifts away from the storm
+// center by a few percent of the bounding box height, worse the larger the
+// box (which for a wide storm can be tens of km, clearly visible next to
+// the center marker).
+function mercY(latDeg) {
+  return Math.log(Math.tan(Math.PI / 4 + latDeg * Math.PI / 360));
+}
+function mercLat(y) {
+  return (2 * Math.atan(Math.exp(y)) - Math.PI / 2) * 180 / Math.PI;
+}
+
 /** Quadrant radii interpolated smoothly around the compass. */
 function azimuthalRadius(azDeg, quadDict, floorNm) {
   const vals = QUADS.map(q => {
@@ -385,6 +401,15 @@ function drawField(items) {
   const ctx = cv.getContext('2d');
   const img = ctx.createImageData(NX, NY);
 
+  // Latitude of raster row iy, chosen so that L.imageOverlay's linear
+  // stretch (linear in Mercator y) puts it back at the right place on the
+  // map. See the mercY/mercLat comment above.
+  const yN = mercY(north), yS = mercY(south);
+  function rowLat(iy) {
+    const f = (iy + .5) / NY;
+    return mercLat(yN - f * (yN - yS));
+  }
+
   // Per-storm peak normalization, matching the GFE tool: find the strongest
   // sampled core cell and scale so it reaches Vmax, tapering to zero at the
   // innermost reported ring so the radii do not move.
@@ -396,7 +421,7 @@ function drawField(items) {
       norm[k].innerR = innerR;
       let best = 0, bestW = 0;
       for (let iy = 0; iy < NY; iy++) {
-        const lat = north - (iy + .5) * (north - south) / NY;
+        const lat = rowLat(iy);
         for (let ix = 0; ix < NX; ix++) {
           const lon = west + (ix + .5) * (east - west) / NX;
           const res = vortexAt(lat, lon, it.snap, it.rmax,
@@ -414,7 +439,7 @@ function drawField(items) {
 
   let peak = 0;
   for (let iy = 0; iy < NY; iy++) {
-    const lat = north - (iy + .5) * (north - south) / NY;
+    const lat = rowLat(iy);
     for (let ix = 0; ix < NX; ix++) {
       const lon = west + (ix + .5) * (east - west) / NX;
       let best = 0;
