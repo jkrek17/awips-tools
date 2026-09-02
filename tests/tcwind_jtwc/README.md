@@ -1,8 +1,9 @@
 # TCWind_JTWC test / evaluation suite
 
 Regression and verification tooling for `GFE/procedures/TCWind_JTWC.py`
-and its web-preview port, `web/TCWind_JTWC/{Code.gs,Index.html}`. Four
-independent questions, four scripts:
+and its web-preview port, `web/TCWind_JTWC/{Code.gs,Index.html}`. Six
+independent questions, six scripts (`besttrack_common.py` is shared
+plumbing, not a check on its own):
 
 | Question | Script |
 |---|---|
@@ -11,6 +12,8 @@ independent questions, four scripts:
 | Is the tool's physics (Rmax) actually right, checked against ground truth? | `verify_besttrack_rmax.py` |
 | Can that regression be made to fit WestPac better? | `fit_westpac_rmax.py` |
 | Where does that ground truth for the web app come from? | `prep_besttrack_data.py` |
+| Is the field's overall *size* realistic, checked against something the model never sees? | `verify_besttrack_roci.py` |
+| Is the field's *shape* between/beyond the reported radii realistic? | `verify_besttrack_holland.py` |
 
 ## Setup
 
@@ -180,4 +183,67 @@ nothing to compare against.
 Re-run `prep_besttrack_data.py` (needs a WP-basin IBTrACS CSV, same as
 the other scripts) and re-push `BestTrackData.gs` whenever it's worth
 refreshing this - e.g. after a season closes out and JTWC's best track
-for it is finalized.
+for it is finalized. As of this writing, 2001-2024 is not a cutoff we
+chose: it's the full range with usable data. JTWC's WestPac wind-radii/
+RMW reporting is essentially absent before 2001 (checked year by year,
+0% coverage), and 2025-2026 aren't in IBTrACS yet even in a freshly
+re-fetched copy - best-track finalization runs a season or more behind.
+
+## Beyond Rmax: is the wind field's *shape* actually right?
+
+Every check above is either about Rmax specifically, or about points the
+field is *built* to pass through exactly (the live tool's "fit check" is
+always near zero at the reported radii, by construction - that's not
+independent evidence the field is right, just that the algebra works).
+Two more scripts check things the model never sees at all:
+
+**`verify_besttrack_roci.py`** compares the tool's own radial wind
+profile - literally the `buildVortex()` field, including motion
+asymmetry from real consecutive best-track positions - against ROCI
+(radius of the outermost closed isobar), which the model has no access
+to. Caveat up front: ROCI is a *pressure*-based size measure; "radius
+where modeled *wind* drops below N kt" is related but not the same
+thing (Chavas & Emanuel 2010 found ROCI correlates with the theoretical
+radius of vanishing wind, which is the closest analogue) - so this is a
+same-order-of-magnitude plausibility/bias check, not an exact one, and
+three thresholds (10/15/20 kt) are checked rather than picking one.
+Result (n=16,251): **the tool's field is dramatically too small for
+weak systems** - TD bias -83 to -109 nm depending on threshold, with
+essentially zero skill (r=0.01) predicting which TD will be bigger or
+smaller than another. That's not entirely a tool failure (TDs mostly
+have no reported radii at all, so there's little for the field to be
+built from, and ROCI is expected to run well outside R10-R20 anyway),
+but it does confirm there's nothing in a radii-less TD bulletin for the
+tool to construct a realistic areal extent from. TY+ systems tell a
+different story: bias flips from oversized at the 10 kt threshold
+(+77 nm - the exponential outer taper may be too slow for intense
+storms specifically) to close to neutral at 20 kt (-11 nm), with decent
+correlation throughout (r≈0.48) - the field's overall size is
+considerably more trustworthy for a strong, well-observed system than a
+weak one.
+
+**`verify_besttrack_holland.py`** takes a different approach: fit an
+independent, published model (Holland 1980, using its dimensionless
+V(r) = Vmax*sqrt((Rmax/r)^B * exp(1-(Rmax/r)^B)) form) to the *same* two
+anchors the tool has (Vmax/Rmax, and the storm's own reported R34),
+solving for Holland's shape parameter B - then see how far Holland's
+prediction and the tool's actual field diverge in between and beyond
+those anchors, where there's no ground truth for either model to be
+checked against directly. Two findings (n=8,572 records with both RMW
+and R34 reported):
+- Asked to predict R50 and R64 - values it was never fit to - Holland's
+  simple 2-parameter curve gets respectably close to the real reported
+  values (R50: bias +4.0 nm, r=0.84; R64: bias +9.4 nm, r=0.69). That's
+  a useful benchmark: a lot of a storm's radial structure is recoverable
+  from just Vmax, Rmax and one radius, which is reassuring context for
+  judging the tool's own (exactly-correct-by-construction) R50/R64.
+- Where the tool's own curve and Holland's curve disagree with each
+  other (both anchored identically, so the gap is pure shape
+  disagreement): it's worst **right next to the core**, between Rmax and
+  R64 (mean |diff| 11.0 kt, spikes to 72.5 kt) and steadily improves
+  moving outward (R64-R50: 7.5 kt, R50-R34: 3.7 kt, beyond R34: 4.4 kt).
+  That's the region where two reasonable models disagree most - and
+  it's also the eyewall/near-core region where getting the wind wrong
+  matters most operationally. Worth flagging in the tool's own output
+  as the zone with the least structural certainty, rather than treating
+  every part of the field as equally trustworthy.
