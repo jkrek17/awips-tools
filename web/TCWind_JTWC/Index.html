@@ -28,6 +28,13 @@
   #paste textarea { width:100%; height:110px; font-family:ui-monospace,monospace;
                     font-size:11px; }
   .fit-ok { color:#166534; } .fit-bad { color:#b91c1c; font-weight:600; }
+  #diag { display:none; padding:8px 10px; background:#f8fafc;
+          border-bottom:1px solid #cbd5e1; }
+  #diag .diagRow { display:flex; gap:18px; flex-wrap:wrap; align-items:flex-start; }
+  #diag .diagCol { display:flex; flex-direction:column; gap:4px; }
+  #diag canvas { background:#fff; border:1px solid #d4d4d8; border-radius:3px; }
+  #diag .diagCap { font-size:11px; color:#52525b; }
+  #diagStorm { margin-bottom:6px; }
 </style>
 </head>
 <body>
@@ -41,6 +48,7 @@
   <div id="bar">
     <button id="reload">Fetch bulletins</button>
     <button id="togglePaste">Paste text</button>
+    <button id="toggleDiag">Diagnostics</button>
     <label><input type="checkbox" id="layRadii" checked> Radii &amp; track</label>
     <label><input type="checkbox" id="layField" checked> Wind field</label>
     <label>Time <input type="range" id="tslider" min="0" max="0" value="0" style="width:220px"></label>
@@ -51,6 +59,31 @@
   <div id="paste">
     <textarea id="pastebox" placeholder="Paste a JTWC warning here, then press Parse"></textarea>
     <button id="parsePaste" style="margin-top:6px">Parse pasted text</button>
+  </div>
+
+  <div id="diag">
+    <select id="diagStorm"></select>
+    <div class="diagRow">
+      <div class="diagCol">
+        <canvas id="histCanvas" width="620" height="170"></canvas>
+        <div class="diagCap">
+          Time history: <b>Vmax</b> (black) and <b>Rmax</b> (gray dashed, right
+          axis) vs forecast hour. Colored bands are each threshold's
+          quadrant min-max range (the wider the band, the more asymmetric
+          the bulletin's own radii are) with the quadrant mean as a line.
+          Vertical line marks the currently selected time.
+        </div>
+      </div>
+      <div class="diagCol">
+        <canvas id="profCanvas" width="360" height="220"></canvas>
+        <div class="diagCap">
+          Azimuthal profile at the selected time: modeled wind speed vs
+          radius along each quadrant bearing. Dots are the bulletin's own
+          reported radii - a dot sitting on its line is a good fit; off the
+          line means the interpolation is straying from what JTWC reported.
+        </div>
+      </div>
+    </div>
   </div>
 
   <div id="map"></div>
@@ -517,6 +550,204 @@ function render() {
     (peak ? '\npeak in field: ' + peak.toFixed(0) + ' kt' : '') +
     '\n<span class="' + cls + '">fit check: worst error at a reported radius ' +
     fc.worst.toFixed(2) + ' kt across ' + fc.count + ' points</span>';
+
+  updateDiagnostics(items, epoch);
+}
+
+// ---------------------------------------------------------------------------
+// Diagnostics: time-history and azimuthal-profile panels. Neither feeds
+// back into the map or the insert - they're read-only QC views onto the
+// same taus/vortexAt() the map already uses, for judging the tool rather
+// than running it.
+// ---------------------------------------------------------------------------
+
+const THRESH_COLOR = { 64: '#dc2626', 50: '#f97316', 34: '#eab308' };
+const QUAD_COLOR = { NE: '#dc2626', SE: '#f97316', SW: '#2563eb', NW: '#16a34a' };
+
+function diagVisible() {
+  return document.getElementById('diag').style.display === 'block';
+}
+
+function populateDiagStorm() {
+  const sel = document.getElementById('diagStorm');
+  const prev = sel.value;
+  sel.innerHTML = '';
+  for (const s of storms) {
+    const opt = document.createElement('option');
+    opt.value = s.pil;
+    opt.textContent = s.pil + ' ' + s.label;
+    sel.appendChild(opt);
+  }
+  if (storms.some(s => s.pil === prev)) sel.value = prev;
+}
+
+/** Time-history: Vmax, Rmax, and each threshold's quadrant min/mean/max. */
+function drawHistory(storm, nowEpoch) {
+  const cv = document.getElementById('histCanvas');
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+  if (!storm || storm.taus.length < 2) return;
+
+  const padL = 34, padR = 34, padT = 10, padB = 20;
+  const taus = storm.taus;
+  const t0 = taus[0].epoch, t1 = taus[taus.length - 1].epoch;
+  const x = e => padL + (W - padL - padR) * (t1 > t0 ? (e - t0) / (t1 - t0) : 0);
+
+  const vmaxMax = Math.max(...taus.map(t => t.vmax)) * 1.15;
+  const yV = v => H - padB - (H - padT - padB) * (v / Math.max(vmaxMax, 1));
+
+  const rmaxes = taus.map(t => resolveRmax(t, RMAX_OVERRIDE_NM));
+  const rmaxMax = Math.max(...rmaxes) * 1.25;
+  const yR = r => H - padB - (H - padT - padB) * (r / Math.max(rmaxMax, 1));
+
+  // Axes.
+  ctx.strokeStyle = '#d4d4d8'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, H - padB);
+  ctx.lineTo(W - padR, H - padB); ctx.stroke();
+  ctx.fillStyle = '#71717a'; ctx.font = '10px system-ui, sans-serif';
+  ctx.fillText('kt', 4, padT + 8);
+  ctx.fillText('Rmax nm', W - padR + 2, padT + 8);
+  for (const t of taus) {
+    ctx.fillText(String(t.tau), x(t.epoch) - 4, H - padB + 12);
+  }
+
+  // Quadrant min/mean/max band per threshold.
+  for (const thr of [34, 50, 64]) {
+    const pts = taus
+      .filter(t => t.radii[thr])
+      .map(t => {
+        const vals = QUADS.map(q => t.radii[thr][q]).filter(v => v > 0);
+        if (!vals.length) return null;
+        return { epoch: t.epoch, min: Math.min(...vals), max: Math.max(...vals),
+                 mean: vals.reduce((a, b) => a + b, 0) / vals.length };
+      })
+      .filter(Boolean);
+    if (pts.length < 2) continue;
+    const rMax2 = Math.max(rmaxMax, Math.max(...pts.map(p => p.max)) * 1.1);
+    const yR2 = r => H - padB - (H - padT - padB) * (r / rMax2);
+    ctx.fillStyle = THRESH_COLOR[thr] + '33';
+    ctx.beginPath();
+    pts.forEach((p, i) => (i ? ctx.lineTo(x(p.epoch), yR2(p.max))
+                             : ctx.moveTo(x(p.epoch), yR2(p.max))));
+    for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(x(pts[i].epoch), yR2(pts[i].min));
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = THRESH_COLOR[thr]; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    pts.forEach((p, i) => (i ? ctx.lineTo(x(p.epoch), yR2(p.mean))
+                             : ctx.moveTo(x(p.epoch), yR2(p.mean))));
+    ctx.stroke();
+  }
+
+  // Rmax, dashed gray, right axis.
+  ctx.strokeStyle = '#71717a'; ctx.setLineDash([3, 3]); ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  taus.forEach((t, i) => (i ? ctx.lineTo(x(t.epoch), yR(rmaxes[i]))
+                            : ctx.moveTo(x(t.epoch), yR(rmaxes[i]))));
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Vmax, solid black, left axis.
+  ctx.strokeStyle = '#111'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  taus.forEach((t, i) => (i ? ctx.lineTo(x(t.epoch), yV(t.vmax))
+                            : ctx.moveTo(x(t.epoch), yV(t.vmax))));
+  ctx.stroke();
+  for (const t of taus) {
+    ctx.fillStyle = t.conf < 1 ? '#a1a1aa' : '#111';
+    ctx.beginPath(); ctx.arc(x(t.epoch), yV(t.vmax), 3, 0, 2 * Math.PI); ctx.fill();
+  }
+
+  // Current-time marker.
+  if (nowEpoch >= t0 && nowEpoch <= t1) {
+    ctx.strokeStyle = '#0ea5e9'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(x(nowEpoch), padT); ctx.lineTo(x(nowEpoch), H - padB);
+    ctx.stroke();
+  }
+}
+
+/** Azimuthal profile: modeled wind vs radius along each quadrant bearing. */
+function drawProfile(storm, snap, rmax) {
+  const cv = document.getElementById('profCanvas');
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+  if (!storm || !snap) return;
+
+  const padL = 34, padR = 8, padT = 10, padB = 20;
+  const reported = [];
+  for (const thr of [64, 50, 34]) {
+    if (!snap.radii[thr]) continue;
+    for (const q of QUADS) {
+      const rr = snap.radii[thr][q];
+      if (rr > 0) reported.push(rr);
+    }
+  }
+  const rMaxAxis = Math.max(rmax * 3, ...reported, 20) * 1.15;
+  const vMaxAxis = Math.max(snap.vmax, 34) * 1.15;
+  const x = r => padL + (W - padL - padR) * (r / rMaxAxis);
+  const y = v => H - padB - (H - padT - padB) * (v / vMaxAxis);
+
+  ctx.strokeStyle = '#d4d4d8'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, H - padB);
+  ctx.lineTo(W - padR, H - padB); ctx.stroke();
+  ctx.fillStyle = '#71717a'; ctx.font = '10px system-ui, sans-serif';
+  ctx.fillText('kt', 4, padT + 8);
+  ctx.fillText('nm', W - padR - 14, H - 4);
+
+  // Rmax marker.
+  ctx.strokeStyle = '#a1a1aa'; ctx.setLineDash([2, 3]); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(x(rmax), padT); ctx.lineTo(x(rmax), H - padB); ctx.stroke();
+  ctx.setLineDash([]);
+
+  const N = 80;
+  for (const q of QUADS) {
+    const az = QUAD_AZ[q];
+    ctx.strokeStyle = QUAD_COLOR[q]; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let i = 0; i <= N; i++) {
+      const r = rMaxAxis * i / N;
+      const p = destPoint(snap.lat, snap.lon, az, Math.max(r, 0.01));
+      const res = vortexAt(p[0], p[1], snap, rmax, MOTION_ASYMMETRY_FRACTION, INFLOW_ANGLE_DEG);
+      const px = x(r), py = y(res.mag);
+      i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+    }
+    ctx.stroke();
+
+    for (const thr of [64, 50, 34]) {
+      if (!snap.radii[thr]) continue;
+      const rr = snap.radii[thr][q];
+      if (rr <= 0) continue;
+      ctx.fillStyle = QUAD_COLOR[q];
+      ctx.beginPath(); ctx.arc(x(rr), y(thr), 3, 0, 2 * Math.PI); ctx.fill();
+    }
+  }
+
+  let ly = padT + 8;
+  ctx.font = '10px system-ui, sans-serif';
+  for (const q of QUADS) {
+    ctx.fillStyle = QUAD_COLOR[q];
+    ctx.fillRect(W - padR - 34, ly - 6, 8, 8);
+    ctx.fillText(q, W - padR - 22, ly + 2);
+    ly += 12;
+  }
+}
+
+function updateDiagnostics(items, nowEpoch) {
+  if (!diagVisible()) return;
+  const sel = document.getElementById('diagStorm');
+  const pil = sel.value;
+  const storm = storms.find(s => s.pil === pil) || storms[0];
+  drawHistory(storm, nowEpoch);
+  const it = items.find(i => i.storm === storm);
+  if (it) {
+    drawProfile(storm, it.snap, it.rmax);
+  } else if (storm) {
+    // Selected storm isn't active at this time step (outside its taus span
+    // or off the current timeline entirely) - still show its own initial
+    // snapshot so the panel isn't just blank.
+    drawProfile(storm, storm.taus[0], resolveRmax(storm.taus[0], RMAX_OVERRIDE_NM));
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -539,6 +770,7 @@ function ingest(results) {
       .filter(Boolean).join(' ');
     storms.push(s);
   }
+  populateDiagStorm();
   rebuildTimeline();
   if (!storms.length) {
     document.getElementById('status').textContent =
@@ -581,6 +813,12 @@ document.getElementById('togglePaste').onclick = () => {
   const p = document.getElementById('paste');
   p.style.display = p.style.display === 'block' ? 'none' : 'block';
 };
+document.getElementById('toggleDiag').onclick = () => {
+  const d = document.getElementById('diag');
+  d.style.display = d.style.display === 'block' ? 'none' : 'block';
+  if (d.style.display === 'block') render();
+};
+document.getElementById('diagStorm').onchange = render;
 document.getElementById('parsePaste').onclick = () => {
   const txt = document.getElementById('pastebox').value;
   if (!txt.trim()) return;
