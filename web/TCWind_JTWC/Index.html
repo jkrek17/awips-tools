@@ -254,7 +254,15 @@ function vortexAt(lat, lon, snap, rmax, asymFrac, inflowDeg) {
   const outMag = Math.sqrt(u * u + v * v);
   let outDir = (Math.atan2(-u, -v) * 180 / Math.PI) % 360;
   if (outDir < 0) outDir += 360;
-  return { mag: outMag, dir: outDir, r: r, az: az, knots: [kr, kv] };
+
+  // Footprint radius for callers deciding where the insert/taper stops.
+  // With no reported radii at all (kr has only the Rmax knot), the actual
+  // decay is still anchored at Rmax - but treating Rmax itself as "R34" for
+  // footprint sizing would give a tiny, misleadingly tight footprint for a
+  // weak system with no radii reported. Matches TCWind_JTWC.py's buildVortex().
+  const r34 = kr.length > 1 ? kr[kr.length - 1] : rmax * 3;
+
+  return { mag: outMag, dir: outDir, r: r, az: az, knots: [kr, kv], r34: r34 };
 }
 
 // ---------------------------------------------------------------------------
@@ -479,9 +487,7 @@ function drawField(items) {
       items.forEach((it, k) => {
         const res = vortexAt(lat, lon, it.snap, it.rmax,
                              MOTION_ASYMMETRY_FRACTION, INFLOW_ANGLE_DEG);
-        const [kr] = res.knots;
-        const r34 = kr[kr.length - 1];
-        if (res.r > r34 * MAX_INSERT_RADIUS_FACTOR) return;
+        if (res.r > res.r34 * MAX_INSERT_RADIUS_FACTOR) return;
         let m = res.mag;
         if (norm[k].factor > 1) {
           const w = Math.min(Math.max(

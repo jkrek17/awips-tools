@@ -317,7 +317,10 @@ function parseJTWC(text) {
   var mn = /WARNING\s+NR\s+(\d+)/.exec(full);
   if (mn) header.warningNumber = parseInt(mn[1], 10);
 
-  var mpr = /MINIMUM CENTRAL PRESSURE[\s\S]*?(\d+)\s*MB/.exec(full);
+  // \s+ between words, not a literal space: REMARKS text is word-wrapped at
+  // ~72 columns and "MINIMUM CENTRAL PRESSURE" does land split across a
+  // line break in real bulletins, which a literal space would silently miss.
+  var mpr = /MINIMUM\s+CENTRAL\s+PRESSURE[\s\S]*?(\d+)\s*MB/.exec(full);
   if (mpr) header.pressureMb = parseInt(mpr[1], 10);
 
   return { header: header, taus: taus, text: text };

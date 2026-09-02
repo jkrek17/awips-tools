@@ -191,7 +191,11 @@ RE_STORM = re.compile(
     r"SUBTROPICAL STORM|SUBTROPICAL DEPRESSION)\s+(\d{1,2}[A-Z])"
     r"\s*(?:\(([^)]+)\))?")
 RE_WARNNR = re.compile(r"WARNING\s+NR\s+(\d+)")
-RE_PRESSURE = re.compile(r"MINIMUM CENTRAL PRESSURE.*?(\d+)\s*MB", re.DOTALL)
+# \s+ between words, not a literal space: REMARKS text is word-wrapped at
+# ~72 columns and "MINIMUM CENTRAL PRESSURE" does land split across a line
+# break in real bulletins, which a literal space would silently miss.
+RE_PRESSURE = re.compile(
+    r"MINIMUM\s+CENTRAL\s+PRESSURE.*?(\d+)\s*MB", re.DOTALL)
 
 
 class Tau(object):
