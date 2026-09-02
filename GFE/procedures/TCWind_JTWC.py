@@ -879,7 +879,24 @@ def _buildVortexGTCM(latGrid, lonGrid, snapshot, rmax_nm, outerDecayFactor,
     above = prof2d >= 34.0
     anyAbove = above.any(axis=1)
     last = prof2d.shape[1] - 1 - np.argmax(above[:, ::-1], axis=1)
-    r34 = np.where(anyAbove, probe[last], fit["rm"] * 3.0)
+
+    # Interpolate the crossing rather than snapping to the probe grid.  probe[last]
+    # is the last sample still AT or ABOVE 34 kt, so the field there is >= 34 while
+    # the taper below restarts at exactly 34 - the difference lands as a step at the
+    # footprint boundary.  On a 1 nm probe that was a 3.36 kt mean jump, which made
+    # this taper the largest single source of roughness in the GTCM field, larger
+    # than anything in the vortex itself.  Solving for the exact radius where the
+    # field equals 34 makes the boundary continuous by construction.
+    rows = np.arange(prof2d.shape[0])
+    nxt = np.minimum(last + 1, prof2d.shape[1] - 1)
+    v_hi = prof2d[rows, last]
+    v_lo = prof2d[rows, nxt]
+    span = v_hi - v_lo
+    frac = np.where(span > 1e-9, (v_hi - 34.0) / np.maximum(span, 1e-9), 0.0)
+    frac = np.clip(frac, 0.0, 1.0)
+    r34_exact = probe[last] + frac * (probe[nxt] - probe[last])
+
+    r34 = np.where(anyAbove, r34_exact, fit["rm"] * 3.0)
     r34 = r34.reshape(r.shape).astype(np.float32)
 
     decayL = np.maximum(r34 * float(outerDecayFactor), MIN_OUTER_DECAY_NM)

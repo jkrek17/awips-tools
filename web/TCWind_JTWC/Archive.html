@@ -1248,7 +1248,7 @@ function renderObs(an) {
     : (f0(d2l) + ' km / ' + f0(d2l * KM2NM) + ' nm' + (d2l <= 0 ? ' (centre over land)' : ''));
   var html = '';
   html += kv('Valid time', dtg(rec.iso) + '  (' + isoZ(rec.iso) + ')');
-  html += kv('Centre', f1(rec.lat) + '° ' + (rec.lat >= 0 ? 'N' : 'S').replace('N', 'N') +
+  html += kv('Centre', f1(Math.abs(rec.lat)) + '° ' + (rec.lat >= 0 ? 'N' : 'S') +
              ', ' + f1(Math.abs(rec.lon)) + '° ' + (rec.lon >= 0 ? 'E' : 'W'));
   html += kv('Vmax', f0(rec.vmax) + ' kt' + (an.pres !== null ? '   /   ' + f0(an.pres) + ' hPa' : ''));
   html += kv('Motion', f0(rec.motionDir) + '° at ' + f1(rec.motionSpd) + ' kt');
@@ -2285,6 +2285,16 @@ function boot() {
   // Global arrow stepping through the timeline when focus is not in a control.
   document.addEventListener('keydown', function (e) {
     var tag = (e.target && e.target.tagName) || '';
+    // The tab strip owns its own left/right, per the ARIA tabs pattern.
+    if (e.target && e.target.getAttribute && e.target.getAttribute('role') === 'tab') {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        var toStorm = e.target.id === 'tab-cohort';
+        setTab(toStorm ? 'storm' : 'cohort');
+        $(toStorm ? 'tab-storm' : 'tab-cohort').focus();
+      }
+      return;
+    }
     if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || tag === 'UL') return;
     if ($('panel-storm').classList.contains('hide')) return;
     if (e.key === 'ArrowRight') { e.preventDefault(); stepRecord(1); }

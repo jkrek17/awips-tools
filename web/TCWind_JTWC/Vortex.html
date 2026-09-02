@@ -631,20 +631,36 @@ function vortexFieldGTCM(snap) {
       }
     }
 
-    // Python casts the r34 grid to float32 (real AWIPS grid precision).
-    // Probe radii are integers 1..900, exact in float32; the fallback
-    // fit.rm * 3 is not, so fround it rather than leave a systematic
-    // sub-nm offset between the two ports.
-    // No memo: every raster point has its own azimuth, so a cache keyed on
-    // a float would spend more on Number-to-String conversion than the
-    // search costs.
-    return Math.fround(found >= 0 ? (found + 1) : fit.rm * 3.0);
+    // Interpolate the crossing instead of snapping to the whole-nm probe.
+    // probe[found] is the last sample still AT or ABOVE 34 kt, so the field
+    // there is >= 34 while the taper restarts at exactly 34 - the difference
+    // shows up as a step at the footprint boundary (3.36 kt on average before
+    // this, the largest single source of roughness in the GTCM field).
+    // Solving for the radius where the field equals 34 makes it continuous.
+    // Mirrors the same interpolation in _buildVortexGTCM().
+    if (found < 0) return Math.fround(fit.rm * 3.0);
+    var rHi = found + 1;
+    if (found >= nProbe - 1) return Math.fround(rHi);
+    var vHi = magAtProbe(found, azDeg);
+    var vLo = magAtProbe(found + 1, azDeg);
+    var span = vHi - vLo;
+    var frac = span > 1e-9 ? (vHi - 34.0) / span : 0.0;
+    if (frac < 0) frac = 0; else if (frac > 1) frac = 1;
+    // Python casts the r34 grid to float32 (real AWIPS grid precision), so
+    // fround here too rather than leave a systematic sub-nm offset between
+    // the two ports.
+    return Math.fround(rHi + frac);
+  }
+
+  /** Total field magnitude at a probe index, on one bearing. */
+  function magAtProbe(idx, azDeg) {
+    var uv = gtcmUV(prof[idx], azDeg, fit.ax, fit.ay, lat);
+    return Math.sqrt(uv[0] * uv[0] + uv[1] * uv[1]);
   }
 
   /** The literal test Python applies, bit for bit. */
   function aboveThreshold(idx, azDeg) {
-    var uv = gtcmUV(prof[idx], azDeg, fit.ax, fit.ay, lat);
-    return Math.sqrt(uv[0] * uv[0] + uv[1] * uv[1]) >= 34.0;
+    return magAtProbe(idx, azDeg) >= 34.0;
   }
 
   function at(plat, plon) {
@@ -658,11 +674,10 @@ function vortexFieldGTCM(snap) {
 
     var r34 = r34At(az);
     var decayL = Math.max(r34 * OUTER_DECAY_FACTOR, MIN_OUTER_DECAY_NM);
-    // `r > r34`, strictly: a point sitting exactly on the modelled 34 kt
-    // radius keeps the vortex value.  Not cosmetic - r34 is the outermost
-    // whole-nm probe still AT OR ABOVE 34 kt, so the vortex value there is
-    // >= 34 while the taper starts at exactly 34, and `>=` here would shave
-    // a fraction of a knot off a ring the whole footprint is anchored on.
+    // `r > r34`, matching Python.  r34 is now the interpolated radius where
+    // the field equals 34, so the vortex and the taper agree there to within
+    // rounding and either comparison gives the same answer; the strict form
+    // is kept only so the two ports stay bit-comparable.
     if (r > r34) mag = 34.0 * Math.exp(-(r - r34) / decayL);
 
     if (GTCM_APPLY_INFLOW) {
