@@ -473,21 +473,31 @@ function vortexAt(lat, lon, snap, rmax, asymFrac, inflowDeg) {
       const r1 = kr[i], v1 = kv[i], r2 = kr[i + 1], v2 = kv[i + 1];
       if (r > r1 && r <= r2) {
         const ratio = Math.max(r2 / Math.max(r1, 1e-3), 1.0001);
-        let x;
-        if (v1 <= v2) {
-          // Only reachable for the innermost segment, when vmax exactly
-          // equals the next ring's threshold (see the vmax < thr comment
-          // in knotsAt()) - both ends of the segment call for the same
-          // speed, so it's a flat plateau (x=0), not the general-case
-          // Math.max(x, 0.05) floor below. That floor forces a minimum
-          // decay rate meant for v1 > v2 segments; applied here it
-          // invents a several-kt falloff across a span the reported radii
-          // say should be flat.
-          x = 0;
-        } else {
-          x = Math.log(v1 / v2) / Math.log(ratio);
-          x = Math.min(Math.max(x, 0.05), 2.5);
-        }
+        // x solves v1*(r1/r2)^x = v2 exactly, so the profile passes
+        // through the reported radius/threshold at r2 by construction -
+        // that boundary match is the entire point of solving for x per
+        // segment instead of using one global exponent. Floor at 0, not
+        // some higher value like this used to have (0.05): a storm whose
+        // Vmax barely clears the next ring's threshold (a common case -
+        // e.g. 35kt Vmax vs. a 34kt ring, or 65kt vs. 64kt) combined with
+        // a wide ratio (a large reported radius relative to Rmax, equally
+        // common) naturally needs a very shallow exponent to cover that
+        // distance on only a 1kt drop. A higher floor overrides that with
+        // an unrelated, steeper minimum decay rate, which breaks the
+        // boundary match: verified on a real bulletin (35kt TS, Rmax
+        // 36.5nm, R34 120nm reported in one quadrant) that the 0.05 floor
+        // made the modeled field fall under 34kt by ~65nm instead of the
+        // reported 120nm - a 46% shortfall the tool's own "fit check"
+        // against a sample of reported points can miss, since it only
+        // ever tests exactly at the reported radius (where, per this same
+        // bug, a sample landing there could tip into the next segment or
+        // the outer taper on floating-point noise and read correctly by
+        // accident - see compare_py_js.py's "Known benign residual").
+        // v1 < v2 is unreachable (every segment is built strictly weaker
+        // than the last); v1 == v2 (the exact-threshold case) is
+        // naturally x=0 here already, with no special-casing needed.
+        let x = Math.log(v1 / v2) / Math.log(ratio);
+        x = Math.min(Math.max(x, 0), 2.5);
         mag = v1 * Math.pow(Math.max(r1, 1e-3) / safeR, x);
         break;
       }

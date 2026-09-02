@@ -669,23 +669,31 @@ def buildVortex(latGrid, lonGrid, snapshot, rmax_nm,
         r1, v1 = knot_r[i], knot_v[i]
         r2, v2 = knot_r[i + 1], knot_v[i + 1]
         ratio = np.maximum(r2 / np.maximum(r1, 1e-3), 1.0001)
-        if v1 <= v2:
-            # Only reachable for the innermost segment, when vmax exactly
-            # equals the next ring's threshold (see the vmax < threshold
-            # comment above) - both ends of the segment call for the same
-            # speed, so it is a flat plateau (x=0), not the general-case
-            # np.clip(..., 0.05, ...) floor below. That floor forces a
-            # minimum decay rate meant for v1 > v2 segments; applied here
-            # it invents a several-kt falloff across a span the reported
-            # radii say should be flat, and - since natural x is already
-            # exactly 0 in this case - whether a sample sitting exactly on
-            # r2 lands in this segment or the next becomes a coin flip on
-            # floating-point noise that used to be harmless (both sides
-            # agreed) and would otherwise no longer agree.
-            x = 0.0
-        else:
-            x = np.log(v1 / v2) / np.log(ratio)
-            x = np.clip(x, 0.05, 2.5)
+        # x solves v1*(r1/r2)^x = v2 exactly, so the profile passes through
+        # the reported radius/threshold at r2 by construction - that
+        # boundary match is the entire point of solving for x per segment
+        # instead of using one global exponent. Floor at 0.0, not some
+        # higher value like the 0.05 this used to have: a storm whose Vmax
+        # barely clears the next ring's threshold (a common case - e.g.
+        # 35kt Vmax vs. a 34kt ring, or 65kt vs. 64kt) combined with a wide
+        # ratio (a large reported radius relative to Rmax, equally common)
+        # naturally needs a very shallow exponent to cover that distance on
+        # only a 1kt drop. A higher floor overrides that with an
+        # unrelated, steeper minimum decay rate, which breaks the boundary
+        # match: verified on a real bulletin (35kt TS, Rmax 36.5nm, R34
+        # 120nm reported in one quadrant) that the 0.05 floor made the
+        # modeled field fall under 34kt by ~65nm instead of the reported
+        # 120nm - a 46% shortfall the tool's own "fit check" against a
+        # sample of reported points can miss, since it only ever tests
+        # exactly at the reported radius (where, per this same bug, a
+        # sample landing there could tip into the next segment or the
+        # outer taper on floating-point noise and read correctly by
+        # accident - see compare_py_js.py's "Known benign residual").
+        # v1 < v2 is unreachable (every segment is built strictly weaker
+        # than the last); v1 == v2 (the exact-threshold case above) is
+        # naturally x=0 here already, with no special-casing needed.
+        x = np.log(v1 / v2) / np.log(ratio)
+        x = np.clip(x, 0.0, 2.5)
         seg = (r > r1) & (r <= r2)
         mag = np.where(seg,
                        v1 * (np.maximum(r1, 1e-3) / safe_r) ** x,
