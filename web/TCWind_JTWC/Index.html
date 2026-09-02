@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  html, body { margin:0; padding:0; height:100%; font-family: system-ui, sans-serif; }
+  #wrap { display:flex; flex-direction:column; height:100%; }
+  #banner { background:#7f1d1d; color:#fff; padding:6px 10px; font-size:13px;
+            font-weight:600; letter-spacing:.02em; }
+  #banner span { font-weight:400; opacity:.9; }
+  #bar { display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+         padding:8px 10px; background:#f4f4f5; border-bottom:1px solid #d4d4d8;
+         font-size:13px; }
+  #map { flex:1; min-height:300px; }
+  #status { padding:6px 10px; background:#fafafa; border-top:1px solid #e4e4e7;
+            font-size:12px; color:#3f3f46; white-space:pre-wrap; max-height:110px;
+            overflow:auto; }
+  button { font:inherit; padding:4px 10px; cursor:pointer; }
+  select, input[type=range] { font:inherit; }
+  .legend { background:#fff; padding:6px 8px; border-radius:4px; font-size:11px;
+            line-height:1.5; box-shadow:0 1px 4px rgba(0,0,0,.3); }
+  .legend i { display:inline-block; width:14px; height:10px; margin-right:5px; }
+  #paste { display:none; padding:8px 10px; background:#fff7ed;
+           border-bottom:1px solid #fed7aa; }
+  #paste textarea { width:100%; height:110px; font-family:ui-monospace,monospace;
+                    font-size:11px; }
+  .fit-ok { color:#166534; } .fit-bad { color:#b91c1c; font-weight:600; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="banner">
+    *** EXPERIMENTAL - NOT OPERATIONALLY VETTED ***
+    <span>Analytic vortex fit to the JTWC wind radii, not a gridded product.
+    Not verified against observations. Preview only.</span>
+  </div>
+
+  <div id="bar">
+    <button id="reload">Fetch bulletins</button>
+    <button id="togglePaste">Paste text</button>
+    <label><input type="checkbox" id="layRadii" checked> Radii &amp; track</label>
+    <label><input type="checkbox" id="layField" checked> Wind field</label>
+    <label>Time <input type="range" id="tslider" min="0" max="0" value="0" style="width:220px"></label>
+    <span id="tlabel">--</span>
+    <span id="ver" style="margin-left:auto;color:#71717a"></span>
+  </div>
+
+  <div id="paste">
+    <textarea id="pastebox" placeholder="Paste a JTWC warning here, then press Parse"></textarea>
+    <button id="parsePaste" style="margin-top:6px">Parse pasted text</button>
+  </div>
+
+  <div id="map"></div>
+  <div id="status">Loading…</div>
+</div>
+
+<script>
+// ---------------------------------------------------------------------------
+// Tunables. These MUST match the constants block in TCWind_JTWC.py.
+// ---------------------------------------------------------------------------
+const MOTION_ASYMMETRY_FRACTION = 0.5;
+const INFLOW_ANGLE_DEG          = 22.0;
+const RMAX_OVERRIDE_NM          = 0.0;
+const OUTER_DECAY_FACTOR        = 1.0;
+const MIN_OUTER_DECAY_NM        = 30.0;
+const NORMALIZE_CORE_PEAK       = true;
+const PEAK_NORMALIZE_MAX_FACTOR = 2.0;
+const MAX_INSERT_RADIUS_FACTOR  = 5.0;
+
+const KT2MS = 0.514444;
+const KM2NM = 1 / 1.852;
+const EARTH_R_NM = 3440.065;
+const QUADS = ['NE', 'SE', 'SW', 'NW'];
+const QUAD_AZ = { NE: 45, SE: 135, SW: 225, NW: 315 };
+
+// ---------------------------------------------------------------------------
+// Vortex math - port of TCWind_JTWC.py. Scalar rather than array based, which
+// is slower but keeps it readable next to the Python.
+// ---------------------------------------------------------------------------
+
+function willoughbyRmax(vmaxKt, latDeg) {
+  const vms = vmaxKt * KT2MS;
+  return 46.4 * Math.exp(-0.0155 * vms + 0.0169 * Math.abs(latDeg)) * KM2NM;
+}
+
+function resolveRmax(snap, overrideNm) {
+  let rmax = (overrideNm && overrideNm > 0)
+    ? overrideNm : willoughbyRmax(snap.vmax, snap.lat);
+  for (const thr of [64, 50, 34]) {
+    if (!snap.radii[thr]) continue;
+    if (snap.vmax <= thr) continue;
+    const nz = QUADS.map(q => snap.radii[thr][q]).filter(v => v > 0);
+    if (nz.length) rmax = Math.min(rmax, 0.7 * Math.min(...nz));
+    break;
+  }
+  return Math.max(rmax, 3.0);
+}
+
+function distBearing(lat, lon, clat, clon) {
+  const d2r = Math.PI / 180;
+  const lat1 = clat * d2r, lon1 = clon * d2r;
+  const lat2 = lat * d2r,  lon2 = (((lon + 180) % 360 + 360) % 360 - 180) * d2r;
+  const dlon = lon2 - lon1;
+  const a = Math.pow(Math.sin((lat2 - lat1) / 2), 2) +
+            Math.cos(lat1) * Math.cos(lat2) * Math.pow(Math.sin(dlon / 2), 2);
+  const dist = 2 * EARTH_R_NM * Math.asin(Math.sqrt(Math.min(Math.max(a, 0), 1)));
+  const y = Math.sin(dlon) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) -
+            Math.sin(lat1) * Math.cos(lat2) * Math.cos(dlon);
+  let brg = (Math.atan2(y, x) * 180 / Math.PI) % 360;
+  if (brg < 0) brg += 360;
+  return [dist, brg];
+}
+
+function destPoint(clat, clon, brgDeg, distNm) {
+  const d2r = Math.PI / 180, r2d = 180 / Math.PI;
+  const d = distNm / EARTH_R_NM, b = brgDeg * d2r;
+  const l1 = clat * d2r, o1 = clon * d2r;
+  const l2 = Math.asin(Math.sin(l1) * Math.cos(d) +
+                       Math.cos(l1) * Math.sin(d) * Math.cos(b));
+  const o2 = o1 + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(l1),
+                             Math.cos(d) - Math.sin(l1) * Math.sin(l2));
+  return [l2 * r2d, o2 * r2d];
+}
+
+/** Quadrant radii interpolated smoothly around the compass. */
+function azimuthalRadius(azDeg, quadDict, floorNm) {
+  const vals = QUADS.map(q => {
+    const v = quadDict[q] || 0;
+    return v > 0 ? v : floorNm;
+  });
+  const xs = [45, 135, 225, 315, 405];
+  const ys = vals.concat([vals[0]]);
+  let a = azDeg < 45 ? azDeg + 360 : azDeg;
+  for (let i = 0; i < xs.length - 1; i++) {
+    if (a >= xs[i] && a <= xs[i + 1]) {
+      const f = (a - xs[i]) / (xs[i + 1] - xs[i]);
+      return ys[i] + f * (ys[i + 1] - ys[i]);
+    }
+  }
+  return ys[0];
+}
+
+/** Profile knots at one azimuth: [[radius, speed], ...] outward. */
+function knotsAt(snap, rmax, az) {
+  const floor = rmax * 1.05;
+  const kr = [rmax], kv = [snap.vmax];
+  let prev = rmax;
+  for (const thr of [64, 50, 34]) {
+    if (!snap.radii[thr]) continue;
+    if (snap.vmax <= thr) continue;
+    let rr = azimuthalRadius(az, snap.radii[thr], floor);
+    rr = Math.max(rr, prev * 1.02);
+    kr.push(rr); kv.push(thr);
+    prev = rr;
+  }
+  return [kr, kv];
+}
+
+/** Wind speed and direction at one point, before peak normalization. */
+function vortexAt(lat, lon, snap, rmax, asymFrac, inflowDeg) {
+  const [r, az] = distBearing(lat, lon, snap.lat, snap.lon);
+  const [kr, kv] = knotsAt(snap, rmax, az);
+  const safeR = Math.max(r, 1e-3);
+  let mag;
+
+  if (r <= kr[0]) {
+    mag = snap.vmax * (safeR / Math.max(kr[0], 1e-3));   // solid body
+  } else {
+    mag = null;
+    for (let i = 0; i < kr.length - 1; i++) {
+      const r1 = kr[i], v1 = kv[i], r2 = kr[i + 1], v2 = kv[i + 1];
+      if (r > r1 && r <= r2) {
+        const ratio = Math.max(r2 / Math.max(r1, 1e-3), 1.0001);
+        let x = Math.log(v1 / v2) / Math.log(ratio);
+        x = Math.min(Math.max(x, 0.05), 2.5);
+        mag = v1 * Math.pow(Math.max(r1, 1e-3) / safeR, x);
+        break;
+      }
+    }
+    if (mag === null) {
+      // Outside the outermost ring: exponential taper, not extrapolation
+      // of the inner power law.
+      const anchorR = kr[kr.length - 1], anchorV = kv[kv.length - 1];
+      const L = Math.max(anchorR * OUTER_DECAY_FACTOR, MIN_OUTER_DECAY_NM);
+      mag = anchorV * Math.exp(-(r - anchorR) / L);
+    }
+  }
+
+  const sign = snap.lat >= 0 ? 1 : -1;
+  const metFrom = (((az + sign * (90 - inflowDeg)) % 360) + 360) % 360;
+  const rad = metFrom * Math.PI / 180;
+  let u = -mag * Math.sin(rad), v = -mag * Math.cos(rad);
+
+  if (snap.motionSpd) {
+    const frac = asymFrac * Math.min(Math.max(mag / Math.max(snap.vmax, 1), 0), 1);
+    const mr = snap.motionDir * Math.PI / 180;
+    u += frac * snap.motionSpd * Math.sin(mr);
+    v += frac * snap.motionSpd * Math.cos(mr);
+  }
+
+  const outMag = Math.sqrt(u * u + v * v);
+  let outDir = (Math.atan2(-u, -v) * 180 / Math.PI) % 360;
+  if (outDir < 0) outDir += 360;
+  return { mag: outMag, dir: outDir, r: r, az: az, knots: [kr, kv] };
+}
+
+// ---------------------------------------------------------------------------
+// Track interpolation
+// ---------------------------------------------------------------------------
+
+function interpolateTrack(taus, epoch) {
+  let lo = taus[0], hi = taus[0], f = 0;
+  if (epoch <= taus[0].epoch) { lo = hi = taus[0]; }
+  else if (epoch >= taus[taus.length - 1].epoch) {
+    lo = hi = taus[taus.length - 1];
+  } else {
+    for (let i = 0; i < taus.length - 1; i++) {
+      if (taus[i].epoch <= epoch && epoch <= taus[i + 1].epoch) {
+        lo = taus[i]; hi = taus[i + 1];
+        const span = hi.epoch - lo.epoch;
+        f = span > 0 ? (epoch - lo.epoch) / span : 0;
+        break;
+      }
+    }
+  }
+
+  let dlon = hi.lon - lo.lon;
+  if (dlon > 180) dlon -= 360; else if (dlon < -180) dlon += 360;
+
+  const s = {
+    epoch: epoch,
+    lat: lo.lat + f * (hi.lat - lo.lat),
+    lon: ((lo.lon + f * dlon + 180) % 360 + 360) % 360 - 180,
+    vmax: lo.vmax + f * (hi.vmax - lo.vmax),
+    conf: lo.conf + f * (hi.conf - lo.conf),
+    motionDir: lo.motionDir,
+    motionSpd: lo.motionSpd + f * (hi.motionSpd - lo.motionSpd),
+    radii: {}
+  };
+  for (const thr of [64, 50, 34]) {
+    const a = lo.radii[thr] || { NE:0, SE:0, SW:0, NW:0 };
+    const b = hi.radii[thr] || { NE:0, SE:0, SW:0, NW:0 };
+    const vals = {};
+    let any = false;
+    for (const q of QUADS) {
+      vals[q] = a[q] + f * (b[q] - a[q]);
+      if (vals[q] > 0) any = true;
+    }
+    if (any) s.radii[thr] = vals;
+  }
+  return s;
+}
+
+// ---------------------------------------------------------------------------
+// Map
+// ---------------------------------------------------------------------------
+
+const map = L.map('map').setView([22, 165], 4);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 10, attribution: '&copy; OpenStreetMap'
+}).addTo(map);
+
+const radiiLayer = L.layerGroup().addTo(map);
+let fieldOverlay = null;
+
+const legend = L.control({ position: 'bottomright' });
+legend.onAdd = function () {
+  const div = L.DomUtil.create('div', 'legend');
+  div.innerHTML =
+    '<b>Wind (kt)</b><br>' +
+    '<i style="background:#7c3aed"></i>80+<br>' +
+    '<i style="background:#dc2626"></i>64-80<br>' +
+    '<i style="background:#f97316"></i>50-64<br>' +
+    '<i style="background:#eab308"></i>34-50<br>' +
+    '<i style="background:#22c55e"></i>20-34<br>' +
+    '<i style="background:#93c5fd"></i>&lt;20';
+  return div;
+};
+legend.addTo(map);
+
+function windColor(v) {
+  if (v >= 80) return [124, 58, 237];
+  if (v >= 64) return [220, 38, 38];
+  if (v >= 50) return [249, 115, 22];
+  if (v >= 34) return [234, 179, 8];
+  if (v >= 20) return [34, 197, 94];
+  return [147, 197, 253];
+}
+
+let storms = [];      // [{pil, header, taus, stale}]
+let timeSteps = [];   // epochs
+
+function rebuildTimeline() {
+  timeSteps = [];
+  if (!storms.length) return;
+  const t0 = Math.min(...storms.map(s => s.taus[0].epoch));
+  const t1 = Math.max(...storms.map(s => s.taus[s.taus.length - 1].epoch));
+  // Every tau, plus 3-hourly fill, so a forecast time is always landable.
+  const set = new Set();
+  for (const s of storms) for (const t of s.taus) set.add(t.epoch);
+  for (let t = t0; t <= t1; t += 3 * 3600) set.add(t);
+  timeSteps = Array.from(set).sort((a, b) => a - b);
+  const sl = document.getElementById('tslider');
+  sl.min = 0; sl.max = timeSteps.length - 1; sl.value = 0;
+}
+
+function fmtTime(epoch) {
+  const d = new Date(epoch * 1000);
+  const p = n => String(n).padStart(2, '0');
+  return p(d.getUTCDate()) + '/' + p(d.getUTCHours()) + p(d.getUTCMinutes()) + 'Z';
+}
+
+function activeSnaps(epoch) {
+  const out = [];
+  for (const s of storms) {
+    if (epoch < s.taus[0].epoch || epoch > s.taus[s.taus.length - 1].epoch) continue;
+    const snap = interpolateTrack(s.taus, epoch);
+    const onTau = s.taus.some(t => t.epoch === epoch);
+    out.push({ storm: s, snap: snap, rmax: resolveRmax(snap, RMAX_OVERRIDE_NM),
+               onTau: onTau });
+  }
+  return out;
+}
+
+function drawRadii(items) {
+  radiiLayer.clearLayers();
+  const colors = { 64: '#dc2626', 50: '#f97316', 34: '#eab308' };
+
+  for (const s of storms) {
+    const pts = s.taus.map(t => [t.lat, t.lon]);
+    L.polyline(pts, { color: '#111', weight: 2, opacity: .8,
+                      dashArray: '4,4' }).addTo(radiiLayer);
+    for (const t of s.taus) {
+      L.circleMarker([t.lat, t.lon], {
+        radius: 4, color: '#111', fillColor: '#fff', fillOpacity: 1, weight: 2
+      }).bindTooltip(s.pil + ' ' + t.tau + 'h ' + fmtTime(t.epoch) +
+                     '<br>' + t.vmax + ' kt').addTo(radiiLayer);
+    }
+  }
+
+  for (const it of items) {
+    const snap = it.snap, rmax = it.rmax;
+    for (const thr of [34, 50, 64]) {
+      if (!snap.radii[thr]) continue;
+      const floor = rmax * 1.05;
+      const ring = [];
+      for (let az = 0; az <= 360; az += 2) {
+        const rr = azimuthalRadius(az % 360, snap.radii[thr], floor);
+        ring.push(destPoint(snap.lat, snap.lon, az, rr));
+      }
+      L.polygon(ring, { color: colors[thr], weight: 2, fill: false,
+                        opacity: .95 })
+        .bindTooltip(thr + ' kt radius').addTo(radiiLayer);
+    }
+    L.circleMarker([snap.lat, snap.lon], {
+      radius: 6, color: '#000', fillColor: '#fff', fillOpacity: 1, weight: 3
+    }).addTo(radiiLayer);
+  }
+}
+
+function drawField(items) {
+  if (fieldOverlay) { map.removeLayer(fieldOverlay); fieldOverlay = null; }
+  if (!items.length) return;
+
+  // Bounds: the union of every storm's insert limit.
+  let north = -90, south = 90, east = -180, west = 180;
+  for (const it of items) {
+    const maxR = Math.max(...QUADS.map(q =>
+      (it.snap.radii[34] ? it.snap.radii[34][q] : 0) || it.rmax * 3));
+    const pad = Math.max(maxR * MAX_INSERT_RADIUS_FACTOR, 120) / 60.0;
+    north = Math.max(north, it.snap.lat + pad);
+    south = Math.min(south, it.snap.lat - pad);
+    const padLon = pad / Math.max(Math.cos(it.snap.lat * Math.PI / 180), .3);
+    east = Math.max(east, it.snap.lon + padLon);
+    west = Math.min(west, it.snap.lon - padLon);
+  }
+
+  const NX = 260, NY = 220;
+  const cv = document.createElement('canvas');
+  cv.width = NX; cv.height = NY;
+  const ctx = cv.getContext('2d');
+  const img = ctx.createImageData(NX, NY);
+
+  // Per-storm peak normalization, matching the GFE tool: find the strongest
+  // sampled core cell and scale so it reaches Vmax, tapering to zero at the
+  // innermost reported ring so the radii do not move.
+  const norm = items.map(() => ({ factor: 1, innerR: null }));
+  if (NORMALIZE_CORE_PEAK) {
+    items.forEach((it, k) => {
+      const [kr] = knotsAt(it.snap, it.rmax, 45);
+      const innerR = kr.length > 1 ? kr[1] : kr[0];
+      norm[k].innerR = innerR;
+      let best = 0, bestW = 0;
+      for (let iy = 0; iy < NY; iy++) {
+        const lat = north - (iy + .5) * (north - south) / NY;
+        for (let ix = 0; ix < NX; ix++) {
+          const lon = west + (ix + .5) * (east - west) / NX;
+          const res = vortexAt(lat, lon, it.snap, it.rmax,
+                               MOTION_ASYMMETRY_FRACTION, INFLOW_ANGLE_DEG);
+          const w = Math.min(Math.max((innerR - res.r) / Math.max(innerR, 1e-3), 0), 1);
+          if (w > 0 && res.mag > best) { best = res.mag; bestW = w; }
+        }
+      }
+      if (best > 0 && bestW > 0.05 && best < it.snap.vmax) {
+        norm[k].factor = Math.min(
+          1 + (it.snap.vmax / best - 1) / bestW, PEAK_NORMALIZE_MAX_FACTOR);
+      }
+    });
+  }
+
+  let peak = 0;
+  for (let iy = 0; iy < NY; iy++) {
+    const lat = north - (iy + .5) * (north - south) / NY;
+    for (let ix = 0; ix < NX; ix++) {
+      const lon = west + (ix + .5) * (east - west) / NX;
+      let best = 0;
+      items.forEach((it, k) => {
+        const res = vortexAt(lat, lon, it.snap, it.rmax,
+                             MOTION_ASYMMETRY_FRACTION, INFLOW_ANGLE_DEG);
+        const [kr] = res.knots;
+        const r34 = kr[kr.length - 1];
+        if (res.r > r34 * MAX_INSERT_RADIUS_FACTOR) return;
+        let m = res.mag;
+        if (norm[k].factor > 1) {
+          const w = Math.min(Math.max(
+            (norm[k].innerR - res.r) / Math.max(norm[k].innerR, 1e-3), 0), 1);
+          m *= 1 + (norm[k].factor - 1) * w;
+        }
+        if (m > best) best = m;
+      });
+      const o = (iy * NX + ix) * 4;
+      if (best < 15) { img.data[o + 3] = 0; continue; }
+      const c = windColor(best);
+      img.data[o] = c[0]; img.data[o + 1] = c[1]; img.data[o + 2] = c[2];
+      img.data[o + 3] = 165;
+      if (best > peak) peak = best;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  fieldOverlay = L.imageOverlay(cv.toDataURL(),
+    [[south, west], [north, east]], { opacity: .75 });
+  if (document.getElementById('layField').checked) fieldOverlay.addTo(map);
+  return peak;
+}
+
+/** Check the rendered profile against the numbers the bulletin states. */
+function fitCheck(items) {
+  let worst = 0, n = 0;
+  for (const it of items) {
+    for (const thr of [64, 50, 34]) {
+      if (!it.snap.radii[thr]) continue;
+      for (const q of QUADS) {
+        const rr = it.snap.radii[thr][q];
+        if (rr <= 0) continue;
+        const p = destPoint(it.snap.lat, it.snap.lon, QUAD_AZ[q], rr);
+        const res = vortexAt(p[0], p[1], it.snap, it.rmax, 0, INFLOW_ANGLE_DEG);
+        worst = Math.max(worst, Math.abs(res.mag - thr));
+        n++;
+      }
+    }
+  }
+  return { worst: worst, count: n };
+}
+
+function render() {
+  if (!timeSteps.length) return;
+  const idx = parseInt(document.getElementById('tslider').value, 10);
+  const epoch = timeSteps[idx];
+  const items = activeSnaps(epoch);
+
+  document.getElementById('tlabel').textContent =
+    fmtTime(epoch) + (items.some(i => i.onTau) ? '  (forecast time)' : '');
+
+  radiiLayer.clearLayers();
+  if (document.getElementById('layRadii').checked) drawRadii(items);
+  const peak = document.getElementById('layField').checked
+    ? drawField(items) : (drawField(items), null);
+
+  const fc = fitCheck(items);
+  const cls = fc.worst < 0.5 ? 'fit-ok' : 'fit-bad';
+  const lines = items.map(it =>
+    it.storm.pil + ' ' + it.storm.label + ': ' +
+    it.snap.vmax.toFixed(0) + ' kt, Rmax ' + it.rmax.toFixed(1) + ' nm' +
+    (it.snap.conf < 1 ? ' [post-transition, confidence ' +
+      it.snap.conf.toFixed(2) + ']' : ''));
+  document.getElementById('status').innerHTML =
+    lines.join('\n') +
+    (peak ? '\npeak in field: ' + peak.toFixed(0) + ' kt' : '') +
+    '\n<span class="' + cls + '">fit check: worst error at a reported radius ' +
+    fc.worst.toFixed(2) + ' kt across ' + fc.count + ' points</span>';
+}
+
+// ---------------------------------------------------------------------------
+// Wiring
+// ---------------------------------------------------------------------------
+
+function ingest(results) {
+  storms = [];
+  const notes = [];
+  for (const r of results) {
+    if (!r.ok) { notes.push(r.file + ': ' + (r.error || 'no data')); continue; }
+    if (r.stale) {
+      notes.push(r.file + ': stale, ' +
+        (r.ageHours !== undefined ? r.ageHours.toFixed(0) + ' h old' : 'period ended'));
+      continue;
+    }
+    const s = r.storm;
+    s.label = [s.header.systemType, s.header.stormId,
+               s.header.stormName ? '(' + s.header.stormName + ')' : '']
+      .filter(Boolean).join(' ');
+    storms.push(s);
+  }
+  rebuildTimeline();
+  if (!storms.length) {
+    document.getElementById('status').textContent =
+      'No live storms.\n' + notes.join('\n');
+    radiiLayer.clearLayers();
+    if (fieldOverlay) { map.removeLayer(fieldOverlay); fieldOverlay = null; }
+    return;
+  }
+  const lats = storms.flatMap(s => s.taus.map(t => t.lat));
+  const lons = storms.flatMap(s => s.taus.map(t => t.lon));
+  map.fitBounds([[Math.min(...lats) - 2, Math.min(...lons) - 2],
+                 [Math.max(...lats) + 2, Math.max(...lons) + 2]]);
+  render();
+  if (notes.length) {
+    document.getElementById('status').textContent += '\n' + notes.join('\n');
+  }
+}
+
+function load(force) {
+  document.getElementById('status').textContent = 'Fetching…';
+  google.script.run
+    .withSuccessHandler(ingest)
+    .withFailureHandler(e => {
+      document.getElementById('status').textContent =
+        'Fetch failed: ' + e.message + '\nUse Paste text instead.';
+    })
+    .getBulletins(!!force);
+}
+
+document.getElementById('reload').onclick = () => load(true);
+document.getElementById('tslider').oninput = render;
+document.getElementById('layRadii').onchange = render;
+document.getElementById('layField').onchange = () => {
+  if (!document.getElementById('layField').checked && fieldOverlay) {
+    map.removeLayer(fieldOverlay);
+  }
+  render();
+};
+document.getElementById('togglePaste').onclick = () => {
+  const p = document.getElementById('paste');
+  p.style.display = p.style.display === 'block' ? 'none' : 'block';
+};
+document.getElementById('parsePaste').onclick = () => {
+  const txt = document.getElementById('pastebox').value;
+  if (!txt.trim()) return;
+  document.getElementById('status').textContent = 'Parsing…';
+  google.script.run
+    .withSuccessHandler(r => ingest([r]))
+    .withFailureHandler(e => {
+      document.getElementById('status').textContent = 'Parse failed: ' + e.message;
+    })
+    .parsePasted(txt);
+};
+
+document.getElementById('ver').textContent = 'v2026-09-02a';
+load(false);
+</script>
+</body>
+</html>
