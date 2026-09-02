@@ -84,6 +84,12 @@ def build_scatter(all_storms):
             rmw = to_float(row["USA_RMW"])
             if lat is None or vmax is None or rmw is None or rmw <= 0:
                 continue
+            # buildFor() in TCWind_JTWC.py now skips any storm-time below
+            # tropical storm strength outright, so this chart (which uses
+            # the real resolveRmax()) shouldn't score the tool against
+            # something it no longer even attempts.
+            if vmax < 34:
+                continue
             mins = []
             for thresh in (64, 50, 34):
                 q = quad_radii(row, thresh)

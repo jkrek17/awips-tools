@@ -127,41 +127,44 @@
         <h3>The size formula now guesses right on average</h3>
         <ul>
           <li>The original formula was built and tuned using Atlantic
-            storms. Applied to the Western Pacific, it guessed too small
-            by about 10 nautical miles (nm) on average.</li>
-          <li>We rebuilt it using over 16,000 real Western Pacific storm
+            storms. Applied to Western Pacific tropical storms and
+            typhoons, it guessed too small by about 6 nautical miles (nm)
+            on average.</li>
+          <li>We rebuilt it using thousands of real Western Pacific storm
             records, then tested it against storms it hadn't seen before.
-            The average miss dropped to about 3&nbsp;nm, and it tracks the
+            The average miss dropped to about 2&nbsp;nm, and it tracks the
             real answer more closely too.</li>
           <li>This improved version is what the tool uses today.</li>
         </ul>
       </div>
-      <div class="finding caution">
-        <span class="tag">Storm size &middot; caveat</span>
-        <h3>Still a coin flip for any one weak storm</h3>
+      <div class="finding">
+        <span class="tag">Storm size &middot; scope</span>
+        <h3>The tool skips depressions entirely</h3>
         <ul>
-          <li>For weak depressions specifically, the tool has almost no
-            ability to predict any single storm's exact size - even though
-            its average across many storms is accurate.</li>
-          <li>Treat the tool's size guess for a weak system as a reasonable
-            long-run average, not a real prediction for that particular
-            storm.</li>
+          <li>Below tropical storm strength (under 34 kt), there's no
+            organized wind field to model, and almost never any reported
+            wind radii to build one from even if there were.</li>
+          <li>Rather than guess anyway, the tool now leaves the
+            background wind grid completely untouched for a storm at
+            depression strength - no invented structure where there
+            isn't any real one.</li>
+          <li>Everything else on this page is scored only against
+            tropical-storm-strength and stronger records, to match.</li>
         </ul>
       </div>
       <div class="finding warn">
         <span class="tag">Wind field size &middot; ROCI check</span>
-        <h3>Badly too small for weak systems</h3>
+        <h3>Runs small, worse for tropical storms than typhoons</h3>
         <ul>
           <li>We checked the size of the tool's wind field against ROCI -
             how far out a storm's whole circulation reaches, a separate
             measurement the tool never actually sees or uses.</li>
-          <li>For depressions, the tool's field runs 83 to 109&nbsp;nm too
-            small on average, and barely predicts the real size at all.
-            Most weak storms don't even have reported wind radii for the
-            tool to build a realistic size from in the first place.</li>
-          <li>For typhoon-strength storms, the size is roughly right,
-            though the outer edge stretches a bit too far at the very
-            lowest wind speeds.</li>
+          <li>For tropical storms, the tool's field runs 16 to 69&nbsp;nm
+            too small on average depending on which wind speed you check,
+            and only loosely tracks the real size.</li>
+          <li>For typhoons, the field is closer at moderate wind speeds
+            but stretches far too wide at the very lowest speeds checked -
+            by nearly 80&nbsp;nm too big on average.</li>
         </ul>
       </div>
       <div class="finding caution">
@@ -172,7 +175,7 @@
             independent formula (Holland, 1980), starting from the same
             storm strength and size.</li>
           <li>The two disagree the most just outside the eyewall - by
-            about 11&nbsp;kt on average, and by as much as 70+&nbsp;kt in
+            about 12&nbsp;kt on average, and by as much as 68&nbsp;kt in
             the worst cases - and agree more the farther out you go.</li>
           <li>That's also the area - the eyewall - where getting the wind
             speed wrong matters most.</li>
@@ -188,10 +191,12 @@
         <canvas id="btScatterCanvas" width="600" height="320"></canvas>
         <div class="cap">
           The tool's guessed storm size compared to JTWC's real, corrected
-          size, for every usable Western Pacific storm from 2001-2024. The
-          diagonal line is a perfect match; dots below it mean the tool
-          guessed too small. Colored by storm strength: purple = typhoon,
-          orange = tropical storm, green = depression.
+          size, for every usable Western Pacific tropical storm or
+          typhoon from 2001-2024 (depressions are out of scope - see
+          "The tool skips depressions entirely" above). The diagonal
+          line is a perfect match; dots below it mean the tool guessed
+          too small. Colored by storm strength: purple = typhoon, orange
+          = tropical storm.
         </div>
         <div class="stat" id="btScatterStat"></div>
       </div>
@@ -256,7 +261,10 @@ function drawBestTrackScatter(data) {
   const AX = 60;
   const x = v => padL + (W - padL - padR) * Math.min(v, AX) / AX;
   const y = v => H - padB - (H - padT - padB) * Math.min(v, AX) / AX;
-  const catColor = vmax => vmax >= 64 ? '#7c3aed' : vmax >= 34 ? '#f97316' : '#22c55e';
+  // Depressions never appear here (see build_scatter() in
+  // prep_besttrack_data.py) - the tool no longer runs below 34kt, so
+  // there's no green "depression" branch to keep around.
+  const catColor = vmax => vmax >= 64 ? '#7c3aed' : '#f97316';
 
   ctx.strokeStyle = '#d4d4d8'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, H - padB);

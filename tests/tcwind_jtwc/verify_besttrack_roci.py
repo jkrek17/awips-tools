@@ -101,6 +101,12 @@ def main():
     for sid, name, season, rows in iter_storms(path):
         for rec in build_storm_records(rows):
             n_seen += 1
+            # buildFor() in TCWind_JTWC.py now skips any storm-time below
+            # tropical storm strength outright, so scoring the tool's
+            # field against depression-strength records would be scoring
+            # it on something it no longer even attempts.
+            if rec["vmax"] < 34:
+                continue
             if not rec["roci"] or rec["roci"] <= 0:
                 continue
             n_used += 1
@@ -117,7 +123,7 @@ def main():
         print("Tool's radius where modeled wind falls below %.0f kt, "
               "vs best-track ROCI:" % t)
         fmt("all records", stats(pairs[t]))
-        for cat in ("TD (<34kt)", "TS (34-63kt)", "TY+ (64kt+)"):
+        for cat in ("TS (34-63kt)", "TY+ (64kt+)"):
             fmt("  " + cat, stats(by_cat[t].get(cat, [])))
         print()
 

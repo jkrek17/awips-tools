@@ -662,6 +662,18 @@ function windColor(v) {
 let storms = [];      // [{pil, header, taus, stale}]
 let timeSteps = [];   // epochs
 
+// Tropical Depression strength (Vmax < 34kt): no organized 34kt-or-
+// greater wind field to speak of, and - per JTWC's own reporting
+// practice - essentially never any wind radii to build one from even if
+// there were. Building this tool's parametric vortex for one anyway
+// would invent structure that isn't really there, not add real
+// information - matches buildFor()'s skip in TCWind_JTWC.py exactly.
+// The track itself (position history) still draws regardless; only the
+// rings/raster/current-position marker are gated on this.
+function hasOrganizedWind(it) {
+  return it.snap.vmax >= 34;
+}
+
 function rebuildTimeline() {
   timeSteps = [];
   if (!storms.length) return;
@@ -747,6 +759,7 @@ function literalRadiiPolygon(lat0, lon0, quadDict) {
 
 function drawRadii(items) {
   radiiLayer.clearLayers();
+  items = items.filter(hasOrganizedWind);
   const colors = { 64: '#dc2626', 50: '#f97316', 34: '#eab308' };
 
   // The point the time slider/hotkeys are currently sitting on, if any -
@@ -840,6 +853,7 @@ function drawRadii(items) {
 }
 
 function drawField(items) {
+  items = items.filter(hasOrganizedWind);
   if (fieldOverlay) { map.removeLayer(fieldOverlay); fieldOverlay = null; }
   if (!items.length) return;
 
@@ -934,7 +948,7 @@ function drawField(items) {
 /** Check the rendered profile against the numbers the bulletin states. */
 function fitCheck(items) {
   let worst = 0, n = 0;
-  for (const it of items) {
+  for (const it of items.filter(hasOrganizedWind)) {
     for (const thr of [64, 50, 34]) {
       if (!it.snap.radii[thr]) continue;
       for (const q of QUADS) {
@@ -967,13 +981,18 @@ function render() {
   const fc = fitCheck(items);
   const cls = fc.worst < 0.5 ? 'fit-ok' : 'fit-bad';
   const lines = items.map(it =>
-    it.storm.pil + ' ' + it.storm.label + ': ' +
-    it.snap.vmax.toFixed(0) + ' kt, Rmax ' + it.rmax.toFixed(1) + ' nm' +
-    (it.snap.rmw ? ' (actual RMW ' + it.snap.rmw.toFixed(1) + ' nm, error ' +
-      (it.rmax - it.snap.rmw >= 0 ? '+' : '') +
-      (it.rmax - it.snap.rmw).toFixed(1) + ' nm)' : '') +
-    (it.snap.conf < 1 ? ' [post-transition, confidence ' +
-      it.snap.conf.toFixed(2) + ']' : ''));
+    hasOrganizedWind(it)
+    ? it.storm.pil + ' ' + it.storm.label + ': ' +
+      it.snap.vmax.toFixed(0) + ' kt, Rmax ' + it.rmax.toFixed(1) + ' nm' +
+      (it.snap.rmw ? ' (actual RMW ' + it.snap.rmw.toFixed(1) + ' nm, error ' +
+        (it.rmax - it.snap.rmw >= 0 ? '+' : '') +
+        (it.rmax - it.snap.rmw).toFixed(1) + ' nm)' : '') +
+      (it.snap.conf < 1 ? ' [post-transition, confidence ' +
+        it.snap.conf.toFixed(2) + ']' : '')
+    : it.storm.pil + ' ' + it.storm.label + ': ' + it.snap.vmax.toFixed(0) +
+      ' kt - below tropical storm strength, no wind field built' +
+      ' (matches the real GFE tool, which leaves the background grid' +
+      ' untouched here too)');
   document.getElementById('status').innerHTML =
     lines.join('\n') +
     (peak ? '\npeak in field: ' + peak.toFixed(0) + ' kt' : '') +

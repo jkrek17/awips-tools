@@ -1211,6 +1211,7 @@ if _IN_GFE:
 
             written = 0
             skippedST = 0
+            skippedTD = 0
             contributed = {}
             peakWritten = 0.0
             bulletinPeak = max(t.vmax for s in storms for t in s["taus"])
@@ -1218,13 +1219,29 @@ if _IN_GFE:
             def buildFor(when, tr):
                 """Storm fields valid at `when`, for the block `tr`."""
                 out = []
+                tdSkipped = 0
                 for s in storms:
                     taus = s["taus"]
                     if when < taus[0].epoch or when > taus[-1].epoch:
                         continue
                     snap = interpolateTrack(taus, when)
                     if not INSERT_AFTER_SUBTROPICAL and snap.conf < 1.0:
-                        return None, True
+                        return None, True, 0
+                    if snap.vmax < 34.0:
+                        # Tropical Depression strength: no organized 34kt-
+                        # or-greater wind field to speak of, and - per
+                        # JTWC's own reporting practice - essentially
+                        # never any wind radii to build one from even if
+                        # there were. This tool's parametric vortex is
+                        # built to represent an organized TC circulation;
+                        # inserting it over the background model's own
+                        # winds here would invent structure that isn't
+                        # really there, not add real information. Leave
+                        # the background untouched for this storm at this
+                        # time - any other, stronger storm in the same
+                        # bulletin is unaffected.
+                        tdSkipped += 1
+                        continue
                     rmax = resolveRmax(snap, RMAX_OVERRIDE_NM)
                     vMag, vDir, r, r34 = buildVortex(
                         latGrid, lonGrid, snap, rmax,
@@ -1237,7 +1254,7 @@ if _IN_GFE:
                                 "r34": r34,
                                 "limitFactor": MAX_INSERT_RADIUS_FACTOR})
                     contributed[s["pil"]] = contributed.get(s["pil"], 0) + 1
-                return out, False
+                return out, False, tdSkipped
 
             def writeBlock(tr, built):
                 """Insert `built` over the background and store the grid."""
@@ -1275,7 +1292,8 @@ if _IN_GFE:
                 if trStart < spanStart or trStart > spanEnd:
                     continue
 
-                built, stFlag = buildFor(trStart, tr)
+                built, stFlag, tdCount = buildFor(trStart, tr)
+                skippedTD += tdCount
                 if stFlag:
                     skippedST += 1
                     continue
@@ -1345,6 +1363,9 @@ if _IN_GFE:
             if skippedST:
                 msg += " Skipped %d storm-times after subtropical " \
                        "transition." % skippedST
+            if skippedTD:
+                msg += " Skipped %d storm-times below tropical storm " \
+                       "strength (no 34kt wind)." % skippedTD
             if stale:
                 msg += " Skipped stale: " + "; ".join(stale) + "."
             if problems:

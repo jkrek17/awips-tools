@@ -145,10 +145,17 @@ def atlantic_willoughby_rmax(vmax_kt, lat_deg):
 
 def main():
     path = sys.argv[1] if len(sys.argv) > 1 else CACHE
+    # >= 34kt only: buildFor() in TCWind_JTWC.py now skips any storm-time
+    # below tropical storm strength outright (no organized 34kt-or-greater
+    # wind field to speak of, essentially never any radii either) rather
+    # than build a vortex for it - so scoring the tool against depression-
+    # strength records would be scoring it on something it no longer even
+    # attempts. See the "TD (<34kt)" row this used to print here.
     records = [rec for row in load_rows(path)
-               if (rec := build_record(row)) is not None]
-    print("%d usable JTWC best-track records (WP basin, RMW present)\n"
-          % len(records))
+               if (rec := build_record(row)) is not None and rec["vmax"] >= 34]
+    print("%d usable JTWC best-track records (WP basin, RMW present, "
+          "TS-strength or greater - depressions excluded, the tool no "
+          "longer runs on them)\n" % len(records))
 
     atlantic_only = []
     current_only = []
@@ -183,7 +190,7 @@ def main():
           "when reported), vs JTWC best-track RMW:")
     fmt("all records", stats(current_clamped))
     print()
-    for cat in ("TD (<34kt)", "TS (34-63kt)", "TY+ (64kt+)"):
+    for cat in ("TS (34-63kt)", "TY+ (64kt+)"):
         fmt(cat, stats(by_cat_clamped.get(cat, [])))
 
     print("\nSplit by whether the radii clamp actually changed the estimate:")
