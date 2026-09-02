@@ -596,18 +596,31 @@ def buildVortex(latGrid, lonGrid, snapshot, rmax_nm,
     # A reported quadrant radius already IS this storm's real asymmetry -
     # translation-driven or otherwise (shear, extratropical transition,
     # ...) - so adding the synthetic motion vector below on top of it is
-    # double counting, not reinforcement. NHC's own reference wind model
-    # (DeMaria et al. 2009, the radii-CLIPER field WTCM/GTCM was adapted
-    # from) does not have this problem because it only ever has ONE
-    # asymmetry mechanism: it starts from a genuinely AXISYMMETRIC Rankine
-    # vortex and adds a single motion-based wavenumber-1 term, then folds
-    # the official radii in as an additive residual correction - it never
-    # independently shapes a per-quadrant vortex from the radii and then
-    # also adds a motion vector on top the way this function's knot_r
-    # construction above does. Skip the motion term whenever there is
-    # anything to be asymmetric about already; keep it as a shaping
-    # fallback for the radii-less case (weak/developing systems where only
-    # Vmax is known), so those aren't left perfectly circular.
+    # double counting, not reinforcement. Confirmed against NHC's own
+    # Gridded TCM (WTCM/GTCM) Users Guide: WTCM never independently shapes
+    # a per-quadrant vortex from the radii and then ALSO adds a motion
+    # vector - it has exactly one asymmetry mechanism. It fits a single
+    # SYMMETRIC modified-Rankine vortex (Rappin et al. 2013) plus one
+    # wavenumber-1 motion term (Schwerdt 1979: a = 1.6*c^0.63, c = storm
+    # speed in kt) by least-squares against ALL the reported radii
+    # together (eq. 7 in the guide), not fit per quadrant the way this
+    # function's knot_r construction above is. (Its legacy predecessor,
+    # TCMWindTool, instead did what this function does - a per-quadrant
+    # radial fit, tangentially interpolated between quadrants - but with
+    # no separate motion vector either; WTCM replaced it rather than
+    # adding the motion term on top of it.) Skip the motion term whenever
+    # there is anything to be asymmetric about already; keep it as a
+    # shaping fallback for the radii-less case (weak/developing systems
+    # where only Vmax is known), so those aren't left perfectly circular.
+    #
+    # NOTE: WTCM also subtracts the asymmetry magnitude from Vm inside the
+    # vortex itself (V = (Vm-a)*(...)) specifically so the vortex peak
+    # plus the vector add back up to Vm, not Vm+a - this function's
+    # radii-less fallback below does not do that (knot_v[0] stays snap.vmax
+    # exactly), so it can still overshoot Vmax at the point where the
+    # motion vector aligns with the tangential wind. Not fixed here - the
+    # radii-less case is a much smaller share of real use than the
+    # radii-present case this function is otherwise built around.
     if snapshot.radii:
         asymFrac = 0.0
 
