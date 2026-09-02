@@ -56,7 +56,7 @@
 
   .legend { background:var(--surface); padding:8px 10px; border-radius:var(--radius);
             font-size:11px; line-height:1.55; box-shadow:var(--shadow); border:1px solid var(--border);
-            min-width:128px; }
+            min-width:128px; max-width:220px; }
   .legend i { display:inline-block; width:14px; height:10px; margin-right:5px; border-radius:2px; }
   .legendSep { border-top:1px solid var(--border); margin:6px 0; }
   .legendNote { font-size:9.5px; color:var(--text-faint); margin-top:2px; }
@@ -641,14 +641,11 @@ legend.onAdd = function () {
     '<span class="swatch" style="border-color:#dc2626"></span>64 kt radius<br>' +
     '<span class="swatch" style="border-color:#f97316"></span>50 kt radius<br>' +
     '<span class="swatch" style="border-color:#eab308"></span>34 kt radius<br>' +
-    '<span class="swatch dash" style="border-color:#111"></span>same, literal&#8224;<br>' +
+    '<span class="swatch dash" style="border-color:#94a3b8"></span>same, literal&#8224;<br>' +
     '<span class="swatch dash" style="border-color:#db2777"></span>actual RMW*<br>' +
     '<span class="swatch dash" style="border-color:#0d9488"></span>actual ROCI*<br>' +
-    '<div class="legendNote">*Archived Cases only. &#8224;"Reported radii ' +
-    '(literal)" checkbox - same colors as the solid rings above, each ' +
-    'quadrant held constant across its own 90&deg; span and stepped at ' +
-    'the compass boundaries, instead of the solid rings\' smooth ' +
-    'interpolation between quadrant centers.</div>';
+    '<div class="legendNote">*Archived Cases only<br>' +
+    '&#8224;same colors, quadrants unsmoothed</div>';
   return div;
 };
 legend.addTo(map);
