@@ -424,6 +424,23 @@ function knotsAt(snap, rmax, az) {
 
 /** Wind speed and direction at one point, before peak normalization. */
 function vortexAt(lat, lon, snap, rmax, asymFrac, inflowDeg) {
+  // A reported quadrant radius already IS this storm's real asymmetry -
+  // translation-driven or otherwise (shear, extratropical transition,
+  // ...) - so adding the synthetic motion vector below on top of it is
+  // double counting, not reinforcement. NHC's own reference wind model
+  // (DeMaria et al. 2009, the radii-CLIPER field WTCM/GTCM was adapted
+  // from) does not have this problem because it only ever has ONE
+  // asymmetry mechanism: it starts from a genuinely AXISYMMETRIC Rankine
+  // vortex and adds a single motion-based wavenumber-1 term, then folds
+  // the official radii in as an additive residual correction - it never
+  // independently shapes a per-quadrant vortex from the radii and then
+  // also adds a motion vector on top the way knotsAt() does. Skip the
+  // motion term whenever there is anything to be asymmetric about
+  // already; keep it as a shaping fallback for the radii-less case
+  // (weak/developing systems where only Vmax is known), so those aren't
+  // left perfectly circular.
+  if (Object.keys(snap.radii).length) asymFrac = 0;
+
   const [r, az] = distBearing(lat, lon, snap.lat, snap.lon);
   const [kr, kv] = knotsAt(snap, rmax, az);
   const safeR = Math.max(r, 1e-3);

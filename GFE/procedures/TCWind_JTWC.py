@@ -593,6 +593,24 @@ def buildVortex(latGrid, lonGrid, snapshot, rmax_nm,
                 outerDecayFactor=OUTER_DECAY_FACTOR,
                 normalizePeak=NORMALIZE_CORE_PEAK):
     """Return (magGrid_kt, dirGrid_deg, r_nm, r34_nm) for one time."""
+    # A reported quadrant radius already IS this storm's real asymmetry -
+    # translation-driven or otherwise (shear, extratropical transition,
+    # ...) - so adding the synthetic motion vector below on top of it is
+    # double counting, not reinforcement. NHC's own reference wind model
+    # (DeMaria et al. 2009, the radii-CLIPER field WTCM/GTCM was adapted
+    # from) does not have this problem because it only ever has ONE
+    # asymmetry mechanism: it starts from a genuinely AXISYMMETRIC Rankine
+    # vortex and adds a single motion-based wavenumber-1 term, then folds
+    # the official radii in as an additive residual correction - it never
+    # independently shapes a per-quadrant vortex from the radii and then
+    # also adds a motion vector on top the way this function's knot_r
+    # construction above does. Skip the motion term whenever there is
+    # anything to be asymmetric about already; keep it as a shaping
+    # fallback for the radii-less case (weak/developing systems where only
+    # Vmax is known), so those aren't left perfectly circular.
+    if snapshot.radii:
+        asymFrac = 0.0
+
     r, az = _distBearingGrids(latGrid, lonGrid, snapshot.lat, snapshot.lon)
 
     floor = rmax_nm * 1.05
