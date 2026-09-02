@@ -1954,7 +1954,12 @@ function render() {
     });
   }
   if (archiveRms !== null) {
-    lines.push({ text: '   archive reference RMS (getFindings): ' + n2(archiveRms) + ' kt' });
+    /* A different statistic from the p75/p90 above: this is the aggregate
+       RMS over the whole WestPac archive, not a percentile of per-fit RMS.
+       Labelled so the two are not read as the same number. */
+    lines.push({ text: '   for scale — aggregate WestPac fit RMS across the ' +
+      'whole archive (Findings, fitQuality.WP.rmsWindErrKt): ' +
+      n2(archiveRms) + ' kt' });
   }
   for (i = 0; i < slots.length; i++) {
     var sl = slots[i];

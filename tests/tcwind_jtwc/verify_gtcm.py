@@ -189,6 +189,21 @@ def _one_sided_fit(x, y, x0, lo, hi):
     return float(slope), float(intercept)
 
 
+def _step_across(x, y, x0):
+    """Magnitude of the field's step across x0, in kt.
+
+    The two samples either side of x0 on the ray grid, differenced.  On a
+    RAY_STEP_NM grid this also picks up one grid step of ordinary gradient,
+    which is the honest floor on what a sampled field can distinguish a
+    discontinuity from - a genuinely continuous knot reads as the local
+    gradient times the grid step, not as zero.
+    """
+    j = int(np.searchsorted(x, x0))
+    if j <= 0 or j >= len(x):
+        return None
+    return abs(float(y[j]) - float(y[j - 1]))
+
+
 def _perquad_knots(snap, rmax, az):
     """Knot radii per azimuth for the per-quadrant construction.
 
@@ -310,7 +325,18 @@ def radial_kinks_and_monotonicity(snap, rmax, fit):
                 if a is None or b is None:
                     continue
                 brk = abs(b[0] - a[0])
-                jmp = abs(b[1] - a[1])
+                # The jump is the STEP across the knot, measured between the two
+                # samples straddling it, not the gap between two linear
+                # extrapolations.  Extrapolating over a window this wide turns
+                # any curvature difference across the knot into a phantom jump:
+                # on a deliberately continuous power-law-into-exponential test
+                # function the old estimator reported 0.02, 0.09 and 0.30 kt at
+                # 2, 5 and 10 nm windows respectively, for a true step of 1e-6.
+                # The vortex is a power law and the taper is an exponential, so
+                # that mismatch is exactly the shape this knot has.
+                jmp = _step_across(rr, mag[i], r0)
+                if jmp is None:
+                    continue
                 breaks.append(brk)
                 jumps.append(jmp)
                 d = detail.setdefault(labels[row], {"break": [], "jump": []})
