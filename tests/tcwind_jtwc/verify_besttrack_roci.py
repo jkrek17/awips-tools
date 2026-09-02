@@ -1,5 +1,36 @@
 #!/usr/bin/env python3
-"""Verify the tool's wind-field SIZE (not just its core Rmax) against real
+"""SUPERSEDED FRAMING - kept for provenance, not as a current check.
+
+    This scores the tool's field SIZE against best track as though the tool
+    were a forecast competing with nature.  It is not.  Read this first.
+
+TCWind_JTWC.py's job is to render a physically plausible wind field consistent
+with one bulletin's reported radii, not to reproduce a storm's true areal
+extent - which no bulletin contains and no construction here could recover.
+Under "gtcm" the modelled size is set by the least-squares fit to the reported
+radii plus this tool's documented outer taper; both are choices about
+rendering, and neither is a prediction of ROCI.
+
+The headline result recorded in README.md - that the field is dramatically too
+small for tropical depressions, bias -83 to -109 nm - is about records that
+carry no wind radii at all.  Those are exactly the records verify_gtcm.py
+excludes, because with no reported radii both constructions collapse to the
+same climatological guess and the comparison carries no information.  The
+finding is not wrong; it is about a part of the input space the current
+verification deliberately does not speak to, and it should not be read as a
+statement about the shipped field.
+
+Kept rather than deleted because web/TCWind_JTWC/Index.html cites it by name
+where it explains what the modelled field's outer edge does and does not mean,
+and because the ROCI-is-a-pressure-measure caveat below is the kind of thing
+that gets re-derived badly if it is thrown away.  It cannot be re-run here: it
+needs the WestPac IBTrACS CSV, which is not in this environment.
+
+What replaced it: tests/tcwind_jtwc/verify_gtcm.py.
+
+--- original header follows ------------------------------------------------
+
+Verify the tool's wind-field SIZE (not just its core Rmax) against real
 best-track data, using ROCI - radius of the outermost closed isobar.
 
 Every check up to now (verify_besttrack_rmax.py, and the fit check the
