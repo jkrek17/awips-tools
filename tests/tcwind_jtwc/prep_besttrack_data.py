@@ -1,36 +1,40 @@
 #!/usr/bin/env python3
-"""Build the two best-track datasets shipped inside the Apps Script web
-app for the "Best-track QC" panel:
+"""Build the datasets shipped inside the Apps Script web app for the
+"Best-track QC" panel:
 
   - a random sample of 100 storms, each with its full track (position,
-    Vmax, reported wind radii, and observed RMW where available), for
-    the storm browser - lets you flip through a real storm and see its
-    actual reported radii/RMW next to the tool's own modeled output.
+    Vmax, reported wind radii, RMW, and ROCI where available), for the
+    storm browser - lets you flip through a real storm and see its
+    actual reported radii/RMW/ROCI next to the tool's own modeled
+    output on the map.
   - every usable record in the whole WP best-track archive (~16k),
     compacted to just what the verification scatter needs, for the
     aggregate predicted-vs-actual Rmax chart.
+  - a small summary of how far the tool's own profile and an
+    independent Holland (1980) profile diverge, by zone (Rmax-R64,
+    R64-R50, R50-R34, beyond R34) - see verify_besttrack_holland.py,
+    which this reuses.
 
-Both are written as ready-to-push Apps Script source
-(web/TCWind_JTWC/BestTrackData.gs, `var BEST_TRACK_SAMPLE = [...]` /
-`var BEST_TRACK_SCATTER = [...]`) plus the same data as plain JSON
-under tests/tcwind_jtwc/data/ for reference/diffing.
+All three are written as ready-to-push Apps Script source
+(web/TCWind_JTWC/BestTrackData.gs, fetched by the client via
+Code.gs's getBestTrackSample()/getBestTrackScatter()/
+getHollandZoneSummary(), same as live bulletins) plus plain JSON under
+tests/tcwind_jtwc/data/ for reference/diffing.
 
 Usage:
     python3 prep_besttrack_data.py [path/to/ibtracs_WP.csv]
 """
-import calendar
-import csv
 import json
-import math
 import os
 import random
 import sys
-import time
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..",
-                                 "GFE", "procedures"))
+from besttrack_common import CACHE, iter_storms, build_storm_records, quad_radii, to_float
+from verify_besttrack_holland import (
+    solve_holland_B, holland_v_at, dest_grid,
+)
 import TCWind_JTWC as tc
-from verify_besttrack_rmax import load_rows, CACHE, to_float, QUADS
+import numpy as np
 
 SEED = 20260902
 N_SAMPLE_STORMS = 100
@@ -47,97 +51,25 @@ DATA_DIR = os.path.join(HERE, "data")
 GS_OUT = os.path.join(HERE, "..", "..", "web", "TCWind_JTWC", "BestTrackData.gs")
 
 
-def quad_radii(row, thresh):
-    vals = {}
-    any_present = False
-    for q in QUADS:
-        v = to_float(row["USA_R%d_%s" % (thresh, q)])
-        if v is not None:
-            any_present = True
-        vals[q] = v or 0.0
-    return vals if any_present else None
-
-
-def build_storm_records(rows):
-    """rows: one storm's IBTrACS rows, in file order (already time-sorted).
-    Returns a list of record dicts with motion filled in from consecutive
-    positions, same convention parseJTWC() uses (last point inherits the
-    previous motion)."""
-    recs = []
-    for row in rows:
-        lat = to_float(row["USA_LAT"]) or to_float(row["LAT"])
-        lon = to_float(row["USA_LON"]) or to_float(row["LON"])
-        vmax = to_float(row["USA_WIND"])
-        if lat is None or lon is None or vmax is None:
-            continue
-        radii = {}
-        for thresh in (64, 50, 34):
-            q = quad_radii(row, thresh)
-            if q:
-                radii[thresh] = q
-        epoch = calendar.timegm(
-            time.strptime(row["ISO_TIME"], "%Y-%m-%d %H:%M:%S"))
-        recs.append({
-            "iso": row["ISO_TIME"], "epoch": epoch,
-            "lat": lat, "lon": lon, "vmax": vmax,
-            "rmw": to_float(row["USA_RMW"]),
-            "radii": radii,
-        })
-
-    for i, rec in enumerate(recs):
-        if i + 1 < len(recs):
-            brg, spd = tc._bearing_speed(_pt(rec), _pt(recs[i + 1]))
-            rec["motionDir"], rec["motionSpd"] = brg, spd
-        elif i > 0:
-            rec["motionDir"] = recs[i - 1]["motionDir"]
-            rec["motionSpd"] = recs[i - 1]["motionSpd"]
-        else:
-            rec["motionDir"], rec["motionSpd"] = 0.0, 0.0
-    return recs
-
-
-class _pt(object):
-    """Minimal duck-typed stand-in for a Tau, for tc._bearing_speed()."""
-    def __init__(self, rec):
-        self.lat = rec["lat"]
-        self.lon = rec["lon"]
-        self.epoch = rec["epoch"]
-
-
-def main():
-    path = sys.argv[1] if len(sys.argv) > 1 else CACHE
-    from collections import defaultdict, OrderedDict
-    by_sid = defaultdict(list)
-    names = {}
-    seasons = {}
-    for row in load_rows(path):
-        if row["USA_AGENCY"].strip() != "jtwc_wp":
-            continue
-        by_sid[row["SID"]].append(row)
-        names[row["SID"]] = row["NAME"]
-        seasons[row["SID"]] = row["SEASON"]
-
-    # --- sample-100 storm browser dataset -----------------------------
-    eligible = [sid for sid, rows in by_sid.items()
-                if int(seasons[sid]) >= MIN_SEASON
-                and sum(1 for r in rows if to_float(r["USA_WIND"])
-                        and to_float(r["USA_LAT"])) >= MIN_RECORDS]
+def build_sample(all_storms):
+    eligible = [(sid, name, season, rows) for sid, name, season, rows in all_storms
+                if int(season) >= MIN_SEASON
+                and sum(1 for r in rows if r["USA_WIND"].strip()
+                        and r["USA_LAT"].strip()) >= MIN_RECORDS]
     rnd = random.Random(SEED)
-    sample_sids = rnd.sample(eligible, min(N_SAMPLE_STORMS, len(eligible)))
+    picked = rnd.sample(eligible, min(N_SAMPLE_STORMS, len(eligible)))
+    picked.sort(key=lambda t: (t[2], t[0]))  # season, sid
 
     sample = []
-    for sid in sorted(sample_sids, key=lambda s: (seasons[s], s)):
-        recs = build_storm_records(by_sid[sid])
+    for sid, name, season, rows in picked:
+        recs = build_storm_records(rows)
         if len(recs) < MIN_RECORDS:
             continue
-        sample.append({
-            "sid": sid, "name": names[sid], "season": seasons[sid],
-            "records": recs,
-        })
-    print("Storm browser: %d storms, %d total records"
-          % (len(sample), sum(len(s["records"]) for s in sample)))
+        sample.append({"sid": sid, "name": name, "season": season, "records": recs})
+    return sample
 
-    # --- full-archive scatter dataset ----------------------------------
+
+def build_scatter(all_storms):
     # Compact positional rows: [vmax, lat, rmw, r64min, r50min, r34min].
     # r*min is the smallest nonzero quadrant at that threshold (0 if the
     # threshold wasn't reported) - all resolveRmax()'s clamp needs is
@@ -145,7 +77,7 @@ def main():
     # reuse the real resolveRmax()/willoughbyRmax() unmodified rather than
     # duplicating the clamp formula here.
     scatter = []
-    for rows in by_sid.values():
+    for sid, name, season, rows in all_storms:
         for row in rows:
             lat = to_float(row["USA_LAT"]) or to_float(row["LAT"])
             vmax = to_float(row["USA_WIND"])
@@ -158,13 +90,86 @@ def main():
                 nz = [v for v in (q or {}).values() if v > 0]
                 mins.append(round(min(nz), 1) if nz else 0)
             scatter.append([round(vmax, 1), round(lat, 2), round(rmw, 1)] + mins)
+    return scatter
+
+
+def build_holland_zone_summary(all_storms):
+    """Mirrors verify_besttrack_holland.py's zone-divergence computation,
+    condensed to {zone: {n, mean, p90}} for the bar chart."""
+    zone_diffs = {}
+    for sid, name, season, rows in all_storms:
+        for rec in build_storm_records(rows):
+            rmw = rec["rmw"]
+            # build_storm_records() already gives us the full radii dict
+            # per record, so compute the mean directly from it.
+            r34_vals = [v for v in rec["radii"].get(34, {}).values() if v > 0]
+            r34 = sum(r34_vals) / len(r34_vals) if r34_vals else None
+            if not rmw or not r34 or rec["vmax"] <= 34 or r34 <= rmw:
+                continue
+            try:
+                B = solve_holland_B(rec["vmax"], rmw, r34)
+            except (ValueError, ZeroDivisionError):
+                continue
+            if not (0.3 <= B <= 3.0):
+                continue
+
+            snap = tc.Snapshot()
+            snap.lat, snap.lon, snap.vmax = rec["lat"], rec["lon"], rec["vmax"]
+            snap.radii = rec["radii"]
+            tool_rmax = tc.resolveRmax(snap, 0.0)
+
+            edge_pts = [("Rmax", tool_rmax)]
+            for thresh, label in ((64, "R64"), (50, "R50")):
+                vals = [v for v in rec["radii"].get(thresh, {}).values() if v > 0]
+                if vals:
+                    edge_pts.append((label, sum(vals) / len(vals)))
+            edge_pts.append(("R34", r34))
+            edge_pts.append(("2xR34", r34 * 2.0))
+            edge_pts.sort(key=lambda p: p[1])
+
+            for (name_lo, lo), (name_hi, hi) in zip(edge_pts, edge_pts[1:]):
+                if hi <= lo:
+                    continue
+                mid = (lo + hi) / 2.0
+                lat, lon = dest_grid(rec["lat"], rec["lon"], 45.0, np.array([mid]))
+                tool_mag, _d, _r, _r34 = tc.buildVortex(
+                    lat, lon, snap, tool_rmax, normalizePeak=False)
+                holland_mag = holland_v_at(rec["vmax"], rmw, B, mid)
+                label = name_lo + "-" + name_hi
+                zone_diffs.setdefault(label, []).append(
+                    abs(float(tool_mag[0]) - holland_mag))
+
+    out = {}
+    for label, vals in zone_diffs.items():
+        vals_sorted = sorted(vals)
+        p90 = vals_sorted[int(0.9 * (len(vals_sorted) - 1))]
+        out[label] = {"n": len(vals), "mean": round(sum(vals) / len(vals), 2),
+                       "p90": round(p90, 2)}
+    return out
+
+
+def main():
+    path = sys.argv[1] if len(sys.argv) > 1 else CACHE
+    all_storms = list(iter_storms(path))
+    print("%d storms (jtwc_wp) loaded" % len(all_storms))
+
+    sample = build_sample(all_storms)
+    print("Storm browser: %d storms, %d total records"
+          % (len(sample), sum(len(s["records"]) for s in sample)))
+
+    scatter = build_scatter(all_storms)
     print("Scatter: %d records" % len(scatter))
+
+    zone_summary = build_holland_zone_summary(all_storms)
+    print("Holland zone summary: %s" % {k: v["n"] for k, v in zone_summary.items()})
 
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(os.path.join(DATA_DIR, "besttrack_sample.json"), "w") as f:
         json.dump(sample, f, indent=1)
     with open(os.path.join(DATA_DIR, "besttrack_scatter.json"), "w") as f:
         json.dump(scatter, f)
+    with open(os.path.join(DATA_DIR, "holland_zone_summary.json"), "w") as f:
+        json.dump(zone_summary, f, indent=1)
 
     with open(GS_OUT, "w") as f:
         f.write("/**\n")
@@ -175,16 +180,21 @@ def main():
         f.write(" *\n")
         f.write(" * BEST_TRACK_SAMPLE: %d storms for the storm browser, full\n"
                 % len(sample))
-        f.write(" *   per-record radii/RMW where reported.\n")
+        f.write(" *   per-record radii/RMW/ROCI where reported.\n")
         f.write(" * BEST_TRACK_SCATTER: %d records for the verification\n"
                 % len(scatter))
         f.write(" *   scatter, as [vmax, lat, rmw, r64min, r50min, r34min].\n")
+        f.write(" * HOLLAND_ZONE_SUMMARY: mean/p90 |tool-Holland| divergence\n")
+        f.write(" *   by radial zone, from verify_besttrack_holland.py.\n")
         f.write(" */\n")
         f.write("var BEST_TRACK_SAMPLE = ")
         json.dump(sample, f, separators=(",", ":"))
         f.write(";\n\n")
         f.write("var BEST_TRACK_SCATTER = ")
         json.dump(scatter, f, separators=(",", ":"))
+        f.write(";\n\n")
+        f.write("var HOLLAND_ZONE_SUMMARY = ")
+        json.dump(zone_summary, f, separators=(",", ":"))
         f.write(";\n")
 
     gs_size = os.path.getsize(GS_OUT)

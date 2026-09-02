@@ -30,7 +30,8 @@
   .fit-ok { color:#166534; } .fit-bad { color:#b91c1c; font-weight:600; }
   #diag, #besttrack { display:none; padding:8px 10px; background:#f8fafc;
                       border-bottom:1px solid #cbd5e1; }
-  #diag .diagRow { display:flex; gap:18px; flex-wrap:wrap; align-items:flex-start; }
+  #diag .diagRow, #besttrack .diagRow { display:flex; gap:18px; flex-wrap:wrap;
+                   align-items:flex-start; }
   #diag .diagCol, #besttrack .diagCol { display:flex; flex-direction:column;
                    gap:4px; align-items:flex-start; flex:0 0 auto; }
   /* Canvas has no natural CSS size of its own beyond its width/height
@@ -42,8 +43,13 @@
   #histCanvas, #histCanvas + .diagCap { width:620px; }
   #profCanvas, #profCanvas + .diagCap { width:360px; }
   #btScatterCanvas, #btScatterCanvas + .diagCap { width:620px; }
+  #btZoneCanvas, #btZoneCanvas + .diagCap { width:360px; }
   #diag .diagCap, #besttrack .diagCap { font-size:11px; color:#52525b; }
   #diagStorm, #btStorm { margin-bottom:6px; }
+  .btGuide { font-size:11px; color:#3f3f46; background:#fff; border:1px solid #d4d4d8;
+             border-radius:4px; padding:8px 10px; margin:8px 0; max-width:1000px; }
+  .btGuide ul { margin:4px 0 0; padding-left:18px; }
+  .btGuide li { margin-bottom:3px; }
 </style>
 </head>
 <body>
@@ -64,6 +70,15 @@
     <label>Time <input type="range" id="tslider" min="0" max="0" value="0" style="width:220px"></label>
     <span id="tlabel">--</span>
     <span id="ver" style="margin-left:auto;color:#71717a"></span>
+  </div>
+  <div style="padding:2px 10px;background:#f4f4f5;font-size:11px;color:#71717a;
+              border-bottom:1px solid #e4e4e7;">
+    Live data: real-time JTWC warnings from NOAA's Telecommunications
+    Gateway (tgftp.nws.noaa.gov). "Best-track QC" instead uses JTWC's
+    post-season reanalysis via NOAA NCEI's public
+    <a href="https://www.ncei.noaa.gov/products/international-best-track-archive"
+       target="_blank" style="color:inherit;">IBTrACS</a> archive - see
+    that panel for details.
   </div>
 
   <div id="paste">
@@ -91,6 +106,10 @@
           radius along each quadrant bearing. Dots are the bulletin's own
           reported radii - a dot sitting on its line is a good fit; off the
           line means the interpolation is straying from what JTWC reported.
+          In Best-track QC, a dashed gray <b>Holland</b> curve also appears:
+          an independent model anchored the same way (same Vmax/Rmax/R34).
+          Where it and the colored lines pull apart is genuine disagreement
+          between two reasonable models, worst just outside the core.
         </div>
       </div>
     </div>
@@ -102,15 +121,76 @@
       <button id="btExit">Back to live bulletins</button>
       <span id="btInfo" class="diagCap"></span>
     </div>
-    <div class="diagCol" style="margin-top:8px;">
-      <canvas id="btScatterCanvas" width="620" height="320"></canvas>
-      <div class="diagCap">
-        Verification: tool's predicted Rmax vs JTWC's own post-season
-        best-track RMW, every usable WestPac record 2001-2024. Diagonal
-        line is perfect agreement; points below it are underestimates.
-        Colored by intensity category. Picking a storm above shows its
-        actual track/radii/RMW (magenta dashed ring) on the map, next to
-        the tool's own modeled output, exactly like a live bulletin.
+
+    <div class="btGuide">
+      <b>Where this data comes from:</b> the live map ("Fetch bulletins")
+      reads real-time JTWC tropical cyclone warnings from NOAA's
+      Telecommunications Gateway (<code>tgftp.nws.noaa.gov</code>) - the
+      same text products this tool's GFE counterpart ingests operationally.
+      This Best-track QC panel instead reads JTWC's own <i>post-season</i>
+      reanalysis - the corrected, final position/intensity/wind-radii/RMW/
+      ROCI for each storm - from NOAA NCEI's public
+      <a href="https://www.ncei.noaa.gov/products/international-best-track-archive"
+         target="_blank">IBTrACS</a> archive (agency <code>jtwc_wp</code>,
+      WestPac basin, 2001-2024 - JTWC's WestPac wind-radii/RMW reporting is
+      essentially absent before 2001, and 2025-2026 aren't finalized/
+      ingested into IBTrACS yet). In other words: the live map shows what
+      the tool does with a real-time warning; this panel shows how that
+      same tool's math holds up once the true, later-corrected answer is
+      known.
+      <br><br>
+      <b>How to read the map above once a storm is picked:</b> black/white
+      dot is the storm center at the selected time, dashed black line is
+      its full track. Solid red/orange/yellow rings are JTWC's own
+      reported 64/50/34-kt wind radii (ground truth); the colored raster
+      underneath is the tool's modeled wind field, built from those same
+      radii. Magenta dashed ring = actual reported RMW; teal dashed ring =
+      actual ROCI, a pressure-based size measure, not directly comparable
+      to a wind radius (see the ROCI chart's caption). Where the raster's
+      bright core sits relative to the magenta ring, and how far it fades
+      out relative to the teal ring, is the comparison that matters.
+      <br><br>
+      <b>What we've found so far</b> (full numbers in
+      <code>tests/tcwind_jtwc/README.md</code>):
+      <ul>
+        <li><b>Rmax</b> (magenta ring vs. the field's bright core): now
+          unbiased on average after refitting to WestPac data, but still
+          has close to no skill predicting any <i>one</i> weak storm's
+          Rmax (r=0.04 for depressions) - treat it as a reasonable
+          long-run average, not a real prediction for that storm.</li>
+        <li><b>Field size</b> (raster extent vs. teal ROCI ring): badly
+          undersized for weak systems (most have no reported radii to
+          build a field from at all), roughly right for typhoon-strength
+          systems aside from the outer taper reaching a bit too far in
+          light wind.</li>
+        <li><b>Field shape</b> (colored quadrant curves vs. the dashed
+          Holland curve, in Diagnostics): the two models agree least just
+          outside the core (Rmax-R64) and progressively more moving
+          outward - the near-core/eyewall region is where this tool's
+          shape choice is least certain, which is also operationally
+          where it matters most.</li>
+      </ul>
+    </div>
+
+    <div class="diagRow">
+      <div class="diagCol">
+        <canvas id="btScatterCanvas" width="620" height="320"></canvas>
+        <div class="diagCap">
+          Verification: tool's predicted Rmax vs JTWC's own post-season
+          best-track RMW, every usable WestPac record 2001-2024. Diagonal
+          line is perfect agreement; points below it are underestimates.
+          Colored by intensity category.
+        </div>
+      </div>
+      <div class="diagCol">
+        <canvas id="btZoneCanvas" width="360" height="320"></canvas>
+        <div class="diagCap">
+          How far the tool's own wind profile and an independent model
+          (Holland 1980) disagree, by radial zone - bar is the typical
+          (mean) disagreement, tick mark is the 90th percentile
+          (occasional larger disagreements). Tallest bar is where the
+          field's shape is least certain.
+        </div>
       </div>
     </div>
   </div>
@@ -168,6 +248,38 @@ function resolveRmax(snap, overrideNm) {
     break;
   }
   return Math.max(rmax, 3.0);
+}
+
+// ---------------------------------------------------------------------------
+// Holland (1980) profile - an independent, published model, used ONLY as a
+// second opinion in the Best-track QC panel (never in the live tool's own
+// field). Dimensionless form, V(r) = Vmax*sqrt((Rmax/r)^B * exp(1-(Rmax/r)^B)),
+// so it needs no central pressure. MUST match verify_besttrack_holland.py.
+// ---------------------------------------------------------------------------
+
+function hollandG(x) { return x * Math.exp(1 - x); }
+
+/** Bisect g(x)=y for x in (0,1] - g is monotonic increasing there, which is
+ * always the branch r >= Rmax (x = (Rmax/r)^B <= 1) puts us on. */
+function solveXForG(y) {
+  let lo = 1e-6, hi = 1.0;
+  y = Math.min(Math.max(y, hollandG(lo)), hollandG(hi));
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    if (hollandG(mid) < y) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+/** B such that Holland's V(r34Nm) = 34 kt, given Vmax/Rmax. */
+function solveHollandB(vmax, rmaxNm, r34Nm) {
+  const x = solveXForG((34 / vmax) ** 2);
+  return Math.log(x) / Math.log(rmaxNm / r34Nm);
+}
+
+function hollandVAt(vmax, rmaxNm, B, rNm) {
+  const x = (rmaxNm / rNm) ** B;
+  return vmax * Math.sqrt(Math.max(hollandG(x), 0));
 }
 
 function distBearing(lat, lon, clat, clon) {
@@ -335,9 +447,11 @@ function interpolateTrack(taus, epoch) {
     motionDir: lo.motionDir,
     motionSpd: lo.motionSpd + f * (hi.motionSpd - lo.motionSpd),
     // Best-track ground truth (Best-track QC panel only; undefined/null
-    // for live bulletins, which never carry an observed RMW).
+    // for live bulletins, which never carry an observed RMW/ROCI).
     rmw: (lo.rmw != null && hi.rmw != null) ? lo.rmw + f * (hi.rmw - lo.rmw)
        : (f < 0.5 ? lo.rmw : hi.rmw),
+    roci: (lo.roci != null && hi.roci != null) ? lo.roci + f * (hi.roci - lo.roci)
+        : (f < 0.5 ? lo.roci : hi.roci),
     radii: {}
   };
   for (const thr of [64, 50, 34]) {
@@ -467,6 +581,23 @@ function drawRadii(items) {
                         opacity: .95, dashArray: '3,4' })
         .bindTooltip('actual RMW: ' + snap.rmw.toFixed(1) + ' nm (tool: ' +
                      rmax.toFixed(1) + ' nm)').addTo(radiiLayer);
+    }
+    // Best-track QC only: ROCI (radius of outermost closed isobar) - a
+    // pressure-based size the tool never sees, checked against where its
+    // own wind field decays away (see verify_besttrack_roci.py). Not the
+    // same physical quantity as any wind-speed radius, so it's drawn in
+    // its own color rather than alongside the R34/R50/R64 rings.
+    if (snap.roci) {
+      const ring = [];
+      for (let az = 0; az <= 360; az += 5) {
+        ring.push(destPoint(snap.lat, snap.lon, az, snap.roci));
+      }
+      L.polygon(ring, { color: '#0d9488', weight: 2, fill: false,
+                        opacity: .85, dashArray: '2,6' })
+        .bindTooltip('actual ROCI: ' + snap.roci.toFixed(0) +
+                     ' nm (outermost closed isobar - a pressure-based ' +
+                     'size, not directly comparable to the wind ' +
+                     'radii)').addTo(radiiLayer);
     }
     L.circleMarker([snap.lat, snap.lon], {
       radius: 6, color: '#000', fillColor: '#fff', fillOpacity: 1, weight: 3
@@ -789,14 +920,45 @@ function drawProfile(storm, snap, rmax) {
     }
   }
 
+  // Best-track QC only: an independent second opinion (Holland 1980),
+  // anchored to the same Vmax/Rmax plus the storm's own mean R34 - so it
+  // agrees with the tool AT Rmax and R34 by construction, and the gap
+  // between the two curves everywhere else is genuine model disagreement,
+  // not just one of them missing a data point the other has. See
+  // verify_besttrack_holland.py.
+  let drewHolland = false;
+  if (snap.rmw && snap.radii[34]) {
+    const rmw = snap.rmw;
+    const r34vals = QUADS.map(q => snap.radii[34][q]).filter(v => v > 0);
+    const r34mean = r34vals.length ? r34vals.reduce((a, b) => a + b, 0) / r34vals.length : 0;
+    if (r34mean > rmw && snap.vmax > 34) {
+      const B = solveHollandB(snap.vmax, rmw, r34mean);
+      if (B > 0.3 && B < 3.0) {
+        drewHolland = true;
+        ctx.strokeStyle = '#3f3f46'; ctx.lineWidth = 1.5; ctx.setLineDash([5, 3]);
+        ctx.beginPath();
+        for (let i = 0; i <= N; i++) {
+          const r = Math.max(rMaxAxis * i / N, rmw * 0.5);
+          const v = hollandVAt(snap.vmax, rmw, B, Math.max(r, rmw));
+          const px = x(r), py = y(v);
+          i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+  }
+
+  const legendEntries = QUADS.map(q => [q, QUAD_COLOR[q]]);
+  if (drewHolland) legendEntries.push(['Holland', '#3f3f46']);
   let ly = padT + 8;
   ctx.font = '10px system-ui, sans-serif';
   ctx.fillStyle = 'rgba(255,255,255,.85)';
-  ctx.fillRect(W - padR - 40, padT, 40, 12 * QUADS.length + 4);
-  for (const q of QUADS) {
-    ctx.fillStyle = QUAD_COLOR[q];
-    ctx.fillRect(W - padR - 34, ly - 6, 8, 8);
-    ctx.fillText(q, W - padR - 22, ly + 2);
+  ctx.fillRect(W - padR - 48, padT, 48, 12 * legendEntries.length + 4);
+  for (const [label, color] of legendEntries) {
+    ctx.fillStyle = color;
+    ctx.fillRect(W - padR - 42, ly - 6, 8, 8);
+    ctx.fillText(label, W - padR - 30, ly + 2);
     ly += 12;
   }
 }
@@ -833,7 +995,7 @@ function buildBestTrackStorm(entry) {
   const taus = entry.records.map((r, i) => ({
     tau: i * 6, epoch: r.epoch, lat: r.lat, lon: r.lon, vmax: r.vmax,
     gust: null, radii: r.radii || {}, motionDir: r.motionDir,
-    motionSpd: r.motionSpd, conf: 1.0, rmw: r.rmw,
+    motionSpd: r.motionSpd, conf: 1.0, rmw: r.rmw, roci: r.roci,
   }));
   return {
     pil: 'BEST-TRACK', file: entry.sid,
@@ -942,6 +1104,71 @@ function loadBestTrackScatter() {
   }).getBestTrackScatter();
 }
 
+/** Zone-divergence bar chart: mean/p90 |tool - Holland| per radial zone.
+ * See verify_besttrack_holland.py; this is that script's finding made
+ * visible instead of only a terminal report. */
+let hollandZoneSummary = null;
+const ZONE_ORDER = ['Rmax-R64', 'R64-R50', 'Rmax-R50', 'R50-R34', 'Rmax-R34', 'R34-2xR34'];
+const ZONE_SHORT = { 'Rmax-R64': 'Rmax–R64', 'R64-R50': 'R64–R50',
+  'Rmax-R50': 'Rmax–R50', 'R50-R34': 'R50–R34',
+  'Rmax-R34': 'Rmax–R34', 'R34-2xR34': 'beyond R34' };
+
+function drawHollandZoneChart() {
+  const cv = document.getElementById('btZoneCanvas');
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+  if (!hollandZoneSummary) return;
+
+  const zones = ZONE_ORDER.filter(z => hollandZoneSummary[z]);
+  const padL = 34, padR = 10, padT = 10, padB = 46;
+  const maxV = Math.max(...zones.map(z => hollandZoneSummary[z].p90)) * 1.15;
+  const barW = (W - padL - padR) / zones.length;
+  const y = v => H - padB - (H - padT - padB) * v / maxV;
+
+  ctx.strokeStyle = '#d4d4d8'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, H - padB);
+  ctx.lineTo(W - padR, H - padB); ctx.stroke();
+  ctx.fillStyle = '#71717a'; ctx.font = '10px system-ui, sans-serif';
+  ctx.fillText('kt', 4, padT + 8);
+
+  zones.forEach((z, i) => {
+    const s = hollandZoneSummary[z];
+    const bx = padL + i * barW + barW * 0.2, bw = barW * 0.6;
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillRect(bx, y(s.mean), bw, H - padB - y(s.mean));
+    ctx.strokeStyle = '#334155'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(bx, y(s.p90)); ctx.lineTo(bx + bw, y(s.p90));
+    ctx.stroke();
+
+    ctx.save();
+    ctx.translate(bx + bw / 2, H - padB + 6);
+    ctx.rotate(-Math.PI / 5);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#3f3f46'; ctx.font = '9px system-ui, sans-serif';
+    ctx.fillText(ZONE_SHORT[z] || z, 0, 0);
+    ctx.restore();
+  });
+
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#71717a'; ctx.font = '10px system-ui, sans-serif';
+  ctx.fillText('bar=mean, tick=p90', W - padR, padT + 8);
+  ctx.textAlign = 'left';
+}
+
+function loadHollandZoneSummary() {
+  if (hollandZoneSummary) { drawHollandZoneChart(); return; }
+  google.script.run.withSuccessHandler(data => {
+    hollandZoneSummary = data;
+    drawHollandZoneChart();
+  }).withFailureHandler(e => {
+    document.getElementById('btInfo').textContent =
+      (document.getElementById('btInfo').textContent || '') +
+      '  Zone chart failed: ' + e.message;
+  }).getHollandZoneSummary();
+}
+
 // ---------------------------------------------------------------------------
 // Wiring
 // ---------------------------------------------------------------------------
@@ -1016,7 +1243,7 @@ document.getElementById('toggleBestTrack').onclick = () => {
   const show = p.style.display !== 'block';
   p.style.display = show ? 'block' : 'none';
   if (show && !bestTrackSample) loadBestTrackSample();
-  if (show) loadBestTrackScatter();
+  if (show) { loadBestTrackScatter(); loadHollandZoneSummary(); }
 };
 document.getElementById('btStorm').onchange = e => selectBestTrackStorm(parseInt(e.target.value, 10));
 document.getElementById('btExit').onclick = () => {

@@ -159,6 +159,13 @@ function getBestTrackScatter() {
   return BEST_TRACK_SCATTER;
 }
 
+/** {zone: {n, mean, p90}} - how far the tool's profile and an independent
+ * Holland (1980) profile diverge, by radial zone. From
+ * verify_besttrack_holland.py via prep_besttrack_data.py. */
+function getHollandZoneSummary() {
+  return HOLLAND_ZONE_SUMMARY;
+}
+
 
 // ---------------------------------------------------------------------------
 // Parser - port of parseJTWC() in TCWind_JTWC.py

@@ -145,25 +145,28 @@ breakdown in each script's output.
 ## Best-track QC panel (in the web app)
 
 `prep_besttrack_data.py` turns the same IBTrACS WP-basin archive into
-two datasets baked into the deployed web app itself
+three datasets baked into the deployed web app itself
 (`web/TCWind_JTWC/BestTrackData.gs`, ~1 MB, generated - don't hand-edit;
 `tests/tcwind_jtwc/data/*.json` holds the same data for reference), and
-exposed via `getBestTrackSample()`/`getBestTrackScatter()` in `Code.gs`,
-the same `google.script.run` idiom as fetching live bulletins:
+exposed via `getBestTrackSample()`/`getBestTrackScatter()`/
+`getHollandZoneSummary()` in `Code.gs`, the same `google.script.run`
+idiom as fetching live bulletins:
 
 - **A 100-storm random sample** (2001-2024, seeded, so it's
   reproducible; capped at 100 so the storm-picker dropdown and the map
   stay responsive - the underlying archive has ~2,200 eligible storms),
   each with its full track: position, Vmax, reported wind radii, and
-  observed RMW wherever JTWC's post-season analysis reported one. The
-  "Best-track QC" button in the web app builds a synthetic `storm`
+  observed RMW/ROCI wherever JTWC's post-season analysis reported them.
+  The "Best-track QC" button in the web app builds a synthetic `storm`
   object from whichever one is picked, in the exact shape a parsed
   live bulletin produces, so every existing map/diagnostics function
   (`drawRadii`, `drawField`, `resolveRmax`, the time-history and
   azimuthal-profile charts) draws it with no changes at all. The only
-  new drawing code is one dashed ring for the storm's actual reported
-  RMW (ground truth) next to the tool's own modeled core, and a
-  Rmax-vs-RMW delta printed in the status line when both are known.
+  new drawing code is a dashed ring each for the storm's actual RMW
+  (magenta) and ROCI (teal), a Rmax-vs-RMW delta in the status line,
+  and - in the azimuthal-profile chart - an overlaid Holland (1980)
+  curve, solved from the same Vmax/Rmax/R34 anchors, so its divergence
+  from the tool's own quadrant curves is visible per-storm.
 - **Every usable record in the full archive** (~16,200, not just the
   100-storm sample), compacted to `[vmax, lat, rmw, r64min, r50min,
   r34min]` per record - just enough for the client to run the real
@@ -174,6 +177,18 @@ the same `google.script.run` idiom as fetching live bulletins:
   with a live-computed bias/MAE/RMSE) - this is `verify_besttrack_rmax.py`
   made visible and explorable in the tool itself, rather than a
   terminal report.
+- **The Holland zone-divergence summary** (mean/90th-percentile
+  |tool-Holland| per radial zone, from `verify_besttrack_holland.py`'s
+  own computation, condensed) - drawn as a small bar chart next to the
+  scatter, so the "near-core disagreement is worst" finding is visible
+  as a chart rather than only as a paragraph of numbers.
+
+The panel itself carries a written guide and findings summary (not just
+chart captions) explaining where the live data and the best-track data
+each come from, how to read the map's rings/raster, and the headline
+conclusions from all three checks in plain language - so a forecaster
+using it doesn't have to separately go read this file or the scripts'
+terminal output to know what to make of it.
 
 2001 is the cutoff for both datasets: JTWC's WestPac wind-radii/RMW
 reporting is present on well under half of records before that, so an
