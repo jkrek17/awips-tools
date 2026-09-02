@@ -22,6 +22,18 @@ CACHE = ("/tmp/claude-0/-home-user-awips-tools/"
 
 QUADS = ["NE", "SE", "SW", "NW"]
 
+# RMW/wind-radii presence before 2001 is essentially zero (checked
+# directly: 0 usable RMW records pre-2001 in this agency's data), so that
+# part of the old "2001-2024" coverage claim held on its own. But 2001-2004
+# specifically has unreliable R50/R64 reporting (25.7% of typhoon-strength
+# records had an R64 radius at all, vs. 86-94% from 2005 onward - see
+# verify_besttrack_context.py's header) - 15% of the dataset had far less
+# for the tool to work with than the rest. Every script here now starts
+# at 2005 by default, so "the archive" means the same, fully-radii-capable
+# window everywhere: the storm browser sample, the verification stats, and
+# the Findings page numbers all agree.
+MIN_SEASON = 2005
+
 
 def load_rows(path):
     if not os.path.exists(path):
@@ -130,14 +142,18 @@ def build_storm_records(rows):
     return recs
 
 
-def iter_storms(path, agency="jtwc_wp"):
+def iter_storms(path, agency="jtwc_wp", min_season=MIN_SEASON):
     """Yields (sid, name, season, rows) - rows grouped by SID, storms in
-    file order (which is already time order within IBTrACS)."""
+    file order (which is already time order within IBTrACS). Defaults to
+    MIN_SEASON onward - pass min_season=None for the full, uncapped
+    archive (back to 1945 for jtwc_wp) if a caller genuinely needs it."""
     from collections import OrderedDict
     by_sid = OrderedDict()
     names, seasons = {}, {}
     for row in load_rows(path):
         if row["USA_AGENCY"].strip() != agency:
+            continue
+        if min_season and int(row["SEASON"]) < min_season:
             continue
         sid = row["SID"]
         by_sid.setdefault(sid, []).append(row)

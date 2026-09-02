@@ -25,8 +25,10 @@ Usage:
 
 Downloads NCEI IBTrACS' WestPac-basin CSV to a cache file if no path is
 given and none is cached yet (~115 MB - it's basin-filtered, not
-date-filtered, so it's the full 2001-2024 JTWC digitized best-track
-record, https://www.ncei.noaa.gov/data/international-best-track-archive-
+date-filtered, so the raw file actually goes back to 1945; build_record()
+below applies besttrack_common.MIN_SEASON, currently 2005, since that's
+where jtwc_wp's R50/R64 reporting - not just RMW - becomes reliable,
+https://www.ncei.noaa.gov/data/international-best-track-archive-
 for-climate-stewardship-ibtracs/v04r01/access/csv/ibtracs.WP.list.v04r01.csv).
 """
 import csv
@@ -38,6 +40,7 @@ import urllib.request
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..",
                                  "GFE", "procedures"))
 import TCWind_JTWC as tc
+from besttrack_common import MIN_SEASON
 
 IBTRACS_URL = ("https://www.ncei.noaa.gov/data/international-best-track-"
                "archive-for-climate-stewardship-ibtracs/v04r01/access/csv/"
@@ -70,6 +73,8 @@ def to_float(s):
 
 def build_record(row):
     if row["BASIN"] != "WP" or row["USA_AGENCY"].strip() != "jtwc_wp":
+        return None
+    if int(row["SEASON"]) < MIN_SEASON:
         return None
     vmax = to_float(row["USA_WIND"])
     rmw = to_float(row["USA_RMW"])

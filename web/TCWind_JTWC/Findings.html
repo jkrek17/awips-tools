@@ -111,22 +111,29 @@
     <div class="card">
       <ul class="clean">
         <li><b>Live tool ("Fetch bulletins" / "Paste text"):</b> the same
-          real-time JTWC warning bulletins this tool's GFE version uses in
-          actual operations.</li>
+          real-time JTWC warning bulletins this tool's GFE version
+          consumes operationally - forecast strength, position, and
+          whatever quadrant wind radii the bulletin happens to carry at
+          issuance time.</li>
         <li><b>Archived Cases and everything on this page:</b> JTWC's own
-          after-the-fact review of each storm, done once the season is
-          over. These are the corrected, final numbers - position,
-          strength, wind radii, RMW (how far the strongest winds reach),
-          and ROCI (how far the storm's whole circulation reaches) - from
-          NOAA's public
+          post-season best-track reanalysis for each storm - the
+          corrected, final position, intensity (Vmax), quadrant wind
+          radii (R34/R50/R64), RMW (radius of maximum wind), and ROCI
+          (radius of outermost closed isobar), pulled from NOAA's public
           <a href="https://www.ncei.noaa.gov/products/international-best-track-archive"
-             target="_blank">IBTrACS</a> archive of past storms.</li>
-        <li><b>Years covered: 2001-2024.</b> Not a range we chose - JTWC
-          barely reported wind radii or RMW for Western Pacific storms
-          before 2001, and 2025-2026 storms haven't been finalized yet.</li>
-        <li>In short: the live tool shows what it guesses in the moment,
-          from a real-time warning. Everything below checks those same
-          guesses against the true, later-corrected answer.</li>
+             target="_blank">IBTrACS</a> archive, agency <code>jtwc_wp</code>.</li>
+        <li><b>Scope: 2005-2024, Western Pacific basin, IBTrACS-flagged
+          tropical-storm-strength (Vmax &ge; 34&nbsp;kt) and stronger
+          only.</b> JTWC's R50/R64 reporting for this basin was
+          inconsistent before 2005 - see "Why this page starts at 2005"
+          below for the numbers behind that cutoff. Depression-strength
+          records are excluded because the tool itself now skips them
+          (see below); 2025-2026 storms aren't finalized in IBTrACS yet.</li>
+        <li>In short: the live tool's output is a real-time guess, made
+          before the storm's true structure is known. Everything below
+          scores that same guess logic against the after-the-fact answer,
+          field by field, on a dataset the tool's own fitting never saw
+          in its held-out portion.</li>
       </ul>
     </div>
   </section>
@@ -136,104 +143,137 @@
     <div class="findingGrid">
       <div class="finding">
         <span class="tag">Storm size &middot; fixed</span>
-        <h3>The size formula now guesses right on average</h3>
+        <h3>The Rmax regression is refit, but the radii clamp gives some
+          bias back</h3>
         <ul>
-          <li>The original formula was built and tuned using Atlantic
-            storms. Applied to Western Pacific tropical storms and
-            typhoons, it guessed too small by about 6 nautical miles (nm)
-            on average.</li>
-          <li>We rebuilt it using thousands of real Western Pacific storm
-            records, then tested it against storms it hadn't seen before.
-            The average miss dropped to about 2&nbsp;nm, and it tracks the
-            real answer more closely too.</li>
-          <li>This improved version is what the tool uses today.</li>
+          <li>Willoughby (2006)'s original Atlantic-fit coefficients,
+            scored against 2005-2024 WestPac RMW (n=8906): bias
+            &minus;6.1&nbsp;nm, MAE 10.1&nbsp;nm, RMSE 16.0&nbsp;nm,
+            r=0.56.</li>
+          <li>Refit on WestPac best-track data, scored on a held-out 20%
+            never used for fitting: bias &minus;1.9&nbsp;nm, MAE
+            8.7&nbsp;nm, RMSE 14.1&nbsp;nm, r=0.59 - most of the
+            systematic undersizing is gone.</li>
+          <li>But that's the regression <i>alone</i>. <code>resolveRmax()</code>
+            as actually run - regression, then clamped to &le;0.7&times;
+            the smallest reported radius at the highest threshold present
+            - comes back to bias &minus;5.6&nbsp;nm (MAE 9.2, RMSE 15.0,
+            r=0.59). The clamp binds on 40% of records (n=3535), and
+            when it does it's the dominant source of the tool's remaining
+            negative bias - see "hard ceiling" below.</li>
+          <li>By category: TS (34-63&nbsp;kt) MAE 12.1&nbsp;nm, r=0.35;
+            TY+ (64&nbsp;kt+) MAE 5.6&nbsp;nm, r=0.43. Skill is
+            meaningfully better at typhoon strength, where more storms
+            carry enough reported radii to constrain the clamp.</li>
         </ul>
       </div>
       <div class="finding">
         <span class="tag">Storm size &middot; scope</span>
         <h3>The tool skips depressions entirely</h3>
         <ul>
-          <li>Below tropical storm strength (under 34 kt), there's no
-            organized wind field to model, and almost never any reported
-            wind radii to build one from even if there were.</li>
-          <li>Rather than guess anyway, the tool now leaves the
-            background wind grid completely untouched for a storm at
-            depression strength - no invented structure where there
-            isn't any real one.</li>
-          <li>Everything else on this page is scored only against
-            tropical-storm-strength and stronger records, to match.</li>
+          <li>Below tropical-storm strength (Vmax &lt; 34&nbsp;kt) there
+            is no organized wind field to model in JTWC's own convention,
+            and almost never any reported wind radii to constrain one
+            from even if there were.</li>
+          <li><code>buildFor()</code> now leaves the background wind grid
+            untouched for a depression-strength storm-time rather than
+            fabricate structure the record doesn't support.</li>
+          <li>Every check on this page is therefore scored only against
+            TS-strength-or-greater records, to match what the tool
+            actually attempts.</li>
         </ul>
       </div>
       <div class="finding warn">
-        <span class="tag">Storm &amp; wind-field size</span>
-        <h3>Too small, in more ways than one</h3>
+        <span class="tag">Storm size (Rmax) &middot; structural limit</span>
+        <h3>The regression has a hard ceiling near 39&nbsp;nm</h3>
         <ul>
-          <li>The size formula has a hard ceiling: across every storm
-            checked, its guess never goes above about 39&nbsp;nm - even
-            though real storms range up to 155&nbsp;nm. It structurally
-            cannot recognize a large storm as large, no matter what the
-            bulletin says.</li>
-          <li>The wind field's overall size (checked against ROCI - how
-            far out a storm's whole circulation reaches, something the
-            tool never sees) runs 16 to 69&nbsp;nm too small for tropical
-            storms.</li>
-          <li>For typhoons the size is closer, except at the very lowest
-            wind speeds checked, where it overshoots - by nearly
-            80&nbsp;nm too big on average.</li>
+          <li>Across all 8906 in-scope records, <code>resolveRmax()</code>
+            never returns more than 38.7&nbsp;nm - even before the radii
+            clamp applies. Actual RMW in the same dataset ranges up to
+            155&nbsp;nm, and 21.9% of records with a reported RMW exceed
+            this ceiling.</li>
+          <li><b>This is not primarily a radii-clamp artifact</b> - the
+            ceiling shows up in the unclamped regression itself. Because
+            <code>willoughbyRmax()</code> is exponential and decreasing
+            in Vmax, and the tool only ever runs it for Vmax&nbsp;&ge;
+            34&nbsp;kt, the largest value the fitted curve can return over
+            the Vmax/latitude combinations this basin actually produces
+            lands right at ~39&nbsp;nm (the weakest in-scope intensity,
+            at the archive's higher WestPac latitudes). No further-north,
+            weaker-storm case exists in-scope that could push it higher -
+            it's a property of the fitted curve, not a downstream clamp.</li>
+          <li>Net effect: a genuinely large but weak system - the case
+            this matters most for - will be undersized by the model
+            regardless of whether any radii are reported at all.</li>
+          <li>Wind-field extent (checked against ROCI, at the radius
+            where modeled wind falls below 10/15/20&nbsp;kt): tropical
+            storms run about 22-75&nbsp;nm too small depending on
+            threshold; typhoons track closer, except at the 10&nbsp;kt
+            threshold, where the field overshoots ROCI by about
+            65&nbsp;nm on average.</li>
         </ul>
       </div>
       <div class="finding caution">
         <span class="tag">Wind field shape</span>
-        <h3>Least certain right next to the eye</h3>
+        <h3>Least certain just outside the eyewall</h3>
         <ul>
-          <li>We compared the tool's wind profile against a separate,
-            independent formula (Holland, 1980), starting from the same
-            storm strength and size.</li>
-          <li>The two disagree the most just outside the eyewall - by
-            about 12&nbsp;kt on average, and by as much as 68&nbsp;kt in
-            the worst cases - and agree more the farther out you go.</li>
-          <li>That's also the area - the eyewall - where getting the wind
-            speed wrong matters most.</li>
+          <li>Cross-checked the tool's profile against an independently
+            fit Holland (1980) profile, both anchored to the same Vmax,
+            Rmax, and reported R34. (Holland's own B parameter, fit only
+            to R34, predicts the reported R50/R64 reasonably well on its
+            own - r=0.85/0.70, MAE 12.0/12.9&nbsp;nm - which is why it's
+            a defensible independent baseline here.)</li>
+          <li>The two profiles disagree most in the Rmax-R64 zone -
+            mean |difference| 11.8&nbsp;kt, p90 up to 68.1&nbsp;kt - and
+            converge steadily moving outward (R50-R34: 3.2&nbsp;kt mean;
+            beyond R34: 4.6&nbsp;kt mean).</li>
+          <li>That inner zone, just outside the eyewall, is also where a
+            wind-speed error matters most operationally.</li>
         </ul>
       </div>
       <div class="finding warn">
         <span class="tag">Storm size (Rmax) &middot; caveat</span>
-        <h3>Rmax accuracy falls apart for transitioning storms</h3>
+        <h3>Storm type predicts Rmax error far better than distance to
+          land</h3>
         <ul>
-          <li>Same check as "The size formula now guesses right on
-            average" above (Rmax vs. actual RMW) - but split by IBTrACS'
-            own storm-type flag: purely tropical vs. undergoing
-            extratropical transition or a mixed structure.</li>
-          <li>For purely tropical storms, the average Rmax miss is about
-            9&nbsp;nm and the tool tracks storm-to-storm size reasonably
-            well. For transitioning or mixed-structure storms, the
-            average miss roughly triples (20 to 25&nbsp;nm) and the tool
-            barely tracks any individual storm's size at all.</li>
-          <li>This isn't a rare edge case picked at random - it's the
-            same failure pattern (fast-moving, transitioning storms) that
-            originally surfaced the motion-asymmetry bug fixed earlier in
-            this project. The tool's assumptions fit a steady tropical
-            circulation; transitioning storms often aren't one.</li>
+          <li>Same Rmax-vs-RMW check as above, split by IBTrACS' own
+            storm-nature flag: purely tropical (TS, n=8598) MAE
+            8.6&nbsp;nm, r=0.60. Mixed structure (MX, n=270) MAE
+            24.9&nbsp;nm, r=0.20; extratropical transition (ET, n=56) MAE
+            20.1&nbsp;nm, r=0.16 - roughly triple the error, with almost
+            no skill left tracking any individual storm's size.</li>
+          <li>Split instead by distance to the nearest coastline, error
+            is nearly flat: MAE 8.2&nbsp;nm over/at the coast (&le;25&nbsp;km)
+            versus 9.5&nbsp;nm in the open ocean (&gt;300&nbsp;km). Rmax
+            skill does <i>not</i> meaningfully degrade approaching land -
+            which matters, since that's exactly where watches and
+            warnings concentrate.</li>
+          <li>Same failure signature (fast-moving, transitioning,
+            structurally asymmetric storms) as the motion-asymmetry
+            double-count bug fixed earlier in this project. The vortex
+            model assumes a steady tropical circulation; transitioning
+            storms often aren't one, wherever they happen to be relative
+            to land.</li>
         </ul>
       </div>
       <div class="finding caution">
-        <span class="tag">Data coverage &middot; caveat</span>
-        <h3>Full radii reporting is newer than "2001-2024" suggests</h3>
+        <span class="tag">Data coverage &middot; scope</span>
+        <h3>Why this page starts at 2005, not 2001</h3>
         <ul>
-          <li>The 2001-2024 coverage window (see "Where this data comes
-            from") is accurate for basic wind radii/RMW presence, but
-            JTWC's reporting of the finer 50 and 64&nbsp;kt radii - not
-            just 34&nbsp;kt - was inconsistent through the early part of
-            that window.</li>
-          <li>From 2000-2004, only about 26% of typhoon-strength records
-            had a 64&nbsp;kt radius reported at all, even for major
-            typhoons. From 2005 onward, that jumps to 86-94%.</li>
-          <li>A storm with only its 34&nbsp;kt radius reported gives the
-            tool far less to work with - the whole profile from the core
-            out to that radius rests on a single, coarser curve instead
-            of being anchored by multiple rings. If an older, strong
-            typhoon in Archived Cases shows only a 34&nbsp;kt ring, that's
-            this reporting gap, not a display bug.</li>
+          <li>JTWC's WestPac best-track record carries RMW and some wind
+            radii back to 2001, but reporting of the finer R50/R64
+            thresholds specifically was inconsistent before 2005: only
+            about 26% of typhoon-strength (64&nbsp;kt+) 2000-2004 records
+            carried an R64 radius at all, versus 86-94% from 2005
+            onward.</li>
+          <li>Every figure on this page, the refit regression itself, and
+            the Archived Cases storm browser now draw exclusively from
+            2005-2024 - the fully radii-capable window - so "the archive"
+            means the same dataset everywhere on this site.</li>
+          <li>Practical effect: a pre-2005 storm won't appear in Archived
+            Cases at all now. A storm that shows only a 34&nbsp;kt ring
+            there is a genuine JTWC reporting gap within the 2005-2024
+            window, not a display bug and not a pre-2005 artifact.</li>
         </ul>
       </div>
     </div>
@@ -252,13 +292,14 @@
           smaller than the wind radii. This compares the tool's Rmax
           guess to JTWC's real, corrected value (called RMW in the
           record), for every usable Western Pacific tropical storm or
-          typhoon from 2001-2024 (depressions are out of scope - see
+          typhoon from 2005-2024 (depressions are out of scope - see
           "The tool skips depressions entirely" above). The diagonal
           line is a perfect match; dots below it mean the tool guessed
           too small - notice how the tool's own guesses (across the
-          bottom) barely spread out at all, even as the real size (up
-          the left) ranges far higher. Colored by storm strength: purple
-          = typhoon, orange = tropical storm.
+          bottom) barely spread past ~39&nbsp;nm at all, even as the
+          real size (up the left) ranges past 150&nbsp;nm - the
+          structural ceiling described above. Colored by storm strength:
+          purple = typhoon, orange = tropical storm.
         </div>
         <div class="stat" id="btScatterStat"></div>
       </div>

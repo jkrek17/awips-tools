@@ -39,12 +39,11 @@ import numpy as np
 SEED = 20260902
 N_SAMPLE_STORMS = 100
 MIN_RECORDS = 6
-# JTWC's WestPac wind-radii reporting only becomes reliably present from
-# here on (checked: <50% of jtwc_wp records have USA_RMW before 2001) - a
-# pre-2001 storm has essentially no radii/RMW to show, which would make the
-# storm browser look like the tool is failing when really there's just
-# nothing to compare against.
-MIN_SEASON = 2001
+# iter_storms() below already defaults to besttrack_common.MIN_SEASON
+# (2005) - not 2001, since RMW/some radii is one thing, but reliable
+# R50/R64 reporting specifically only starts around 2005 (see that
+# constant's own comment). all_storms is already restricted by the time
+# it reaches build_sample() below, so no separate cutoff is needed here.
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(HERE, "data")
@@ -53,8 +52,7 @@ GS_OUT = os.path.join(HERE, "..", "..", "web", "TCWind_JTWC", "BestTrackData.gs"
 
 def build_sample(all_storms):
     eligible = [(sid, name, season, rows) for sid, name, season, rows in all_storms
-                if int(season) >= MIN_SEASON
-                and sum(1 for r in rows if r["USA_WIND"].strip()
+                if sum(1 for r in rows if r["USA_WIND"].strip()
                         and r["USA_LAT"].strip()) >= MIN_RECORDS]
     rnd = random.Random(SEED)
     picked = rnd.sample(eligible, min(N_SAMPLE_STORMS, len(eligible)))
