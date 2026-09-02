@@ -5,6 +5,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>JTWC TC Wind - findings</title>
+<?!= HtmlService.createHtmlOutputFromFile('Theme').getContent(); ?>
 <style>
 /* ===========================================================================
    Findings.html - what the GTCM construction does, measured.
@@ -41,54 +42,26 @@
 :root {
   color-scheme: light dark;
 
-  --bg:#eef1f6; --surface:#ffffff; --panel:#f7f9fc; --sunken:#e7ecf3;
-  --text:#0f151d; --muted:#4a5666;
-  --border:#ccd4e0; --border-strong:#9fadbf;
-  --accent:#12508f; --accent-soft:#e6eefa;
-  --ok:#12633a; --warn:#8a5200; --bad:#a4132a;
-  --ok-soft:#e2f2e9; --warn-soft:#faf0dc; --bad-soft:#fbe6ea;
-
   /* two-series chart palette */
   --s-gtcm:#123a6b; --s-gtcm-ink:#123a6b;
   --s-pq:#d08a2a;   --s-pq-ink:#8a4b00;
   --s-ref:#4a5666;             /* control / reference marks: no hue */
   --grid:#dbe2ec; --axis:#7b8798;
-
-  --banner-bg:#7a1020; --banner-fg:#ffffff;
-
-  --r-sm:5px; --r-md:8px;
-  --shadow:0 1px 2px rgba(15,23,42,.10), 0 2px 8px rgba(15,23,42,.06);
-  --font:-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  --mono:ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg:#0c1016; --surface:#151b24; --panel:#1b222c; --sunken:#10161e;
-    --text:#e9eef6; --muted:#a8b6c8;
-    --border:#2b3644; --border-strong:#46566a;
-    --accent:#7ab6f5; --accent-soft:#152437;
-    --ok:#5fd39a; --warn:#f2b45a; --bad:#ff8f9e;
-    --ok-soft:#12281e; --warn-soft:#2b2110; --bad-soft:#2e1419;
     --s-gtcm:#5a8fdd; --s-gtcm-ink:#a9c9ff;
     --s-pq:#f6c684;   --s-pq-ink:#f6c684;
     --s-ref:#a8b6c8;
     --grid:#2b3644; --axis:#8494a8;
-    --shadow:0 1px 2px rgba(0,0,0,.5), 0 2px 10px rgba(0,0,0,.35);
-  }
+}
 }
 :root[data-theme="dark"] {
-  --bg:#0c1016; --surface:#151b24; --panel:#1b222c; --sunken:#10161e;
-  --text:#e9eef6; --muted:#a8b6c8;
-  --border:#2b3644; --border-strong:#46566a;
-  --accent:#7ab6f5; --accent-soft:#152437;
-  --ok:#5fd39a; --warn:#f2b45a; --bad:#ff8f9e;
-  --ok-soft:#12281e; --warn-soft:#2b2110; --bad-soft:#2e1419;
   --s-gtcm:#5a8fdd; --s-gtcm-ink:#a9c9ff;
   --s-pq:#f6c684;   --s-pq-ink:#f6c684;
   --s-ref:#a8b6c8;
   --grid:#2b3644; --axis:#8494a8;
-  --shadow:0 1px 2px rgba(0,0,0,.5), 0 2px 10px rgba(0,0,0,.35);
 }
 
 * { box-sizing:border-box; }

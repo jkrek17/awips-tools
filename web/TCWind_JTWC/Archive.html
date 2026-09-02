@@ -6,6 +6,7 @@
 <title>TC Wind (JTWC) - best-track archive</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<?!= HtmlService.createHtmlOutputFromFile('Theme').getContent(); ?>
 <style>
 /* ==========================================================================
    Tokens.  Complete light palette on :root; dark redefines the SAME names.
@@ -41,53 +42,8 @@
    ========================================================================== */
 :root {
   color-scheme: light dark;
-  --bg:          #f4f6f8;
-  --surface:     #ffffff;
-  --surface-2:   #e9eef3;
-  --surface-3:   #dde5ed;
-  --border:      #b9c4d0;
-  --border-2:    #8d9aa8;
-  --text:        #101720;
-  --text-2:      #4a5765;
-  --link:        #0b5c8f;
-  --ink-model:   #0a5b8c;
-  --ink-bt:      #c07d00;
-  --ink-obs:     #2f3a45;
-  --warn-bg:     #fff4d6;
-  --warn-fg:     #3d2c00;
-  --warn-border: #6b4d00;
-  --neg:         #8a1c1c;
-  --pos:         #12563a;
-  --focus:       #0b5c8f;
-  --chart-grid:  #c2ccd6;
-  --chart-axis:  #4a5765;
-  --shadow:      0 1px 2px rgba(16,23,32,.10), 0 4px 14px rgba(16,23,32,.06);
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg:          #0e141a;
-    --surface:     #151d25;
-    --surface-2:   #1e2831;
-    --surface-3:   #27333e;
-    --border:      #35434f;
-    --border-2:    #5b6d7c;
-    --text:        #e9eff5;
-    --text-2:      #a9b9c7;
-    --link:        #7ccafa;
-    --ink-model:   #1a6ea8;
-    --ink-bt:      #c98200;
-    --ink-obs:     #bcc8d2;
-    --warn-bg:     #3a2d05;
-    --warn-fg:     #ffe08a;
-    --warn-border: #ffc94d;
-    --neg:         #ff9d9d;
-    --pos:         #7fd6ad;
-    --focus:       #7ccafa;
-    --chart-grid:  #35434f;
-    --chart-axis:  #a9b9c7;
-    --shadow:      0 1px 2px rgba(0,0,0,.5), 0 4px 14px rgba(0,0,0,.35);
-  }
-}
+
 
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
