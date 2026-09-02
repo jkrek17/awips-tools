@@ -10,6 +10,7 @@ independent questions, four scripts:
 | Do the Python and JS ports actually agree with each other? | `compare_py_js.py` |
 | Is the tool's physics (Rmax) actually right, checked against ground truth? | `verify_besttrack_rmax.py` |
 | Can that regression be made to fit WestPac better? | `fit_westpac_rmax.py` |
+| Where does that ground truth for the web app come from? | `prep_besttrack_data.py` |
 
 ## Setup
 
@@ -137,3 +138,46 @@ unbiased on average for a weak system, but not to be *right* for any
 particular one. The radii clamp still helps on top of that when it
 binds (22% of records, bias -6.0 nm vs -4.3 nm where it doesn't). Full
 breakdown in each script's output.
+
+## Best-track QC panel (in the web app)
+
+`prep_besttrack_data.py` turns the same IBTrACS WP-basin archive into
+two datasets baked into the deployed web app itself
+(`web/TCWind_JTWC/BestTrackData.gs`, ~1 MB, generated - don't hand-edit;
+`tests/tcwind_jtwc/data/*.json` holds the same data for reference), and
+exposed via `getBestTrackSample()`/`getBestTrackScatter()` in `Code.gs`,
+the same `google.script.run` idiom as fetching live bulletins:
+
+- **A 100-storm random sample** (2001-2024, seeded, so it's
+  reproducible; capped at 100 so the storm-picker dropdown and the map
+  stay responsive - the underlying archive has ~2,200 eligible storms),
+  each with its full track: position, Vmax, reported wind radii, and
+  observed RMW wherever JTWC's post-season analysis reported one. The
+  "Best-track QC" button in the web app builds a synthetic `storm`
+  object from whichever one is picked, in the exact shape a parsed
+  live bulletin produces, so every existing map/diagnostics function
+  (`drawRadii`, `drawField`, `resolveRmax`, the time-history and
+  azimuthal-profile charts) draws it with no changes at all. The only
+  new drawing code is one dashed ring for the storm's actual reported
+  RMW (ground truth) next to the tool's own modeled core, and a
+  Rmax-vs-RMW delta printed in the status line when both are known.
+- **Every usable record in the full archive** (~16,200, not just the
+  100-storm sample), compacted to `[vmax, lat, rmw, r64min, r50min,
+  r34min]` per record - just enough for the client to run the real
+  `resolveRmax()` unmodified (its clamp only ever needs the minimum
+  nonzero quadrant at a threshold, so that's all that's shipped, rather
+  than duplicating the clamp formula in the prep script). Drawn as a
+  scatter (predicted Rmax vs actual RMW, colored by intensity category,
+  with a live-computed bias/MAE/RMSE) - this is `verify_besttrack_rmax.py`
+  made visible and explorable in the tool itself, rather than a
+  terminal report.
+
+2001 is the cutoff for both datasets: JTWC's WestPac wind-radii/RMW
+reporting is present on well under half of records before that, so an
+older storm would show the panel "failing" when really there's just
+nothing to compare against.
+
+Re-run `prep_besttrack_data.py` (needs a WP-basin IBTrACS CSV, same as
+the other scripts) and re-push `BestTrackData.gs` whenever it's worth
+refreshing this - e.g. after a season closes out and JTWC's best track
+for it is finalized.

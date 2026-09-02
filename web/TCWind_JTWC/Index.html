@@ -28,21 +28,22 @@
   #paste textarea { width:100%; height:110px; font-family:ui-monospace,monospace;
                     font-size:11px; }
   .fit-ok { color:#166534; } .fit-bad { color:#b91c1c; font-weight:600; }
-  #diag { display:none; padding:8px 10px; background:#f8fafc;
-          border-bottom:1px solid #cbd5e1; }
+  #diag, #besttrack { display:none; padding:8px 10px; background:#f8fafc;
+                      border-bottom:1px solid #cbd5e1; }
   #diag .diagRow { display:flex; gap:18px; flex-wrap:wrap; align-items:flex-start; }
-  #diag .diagCol { display:flex; flex-direction:column; gap:4px;
-                    align-items:flex-start; flex:0 0 auto; }
+  #diag .diagCol, #besttrack .diagCol { display:flex; flex-direction:column;
+                   gap:4px; align-items:flex-start; flex:0 0 auto; }
   /* Canvas has no natural CSS size of its own beyond its width/height
      attributes, and a column flexbox's default align-items:stretch will
      otherwise blow it up to fill the row - pin both explicitly instead
      of relying on flex sizing. */
-  #diag canvas { background:#fff; border:1px solid #d4d4d8; border-radius:3px;
-                 display:block; max-width:none; }
+  #diag canvas, #besttrack canvas { background:#fff; border:1px solid #d4d4d8;
+                 border-radius:3px; display:block; max-width:none; }
   #histCanvas, #histCanvas + .diagCap { width:620px; }
   #profCanvas, #profCanvas + .diagCap { width:360px; }
-  #diag .diagCap { font-size:11px; color:#52525b; }
-  #diagStorm { margin-bottom:6px; }
+  #btScatterCanvas, #btScatterCanvas + .diagCap { width:620px; }
+  #diag .diagCap, #besttrack .diagCap { font-size:11px; color:#52525b; }
+  #diagStorm, #btStorm { margin-bottom:6px; }
 </style>
 </head>
 <body>
@@ -57,6 +58,7 @@
     <button id="reload">Fetch bulletins</button>
     <button id="togglePaste">Paste text</button>
     <button id="toggleDiag">Diagnostics</button>
+    <button id="toggleBestTrack">Best-track QC</button>
     <label><input type="checkbox" id="layRadii" checked> Radii &amp; track</label>
     <label><input type="checkbox" id="layField" checked> Wind field</label>
     <label>Time <input type="range" id="tslider" min="0" max="0" value="0" style="width:220px"></label>
@@ -90,6 +92,25 @@
           reported radii - a dot sitting on its line is a good fit; off the
           line means the interpolation is straying from what JTWC reported.
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="besttrack">
+    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+      <label>Storm <select id="btStorm"><option>Loading storms…</option></select></label>
+      <button id="btExit">Back to live bulletins</button>
+      <span id="btInfo" class="diagCap"></span>
+    </div>
+    <div class="diagCol" style="margin-top:8px;">
+      <canvas id="btScatterCanvas" width="620" height="320"></canvas>
+      <div class="diagCap">
+        Verification: tool's predicted Rmax vs JTWC's own post-season
+        best-track RMW, every usable WestPac record 2001-2024. Diagonal
+        line is perfect agreement; points below it are underestimates.
+        Colored by intensity category. Picking a storm above shows its
+        actual track/radii/RMW (magenta dashed ring) on the map, next to
+        the tool's own modeled output, exactly like a live bulletin.
       </div>
     </div>
   </div>
@@ -313,6 +334,10 @@ function interpolateTrack(taus, epoch) {
     conf: lo.conf + f * (hi.conf - lo.conf),
     motionDir: lo.motionDir,
     motionSpd: lo.motionSpd + f * (hi.motionSpd - lo.motionSpd),
+    // Best-track ground truth (Best-track QC panel only; undefined/null
+    // for live bulletins, which never carry an observed RMW).
+    rmw: (lo.rmw != null && hi.rmw != null) ? lo.rmw + f * (hi.rmw - lo.rmw)
+       : (f < 0.5 ? lo.rmw : hi.rmw),
     radii: {}
   };
   for (const thr of [64, 50, 34]) {
@@ -429,6 +454,19 @@ function drawRadii(items) {
       L.polygon(ring, { color: colors[thr], weight: 2, fill: false,
                         opacity: .95 })
         .bindTooltip(thr + ' kt radius').addTo(radiiLayer);
+    }
+    // Best-track QC only: the storm's own observed RMW, ground truth,
+    // against which rmax (the tool's estimate, dashed core the field is
+    // built from) can be judged directly.
+    if (snap.rmw) {
+      const ring = [];
+      for (let az = 0; az <= 360; az += 5) {
+        ring.push(destPoint(snap.lat, snap.lon, az, snap.rmw));
+      }
+      L.polygon(ring, { color: '#db2777', weight: 2, fill: false,
+                        opacity: .95, dashArray: '3,4' })
+        .bindTooltip('actual RMW: ' + snap.rmw.toFixed(1) + ' nm (tool: ' +
+                     rmax.toFixed(1) + ' nm)').addTo(radiiLayer);
     }
     L.circleMarker([snap.lat, snap.lon], {
       radius: 6, color: '#000', fillColor: '#fff', fillOpacity: 1, weight: 3
@@ -566,6 +604,9 @@ function render() {
   const lines = items.map(it =>
     it.storm.pil + ' ' + it.storm.label + ': ' +
     it.snap.vmax.toFixed(0) + ' kt, Rmax ' + it.rmax.toFixed(1) + ' nm' +
+    (it.snap.rmw ? ' (actual RMW ' + it.snap.rmw.toFixed(1) + ' nm, error ' +
+      (it.rmax - it.snap.rmw >= 0 ? '+' : '') +
+      (it.rmax - it.snap.rmw).toFixed(1) + ' nm)' : '') +
     (it.snap.conf < 1 ? ' [post-transition, confidence ' +
       it.snap.conf.toFixed(2) + ']' : ''));
   document.getElementById('status').innerHTML =
@@ -778,6 +819,130 @@ function updateDiagnostics(items, nowEpoch) {
 }
 
 // ---------------------------------------------------------------------------
+// Best-track QC panel - real JTWC post-season best-track data (IBTrACS),
+// not a live bulletin. Reuses every map/diagnostics function above by
+// building a "storm" object in the exact shape ingest() builds from a
+// parsed bulletin (same {pil, header, taus, label}), so nothing else in
+// this file needs to know the data didn't come from parseJTWC().
+// ---------------------------------------------------------------------------
+
+let bestTrackSample = null;
+let bestTrackScatter = null;
+
+function buildBestTrackStorm(entry) {
+  const taus = entry.records.map((r, i) => ({
+    tau: i * 6, epoch: r.epoch, lat: r.lat, lon: r.lon, vmax: r.vmax,
+    gust: null, radii: r.radii || {}, motionDir: r.motionDir,
+    motionSpd: r.motionSpd, conf: 1.0, rmw: r.rmw,
+  }));
+  return {
+    pil: 'BEST-TRACK', file: entry.sid,
+    header: { systemType: null, stormId: entry.sid, stormName: entry.name,
+              warningNumber: null, pressureMb: null, refDate: null },
+    taus: taus,
+    label: entry.name + ' ' + entry.season + ' (JTWC best track)',
+  };
+}
+
+function selectBestTrackStorm(idx) {
+  const entry = bestTrackSample[idx];
+  storms = [buildBestTrackStorm(entry)];
+  populateDiagStorm();
+  rebuildTimeline();
+  render();
+  const lats = entry.records.map(r => r.lat), lons = entry.records.map(r => r.lon);
+  map.fitBounds([[Math.min(...lats) - 2, Math.min(...lons) - 2],
+                 [Math.max(...lats) + 2, Math.max(...lons) + 2]]);
+}
+
+function loadBestTrackSample() {
+  const sel = document.getElementById('btStorm');
+  google.script.run.withSuccessHandler(sample => {
+    bestTrackSample = sample;
+    sel.innerHTML = '';
+    sample.forEach((s, i) => {
+      const opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = s.name + ' ' + s.season + ' (' + s.records.length + ' pts)';
+      sel.appendChild(opt);
+    });
+    selectBestTrackStorm(0);
+  }).withFailureHandler(e => {
+    document.getElementById('btInfo').textContent = 'Failed to load storms: ' + e.message;
+  }).getBestTrackSample();
+}
+
+/** Verification scatter: predicted Rmax (x) vs actual best-track RMW (y),
+ * for every usable WP record (not just the 100-storm sample). Runs the
+ * real resolveRmax() client-side on each record - each scatter row carries
+ * just enough (vmax, lat, and the min nonzero quadrant per threshold) for
+ * resolveRmax()'s clamp to reproduce exactly, without re-deriving its
+ * formula here. */
+function drawBestTrackScatter() {
+  const cv = document.getElementById('btScatterCanvas');
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+  if (!bestTrackScatter) return;
+
+  const padL = 40, padR = 10, padT = 10, padB = 24;
+  const AX = 60; // nm axis max; a handful of larger outliers clip at the edge
+  const x = v => padL + (W - padL - padR) * Math.min(v, AX) / AX;
+  const y = v => H - padB - (H - padT - padB) * Math.min(v, AX) / AX;
+  const catColor = vmax => vmax >= 64 ? '#7c3aed' : vmax >= 34 ? '#f97316' : '#22c55e';
+
+  ctx.strokeStyle = '#d4d4d8'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, H - padB);
+  ctx.lineTo(W - padR, H - padB); ctx.stroke();
+  ctx.strokeStyle = '#a1a1aa'; ctx.setLineDash([3, 3]);
+  ctx.beginPath(); ctx.moveTo(x(0), y(0)); ctx.lineTo(x(AX), y(AX)); ctx.stroke();
+  ctx.setLineDash([]);
+
+  let sumE = 0, sumAbsE = 0, sumSqE = 0, n = 0;
+  ctx.globalAlpha = 0.35;
+  for (const rec of bestTrackScatter) {
+    const [vmax, lat, rmw, r64min, r50min, r34min] = rec;
+    const snap = {
+      vmax: vmax, lat: lat,
+      radii: {
+        64: r64min ? { NE: r64min, SE: r64min, SW: r64min, NW: r64min } : undefined,
+        50: r50min ? { NE: r50min, SE: r50min, SW: r50min, NW: r50min } : undefined,
+        34: r34min ? { NE: r34min, SE: r34min, SW: r34min, NW: r34min } : undefined,
+      },
+    };
+    const pred = resolveRmax(snap, 0);
+    ctx.fillStyle = catColor(vmax);
+    ctx.beginPath(); ctx.arc(x(pred), y(rmw), 2, 0, 2 * Math.PI); ctx.fill();
+    const e = pred - rmw;
+    sumE += e; sumAbsE += Math.abs(e); sumSqE += e * e; n++;
+  }
+  ctx.globalAlpha = 1;
+
+  ctx.fillStyle = '#71717a'; ctx.font = '10px system-ui, sans-serif';
+  ctx.fillText('actual RMW (nm)', 4, padT + 8);
+  ctx.textAlign = 'right';
+  ctx.fillText('tool’s Rmax (nm)', W - padR, H - 6);
+  ctx.textAlign = 'left';
+
+  if (n) {
+    const bias = sumE / n, mae = sumAbsE / n, rmse = Math.sqrt(sumSqE / n);
+    document.getElementById('btInfo').textContent =
+      'n=' + n + '  bias=' + (bias >= 0 ? '+' : '') + bias.toFixed(1) +
+      ' nm  MAE=' + mae.toFixed(1) + ' nm  RMSE=' + rmse.toFixed(1) + ' nm';
+  }
+}
+
+function loadBestTrackScatter() {
+  if (bestTrackScatter) { drawBestTrackScatter(); return; }
+  google.script.run.withSuccessHandler(data => {
+    bestTrackScatter = data;
+    drawBestTrackScatter();
+  }).withFailureHandler(e => {
+    document.getElementById('btInfo').textContent = 'Scatter failed to load: ' + e.message;
+  }).getBestTrackScatter();
+}
+
+// ---------------------------------------------------------------------------
 // Wiring
 // ---------------------------------------------------------------------------
 
@@ -846,6 +1011,18 @@ document.getElementById('toggleDiag').onclick = () => {
   if (d.style.display === 'block') render();
 };
 document.getElementById('diagStorm').onchange = render;
+document.getElementById('toggleBestTrack').onclick = () => {
+  const p = document.getElementById('besttrack');
+  const show = p.style.display !== 'block';
+  p.style.display = show ? 'block' : 'none';
+  if (show && !bestTrackSample) loadBestTrackSample();
+  if (show) loadBestTrackScatter();
+};
+document.getElementById('btStorm').onchange = e => selectBestTrackStorm(parseInt(e.target.value, 10));
+document.getElementById('btExit').onclick = () => {
+  document.getElementById('besttrack').style.display = 'none';
+  load(false);
+};
 document.getElementById('parsePaste').onclick = () => {
   const txt = document.getElementById('pastebox').value;
   if (!txt.trim()) return;
