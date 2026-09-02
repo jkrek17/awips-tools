@@ -137,6 +137,75 @@ DIAGNOSTIC_CLIPPING = {
 }
 
 # ---------------------------------------------------------------------------
+# Marine storm identification thresholds
+# ---------------------------------------------------------------------------
+
+MARINE_STORM_THRESHOLDS: Dict[str, float] = {
+    # Wind speed thresholds (knots)
+    "gale_min_kt": 34.0,       # Gale force (BF 8)
+    "storm_min_kt": 48.0,      # Storm force (BF 10)
+    "hurricane_min_kt": 64.0,  # Hurricane force (BF 12)
+    "violent_storm_kt": 56.0,  # Violent storm (BF 11)
+    
+    # Pressure thresholds (hPa)
+    "deep_low_hpa": 980.0,     # Deep low pressure
+    "intense_low_hpa": 960.0,  # Intense low pressure
+    "extreme_low_hpa": 940.0,  # Extreme low pressure
+    "standard_pressure_hpa": 1013.25,
+    
+    # Storm identification parameters
+    "min_pressure_anomaly_hpa": 4.0,    # Minimum depression for detection
+    "min_storm_separation_km": 500.0,   # Minimum center separation
+    "storm_search_radius_km": 800.0,    # Radius for feature extraction
+    "smoothing_scale_km": 100.0,        # Noise reduction scale
+    
+    # Vorticity thresholds (1/s)
+    "cyclonic_vorticity_min": 1e-5,     # Minimum for storm detection
+    "strong_vorticity": 3e-5,           # Strong cyclonic circulation
+    
+    # Wave thresholds (feet)
+    "rough_seas_ft": 8.0,      # Rough seas
+    "very_rough_ft": 13.0,     # Very rough seas  
+    "high_seas_ft": 20.0,      # High seas
+    "phenomenal_ft": 46.0,     # Phenomenal seas
+}
+
+MARINE_INTERACTION_THRESHOLDS: Dict[str, float] = {
+    # Storm interaction distances (km)
+    "fujiwhara_interaction_km": 1400.0,  # Potential Fujiwhara effect
+    "strong_interaction_km": 500.0,      # Strong steering interaction
+    "moderate_interaction_km": 800.0,    # Moderate interaction
+    "weak_interaction_km": 1200.0,       # Weak interaction
+    
+    # Risk index weights
+    "n_storm_risk_weight": 0.4,          # Per-storm contribution
+    "intensity_risk_weight": 0.3,        # Intensity contribution
+    "proximity_risk_weight": 0.2,        # Interaction contribution
+    "area_risk_weight": 0.1,             # Area coverage contribution
+}
+
+MARINE_ENSEMBLE_THRESHOLDS: Dict[str, float] = {
+    # Position uncertainty bounds (km)
+    "low_position_uncertainty_km": 100.0,
+    "moderate_position_uncertainty_km": 200.0,
+    "high_position_uncertainty_km": 400.0,
+    
+    # Intensity spread bounds
+    "low_wind_spread_kt": 5.0,
+    "moderate_wind_spread_kt": 15.0,
+    "high_wind_spread_kt": 25.0,
+    
+    "low_pressure_spread_hpa": 4.0,
+    "moderate_pressure_spread_hpa": 10.0,
+    "high_pressure_spread_hpa": 20.0,
+    
+    # Ensemble agreement thresholds
+    "strong_agreement_fraction": 0.8,    # 80% of members agree
+    "moderate_agreement_fraction": 0.6,  # 60% agree
+    "weak_agreement_fraction": 0.5,      # 50% agree
+}
+
+# ---------------------------------------------------------------------------
 # Unit conversions
 # ---------------------------------------------------------------------------
 
@@ -265,6 +334,73 @@ def get_model_wx_fog_thresholds_nm() -> Dict[str, float]:
     return deepcopy(MODEL_WX_FOG_THRESHOLDS_NM)
 
 
+def get_marine_storm_thresholds() -> Dict[str, float]:
+    """Return marine storm identification thresholds."""
+
+    return deepcopy(MARINE_STORM_THRESHOLDS)
+
+
+def get_marine_interaction_thresholds() -> Dict[str, float]:
+    """Return marine storm interaction thresholds."""
+
+    return deepcopy(MARINE_INTERACTION_THRESHOLDS)
+
+
+def get_marine_ensemble_thresholds() -> Dict[str, float]:
+    """Return marine ensemble analysis thresholds."""
+
+    return deepcopy(MARINE_ENSEMBLE_THRESHOLDS)
+
+
+def beaufort_scale(wind_kt: float) -> int:
+    """
+    Convert wind speed in knots to Beaufort scale number.
+    
+    Args:
+        wind_kt: Wind speed in knots.
+        
+    Returns:
+        Beaufort scale number (0-12).
+    """
+    thresholds = [1, 4, 7, 11, 17, 22, 28, 34, 41, 48, 56, 64]
+    for bf, thresh in enumerate(thresholds):
+        if wind_kt < thresh:
+            return bf
+    return 12
+
+
+def wave_state_description(wave_height_ft: float) -> str:
+    """
+    Get WMO sea state description from wave height.
+    
+    Args:
+        wave_height_ft: Significant wave height in feet.
+        
+    Returns:
+        Sea state description string.
+    """
+    if wave_height_ft < 0.33:
+        return "Calm (glassy)"
+    elif wave_height_ft < 1.0:
+        return "Calm (rippled)"
+    elif wave_height_ft < 1.6:
+        return "Smooth"
+    elif wave_height_ft < 4.0:
+        return "Slight"
+    elif wave_height_ft < 8.0:
+        return "Moderate"
+    elif wave_height_ft < 13.0:
+        return "Rough"
+    elif wave_height_ft < 20.0:
+        return "Very rough"
+    elif wave_height_ft < 30.0:
+        return "High"
+    elif wave_height_ft < 46.0:
+        return "Very high"
+    else:
+        return "Phenomenal"
+
+
 __all__ = [
     "PRECIP_INTENSITY_INCHES",
     "PRECIP_COVERAGE_INCHES",
@@ -301,5 +437,14 @@ __all__ = [
     "get_model_wx_convection",
     "get_model_wx_smoothing_defaults",
     "get_model_wx_fog_thresholds_nm",
+    # Marine storm thresholds
+    "MARINE_STORM_THRESHOLDS",
+    "MARINE_INTERACTION_THRESHOLDS",
+    "MARINE_ENSEMBLE_THRESHOLDS",
+    "get_marine_storm_thresholds",
+    "get_marine_interaction_thresholds",
+    "get_marine_ensemble_thresholds",
+    "beaufort_scale",
+    "wave_state_description",
 ]
 
