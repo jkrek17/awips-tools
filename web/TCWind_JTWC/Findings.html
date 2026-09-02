@@ -47,8 +47,12 @@
   ul.clean li:last-child { margin-bottom:0; }
   code { background:#f1f5f9; border-radius:4px; padding:1px 5px; font-size:12px; }
 
-  .findingGrid { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));
+  /* Fixed 2 columns, not auto-fit: with an even number of cards this
+     always pairs up cleanly (2x2) instead of auto-fit's 3-then-1-orphan
+     at this container's width. Collapses to 1 column on narrow screens. */
+  .findingGrid { display:grid; grid-template-columns:repeat(2, 1fr);
                  gap:12px; margin-top:10px; }
+  @media (max-width:640px) { .findingGrid { grid-template-columns:1fr; } }
   .finding { background:var(--surface); border:1px solid var(--border);
              border-left:4px solid var(--accent); border-radius:var(--radius);
              box-shadow:var(--shadow); padding:14px 16px; }
@@ -63,14 +67,22 @@
   .finding ul { margin:6px 0 0; padding-left:18px; }
   .finding li { font-size:12.5px; color:var(--text-muted); line-height:1.5; margin-bottom:4px; }
 
-  .chartRow { display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start; margin-top:12px; }
+  /* Full-width stacked cards, not a side-by-side row: the scatter and the
+     zone chart have genuinely different natural shapes (wide vs. narrow),
+     so forcing them into equal-width columns just relocates the asymmetry
+     rather than fixing it - stacking each at full width, centered, reads
+     as one deliberate column instead of two mismatched boxes. */
+  .chartCol { display:flex; flex-direction:column; gap:12px; margin-top:12px; }
   .chartCard { background:var(--surface); border:1px solid var(--border);
                border-radius:var(--radius-lg); box-shadow:var(--shadow);
-               padding:14px 16px; flex:0 0 auto; }
-  .chartCard canvas { display:block; max-width:none; border:1px solid var(--border);
-                       border-radius:6px; background:#fff; }
-  .chartCard .cap { font-size:11.5px; color:var(--text-muted); margin-top:8px;
-                     max-width:620px; line-height:1.5; }
+               padding:16px 18px; }
+  .chartTitle { margin:0 0 10px; font-size:13.5px; font-weight:700;
+                text-align:center; color:var(--text); }
+  .chartCard canvas { display:block; margin:0 auto; max-width:100%; height:auto;
+                       border:1px solid var(--border); border-radius:6px; background:#fff; }
+  .chartCard .cap { font-size:11.5px; color:var(--text-muted); margin-top:10px;
+                     max-width:620px; margin-left:auto; margin-right:auto; line-height:1.5; }
+  .stat { text-align:center; }
   .stat { font-size:11.5px; color:var(--text-faint); margin-top:6px; font-variant-numeric:tabular-nums; }
 
   footer { margin-top:36px; padding-top:16px; border-top:1px solid var(--border);
@@ -153,18 +165,21 @@
         </ul>
       </div>
       <div class="finding warn">
-        <span class="tag">Wind field size &middot; ROCI check</span>
-        <h3>Runs small, worse for tropical storms than typhoons</h3>
+        <span class="tag">Storm &amp; wind-field size</span>
+        <h3>Too small, in more ways than one</h3>
         <ul>
-          <li>We checked the size of the tool's wind field against ROCI -
-            how far out a storm's whole circulation reaches, a separate
-            measurement the tool never actually sees or uses.</li>
-          <li>For tropical storms, the tool's field runs 16 to 69&nbsp;nm
-            too small on average depending on which wind speed you check,
-            and only loosely tracks the real size.</li>
-          <li>For typhoons, the field is closer at moderate wind speeds
-            but stretches far too wide at the very lowest speeds checked -
-            by nearly 80&nbsp;nm too big on average.</li>
+          <li>The size formula has a hard ceiling: across every storm
+            checked, its guess never goes above about 39&nbsp;nm - even
+            though real storms range up to 155&nbsp;nm. It structurally
+            cannot recognize a large storm as large, no matter what the
+            bulletin says.</li>
+          <li>The wind field's overall size (checked against ROCI - how
+            far out a storm's whole circulation reaches, something the
+            tool never sees) runs 16 to 69&nbsp;nm too small for tropical
+            storms.</li>
+          <li>For typhoons the size is closer, except at the very lowest
+            wind speeds checked, where it overshoots - by nearly
+            80&nbsp;nm too big on average.</li>
         </ul>
       </div>
       <div class="finding caution">
@@ -186,28 +201,40 @@
 
   <section>
     <h2><span class="num">3</span>The numbers</h2>
-    <div class="chartRow">
+    <div class="chartCol">
       <div class="chartCard">
-        <canvas id="btScatterCanvas" width="600" height="320"></canvas>
+        <h3 class="chartTitle">Storm core size (Rmax) - NOT the 34/50/64&nbsp;kt
+          wind radii used elsewhere on this page</h3>
+        <canvas id="btScatterCanvas" width="640" height="320"></canvas>
         <div class="cap">
-          The tool's guessed storm size compared to JTWC's real, corrected
-          size, for every usable Western Pacific tropical storm or
+          Rmax is how far out from the center the strongest winds are
+          found - a tight radius right around the eye, always much
+          smaller than the wind radii. This compares the tool's Rmax
+          guess to JTWC's real, corrected value (called RMW in the
+          record), for every usable Western Pacific tropical storm or
           typhoon from 2001-2024 (depressions are out of scope - see
           "The tool skips depressions entirely" above). The diagonal
           line is a perfect match; dots below it mean the tool guessed
-          too small. Colored by storm strength: purple = typhoon, orange
-          = tropical storm.
+          too small - notice how the tool's own guesses (across the
+          bottom) barely spread out at all, even as the real size (up
+          the left) ranges far higher. Colored by storm strength: purple
+          = typhoon, orange = tropical storm.
         </div>
         <div class="stat" id="btScatterStat"></div>
       </div>
       <div class="chartCard">
-        <canvas id="btZoneCanvas" width="360" height="320"></canvas>
+        <h3 class="chartTitle">Wind profile shape, by zone between Rmax and
+          the wind radii</h3>
+        <canvas id="btZoneCanvas" width="640" height="280"></canvas>
         <div class="cap">
           How much the tool's wind profile disagrees with a separate,
           independent formula, at different distances from the storm
-          center. The bar shows the typical disagreement; the tick mark
-          shows how bad it can get in worse cases. The tallest bar is
-          where the tool is least sure of itself.
+          center - each zone here is the ring between two landmarks
+          (e.g. "Rmax-R64" is the ring from the core, Rmax, out to the
+          64&nbsp;kt wind radius, R64). The bar shows the typical
+          disagreement; the tick mark shows how bad it can get in worse
+          cases. The tallest bar is where the tool is least sure of
+          itself.
         </div>
       </div>
     </div>
@@ -258,7 +285,12 @@ function drawBestTrackScatter(data) {
   if (!data) return;
 
   const padL = 40, padR = 10, padT = 10, padB = 24;
-  const AX = 60;
+  // Sized to the actual data, not a fixed guess: a hardcoded cap here
+  // previously clipped every storm above 60nm onto the same edge,
+  // masking exactly the "the tool's guesses barely spread out" pattern
+  // this chart exists to show. Rounded up to a clean gridline step.
+  const dataMax = Math.max(...data.map(r => r[2]), 40);
+  const AX = Math.ceil(dataMax / 20) * 20;
   const x = v => padL + (W - padL - padR) * Math.min(v, AX) / AX;
   const y = v => H - padB - (H - padT - padB) * Math.min(v, AX) / AX;
   // Depressions never appear here (see build_scatter() in
@@ -269,6 +301,17 @@ function drawBestTrackScatter(data) {
   ctx.strokeStyle = '#d4d4d8'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, H - padB);
   ctx.lineTo(W - padR, H - padB); ctx.stroke();
+
+  // Gridlines + numeric labels every 20nm, so the axis scale (and how far
+  // it now has to stretch to fit real storms) is legible, not just implied.
+  ctx.strokeStyle = '#eef2f6'; ctx.fillStyle = '#a1a1aa';
+  ctx.font = '9px system-ui, sans-serif'; ctx.textAlign = 'right';
+  for (let v = 20; v <= AX; v += 20) {
+    ctx.beginPath(); ctx.moveTo(padL, y(v)); ctx.lineTo(W - padR, y(v)); ctx.stroke();
+    ctx.fillText(String(v), padL - 4, y(v) + 3);
+  }
+  ctx.textAlign = 'left';
+
   ctx.strokeStyle = '#a1a1aa'; ctx.setLineDash([3, 3]);
   ctx.beginPath(); ctx.moveTo(x(0), y(0)); ctx.lineTo(x(AX), y(AX)); ctx.stroke();
   ctx.setLineDash([]);
@@ -294,9 +337,9 @@ function drawBestTrackScatter(data) {
   ctx.globalAlpha = 1;
 
   ctx.fillStyle = '#71717a'; ctx.font = '10px system-ui, sans-serif';
-  ctx.fillText('storm’s real size (nm)', 4, padT + 8);
+  ctx.fillText('actual RMW (nm)', padL + 6, padT + 20);
   ctx.textAlign = 'right';
-  ctx.fillText('tool’s guess (nm)', W - padR, H - 6);
+  ctx.fillText('tool’s Rmax guess (nm)', W - padR, H - 6);
   ctx.textAlign = 'left';
 
   if (n) {
