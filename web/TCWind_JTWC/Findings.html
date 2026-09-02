@@ -1,492 +1,2285 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <base target="_top">
 <meta charset="utf-8">
-<title>Findings - JTWC TC Wind Tool</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JTWC TC Wind - findings</title>
 <style>
-  :root {
-    --bg: #f1f5f9; --surface: #ffffff; --border: #e2e8f0; --border-strong: #cbd5e1;
-    --text: #1e293b; --text-muted: #52606d; --text-faint: #94a3b8;
-    --brand: #7f1d1d; --accent: #2563eb; --accent-soft: #eff6ff;
-    --radius: 8px; --radius-lg: 12px;
-    --shadow: 0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04);
-    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+/* ===========================================================================
+   Findings.html - what the GTCM construction does, measured.
+
+   EVERY NUMBER ON THIS PAGE COMES FROM getFindings().  There are no
+   statistics in this file.  Anything numeric is either
+     (a) a [data-f="path"] placeholder filled from the findings JSON,
+     (b) derived on the page from those values by an arithmetic identity
+         that is stated next to the result, or
+     (c) read out of the shipped model code in Vortex.html (the quadrant
+         factor and the eq. (7) weights), so that it cannot drift from the
+         code it describes.
+   If a field is absent the page renders a marked gap and lists it in
+   "Fields this page asked for and did not get", rather than inventing it.
+
+   Tokens: every colour is defined on bare :root and only REDEFINED in the
+   dark blocks, so no colour exists solely inside a media query.
+
+   Series palette, chosen numerically rather than by eye (WCAG contrast, and
+   pairwise separation under simulated dichromacy - Vienot, Brettel & Mollon
+   1999 - where 1.00 means the two colours are identical):
+
+     light  GTCM #123a6b / per-quadrant #d08a2a
+            separation  normal 3.99  deutan 4.33  protan 3.40  tritan 5.03
+            on white    11.39:1      2.86:1 (fill only, never text)
+     dark   GTCM #5a8fdd / per-quadrant #f6c684
+            separation  normal 2.08  deutan 2.23  protan 1.85  tritan 2.45
+            on surface  5.28:1       10.98:1
+
+   Colour is never the only channel: GTCM bars are solid, per-quadrant bars
+   are diagonally hatched, every bar carries its value as text, and every
+   chart is backed by a table with the same numbers.
+   ======================================================================== */
+:root {
+  color-scheme: light dark;
+
+  --bg:#eef1f6; --surface:#ffffff; --panel:#f7f9fc; --sunken:#e7ecf3;
+  --text:#0f151d; --muted:#4a5666;
+  --border:#ccd4e0; --border-strong:#9fadbf;
+  --accent:#12508f; --accent-soft:#e6eefa;
+  --ok:#12633a; --warn:#8a5200; --bad:#a4132a;
+  --ok-soft:#e2f2e9; --warn-soft:#faf0dc; --bad-soft:#fbe6ea;
+
+  /* two-series chart palette */
+  --s-gtcm:#123a6b; --s-gtcm-ink:#123a6b;
+  --s-pq:#d08a2a;   --s-pq-ink:#8a4b00;
+  --s-ref:#4a5666;             /* control / reference marks: no hue */
+  --grid:#dbe2ec; --axis:#7b8798;
+
+  --banner-bg:#7a1020; --banner-fg:#ffffff;
+
+  --r-sm:5px; --r-md:8px;
+  --shadow:0 1px 2px rgba(15,23,42,.10), 0 2px 8px rgba(15,23,42,.06);
+  --font:-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --mono:ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#0c1016; --surface:#151b24; --panel:#1b222c; --sunken:#10161e;
+    --text:#e9eef6; --muted:#a8b6c8;
+    --border:#2b3644; --border-strong:#46566a;
+    --accent:#7ab6f5; --accent-soft:#152437;
+    --ok:#5fd39a; --warn:#f2b45a; --bad:#ff8f9e;
+    --ok-soft:#12281e; --warn-soft:#2b2110; --bad-soft:#2e1419;
+    --s-gtcm:#5a8fdd; --s-gtcm-ink:#a9c9ff;
+    --s-pq:#f6c684;   --s-pq-ink:#f6c684;
+    --s-ref:#a8b6c8;
+    --grid:#2b3644; --axis:#8494a8;
+    --shadow:0 1px 2px rgba(0,0,0,.5), 0 2px 10px rgba(0,0,0,.35);
   }
-  * { box-sizing: border-box; }
-  html, body { margin:0; padding:0; background:var(--bg); color:var(--text);
-               font-family:var(--font); }
-  a { color:var(--accent); }
-  .wrap { max-width:1160px; margin:0 auto; padding:0 20px 48px; }
-  header.top { background:var(--brand); color:#fff; padding:18px 20px; }
-  header.top .inner { max-width:1160px; margin:0 auto; }
-  header.top .backlink { display:inline-flex; align-items:center; gap:6px;
-    color:#fecaca; text-decoration:none; font-size:13px; font-weight:600; }
-  header.top .backlink:hover { color:#fff; }
-  header.top h1 { margin:10px 0 4px; font-size:22px; font-weight:700; }
-  header.top p { margin:0; font-size:13px; color:#fecaca; max-width:800px;
-                 line-height:1.5; }
-  .badge { display:inline-block; background:rgba(255,255,255,.15); color:#fff;
-           font-size:11px; font-weight:600; letter-spacing:.03em;
-           padding:3px 8px; border-radius:999px; margin-bottom:8px; }
+}
+:root[data-theme="dark"] {
+  --bg:#0c1016; --surface:#151b24; --panel:#1b222c; --sunken:#10161e;
+  --text:#e9eef6; --muted:#a8b6c8;
+  --border:#2b3644; --border-strong:#46566a;
+  --accent:#7ab6f5; --accent-soft:#152437;
+  --ok:#5fd39a; --warn:#f2b45a; --bad:#ff8f9e;
+  --ok-soft:#12281e; --warn-soft:#2b2110; --bad-soft:#2e1419;
+  --s-gtcm:#5a8fdd; --s-gtcm-ink:#a9c9ff;
+  --s-pq:#f6c684;   --s-pq-ink:#f6c684;
+  --s-ref:#a8b6c8;
+  --grid:#2b3644; --axis:#8494a8;
+  --shadow:0 1px 2px rgba(0,0,0,.5), 0 2px 10px rgba(0,0,0,.35);
+}
 
-  section { margin-top:28px; }
-  section > h2 { font-size:15px; font-weight:700; color:var(--text);
-                 margin:0 0 10px; display:flex; align-items:center; gap:8px; }
-  section > h2 .num { display:inline-flex; align-items:center; justify-content:center;
-    width:22px; height:22px; border-radius:50%; background:var(--accent);
-    color:#fff; font-size:12px; font-weight:700; flex:none; }
+* { box-sizing:border-box; }
+html { -webkit-text-size-adjust:100%; }
+body {
+  margin:0; background:var(--bg); color:var(--text);
+  font:14px/1.5 var(--font); -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+a { color:var(--accent); }
+a:focus-visible, button:focus-visible, summary:focus-visible,
+[tabindex]:focus-visible {
+  outline:2px solid var(--accent); outline-offset:2px; border-radius:2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation:none !important; transition:none !important;
+      scroll-behavior:auto !important; }
+}
 
-  .card { background:var(--surface); border:1px solid var(--border);
-          border-radius:var(--radius-lg); box-shadow:var(--shadow); padding:16px 18px; }
-  .card + .card { margin-top:12px; }
+/* --- safety banner: first thing on the page ------------------------------ */
+#safety {
+  background:var(--banner-bg); color:var(--banner-fg);
+  padding:7px 16px; font-size:12.5px; line-height:1.35;
+  display:flex; gap:10px; align-items:baseline; flex-wrap:wrap;
+}
+#safety b { font-weight:800; letter-spacing:.07em; white-space:nowrap; }
 
-  ul.clean { margin:8px 0 0; padding-left:20px; }
-  ul.clean li { margin-bottom:8px; line-height:1.55; font-size:13px; color:var(--text-muted); }
-  ul.clean li b { color:var(--text); }
-  ul.clean li:last-child { margin-bottom:0; }
-  code { background:#f1f5f9; border-radius:4px; padding:1px 5px; font-size:12px; }
+#pageNote {
+  display:none; padding:9px 16px; background:var(--warn-soft);
+  color:var(--text); border-bottom:2px solid var(--warn);
+  font-weight:600; font-size:13px;
+}
 
-  /* Fixed 2 columns, not auto-fit: with an even number of cards this
-     always pairs up cleanly (2x2) instead of auto-fit's 3-then-1-orphan
-     at this container's width. Collapses to 1 column on narrow screens. */
-  .findingGrid { display:grid; grid-template-columns:repeat(2, 1fr);
-                 gap:12px; margin-top:10px; }
-  @media (max-width:640px) { .findingGrid { grid-template-columns:1fr; } }
-  .finding { background:var(--surface); border:1px solid var(--border);
-             border-left:4px solid var(--accent); border-radius:var(--radius);
-             box-shadow:var(--shadow); padding:14px 16px; }
-  .finding.caution { border-left-color:#d97706; }
-  .finding.warn { border-left-color:#b91c1c; }
-  .finding h3 { margin:0 0 4px; font-size:13.5px; font-weight:700; }
-  .finding .tag { display:inline-block; font-size:10.5px; font-weight:700;
-    letter-spacing:.03em; text-transform:uppercase; padding:2px 7px;
-    border-radius:999px; margin-bottom:8px; background:var(--accent-soft); color:var(--accent); }
-  .finding.caution .tag { background:#fffbeb; color:#b45309; }
-  .finding.warn .tag { background:#fef2f2; color:#b91c1c; }
-  .finding ul { margin:6px 0 0; padding-left:18px; }
-  .finding li { font-size:12.5px; color:var(--text-muted); line-height:1.5; margin-bottom:4px; }
+/* --- masthead ------------------------------------------------------------ */
+#masthead {
+  display:flex; align-items:baseline; gap:14px; flex-wrap:wrap;
+  padding:9px 16px 8px; background:var(--surface);
+  border-bottom:1px solid var(--border);
+}
+#masthead h1 { margin:0; font-size:16px; font-weight:700; letter-spacing:-.01em; }
+#masthead h1 small { display:block; font-size:12px; font-weight:500;
+  color:var(--muted); letter-spacing:0; margin-top:1px; }
+#masthead nav { margin-left:auto; display:flex; gap:4px; align-items:baseline;
+  flex-wrap:wrap; }
+#masthead nav a {
+  padding:4px 10px; border-radius:var(--r-sm); font-size:13px; font-weight:600;
+  text-decoration:none; color:var(--accent); border:1px solid transparent;
+}
+#masthead nav a:hover { background:var(--accent-soft); }
+#masthead nav a[aria-current="page"] {
+  background:var(--accent-soft); border-color:var(--accent); color:var(--text);
+}
+#verTag { font:11.5px var(--mono); color:var(--muted); margin-left:6px; }
 
-  /* Full-width stacked cards, not a side-by-side row: the scatter and the
-     zone chart have genuinely different natural shapes (wide vs. narrow),
-     so forcing them into equal-width columns just relocates the asymmetry
-     rather than fixing it - stacking each at full width, centered, reads
-     as one deliberate column instead of two mismatched boxes. */
-  .chartCol { display:flex; flex-direction:column; gap:12px; margin-top:12px; }
-  .chartCard { background:var(--surface); border:1px solid var(--border);
-               border-radius:var(--radius-lg); box-shadow:var(--shadow);
-               padding:16px 18px; }
-  .chartTitle { margin:0 0 10px; font-size:13.5px; font-weight:700;
-                text-align:center; color:var(--text); }
-  .chartCard canvas { display:block; margin:0 auto; max-width:100%; height:auto;
-                       border:1px solid var(--border); border-radius:6px; background:#fff; }
-  .chartCard .cap { font-size:11.5px; color:var(--text-muted); margin-top:10px;
-                     max-width:620px; margin-left:auto; margin-right:auto; line-height:1.5; }
-  .stat { text-align:center; }
-  .stat { font-size:11.5px; color:var(--text-faint); margin-top:6px; font-variant-numeric:tabular-nums; }
+/* --- layout -------------------------------------------------------------- */
+.wrap { max-width:1180px; margin:0 auto; padding:0 16px 56px; }
 
-  footer { margin-top:36px; padding-top:16px; border-top:1px solid var(--border);
-           font-size:11.5px; color:var(--text-faint); }
+#status { margin:18px 0; padding:14px 16px; border-radius:var(--r-md);
+  border:1px solid var(--border); background:var(--surface);
+  box-shadow:var(--shadow); font-size:13.5px; color:var(--text); }
+#status.err { border-color:var(--bad); background:var(--bad-soft); }
+#status p { margin:0 0 8px; } #status p:last-child { margin-bottom:0; }
+#status code { font:12.5px var(--mono); background:var(--sunken);
+  padding:1px 5px; border-radius:3px; }
+
+section { margin-top:30px; scroll-margin-top:12px; }
+section > h2 {
+  font-size:17px; font-weight:700; margin:0 0 4px; letter-spacing:-.01em;
+  padding-bottom:6px; border-bottom:2px solid var(--border-strong);
+}
+section > h2 .n { color:var(--muted); font-weight:600; margin-right:8px;
+  font-variant-numeric:tabular-nums; }
+section > .lede { margin:10px 0 14px; font-size:14px; color:var(--text);
+  max-width:78ch; }
+h3 { font-size:14px; font-weight:700; margin:18px 0 6px; }
+p { margin:0 0 10px; max-width:78ch; }
+p.tight { margin-bottom:6px; }
+.muted { color:var(--muted); }
+small.note { display:block; font-size:12.5px; color:var(--muted);
+  margin-top:6px; max-width:80ch; }
+
+.card { background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--r-md); box-shadow:var(--shadow); padding:14px 16px; }
+.card + .card { margin-top:12px; }
+
+/* --- table of contents --------------------------------------------------- */
+#toc { margin:18px 0 0; padding:12px 16px; background:var(--panel);
+  border:1px solid var(--border); border-radius:var(--r-md); }
+#toc h2 { font-size:12px; text-transform:uppercase; letter-spacing:.06em;
+  margin:0 0 8px; color:var(--muted); border:0; padding:0; }
+#toc ol { margin:0; padding-left:20px; columns:2; column-gap:28px;
+  font-size:13.5px; }
+#toc li { margin-bottom:4px; break-inside:avoid; }
+@media (max-width:700px) { #toc ol { columns:1; } }
+
+/* --- verdict ------------------------------------------------------------- */
+.verdict { border-left:5px solid var(--accent); }
+.verdict h2 { border:0; padding:0; margin:0 0 8px; font-size:19px; }
+.verdict p { font-size:14.5px; }
+.verdict p.punch { font-size:15.5px; font-weight:600; }
+
+.cards3 { display:grid; grid-template-columns:repeat(3,1fr); gap:12px;
+  margin-top:14px; }
+@media (max-width:900px) { .cards3 { grid-template-columns:1fr; } }
+.cards3 .card { padding:13px 15px; }
+.cards3 h3 { margin:0 0 8px; font-size:13.5px; display:flex; gap:7px;
+  align-items:baseline; }
+.cards3 .mark { font:700 12px/1 var(--mono); padding:3px 5px; border-radius:3px;
+  border:1px solid currentColor; flex:none; }
+.use   .mark { color:var(--ok); background:var(--ok-soft); }
+.dont  .mark { color:var(--bad); background:var(--bad-soft); }
+.unver .mark { color:var(--warn); background:var(--warn-soft); }
+.cards3 ul { margin:0; padding-left:18px; font-size:13px; }
+.cards3 li { margin-bottom:6px; }
+
+/* --- stat row ------------------------------------------------------------ */
+.stats { display:grid; grid-template-columns:repeat(4,1fr); gap:12px;
+  margin-top:14px; }
+@media (max-width:1000px) { .stats { grid-template-columns:repeat(2,1fr); } }
+@media (max-width:560px)  { .stats { grid-template-columns:1fr; } }
+.stat { background:var(--surface); border:1px solid var(--border);
+  border-top:3px solid var(--accent); border-radius:var(--r-md);
+  box-shadow:var(--shadow); padding:12px 14px; }
+.stat .val { display:block; font-size:26px; font-weight:700; color:var(--text);
+  font-variant-numeric:tabular-nums; letter-spacing:-.02em; line-height:1.15; }
+.stat .val .u { font-size:14px; font-weight:600; color:var(--text); margin-left:3px; }
+.stat .lab { display:block; font-size:13px; font-weight:600; color:var(--text);
+  margin-top:4px; }
+.stat .sub { display:block; font-size:12.5px; color:var(--muted); margin-top:4px; }
+
+/* --- tables -------------------------------------------------------------- */
+.tblWrap { overflow-x:auto; margin-top:10px; border:1px solid var(--border);
+  border-radius:var(--r-md); background:var(--surface); box-shadow:var(--shadow); }
+table.data { border-collapse:collapse; width:100%; font-size:13px; }
+table.data caption { text-align:left; padding:10px 12px 8px; font-size:13px;
+  font-weight:700; color:var(--text); }
+table.data caption .cap2 { display:block; font-weight:400; font-size:12.5px;
+  color:var(--muted); margin-top:3px; max-width:88ch; }
+table.data th, table.data td { padding:6px 10px; text-align:left;
+  border-bottom:1px solid var(--border); white-space:nowrap; }
+table.data thead th { background:var(--panel); font-size:12px;
+  text-transform:uppercase; letter-spacing:.04em; color:var(--text);
+  position:sticky; top:0; border-bottom:2px solid var(--border-strong); }
+table.data tbody th { font-weight:600; }
+table.data td.num, table.data th.num { text-align:right;
+  font-variant-numeric:tabular-nums; font-family:var(--mono); font-size:12.5px; }
+table.data tbody tr:hover { background:var(--panel); }
+table.data tr.sep td, table.data tr.sep th { border-top:2px solid var(--border-strong); }
+table.data td.best { font-weight:700; }
+.chip { display:inline-block; font:600 11px/1.4 var(--font); padding:1px 6px;
+  border-radius:999px; border:1px solid var(--border-strong); color:var(--text);
+  background:var(--panel); }
+.chip.gtcm { border-color:var(--s-gtcm); }
+.chip.pq   { border-color:var(--s-pq-ink); }
+
+/* --- charts -------------------------------------------------------------- */
+figure.chart { margin:14px 0 0; padding:14px 16px; background:var(--surface);
+  border:1px solid var(--border); border-radius:var(--r-md);
+  box-shadow:var(--shadow); }
+figure.chart > figcaption { font-size:13px; font-weight:700; margin-bottom:2px; }
+figure.chart > figcaption .sub { display:block; font-weight:400; font-size:12.5px;
+  color:var(--muted); margin-top:3px; max-width:88ch; }
+.svgScroll { overflow-x:auto; margin-top:10px; }
+figure.chart svg { display:block; max-width:100%; height:auto; }
+svg text { font-family:var(--font); fill:var(--text); }
+svg .axisLbl { font-size:11.5px; fill:var(--muted); }
+svg .tick { font-size:11px; fill:var(--muted); }
+svg .valLbl { font-size:11.5px; font-weight:600; fill:var(--text); }
+svg .rowLbl { font-size:12px; fill:var(--text); }
+svg .grid { stroke:var(--grid); stroke-width:1; }
+svg .axis { stroke:var(--axis); stroke-width:1.5; }
+svg .zero { stroke:var(--text); stroke-width:1.5; }
+svg .refline { stroke:var(--s-ref); stroke-width:2; stroke-dasharray:5 3; }
+.legend { display:flex; gap:16px; flex-wrap:wrap; margin-top:10px;
+  font-size:12.5px; color:var(--text); }
+.legend span.k { display:inline-flex; align-items:center; gap:6px; }
+.legend svg { width:26px; height:12px; flex:none; }
+
+/* --- definitions --------------------------------------------------------- */
+details.def { margin-top:10px; border:1px solid var(--border);
+  border-radius:var(--r-md); background:var(--panel); }
+details.def > summary { cursor:pointer; padding:8px 12px; font-size:12.5px;
+  font-weight:600; color:var(--text); list-style-position:inside; }
+details.def > summary:hover { background:var(--sunken); }
+details.def .body { padding:2px 14px 12px; font-size:12.5px; color:var(--text); }
+details.def dt { font:600 12.5px var(--mono); margin-top:9px; color:var(--text); }
+details.def dd { margin:3px 0 0; color:var(--muted); max-width:90ch; }
+details.def dl { margin:0; }
+
+/* --- gap marker ---------------------------------------------------------- */
+.gap { display:inline-block; font:600 12px var(--mono); color:var(--text);
+  background:var(--warn-soft); border:1px dashed var(--warn);
+  border-radius:3px; padding:0 5px; }
+
+blockquote.src { margin:10px 0 0; padding:9px 12px; border-left:3px solid var(--border-strong);
+  background:var(--panel); font-size:12.5px; color:var(--text); border-radius:0 var(--r-sm) var(--r-sm) 0; }
+blockquote.src cite { display:block; margin-top:5px; font-size:11.5px;
+  color:var(--muted); font-style:normal; }
+
+ul.plain { margin:8px 0 0; padding-left:20px; font-size:13.5px; }
+ul.plain li { margin-bottom:7px; }
+
+footer.pg { margin-top:36px; padding-top:14px; border-top:1px solid var(--border);
+  font-size:12.5px; color:var(--muted); }
+footer.pg a { color:var(--accent); }
+.mono { font-family:var(--mono); font-size:12.5px; }
+[hidden] { display:none !important; }
 </style>
 </head>
 <body>
 
-<header class="top">
-  <div class="inner">
-    <a class="backlink" href="<?= baseUrl ?>">&larr; Back to the live tool</a>
-    <div><span class="badge">EXPERIMENTAL &middot; NOT OPERATIONALLY VETTED</span></div>
-    <h1>Findings: how well does the tool actually work?</h1>
-    <p>A plain summary of how well this tool's storm-size and wind-field
-       guesses match real JTWC data. This is a fixed summary, not a live
-       view - to explore a real storm yourself, see
-       <a href="<?= baseUrl ?>?page=live" style="color:#fecaca;">Archived Cases</a>
-       in the live tool.</p>
-  </div>
+<div id="safety" role="note">
+  <b>EXPERIMENTAL &mdash; NOT OPERATIONALLY VETTED</b>
+  <span>Everything below is a comparison against best-track <em>analyses</em>
+    of storm structure. Nothing on this page is a verification against
+    observations, and no part of it clears this tool for operational use.</span>
+</div>
+
+<div id="pageNote" role="status"><?= pageNote ?></div>
+
+<header id="masthead">
+  <h1>JTWC Tropical Cyclone Wind Field
+    <small>Findings &middot; how the GTCM construction behaves, measured</small></h1>
+  <nav aria-label="Pages">
+    <a href="<?= baseUrl ?>?page=live">Live</a>
+    <a href="<?= baseUrl ?>?page=archive">Archive</a>
+    <a href="<?= baseUrl ?>?page=findings" aria-current="page">Findings</a>
+    <span id="verTag"><?= version ?></span>
+  </nav>
 </header>
 
 <div class="wrap">
 
-  <section>
-    <h2><span class="num">1</span>Where this data comes from</h2>
+  <div id="status" role="status" aria-live="polite">
+    <p>Loading the measured findings from the server&hellip;</p>
+  </div>
+
+  <main id="content" hidden>
+
+  <nav id="toc" aria-label="On this page">
+    <h2>On this page</h2>
+    <ol>
+      <li><a href="#verdict">The verdict</a></li>
+      <li><a href="#quadavg">Read this first: quadrant maximum vs quadrant average</a></li>
+      <li><a href="#rings">Does it hit the reported radii?</a></li>
+      <li><a href="#never">Rings the field never reaches</a></li>
+      <li><a href="#coherence">Coherence &mdash; the reason for the switch</a></li>
+      <li><a href="#fielddiff">How different are the two fields?</a></li>
+      <li><a href="#fit">The fit itself</a></li>
+      <li><a href="#unverified">What is <em>not</em> verified</a></li>
+      <li><a href="#scope">Scope, provenance and this page&rsquo;s own gaps</a></li>
+    </ol>
+  </nav>
+
+  <!-- ================================================================== -->
+  <section id="verdict" aria-labelledby="verdict-h">
+    <div class="card verdict">
+      <h2 id="verdict-h">The verdict</h2>
+
+      <p class="punch">This tool renders a physically plausible wind field
+        that is consistent with what a JTWC bulletin says. It is not a
+        forecast, and it is not an attempt to reproduce the bulletin&rsquo;s
+        wind radii &mdash; it deliberately does not reproduce them.</p>
+
+      <p>It reads position, intensity and the 34 / 50 / 64&nbsp;kt quadrant
+        wind radii out of the bulletin, and fits <b id="v-model">the
+        model</b> to them: one symmetric modified-Rankine vortex plus a
+        wavenumber-1 asymmetry, by weighted least squares on <em>wind</em>
+        error. One vortex cannot pass through twelve independently reported
+        radii, so it does not try. What comes out is a single-peaked,
+        corner-free field whose gradient is the model&rsquo;s, not an
+        artefact of where four quadrant bisectors happen to fall.</p>
+
+      <p>The construction it replaced (<span class="chip pq">per-quadrant</span>)
+        fitted each quadrant separately and hit every reported radius exactly
+        &mdash; and left a slope break at every quadrant bisector, because
+        interpolating reported radii around the compass puts a corner there
+        by construction. The office chose the coherent field. <b>That is a
+        trade, and both halves of it are on this page.</b></p>
+
+      <p id="v-summary">Across the archive, the modelled isotachs sit
+        <b id="v-bias">&mdash;</b> from the radii the bulletins reported
+        (mean signed error, <b id="v-mae">&mdash;</b> mean absolute error,
+        <b id="v-n">&mdash;</b> ring-quadrants). Roughly
+        <b id="v-never">&mdash;</b> of reported ring-quadrants are never
+        reached by the modelled field at any radius, so they contribute no
+        error at all to that average &mdash; the miss on those is total, and
+        section&nbsp;4 counts them separately.</p>
+
+      <p class="tight"><b>If your decision turns on the exact radius the
+        bulletin gave, read the bulletin.</b> If it turns on the shape of the
+        wind between and beyond those radii, this construction is the better
+        of the two the tool has carried &mdash; on the evidence in
+        section&nbsp;5, and on nothing else.</p>
+
+      <div class="stats" id="statRow"></div>
+      <small class="note" id="statNote"></small>
+
+      <div class="cards3">
+        <div class="card use">
+          <h3><span class="mark">USE</span> Reasonable uses</h3>
+          <ul>
+            <li>Getting a coherent first-guess wind field into GFE from a
+              bulletin that carries only radii.</li>
+            <li>Judging the <em>gradient</em> and the shape of the envelope
+              between the reported radii, where the bulletin says nothing.</li>
+            <li>Seeing the asymmetry implied by storm motion (Users Guide
+              eq.&nbsp;(2), Schwerdt) rendered consistently.</li>
+            <li>Comparing one forecast hour with the next: the construction
+              is the same at every hour, so changes are the bulletin&rsquo;s,
+              not the method&rsquo;s.</li>
+          </ul>
+        </div>
+        <div class="card dont">
+          <h3><span class="mark">DO NOT</span> Not what it is for</h3>
+          <ul>
+            <li>Reading a radius off the field and quoting it as the
+              R34/R50/R64 in the bulletin. It will be smaller
+              &mdash; see section&nbsp;2.</li>
+            <li>Anything over or near land: the boundary-layer / land
+              roughness reduction is <b>not implemented</b>, so the field is
+              marine exposure everywhere.</li>
+            <li>Wind outside the modelled 34&nbsp;kt radius, where a local
+              taper &mdash; not in the Users Guide &mdash; takes over.</li>
+            <li>Any claim of accuracy against observed wind. Nothing here
+              measures that.</li>
+          </ul>
+        </div>
+        <div class="card unver">
+          <h3><span class="mark">UNVERIFIED</span> Known blind spots</h3>
+          <ul>
+            <li>No comparison against observations of any kind &mdash; buoy,
+              aircraft, scatterometer, or analysis.</li>
+            <li>Forecast hours (&tau;&gt;0) are unverified: every number here
+              comes from best-track analysis times.</li>
+            <li>The outer taper is a local heuristic, not a documented part
+              of the model.</li>
+            <li>Land roughness (Users Guide step&nbsp;4) is not
+              implemented.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================================== -->
+  <section id="quadavg" aria-labelledby="quadavg-h">
+    <h2 id="quadavg-h"><span class="n">2</span>Read this first: quadrant
+      maximum vs quadrant average</h2>
+    <p class="lede">This is the single most misreadable number on the page.
+      Without it, the ring-fit table in section&nbsp;3 looks like a
+      systematic undersize of roughly a sixth, and the honest conclusion
+      from that appearance would be that the tool is broken. It is not:
+      the two numbers are measuring different things.</p>
+
     <div class="card">
-      <ul class="clean">
-        <li><b>Live tool ("Fetch bulletins" / "Paste text"):</b> the same
-          real-time JTWC warning bulletins this tool's GFE version
-          consumes operationally - forecast strength, position, and
-          whatever quadrant wind radii the bulletin happens to carry at
-          issuance time.</li>
-        <li><b>Archived Cases and everything on this page:</b> JTWC's own
-          post-season best-track reanalysis for each storm - the
-          corrected, final position, intensity (Vmax), quadrant wind
-          radii (R34/R50/R64), RMW (radius of maximum wind), and ROCI
-          (radius of outermost closed isobar), pulled from NOAA's public
-          <a href="https://www.ncei.noaa.gov/products/international-best-track-archive"
-             target="_blank">IBTrACS</a> archive, agency <code>jtwc_wp</code>.</li>
-        <li><b>Scope: 2005-2024, Western Pacific basin, IBTrACS-flagged
-          tropical-storm-strength (Vmax &ge; 34&nbsp;kt) and stronger
-          only.</b> JTWC's R50/R64 reporting for this basin was
-          inconsistent before 2005 - see "Why this page starts at 2005"
-          below for the numbers behind that cutoff. Depression-strength
-          records are excluded because the tool itself now skips them
-          (see below); 2025-2026 storms aren't finalized in IBTrACS yet.</li>
-        <li>In short: the live tool's output is a real-time guess, made
-          before the storm's true structure is known. Everything below
-          scores that same guess logic against the after-the-fact answer,
-          field by field, on a dataset the tool's own fitting never saw
-          in its held-out portion.</li>
+      <p><b>What the bulletin reports</b> is the <em>maximum</em> extent of
+        that wind speed anywhere in the quadrant &mdash; the farthest point
+        at which, say, 34&nbsp;kt is analysed in the northeast
+        90&deg;.</p>
+      <p><b>What the GTCM fit aims at</b> is the quadrant <em>average</em>
+        radius, because the model is one smooth vortex and the guide
+        specifies the fit that way (Users Guide step&nbsp;2c). The reported
+        radius is multiplied by <b id="qa-factor">&mdash;</b> to get the fit
+        target before the least squares is run. That factor is
+        <b>read from the shipped code</b> when this page loads, not typed
+        into it, so it cannot drift from the model it describes.</p>
+      <p>So a modelled isotach that lands about a sixth inside the reported
+        radius is the model doing exactly what it was told. Section&nbsp;3
+        therefore reports the same errors twice: against the reported radius,
+        and against the target the fit was actually given. Neither number is
+        the &ldquo;real&rdquo; one on its own; read them together.</p>
+      <p id="qa-weights" class="tight"></p>
+      <div id="qaFig"></div>
+    </div>
+  </section>
+
+  <!-- ================================================================== -->
+  <section id="rings" aria-labelledby="rings-h">
+    <h2 id="rings-h"><span class="n">3</span>Does it hit the reported radii?
+      No &mdash; here is the size of the miss</h2>
+    <p class="lede">Signed radial error, in nautical miles, of the modelled
+      isotach crossing along each quadrant bisector. Negative means the
+      modelled isotach is <em>inside</em> the radius it is being compared
+      with. The left half of every figure and table below is measured
+      against the radius the bulletin reported; the right half against
+      <span id="ringsTargetFactor">that radius scaled to the quadrant
+      average</span>, which is what the fit was aiming at.</p>
+
+    <div id="ringChart"></div>
+    <div id="ringTable"></div>
+    <details class="def" id="ringDefs"></details>
+  </section>
+
+  <!-- ================================================================== -->
+  <section id="never" aria-labelledby="never-h">
+    <h2 id="never-h"><span class="n">4</span>Rings the field never reaches</h2>
+    <p class="lede">The error statistics in section&nbsp;3 can only be
+      computed where the modelled field actually crosses the threshold. Where
+      one symmetric vortex cannot hold the reported structure, the field
+      never reaches a reported ring at any radius along that bisector, and
+      that ring-quadrant drops out of the average entirely. This section is
+      where those cases are counted, so that the miss is visible rather than
+      hidden in a smaller sample. The per-quadrant construction is zero here
+      by construction.</p>
+
+    <div id="neverChart"></div>
+    <div id="neverTable"></div>
+    <small class="note" id="neverNote"></small>
+  </section>
+
+  <!-- ================================================================== -->
+  <section id="coherence" aria-labelledby="coh-h">
+    <h2 id="coh-h"><span class="n">5</span>Coherence &mdash; the reason for
+      the switch</h2>
+    <p class="lede">This is the evidence the change of construction was made
+      on, and it is the only part of this page that is new. Every measure
+      below is a <em>roughness</em>: higher is rougher, for both methods,
+      on the same storm-times and the same sampling grid. The definitions
+      the verification script recorded are printed next to each number, not
+      buried &mdash; a roughness statistic means nothing without its
+      estimator.</p>
+
+    <div id="cohHeadline"></div>
+    <div id="cohChart"></div>
+    <div id="cohTable"></div>
+    <div id="cohKnot"></div>
+    <details class="def" id="cohDefs"></details>
+    <div id="cohBasin"></div>
+  </section>
+
+  <!-- ================================================================== -->
+  <section id="fielddiff" aria-labelledby="fd-h">
+    <h2 id="fd-h"><span class="n">6</span>How different are the two fields?</h2>
+    <p class="lede">If you have used the per-quadrant version of this tool,
+      this is the section that tells you what changed on the screen. The two
+      constructions are differenced over a polar grid out to 400&nbsp;nm on
+      the same storm-times.</p>
+    <div id="fdCards"></div>
+    <div id="fdChart"></div>
+    <div id="fdTable"></div>
+    <small class="note" id="fdNote"></small>
+  </section>
+
+  <!-- ================================================================== -->
+  <section id="fit" aria-labelledby="fit-h">
+    <h2 id="fit-h"><span class="n">7</span>The fit itself</h2>
+    <p class="lede">How well one symmetric vortex plus a wavenumber-1
+      asymmetry can hold the reported structure at all, and what the fitted
+      vortex typically looks like. The wind error below is the residual of
+      the least squares at its own target points &mdash; it says the fit
+      converged on something sensible, and says nothing whatever about
+      forecast accuracy.</p>
+    <div id="fitTable"></div>
+    <div id="fitProfile"></div>
+    <small class="note" id="fitNote"></small>
+  </section>
+
+  <!-- ================================================================== -->
+  <section id="unverified" aria-labelledby="unv-h">
+    <h2 id="unv-h"><span class="n">8</span>What is <em>not</em> verified</h2>
+    <p class="lede">Read this before quoting anything above.</p>
+
+    <div class="card">
+      <h3>Documented departures from the Users Guide</h3>
+      <ul class="plain" id="departures"></ul>
+
+      <h3>Limits of the evidence on this page</h3>
+      <ul class="plain">
+        <li><b>No observations.</b> Every number here compares the modelled
+          field with a best-track <em>analysis</em> of storm structure. Best
+          track is itself an analysis product, produced after the fact from
+          the same kinds of data, and it carries its own uncertainty in the
+          wind radii &mdash; often tens of nautical miles. Agreement with it
+          is internal consistency, not validation.</li>
+        <li><b>Analysis times only.</b> Every case is a best-track
+          analysis time. The tool is used on forecast bulletins at
+          &tau;&nbsp;=&nbsp;12&hellip;120&nbsp;h, where position, intensity
+          and radii are all forecasts. <em>Nothing on this page verifies a
+          forecast hour.</em></li>
+        <li><b>The interpolation between bulletin times is unmeasured.</b>
+          The live tool interpolates the track and the radii between
+          forecast hours; no number here tests that path.</li>
+        <li><b>No land.</b> The field is marine exposure everywhere, so it
+          is too strong over land, and increasingly so with distance
+          inland.</li>
+        <li><b>Sampling.</b> The coherence and field-difference sections use
+          a subsample of the archive, not every storm-time; the counts are
+          in section&nbsp;9.</li>
       </ul>
+
+      <h3>One thing this page's own data flags about the model code</h3>
+      <div id="riDiag"></div>
     </div>
   </section>
 
-  <section>
-    <h2><span class="num">2</span>What we found</h2>
-    <div class="findingGrid">
-      <div class="finding">
-        <span class="tag">Storm size &middot; fixed</span>
-        <h3>The Rmax regression is refit, but the radii clamp gives some
-          bias back</h3>
-        <ul>
-          <li>Willoughby (2006)'s original Atlantic-fit coefficients,
-            scored against 2005-2024 WestPac RMW (n=8906): bias
-            &minus;6.1&nbsp;nm, MAE 10.1&nbsp;nm, RMSE 16.0&nbsp;nm,
-            r=0.56.</li>
-          <li>Refit on WestPac best-track data, scored on a held-out 20%
-            never used for fitting: bias &minus;1.9&nbsp;nm, MAE
-            9.0&nbsp;nm, RMSE 13.1&nbsp;nm, r=0.63 - most of the
-            systematic undersizing is gone.</li>
-          <li>But that's the regression <i>alone</i>. <code>resolveRmax()</code>
-            as actually run - regression, then clamped to &le;0.7&times;
-            the smallest reported radius at the highest threshold present
-            - comes back to bias &minus;5.9&nbsp;nm (MAE 9.2, RMSE 15.0,
-            r=0.59). The clamp binds on 38% of records (n=3388), and
-            when it does it's the dominant source of the tool's remaining
-            negative bias - see "hard ceiling" below.</li>
-          <li>By category: TS (34-63&nbsp;kt) MAE 12.2&nbsp;nm, r=0.35;
-            TY+ (64&nbsp;kt+) MAE 5.7&nbsp;nm, r=0.43. Skill is
-            meaningfully better at typhoon strength, where more storms
-            carry enough reported radii to constrain the clamp.</li>
-        </ul>
-      </div>
-      <div class="finding">
-        <span class="tag">Storm size &middot; scope</span>
-        <h3>The tool skips depressions entirely</h3>
-        <ul>
-          <li>Below tropical-storm strength (Vmax &lt; 34&nbsp;kt) there
-            is no organized wind field to model in JTWC's own convention,
-            and almost never any reported wind radii to constrain one
-            from even if there were.</li>
-          <li><code>buildFor()</code> now leaves the background wind grid
-            untouched for a depression-strength storm-time rather than
-            fabricate structure the record doesn't support.</li>
-          <li>Every check on this page is therefore scored only against
-            TS-strength-or-greater records, to match what the tool
-            actually attempts.</li>
-        </ul>
-      </div>
-      <div class="finding warn">
-        <span class="tag">Storm size (Rmax) &middot; structural limit</span>
-        <h3>The regression has a hard ceiling near 39&nbsp;nm</h3>
-        <ul>
-          <li>Across all 8906 in-scope records, <code>resolveRmax()</code>
-            never returns more than 39.0&nbsp;nm - even before the radii
-            clamp applies. Actual RMW in the same dataset ranges up to
-            155&nbsp;nm, and 21.9% of records with a reported RMW exceed
-            this ceiling.</li>
-          <li><b>This is not primarily a radii-clamp artifact</b> - the
-            ceiling shows up in the unclamped regression itself. Because
-            <code>willoughbyRmax()</code> is exponential and decreasing
-            in Vmax, and the tool only ever runs it for Vmax&nbsp;&ge;
-            34&nbsp;kt, the largest value the fitted curve can return over
-            the Vmax/latitude combinations this basin actually produces
-            lands right at ~39&nbsp;nm (the weakest in-scope intensity,
-            at the archive's higher WestPac latitudes). No further-north,
-            weaker-storm case exists in-scope that could push it higher -
-            it's a property of the fitted curve, not a downstream clamp.</li>
-          <li>Net effect: a genuinely large but weak system - the case
-            this matters most for - will be undersized by the model
-            regardless of whether any radii are reported at all.</li>
-          <li>Wind-field extent (checked against ROCI, at the radius
-            where modeled wind falls below 10/15/20&nbsp;kt): tropical
-            storms run about 22-75&nbsp;nm too small depending on
-            threshold; typhoons track closer, except at the 10&nbsp;kt
-            threshold, where the field overshoots ROCI by about
-            65&nbsp;nm on average.</li>
-        </ul>
-      </div>
-      <div class="finding caution">
-        <span class="tag">Wind field shape</span>
-        <h3>Least certain just outside the eyewall</h3>
-        <ul>
-          <li>Cross-checked the tool's profile against an independently
-            fit Holland (1980) profile, both anchored to the same Vmax,
-            Rmax, and reported R34. (Holland's own B parameter, fit only
-            to R34, predicts the reported R50/R64 reasonably well on its
-            own - r=0.85/0.70, MAE 12.0/12.9&nbsp;nm - which is why it's
-            a defensible independent baseline here.)</li>
-          <li>The two profiles disagree most in the Rmax-R64 zone -
-            mean |difference| 11.8&nbsp;kt, p90 up to 68.1&nbsp;kt - and
-            converge steadily moving outward (R50-R34: 3.2&nbsp;kt mean;
-            beyond R34: 4.6&nbsp;kt mean).</li>
-          <li>That inner zone, just outside the eyewall, is also where a
-            wind-speed error matters most operationally.</li>
-        </ul>
-      </div>
-      <div class="finding warn">
-        <span class="tag">Storm size (Rmax) &middot; caveat</span>
-        <h3>Storm type predicts Rmax error far better than distance to
-          land</h3>
-        <ul>
-          <li>Same Rmax-vs-RMW check as above, split by IBTrACS' own
-            storm-nature flag: purely tropical (TS, n=8598) MAE
-            8.7&nbsp;nm, r=0.60. Mixed structure (MX, n=270) MAE
-            25.0&nbsp;nm, r=0.20; extratropical transition (ET, n=56) MAE
-            20.1&nbsp;nm, r=0.16 - roughly triple the error, with almost
-            no skill left tracking any individual storm's size.</li>
-          <li>Split instead by distance to the nearest coastline, error
-            is nearly flat: MAE 8.2&nbsp;nm over/at the coast (&le;25&nbsp;km)
-            versus 9.6&nbsp;nm in the open ocean (&gt;300&nbsp;km). Rmax
-            skill does <i>not</i> meaningfully degrade approaching land -
-            which matters, since that's exactly where watches and
-            warnings concentrate.</li>
-          <li>Same failure signature (fast-moving, transitioning,
-            structurally asymmetric storms) as the motion-asymmetry
-            double-count bug fixed earlier in this project. The vortex
-            model assumes a steady tropical circulation; transitioning
-            storms often aren't one, wherever they happen to be relative
-            to land.</li>
-        </ul>
-      </div>
-      <div class="finding caution">
-        <span class="tag">Data coverage &middot; scope</span>
-        <h3>Why this page starts at 2005, not 2001</h3>
-        <ul>
-          <li>JTWC's WestPac best-track record carries RMW and some wind
-            radii back to 2001, but reporting of the finer R50/R64
-            thresholds specifically was inconsistent before 2005: only
-            about 26% of typhoon-strength (64&nbsp;kt+) 2000-2004 records
-            carried an R64 radius at all, versus 86-94% from 2005
-            onward.</li>
-          <li>Every figure on this page, the refit regression itself, and
-            the Archived Cases storm browser now draw exclusively from
-            2005-2024 - the fully radii-capable window - so "the archive"
-            means the same dataset everywhere on this site.</li>
-          <li>Practical effect: a pre-2005 storm won't appear in Archived
-            Cases at all now. A storm that shows only a 34&nbsp;kt ring
-            there is a genuine JTWC reporting gap within the 2005-2024
-            window, not a display bug and not a pre-2005 artifact.</li>
-        </ul>
-      </div>
+  <!-- ================================================================== -->
+  <section id="scope" aria-labelledby="scope-h">
+    <h2 id="scope-h"><span class="n">9</span>Scope, provenance and this
+      page&rsquo;s own gaps</h2>
+    <div id="scopeTable"></div>
+    <div id="notesBlock"></div>
+    <div class="card" style="margin-top:12px">
+      <h3 style="margin-top:0">Fields this page asked for and did not get</h3>
+      <div id="gapList"></div>
     </div>
   </section>
 
-  <section>
-    <h2><span class="num">3</span>The numbers</h2>
-    <div class="chartCol">
-      <div class="chartCard">
-        <h3 class="chartTitle">Storm core size (Rmax) - NOT the 34/50/64&nbsp;kt
-          wind radii used elsewhere on this page</h3>
-        <canvas id="btScatterCanvas" width="640" height="320"></canvas>
-        <div class="cap">
-          Rmax is how far out from the center the strongest winds are
-          found - a tight radius right around the eye, always much
-          smaller than the wind radii. This compares the tool's Rmax
-          guess to JTWC's real, corrected value (called RMW in the
-          record), for every usable Western Pacific tropical storm or
-          typhoon from 2005-2024 (depressions are out of scope - see
-          "The tool skips depressions entirely" above). The diagonal
-          line is a perfect match; dots below it mean the tool guessed
-          too small - notice how the tool's own guesses (across the
-          bottom) barely spread past ~39&nbsp;nm at all, even as the
-          real size (up the left) ranges past 150&nbsp;nm - the
-          structural ceiling described above. Colored by storm strength:
-          purple = typhoon, orange = tropical storm.
-        </div>
-        <div class="stat" id="btScatterStat"></div>
-      </div>
-      <div class="chartCard">
-        <h3 class="chartTitle">Wind profile shape, by zone between Rmax and
-          the wind radii</h3>
-        <canvas id="btZoneCanvas" width="640" height="280"></canvas>
-        <div class="cap">
-          How much the tool's wind profile disagrees with a separate,
-          independent formula, at different distances from the storm
-          center - each zone here is the ring between two landmarks
-          (e.g. "Rmax-R64" is the ring from the core, Rmax, out to the
-          64&nbsp;kt wind radius, R64). The bar shows the typical
-          disagreement; the tick mark shows how bad it can get in worse
-          cases. The tallest bar is where the tool is least sure of
-          itself.
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <footer>
-    This tool is experimental and has not been operationally vetted -
-    review every output before it informs any product.
+  <footer class="pg">
+    <p id="footLine"></p>
+    <p>Findings generated by <span class="mono">tests/tcwind_jtwc/verify_gtcm.py</span>
+      and served by <span class="mono">getFindings()</span>. This page holds no
+      statistics of its own. Times are UTC.</p>
   </footer>
 
+  </main>
 </div>
 
+<!-- The single shared copy of the vortex/parser JavaScript.  This page uses
+     gtcmTargets() to read the quadrant factor and the eq. (7) weights out of
+     the shipped model, and gtcmProfile() to draw the fitted profile shape.
+     It defines none of that itself. -->
+<?!= HtmlService.createHtmlOutputFromFile('Vortex').getContent(); ?>
+
 <script>
-// ---------------------------------------------------------------------------
-// Just what the two charts above need - a minimal port of resolveRmax()/
-// willoughbyRmax() from Index.html (MUST match TCWind_JTWC.py's), plus the
-// scatter/zone-chart drawing code. No map, no parser, no live data here.
-// ---------------------------------------------------------------------------
-const KT2MS = 0.514444;
-const KM2NM = 1 / 1.852;
-const QUADS = ['NE', 'SE', 'SW', 'NW'];
+(function () {
+'use strict';
 
-// Same WestPac-refit coefficients as Index.html / TCWind_JTWC.py - see
-// tests/tcwind_jtwc/fit_westpac_rmax.py.
-function willoughbyRmax(vmaxKt, latDeg) {
-  const vms = vmaxKt * KT2MS;
-  return 98.392 * Math.exp(-0.025088 * vms + 0.003021 * Math.abs(latDeg)) * KM2NM;
+// ===========================================================================
+// State
+// ===========================================================================
+var F = null;              // the findings object from getFindings()
+var MISSING = [];          // paths this page asked for and did not get
+
+var BASIN_ORDER = ['WP', 'NA', 'EP'];
+var BASIN_NAME = {
+  WP: 'Western North Pacific',
+  NA: 'North Atlantic',
+  EP: 'Eastern North Pacific'
+};
+var RINGS = ['34', '50', '64'];
+var METHOD_LABEL = { gtcm: 'GTCM', perquad: 'Per-quadrant' };
+
+// ===========================================================================
+// Small helpers
+// ===========================================================================
+function isNum(v) { return typeof v === 'number' && isFinite(v); }
+
+/** Read a dotted path out of the findings.  Returns undefined if any step is
+ *  absent; records the path so section 9 can list what was missing. */
+function val(path) {
+  var cur = F, parts = String(path).split('.'), i;
+  for (i = 0; i < parts.length; i++) {
+    if (cur === null || typeof cur !== 'object' ||
+        !Object.prototype.hasOwnProperty.call(cur, parts[i])) {
+      note_missing(path);
+      return undefined;
+    }
+    cur = cur[parts[i]];
+  }
+  if (cur === null) { note_missing(path); return undefined; }
+  return cur;
+}
+function note_missing(path) {
+  for (var i = 0; i < MISSING.length; i++) if (MISSING[i] === path) return;
+  MISSING.push(path);
+}
+/** Numeric read: undefined (and recorded) unless it is a finite number. */
+function num(path) {
+  var v = val(path);
+  if (!isNum(v)) { if (v !== undefined) note_missing(path); return undefined; }
+  return v;
 }
 
-function resolveRmax(snap, overrideNm) {
-  let rmax = (overrideNm && overrideNm > 0)
-    ? overrideNm : willoughbyRmax(snap.vmax, snap.lat);
-  for (const thr of [64, 50, 34]) {
-    if (!snap.radii[thr]) continue;
-    if (snap.vmax <= thr) continue;
-    const nz = QUADS.map(q => snap.radii[thr][q]).filter(v => v > 0);
-    if (nz.length) rmax = Math.min(rmax, 0.7 * Math.min(...nz));
-    break;
-  }
-  return Math.max(rmax, 3.0);
+function fmt(v, dp) {
+  if (!isNum(v)) return null;
+  var d = (dp === undefined || dp === null) ? 2 : dp;
+  // Least-squares residues that are exactly zero come back as ~1e-15; a
+  // reader should see 0.00, not 2.47e-15 masquerading as a real error.
+  if (Math.abs(v) < 5e-13) v = 0;
+  return v.toFixed(d);
+}
+function fmtSigned(v, dp) {
+  var s = fmt(v, dp);
+  if (s === null) return null;
+  return (parseFloat(s) > 0 ? '+' : '') + s;
 }
 
-function drawBestTrackScatter(data) {
-  const cv = document.getElementById('btScatterCanvas');
-  const ctx = cv.getContext('2d');
-  const W = cv.width, H = cv.height;
-  ctx.clearRect(0, 0, W, H);
-  if (!data) return;
-
-  const padL = 40, padR = 10, padT = 10, padB = 24;
-  // Sized to the actual data, not a fixed guess: a hardcoded cap here
-  // previously clipped every storm above 60nm onto the same edge,
-  // masking exactly the "the tool's guesses barely spread out" pattern
-  // this chart exists to show. Rounded up to a clean gridline step.
-  const dataMax = Math.max(...data.map(r => r[2]), 40);
-  const AX = Math.ceil(dataMax / 20) * 20;
-  const x = v => padL + (W - padL - padR) * Math.min(v, AX) / AX;
-  const y = v => H - padB - (H - padT - padB) * Math.min(v, AX) / AX;
-  // Depressions never appear here (see build_scatter() in
-  // prep_besttrack_data.py) - the tool no longer runs below 34kt, so
-  // there's no green "depression" branch to keep around.
-  const catColor = vmax => vmax >= 64 ? '#7c3aed' : '#f97316';
-
-  ctx.strokeStyle = '#d4d4d8'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, H - padB);
-  ctx.lineTo(W - padR, H - padB); ctx.stroke();
-
-  // Gridlines + numeric labels every 20nm, so the axis scale (and how far
-  // it now has to stretch to fit real storms) is legible, not just implied.
-  ctx.strokeStyle = '#eef2f6'; ctx.fillStyle = '#a1a1aa';
-  ctx.font = '9px system-ui, sans-serif'; ctx.textAlign = 'right';
-  for (let v = 20; v <= AX; v += 20) {
-    ctx.beginPath(); ctx.moveTo(padL, y(v)); ctx.lineTo(W - padR, y(v)); ctx.stroke();
-    ctx.fillText(String(v), padL - 4, y(v) + 3);
+function el(tag, attrs, kids) {
+  var n = document.createElement(tag), k, i, c;
+  if (attrs) {
+    for (k in attrs) {
+      if (!Object.prototype.hasOwnProperty.call(attrs, k)) continue;
+      if (attrs[k] === null || attrs[k] === undefined) continue;
+      if (k === 'text') n.appendChild(document.createTextNode(String(attrs[k])));
+      else n.setAttribute(k, String(attrs[k]));
+    }
   }
-  ctx.textAlign = 'left';
+  if (kids) {
+    for (i = 0; i < kids.length; i++) {
+      c = kids[i];
+      if (c === null || c === undefined) continue;
+      n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    }
+  }
+  return n;
+}
+var SVGNS = 'http://www.w3.org/2000/svg';
+function sv(tag, attrs, kids) {
+  var n = document.createElementNS(SVGNS, tag), k, i, c;
+  if (attrs) {
+    for (k in attrs) {
+      if (!Object.prototype.hasOwnProperty.call(attrs, k)) continue;
+      if (attrs[k] === null || attrs[k] === undefined) continue;
+      if (k === 'text') n.appendChild(document.createTextNode(String(attrs[k])));
+      else n.setAttribute(k, String(attrs[k]));
+    }
+  }
+  if (kids) {
+    for (i = 0; i < kids.length; i++) {
+      c = kids[i];
+      if (c === null || c === undefined) continue;
+      n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    }
+  }
+  return n;
+}
 
-  ctx.strokeStyle = '#a1a1aa'; ctx.setLineDash([3, 3]);
-  ctx.beginPath(); ctx.moveTo(x(0), y(0)); ctx.lineTo(x(AX), y(AX)); ctx.stroke();
-  ctx.setLineDash([]);
+/** A visible, announced marker for a number the data file did not carry.
+ *  Never a dash that could be mistaken for a measured zero. */
+function gap(what) {
+  return el('span', {
+    'class': 'gap', text: 'no data',
+    title: 'Not present in gtcm_findings.json: ' + what,
+    'aria-label': 'no data: ' + what + ' is missing from the findings file'
+  });
+}
+/** Formatted number node, or a gap marker. */
+function nnode(path, dp, unit) {
+  var v = num(path), s = fmt(v, dp);
+  if (s === null) return gap(path);
+  return el('span', { text: s + (unit || '') });
+}
+function setNode(id, node) {
+  var host = document.getElementById(id);
+  if (!host) return;
+  while (host.firstChild) host.removeChild(host.firstChild);
+  if (node) host.appendChild(typeof node === 'string'
+    ? document.createTextNode(node) : node);
+}
+function fill(host, node) {
+  while (host.firstChild) host.removeChild(host.firstChild);
+  if (node) host.appendChild(node);
+}
 
-  let sumE = 0, sumAbsE = 0, n = 0;
-  ctx.globalAlpha = 0.35;
-  for (const rec of data) {
-    const [vmax, lat, rmw, r64min, r50min, r34min] = rec;
-    const snap = {
-      vmax: vmax, lat: lat,
-      radii: {
-        64: r64min ? { NE: r64min, SE: r64min, SW: r64min, NW: r64min } : undefined,
-        50: r50min ? { NE: r50min, SE: r50min, SW: r50min, NW: r50min } : undefined,
-        34: r34min ? { NE: r34min, SE: r34min, SW: r34min, NW: r34min } : undefined,
-      },
+/** Basins actually present in the file, in a stable order. */
+function basins() {
+  var sc = F && F.scope, out = [], k, i;
+  if (!sc) return BASIN_ORDER.slice();
+  for (i = 0; i < BASIN_ORDER.length; i++) {
+    if (Object.prototype.hasOwnProperty.call(sc, BASIN_ORDER[i])) out.push(BASIN_ORDER[i]);
+  }
+  for (k in sc) {
+    if (Object.prototype.hasOwnProperty.call(sc, k) && out.indexOf(k) < 0) out.push(k);
+  }
+  return out;
+}
+function basinLabel(b) { return (BASIN_NAME[b] || b) + ' (' + b + ')'; }
+
+// ===========================================================================
+// Table builder.  cells are {t: text|node, cls, scope, colspan, rowspan}
+// ===========================================================================
+function cell(tag, c) {
+  var n = el(tag, {
+    'class': c.cls || null, scope: c.scope || null,
+    colspan: c.colspan || null, rowspan: c.rowspan || null,
+    title: c.title || null
+  });
+  if (c.t === null || c.t === undefined) n.appendChild(gap(c.gapFor || 'value'));
+  else n.appendChild(typeof c.t === 'string' || typeof c.t === 'number'
+    ? document.createTextNode(String(c.t)) : c.t);
+  return n;
+}
+function dataTable(caption, sub, head, body) {
+  var t = el('table', { 'class': 'data' }), i, j, tr, cap;
+  if (caption) {
+    cap = el('caption', {}, [caption]);
+    if (sub) cap.appendChild(el('span', { 'class': 'cap2', text: sub }));
+    t.appendChild(cap);
+  }
+  var thead = el('thead');
+  for (i = 0; i < head.length; i++) {
+    tr = el('tr');
+    for (j = 0; j < head[i].length; j++) tr.appendChild(cell('th', head[i][j]));
+    thead.appendChild(tr);
+  }
+  t.appendChild(thead);
+  var tb = el('tbody');
+  for (i = 0; i < body.length; i++) {
+    tr = el('tr', { 'class': body[i].cls || null });
+    var row = body[i].cells || body[i];
+    for (j = 0; j < row.length; j++) {
+      tr.appendChild(cell(row[j].scope ? 'th' : 'td', row[j]));
+    }
+    tb.appendChild(tr);
+  }
+  t.appendChild(tb);
+  return el('div', { 'class': 'tblWrap' }, [t]);
+}
+
+/** A <figure> holding a chart plus the caption.  The SVG is marked
+ *  aria-hidden because the table that follows it carries the same numbers
+ *  in text; the figure as a whole is described by its caption. */
+function figure(title, sub, svgNode, legendNode) {
+  var f = el('figure', { 'class': 'chart' });
+  var fc = el('figcaption', {}, [title]);
+  if (sub) fc.appendChild(el('span', { 'class': 'sub', text: sub }));
+  f.appendChild(fc);
+  if (legendNode) f.appendChild(legendNode);
+  f.appendChild(el('div', { 'class': 'svgScroll' }, [svgNode]));
+  return f;
+}
+function legend(items) {
+  var l = el('div', { 'class': 'legend' }), i;
+  for (i = 0; i < items.length; i++) {
+    var it = items[i];
+    var s = sv('svg', { viewBox: '0 0 26 12', 'aria-hidden': 'true' });
+    if (it.kind === 'hatch') {
+      s.appendChild(sv('rect', { x: 0, y: 1, width: 26, height: 10,
+        fill: 'url(#hatchPq)', stroke: 'var(--s-pq-ink)', 'stroke-width': 1 }));
+    } else if (it.kind === 'solid') {
+      s.appendChild(sv('rect', { x: 0, y: 1, width: 26, height: 10,
+        fill: 'var(--s-gtcm)', stroke: 'var(--s-gtcm-ink)', 'stroke-width': 1 }));
+    } else if (it.kind === 'dash') {
+      s.appendChild(sv('line', { x1: 0, y1: 6, x2: 26, y2: 6,
+        stroke: 'var(--s-ref)', 'stroke-width': 2, 'stroke-dasharray': '5 3' }));
+    } else if (it.kind === 'line') {
+      s.appendChild(sv('line', { x1: 0, y1: 6, x2: 26, y2: 6,
+        stroke: 'var(--text)', 'stroke-width': 2,
+        'stroke-dasharray': it.dash || null }));
+    }
+    l.appendChild(el('span', { 'class': 'k' }, [s, it.label]));
+  }
+  return l;
+}
+/** The hatch pattern used for every per-quadrant bar.  Defined once. */
+function hatchDefs() {
+  var p = sv('pattern', { id: 'hatchPq', width: 6, height: 6,
+    patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' });
+  p.appendChild(sv('rect', { width: 6, height: 6, fill: 'var(--surface)' }));
+  p.appendChild(sv('line', { x1: 0, y1: 0, x2: 0, y2: 6,
+    stroke: 'var(--s-pq)', 'stroke-width': 4 }));
+  return sv('defs', {}, [p]);
+}
+function seriesFill(method) {
+  return method === 'gtcm' ? 'var(--s-gtcm)' : 'url(#hatchPq)';
+}
+function seriesStroke(method) {
+  return method === 'gtcm' ? 'var(--s-gtcm-ink)' : 'var(--s-pq-ink)';
+}
+
+/** Nice axis maximum and a tick step for a positive domain. */
+function niceMax(v) {
+  if (!isNum(v) || v <= 0) return 1;
+  var exp = Math.pow(10, Math.floor(Math.log(v) / Math.LN10));
+  var f = v / exp, m;
+  if (f <= 1) m = 1; else if (f <= 2) m = 2; else if (f <= 2.5) m = 2.5;
+  else if (f <= 5) m = 5; else m = 10;
+  return m * exp;
+}
+function ticks(lo, hi, n) {
+  var out = [], i, step = (hi - lo) / n;
+  for (i = 0; i <= n; i++) out.push(lo + i * step);
+  return out;
+}
+
+// ===========================================================================
+// Derived aggregates.  Each is an arithmetic identity over numbers that are
+// in the file; none of them is a new measurement, and the page says next to
+// every one of them how it was formed.
+// ===========================================================================
+
+/** n-weighted pooling of the per-basin "all" rows.  bias and MAE are both
+ *  means, so an n-weighted mean of them is exact.  p90 and RMSE are not
+ *  pooled: a percentile cannot be recovered from per-basin percentiles. */
+function pooledRing(key, method) {
+  var bs = basins(), n = 0, sb = 0, sm = 0, i, a;
+  for (i = 0; i < bs.length; i++) {
+    a = val(key + '.' + bs[i] + '.' + method + '.all');
+    if (!a || !isNum(a.n) || !isNum(a.bias) || !isNum(a.mae)) return null;
+    n += a.n; sb += a.bias * a.n; sm += a.mae * a.n;
+  }
+  if (!n) return null;
+  return { n: n, bias: sb / n, mae: sm / n };
+}
+function pooledNever(method) {
+  var bs = basins(), c = 0, t = 0, i, a;
+  for (i = 0; i < bs.length; i++) {
+    a = val('neverReached.' + bs[i] + '.' + method);
+    if (!a || !isNum(a.count) || !isNum(a.total)) return null;
+    c += a.count; t += a.total;
+  }
+  if (!t) return null;
+  return { count: c, total: t, pct: 100 * c / t };
+}
+/** Reported ring-quadrants for one basin/ring: the per-quadrant construction
+ *  reaches every reported ring by construction, so its n IS the number of
+ *  reported ring-quadrants.  Checked against neverReached.total in
+ *  renderNever(), and the check is shown to the reader. */
+function reportedCount(b, ring) { return num('ringFit.' + b + '.perquad.' + ring + '.n'); }
+
+/** The quadrant factor and the eq. (7) weights, read out of the shipped
+ *  model code rather than typed here.  Returns null if Vortex.html did not
+ *  load, in which case the page says so instead of printing a number. */
+function probeModelConstants() {
+  if (!window.gtcmTargets) return null;
+  try {
+    var snap = {
+      lat: 15, lon: 130, vmax: 100, motionDir: 270, motionSpd: 10,
+      radii: { 64: { NE: 20, SE: 0, SW: 0, NW: 0 },
+               50: { NE: 0, SE: 0, SW: 0, NW: 0 },
+               34: { NE: 100, SE: 0, SW: 0, NW: 0 } }
     };
-    const pred = resolveRmax(snap, 0);
-    ctx.fillStyle = catColor(vmax);
-    ctx.beginPath(); ctx.arc(x(pred), y(rmw), 2, 0, 2 * Math.PI); ctx.fill();
-    const e = pred - rmw;
-    sumE += e; sumAbsE += Math.abs(e); n++;
-  }
-  ctx.globalAlpha = 1;
-
-  ctx.fillStyle = '#71717a'; ctx.font = '10px system-ui, sans-serif';
-  ctx.fillText('actual RMW (nm)', padL + 6, padT + 20);
-  ctx.textAlign = 'right';
-  ctx.fillText('tool’s Rmax guess (nm)', W - padR, H - 6);
-  ctx.textAlign = 'left';
-
-  if (n) {
-    const bias = sumE / n, mae = sumAbsE / n;
-    document.getElementById('btScatterStat').textContent =
-      n + ' storms   ·   average error: ' + (bias >= 0 ? '+' : '') +
-      bias.toFixed(1) + ' nm   ·   typical miss: ' + mae.toFixed(1) + ' nm';
-  }
+    var t = window.gtcmTargets(snap), i, o = { factor: null, w34: null, wInner: null };
+    if (!t || !t.length) return null;
+    for (i = 0; i < t.length; i++) {
+      if (t[i][2] === 34) { o.factor = t[i][0] / 100; o.w34 = t[i][3]; }
+      if (t[i][2] === 64) { o.wInner = t[i][3]; }
+    }
+    return (o.factor === null) ? null : o;
+  } catch (e) { return null; }
 }
 
-const ZONE_ORDER = ['Rmax-R64', 'R64-R50', 'Rmax-R50', 'R50-R34', 'Rmax-R34', 'R34-2xR34'];
-const ZONE_SHORT = { 'Rmax-R64': 'Rmax–R64', 'R64-R50': 'R64–R50',
-  'Rmax-R50': 'Rmax–R50', 'R50-R34': 'R50–R34',
-  'Rmax-R34': 'Rmax–R34', 'R34-2xR34': 'beyond R34' };
+// ===========================================================================
+// 1. Verdict
+// ===========================================================================
+function renderVerdict(mc) {
+  var m = val('model') || {};
+  setNode('v-model', (m.name || 'the GTCM model') +
+    (m.guide ? ', implemented from the ' + m.guide : ''));
 
-function drawHollandZoneChart(summary) {
-  const cv = document.getElementById('btZoneCanvas');
-  const ctx = cv.getContext('2d');
-  const W = cv.width, H = cv.height;
-  ctx.clearRect(0, 0, W, H);
-  if (!summary) return;
+  var pr = pooledRing('ringFit', 'gtcm');
+  var pt = pooledRing('ringFitVsTarget', 'gtcm');
+  var nv = pooledNever('gtcm');
 
-  const zones = ZONE_ORDER.filter(z => summary[z]);
-  const padL = 34, padR = 10, padT = 10, padB = 46;
-  const maxV = Math.max(...zones.map(z => summary[z].p90)) * 1.15;
-  const barW = (W - padL - padR) / zones.length;
-  const y = v => H - padB - (H - padT - padB) * v / maxV;
+  if (pr) {
+    setNode('v-bias', fmt(Math.abs(pr.bias), 1) + ' nm ' +
+      (pr.bias < 0 ? 'inside' : 'outside') + ' on average');
+    setNode('v-mae', fmt(pr.mae, 1) + ' nm');
+    setNode('v-n', String(pr.n) + ' of them');
+  } else {
+    setNode('v-bias', gap('ringFit.<basin>.gtcm.all'));
+    setNode('v-mae', gap('ringFit.<basin>.gtcm.all'));
+    setNode('v-n', gap('ringFit.<basin>.gtcm.all'));
+  }
+  setNode('v-never', nv ? fmt(nv.pct, 1) + '% (' + nv.count + ' of ' + nv.total + ')'
+                        : gap('neverReached.<basin>.gtcm'));
 
-  ctx.strokeStyle = '#d4d4d8'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, H - padB);
-  ctx.lineTo(W - padR, H - padB); ctx.stroke();
-  ctx.fillStyle = '#71717a'; ctx.font = '10px system-ui, sans-serif';
-  ctx.fillText('kt', 4, padT + 8);
+  // --- the four headline numbers ---------------------------------------
+  var kG = num('coherence.gtcm.azimuthalKinkKtPerDeg');
+  var kP = num('coherence.perquad.azimuthalKinkKtPerDeg');
+  var cG = num('coherence.gtcm.azimuthalKinkControlKtPerDeg');
+  var cP = num('coherence.perquad.azimuthalKinkControlKtPerDeg');
 
-  zones.forEach((z, i) => {
-    const s = summary[z];
-    const bx = padL + i * barW + barW * 0.2, bw = barW * 0.6;
-    ctx.fillStyle = '#94a3b8';
-    ctx.fillRect(bx, y(s.mean), bw, H - padB - y(s.mean));
-    ctx.strokeStyle = '#334155'; ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(bx, y(s.p90)); ctx.lineTo(bx + bw, y(s.p90));
-    ctx.stroke();
-
-    ctx.save();
-    ctx.translate(bx + bw / 2, H - padB + 6);
-    ctx.rotate(-Math.PI / 5);
-    ctx.textAlign = 'right';
-    ctx.fillStyle = '#3f3f46'; ctx.font = '9px system-ui, sans-serif';
-    ctx.fillText(ZONE_SHORT[z] || z, 0, 0);
-    ctx.restore();
+  var stats = [];
+  stats.push({
+    val: pt ? fmt(pt.mae, 1) : null, unit: 'nm',
+    lab: 'Mean miss against the target the fit aims at',
+    sub: pt ? 'Mean absolute radial error against ' +
+              (mc ? fmt(mc.factor, 2) + '×' : 'the quadrant-average scaling of') +
+              ' the reported radius, n-weighted over ' + pt.n +
+              ' ring-quadrants the field reaches.'
+            : null,
+    gapFor: 'ringFitVsTarget.<basin>.gtcm.all'
+  });
+  stats.push({
+    val: pr ? fmt(pr.mae, 1) : null, unit: 'nm',
+    lab: 'Mean miss against the reported radius',
+    sub: pr ? 'The same errors measured against the bulletin’s own ' +
+              'quadrant-maximum radii, which the model is not trying to hit. ' +
+              'Mean signed error ' + fmtSigned(pr.bias, 1) + ' nm.'
+            : null,
+    gapFor: 'ringFit.<basin>.gtcm.all'
+  });
+  stats.push({
+    val: nv ? fmt(nv.pct, 1) : null, unit: '%',
+    lab: 'Reported ring-quadrants never reached',
+    sub: nv ? nv.count + ' of ' + nv.total + ' reported ring-quadrants are ' +
+              'not reached by the modelled field at any radius, and are ' +
+              'excluded from the two averages to the left.'
+            : null,
+    gapFor: 'neverReached.<basin>.gtcm'
+  });
+  stats.push({
+    val: (isNum(kG) && isNum(kP) && kG > 0) ? fmt(kP / kG, 1) : null, unit: '×',
+    lab: 'Per-quadrant bisector corner, relative to GTCM’s',
+    sub: (isNum(kG) && isNum(kP) && isNum(cG) && isNum(cP) && cG > 0 && cP > 0)
+      ? 'Mean slope break in wind across the quadrant bisectors. Against ' +
+        'its own noise floor, GTCM sits at ' + fmt(kG / cG, 1) + '× and ' +
+        'the per-quadrant construction at ' + fmt(kP / cP, 1) + '×.'
+      : null,
+    gapFor: 'coherence.<method>.azimuthalKinkKtPerDeg'
   });
 
-  ctx.textAlign = 'right';
-  ctx.fillStyle = '#71717a'; ctx.font = '10px system-ui, sans-serif';
-  ctx.fillText('bar = typical, tick = worse cases', W - padR, padT + 8);
-  ctx.textAlign = 'left';
+  var row = document.getElementById('statRow');
+  while (row.firstChild) row.removeChild(row.firstChild);
+  for (var i = 0; i < stats.length; i++) {
+    var s = stats[i];
+    var valNode = el('span', { 'class': 'val' });
+    if (s.val === null) valNode.appendChild(gap(s.gapFor));
+    else {
+      valNode.appendChild(document.createTextNode(s.val));
+      valNode.appendChild(el('span', { 'class': 'u', text: s.unit }));
+    }
+    row.appendChild(el('div', { 'class': 'stat' }, [
+      valNode,
+      el('span', { 'class': 'lab', text: s.lab }),
+      s.sub ? el('span', { 'class': 'sub', text: s.sub })
+            : el('span', { 'class': 'sub' }, [gap(s.gapFor)])
+    ]));
+  }
+
+  var sc = val('scope') || {}, bs = basins(), parts = [], i2;
+  for (i2 = 0; i2 < bs.length; i2++) {
+    var s2 = sc[bs[i2]] || {};
+    parts.push(bs[i2] + ' ' + (s2.seasons || '?') + ' (' +
+      (isNum(s2.storms) ? s2.storms : '?') + ' storms)');
+  }
+  setNode('statNote', 'Basis: ' + parts.join(', ') +
+    '. Pooled figures are n-weighted means of the per-basin values printed ' +
+    'in sections 3 and 4; percentiles are never pooled. Findings generated ' +
+    (val('generated') || 'on an unrecorded date') + '.');
 }
 
-google.script.run.withSuccessHandler(drawBestTrackScatter)
-  .withFailureHandler(e => { document.getElementById('btScatterStat').textContent =
-    'Failed to load: ' + e.message; })
-  .getBestTrackScatter();
-google.script.run.withSuccessHandler(drawHollandZoneChart)
-  .withFailureHandler(e => {})
-  .getHollandZoneSummary();
+// ===========================================================================
+// 2. Quadrant maximum vs quadrant average
+// ===========================================================================
+function renderQuadAvg(mc) {
+  if (mc) {
+    setNode('qa-factor', fmt(mc.factor, 2));
+    var w = document.getElementById('qa-weights');
+    while (w.firstChild) w.removeChild(w.firstChild);
+    if (isNum(mc.w34) && isNum(mc.wInner)) {
+      w.appendChild(document.createTextNode(
+        'The fit is also weighted: eq. (7) puts a weight of ' + fmt(mc.w34, 0) +
+        ' on every 34 kt target and ' + fmt(mc.wInner, 0) + ' on the 50 and ' +
+        '64 kt targets, so the gale radius pulls the vortex hardest and the ' +
+        'inner rings are fitted more loosely. That weighting is visible in ' +
+        'section 3: the inner rings miss by less in absolute terms simply ' +
+        'because they are smaller, but they are the ones the field fails to ' +
+        'reach at all (section 4).'));
+    }
+  } else {
+    setNode('qa-factor', gap('quadrant factor from Vortex.html'));
+    setNode('qa-weights', 'The eq. (7) weights could not be read: the shared ' +
+      'vortex code (Vortex.html) did not load in this page, so nothing that ' +
+      'depends on it is shown.');
+  }
+  setNode('ringsTargetFactor', mc
+    ? fmt(mc.factor, 2) + '× that radius — the quadrant-average target'
+    : 'the quadrant-average target');
+  fill(document.getElementById('qaFig'), quadFigure(mc));
+}
+
+/** Schematic of the quadrant-maximum / quadrant-average distinction.  It is
+ *  a drawing, not data, and says so in its caption and its aria label. */
+function quadFigure(mc) {
+  var f = mc && isNum(mc.factor) ? mc.factor : 0.85;
+  var W = 430, H = 250, cx = 40, cy = 210, R = 150;
+  var s = sv('svg', { viewBox: '0 0 ' + W + ' ' + H, width: W, height: H,
+    role: 'img',
+    'aria-label': 'Schematic: the bulletin reports the farthest extent of a ' +
+      'wind speed in a quadrant; the GTCM fit is aimed at ' + fmt(f, 2) +
+      ' times that radius, the quadrant-average radius. Not measured data.' });
+
+  function P(rr, deg) {
+    var a = deg * Math.PI / 180;
+    return [cx + rr * Math.sin(a), cy - rr * Math.cos(a)];
+  }
+  // quadrant frame
+  s.appendChild(sv('line', { x1: cx, y1: cy, x2: cx, y2: cy - R - 18, 'class': 'axis' }));
+  s.appendChild(sv('line', { x1: cx, y1: cy, x2: cx + R + 18, y2: cy, 'class': 'axis' }));
+  s.appendChild(sv('text', { x: cx - 4, y: cy - R - 24, 'class': 'tick',
+    'text-anchor': 'start', text: 'N' }));
+  s.appendChild(sv('text', { x: cx + R + 22, y: cy + 4, 'class': 'tick', text: 'E' }));
+
+  // arcs at R and at f*R
+  var d, k, p;
+  d = ''; for (k = 0; k <= 90; k += 2) { p = P(R, k); d += (k ? 'L' : 'M') + fmt(p[0], 1) + ' ' + fmt(p[1], 1); }
+  s.appendChild(sv('path', { d: d, fill: 'none', stroke: 'var(--text)',
+    'stroke-width': 1.5, 'stroke-dasharray': '7 4' }));
+  d = ''; for (k = 0; k <= 90; k += 2) { p = P(f * R, k); d += (k ? 'L' : 'M') + fmt(p[0], 1) + ' ' + fmt(p[1], 1); }
+  s.appendChild(sv('path', { d: d, fill: 'none', stroke: 'var(--text)',
+    'stroke-width': 1.5, 'stroke-dasharray': '2 3' }));
+
+  // a schematic analysed boundary that touches R once
+  d = '';
+  for (k = 0; k <= 90; k += 1) {
+    var g = Math.exp(-Math.pow((k - 55) / 17, 2));
+    var rr = R * (0.72 + 0.28 * g) * (1 + 0.05 * Math.sin(k / 8));
+    p = P(Math.min(rr, R), k);
+    d += (k ? 'L' : 'M') + fmt(p[0], 1) + ' ' + fmt(p[1], 1);
+  }
+  s.appendChild(sv('path', { d: d, fill: 'none', stroke: 'var(--text)',
+    'stroke-width': 2.5 }));
+
+  p = P(R, 55);
+  s.appendChild(sv('circle', { cx: p[0], cy: p[1], r: 4, fill: 'var(--text)' }));
+  s.appendChild(sv('text', { x: p[0] + 8, y: p[1] - 6, 'class': 'valLbl',
+    text: 'reported radius = farthest extent' }));
+  p = P(f * R, 18);
+  s.appendChild(sv('text', { x: p[0] + 8, y: p[1] + 4, 'class': 'valLbl',
+    text: 'fit target = ' + fmt(f, 2) + ' × reported' }));
+  p = P(R * 0.80, 84);
+  s.appendChild(sv('text', { x: p[0] + 10, y: p[1] + 4, 'class': 'tick',
+    text: 'analysed 34 kt boundary (schematic)' }));
+
+  return figure('Why the modelled isotach sits inside the reported radius',
+    'Schematic only — no measurement is plotted here. The bulletin gives ' +
+    'the farthest extent of the wind in the quadrant (dashed). The vortex is ' +
+    'fitted to the quadrant average (dotted), so the modelled isotach lands ' +
+    'inside the reported radius by design.', s,
+    legend([
+      { kind: 'line', label: 'analysed boundary (schematic)' },
+      { kind: 'line', dash: '7 4', label: 'reported radius (quadrant maximum)' },
+      { kind: 'line', dash: '2 3', label: 'fit target (quadrant average)' }
+    ]));
+}
+
+// ===========================================================================
+// 3. Ring fit
+// ===========================================================================
+function ringRows() {
+  var bs = basins(), out = [], i, j;
+  for (i = 0; i < bs.length; i++) {
+    for (j = 0; j < RINGS.length; j++) {
+      out.push({ b: bs[i], ring: RINGS[j],
+                 label: bs[i] + '  R' + RINGS[j], first: j === 0 });
+    }
+  }
+  return out;
+}
+
+function renderRings(mc) {
+  var rows = ringRows(), methods = ['gtcm', 'perquad'];
+  var panels = [
+    { key: 'ringFit', title: 'vs the radius the bulletin reported' },
+    { key: 'ringFitVsTarget',
+      title: 'vs the fit target (' + (mc ? fmt(mc.factor, 2) + ' × reported' :
+             'quadrant average') + ')' }
+  ];
+
+  // shared domain, so the two panels are directly comparable at equal scale
+  var maxAbs = 0, i, j, k, v;
+  for (i = 0; i < panels.length; i++)
+    for (j = 0; j < rows.length; j++)
+      for (k = 0; k < methods.length; k++) {
+        v = num(panels[i].key + '.' + rows[j].b + '.' + methods[k] + '.' +
+                rows[j].ring + '.bias');
+        if (isNum(v)) maxAbs = Math.max(maxAbs, Math.abs(v));
+      }
+  var dom = niceMax(maxAbs || 1);
+
+  var labelW = 78, panelW = 262, gapW = 74, padT = 66, padB = 40;
+  var barH = 12, pairGap = 3, groupGap = 12;
+  var groupH = barH * 2 + pairGap + groupGap;
+  var H = padT + rows.length * groupH + padB;
+  var W = labelW + panelW * 2 + gapW + 30;
+
+  var s = sv('svg', { viewBox: '0 0 ' + W + ' ' + H, width: W, height: H,
+    'aria-hidden': 'true', style: 'min-width:' + W + 'px' });
+  s.appendChild(hatchDefs());
+
+  for (i = 0; i < panels.length; i++) {
+    var x0 = labelW + i * (panelW + gapW);
+    var xc = x0 + panelW / 2;
+    var sc = (panelW / 2) / dom;               // px per nm, identical in both
+
+    s.appendChild(sv('text', { x: xc, y: 20, 'text-anchor': 'middle',
+      'class': 'valLbl', text: panels[i].title }));
+    s.appendChild(sv('text', { x: xc, y: 36, 'text-anchor': 'middle',
+      'class': 'axisLbl', text: 'signed radial error (nm)' }));
+
+    var tk = ticks(-dom, dom, 4);
+    for (j = 0; j < tk.length; j++) {
+      var xt = xc + tk[j] * sc;
+      s.appendChild(sv('line', { x1: xt, y1: padT - 12, x2: xt,
+        y2: H - padB + 4, 'class': tk[j] === 0 ? 'zero' : 'grid' }));
+      s.appendChild(sv('text', { x: xt, y: padT - 18, 'text-anchor': 'middle',
+        'class': 'tick', text: fmtSigned(tk[j], 0) }));
+      s.appendChild(sv('text', { x: xt, y: H - padB + 18, 'text-anchor': 'middle',
+        'class': 'tick', text: fmtSigned(tk[j], 0) }));
+    }
+    s.appendChild(sv('text', { x: xc - panelW / 2, y: H - padB + 34,
+      'text-anchor': 'start', 'class': 'axisLbl',
+      text: '← modelled isotach inside' }));
+    s.appendChild(sv('text', { x: xc + panelW / 2, y: H - padB + 34,
+      'text-anchor': 'end', 'class': 'axisLbl', text: 'outside →' }));
+
+    for (j = 0; j < rows.length; j++) {
+      var yTop = padT + j * groupH;
+      for (k = 0; k < methods.length; k++) {
+        var y = yTop + k * (barH + pairGap);
+        v = num(panels[i].key + '.' + rows[j].b + '.' + methods[k] + '.' +
+                rows[j].ring + '.bias');
+        if (!isNum(v)) {
+          s.appendChild(sv('text', { x: xc + 4, y: y + barH - 2,
+            'class': 'tick', text: 'no data' }));
+          continue;
+        }
+        if (Math.abs(v) < 5e-13) v = 0;
+        var w = Math.abs(v) * sc;
+        s.appendChild(sv('rect', {
+          x: v < 0 ? xc - w : xc, y: y, width: Math.max(w, 0.8), height: barH,
+          fill: seriesFill(methods[k]), stroke: seriesStroke(methods[k]),
+          'stroke-width': 1
+        }));
+        var lx = v < 0 ? xc - w - 4 : xc + w + 4;
+        s.appendChild(sv('text', { x: lx, y: y + barH - 2, 'class': 'valLbl',
+          'text-anchor': v < 0 ? 'end' : 'start', text: fmtSigned(v, 1) }));
+      }
+      if (i === 0) {
+        s.appendChild(sv('text', { x: 4, y: yTop + barH + 4, 'class': 'rowLbl',
+          text: rows[j].label }));
+        if (rows[j].first && j > 0) {
+          s.appendChild(sv('line', { x1: 2, y1: yTop - groupGap / 2,
+            x2: W - 8, y2: yTop - groupGap / 2, 'class': 'grid' }));
+        }
+      }
+    }
+  }
+
+  fill(document.getElementById('ringChart'), figure(
+    'Where the modelled isotachs land, by basin and ring',
+    'Both panels are drawn at the same scale (' + fmt(dom, 0) + ' nm full ' +
+    'width either side of zero), so the shift between them is the ' +
+    'quadrant-average conversion and nothing else. Upper bar of each pair: ' +
+    'GTCM. Lower, hatched: the retired per-quadrant construction, which is ' +
+    'exactly zero in the left panel because it reproduces the reported ' +
+    'radius by construction. Every value is also in the table below.',
+    s, legend([
+      { kind: 'solid', label: 'GTCM (shipped)' },
+      { kind: 'hatch', label: 'Per-quadrant (retired)' }
+    ])));
+
+  // --- table ------------------------------------------------------------
+  var head = [[
+    { t: 'Basin', scope: 'col' }, { t: 'Ring', scope: 'col' },
+    { t: 'Method', scope: 'col' }, { t: 'n', scope: 'col', cls: 'num' },
+    { t: 'bias', scope: 'col', cls: 'num', title: 'vs reported radius, nm' },
+    { t: 'MAE', scope: 'col', cls: 'num', title: 'vs reported radius, nm' },
+    { t: 'RMSE', scope: 'col', cls: 'num', title: 'vs reported radius, nm' },
+    { t: 'p90', scope: 'col', cls: 'num', title: 'vs reported radius, nm' },
+    { t: 'bias', scope: 'col', cls: 'num', title: 'vs fit target, nm' },
+    { t: 'MAE', scope: 'col', cls: 'num', title: 'vs fit target, nm' },
+    { t: 'RMSE', scope: 'col', cls: 'num', title: 'vs fit target, nm' },
+    { t: 'p90', scope: 'col', cls: 'num', title: 'vs fit target, nm' }
+  ]];
+  head.unshift([
+    { t: '', colspan: 3 }, { t: '', colspan: 1 },
+    { t: 'against the reported radius (nm)', colspan: 4, cls: 'num' },
+    { t: 'against the fit target (nm)', colspan: 4, cls: 'num' }
+  ]);
+
+  var body = [], bs = basins(), rl = RINGS.concat(['all']);
+  for (i = 0; i < bs.length; i++) {
+    for (j = 0; j < rl.length; j++) {
+      for (k = 0; k < 2; k++) {
+        var m = methods[k];
+        var base = 'ringFit.' + bs[i] + '.' + m + '.' + rl[j];
+        var tgt = 'ringFitVsTarget.' + bs[i] + '.' + m + '.' + rl[j];
+        var cells = [];
+        if (k === 0) {
+          cells.push({ t: bs[i], scope: 'row', rowspan: 2 });
+          cells.push({ t: rl[j] === 'all' ? 'all' : 'R' + rl[j], rowspan: 2 });
+        }
+        cells.push({ t: METHOD_LABEL[m] });
+        cells.push({ t: fmt(num(base + '.n'), 0), cls: 'num', gapFor: base + '.n' });
+        cells.push({ t: fmtSigned(num(base + '.bias'), 2), cls: 'num', gapFor: base + '.bias' });
+        cells.push({ t: fmt(num(base + '.mae'), 2), cls: 'num', gapFor: base + '.mae' });
+        cells.push({ t: fmt(num(base + '.rmse'), 2), cls: 'num', gapFor: base + '.rmse' });
+        cells.push({ t: fmt(num(base + '.p90'), 2), cls: 'num', gapFor: base + '.p90' });
+        cells.push({ t: fmtSigned(num(tgt + '.bias'), 2), cls: 'num', gapFor: tgt + '.bias' });
+        cells.push({ t: fmt(num(tgt + '.mae'), 2), cls: 'num', gapFor: tgt + '.mae' });
+        cells.push({ t: fmt(num(tgt + '.rmse'), 2), cls: 'num', gapFor: tgt + '.rmse' });
+        cells.push({ t: fmt(num(tgt + '.p90'), 2), cls: 'num', gapFor: tgt + '.p90' });
+        body.push({ cells: cells,
+          cls: (j === rl.length - 1 && k === 0) ? 'sep' : ((j === 0 && k === 0 && i > 0) ? 'sep' : null) });
+      }
+    }
+  }
+  fill(document.getElementById('ringTable'), dataTable(
+    'Radial error of the modelled isotach crossings, by basin, ring and method',
+    'n is the number of reported ring-quadrants the modelled field actually ' +
+    'reaches, so the GTCM and per-quadrant rows are not over the same sample: ' +
+    'the ring-quadrants GTCM never reaches are counted in section 4, not here. ' +
+    'p90 and RMSE are per basin only — a percentile cannot be pooled.',
+    head, body));
+
+  // --- the definitions the verification script recorded -------------------
+  var d = document.getElementById('ringDefs');
+  while (d.firstChild) d.removeChild(d.firstChild);
+  d.appendChild(el('summary', { text: 'How these errors are defined (from the findings file)' }));
+  var dl = el('dl');
+  var nk = ['ringFit', 'ringFitVsTarget'];
+  for (i = 0; i < nk.length; i++) {
+    var txt = val('notes.' + nk[i]);
+    dl.appendChild(el('dt', { text: nk[i] }));
+    dl.appendChild(el('dd', {}, [typeof txt === 'string' ? txt : gap('notes.' + nk[i])]));
+  }
+  d.appendChild(el('div', { 'class': 'body' }, [dl]));
+}
+
+// ===========================================================================
+// 4. Rings the field never reaches
+// ===========================================================================
+function renderNever() {
+  var bs = basins(), rows = [], i, j;
+  var maxPct = 0;
+  for (i = 0; i < bs.length; i++) {
+    for (j = 0; j < RINGS.length; j++) {
+      var cnt = num('neverReached.' + bs[i] + '.gtcm.byRing.' + RINGS[j]);
+      var rep = reportedCount(bs[i], RINGS[j]);
+      var pct = (isNum(cnt) && isNum(rep) && rep > 0) ? 100 * cnt / rep : null;
+      if (isNum(pct)) maxPct = Math.max(maxPct, pct);
+      rows.push({ b: bs[i], ring: RINGS[j], cnt: cnt, rep: rep, pct: pct,
+                  first: j === 0 });
+    }
+  }
+  var dom = niceMax(maxPct || 1);
+  var labelW = 92, plotW = 330, padT = 46, padB = 40, barH = 15, gapH = 9;
+  var H = padT + rows.length * (barH + gapH) + padB;
+  var W = labelW + plotW + 150;
+  var s = sv('svg', { viewBox: '0 0 ' + W + ' ' + H, width: W, height: H,
+    'aria-hidden': 'true', style: 'min-width:' + W + 'px' });
+  s.appendChild(sv('text', { x: labelW, y: 18, 'class': 'valLbl',
+    text: 'per cent of that ring’s reported quadrants that the GTCM field never reaches' }));
+  var tk = ticks(0, dom, 4);
+  for (i = 0; i < tk.length; i++) {
+    var xt = labelW + (tk[i] / dom) * plotW;
+    s.appendChild(sv('line', { x1: xt, y1: padT - 10, x2: xt, y2: H - padB + 4,
+      'class': i === 0 ? 'axis' : 'grid' }));
+    s.appendChild(sv('text', { x: xt, y: padT - 16, 'text-anchor': 'middle',
+      'class': 'tick', text: fmt(tk[i], 0) + '%' }));
+  }
+  for (i = 0; i < rows.length; i++) {
+    var y = padT + i * (barH + gapH);
+    s.appendChild(sv('text', { x: 4, y: y + barH - 3, 'class': 'rowLbl',
+      text: rows[i].b + '  R' + rows[i].ring }));
+    if (!isNum(rows[i].pct)) {
+      s.appendChild(sv('text', { x: labelW + 4, y: y + barH - 3, 'class': 'tick',
+        text: 'no data' }));
+      continue;
+    }
+    var w = (rows[i].pct / dom) * plotW;
+    s.appendChild(sv('rect', { x: labelW, y: y, width: Math.max(w, 0.8),
+      height: barH, fill: 'var(--s-gtcm)', stroke: 'var(--s-gtcm-ink)',
+      'stroke-width': 1 }));
+    s.appendChild(sv('text', { x: labelW + w + 6, y: y + barH - 3,
+      'class': 'valLbl', text: fmt(rows[i].pct, 1) + '%  (' + rows[i].cnt +
+      ' of ' + rows[i].rep + ')' }));
+  }
+  fill(document.getElementById('neverChart'), figure(
+    'Reported ring-quadrants the GTCM field never reaches',
+    'One symmetric vortex cannot hold every reported ring at once. The ' +
+    'denominators are the reported ring-quadrants for that basin and ring; ' +
+    'the per-quadrant construction is zero on every row here by construction, ' +
+    'so it is not drawn.', s, legend([
+      { kind: 'solid', label: 'GTCM (shipped) — per-quadrant is 0% on every row' }
+    ])));
+
+  // --- table, with the consistency check shown --------------------------
+  var head = [[
+    { t: 'Basin', scope: 'col' }, { t: 'Ring', scope: 'col' },
+    { t: 'reported ring-quadrants', scope: 'col', cls: 'num' },
+    { t: 'never reached', scope: 'col', cls: 'num' },
+    { t: '% never reached', scope: 'col', cls: 'num' },
+    { t: 'scored in section 3', scope: 'col', cls: 'num' }
+  ]];
+  var body = [], checkOk = true, anyCheck = false;
+  for (i = 0; i < rows.length; i++) {
+    var g = num('ringFit.' + rows[i].b + '.gtcm.' + rows[i].ring + '.n');
+    if (isNum(g) && isNum(rows[i].rep) && isNum(rows[i].cnt)) {
+      anyCheck = true;
+      if (rows[i].rep - rows[i].cnt !== g) checkOk = false;
+    }
+    body.push({ cells: [
+      { t: rows[i].b, scope: 'row' },
+      { t: 'R' + rows[i].ring },
+      { t: fmt(rows[i].rep, 0), cls: 'num', gapFor: 'ringFit.' + rows[i].b + '.perquad.' + rows[i].ring + '.n' },
+      { t: fmt(rows[i].cnt, 0), cls: 'num', gapFor: 'neverReached.' + rows[i].b + '.gtcm.byRing.' + rows[i].ring },
+      { t: isNum(rows[i].pct) ? fmt(rows[i].pct, 1) : null, cls: 'num' },
+      { t: fmt(g, 0), cls: 'num', gapFor: 'ringFit.' + rows[i].b + '.gtcm.' + rows[i].ring + '.n' }
+    ], cls: rows[i].first && i > 0 ? 'sep' : null });
+  }
+  for (i = 0; i < bs.length; i++) {
+    body.push({ cells: [
+      { t: bs[i], scope: 'row' }, { t: 'all rings' },
+      { t: fmt(num('neverReached.' + bs[i] + '.gtcm.total'), 0), cls: 'num',
+        gapFor: 'neverReached.' + bs[i] + '.gtcm.total' },
+      { t: fmt(num('neverReached.' + bs[i] + '.gtcm.count'), 0), cls: 'num',
+        gapFor: 'neverReached.' + bs[i] + '.gtcm.count' },
+      { t: fmt(num('neverReached.' + bs[i] + '.gtcm.pct'), 2), cls: 'num',
+        gapFor: 'neverReached.' + bs[i] + '.gtcm.pct' },
+      { t: fmt(num('ringFit.' + bs[i] + '.gtcm.all.n'), 0), cls: 'num',
+        gapFor: 'ringFit.' + bs[i] + '.gtcm.all.n' }
+    ], cls: i === 0 ? 'sep' : null });
+  }
+  fill(document.getElementById('neverTable'), dataTable(
+    'Rings the modelled field never reaches, by basin and ring',
+    'The per-ring percentages are formed on this page as (never reached) ÷ ' +
+    '(reported ring-quadrants); the findings file carries the counts and the ' +
+    'all-ring percentage, not the per-ring one.',
+    head, body));
+
+  var nv = pooledNever('gtcm');
+  setNode('neverNote',
+    (anyCheck ? (checkOk
+      ? 'Consistency check, computed in the browser: for every basin and ring, ' +
+        '(reported ring-quadrants) − (never reached) equals the number scored ' +
+        'in section 3. It does, on every row, which is why the denominators ' +
+        'above can be trusted. '
+      : 'Consistency check, computed in the browser: (reported ring-quadrants) ' +
+        '− (never reached) does NOT equal the number scored in section 3 on at ' +
+        'least one row. Treat the denominators above with caution and re-run ' +
+        'verify_gtcm.py. ') : '') +
+    (nv ? 'Pooled over all basins: ' + nv.count + ' of ' + nv.total +
+          ' reported ring-quadrants (' + fmt(nv.pct, 1) + '%) are never ' +
+          'reached. ' : '') +
+    (typeof val('notes.neverReached') === 'string' ? val('notes.neverReached') : ''));
+}
+
+// ===========================================================================
+// 5. Coherence
+// ===========================================================================
+var COH_METRICS = [
+  { k: 'azimuthalKinkKtPerDeg', dp: 4, unit: 'kt/deg',
+    lab: 'Azimuthal slope break at the quadrant bisectors' },
+  { k: 'azimuthalKinkControlKtPerDeg', dp: 4, unit: 'kt/deg', ctl: true,
+    lab: 'The same estimator where neither method has a corner (noise floor)' },
+  { k: 'radialKinkKtPerNm', dp: 3, unit: 'kt/nm',
+    lab: 'Radial slope break at the construction’s own profile knots' },
+  { k: 'radialKinkExclTaperKtPerNm', dp: 3, unit: 'kt/nm',
+    lab: 'The same, excluding the outer-taper knot' },
+  { k: 'radialJumpKt', dp: 3, unit: 'kt',
+    lab: 'Step in wind across those knots (a discontinuity, not a kink)' },
+  { k: 'radialJumpExclTaperKt', dp: 3, unit: 'kt',
+    lab: 'The same, excluding the outer-taper knot' },
+  { k: 'fieldRoughnessPctVmax', dp: 3, unit: '% of Vmax',
+    lab: 'Whole-field roughness on a fixed polar grid' },
+  { k: 'monotonicityViolationPct', dp: 4, unit: '%',
+    lab: 'Radial samples where the field invents a secondary wind maximum' },
+  { k: 'cases', dp: 0, unit: 'storm-times', nocmp: true,
+    lab: 'Storm-times contributing' }
+];
+
+function miniBar(title, unit, rows, refLabel) {
+  var W = 340, labelW = 86, plotW = 150, padT = 40, padB = 26;
+  var barH = 16, gapH = 10;
+  var H = padT + rows.length * (barH + gapH) + padB, i;
+  var mx = 0;
+  for (i = 0; i < rows.length; i++) {
+    if (isNum(rows[i].v)) mx = Math.max(mx, rows[i].v);
+    if (isNum(rows[i].ref)) mx = Math.max(mx, rows[i].ref);
+  }
+  var dom = niceMax(mx || 1);
+  var s = sv('svg', { viewBox: '0 0 ' + W + ' ' + H, width: W, height: H,
+    'aria-hidden': 'true' });
+  s.appendChild(hatchDefs());
+  s.appendChild(sv('text', { x: 0, y: 14, 'class': 'valLbl', text: title }));
+  s.appendChild(sv('text', { x: 0, y: 28, 'class': 'axisLbl', text: unit }));
+  var tk = ticks(0, dom, 2);
+  for (i = 0; i < tk.length; i++) {
+    var xt = labelW + (tk[i] / dom) * plotW;
+    s.appendChild(sv('line', { x1: xt, y1: padT - 8, x2: xt, y2: H - padB + 2,
+      'class': i === 0 ? 'axis' : 'grid' }));
+    s.appendChild(sv('text', { x: xt, y: H - padB + 15, 'text-anchor': 'middle',
+      'class': 'tick', text: fmt(tk[i], tk[i] === 0 ? 0 : (dom < 0.02 ? 4 : (dom < 1 ? 3 : 1))) }));
+  }
+  for (i = 0; i < rows.length; i++) {
+    var y = padT + i * (barH + gapH);
+    s.appendChild(sv('text', { x: 0, y: y + barH - 3, 'class': 'rowLbl',
+      text: rows[i].label }));
+    if (!isNum(rows[i].v)) {
+      s.appendChild(sv('text', { x: labelW + 4, y: y + barH - 3, 'class': 'tick',
+        text: 'no data' }));
+      continue;
+    }
+    var w = (rows[i].v / dom) * plotW;
+    s.appendChild(sv('rect', { x: labelW, y: y, width: Math.max(w, 0.8),
+      height: barH, fill: seriesFill(rows[i].method),
+      stroke: seriesStroke(rows[i].method), 'stroke-width': 1 }));
+    if (isNum(rows[i].ref)) {
+      var xr = labelW + (rows[i].ref / dom) * plotW;
+      s.appendChild(sv('line', { x1: xr, y1: y - 3, x2: xr, y2: y + barH + 3,
+        'class': 'refline' }));
+    }
+    s.appendChild(sv('text', { x: labelW + Math.max(w, 0.8) + 5,
+      y: y + barH - 3, 'class': 'valLbl',
+      text: fmt(rows[i].v, rows[i].dp) }));
+  }
+  if (refLabel) {
+    s.appendChild(sv('text', { x: 0, y: H - 4, 'class': 'axisLbl', text: refLabel }));
+  }
+  return s;
+}
+
+function cohRows(metric) {
+  return [
+    { label: 'GTCM', method: 'gtcm', dp: metric.dp,
+      v: num('coherence.gtcm.' + metric.k),
+      ref: metric.ref ? num('coherence.gtcm.' + metric.ref) : null },
+    { label: 'Per-quadrant', method: 'perquad', dp: metric.dp,
+      v: num('coherence.perquad.' + metric.k),
+      ref: metric.ref ? num('coherence.perquad.' + metric.ref) : null }
+  ];
+}
+
+function renderCoherence() {
+  // --- the paragraph a SOO reads ----------------------------------------
+  var kG = num('coherence.gtcm.azimuthalKinkKtPerDeg');
+  var kP = num('coherence.perquad.azimuthalKinkKtPerDeg');
+  var cG = num('coherence.gtcm.azimuthalKinkControlKtPerDeg');
+  var cP = num('coherence.perquad.azimuthalKinkControlKtPerDeg');
+  var rG = num('coherence.gtcm.radialKinkKtPerNm');
+  var rP = num('coherence.perquad.radialKinkKtPerNm');
+  var xG = num('coherence.gtcm.radialKinkExclTaperKtPerNm');
+  var xP = num('coherence.perquad.radialKinkExclTaperKtPerNm');
+  var fG = num('coherence.gtcm.fieldRoughnessPctVmax');
+  var fP = num('coherence.perquad.fieldRoughnessPctVmax');
+  var mG = num('coherence.gtcm.monotonicityViolationPct');
+  var mP = num('coherence.perquad.monotonicityViolationPct');
+  var nCases = num('coherence.gtcm.cases');
+
+  var host = document.getElementById('cohHeadline');
+  var card = el('div', { 'class': 'card' });
+
+  function p(kids) { card.appendChild(el('p', {}, kids)); }
+  function b(t) { return el('b', { text: t }); }
+
+  if (isNum(kG) && isNum(kP) && isNum(cG) && isNum(cP) && cG > 0 && cP > 0) {
+    p(['The corner is gone, and that is the whole case for the switch. ' +
+       'Across the quadrant bisectors — where the per-quadrant construction ' +
+       'joins one quadrant’s radii to the next — the mean slope break in wind ' +
+       'is ',
+       b(fmt(kG, 4) + ' kt/deg'), ' for GTCM and ',
+       b(fmt(kP, 4) + ' kt/deg'), ' for the per-quadrant field. Those numbers ' +
+       'only mean something against the same estimator run where neither ' +
+       'method has a corner at all: that noise floor is ',
+       b(fmt(cG, 4)), ' kt/deg for GTCM and ', b(fmt(cP, 4)),
+       ' kt/deg for per-quadrant. So GTCM measures ',
+       b(fmt(kG / cG, 1) + '× its own floor'),
+       (kG <= cG ? ' — at or below it, i.e. no detectable corner — ' :
+                   ' — a detectable but small corner — '),
+       'while the per-quadrant field measures ', b(fmt(kP / cP, 1) + '× its own floor'),
+       '. That is the artefact the office was trying to be rid of.']);
+  } else {
+    card.appendChild(el('p', {}, ['The azimuthal coherence numbers are ',
+      gap('coherence.<method>.azimuthalKink*'), ' in this findings file.']));
+  }
+
+  if (isNum(rG) && isNum(rP) && isNum(xG) && isNum(xP)) {
+    p(['Along a radius the picture is more mixed, and the honest reading needs ' +
+       'the taper separated out. Counting every knot in each construction’s own ' +
+       'profile, the mean slope break is ', b(fmt(rG, 2) + ' kt/nm'),
+       ' for GTCM against ', b(fmt(rP, 2) + ' kt/nm'), ' for per-quadrant. ' +
+       'Excluding the outer taper — this tool’s own departure from the guide, ' +
+       'present in both constructions — it is ', b(fmt(xG, 2) + ' kt/nm'),
+       ' against ', b(fmt(xP, 2) + ' kt/nm'), ': what is left in the ' +
+       'per-quadrant field is dominated by its sharp corner at the radius of ' +
+       'maximum wind, which GTCM softens but does not remove.']);
+  }
+
+  if (isNum(fG) && isNum(fP)) {
+    var diff = Math.abs(fG - fP), rel = diff / Math.max(fG, fP);
+    p(['What the switch did NOT buy: whole-field smoothness. Measured as a ' +
+       'discrete second difference over a fixed polar grid, the two fields are ' +
+       (rel < 0.1 ? 'within a few per cent of each other — ' : '') +
+       'GTCM ', b(fmt(fG, 2) + '% of Vmax'), ' against per-quadrant ',
+       b(fmt(fP, 2) + '%'), (rel < 0.1
+         ? '. At that sampling scale this is a tie. The coherence gain is ' +
+           'concentrated where the artefacts were — the bisectors and the ' +
+           'knots — not spread over the field.'
+         : '. GTCM is the ' + (fG < fP ? 'smoother' : 'rougher') + ' of the two ' +
+           'at that sampling scale, by ' + fmt(100 * rel, 0) + '%.')]);
+  }
+
+  if (isNum(mG) && isNum(mP)) {
+    p(['And a cost that is small but real: on ', b(fmt(mG, 4) + '%'),
+       ' of radial samples outside the wind maximum the GTCM field increases ' +
+       'outward — it invents a secondary maximum — against ', b(fmt(mP, 4) + '%'),
+       ' for the per-quadrant construction. ' +
+       (isNum(mP) && mP === 0
+         ? 'The per-quadrant construction never does this; GTCM occasionally does. '
+         : '') +
+       (isNum(nCases) ? 'Both are measured on the same ' + fmt(nCases, 0) +
+         ' storm-times. ' : '')]);
+  }
+  fill(host, card);
+
+  // --- small multiples ---------------------------------------------------
+  var grid = el('div', { style:
+    'display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin-top:12px' });
+  var picks = [
+    { k: 'azimuthalKinkKtPerDeg', ref: 'azimuthalKinkControlKtPerDeg', dp: 4,
+      title: 'Slope break at the quadrant bisectors', unit: 'kt per degree of azimuth',
+      refLabel: 'dashed rule on each bar = that method’s own noise floor' },
+    { k: 'radialKinkExclTaperKtPerNm', dp: 2,
+      title: 'Slope break at the profile knots, taper excluded', unit: 'kt per nm' },
+    { k: 'fieldRoughnessPctVmax', dp: 2,
+      title: 'Whole-field roughness', unit: 'per cent of Vmax (lower is smoother)' },
+    { k: 'monotonicityViolationPct', dp: 4,
+      title: 'Samples inventing a secondary wind maximum', unit: 'per cent of radial samples' }
+  ];
+  for (var i = 0; i < picks.length; i++) {
+    grid.appendChild(el('div', { 'class': 'card' }, [
+      miniBar(picks[i].title, picks[i].unit, cohRows(picks[i]), picks[i].refLabel)
+    ]));
+  }
+  var wrapFig = el('figure', { 'class': 'chart' }, [
+    el('figcaption', {}, ['Four coherence measures, GTCM against the retired construction',
+      el('span', { 'class': 'sub', text:
+        'Every measure is a roughness: lower is smoother, on the same ' +
+        'storm-times and the same grid. Solid bars GTCM, hatched bars ' +
+        'per-quadrant; each bar is labelled with its value, and every number ' +
+        'is repeated in the table below.' })]),
+    legend([
+      { kind: 'solid', label: 'GTCM (shipped)' },
+      { kind: 'hatch', label: 'Per-quadrant (retired)' },
+      { kind: 'dash', label: 'estimator noise floor (control)' }
+    ]),
+    grid
+  ]);
+  fill(document.getElementById('cohChart'), wrapFig);
+
+  // --- the full table ----------------------------------------------------
+  var head = [[
+    { t: 'Measure', scope: 'col' }, { t: 'units', scope: 'col' },
+    { t: 'GTCM', scope: 'col', cls: 'num' },
+    { t: 'Per-quadrant', scope: 'col', cls: 'num' },
+    { t: 'smoother', scope: 'col' }
+  ]];
+  var body = [], j;
+  for (j = 0; j < COH_METRICS.length; j++) {
+    var mt = COH_METRICS[j];
+    var a = num('coherence.gtcm.' + mt.k), c = num('coherence.perquad.' + mt.k);
+    var verdict = '—';
+    if (!mt.nocmp && !mt.ctl && isNum(a) && isNum(c)) {
+      verdict = (Math.abs(a - c) < 1e-12) ? 'tie'
+        : (a < c ? METHOD_LABEL.gtcm : METHOD_LABEL.perquad);
+    } else if (mt.ctl) { verdict = 'control'; }
+    body.push({ cells: [
+      { t: mt.lab, scope: 'row' },
+      { t: mt.unit || '—' },
+      { t: fmt(a, mt.dp), cls: 'num', gapFor: 'coherence.gtcm.' + mt.k },
+      { t: fmt(c, mt.dp), cls: 'num', gapFor: 'coherence.perquad.' + mt.k },
+      { t: verdict, cls: verdict === METHOD_LABEL.gtcm ? 'best' : null }
+    ] });
+  }
+  fill(document.getElementById('cohTable'), dataTable(
+    'Every coherence measure in the findings file',
+    'Higher is rougher throughout. The control row is not a comparison ' +
+    'between methods — it is the same estimator applied where neither method ' +
+    'has a corner, so each method’s bisector value should be read against its ' +
+    'own control.', head, body));
+
+  // --- by knot -----------------------------------------------------------
+  var KNOT_LABEL = {
+    rm: 'rm — the Rankine corner at the radius of maximum wind',
+    ri: 'ri — the x1 → x2 junction of eq. (3)',
+    r34taper: 'modelled R34 — where the local outer taper begins',
+    Rmax: 'Rmax — the solid-body / Rankine corner',
+    R34: 'R34 — reported ring (also where the taper begins)',
+    R50: 'R50 — reported ring',
+    R64: 'R64 — reported ring'
+  };
+  var KNOT_ORDER = ['rm', 'ri', 'r34taper', 'Rmax', 'R64', 'R50', 'R34'];
+  var kbody = [], meth = ['gtcm', 'perquad'], mi, ki;
+  for (mi = 0; mi < meth.length; mi++) {
+    var bk = val('coherence.' + meth[mi] + '.byKnot');
+    if (!bk) continue;
+    var keys = [];
+    for (ki = 0; ki < KNOT_ORDER.length; ki++) {
+      if (Object.prototype.hasOwnProperty.call(bk, KNOT_ORDER[ki])) keys.push(KNOT_ORDER[ki]);
+    }
+    for (var kk in bk) {
+      if (Object.prototype.hasOwnProperty.call(bk, kk) && keys.indexOf(kk) < 0) keys.push(kk);
+    }
+    for (ki = 0; ki < keys.length; ki++) {
+      var kn = bk[keys[ki]] || {};
+      kbody.push({ cells: [
+        { t: METHOD_LABEL[meth[mi]] || meth[mi], scope: 'row' },
+        { t: KNOT_LABEL[keys[ki]] || keys[ki] },
+        { t: fmt(kn.n, 0), cls: 'num' },
+        { t: fmt(kn.kinkKtPerNm, 3), cls: 'num' },
+        { t: fmt(kn.jumpKt, 3), cls: 'num' }
+      ], cls: (ki === 0 && mi > 0) ? 'sep' : null });
+    }
+  }
+  if (!kbody.length) {
+    fill(document.getElementById('cohKnot'), el('div', { 'class': 'card' },
+      [gap('coherence.<method>.byKnot'), ' — the per-knot breakdown is not in ' +
+       'this findings file.']));
+  } else {
+    fill(document.getElementById('cohKnot'), dataTable(
+      'Where each construction’s roughness actually lives',
+      'The same radial measures, broken out by the knot they were measured at. ' +
+      'A jump is a step in the wind itself and is worse than a kink, which is ' +
+      'only a change of slope.',
+      [[{ t: 'Method', scope: 'col' }, { t: 'Knot', scope: 'col' },
+        { t: 'n', scope: 'col', cls: 'num' },
+        { t: 'kink (kt/nm)', scope: 'col', cls: 'num' },
+        { t: 'jump (kt)', scope: 'col', cls: 'num' }]], kbody));
+  }
+
+  // --- definitions, verbatim from the findings file ----------------------
+  var d = document.getElementById('cohDefs');
+  while (d.firstChild) d.removeChild(d.firstChild);
+  d.appendChild(el('summary', {
+    text: 'Exact definitions of every coherence measure (verbatim from the findings file)' }));
+  var defs = val('coherenceDefinitions'), dl = el('dl');
+  if (defs) {
+    var order = [], key;
+    for (j = 0; j < COH_METRICS.length; j++) {
+      if (Object.prototype.hasOwnProperty.call(defs, COH_METRICS[j].k)) order.push(COH_METRICS[j].k);
+    }
+    for (key in defs) {
+      if (Object.prototype.hasOwnProperty.call(defs, key) && order.indexOf(key) < 0) order.push(key);
+    }
+    for (j = 0; j < order.length; j++) {
+      dl.appendChild(el('dt', { text: order[j] }));
+      dl.appendChild(el('dd', { text: String(defs[order[j]]) }));
+    }
+  } else {
+    dl.appendChild(el('dd', {}, [gap('coherenceDefinitions')]));
+  }
+  d.appendChild(el('div', { 'class': 'body' }, [dl]));
+
+  // --- per basin ---------------------------------------------------------
+  var cb = val('coherenceByBasin');
+  if (!cb) {
+    fill(document.getElementById('cohBasin'), el('small', { 'class': 'note' },
+      ['Per-basin coherence: ', gap('coherenceByBasin')]));
+    return;
+  }
+  var bs = basins(), bbody = [], bi, mi2;
+  for (bi = 0; bi < bs.length; bi++) {
+    for (mi2 = 0; mi2 < meth.length; mi2++) {
+      var base = 'coherenceByBasin.' + bs[bi] + '.' + meth[mi2] + '.';
+      bbody.push({ cells: [
+        { t: bs[bi], scope: 'row' },
+        { t: METHOD_LABEL[meth[mi2]] },
+        { t: fmt(num(base + 'cases'), 0), cls: 'num' },
+        { t: fmt(num(base + 'azimuthalKinkKtPerDeg'), 4), cls: 'num' },
+        { t: fmt(num(base + 'azimuthalKinkControlKtPerDeg'), 4), cls: 'num' },
+        { t: fmt(num(base + 'radialKinkExclTaperKtPerNm'), 2), cls: 'num' },
+        { t: fmt(num(base + 'fieldRoughnessPctVmax'), 2), cls: 'num' },
+        { t: fmt(num(base + 'monotonicityViolationPct'), 4), cls: 'num' }
+      ], cls: (mi2 === 0 && bi > 0) ? 'sep' : null });
+    }
+  }
+  fill(document.getElementById('cohBasin'), dataTable(
+    'The same measures, per basin',
+    'Worth reading before generalising: the bisector estimator’s noise floor ' +
+    'varies a lot between basins, and in at least one it can exceed the ' +
+    'signal it is meant to bound.',
+    [[{ t: 'Basin', scope: 'col' }, { t: 'Method', scope: 'col' },
+      { t: 'cases', scope: 'col', cls: 'num' },
+      { t: 'azimuthal kink (kt/deg)', scope: 'col', cls: 'num' },
+      { t: 'its control', scope: 'col', cls: 'num' },
+      { t: 'radial kink excl. taper (kt/nm)', scope: 'col', cls: 'num' },
+      { t: 'field roughness (%Vmax)', scope: 'col', cls: 'num' },
+      { t: 'monotonicity (%)', scope: 'col', cls: 'num' }]], bbody));
+}
+
+// ===========================================================================
+// 6. Field difference between the two constructions
+// ===========================================================================
+function renderFieldDiff() {
+  var bs = basins(), i, j, cards = el('div', { 'class': 'stats' });
+  for (i = 0; i < bs.length; i++) {
+    var mean = num('fieldDiff.' + bs[i] + '.meanAbsKt');
+    var p95 = num('fieldDiff.' + bs[i] + '.p95AbsKt');
+    var v = el('span', { 'class': 'val' });
+    if (isNum(mean)) {
+      v.appendChild(document.createTextNode(fmt(mean, 1)));
+      v.appendChild(el('span', { 'class': 'u', text: 'kt' }));
+    } else { v.appendChild(gap('fieldDiff.' + bs[i] + '.meanAbsKt')); }
+    cards.appendChild(el('div', { 'class': 'stat' }, [
+      v,
+      el('span', { 'class': 'lab', text: 'Mean |GTCM − per-quadrant|, ' + basinLabel(bs[i]) }),
+      el('span', { 'class': 'sub', text: isNum(p95)
+        ? '95th percentile of the same difference: ' + fmt(p95, 1) + ' kt. ' +
+          'Over a polar grid out to 400 nm.'
+        : 'p95 not in the findings file.' })
+    ]));
+  }
+  fill(document.getElementById('fdCards'), cards);
+
+  // --- area ratios -------------------------------------------------------
+  var rows = [], maxR = 1;
+  for (i = 0; i < bs.length; i++) {
+    for (j = 0; j < RINGS.length; j++) {
+      var med = num('fieldDiff.' + bs[i] + '.areaRatio' + RINGS[j]);
+      var mn = num('fieldDiff.' + bs[i] + '.areaRatio' + RINGS[j] + 'Mean');
+      var n = num('fieldDiff.' + bs[i] + '.areaRatio' + RINGS[j] + 'N');
+      if (isNum(med)) maxR = Math.max(maxR, med);
+      rows.push({ b: bs[i], ring: RINGS[j], med: med, mean: mn, n: n, first: j === 0 });
+    }
+  }
+  var dom = niceMax(maxR);
+  var labelW = 92, plotW = 300, padT = 46, padB = 42, barH = 15, gapH = 9;
+  var H = padT + rows.length * (barH + gapH) + padB, W = labelW + plotW + 170;
+  var s = sv('svg', { viewBox: '0 0 ' + W + ' ' + H, width: W, height: H,
+    'aria-hidden': 'true', style: 'min-width:' + W + 'px' });
+  s.appendChild(sv('text', { x: 0, y: 16, 'class': 'valLbl',
+    text: 'GTCM isotach area ÷ per-quadrant isotach area (median over cases)' }));
+  var tk = ticks(0, dom, 4);
+  for (i = 0; i < tk.length; i++) {
+    var xt = labelW + (tk[i] / dom) * plotW;
+    s.appendChild(sv('line', { x1: xt, y1: padT - 10, x2: xt, y2: H - padB + 4,
+      'class': i === 0 ? 'axis' : 'grid' }));
+    s.appendChild(sv('text', { x: xt, y: padT - 16, 'text-anchor': 'middle',
+      'class': 'tick', text: fmt(tk[i], 1) }));
+  }
+  var x1 = labelW + (1 / dom) * plotW;
+  s.appendChild(sv('line', { x1: x1, y1: padT - 10, x2: x1, y2: H - padB + 4,
+    'class': 'refline' }));
+  s.appendChild(sv('text', { x: x1, y: H - padB + 20, 'text-anchor': 'middle',
+    'class': 'axisLbl', text: '1.00 = same area' }));
+  for (i = 0; i < rows.length; i++) {
+    var y = padT + i * (barH + gapH);
+    s.appendChild(sv('text', { x: 0, y: y + barH - 3, 'class': 'rowLbl',
+      text: rows[i].b + '  ' + rows[i].ring + ' kt' }));
+    if (!isNum(rows[i].med)) {
+      s.appendChild(sv('text', { x: labelW + 4, y: y + barH - 3, 'class': 'tick',
+        text: 'no data' }));
+      continue;
+    }
+    var w = (rows[i].med / dom) * plotW;
+    s.appendChild(sv('rect', { x: labelW, y: y, width: Math.max(w, 0.8),
+      height: barH, fill: 'var(--s-gtcm)', stroke: 'var(--s-gtcm-ink)',
+      'stroke-width': 1 }));
+    s.appendChild(sv('text', { x: labelW + w + 6, y: y + barH - 3,
+      'class': 'valLbl', text: fmt(rows[i].med, 2) +
+        (isNum(rows[i].n) ? '  (' + rows[i].n + ' cases)' : '') }));
+  }
+  fill(document.getElementById('fdChart'), figure(
+    'How much smaller the GTCM envelope is',
+    'A value of 0.70 means the GTCM 34 kt area is 70 per cent of the area the ' +
+    'per-quadrant construction drew on the same storm-time. This is the ' +
+    'quadrant-average conversion of section 2 expressed as area, and it is ' +
+    'the change a forecaster used to the old tool will notice first. Cases ' +
+    'where the per-quadrant area vanishes are undefined and excluded.',
+    s, legend([
+      { kind: 'solid', label: 'median area ratio' },
+      { kind: 'dash', label: '1.00 — the two constructions cover the same area' }
+    ])));
+
+  var head = [[
+    { t: 'Basin', scope: 'col' }, { t: 'Isotach', scope: 'col' },
+    { t: 'median area ratio', scope: 'col', cls: 'num' },
+    { t: 'mean area ratio', scope: 'col', cls: 'num' },
+    { t: 'cases', scope: 'col', cls: 'num' },
+    { t: 'mean |Δ| (kt)', scope: 'col', cls: 'num' },
+    { t: 'p95 |Δ| (kt)', scope: 'col', cls: 'num' }
+  ]];
+  var body = [];
+  for (i = 0; i < rows.length; i++) {
+    body.push({ cells: [
+      { t: rows[i].b, scope: 'row' },
+      { t: rows[i].ring + ' kt' },
+      { t: fmt(rows[i].med, 3), cls: 'num',
+        gapFor: 'fieldDiff.' + rows[i].b + '.areaRatio' + rows[i].ring },
+      { t: fmt(rows[i].mean, 3), cls: 'num',
+        gapFor: 'fieldDiff.' + rows[i].b + '.areaRatio' + rows[i].ring + 'Mean' },
+      { t: fmt(rows[i].n, 0), cls: 'num',
+        gapFor: 'fieldDiff.' + rows[i].b + '.areaRatio' + rows[i].ring + 'N' },
+      { t: rows[i].first ? fmt(num('fieldDiff.' + rows[i].b + '.meanAbsKt'), 2) : '',
+        cls: 'num' },
+      { t: rows[i].first ? fmt(num('fieldDiff.' + rows[i].b + '.p95AbsKt'), 2) : '',
+        cls: 'num' }
+    ], cls: rows[i].first && i > 0 ? 'sep' : null });
+  }
+  fill(document.getElementById('fdTable'), dataTable(
+    'Difference between the two constructions',
+    'Mean and p95 |Δ| are per basin and repeat on the first row of each block.',
+    head, body));
+  setNode('fdNote', typeof val('notes.fieldDiff') === 'string'
+    ? val('notes.fieldDiff') : '');
+}
+
+// ===========================================================================
+// 7. The fit itself
+// ===========================================================================
+function renderFit() {
+  var bs = basins(), i, body = [];
+  for (i = 0; i < bs.length; i++) {
+    var b = 'fitQuality.' + bs[i] + '.';
+    body.push({ cells: [
+      { t: basinLabel(bs[i]), scope: 'row' },
+      { t: fmt(num(b + 'n'), 0), cls: 'num', gapFor: b + 'n' },
+      { t: fmt(num(b + 'rmsWindErrKt'), 2), cls: 'num', gapFor: b + 'rmsWindErrKt' },
+      { t: fmt(num(b + 'medianRmsWindErrKt'), 2), cls: 'num', gapFor: b + 'medianRmsWindErrKt' },
+      { t: fmt(num(b + 'medianRm'), 1), cls: 'num', gapFor: b + 'medianRm' },
+      { t: fmt(num(b + 'medianRi'), 1), cls: 'num', gapFor: b + 'medianRi' },
+      { t: fmt(num(b + 'medianX1'), 3), cls: 'num', gapFor: b + 'medianX1' },
+      { t: fmt(num(b + 'medianX2'), 3), cls: 'num', gapFor: b + 'medianX2' }
+    ] });
+  }
+  fill(document.getElementById('fitTable'), dataTable(
+    'The fitted vortex, by basin',
+    'rm is the fitted radius of maximum wind and ri the radius where the ' +
+    'profile switches from the x1 decay to the x2 decay; x1 and x2 are the ' +
+    'two decay exponents of Users Guide eq. (3). The wind error is the ' +
+    'weighted RMS residual of the least squares at its own target points.',
+    [[{ t: 'Basin', scope: 'col' }, { t: 'cases', scope: 'col', cls: 'num' },
+      { t: 'RMS wind error (kt)', scope: 'col', cls: 'num' },
+      { t: 'median RMS (kt)', scope: 'col', cls: 'num' },
+      { t: 'median rm (nm)', scope: 'col', cls: 'num' },
+      { t: 'median ri (nm)', scope: 'col', cls: 'num' },
+      { t: 'median x1', scope: 'col', cls: 'num' },
+      { t: 'median x2', scope: 'col', cls: 'num' }]], body));
+
+  setNode('fitNote', typeof val('notes.fitQuality') === 'string'
+    ? val('notes.fitQuality') : '');
+  fill(document.getElementById('fitProfile'), profileFigure());
+}
+
+/** The shape of the fitted profile, drawn with the shared model code in
+ *  Vortex.html from the median fitted parameters in the findings file.
+ *  Nothing about the shape is typed into this page. */
+function profileFigure() {
+  if (!window.gtcmProfile) {
+    return el('div', { 'class': 'card' }, ['The profile figure needs the shared ' +
+      'vortex code (Vortex.html), which did not load in this page. Nothing is ' +
+      'drawn rather than drawing a shape this page invented.']);
+  }
+  var bs = basins(), series = [], i, j, maxR = 0;
+  for (i = 0; i < bs.length; i++) {
+    var b = 'fitQuality.' + bs[i] + '.';
+    var rm = num(b + 'medianRm'), ri = num(b + 'medianRi');
+    var x1 = num(b + 'medianX1'), x2 = num(b + 'medianX2');
+    if (!isNum(rm) || !isNum(ri) || !isNum(x1) || !isNum(x2)) continue;
+    series.push({ b: bs[i], rm: rm, ri: ri, x1: x1, x2: x2 });
+    maxR = Math.max(maxR, ri);
+  }
+  if (!series.length) {
+    return el('div', { 'class': 'card' }, [gap('fitQuality.<basin>.median*'),
+      ' — the median fit parameters are not in this findings file, so the ' +
+      'profile shape cannot be drawn.']);
+  }
+  var rMax = Math.max(200, Math.ceil(maxR * 4 / 50) * 50);
+  var W = 640, H = 320, L = 58, Rp = 92, T = 26, Bm = 52;
+  var pw = W - L - Rp, ph = H - T - Bm;
+  var s = sv('svg', { viewBox: '0 0 ' + W + ' ' + H, width: W, height: H,
+    'aria-hidden': 'true', style: 'min-width:520px' });
+  function X(r) { return L + (r / rMax) * pw; }
+  function Y(v) { return T + ph - v * ph; }
+  var tkx = ticks(0, rMax, 5), tky = ticks(0, 1, 5);
+  for (i = 0; i < tky.length; i++) {
+    s.appendChild(sv('line', { x1: L, y1: Y(tky[i]), x2: L + pw, y2: Y(tky[i]),
+      'class': i === 0 ? 'axis' : 'grid' }));
+    s.appendChild(sv('text', { x: L - 8, y: Y(tky[i]) + 4, 'text-anchor': 'end',
+      'class': 'tick', text: fmt(tky[i] * 100, 0) }));
+  }
+  for (i = 0; i < tkx.length; i++) {
+    s.appendChild(sv('line', { x1: X(tkx[i]), y1: T, x2: X(tkx[i]), y2: T + ph,
+      'class': i === 0 ? 'axis' : 'grid' }));
+    s.appendChild(sv('text', { x: X(tkx[i]), y: T + ph + 18, 'text-anchor': 'middle',
+      'class': 'tick', text: fmt(tkx[i], 0) }));
+  }
+  s.appendChild(sv('text', { x: L + pw / 2, y: H - 16, 'text-anchor': 'middle',
+    'class': 'axisLbl', text: 'radius from the storm centre (nm)' }));
+  s.appendChild(sv('text', { x: 14, y: T + ph / 2, 'class': 'axisLbl',
+    'text-anchor': 'middle', transform: 'rotate(-90 14 ' + (T + ph / 2) + ')',
+    text: 'tangential wind (% of its own peak)' }));
+
+  var DASH = [null, '7 4', '2 3', '10 3 2 3'];
+  for (i = 0; i < series.length; i++) {
+    var sp = series[i], d = '', step = rMax / 300, r, v;
+    for (j = 0; j <= 300; j++) {
+      r = Math.max(j * step, 0.05);
+      v = window.gtcmProfile(r, 1, 0, sp.rm, sp.ri, sp.x1, sp.x2);
+      if (!isNum(v)) continue;
+      d += (d ? 'L' : 'M') + fmt(X(r), 1) + ' ' + fmt(Y(Math.max(0, Math.min(1, v))), 1);
+    }
+    s.appendChild(sv('path', { d: d, fill: 'none', stroke: 'var(--text)',
+      'stroke-width': 2, 'stroke-dasharray': DASH[i % DASH.length] }));
+    // knots
+    var kn = [{ r: sp.rm, t: 'rm' }, { r: sp.ri, t: 'ri' }];
+    for (j = 0; j < kn.length; j++) {
+      var vy = window.gtcmProfile(Math.max(kn[j].r, 0.05), 1, 0, sp.rm, sp.ri, sp.x1, sp.x2);
+      if (!isNum(vy)) continue;
+      s.appendChild(sv('circle', { cx: X(kn[j].r), cy: Y(vy), r: 3.4,
+        fill: 'var(--surface)', stroke: 'var(--text)', 'stroke-width': 1.6 }));
+    }
+    var vEnd = window.gtcmProfile(rMax, 1, 0, sp.rm, sp.ri, sp.x1, sp.x2);
+    s.appendChild(sv('text', { x: L + pw + 6, y: Y(Math.max(0, Math.min(1, vEnd))) + 4,
+      'class': 'valLbl', text: sp.b + '  rm ' + fmt(sp.rm, 0) + ' nm' }));
+  }
+  return figure(
+    'The shape the fit produces, from the median fitted parameters',
+    'Drawn by calling the shipped model code (gtcmProfile in Vortex.html) with ' +
+    'the median rm, ri, x1 and x2 from the table above — one curve per basin, ' +
+    'told apart by dash pattern and by the label at the right-hand end, not by ' +
+    'colour. Wind is shown as a percentage of the profile’s own peak, so the ' +
+    'curve is intensity-independent. Open circles mark the two knots (rm and ' +
+    'ri) whose slope breaks are measured in section 5; the third knot, where ' +
+    'the outer taper starts, depends on intensity and is not drawn.',
+    s, legend([
+      { kind: 'line', label: 'fitted profile, one per basin (dash pattern differs)' }
+    ]));
+}
+
+// ===========================================================================
+// 8. What is not verified
+// ===========================================================================
+function renderUnverified() {
+  var ul = document.getElementById('departures');
+  while (ul.firstChild) ul.removeChild(ul.firstChild);
+  var dep = val('model.departures');
+  if (dep && dep.length) {
+    for (var i = 0; i < dep.length; i++) {
+      ul.appendChild(el('li', { text: String(dep[i]) }));
+    }
+  } else {
+    ul.appendChild(el('li', {}, [gap('model.departures'),
+      ' — the findings file lists no documented departures, which is itself ' +
+      'worth checking: the code comments in TCWind_JTWC.py describe two.']));
+  }
+
+  var host = document.getElementById('riDiag');
+  var diag = val('coherenceDiagnostics');
+  if (!diag) {
+    fill(host, el('p', {}, ['Continuity diagnostics: ', gap('coherenceDiagnostics')]));
+    return;
+  }
+  var wrap = el('div');
+  var step = diag.riStep || {};
+  var maxStep = isNum(step.maxStepKt) ? Math.abs(step.maxStepKt) : null;
+  var p1 = el('p');
+  if (maxStep !== null) {
+    p1.appendChild(document.createTextNode(
+      'The findings file carries a diagnostic aimed at one line of the model: ' +
+      'the continuity factor A that joins the two decay regions of eq. (3) at ' +
+      'ri. Measured on the field as it is actually built, the largest step in ' +
+      'wind across ri is '));
+    p1.appendChild(el('b', { text: fmt(maxStep, 8) + ' kt' }));
+    p1.appendChild(document.createTextNode(
+      (isNum(step.meanStepKt) ? ' (mean ' + fmt(step.meanStepKt, 8) + ' kt)' : '') +
+      (isNum(step.n) ? ' over ' + fmt(step.n, 0) + ' storm-times' : '') + '. ' +
+      (maxStep < 0.01
+        ? 'That is zero to within floating-point noise: the profile this tool ' +
+          'ships is continuous at ri, and the wind you see there is not a step.'
+        : 'That is a real discontinuity in the wind field, and it should be ' +
+          'treated as a defect rather than a feature.')));
+  } else {
+    p1.appendChild(document.createTextNode('Continuity at ri: '));
+    p1.appendChild(gap('coherenceDiagnostics.riStep.maxStepKt'));
+  }
+  wrap.appendChild(p1);
+
+  var alt = diag.gtcmWithContinuousRi;
+  var aK = alt && isNum(alt.radialKinkKtPerNm) ? alt.radialKinkKtPerNm : null;
+  var bK = num('coherence.gtcm.radialKinkKtPerNm');
+  if (aK !== null && isNum(bK)) {
+    wrap.appendChild(el('p', {}, [
+      'The same diagnostic re-runs the whole coherence block with the ' +
+      'alternative continuity factor patched in and the fits redone. That ' +
+      'moves the radial slope break from ',
+      el('b', { text: fmt(bK, 3) + ' kt/nm' }), ' to ',
+      el('b', { text: fmt(aK, 3) + ' kt/nm' }),
+      ' — ' + (Math.abs(aK - bK) < 0.05
+        ? 'a difference too small to matter, which is what one expects when ' +
+          'the shipped profile is already continuous.'
+        : 'a difference large enough to matter, which would need explaining.')]));
+  }
+  if (typeof diag.note === 'string') {
+    wrap.appendChild(el('blockquote', { 'class': 'src' }, [
+      diag.note,
+      el('cite', { text: 'coherenceDiagnostics.note, verbatim from gtcm_findings.json' })
+    ]));
+    wrap.appendChild(el('p', { 'class': 'muted', text:
+      'Read that note against the measurement above it. As shipped today, ' +
+      'both TCWind_JTWC.py and the JavaScript port use the ' +
+      'continuity-preserving factor A = (rm/ri)^(x1−x2), and the measured ' +
+      'step at ri is consistent with that. The note describes the factor as ' +
+      'printed in the Users Guide, which does not preserve continuity; it is ' +
+      'kept here rather than deleted because it records why the diagnostic ' +
+      'exists, and because a reader should be able to see the disagreement ' +
+      'and check the code rather than take this page’s word for it.' }));
+  }
+  fill(host, wrap);
+}
+
+// ===========================================================================
+// 9. Scope, provenance, gaps
+// ===========================================================================
+function renderScope() {
+  var bs = basins(), i, body = [];
+  for (i = 0; i < bs.length; i++) {
+    var b = 'scope.' + bs[i] + '.';
+    body.push({ cells: [
+      { t: basinLabel(bs[i]), scope: 'row' },
+      { t: val(b + 'agency') || null, gapFor: b + 'agency' },
+      { t: val(b + 'seasons') || null, gapFor: b + 'seasons' },
+      { t: fmt(num(b + 'storms'), 0), cls: 'num', gapFor: b + 'storms' },
+      { t: fmt(num(b + 'records'), 0), cls: 'num', gapFor: b + 'records' },
+      { t: fmt(num(b + 'usableRecords'), 0), cls: 'num', gapFor: b + 'usableRecords' },
+      { t: fmt(num(b + 'casesEvaluated'), 0), cls: 'num', gapFor: b + 'casesEvaluated' },
+      { t: fmt(num(b + 'coherenceCases'), 0), cls: 'num', gapFor: b + 'coherenceCases' }
+    ] });
+  }
+  fill(document.getElementById('scopeTable'), dataTable(
+    'What was measured, and on how much of it',
+    'A record is one best-track analysis time. "Usable" means it carried ' +
+    'enough structure to build from. The ring and field statistics use the ' +
+    'evaluated cases; the coherence statistics use the smaller subsample in ' +
+    'the last column, because that measurement is far more expensive. Seasons ' +
+    'differ by basin because the reporting does: R64 is not reported in the ' +
+    'earlier years.',
+    [[{ t: 'Basin', scope: 'col' }, { t: 'agency', scope: 'col' },
+      { t: 'seasons', scope: 'col' },
+      { t: 'storms', scope: 'col', cls: 'num' },
+      { t: 'records', scope: 'col', cls: 'num' },
+      { t: 'usable records', scope: 'col', cls: 'num' },
+      { t: 'cases evaluated', scope: 'col', cls: 'num' },
+      { t: 'coherence cases', scope: 'col', cls: 'num' }]], body));
+
+  var host = document.getElementById('notesBlock');
+  var card = el('div', { 'class': 'card', style: 'margin-top:12px' });
+  card.appendChild(el('h3', { text: 'Provenance, verbatim from the findings file',
+    style: 'margin-top:0' }));
+  var keyOrder = ['sources', 'verification'], notes = val('notes') || {}, k, j;
+  for (j = 0; j < keyOrder.length; j++) {
+    if (typeof notes[keyOrder[j]] === 'string') {
+      card.appendChild(el('blockquote', { 'class': 'src' }, [
+        notes[keyOrder[j]], el('cite', { text: 'notes.' + keyOrder[j] })]));
+    } else {
+      card.appendChild(el('p', {}, [gap('notes.' + keyOrder[j])]));
+    }
+  }
+  var d = el('details', { 'class': 'def' });
+  d.appendChild(el('summary', { text: 'Every note the verification script recorded' }));
+  var dl = el('dl');
+  for (k in notes) {
+    if (!Object.prototype.hasOwnProperty.call(notes, k)) continue;
+    dl.appendChild(el('dt', { text: 'notes.' + k }));
+    dl.appendChild(el('dd', { text: String(notes[k]) }));
+  }
+  d.appendChild(el('div', { 'class': 'body' }, [dl]));
+  card.appendChild(d);
+  fill(host, card);
+
+  var m = val('model') || {};
+  setNode('footLine',
+    'Model: ' + (m.name || 'unnamed') +
+    (m.method ? ' (method "' + m.method + '")' : '') +
+    (m.guide ? ', from the ' + m.guide : '') +
+    '. Findings generated ' + (val('generated') || 'on an unrecorded date') +
+    '. Basins: ' + bs.join(', ') + '.');
+}
+
+function renderGaps() {
+  var host = document.getElementById('gapList');
+  if (!MISSING.length) {
+    fill(host, el('p', { 'class': 'tight', text:
+      'None. Every field this page reads was present in the findings file, ' +
+      'and every number above came from it.' }));
+    return;
+  }
+  var wrap = el('div');
+  wrap.appendChild(el('p', { 'class': 'tight', text:
+    'These paths were requested and were absent or non-numeric in the ' +
+    'findings file. Wherever one of them belonged, the page shows a marked ' +
+    'gap rather than a number:' }));
+  var ul = el('ul', { 'class': 'plain' });
+  MISSING.sort();
+  for (var i = 0; i < MISSING.length; i++) {
+    ul.appendChild(el('li', {}, [el('span', { 'class': 'mono', text: MISSING[i] })]));
+  }
+  wrap.appendChild(ul);
+  fill(host, wrap);
+}
+
+// ===========================================================================
+// Boot
+// ===========================================================================
+function setStatus(kind, kids) {
+  var s = document.getElementById('status');
+  s.className = (kind === 'err') ? 'err' : '';
+  while (s.firstChild) s.removeChild(s.firstChild);
+  for (var i = 0; i < kids.length; i++) {
+    s.appendChild(el('p', {}, [kids[i]]));
+  }
+  s.hidden = false;
+}
+
+function renderAll(findings) {
+  F = findings;
+  MISSING = [];
+  var failed = [], mc = probeModelConstants();
+  var steps = [
+    ['the verdict', function () { renderVerdict(mc); }],
+    ['section 2', function () { renderQuadAvg(mc); }],
+    ['section 3', function () { renderRings(mc); }],
+    ['section 4', renderNever],
+    ['section 5', renderCoherence],
+    ['section 6', renderFieldDiff],
+    ['section 7', renderFit],
+    ['section 8', renderUnverified],
+    ['section 9', renderScope]
+  ];
+  for (var i = 0; i < steps.length; i++) {
+    try { steps[i][1](); }
+    catch (e) {
+      failed.push(steps[i][0] + ' (' + (e && e.message ? e.message : String(e)) + ')');
+      if (window.console && console.error) console.error(steps[i][0], e);
+    }
+  }
+  renderGaps();
+  document.getElementById('content').hidden = false;
+  if (failed.length) {
+    setStatus('err', [
+      'Part of this page did not render: ' + failed.join('; ') + '.',
+      'What is shown below is still read from the findings file and is not ' +
+      'invented, but treat the page as incomplete and report the message ' +
+      'above with the deployment version.'
+    ]);
+  } else {
+    document.getElementById('status').hidden = true;
+  }
+}
+
+function boot() {
+  if (!window.google || !google.script || !google.script.run) {
+    setStatus('err', [
+      'This page is not running inside the Apps Script web app, so it cannot ' +
+      'call getFindings() and has nothing to show.',
+      'Open it from the deployed /exec URL with ?page=findings.'
+    ]);
+    return;
+  }
+  google.script.run
+    .withSuccessHandler(function (f) {
+      if (!f || typeof f !== 'object') {
+        setStatus('err', [
+          'getFindings() returned no object, so there is nothing to display.',
+          'Run tests/tcwind_jtwc/verify_gtcm.py, re-run prep_besttrack_data.py ' +
+          'to bundle it into BestTrackData.gs, clasp push, and redeploy.'
+        ]);
+        return;
+      }
+      try { renderAll(f); }
+      catch (e) {
+        setStatus('err', [
+          'The findings were fetched but this page failed to render them: ' +
+          (e && e.message ? e.message : String(e)),
+          'The data is on the server; this is a page fault. Reload, and if it ' +
+          'persists report the message above with the deployment version.'
+        ]);
+      }
+    })
+    .withFailureHandler(function (err) {
+      setStatus('err', [
+        'getFindings() failed: ' + (err && err.message ? err.message : String(err)),
+        'Nothing on this page is cached in the browser, so there is nothing to ' +
+        'fall back to. The usual cause is that gtcm_findings.json has not been ' +
+        'generated and bundled: run tests/tcwind_jtwc/verify_gtcm.py, then ' +
+        'prep_besttrack_data.py, then clasp push and redeploy.'
+      ]);
+    })
+    .getFindings();
+}
+
+// The server injects its own "unknown page" banner right after <body> when
+// ?page= was not recognised.  This page renders pageNote itself, so show
+// ours and remove the duplicate.
+(function () {
+  var mine = document.getElementById('pageNote');
+  if (mine && mine.textContent.replace(/\s/g, '')) {
+    mine.style.display = 'block';
+    var dupes = document.querySelectorAll('[data-server-note]');
+    for (var i = 0; i < dupes.length; i++) dupes[i].parentNode.removeChild(dupes[i]);
+  }
+})();
+
+boot();
+
+})();
 </script>
 </body>
 </html>
