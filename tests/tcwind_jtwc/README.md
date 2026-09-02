@@ -150,11 +150,18 @@ three datasets baked into the deployed web app itself
 `tests/tcwind_jtwc/data/*.json` holds the same data for reference), and
 exposed via `getBestTrackSample()`/`getBestTrackScatter()`/
 `getHollandZoneSummary()` in `Code.gs`, the same `google.script.run`
-idiom as fetching live bulletins. These feed two separate panels/tabs
-in the toolbar - "Archived Cases" (the storm-by-storm map viewer) and
-"Findings" (the aggregate charts and a written summary), kept apart so
-picking a case to inspect and reading the overall verification results
-aren't competing for the same screen:
+idiom as fetching live bulletins. These feed two separate destinations
+- "Archived Cases" (a panel inside the map tool, `web/TCWind_JTWC/
+Index.html`, for the storm-by-storm viewer) and "Findings" (its own
+standalone page, `web/TCWind_JTWC/Findings.html`, for the aggregate
+charts and a written summary) - so picking a case to inspect and
+reading the overall verification results aren't competing for the same
+screen, and Findings has its own linkable/shareable URL
+(`<web app URL>?page=findings`) rather than living as a panel toggled
+inside the live tool. `Code.gs`'s `doGet(e)` routes on `e.parameter.page`
+to serve one template or the other, both via `HtmlService.createTemplateFromFile`
+so each can inject the deployment's own URL (`<?= baseUrl ?>`, from
+`ScriptApp.getService().getUrl()`) for the link between them:
 
 - **A 100-storm random sample** (2001-2024, seeded, so it's
   reproducible; capped at 100 so the storm-picker dropdown and the map

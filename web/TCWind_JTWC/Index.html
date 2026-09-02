@@ -6,80 +6,123 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
-  html, body { margin:0; padding:0; height:100%; font-family: system-ui, sans-serif; }
-  #wrap { display:flex; flex-direction:column; height:100%; }
-  #banner { background:#7f1d1d; color:#fff; padding:6px 10px; font-size:13px;
-            font-weight:600; letter-spacing:.02em; }
-  #banner span { font-weight:400; opacity:.9; }
-  #bar { display:flex; align-items:center; gap:14px; flex-wrap:wrap;
-         padding:8px 10px; background:#f4f4f5; border-bottom:1px solid #d4d4d8;
-         font-size:13px; }
-  #map { flex:1; min-height:300px; }
-  #status { padding:6px 10px; background:#fafafa; border-top:1px solid #e4e4e7;
-            font-size:12px; color:#3f3f46; white-space:pre-wrap; max-height:110px;
-            overflow:auto; }
-  button { font:inherit; padding:4px 10px; cursor:pointer; }
+  :root {
+    --bg:#f1f5f9; --surface:#ffffff; --border:#e2e8f0; --border-strong:#cbd5e1;
+    --text:#1e293b; --text-muted:#52606d; --text-faint:#94a3b8;
+    --brand:#7f1d1d; --accent:#2563eb; --accent-soft:#eff6ff;
+    --radius:6px; --radius-lg:10px;
+    --shadow:0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04);
+    --font:-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing:border-box; }
+  html, body { margin:0; padding:0; height:100%; font-family:var(--font); color:var(--text); }
+  #wrap { display:flex; flex-direction:column; height:100%; background:var(--bg); }
+
+  #banner { background:var(--brand); color:#fff; padding:8px 14px; font-size:12.5px;
+            font-weight:700; letter-spacing:.03em; }
+  #banner span { font-weight:400; opacity:.88; letter-spacing:normal; margin-left:6px; }
+
+  #bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+         padding:9px 14px; background:var(--surface); border-bottom:1px solid var(--border);
+         font-size:13px; box-shadow:var(--shadow); position:relative; z-index:2; }
+  #bar .sep { width:1px; align-self:stretch; background:var(--border); margin:0 2px; }
+  #bar label { display:inline-flex; align-items:center; gap:5px; color:var(--text-muted); }
+  #tlabel { color:var(--text-muted); font-variant-numeric:tabular-nums; }
+
+  button, .btn { font:inherit; font-weight:600; padding:6px 12px; cursor:pointer;
+         background:var(--surface); color:var(--text); border:1px solid var(--border-strong);
+         border-radius:var(--radius); transition:background .12s, border-color .12s;
+         text-decoration:none; display:inline-flex; align-items:center; gap:5px; }
+  button:hover, .btn:hover { background:#f8fafc; border-color:#94a3b8; }
+  button:active { background:#f1f5f9; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  button.primary:hover { background:#1d4ed8; border-color:#1d4ed8; }
+  button.is-active { background:var(--accent-soft); border-color:var(--accent); color:var(--accent); }
+  .btn.findingsLink { background:#fff7ed; border-color:#fdba74; color:#9a3412; }
+  .btn.findingsLink:hover { background:#ffedd5; }
   select, input[type=range] { font:inherit; }
-  .legend { background:#fff; padding:6px 8px; border-radius:4px; font-size:11px;
-            line-height:1.5; box-shadow:0 1px 4px rgba(0,0,0,.3); }
-  .legend i { display:inline-block; width:14px; height:10px; margin-right:5px; }
-  #paste { display:none; padding:8px 10px; background:#fff7ed;
-           border-bottom:1px solid #fed7aa; }
+  select { padding:5px 8px; border:1px solid var(--border-strong); border-radius:var(--radius);
+           background:var(--surface); }
+
+  #map { flex:1; min-height:300px; }
+  #status { padding:8px 14px; background:var(--surface); border-top:1px solid var(--border);
+            font-size:12px; color:var(--text-muted); white-space:pre-wrap; max-height:110px;
+            overflow:auto; font-variant-numeric:tabular-nums; }
+
+  .legend { background:var(--surface); padding:8px 10px; border-radius:var(--radius);
+            font-size:11px; line-height:1.6; box-shadow:var(--shadow); border:1px solid var(--border); }
+  .legend i { display:inline-block; width:14px; height:10px; margin-right:5px; border-radius:2px; }
+
+  #sourceNote { padding:6px 14px; background:#f8fafc; font-size:11.5px; color:var(--text-faint);
+                border-bottom:1px solid var(--border); }
+  #sourceNote a { color:var(--text-faint); text-decoration:underline; }
+
+  #paste { display:none; padding:12px 14px; background:#fffbeb;
+           border-bottom:1px solid #fde68a; }
   #paste textarea { width:100%; height:110px; font-family:ui-monospace,monospace;
-                    font-size:11px; }
+                    font-size:11px; border:1px solid var(--border-strong); border-radius:var(--radius);
+                    padding:8px; }
   .fit-ok { color:#166534; } .fit-bad { color:#b91c1c; font-weight:600; }
-  #diag, #archived, #findings { display:none; padding:8px 10px; background:#f8fafc;
-                      border-bottom:1px solid #cbd5e1; }
-  #diag .diagRow, #findings .diagRow { display:flex; gap:18px; flex-wrap:wrap;
-                   align-items:flex-start; }
-  #diag .diagCol, #findings .diagCol { display:flex; flex-direction:column;
-                   gap:4px; align-items:flex-start; flex:0 0 auto; }
+
+  #diag, #archived { display:none; padding:14px; background:#f8fafc;
+                      border-bottom:1px solid var(--border-strong); }
+  #diag .diagRow { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-start; }
+  #diag .diagCol { display:flex; flex-direction:column;
+                   gap:6px; align-items:flex-start; flex:0 0 auto; background:var(--surface);
+                   border:1px solid var(--border); border-radius:var(--radius-lg);
+                   box-shadow:var(--shadow); padding:10px 12px; }
   /* Canvas has no natural CSS size of its own beyond its width/height
      attributes, and a column flexbox's default align-items:stretch will
      otherwise blow it up to fill the row - pin both explicitly instead
      of relying on flex sizing. */
-  #diag canvas, #findings canvas { background:#fff; border:1px solid #d4d4d8;
-                 border-radius:3px; display:block; max-width:none; }
+  #diag canvas { background:#fff; border:1px solid var(--border); border-radius:4px;
+                 display:block; max-width:none; }
   #histCanvas, #histCanvas + .diagCap { width:620px; }
   #profCanvas, #profCanvas + .diagCap { width:360px; }
-  #btScatterCanvas, #btScatterCanvas + .diagCap { width:620px; }
-  #btZoneCanvas, #btZoneCanvas + .diagCap { width:360px; }
-  #diag .diagCap, #findings .diagCap { font-size:11px; color:#52525b; }
-  #diagStorm, #btStorm { margin-bottom:6px; }
-  .btGuide { font-size:11px; color:#3f3f46; background:#fff; border:1px solid #d4d4d8;
-             border-radius:4px; padding:8px 10px; margin:8px 0; max-width:1000px; }
-  .btGuide ul { margin:4px 0 0; padding-left:18px; }
-  .btGuide li { margin-bottom:3px; }
+  #diag .diagCap { font-size:11px; color:var(--text-muted); line-height:1.5; }
+  #diagStorm, #btStorm { margin-bottom:2px; }
+
+  .guide { font-size:12.5px; color:var(--text-muted); line-height:1.6; background:var(--surface);
+           border:1px solid var(--border); border-radius:var(--radius-lg); box-shadow:var(--shadow);
+           padding:14px 16px; margin:0 0 4px; max-width:1040px; }
+  .guide h3 { margin:0 0 8px; font-size:12.5px; font-weight:700; color:var(--text);
+              text-transform:uppercase; letter-spacing:.03em; }
+  .guide ul { margin:0; padding-left:20px; }
+  .guide li { margin-bottom:6px; }
+  .guide li:last-child { margin-bottom:0; }
+  .guide + .guide { margin-top:10px; }
+  .swatch { display:inline-block; width:22px; height:0; border-top:3px solid; margin-right:4px;
+            vertical-align:middle; position:relative; top:-2px; }
+  .swatch.dash { border-top-style:dashed; }
 </style>
 </head>
 <body>
 <div id="wrap">
   <div id="banner">
     *** EXPERIMENTAL - NOT OPERATIONALLY VETTED ***
-    <span>Analytic vortex fit to the JTWC wind radii, not a gridded product.
-    Not verified against observations. Preview only.</span>
+    <span>Analytic vortex fit to the JTWC wind radii, not a gridded product. Not verified against observations. Preview only.</span>
   </div>
 
   <div id="bar">
-    <button id="reload">Fetch bulletins</button>
+    <button id="reload" class="primary">Fetch bulletins</button>
     <button id="togglePaste">Paste text</button>
+    <div class="sep"></div>
     <button id="toggleDiag">Diagnostics</button>
     <button id="toggleArchived">Archived Cases</button>
-    <button id="toggleFindings">Findings</button>
+    <a id="findingsLink" class="btn findingsLink" href="<?= baseUrl ?>?page=findings" target="_blank">Findings ↗</a>
+    <div class="sep"></div>
     <label><input type="checkbox" id="layRadii" checked> Radii &amp; track</label>
     <label><input type="checkbox" id="layField" checked> Wind field</label>
     <label>Time <input type="range" id="tslider" min="0" max="0" value="0" style="width:220px"></label>
     <span id="tlabel">--</span>
-    <span id="ver" style="margin-left:auto;color:#71717a"></span>
+    <span id="ver" style="margin-left:auto;color:var(--text-faint)"></span>
   </div>
-  <div style="padding:2px 10px;background:#f4f4f5;font-size:11px;color:#71717a;
-              border-bottom:1px solid #e4e4e7;">
+  <div id="sourceNote">
     Live data: real-time JTWC warnings from NOAA's Telecommunications
     Gateway (tgftp.nws.noaa.gov). "Archived Cases" and "Findings" instead
     use JTWC's post-season reanalysis via NOAA NCEI's public
     <a href="https://www.ncei.noaa.gov/products/international-best-track-archive"
-       target="_blank" style="color:inherit;">IBTrACS</a> archive - see
-    the Findings tab for details.
+       target="_blank">IBTrACS</a> archive &mdash; see the Findings page for details.
   </div>
 
   <div id="paste">
@@ -107,7 +150,7 @@
           radius along each quadrant bearing. Dots are the bulletin's own
           reported radii - a dot sitting on its line is a good fit; off the
           line means the interpolation is straying from what JTWC reported.
-          In Best-track QC, a dashed gray <b>Holland</b> curve also appears:
+          In Archived Cases, a dashed gray <b>Holland</b> curve also appears:
           an independent model anchored the same way (same Vmax/Rmax/R34).
           Where it and the colored lines pull apart is genuine disagreement
           between two reasonable models, worst just outside the core.
@@ -117,98 +160,50 @@
   </div>
 
   <div id="archived">
-    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
       <label>Storm <select id="btStorm"><option>Loading storms…</option></select></label>
       <button id="btExit">Back to live bulletins</button>
       <span id="btInfo" class="diagCap"></span>
     </div>
 
-    <div class="btGuide">
-      <b>Archived Cases</b> replays one real storm's JTWC <i>post-season</i>
-      best-track reanalysis - not a live bulletin - through this same
-      map/diagnostics view, so the tool's output can be checked against the
-      later-corrected, true answer. See the <b>Findings</b> tab for where
-      this data comes from, how it compares to the live data source, and
-      what we've learned from it in aggregate across ~16,000 records.
-      <br><br>
-      <b>How to read the map above once a storm is picked:</b> black/white
-      dot is the storm center at the selected time, dashed black line is
-      its full track. Solid red/orange/yellow rings are JTWC's own
-      reported 64/50/34-kt wind radii (ground truth); the colored raster
-      underneath is the tool's modeled wind field, built from those same
-      radii. Magenta dashed ring = actual reported RMW; teal dashed ring =
-      actual ROCI, a pressure-based size measure, not directly comparable
-      to a wind radius (see Findings for the caveat). Where the raster's
-      bright core sits relative to the magenta ring, and how far it fades
-      out relative to the teal ring, is the comparison that matters. In
-      Diagnostics, the azimuthal-profile chart also overlays an independent
-      Holland (1980) curve for the selected storm/time.
-    </div>
-  </div>
-
-  <div id="findings">
-    <div class="btGuide">
-      <b>Where this data comes from:</b> the live map ("Fetch bulletins")
-      reads real-time JTWC tropical cyclone warnings from NOAA's
-      Telecommunications Gateway (<code>tgftp.nws.noaa.gov</code>) - the
-      same text products this tool's GFE counterpart ingests operationally.
-      <b>Archived Cases</b> instead reads JTWC's own <i>post-season</i>
-      reanalysis - the corrected, final position/intensity/wind-radii/RMW/
-      ROCI for each storm - from NOAA NCEI's public
-      <a href="https://www.ncei.noaa.gov/products/international-best-track-archive"
-         target="_blank">IBTrACS</a> archive (agency <code>jtwc_wp</code>,
-      WestPac basin, 2001-2024 - JTWC's WestPac wind-radii/RMW reporting is
-      essentially absent before 2001, and 2025-2026 aren't finalized/
-      ingested into IBTrACS yet). In other words: the live map shows what
-      the tool does with a real-time warning; the charts below (and the
-      Archived Cases tab, storm by storm) show how that same tool's math
-      holds up once the true, later-corrected answer is known.
-      <br><br>
-      <b>What we've found so far</b> (full numbers in
-      <code>tests/tcwind_jtwc/README.md</code>):
+    <div class="guide">
+      <h3>What this is</h3>
       <ul>
-        <li><b>Rmax</b> (scatter below, and the magenta RMW ring vs. the
-          field's bright core in Archived Cases): now unbiased on average
-          after refitting to WestPac data, but still has close to no skill
-          predicting any <i>one</i> weak storm's Rmax (r=0.04 for
-          depressions) - treat it as a reasonable long-run average, not a
-          real prediction for that storm.</li>
-        <li><b>Field size</b> (raster extent vs. actual ROCI, the teal
-          ring in Archived Cases - a pressure-based size measure, not
-          directly comparable to a wind radius): badly undersized for weak
-          systems (most have no reported radii to build a field from at
-          all), roughly right for typhoon-strength systems aside from the
-          outer taper reaching a bit too far in light wind.</li>
-        <li><b>Field shape</b> (zone chart below; the colored quadrant
-          curves vs. the dashed Holland curve in Archived Cases'
-          Diagnostics view): the two models agree least just outside the
-          core (Rmax-R64) and progressively more moving outward - the
-          near-core/eyewall region is where this tool's shape choice is
-          least certain, which is also operationally where it matters
-          most.</li>
+        <li><b>Archived Cases</b> replays one real storm's JTWC
+          <i>post-season</i> best-track reanalysis &mdash; not a live
+          bulletin &mdash; through this same map/diagnostics view, so the
+          tool's output can be checked against the later-corrected, true
+          answer.</li>
+        <li>See the <a href="<?= baseUrl ?>?page=findings" target="_blank">Findings</a>
+          page for where this data comes from and what we've learned from
+          it in aggregate across ~16,000 records.</li>
       </ul>
     </div>
 
-    <div class="diagRow">
-      <div class="diagCol">
-        <canvas id="btScatterCanvas" width="620" height="320"></canvas>
-        <div class="diagCap">
-          Verification: tool's predicted Rmax vs JTWC's own post-season
-          best-track RMW, every usable WestPac record 2001-2024. Diagonal
-          line is perfect agreement; points below it are underestimates.
-          Colored by intensity category.
-        </div>
-      </div>
-      <div class="diagCol">
-        <canvas id="btZoneCanvas" width="360" height="320"></canvas>
-        <div class="diagCap">
-          How far the tool's own wind profile and an independent model
-          (Holland 1980) disagree, by radial zone - bar is the typical
-          (mean) disagreement, tick mark is the 90th percentile
-          (occasional larger disagreements). Tallest bar is where the
-          field's shape is least certain.
-        </div>
-      </div>
+    <div class="guide">
+      <h3>How to read the map, once a storm is picked</h3>
+      <ul>
+        <li><b>Black/white dot</b> &mdash; storm center at the selected time;
+          <b>dashed black line</b> &mdash; its full track.</li>
+        <li><span class="swatch" style="border-color:#eab308"></span>
+          <span class="swatch" style="border-color:#f97316"></span>
+          <span class="swatch" style="border-color:#dc2626"></span>
+          <b>Solid red/orange/yellow rings</b> &mdash; JTWC's own reported
+          64/50/34-kt wind radii (ground truth).</li>
+        <li><b>Colored raster</b> &mdash; the tool's modeled wind field,
+          built from those same radii.</li>
+        <li><span class="swatch dash" style="border-color:#db2777"></span>
+          <b>Magenta dashed ring</b> &mdash; actual reported RMW.</li>
+        <li><span class="swatch dash" style="border-color:#0d9488"></span>
+          <b>Teal dashed ring</b> &mdash; actual ROCI, a pressure-based size
+          measure, not directly comparable to a wind radius (see Findings
+          for the caveat).</li>
+        <li>What matters: where the raster's bright core sits relative to
+          the magenta ring, and how far it fades out relative to the teal
+          ring.</li>
+        <li>In <b>Diagnostics</b>, the azimuthal-profile chart also overlays
+          an independent Holland (1980) curve for the selected storm/time.</li>
+      </ul>
     </div>
   </div>
 
@@ -1006,7 +1001,6 @@ function updateDiagnostics(items, nowEpoch) {
 // ---------------------------------------------------------------------------
 
 let bestTrackSample = null;
-let bestTrackScatter = null;
 
 function buildBestTrackStorm(entry) {
   const taus = entry.records.map((r, i) => ({
@@ -1049,141 +1043,6 @@ function loadBestTrackSample() {
   }).withFailureHandler(e => {
     document.getElementById('btInfo').textContent = 'Failed to load storms: ' + e.message;
   }).getBestTrackSample();
-}
-
-/** Verification scatter: predicted Rmax (x) vs actual best-track RMW (y),
- * for every usable WP record (not just the 100-storm sample). Runs the
- * real resolveRmax() client-side on each record - each scatter row carries
- * just enough (vmax, lat, and the min nonzero quadrant per threshold) for
- * resolveRmax()'s clamp to reproduce exactly, without re-deriving its
- * formula here. */
-function drawBestTrackScatter() {
-  const cv = document.getElementById('btScatterCanvas');
-  const ctx = cv.getContext('2d');
-  const W = cv.width, H = cv.height;
-  ctx.clearRect(0, 0, W, H);
-  if (!bestTrackScatter) return;
-
-  const padL = 40, padR = 10, padT = 10, padB = 24;
-  const AX = 60; // nm axis max; a handful of larger outliers clip at the edge
-  const x = v => padL + (W - padL - padR) * Math.min(v, AX) / AX;
-  const y = v => H - padB - (H - padT - padB) * Math.min(v, AX) / AX;
-  const catColor = vmax => vmax >= 64 ? '#7c3aed' : vmax >= 34 ? '#f97316' : '#22c55e';
-
-  ctx.strokeStyle = '#d4d4d8'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, H - padB);
-  ctx.lineTo(W - padR, H - padB); ctx.stroke();
-  ctx.strokeStyle = '#a1a1aa'; ctx.setLineDash([3, 3]);
-  ctx.beginPath(); ctx.moveTo(x(0), y(0)); ctx.lineTo(x(AX), y(AX)); ctx.stroke();
-  ctx.setLineDash([]);
-
-  let sumE = 0, sumAbsE = 0, sumSqE = 0, n = 0;
-  ctx.globalAlpha = 0.35;
-  for (const rec of bestTrackScatter) {
-    const [vmax, lat, rmw, r64min, r50min, r34min] = rec;
-    const snap = {
-      vmax: vmax, lat: lat,
-      radii: {
-        64: r64min ? { NE: r64min, SE: r64min, SW: r64min, NW: r64min } : undefined,
-        50: r50min ? { NE: r50min, SE: r50min, SW: r50min, NW: r50min } : undefined,
-        34: r34min ? { NE: r34min, SE: r34min, SW: r34min, NW: r34min } : undefined,
-      },
-    };
-    const pred = resolveRmax(snap, 0);
-    ctx.fillStyle = catColor(vmax);
-    ctx.beginPath(); ctx.arc(x(pred), y(rmw), 2, 0, 2 * Math.PI); ctx.fill();
-    const e = pred - rmw;
-    sumE += e; sumAbsE += Math.abs(e); sumSqE += e * e; n++;
-  }
-  ctx.globalAlpha = 1;
-
-  ctx.fillStyle = '#71717a'; ctx.font = '10px system-ui, sans-serif';
-  ctx.fillText('actual RMW (nm)', 4, padT + 8);
-  ctx.textAlign = 'right';
-  ctx.fillText('tool’s Rmax (nm)', W - padR, H - 6);
-  ctx.textAlign = 'left';
-
-  if (n) {
-    const bias = sumE / n, mae = sumAbsE / n, rmse = Math.sqrt(sumSqE / n);
-    document.getElementById('btInfo').textContent =
-      'n=' + n + '  bias=' + (bias >= 0 ? '+' : '') + bias.toFixed(1) +
-      ' nm  MAE=' + mae.toFixed(1) + ' nm  RMSE=' + rmse.toFixed(1) + ' nm';
-  }
-}
-
-function loadBestTrackScatter() {
-  if (bestTrackScatter) { drawBestTrackScatter(); return; }
-  google.script.run.withSuccessHandler(data => {
-    bestTrackScatter = data;
-    drawBestTrackScatter();
-  }).withFailureHandler(e => {
-    document.getElementById('btInfo').textContent = 'Scatter failed to load: ' + e.message;
-  }).getBestTrackScatter();
-}
-
-/** Zone-divergence bar chart: mean/p90 |tool - Holland| per radial zone.
- * See verify_besttrack_holland.py; this is that script's finding made
- * visible instead of only a terminal report. */
-let hollandZoneSummary = null;
-const ZONE_ORDER = ['Rmax-R64', 'R64-R50', 'Rmax-R50', 'R50-R34', 'Rmax-R34', 'R34-2xR34'];
-const ZONE_SHORT = { 'Rmax-R64': 'Rmax–R64', 'R64-R50': 'R64–R50',
-  'Rmax-R50': 'Rmax–R50', 'R50-R34': 'R50–R34',
-  'Rmax-R34': 'Rmax–R34', 'R34-2xR34': 'beyond R34' };
-
-function drawHollandZoneChart() {
-  const cv = document.getElementById('btZoneCanvas');
-  const ctx = cv.getContext('2d');
-  const W = cv.width, H = cv.height;
-  ctx.clearRect(0, 0, W, H);
-  if (!hollandZoneSummary) return;
-
-  const zones = ZONE_ORDER.filter(z => hollandZoneSummary[z]);
-  const padL = 34, padR = 10, padT = 10, padB = 46;
-  const maxV = Math.max(...zones.map(z => hollandZoneSummary[z].p90)) * 1.15;
-  const barW = (W - padL - padR) / zones.length;
-  const y = v => H - padB - (H - padT - padB) * v / maxV;
-
-  ctx.strokeStyle = '#d4d4d8'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, H - padB);
-  ctx.lineTo(W - padR, H - padB); ctx.stroke();
-  ctx.fillStyle = '#71717a'; ctx.font = '10px system-ui, sans-serif';
-  ctx.fillText('kt', 4, padT + 8);
-
-  zones.forEach((z, i) => {
-    const s = hollandZoneSummary[z];
-    const bx = padL + i * barW + barW * 0.2, bw = barW * 0.6;
-    ctx.fillStyle = '#94a3b8';
-    ctx.fillRect(bx, y(s.mean), bw, H - padB - y(s.mean));
-    ctx.strokeStyle = '#334155'; ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(bx, y(s.p90)); ctx.lineTo(bx + bw, y(s.p90));
-    ctx.stroke();
-
-    ctx.save();
-    ctx.translate(bx + bw / 2, H - padB + 6);
-    ctx.rotate(-Math.PI / 5);
-    ctx.textAlign = 'right';
-    ctx.fillStyle = '#3f3f46'; ctx.font = '9px system-ui, sans-serif';
-    ctx.fillText(ZONE_SHORT[z] || z, 0, 0);
-    ctx.restore();
-  });
-
-  ctx.textAlign = 'right';
-  ctx.fillStyle = '#71717a'; ctx.font = '10px system-ui, sans-serif';
-  ctx.fillText('bar=mean, tick=p90', W - padR, padT + 8);
-  ctx.textAlign = 'left';
-}
-
-function loadHollandZoneSummary() {
-  if (hollandZoneSummary) { drawHollandZoneChart(); return; }
-  google.script.run.withSuccessHandler(data => {
-    hollandZoneSummary = data;
-    drawHollandZoneChart();
-  }).withFailureHandler(e => {
-    document.getElementById('btInfo').textContent =
-      (document.getElementById('btInfo').textContent || '') +
-      '  Zone chart failed: ' + e.message;
-  }).getHollandZoneSummary();
 }
 
 // ---------------------------------------------------------------------------
@@ -1245,32 +1104,32 @@ document.getElementById('layField').onchange = () => {
   }
   render();
 };
-document.getElementById('togglePaste').onclick = () => {
+document.getElementById('togglePaste').onclick = (ev) => {
   const p = document.getElementById('paste');
-  p.style.display = p.style.display === 'block' ? 'none' : 'block';
+  const show = p.style.display !== 'block';
+  p.style.display = show ? 'block' : 'none';
+  ev.currentTarget.classList.toggle('is-active', show);
 };
-document.getElementById('toggleDiag').onclick = () => {
+document.getElementById('toggleDiag').onclick = (ev) => {
   const d = document.getElementById('diag');
-  d.style.display = d.style.display === 'block' ? 'none' : 'block';
-  if (d.style.display === 'block') render();
+  const show = d.style.display !== 'block';
+  d.style.display = show ? 'block' : 'none';
+  ev.currentTarget.classList.toggle('is-active', show);
+  if (show) render();
 };
 document.getElementById('diagStorm').onchange = render;
-document.getElementById('toggleArchived').onclick = () => {
+document.getElementById('toggleArchived').onclick = (ev) => {
   const p = document.getElementById('archived');
   const show = p.style.display !== 'block';
   p.style.display = show ? 'block' : 'none';
+  ev.currentTarget.classList.toggle('is-active', show);
   if (show && !bestTrackSample) loadBestTrackSample();
 };
 document.getElementById('btStorm').onchange = e => selectBestTrackStorm(parseInt(e.target.value, 10));
 document.getElementById('btExit').onclick = () => {
   document.getElementById('archived').style.display = 'none';
+  document.getElementById('toggleArchived').classList.remove('is-active');
   load(false);
-};
-document.getElementById('toggleFindings').onclick = () => {
-  const p = document.getElementById('findings');
-  const show = p.style.display !== 'block';
-  p.style.display = show ? 'block' : 'none';
-  if (show) { loadBestTrackScatter(); loadHollandZoneSummary(); }
 };
 document.getElementById('parsePaste').onclick = () => {
   const txt = document.getElementById('pastebox').value;

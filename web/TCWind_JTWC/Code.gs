@@ -52,9 +52,20 @@ var CONF_SUBTROPICAL = 0.25;
 // Web app entry point
 // ---------------------------------------------------------------------------
 
-function doGet() {
-  return HtmlService.createHtmlOutputFromFile('Index')
-    .setTitle('JTWC TC Wind preview (EXPERIMENTAL)')
+function doGet(e) {
+  // ?page=findings gets its own page (Findings.html) rather than a panel
+  // toggled inside the map tool - a standalone report, linkable/shareable
+  // on its own, not a popup living inside the live/archived-case view.
+  var page = (e && e.parameter && e.parameter.page) || 'live';
+  var tmplName = page === 'findings' ? 'Findings' : 'Index';
+  var title = page === 'findings'
+    ? 'JTWC TC Wind - Findings (EXPERIMENTAL)'
+    : 'JTWC TC Wind preview (EXPERIMENTAL)';
+
+  var tmpl = HtmlService.createTemplateFromFile(tmplName);
+  tmpl.baseUrl = ScriptApp.getService().getUrl();
+  return tmpl.evaluate()
+    .setTitle(title)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
