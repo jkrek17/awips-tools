@@ -292,17 +292,17 @@ const QUAD_BOUNDS = { NE: [0, 90], SE: [90, 180], SW: [180, 270], NW: [270, 360]
 // ---------------------------------------------------------------------------
 
 // Same functional form as Willoughby et al. (2006) but refit against
-// 16,103 real JTWC WestPac best-track records (2001-2024, IBTrACS, agency
-// jtwc_wp) rather than Willoughby's Atlantic coefficients (46.4, -0.0155,
-// 0.0169), which underestimated JTWC's own post-season RMW by ~10 nm on
-// average. Out-of-sample bias on a held-out 20% of storms: -3.3 nm vs
-// -11.5 nm for the original. MUST match willoughbyRmax() in
-// TCWind_JTWC.py - see tests/tcwind_jtwc/fit_westpac_rmax.py for how
-// these were produced and tests/tcwind_jtwc/verify_besttrack_rmax.py for
-// the validation.
+// 13,834 real JTWC WestPac best-track records (2005-2024, IBTrACS, agency
+// jtwc_wp - see besttrack_common.MIN_SEASON for why 2005, not 2001)
+// rather than Willoughby's Atlantic coefficients (46.4, -0.0155, 0.0169),
+// which underestimated JTWC's own post-season RMW by ~10 nm on average.
+// Out-of-sample bias on a held-out 20% of storms: -1.9 nm vs -9.4 nm for
+// the original. MUST match willoughbyRmax() in TCWind_JTWC.py - see
+// tests/tcwind_jtwc/fit_westpac_rmax.py for how these were produced and
+// tests/tcwind_jtwc/verify_besttrack_rmax.py for the validation.
 function willoughbyRmax(vmaxKt, latDeg) {
   const vms = vmaxKt * KT2MS;
-  return 97.892 * Math.exp(-0.023895 * vms + 0.002528 * Math.abs(latDeg)) * KM2NM;
+  return 98.392 * Math.exp(-0.025088 * vms + 0.003021 * Math.abs(latDeg)) * KM2NM;
 }
 
 function resolveRmax(snap, overrideNm) {
@@ -535,7 +535,40 @@ function vortexAt(lat, lon, snap, rmax, asymFrac, inflowDeg) {
     // kv[0], not snap.vmax: the same reduced core reference used to cap
     // mag above, so frac still reaches its ceiling (asymFrac) exactly at
     // the peak - see the comment by the kv[0] reduction above.
-    const frac = asymFrac * Math.min(Math.max(mag / Math.max(kv[0], 1), 0), 1);
+    let frac = asymFrac * Math.min(Math.max(mag / Math.max(kv[0], 1), 0), 1);
+
+    // asymFrac above is forced to 0 across the whole anchored band
+    // (Rmax through the outermost reported ring) whenever any radius was
+    // reported, to avoid double-counting that ring's own real asymmetry.
+    // But Rmax itself is never a reported value - JTWC has no
+    // per-quadrant RMW - so strictly inside it (r <= Rmax) there is
+    // nothing to double-count. Give that zone its own, always-on vector,
+    // using the same MOTION_ASYMMETRY_FRACTION already vetted for the
+    // radii-less case above (not a new, separately-tuned number). Ramped
+    // to exactly 0 at the dead center (r=0) and at Rmax's own boundary
+    // (continuous with the anchored band's forced 0 just outside it, so
+    // this introduces no seam at the ring itself). This function itself
+    // does no peak recovery - drawField()'s own norm[]/factor pass above
+    // already re-scales the sampled core grid up to Vmax afterward,
+    // weighted to zero at the same first-reported-ring boundary, exactly
+    // mirroring normalizePeak() in TCWind_JTWC.py's buildVortex().
+    //
+    // UNLIKE every other correction in this file, this one cannot be
+    // checked against IBTrACS: best-track RMW is a single scalar per
+    // storm-time, never per-quadrant, so there is no ground truth
+    // anywhere in the archive for how Rmax's own wind field actually
+    // varies by azimuth. This rests on the same wavenumber-1 mechanism
+    // already used for the radii-less fallback, not on anything verified
+    // here - see tests/tcwind_jtwc/README.md. Left the far-field taper
+    // (beyond the outermost ring) alone: it is already its own
+    // unverified heuristic, and stacking a second one on top of it,
+    // more cheaply, less usefully, was not worth doing. MUST match
+    // buildVortex() in TCWind_JTWC.py.
+    if (Object.keys(snap.radii).length && MOTION_ASYMMETRY_FRACTION && r <= kr[0]) {
+      const core = Math.min(Math.max(r / Math.max(kr[0], 1e-3), 0), 1);
+      frac = MOTION_ASYMMETRY_FRACTION * 4 * core * (1 - core);
+    }
+
     const mr = snap.motionDir * Math.PI / 180;
     u += frac * snap.motionSpd * Math.sin(mr);
     v += frac * snap.motionSpd * Math.cos(mr);

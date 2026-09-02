@@ -497,13 +497,14 @@ def willoughbyRmax(vmax_kt, lat_deg):
     """Rmax regression, returned in nautical miles.
 
     Same functional form as Willoughby et al. (2006) - exponential in
-    intensity and latitude - but refit against 16,103 real JTWC WestPac
-    best-track records (2001-2024, IBTrACS, agency jtwc_wp) rather than
+    intensity and latitude - but refit against 13,834 real JTWC WestPac
+    best-track records (2005-2024, IBTrACS, agency jtwc_wp - see
+    besttrack_common.MIN_SEASON for why 2005, not 2001) rather than
     Willoughby's original Atlantic coefficients (A=46.4, B=-0.0155,
     C=0.0169). Those underestimated JTWC's own post-season RMW by ~10 nm
     on average across this dataset (worst for weak systems); this refit's
     out-of-sample bias on a held-out 20% of storms (never used for
-    fitting) is -3.3 nm, MAE 10.7 nm, vs -11.5 nm / 14.4 nm for the
+    fitting) is -1.9 nm, MAE 9.0 nm, vs -9.4 nm / 12.4 nm for the
     original coefficients over the same held-out storms. See
     tests/tcwind_jtwc/fit_westpac_rmax.py, which produced these
     coefficients and reports the full validation, and
@@ -511,7 +512,7 @@ def willoughbyRmax(vmax_kt, lat_deg):
     original comparison this replaces.
     """
     v_ms = vmax_kt * KT2MS
-    rmax_km = 97.892 * np.exp(-0.023895 * v_ms + 0.002528 * abs(lat_deg))
+    rmax_km = 98.392 * np.exp(-0.025088 * v_ms + 0.003021 * abs(lat_deg))
     return rmax_km * KM2NM
 
 
@@ -728,6 +729,41 @@ def buildVortex(latGrid, lonGrid, snapshot, rmax_nm,
         # (asymFrac) exactly at the peak - see the knot_v[0] reduction
         # comment above.
         frac = asymFrac * np.clip(mag / max(knot_v[0], 1.0), 0.0, 1.0)
+
+        # asymFrac above is forced to 0 across the whole anchored band
+        # (Rmax through the outermost reported ring) whenever any radius
+        # was reported, to avoid double-counting that ring's own real
+        # asymmetry. But Rmax itself is never a reported value - JTWC
+        # has no per-quadrant RMW - so strictly inside it (r <= Rmax)
+        # there is nothing to double-count. Give that zone its own,
+        # always-on vector, using the same MOTION_ASYMMETRY_FRACTION
+        # already vetted for the radii-less case above (not a new,
+        # separately-tuned number). Ramped to exactly 0 at the dead
+        # center (r=0, no direction to speak of there) and at Rmax's own
+        # boundary (continuous with the anchored band's forced 0 just
+        # outside it, so this introduces no seam at the ring itself).
+        # normalizePeak() below already runs unconditionally and never
+        # touches cells at or beyond the first REPORTED ring, so it
+        # recovers the exact Vmax peak afterward without any separate
+        # Vm-a-style correction here.
+        #
+        # UNLIKE every other correction in this file, this one cannot be
+        # checked against IBTrACS: best-track RMW is a single scalar per
+        # storm-time, never per-quadrant, so there is no ground truth
+        # anywhere in the archive for how Rmax's own wind field actually
+        # varies by azimuth. This rests on the same wavenumber-1
+        # mechanism already used for the radii-less fallback, not on
+        # anything verified here - see tests/tcwind_jtwc/README.md.
+        # Left the far-field taper (beyond the outermost ring) alone:
+        # it is already its own unverified heuristic (see the comment
+        # above the outer-taper block), and stacking a second one on
+        # top of it, more cheaply, less usefully (weaker winds, farther
+        # from anything operationally decided), was not worth doing.
+        if snapshot.radii and MOTION_ASYMMETRY_FRACTION:
+            core = np.clip(r / np.maximum(knot_r[0], 1e-3), 0.0, 1.0)
+            coreFrac = MOTION_ASYMMETRY_FRACTION * 4.0 * core * (1.0 - core)
+            frac = np.where(r <= knot_r[0], coreFrac, frac)
+
         mrad = np.radians(snapshot.motionDir)
         u = u + frac * snapshot.motionSpd * np.sin(mrad)
         v = v + frac * snapshot.motionSpd * np.cos(mrad)

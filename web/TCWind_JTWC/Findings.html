@@ -152,17 +152,17 @@
             r=0.56.</li>
           <li>Refit on WestPac best-track data, scored on a held-out 20%
             never used for fitting: bias &minus;1.9&nbsp;nm, MAE
-            8.7&nbsp;nm, RMSE 14.1&nbsp;nm, r=0.59 - most of the
+            9.0&nbsp;nm, RMSE 13.1&nbsp;nm, r=0.63 - most of the
             systematic undersizing is gone.</li>
           <li>But that's the regression <i>alone</i>. <code>resolveRmax()</code>
             as actually run - regression, then clamped to &le;0.7&times;
             the smallest reported radius at the highest threshold present
-            - comes back to bias &minus;5.6&nbsp;nm (MAE 9.2, RMSE 15.0,
-            r=0.59). The clamp binds on 40% of records (n=3535), and
+            - comes back to bias &minus;5.9&nbsp;nm (MAE 9.2, RMSE 15.0,
+            r=0.59). The clamp binds on 38% of records (n=3388), and
             when it does it's the dominant source of the tool's remaining
             negative bias - see "hard ceiling" below.</li>
-          <li>By category: TS (34-63&nbsp;kt) MAE 12.1&nbsp;nm, r=0.35;
-            TY+ (64&nbsp;kt+) MAE 5.6&nbsp;nm, r=0.43. Skill is
+          <li>By category: TS (34-63&nbsp;kt) MAE 12.2&nbsp;nm, r=0.35;
+            TY+ (64&nbsp;kt+) MAE 5.7&nbsp;nm, r=0.43. Skill is
             meaningfully better at typhoon strength, where more storms
             carry enough reported radii to constrain the clamp.</li>
         </ul>
@@ -188,7 +188,7 @@
         <h3>The regression has a hard ceiling near 39&nbsp;nm</h3>
         <ul>
           <li>Across all 8906 in-scope records, <code>resolveRmax()</code>
-            never returns more than 38.7&nbsp;nm - even before the radii
+            never returns more than 39.0&nbsp;nm - even before the radii
             clamp applies. Actual RMW in the same dataset ranges up to
             155&nbsp;nm, and 21.9% of records with a reported RMW exceed
             this ceiling.</li>
@@ -238,13 +238,13 @@
         <ul>
           <li>Same Rmax-vs-RMW check as above, split by IBTrACS' own
             storm-nature flag: purely tropical (TS, n=8598) MAE
-            8.6&nbsp;nm, r=0.60. Mixed structure (MX, n=270) MAE
-            24.9&nbsp;nm, r=0.20; extratropical transition (ET, n=56) MAE
+            8.7&nbsp;nm, r=0.60. Mixed structure (MX, n=270) MAE
+            25.0&nbsp;nm, r=0.20; extratropical transition (ET, n=56) MAE
             20.1&nbsp;nm, r=0.16 - roughly triple the error, with almost
             no skill left tracking any individual storm's size.</li>
           <li>Split instead by distance to the nearest coastline, error
             is nearly flat: MAE 8.2&nbsp;nm over/at the coast (&le;25&nbsp;km)
-            versus 9.5&nbsp;nm in the open ocean (&gt;300&nbsp;km). Rmax
+            versus 9.6&nbsp;nm in the open ocean (&gt;300&nbsp;km). Rmax
             skill does <i>not</i> meaningfully degrade approaching land -
             which matters, since that's exactly where watches and
             warnings concentrate.</li>
@@ -342,7 +342,7 @@ const QUADS = ['NE', 'SE', 'SW', 'NW'];
 // tests/tcwind_jtwc/fit_westpac_rmax.py.
 function willoughbyRmax(vmaxKt, latDeg) {
   const vms = vmaxKt * KT2MS;
-  return 97.892 * Math.exp(-0.023895 * vms + 0.002528 * Math.abs(latDeg)) * KM2NM;
+  return 98.392 * Math.exp(-0.025088 * vms + 0.003021 * Math.abs(latDeg)) * KM2NM;
 }
 
 function resolveRmax(snap, overrideNm) {
