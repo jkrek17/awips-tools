@@ -533,7 +533,12 @@ def resolveRmax(snapshot, override_nm=0.0):
     for threshold in (64, 50, 34):
         if threshold not in snapshot.radii:
             continue
-        if snapshot.vmax <= threshold:
+        # vmax < threshold (not <=): a storm whose peak exactly equals a
+        # threshold (e.g. a 50kt storm reporting R50) still reaches it -
+        # JTWC would not report a radius for a threshold it hadn't reached,
+        # so only a *stale* radius (already below the storm's current
+        # threshold) should be excluded here.
+        if snapshot.vmax < threshold:
             continue
         nonzero = [v for v in snapshot.radii[threshold].values() if v > 0.0]
         if nonzero:
@@ -600,7 +605,13 @@ def buildVortex(latGrid, lonGrid, snapshot, rmax_nm,
     for threshold in (64, 50, 34):
         if threshold not in snapshot.radii:
             continue
-        if snapshot.vmax <= threshold:
+        # See the matching comment in resolveRmax(): vmax < threshold, not
+        # <=, so a storm whose peak exactly equals a reported ring's
+        # threshold (a 50kt storm reporting R50, say - not rare, since
+        # JTWC rounds Vmax to 5kt bins) still gets that ring built into its
+        # profile instead of the knot list jumping straight past it to the
+        # next-weaker ring.
+        if snapshot.vmax < threshold:
             continue
         rr = _azimuthalRadii(az, snapshot.radii[threshold], floor)
         rr = np.maximum(rr, prev * 1.02)      # enforce monotonicity
@@ -623,8 +634,23 @@ def buildVortex(latGrid, lonGrid, snapshot, rmax_nm,
         r1, v1 = knot_r[i], knot_v[i]
         r2, v2 = knot_r[i + 1], knot_v[i + 1]
         ratio = np.maximum(r2 / np.maximum(r1, 1e-3), 1.0001)
-        x = np.log(v1 / v2) / np.log(ratio)
-        x = np.clip(x, 0.05, 2.5)
+        if v1 <= v2:
+            # Only reachable for the innermost segment, when vmax exactly
+            # equals the next ring's threshold (see the vmax < threshold
+            # comment above) - both ends of the segment call for the same
+            # speed, so it is a flat plateau (x=0), not the general-case
+            # np.clip(..., 0.05, ...) floor below. That floor forces a
+            # minimum decay rate meant for v1 > v2 segments; applied here
+            # it invents a several-kt falloff across a span the reported
+            # radii say should be flat, and - since natural x is already
+            # exactly 0 in this case - whether a sample sitting exactly on
+            # r2 lands in this segment or the next becomes a coin flip on
+            # floating-point noise that used to be harmless (both sides
+            # agreed) and would otherwise no longer agree.
+            x = 0.0
+        else:
+            x = np.log(v1 / v2) / np.log(ratio)
+            x = np.clip(x, 0.05, 2.5)
         seg = (r > r1) & (r <= r2)
         mag = np.where(seg,
                        v1 * (np.maximum(r1, 1e-3) / safe_r) ** x,

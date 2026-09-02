@@ -295,7 +295,12 @@ function resolveRmax(snap, overrideNm) {
     ? overrideNm : willoughbyRmax(snap.vmax, snap.lat);
   for (const thr of [64, 50, 34]) {
     if (!snap.radii[thr]) continue;
-    if (snap.vmax <= thr) continue;
+    // vmax < thr (not <=): a storm whose peak exactly equals a threshold
+    // (e.g. a 50kt storm reporting R50) still reaches it - JTWC would not
+    // report a radius for a threshold it hadn't reached, so only a
+    // *stale* radius (already below the storm's current threshold) should
+    // be excluded here.
+    if (snap.vmax < thr) continue;
     const nz = QUADS.map(q => snap.radii[thr][q]).filter(v => v > 0);
     if (nz.length) rmax = Math.min(rmax, 0.7 * Math.min(...nz));
     break;
@@ -403,7 +408,12 @@ function knotsAt(snap, rmax, az) {
   let prev = rmax;
   for (const thr of [64, 50, 34]) {
     if (!snap.radii[thr]) continue;
-    if (snap.vmax <= thr) continue;
+    // See the matching comment in resolveRmax(): vmax < thr, not <=, so a
+    // storm whose peak exactly equals a reported ring's threshold (a 50kt
+    // storm reporting R50, say - not rare, since JTWC rounds Vmax to 5kt
+    // bins) still gets that ring built into its profile instead of the
+    // knot list jumping straight past it to the next-weaker ring.
+    if (snap.vmax < thr) continue;
     let rr = azimuthalRadius(az, snap.radii[thr], floor);
     rr = Math.max(rr, prev * 1.02);
     kr.push(rr); kv.push(thr);
@@ -427,8 +437,21 @@ function vortexAt(lat, lon, snap, rmax, asymFrac, inflowDeg) {
       const r1 = kr[i], v1 = kv[i], r2 = kr[i + 1], v2 = kv[i + 1];
       if (r > r1 && r <= r2) {
         const ratio = Math.max(r2 / Math.max(r1, 1e-3), 1.0001);
-        let x = Math.log(v1 / v2) / Math.log(ratio);
-        x = Math.min(Math.max(x, 0.05), 2.5);
+        let x;
+        if (v1 <= v2) {
+          // Only reachable for the innermost segment, when vmax exactly
+          // equals the next ring's threshold (see the vmax < thr comment
+          // in knotsAt()) - both ends of the segment call for the same
+          // speed, so it's a flat plateau (x=0), not the general-case
+          // Math.max(x, 0.05) floor below. That floor forces a minimum
+          // decay rate meant for v1 > v2 segments; applied here it
+          // invents a several-kt falloff across a span the reported radii
+          // say should be flat.
+          x = 0;
+        } else {
+          x = Math.log(v1 / v2) / Math.log(ratio);
+          x = Math.min(Math.max(x, 0.05), 2.5);
+        }
         mag = v1 * Math.pow(Math.max(r1, 1e-3) / safeR, x);
         break;
       }
