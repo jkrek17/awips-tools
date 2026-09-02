@@ -142,6 +142,8 @@
     <div class="sep"></div>
     <label><input type="checkbox" id="layRadii" checked> Radii &amp; track</label>
     <label><input type="checkbox" id="layField" checked> Wind field</label>
+    <label title="The raw quadrant radii exactly as reported, no smoothing between quadrants and no floor substituted for a genuine 0 - lets you compare the unprocessed input directly against the smooth ring/model output.">
+      <input type="checkbox" id="layLiteral"> Reported radii (literal)</label>
     <label>Time
       <button id="tPrev" class="stepBtn" title="Step back (←)" aria-label="Step back">◀</button>
       <input type="range" id="tslider" min="0" max="0" value="0" style="width:180px">
@@ -232,6 +234,14 @@
             64/50/34-kt wind radii (ground truth).</li>
           <li><b>Colored raster</b> &mdash; the tool's modeled wind field,
             built from those same radii.</li>
+          <li>The solid rings are already an interpolation, not the raw
+            report: JTWC only gives one number per quadrant, smoothly
+            blended between quadrant centers here. Turn on
+            <b>Reported radii (literal)</b> in the toolbar to see each
+            quadrant's own number held flat across its full 90&deg; span
+            instead, stepped at the compass boundaries - the actual,
+            unprocessed input, laid directly over both the smooth ring
+            and the raster.</li>
           <li><span class="swatch dash" style="border-color:#db2777"></span>
             <b>Magenta dashed ring</b> &mdash; actual reported RMW.</li>
           <li><span class="swatch dash" style="border-color:#0d9488"></span>
@@ -270,6 +280,11 @@ const KM2NM = 1 / 1.852;
 const EARTH_R_NM = 3440.065;
 const QUADS = ['NE', 'SE', 'SW', 'NW'];
 const QUAD_AZ = { NE: 45, SE: 135, SW: 225, NW: 315 };
+// Compass quadrant BOUNDARIES (not centers) - NE spans 0-90deg, SE
+// 90-180, SW 180-270, NW 270-360. Used only by the "literal reported
+// radii" layer (see literalRadiiPolygon() below); everything else keys
+// off QUAD_AZ's quadrant centers instead.
+const QUAD_BOUNDS = { NE: [0, 90], SE: [90, 180], SW: [180, 270], NW: [270, 360] };
 
 // ---------------------------------------------------------------------------
 // Vortex math - port of TCWind_JTWC.py. Scalar rather than array based, which
@@ -626,9 +641,14 @@ legend.onAdd = function () {
     '<span class="swatch" style="border-color:#dc2626"></span>64 kt radius<br>' +
     '<span class="swatch" style="border-color:#f97316"></span>50 kt radius<br>' +
     '<span class="swatch" style="border-color:#eab308"></span>34 kt radius<br>' +
+    '<span class="swatch dash" style="border-color:#111"></span>same, literal&#8224;<br>' +
     '<span class="swatch dash" style="border-color:#db2777"></span>actual RMW*<br>' +
     '<span class="swatch dash" style="border-color:#0d9488"></span>actual ROCI*<br>' +
-    '<div class="legendNote">*Archived Cases only</div>';
+    '<div class="legendNote">*Archived Cases only. &#8224;"Reported radii ' +
+    '(literal)" checkbox - same colors as the solid rings above, each ' +
+    'quadrant held constant across its own 90&deg; span and stepped at ' +
+    'the compass boundaries, instead of the solid rings\' smooth ' +
+    'interpolation between quadrant centers.</div>';
   return div;
 };
 legend.addTo(map);
@@ -704,6 +724,30 @@ function haloCircle(latlng, radius, opts) {
   return L.circleMarker(latlng, Object.assign({ radius: radius }, opts)).addTo(radiiLayer);
 }
 
+// The raw quadrant radii exactly as reported: each quadrant's own value
+// held constant across its full 90deg compass span (no smoothing/curve
+// between quadrants, no floor substituted for a genuine 0 - a "000 NM"
+// quadrant collapses all the way to the storm center, exactly as JTWC/
+// best-track reported it), connected quadrant-to-quadrant by a straight
+// radial step at each compass boundary (0/90/180/270) - perpendicular to
+// the arcs on either side of it, hence the right-angle corners. This is
+// deliberately NOT what azimuthalRadius()/the model use (those smoothly
+// interpolate between quadrant CENTERS instead) - it exists so the exact,
+// unprocessed input can be compared side-by-side with what the tool
+// actually built from it, rather than trusting that the smooth ring is a
+// faithful copy of the report.
+function literalRadiiPolygon(lat0, lon0, quadDict) {
+  const STEP = 3; // deg, resolution of the arc across one quadrant
+  const pts = [];
+  for (const q of QUADS) {
+    const [a0, a1] = QUAD_BOUNDS[q];
+    const r = quadDict[q] || 0;
+    for (let az = a0; az < a1; az += STEP) pts.push(destPoint(lat0, lon0, az, r));
+    pts.push(destPoint(lat0, lon0, a1, r));   // exact boundary vertex
+  }
+  return pts;
+}
+
 function drawRadii(items) {
   radiiLayer.clearLayers();
   const colors = { 64: '#dc2626', 50: '#f97316', 34: '#eab308' };
@@ -744,6 +788,17 @@ function drawRadii(items) {
       haloLine(L.polygon, ring, { color: colors[thr], weight: 2.5, fill: false,
                                   opacity: 1 })
         .bindTooltip(thr + ' kt radius');
+
+      if (document.getElementById('layLiteral').checked) {
+        const lit = literalRadiiPolygon(snap.lat, snap.lon, snap.radii[thr]);
+        haloLine(L.polygon, lit, { color: colors[thr], weight: 1.5, fill: false,
+                                   opacity: .9, dashArray: '1,4' })
+          .bindTooltip(thr + ' kt radius, as reported (literal, unsmoothed)' +
+                       ' - NE ' + (snap.radii[thr].NE || 0) + ', SE ' +
+                       (snap.radii[thr].SE || 0) + ', SW ' +
+                       (snap.radii[thr].SW || 0) + ', NW ' +
+                       (snap.radii[thr].NW || 0) + ' nm');
+      }
     }
     // Best-track QC only: the storm's own observed RMW, ground truth,
     // against which rmax (the tool's estimate, dashed core the field is
@@ -1294,6 +1349,7 @@ document.addEventListener('keydown', e => {
 document.getElementById('reload').onclick = () => load(true);
 document.getElementById('tslider').oninput = render;
 document.getElementById('layRadii').onchange = render;
+document.getElementById('layLiteral').onchange = render;
 document.getElementById('layField').onchange = () => {
   if (!document.getElementById('layField').checked && fieldOverlay) {
     map.removeLayer(fieldOverlay);
