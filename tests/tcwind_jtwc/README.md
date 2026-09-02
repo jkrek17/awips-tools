@@ -142,7 +142,7 @@ particular one. The radii clamp still helps on top of that when it
 binds (22% of records, bias -6.0 nm vs -4.3 nm where it doesn't). Full
 breakdown in each script's output.
 
-## Best-track QC panel (in the web app)
+## Archived Cases and Findings panels (in the web app)
 
 `prep_besttrack_data.py` turns the same IBTrACS WP-basin archive into
 three datasets baked into the deployed web app itself
@@ -150,23 +150,27 @@ three datasets baked into the deployed web app itself
 `tests/tcwind_jtwc/data/*.json` holds the same data for reference), and
 exposed via `getBestTrackSample()`/`getBestTrackScatter()`/
 `getHollandZoneSummary()` in `Code.gs`, the same `google.script.run`
-idiom as fetching live bulletins:
+idiom as fetching live bulletins. These feed two separate panels/tabs
+in the toolbar - "Archived Cases" (the storm-by-storm map viewer) and
+"Findings" (the aggregate charts and a written summary), kept apart so
+picking a case to inspect and reading the overall verification results
+aren't competing for the same screen:
 
 - **A 100-storm random sample** (2001-2024, seeded, so it's
   reproducible; capped at 100 so the storm-picker dropdown and the map
   stay responsive - the underlying archive has ~2,200 eligible storms),
   each with its full track: position, Vmax, reported wind radii, and
   observed RMW/ROCI wherever JTWC's post-season analysis reported them.
-  The "Best-track QC" button in the web app builds a synthetic `storm`
-  object from whichever one is picked, in the exact shape a parsed
-  live bulletin produces, so every existing map/diagnostics function
-  (`drawRadii`, `drawField`, `resolveRmax`, the time-history and
-  azimuthal-profile charts) draws it with no changes at all. The only
-  new drawing code is a dashed ring each for the storm's actual RMW
-  (magenta) and ROCI (teal), a Rmax-vs-RMW delta in the status line,
-  and - in the azimuthal-profile chart - an overlaid Holland (1980)
-  curve, solved from the same Vmax/Rmax/R34 anchors, so its divergence
-  from the tool's own quadrant curves is visible per-storm.
+  The "Archived Cases" tab builds a synthetic `storm` object from
+  whichever one is picked, in the exact shape a parsed live bulletin
+  produces, so every existing map/diagnostics function (`drawRadii`,
+  `drawField`, `resolveRmax`, the time-history and azimuthal-profile
+  charts) draws it with no changes at all. The only new drawing code
+  is a dashed ring each for the storm's actual RMW (magenta) and ROCI
+  (teal), a Rmax-vs-RMW delta in the status line, and - in the
+  azimuthal-profile chart - an overlaid Holland (1980) curve, solved
+  from the same Vmax/Rmax/R34 anchors, so its divergence from the
+  tool's own quadrant curves is visible per-storm.
 - **Every usable record in the full archive** (~16,200, not just the
   100-storm sample), compacted to `[vmax, lat, rmw, r64min, r50min,
   r34min]` per record - just enough for the client to run the real
@@ -183,12 +187,13 @@ idiom as fetching live bulletins:
   scatter, so the "near-core disagreement is worst" finding is visible
   as a chart rather than only as a paragraph of numbers.
 
-The panel itself carries a written guide and findings summary (not just
-chart captions) explaining where the live data and the best-track data
-each come from, how to read the map's rings/raster, and the headline
-conclusions from all three checks in plain language - so a forecaster
-using it doesn't have to separately go read this file or the scripts'
-terminal output to know what to make of it.
+Both panels carry a written guide (not just chart captions): Archived
+Cases explains how to read the map's rings/raster for whichever storm
+is picked; Findings explains where the live data and the best-track
+data each come from and states the headline conclusions from all three
+checks in plain language - so a forecaster using either tab doesn't
+have to separately go read this file or the scripts' terminal output
+to know what to make of it.
 
 2001 is the cutoff for both datasets: JTWC's WestPac wind-radii/RMW
 reporting is present on well under half of records before that, so an

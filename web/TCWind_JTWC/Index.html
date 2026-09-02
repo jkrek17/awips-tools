@@ -28,23 +28,23 @@
   #paste textarea { width:100%; height:110px; font-family:ui-monospace,monospace;
                     font-size:11px; }
   .fit-ok { color:#166534; } .fit-bad { color:#b91c1c; font-weight:600; }
-  #diag, #besttrack { display:none; padding:8px 10px; background:#f8fafc;
+  #diag, #archived, #findings { display:none; padding:8px 10px; background:#f8fafc;
                       border-bottom:1px solid #cbd5e1; }
-  #diag .diagRow, #besttrack .diagRow { display:flex; gap:18px; flex-wrap:wrap;
+  #diag .diagRow, #findings .diagRow { display:flex; gap:18px; flex-wrap:wrap;
                    align-items:flex-start; }
-  #diag .diagCol, #besttrack .diagCol { display:flex; flex-direction:column;
+  #diag .diagCol, #findings .diagCol { display:flex; flex-direction:column;
                    gap:4px; align-items:flex-start; flex:0 0 auto; }
   /* Canvas has no natural CSS size of its own beyond its width/height
      attributes, and a column flexbox's default align-items:stretch will
      otherwise blow it up to fill the row - pin both explicitly instead
      of relying on flex sizing. */
-  #diag canvas, #besttrack canvas { background:#fff; border:1px solid #d4d4d8;
+  #diag canvas, #findings canvas { background:#fff; border:1px solid #d4d4d8;
                  border-radius:3px; display:block; max-width:none; }
   #histCanvas, #histCanvas + .diagCap { width:620px; }
   #profCanvas, #profCanvas + .diagCap { width:360px; }
   #btScatterCanvas, #btScatterCanvas + .diagCap { width:620px; }
   #btZoneCanvas, #btZoneCanvas + .diagCap { width:360px; }
-  #diag .diagCap, #besttrack .diagCap { font-size:11px; color:#52525b; }
+  #diag .diagCap, #findings .diagCap { font-size:11px; color:#52525b; }
   #diagStorm, #btStorm { margin-bottom:6px; }
   .btGuide { font-size:11px; color:#3f3f46; background:#fff; border:1px solid #d4d4d8;
              border-radius:4px; padding:8px 10px; margin:8px 0; max-width:1000px; }
@@ -64,7 +64,8 @@
     <button id="reload">Fetch bulletins</button>
     <button id="togglePaste">Paste text</button>
     <button id="toggleDiag">Diagnostics</button>
-    <button id="toggleBestTrack">Best-track QC</button>
+    <button id="toggleArchived">Archived Cases</button>
+    <button id="toggleFindings">Findings</button>
     <label><input type="checkbox" id="layRadii" checked> Radii &amp; track</label>
     <label><input type="checkbox" id="layField" checked> Wind field</label>
     <label>Time <input type="range" id="tslider" min="0" max="0" value="0" style="width:220px"></label>
@@ -74,11 +75,11 @@
   <div style="padding:2px 10px;background:#f4f4f5;font-size:11px;color:#71717a;
               border-bottom:1px solid #e4e4e7;">
     Live data: real-time JTWC warnings from NOAA's Telecommunications
-    Gateway (tgftp.nws.noaa.gov). "Best-track QC" instead uses JTWC's
-    post-season reanalysis via NOAA NCEI's public
+    Gateway (tgftp.nws.noaa.gov). "Archived Cases" and "Findings" instead
+    use JTWC's post-season reanalysis via NOAA NCEI's public
     <a href="https://www.ncei.noaa.gov/products/international-best-track-archive"
        target="_blank" style="color:inherit;">IBTrACS</a> archive - see
-    that panel for details.
+    the Findings tab for details.
   </div>
 
   <div id="paste">
@@ -115,7 +116,7 @@
     </div>
   </div>
 
-  <div id="besttrack">
+  <div id="archived">
     <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
       <label>Storm <select id="btStorm"><option>Loading storms…</option></select></label>
       <button id="btExit">Back to live bulletins</button>
@@ -123,21 +124,12 @@
     </div>
 
     <div class="btGuide">
-      <b>Where this data comes from:</b> the live map ("Fetch bulletins")
-      reads real-time JTWC tropical cyclone warnings from NOAA's
-      Telecommunications Gateway (<code>tgftp.nws.noaa.gov</code>) - the
-      same text products this tool's GFE counterpart ingests operationally.
-      This Best-track QC panel instead reads JTWC's own <i>post-season</i>
-      reanalysis - the corrected, final position/intensity/wind-radii/RMW/
-      ROCI for each storm - from NOAA NCEI's public
-      <a href="https://www.ncei.noaa.gov/products/international-best-track-archive"
-         target="_blank">IBTrACS</a> archive (agency <code>jtwc_wp</code>,
-      WestPac basin, 2001-2024 - JTWC's WestPac wind-radii/RMW reporting is
-      essentially absent before 2001, and 2025-2026 aren't finalized/
-      ingested into IBTrACS yet). In other words: the live map shows what
-      the tool does with a real-time warning; this panel shows how that
-      same tool's math holds up once the true, later-corrected answer is
-      known.
+      <b>Archived Cases</b> replays one real storm's JTWC <i>post-season</i>
+      best-track reanalysis - not a live bulletin - through this same
+      map/diagnostics view, so the tool's output can be checked against the
+      later-corrected, true answer. See the <b>Findings</b> tab for where
+      this data comes from, how it compares to the live data source, and
+      what we've learned from it in aggregate across ~16,000 records.
       <br><br>
       <b>How to read the map above once a storm is picked:</b> black/white
       dot is the storm center at the selected time, dashed black line is
@@ -146,29 +138,54 @@
       underneath is the tool's modeled wind field, built from those same
       radii. Magenta dashed ring = actual reported RMW; teal dashed ring =
       actual ROCI, a pressure-based size measure, not directly comparable
-      to a wind radius (see the ROCI chart's caption). Where the raster's
+      to a wind radius (see Findings for the caveat). Where the raster's
       bright core sits relative to the magenta ring, and how far it fades
-      out relative to the teal ring, is the comparison that matters.
+      out relative to the teal ring, is the comparison that matters. In
+      Diagnostics, the azimuthal-profile chart also overlays an independent
+      Holland (1980) curve for the selected storm/time.
+    </div>
+  </div>
+
+  <div id="findings">
+    <div class="btGuide">
+      <b>Where this data comes from:</b> the live map ("Fetch bulletins")
+      reads real-time JTWC tropical cyclone warnings from NOAA's
+      Telecommunications Gateway (<code>tgftp.nws.noaa.gov</code>) - the
+      same text products this tool's GFE counterpart ingests operationally.
+      <b>Archived Cases</b> instead reads JTWC's own <i>post-season</i>
+      reanalysis - the corrected, final position/intensity/wind-radii/RMW/
+      ROCI for each storm - from NOAA NCEI's public
+      <a href="https://www.ncei.noaa.gov/products/international-best-track-archive"
+         target="_blank">IBTrACS</a> archive (agency <code>jtwc_wp</code>,
+      WestPac basin, 2001-2024 - JTWC's WestPac wind-radii/RMW reporting is
+      essentially absent before 2001, and 2025-2026 aren't finalized/
+      ingested into IBTrACS yet). In other words: the live map shows what
+      the tool does with a real-time warning; the charts below (and the
+      Archived Cases tab, storm by storm) show how that same tool's math
+      holds up once the true, later-corrected answer is known.
       <br><br>
       <b>What we've found so far</b> (full numbers in
       <code>tests/tcwind_jtwc/README.md</code>):
       <ul>
-        <li><b>Rmax</b> (magenta ring vs. the field's bright core): now
-          unbiased on average after refitting to WestPac data, but still
-          has close to no skill predicting any <i>one</i> weak storm's
-          Rmax (r=0.04 for depressions) - treat it as a reasonable
-          long-run average, not a real prediction for that storm.</li>
-        <li><b>Field size</b> (raster extent vs. teal ROCI ring): badly
-          undersized for weak systems (most have no reported radii to
-          build a field from at all), roughly right for typhoon-strength
-          systems aside from the outer taper reaching a bit too far in
-          light wind.</li>
-        <li><b>Field shape</b> (colored quadrant curves vs. the dashed
-          Holland curve, in Diagnostics): the two models agree least just
-          outside the core (Rmax-R64) and progressively more moving
-          outward - the near-core/eyewall region is where this tool's
-          shape choice is least certain, which is also operationally
-          where it matters most.</li>
+        <li><b>Rmax</b> (scatter below, and the magenta RMW ring vs. the
+          field's bright core in Archived Cases): now unbiased on average
+          after refitting to WestPac data, but still has close to no skill
+          predicting any <i>one</i> weak storm's Rmax (r=0.04 for
+          depressions) - treat it as a reasonable long-run average, not a
+          real prediction for that storm.</li>
+        <li><b>Field size</b> (raster extent vs. actual ROCI, the teal
+          ring in Archived Cases - a pressure-based size measure, not
+          directly comparable to a wind radius): badly undersized for weak
+          systems (most have no reported radii to build a field from at
+          all), roughly right for typhoon-strength systems aside from the
+          outer taper reaching a bit too far in light wind.</li>
+        <li><b>Field shape</b> (zone chart below; the colored quadrant
+          curves vs. the dashed Holland curve in Archived Cases'
+          Diagnostics view): the two models agree least just outside the
+          core (Rmax-R64) and progressively more moving outward - the
+          near-core/eyewall region is where this tool's shape choice is
+          least certain, which is also operationally where it matters
+          most.</li>
       </ul>
     </div>
 
@@ -1238,17 +1255,22 @@ document.getElementById('toggleDiag').onclick = () => {
   if (d.style.display === 'block') render();
 };
 document.getElementById('diagStorm').onchange = render;
-document.getElementById('toggleBestTrack').onclick = () => {
-  const p = document.getElementById('besttrack');
+document.getElementById('toggleArchived').onclick = () => {
+  const p = document.getElementById('archived');
   const show = p.style.display !== 'block';
   p.style.display = show ? 'block' : 'none';
   if (show && !bestTrackSample) loadBestTrackSample();
-  if (show) { loadBestTrackScatter(); loadHollandZoneSummary(); }
 };
 document.getElementById('btStorm').onchange = e => selectBestTrackStorm(parseInt(e.target.value, 10));
 document.getElementById('btExit').onclick = () => {
-  document.getElementById('besttrack').style.display = 'none';
+  document.getElementById('archived').style.display = 'none';
   load(false);
+};
+document.getElementById('toggleFindings').onclick = () => {
+  const p = document.getElementById('findings');
+  const show = p.style.display !== 'block';
+  p.style.display = show ? 'block' : 'none';
+  if (show) { loadBestTrackScatter(); loadHollandZoneSummary(); }
 };
 document.getElementById('parsePaste').onclick = () => {
   const txt = document.getElementById('pastebox').value;
