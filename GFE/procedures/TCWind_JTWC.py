@@ -674,7 +674,17 @@ def _gtcmProfile(r, vmax, a, rm, ri, x1, x2):
     rm = max(float(rm), 1e-3)
     ri = max(float(ri), rm * 1.0001)
     safe = np.maximum(np.asarray(r, dtype=float), 1e-6)
-    A = (ri / rm) ** x1 * (rm / ri) ** x2
+    # A exists solely to make V continuous across ri, which the Users Guide
+    # states in words. Continuity requires
+    #     (rm/ri)**x1 == A * (rm/ri)**x2   ->   A = (rm/ri)**(x1 - x2)
+    # The guide PRINTS A = (ri/rm)**x1 (rm/ri)**x2, which does not satisfy
+    # that except in the degenerate x1 == x2 case - it is a typo, or a
+    # superscript mangled in the PDF. Transcribing it literally left a mean
+    # +4.4 kt step at ri (max +44 kt) and made the GTCM field measurably
+    # rougher than the per-quadrant construction it replaced, which is the
+    # opposite of the reason for the switch. Caught by the coherence check
+    # in tests/tcwind_jtwc/verify_gtcm.py; see its radial-value-jump column.
+    A = (rm / ri) ** (x1 - x2)
     return np.where(safe < rm, vs * (safe / rm),
                     np.where(safe < ri,
                              vs * (rm / safe) ** x1,

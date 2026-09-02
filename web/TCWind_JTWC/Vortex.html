@@ -308,7 +308,11 @@ function gtcmProfile(r, vmax, a, rm, ri, x1, x2) {
   var safe = Math.max(Number(r), 1e-6);
   if (safe < rm) return vs * (safe / rm);
   if (safe < ri) return vs * Math.pow(rm / safe, x1);
-  var A = Math.pow(ri / rm, x1) * Math.pow(rm / ri, x2);
+  // A makes V continuous across ri: (rm/ri)^x1 == A*(rm/ri)^x2, so
+  // A = (rm/ri)^(x1-x2).  The Users Guide prints a different expression that
+  // is only continuous when x1 == x2; see the matching comment in
+  // TCWind_JTWC.py's _gtcmProfile().
+  var A = Math.pow(rm / ri, x1 - x2);
   return A * vs * Math.pow(rm / safe, x2);
 }
 
