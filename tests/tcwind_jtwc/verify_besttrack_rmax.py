@@ -23,10 +23,11 @@ the tool's physical assumption - not a parser test, and not circular
 Usage:
     python3 verify_besttrack_rmax.py [path/to/ibtracs.csv]
 
-Downloads the NCEI IBTrACS "last 3 years" WMO CSV to a cache file if no
-path is given and none is cached yet (~10 MB,
-https://www.ncei.noaa.gov/data/international-best-track-archive-for-
-climate-stewardship-ibtracs/v04r01/access/csv/ibtracs.last3years.list.v04r01.csv).
+Downloads NCEI IBTrACS' WestPac-basin CSV to a cache file if no path is
+given and none is cached yet (~115 MB - it's basin-filtered, not
+date-filtered, so it's the full 2001-2024 JTWC digitized best-track
+record, https://www.ncei.noaa.gov/data/international-best-track-archive-
+for-climate-stewardship-ibtracs/v04r01/access/csv/ibtracs.WP.list.v04r01.csv).
 """
 import csv
 import math
@@ -40,8 +41,8 @@ import TCWind_JTWC as tc
 
 IBTRACS_URL = ("https://www.ncei.noaa.gov/data/international-best-track-"
                "archive-for-climate-stewardship-ibtracs/v04r01/access/csv/"
-               "ibtracs.last3years.list.v04r01.csv")
-CACHE = "/tmp/claude-0/-home-user-awips-tools/738f763c-b8e3-58a4-9745-13d9f53ffc1b/scratchpad/ibtracs_last3.csv"
+               "ibtracs.WP.list.v04r01.csv")
+CACHE = "/tmp/claude-0/-home-user-awips-tools/738f763c-b8e3-58a4-9745-13d9f53ffc1b/scratchpad/ibtracs_wp_full.csv"
 
 QUADS = ["NE", "SE", "SW", "NW"]
 
@@ -133,6 +134,15 @@ def category(vmax):
     return "TY+ (64kt+)"
 
 
+# The original Atlantic-tuned Willoughby (2006) coefficients, hardcoded here
+# (independent of whatever tc.willoughbyRmax() currently uses) so this
+# report always shows the "before" picture, even after willoughbyRmax()
+# itself gets refit - see fit_westpac_rmax.py.
+def atlantic_willoughby_rmax(vmax_kt, lat_deg):
+    v_ms = vmax_kt * tc.KT2MS
+    return 46.4 * math.exp(-0.0155 * v_ms + 0.0169 * abs(lat_deg)) * tc.KM2NM
+
+
 def main():
     path = sys.argv[1] if len(sys.argv) > 1 else CACHE
     records = [rec for row in load_rows(path)
@@ -140,8 +150,9 @@ def main():
     print("%d usable JTWC best-track records (WP basin, RMW present)\n"
           % len(records))
 
-    willoughby_only = []
-    clamped = []
+    atlantic_only = []
+    current_only = []
+    current_clamped = []
     by_cat_clamped = {}
     clamp_bound = []
     clamp_not_bound = []
@@ -151,23 +162,26 @@ def main():
         snap.lat, snap.lon, snap.vmax = rec["lat"], rec["lon"], rec["vmax"]
         snap.radii = rec["radii"]
 
+        a = atlantic_willoughby_rmax(snap.vmax, snap.lat)
         w = tc.willoughbyRmax(snap.vmax, snap.lat)
         c = tc.resolveRmax(snap, 0.0)
 
-        willoughby_only.append((w, rec["rmw"]))
-        clamped.append((c, rec["rmw"]))
+        atlantic_only.append((a, rec["rmw"]))
+        current_only.append((w, rec["rmw"]))
+        current_clamped.append((c, rec["rmw"]))
         by_cat_clamped.setdefault(category(rec["vmax"]), []).append((c, rec["rmw"]))
         if c < w - 1e-6:
             clamp_bound.append((c, rec["rmw"]))
         else:
             clamp_not_bound.append((c, rec["rmw"]))
 
-    print("Willoughby (2006) regression alone, vs JTWC best-track RMW:")
-    fmt("all records", stats(willoughby_only))
+    print("Regression alone (no radii clamp), vs JTWC best-track RMW:")
+    fmt("original Willoughby (2006)", stats(atlantic_only))
+    fmt("currently live in the tool", stats(current_only))
 
     print("\nTool's actual resolveRmax() (regression, clamped by radii "
           "when reported), vs JTWC best-track RMW:")
-    fmt("all records", stats(clamped))
+    fmt("all records", stats(current_clamped))
     print()
     for cat in ("TD (<34kt)", "TS (34-63kt)", "TY+ (64kt+)"):
         fmt(cat, stats(by_cat_clamped.get(cat, [])))
@@ -177,8 +191,8 @@ def main():
     fmt("clamp not bound (regression won)", stats(clamp_not_bound))
 
     print("\n%d of %d records (%.0f%%) had the clamp bind - i.e. the radii "
-          "in the bulletin, not the Atlantic-tuned regression, actually "
-          "determined the tool's Rmax most of the time this data is used."
+          "in the bulletin, not the regression, actually determined the "
+          "tool's Rmax most of the time this data is used."
           % (len(clamp_bound), len(records),
              100.0 * len(clamp_bound) / len(records) if records else 0))
 

@@ -122,9 +122,18 @@ const QUAD_AZ = { NE: 45, SE: 135, SW: 225, NW: 315 };
 // is slower but keeps it readable next to the Python.
 // ---------------------------------------------------------------------------
 
+// Same functional form as Willoughby et al. (2006) but refit against
+// 16,103 real JTWC WestPac best-track records (2001-2024, IBTrACS, agency
+// jtwc_wp) rather than Willoughby's Atlantic coefficients (46.4, -0.0155,
+// 0.0169), which underestimated JTWC's own post-season RMW by ~10 nm on
+// average. Out-of-sample bias on a held-out 20% of storms: -3.3 nm vs
+// -11.5 nm for the original. MUST match willoughbyRmax() in
+// TCWind_JTWC.py - see tests/tcwind_jtwc/fit_westpac_rmax.py for how
+// these were produced and tests/tcwind_jtwc/verify_besttrack_rmax.py for
+// the validation.
 function willoughbyRmax(vmaxKt, latDeg) {
   const vms = vmaxKt * KT2MS;
-  return 46.4 * Math.exp(-0.0155 * vms + 0.0169 * Math.abs(latDeg)) * KM2NM;
+  return 97.892 * Math.exp(-0.023895 * vms + 0.002528 * Math.abs(latDeg)) * KM2NM;
 }
 
 function resolveRmax(snap, overrideNm) {

@@ -64,9 +64,10 @@ MOTION_ASYMMETRY_FRACTION = 0.5
 # affects direction only, never speed.
 INFLOW_ANGLE_DEG = 22.0
 
-# Radius of maximum wind, in nm.  0 uses the Willoughby (2006) regression,
-# clamped below the innermost reported ring.  A nonzero value is also
-# clamped, so only settings below the clamp have any effect.
+# Radius of maximum wind, in nm.  0 uses the Willoughby-form regression
+# (see willoughbyRmax()), clamped below the innermost reported ring.  A
+# nonzero value is also clamped, so only settings below the clamp have
+# any effect.
 RMAX_OVERRIDE_NM = 0.0
 
 # Outside R34 the bulletin says nothing, so the profile tapers exponentially
@@ -493,18 +494,36 @@ def interpolateTrack(taus, epoch):
 # ---------------------------------------------------------------------------
 
 def willoughbyRmax(vmax_kt, lat_deg):
-    """Willoughby et al. (2006) Rmax regression, returned in nautical miles."""
+    """Rmax regression, returned in nautical miles.
+
+    Same functional form as Willoughby et al. (2006) - exponential in
+    intensity and latitude - but refit against 16,103 real JTWC WestPac
+    best-track records (2001-2024, IBTrACS, agency jtwc_wp) rather than
+    Willoughby's original Atlantic coefficients (A=46.4, B=-0.0155,
+    C=0.0169). Those underestimated JTWC's own post-season RMW by ~10 nm
+    on average across this dataset (worst for weak systems); this refit's
+    out-of-sample bias on a held-out 20% of storms (never used for
+    fitting) is -3.3 nm, MAE 10.7 nm, vs -11.5 nm / 14.4 nm for the
+    original coefficients over the same held-out storms. See
+    tests/tcwind_jtwc/fit_westpac_rmax.py, which produced these
+    coefficients and reports the full validation, and
+    tests/tcwind_jtwc/verify_besttrack_rmax.py, which reproduces the
+    original comparison this replaces.
+    """
     v_ms = vmax_kt * KT2MS
-    rmax_km = 46.4 * np.exp(-0.0155 * v_ms + 0.0169 * abs(lat_deg))
+    rmax_km = 97.892 * np.exp(-0.023895 * v_ms + 0.002528 * abs(lat_deg))
     return rmax_km * KM2NM
 
 
 def resolveRmax(snapshot, override_nm=0.0):
     """Rmax estimate, clamped so it stays inside the highest reported ring.
 
-    JTWC never gives Rmax.  The regression is a reasonable prior but it is
-    tuned to Atlantic climatology and routinely disagrees with the radii in
-    the same bulletin for small WestPac systems, so the reported rings win.
+    JTWC never gives Rmax.  willoughbyRmax() is fit to WestPac best-track
+    data and is unbiased on average (see verify_besttrack_rmax.py), but a
+    2-parameter (intensity, latitude) regression has essentially no skill
+    predicting any *individual* storm's Rmax, especially a weak one - the
+    reported radii, when there are any, are real per-storm information the
+    regression cannot have, so they win.
     """
     if override_nm and override_nm > 0:
         rmax = float(override_nm)

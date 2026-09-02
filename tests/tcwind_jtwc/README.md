@@ -1,14 +1,15 @@
 # TCWind_JTWC test / evaluation suite
 
 Regression and verification tooling for `GFE/procedures/TCWind_JTWC.py`
-and its web-preview port, `web/TCWind_JTWC/{Code.gs,Index.html}`. Three
-independent questions, three scripts:
+and its web-preview port, `web/TCWind_JTWC/{Code.gs,Index.html}`. Four
+independent questions, four scripts:
 
 | Question | Script |
 |---|---|
 | Does the parser still produce what we expect on known inputs? | `test_parser_golden.py` |
 | Do the Python and JS ports actually agree with each other? | `compare_py_js.py` |
 | Is the tool's physics (Rmax) actually right, checked against ground truth? | `verify_besttrack_rmax.py` |
+| Can that regression be made to fit WestPac better? | `fit_westpac_rmax.py` |
 
 ## Setup
 
@@ -105,18 +106,34 @@ actually trigger.
 
 **`verify_besttrack_rmax.py`** compared the tool's Rmax against real
 JTWC post-season best-track RMW (IBTrACS, `agency=jtwc_wp`, WP basin,
-last 3 years, n=1347) - something no real-time bulletin can ever check
+2001-2024, n=16,103) - something no real-time bulletin can ever check
 against, since JTWC doesn't report an observed Rmax operationally. The
-result: **the tool underestimates Rmax by roughly 12-14 nm on average**,
-worst for weak systems (TD: bias -22 nm, and the regression doesn't
-even correlate with the true value in the right direction, r=-0.28)
-and much better for typhoon-strength systems (TY+: bias -3 nm, r=0.36).
-The radii clamp helps when it binds (26% of records) but doesn't fully
-correct the underlying regression's bias. Full breakdown in the
-script's output. This confirms, with a number instead of a hunch, the
-tool's own code comment that Willoughby (2006) is an Atlantic-tuned
-prior that doesn't transfer cleanly to WestPac - and specifically says
-*how* it fails (systematic underestimate, worst for weak systems) - so
-a forecaster relying on Rmax for a weak, radii-less system like SAUDEL
-should treat it as optimistic (too small) rather than as a neutral
-guess.
+original Willoughby (2006) coefficients underestimated Rmax by ~10 nm
+on average, worst for weak systems (TD: bias -22 nm on the 3-year
+sample this was first measured on, and the regression didn't even
+correlate with the true value in the right direction, r=-0.28) and much
+better for typhoon-strength systems.
+
+**`fit_westpac_rmax.py`** refit the same functional form (still
+exponential in intensity and latitude) against this data, split by
+storm into 80% train / 20% held-out test so the validation isn't just
+measuring how well it memorized the fitting data. Out-of-sample on the
+held-out storms: bias -11.5 nm -> -3.3 nm, MAE 14.4 -> 10.7 nm, RMSE
+20.7 -> 16.7 nm, r 0.43 -> 0.50. **This refit is now what's live** in
+both `willoughbyRmax()` implementations (coefficients A=97.892,
+B=-0.023895, C=0.002528, replacing Willoughby's A=46.4, B=-0.0155,
+C=0.0169).
+
+Re-running `verify_besttrack_rmax.py` against the now-live regression
+(full dataset, in-sample): bias -10.2 -> -2.7 nm, MAE 13.1 -> 9.7 nm,
+RMSE 19.5 -> 15.5 nm, r 0.51 -> 0.59. By category, the refit fixed the
+*systematic* underestimate everywhere (TD bias -22 -> -3.6 nm, TS -15.5
+-> -7.6 nm, TY+ -3.2 -> -2.5 nm) but weak systems are still barely
+predictable at all beyond that average correction - TD's correlation is
+r=0.04, essentially no skill storm-to-storm even now. That's an honest
+limit of a 2-parameter (intensity, latitude) regression, not something
+a coefficient refit can fix: expect a WestPac Rmax estimate to be
+unbiased on average for a weak system, but not to be *right* for any
+particular one. The radii clamp still helps on top of that when it
+binds (22% of records, bias -6.0 nm vs -4.3 nm where it doesn't). Full
+breakdown in each script's output.
