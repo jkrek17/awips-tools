@@ -5,17 +5,21 @@
                every reported radius exactly, by construction.  NHC's legacy
                TCMWindTool worked this way.
 
-    "wtcm"     one symmetric modified-Rankine vortex plus a single wavenumber-1
-               motion term (Schwerdt 1979), fit by least squares against all
-               reported radii together.  This is the construction NHC's Gridded
-               TCM uses, so it is what the Atlantic/EastPac grids OPC already
-               ingests look like.
+    "gtcm"     NHC's Gridded TCM / WTCM, implemented from the Gridded TCM Users
+               Guide v1.9.1: one symmetric modified Rankine vortex with two size
+               parameters (eq. 3) plus a wavenumber-1 asymmetry, fit by weighted
+               least squares on WIND error (eq. 7).  This is what builds the
+               Atlantic/EastPac grids OPC already ingests.
 
 Two questions, answered separately:
 
   1. RING REPRODUCTION - how far does each construction land from the radii the
-     bulletin actually reported?  This is the tool's contract, so "perquad" is
-     exact by definition and the only interesting number is what "wtcm" costs.
+     bulletin reported?  Read this one carefully.  GTCM fits to the quadrant
+     AVERAGE wind, converting the reported quadrant MAXIMUM with a 0.85 factor
+     (guide step 2c), so its rings are expected to sit ~15% inside the reported
+     value.  That is the model working as specified, not an error.  Both
+     framings are reported below: against the reported radius, and against the
+     0.85-scaled radius GTCM actually fits to.
 
   2. FIELD DIFFERENCE - how different are the two wind fields a forecaster would
      actually see, in kt and in the 34/50/64 kt areas that drive warnings?  A
@@ -130,18 +134,18 @@ def field_difference(snap):
         lons[i, :] = lo
 
     fields = {}
-    for method in ("perquad", "wtcm"):
+    for method in ("perquad", "gtcm"):
         mag, _d, _r, _r34 = T.buildVortex(lats, lons, snap, rmax, method=method)
         fields[method] = np.asarray(mag, dtype=float)
 
-    diff = np.abs(fields["wtcm"] - fields["perquad"])
+    diff = np.abs(fields["gtcm"] - fields["perquad"])
     # Area weight for a polar cell is r*dr*dtheta; constant factors cancel in a
     # ratio, so r alone is enough.
     weight = R
     areas = {}
     for threshold in (34, 50, 64):
         a_pq = float(np.sum(weight * (fields["perquad"] >= threshold)))
-        a_wt = float(np.sum(weight * (fields["wtcm"] >= threshold)))
+        a_wt = float(np.sum(weight * (fields["gtcm"] >= threshold)))
         areas[threshold] = (a_wt / a_pq) if a_pq > 0 else float("nan")
     return float(diff.mean()), float(np.percentile(diff, 95)), areas
 
@@ -158,11 +162,15 @@ def main():
         storms = json.load(fh)
 
     per_thr = {"perquad": {34: [], 50: [], 64: []},
-               "wtcm": {34: [], 50: [], 64: []}}
+               "gtcm": {34: [], 50: [], 64: []}}
+    # Same errors, measured against the quadrant-average radius GTCM actually
+    # fits to rather than the quadrant-maximum the bulletin reports.
+    per_thr_fit = {"perquad": {34: [], 50: [], 64: []},
+                   "gtcm": {34: [], 50: [], 64: []}}
     # A reported ring the field never reaches at all is a worse failure than a
     # displaced one, and averaging only the hits would hide it entirely.
     missed = {"perquad": {34: 0, 50: 0, 64: 0},
-              "wtcm": {34: 0, 50: 0, 64: 0}}
+              "gtcm": {34: 0, 50: 0, 64: 0}}
     diffs, p95s = [], []
     area_ratios = {34: [], 50: [], 64: []}
     n = 0
@@ -174,12 +182,15 @@ def main():
             snap = _snapshot(rec)
             if not snap.radii:
                 continue
-            for method in ("perquad", "wtcm"):
+            for method in ("perquad", "gtcm"):
                 for threshold, rep, got in ring_errors(snap, method):
                     if got is None:
                         missed[method][threshold] += 1
                     else:
                         per_thr[method][threshold].append(got - rep)
+                        scale = (T.GTCM_QUAD_AVG_FACTOR
+                                 if method == "gtcm" else 1.0)
+                        per_thr_fit[method][threshold].append(got - rep * scale)
             m, p, areas = field_difference(snap)
             diffs.append(m)
             p95s.append(p)
@@ -208,7 +219,7 @@ def main():
           % ("method", "ring", "n", "bias", "MAE", "RMSE", "p90|err|"))
     print("   " + "-" * 62)
     summary = {"cases": n, "rings": {}, "field": {}}
-    for method in ("perquad", "wtcm"):
+    for method in ("perquad", "gtcm"):
         for threshold in (64, 50, 34):
             st = stats(per_thr[method][threshold])
             if not st:
@@ -235,25 +246,40 @@ def main():
                 if missed[method][t])))
         print("   " + "-" * 62)
 
+    print("\n   Same rings, measured against each method's own fit target")
+    print("   (GTCM fits the quadrant AVERAGE = 0.85 x the reported maximum):")
+    for method in ("perquad", "gtcm"):
+        st = stats(sum(per_thr_fit[method].values(), []))
+        if st:
+            print("   %-9s %-6s %7d %+9.2f %9.2f %9.2f %9.2f"
+                  % (method, "ALL", st["n"], st["bias"], st["mae"],
+                     st["rmse"], st["p90"]))
+            summary["rings"].setdefault(method, {})["all_vs_fit_target"] = st
+
     print("\n2. FIELD DIFFERENCE (what a forecaster would see change)")
-    print("   mean |wtcm - perquad| over the field : %6.2f kt" % np.mean(diffs))
+    print("   mean |gtcm - perquad| over the field : %6.2f kt" % np.mean(diffs))
     print("   p95 of that difference, per case     : %6.2f kt" % np.mean(p95s))
     for threshold in (34, 50, 64):
         vals = area_ratios[threshold]
         if vals:
-            print("   %d kt area, wtcm / perquad          : %6.3f  "
+            print("   %d kt area, gtcm / perquad          : %6.3f  "
                   "(median %.3f)" % (threshold, float(np.mean(vals)),
                                      float(np.median(vals))))
             summary["field"]["area_ratio_%d" % threshold] = float(np.mean(vals))
     summary["field"]["mean_abs_kt"] = float(np.mean(diffs))
     summary["field"]["p95_abs_kt"] = float(np.mean(p95s))
 
-    print("\nCaveat: the \"wtcm\" branch is reconstructed from the description in")
-    print("TCWind_JTWC.py plus published forms, NOT from NHC's Users Guide. The")
-    print("radial-exponent treatment in particular (see WTCM_X_* in that file) is")
-    print("unverified, and is the most likely reason a real WTCM would score")
-    print("better than this. Treat these numbers as an upper bound on the cost of")
-    print("switching, not as a measurement of NHC's own tool.")
+    if args.json:
+        with open(args.json, "w") as fh:
+            json.dump(summary, fh, indent=2, sort_keys=True)
+        print("\nwrote %s" % args.json)
+
+
+    print("\nThe GTCM branch follows the Users Guide v1.9.1. Two documented")
+    print("departures: the profile is tapered beyond the modelled 34 kt radius so")
+    print("the insert terminates (NHC leaves its grids missing out there and lets")
+    print("the receiving office blend), and step 4's land-roughness reduction is")
+    print("not implemented, so the field is marine-exposure everywhere.")
 
     if args.json:
         with open(args.json, "w") as fh:
