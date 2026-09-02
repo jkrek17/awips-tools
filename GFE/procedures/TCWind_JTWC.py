@@ -899,9 +899,25 @@ def _buildVortexGTCM(latGrid, lonGrid, snapshot, rmax_nm, outerDecayFactor,
     r34 = np.where(anyAbove, r34_exact, fit["rm"] * 3.0)
     r34 = r34.reshape(r.shape).astype(np.float32)
 
+    # Anchor the taper on the field's OWN value at r34, not on a constant 34.
+    # Where the field does reach 34 kt these are the same number, because r34
+    # is solved as the radius where it does.  Where it never reaches 34 - a
+    # weak system, or a quadrant of a marginal one where the asymmetry vector
+    # opposes the flow after the Vm-a reduction - r34 falls back to 3*rm, and
+    # anchoring on 34 there made the field jump UP at that radius: a 30 kt
+    # system came out with its peak of 34 kt sitting 113 nm from the centre
+    # instead of in its core.  Evaluating the profile at r34 handles both
+    # branches with one expression.
+    az1d = np.asarray(az).ravel()
+    r341d = np.asarray(r34).ravel()
+    Vanchor = _gtcmProfile(r341d, snapshot.vmax, fit["a"], fit["rm"],
+                           fit["ri"], fit["x1"], fit["x2"])
+    ua, va = _gtcmUV(Vanchor, az1d, fit["ax"], fit["ay"], snapshot.lat)
+    anchorV = np.sqrt(ua * ua + va * va).reshape(r.shape)
+
     decayL = np.maximum(r34 * float(outerDecayFactor), MIN_OUTER_DECAY_NM)
     outer = r > r34
-    mag = np.where(outer, 34.0 * np.exp(-(r - r34) / decayL), mag)
+    mag = np.where(outer, anchorV * np.exp(-(r - r34) / decayL), mag)
 
     if GTCM_APPLY_INFLOW:
         sign = 1.0 if snapshot.lat >= 0 else -1.0

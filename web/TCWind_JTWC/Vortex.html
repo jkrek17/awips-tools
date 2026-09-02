@@ -678,7 +678,16 @@ function vortexFieldGTCM(snap) {
     // the field equals 34, so the vortex and the taper agree there to within
     // rounding and either comparison gives the same answer; the strict form
     // is kept only so the two ports stay bit-comparable.
-    if (r > r34) mag = 34.0 * Math.exp(-(r - r34) / decayL);
+    if (r > r34) {
+      // Anchor on the field's own value at r34, not a constant 34.  They are
+      // the same wherever the field actually reaches 34 kt, since that is how
+      // r34 is solved; where it never does, r34 falls back to 3*rm and a
+      // constant 34 made the field step UP there.  Mirrors _buildVortexGTCM().
+      var Va = gtcmProfile(r34, vmax, fit.a, fit.rm, fit.ri, fit.x1, fit.x2);
+      var uva = gtcmUV(Va, az, fit.ax, fit.ay, lat);
+      var anchorV = Math.sqrt(uva[0] * uva[0] + uva[1] * uva[1]);
+      mag = anchorV * Math.exp(-(r - r34) / decayL);
+    }
 
     if (GTCM_APPLY_INFLOW) {
       var metFrom = mod360(az + sign * (90.0 - INFLOW_ANGLE_DEG));
