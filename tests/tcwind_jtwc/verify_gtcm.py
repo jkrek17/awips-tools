@@ -214,25 +214,23 @@ def _perquad_knots(snap, rmax, az):
     return np.array(knots), labels, len(labels) - 1
 
 
-def _gtcm_knots(snap, az, fit):
+def _gtcm_knots(snap, az, fit, r34):
     """rm, ri and the per-azimuth modelled R34 where the taper starts.
 
-    The R34 calculation repeats _buildVortexGTCM()'s, which does not expose
-    it; if that ever diverges these numbers describe the wrong knot.
+    r34 comes from buildVortex()'s own fourth return value rather than being
+    recomputed here.  It used to be recomputed, with a docstring warning that
+    the copy would describe the wrong knot if the builder ever changed - which
+    is exactly what happened.  When the builder switched from snapping r34 to
+    the whole-nm probe grid to interpolating the 34 kt crossing, this copy kept
+    snapping, so the estimator sampled either side of a radius that was no
+    longer the knot and reported a 3.3 kt "value jump" across a boundary that
+    is in fact continuous to 0.001 kt.  Taking the builder's own value removes
+    the class of bug rather than resynchronising it.
     """
     az = np.asarray(az, dtype=float)
-    probe = np.linspace(1.0, 900.0, 900)
-    prof = T._gtcmProfile(probe, snap.vmax, fit["a"], fit["rm"], fit["ri"],
-                          fit["x1"], fit["x2"])
-    uu, vv = T._gtcmUV(prof[None, :], az[:, None], fit["ax"], fit["ay"],
-                       snap.lat)
-    prof2d = np.sqrt(uu * uu + vv * vv)
-    above = prof2d >= 34.0
-    any_above = above.any(axis=1)
-    last = prof2d.shape[1] - 1 - np.argmax(above[:, ::-1], axis=1)
-    r34 = np.where(any_above, probe[last], fit["rm"] * 3.0)
     return (np.array([np.full(az.shape, fit["rm"]),
-                      np.full(az.shape, fit["ri"]), r34]),
+                      np.full(az.shape, fit["ri"]),
+                      np.asarray(r34, dtype=float)]),
             ["rm", "ri", "r34taper"], 2)
 
 
@@ -277,13 +275,23 @@ def radial_kinks_and_monotonicity(snap, rmax, fit):
     """Per-method knot slope breaks, knot value jumps, and monotonicity."""
     rr = np.arange(RAY_STEP_NM, RAY_MAX_NM + RAY_STEP_NM, RAY_STEP_NM)
     lats, lons = C.ray_grid(snap.lat, snap.lon, RAY_AZ, rr)
+    # Build both fields first, so the GTCM knot list can use the builder's own
+    # r34 instead of a second, drifting copy of the calculation.
+    fields = {}
+    for method in C.METHODS:
+        m, _dir, _r, r34 = T.buildVortex(lats, lons, snap, rmax, method=method)
+        fields[method] = (np.asarray(m, dtype=float),
+                          np.asarray(r34, dtype=float))
+
+    # r34 varies only with azimuth, so one column is the per-azimuth value.
+    gtcm_r34 = fields["gtcm"][1]
+    gtcm_r34 = gtcm_r34[:, 0] if gtcm_r34.ndim == 2 else gtcm_r34
     knots = {"perquad": _perquad_knots(snap, rmax, RAY_AZ),
-             "gtcm": _gtcm_knots(snap, RAY_AZ, fit)}
+             "gtcm": _gtcm_knots(snap, RAY_AZ, fit, gtcm_r34)}
 
     out = {}
     for method in C.METHODS:
-        mag = np.asarray(T.buildVortex(lats, lons, snap, rmax,
-                                       method=method)[0], dtype=float)
+        mag = fields[method][0]
         kn, labels, taper_row = knots[method]
         breaks, jumps, breaks_nt, jumps_nt = [], [], [], []
         detail = {}

@@ -17,14 +17,27 @@
      --text-2   #4a5765 on --surface          7.39:1
      --text-2   #4a5765 on --surface-2        6.33:1
      --link     #0b5c8f on --surface          7.14:1
-     --ink-bt   #7a4f00 on --surface-2        6.11:1
+     --text-2   #4a5765 on --surface-3        5.81:1  (the page minimum)
    Dark theme:
      --text     #e9eff5 on --surface #151d25  14.69:1
      --text-2   #a9b9c7 on --surface-2        7.45:1
-     --ink-model#7ccafa on --surface          9.47:1
-     --ink-bt   #e0a040 on --surface-2        6.61:1
+     --text-2   #a9b9c7 on --surface-3        6.41:1
+     --link     #7ccafa on --surface-2        8.33:1
+     --warn-fg  #ffe08a on --warn-bg          10.45:1
    Nothing on this page is set in a colour below 4.5:1, statistics least
    of all.  There is no "faint" token.
+
+   --ink-model / --ink-bt / --ink-obs are CHART SERIES colours, never text.
+   They are held apart on the luminance axis as well as by hue, so they stay
+   distinguishable under dichromacy.  Worst-case separation across all six
+   pairings (the three series plus --text), measured as the WCAG contrast
+   ratio between Vienot-Brettel simulated colours under protanopia,
+   deuteranopia and tritanopia: light 1.54:1, dark 1.42:1 (the previous build
+   scored 1.02-1.05 here).  Each series additionally carries a non-colour
+   channel - dash pattern in the legend, hatch in the histogram, marker shape
+   in the scatter - and a direct textual label, so colour is never the only
+   channel.  Each is at least 3:1 against its surface (light 7.27/3.40/11.59,
+   dark 3.11/5.41/9.99).
    ========================================================================== */
 :root {
   color-scheme: light dark;
@@ -38,8 +51,8 @@
   --text-2:      #4a5765;
   --link:        #0b5c8f;
   --ink-model:   #0a5b8c;
-  --ink-bt:      #7a4f00;
-  --ink-obs:     #26313d;
+  --ink-bt:      #c07d00;
+  --ink-obs:     #2f3a45;
   --warn-bg:     #fff4d6;
   --warn-fg:     #3d2c00;
   --warn-border: #6b4d00;
@@ -61,9 +74,9 @@
     --text:        #e9eff5;
     --text-2:      #a9b9c7;
     --link:        #7ccafa;
-    --ink-model:   #7ccafa;
-    --ink-bt:      #e0a040;
-    --ink-obs:     #dfe7ee;
+    --ink-model:   #1a6ea8;
+    --ink-bt:      #c98200;
+    --ink-obs:     #bcc8d2;
     --warn-bg:     #3a2d05;
     --warn-fg:     #ffe08a;
     --warn-border: #ffc94d;
@@ -493,7 +506,10 @@ footer.pagefoot li { margin: .2rem 0; }
               scaled by 0.85 to a quadrant average &mdash; that scaled value, not the reported
               one, is what GTCM actually minimises against.
               &Delta; is modelled minus the column it sits under; positive means the model is
-              larger than the analysis.
+              larger than the analysis. A 34 kt row marked <em>3&times;r&#8344; fallback</em> is one
+              where the modelled field never reaches 34 kt anywhere on that bearing; the tool
+              substitutes 3&times;r&#8344; so the outer taper has something to anchor to, and that
+              substitute is what is compared here.
             </caption>
           </table></div>
         </div>
@@ -537,7 +553,9 @@ footer.pagefoot li { margin: .2rem 0; }
             <caption>Modelled minus reported radius on each reported quadrant bisector, pooled.
               <em>vs target</em> repeats the comparison against the 0.85-scaled quadrant average
               GTCM actually fits. <em>unreached</em> counts quadrant points where the modelled
-              field never attains the threshold at any radius out to 900 nm.</caption>
+              field never attains the threshold at any radius out to 900 nm. 34 kt is never
+              counted unreached &mdash; the tool substitutes 3&times;r&#8344; there instead, and
+              the tile above reports how often that happened.</caption>
           </table></div>
         </div>
 
@@ -758,27 +776,38 @@ function profileOf(snap, fit) {
   return p;
 }
 
-/** Outermost whole-nm radius on `azDeg` at which the modelled field still
- *  reaches `thr` knots, or null if it never does.
+/** Outermost whole-nm probe radius on `azDeg` at which the symmetric profile
+ *  plus asymmetry still reaches `thr` knots, or null if it never does.
+ *
+ *  OUTERMOST, not first: eq. (3) steps at r_i, so the profile is not
+ *  monotonic and a first crossing would sometimes land inside the eye.  This
+ *  is the same rule vortexFieldGTCM's r34At() applies, expressed for an
+ *  arbitrary threshold.  The outer taper cannot affect 50 or 64 kt - it caps
+ *  the field at 34 kt and only applies beyond the modelled 34 kt radius. */
+function scanRingRadius(prof, fit, lat, azDeg, thr) {
+  var i, uv;
+  for (i = PROBE_MAX - 1; i >= 0; i--) {
+    uv = V.gtcmUV(prof[i], azDeg, fit.ax, fit.ay, lat);
+    if (Math.sqrt(uv[0] * uv[0] + uv[1] * uv[1]) >= thr) return i + 1;
+  }
+  return null;
+}
+
+/** The radius the TOOL uses for `thr` on this bearing.
  *
  *  For 34 kt this delegates to the field's own r34At(), so the 34 kt figures
- *  on this page are exactly the tool's - including its float32 cast.  For 50
- *  and 64 kt there is no such export, so the same rule is applied here:
- *  scan the probe grid downward and take the OUTERMOST crossing, not the
- *  first, because eq. (3) steps at r_i and the profile is not monotonic.
- *  The outer taper cannot affect 50 or 64 kt: it caps the field at 34 kt and
- *  only applies beyond the modelled 34 kt radius. */
+ *  on this page are exactly the tool's - including its float32 cast and its
+ *  fallback.  That fallback matters and is not hidden: when the modelled
+ *  field never reaches 34 kt anywhere on a bearing, r34At() returns 3*rm
+ *  rather than nothing, because the taper has to be anchored somewhere.  So
+ *  a 34 kt point is never reported "unreached"; instead analyseRecord() flags
+ *  it, and the tables say so. */
 function modelRingRadius(field, prof, snap, azDeg, thr) {
   if (thr === 34) {
     var r34 = field.r34At(azDeg);
     return (r34 && r34 > 0) ? r34 : null;
   }
-  var fit = field.fit, i, uv;
-  for (i = PROBE_MAX - 1; i >= 0; i--) {
-    uv = V.gtcmUV(prof[i], azDeg, fit.ax, fit.ay, snap.lat);
-    if (Math.sqrt(uv[0] * uv[0] + uv[1] * uv[1]) >= thr) return i + 1;
-  }
-  return null;
+  return scanRingRadius(prof, field.fit, snap.lat, azDeg, thr);
 }
 
 /** Replay one record.  Returns the fit, the field, and one row per reported
@@ -802,8 +831,14 @@ function analyseRecord(rec) {
       if (rep === null || rep <= 0) continue;   // 000 NM is "no ring", not zero
       az = QUAD_AZ[QUADS[q]];
       mod = modelRingRadius(field, prof, snap, az, thr);
+      // A 34 kt radius that came from r34At()'s 3*rm fallback rather than a
+      // real crossing is still the number the tool uses, so it is still the
+      // number compared - but it is a different kind of number, and every
+      // table that shows it says so.
+      var fb = (thr === 34 && mod !== null &&
+                scanRingRadius(prof, fit, snap.lat, az, 34) === null);
       rings.push({
-        thr: thr, quad: QUADS[q], az: az,
+        thr: thr, quad: QUADS[q], az: az, fallback: fb,
         reported: rep, target: rep * QUAD_AVG, model: mod,
         errRep: mod === null ? null : mod - rep,
         errTgt: mod === null ? null : mod - rep * QUAD_AVG
@@ -824,10 +859,12 @@ function analyseRecord(rec) {
  *  share one renderer. */
 function emptyAcc() {
   return { n: 0, sumRep: 0, sumAbsRep: 0, sumSqRep: 0,
-           sumTgt: 0, sumAbsTgt: 0, unreached: 0, absList: [] };
+           sumTgt: 0, sumAbsTgt: 0, unreached: 0, fallback: 0, n34: 0, absList: [] };
 }
 function pushAcc(a, ring) {
   a.n++;
+  if (ring.thr === 34) a.n34++;
+  if (ring.fallback) a.fallback++;
   if (ring.model === null) { a.unreached++; return; }
   a.sumRep += ring.errRep; a.sumAbsRep += Math.abs(ring.errRep);
   a.sumSqRep += ring.errRep * ring.errRep;
@@ -839,6 +876,8 @@ function statsOf(a) {
   return {
     n: a.n, reached: k, unreached: a.unreached,
     unreachedPct: a.n ? (100 * a.unreached / a.n) : null,
+    fallback: a.fallback, n34: a.n34,
+    fallbackPct: a.n34 ? (100 * a.fallback / a.n34) : null,
     bias: k ? a.sumRep / k : null,
     mae: k ? a.sumAbsRep / k : null,
     rmse: k ? Math.sqrt(a.sumSqRep / k) : null,
@@ -1293,7 +1332,8 @@ function renderQuadTable(an) {
     var r = an.rings[i];
     rows += '<tr><td>' + r.thr + ' kt</td><td>' + r.quad + '</td><td>' + f0(r.az) + '°</td>' +
       '<td>' + f0(r.reported) + '</td><td>' + f0(r.target) + '</td>' +
-      '<td>' + (r.model === null ? 'never reached' : f0(r.model)) + '</td>' +
+      '<td>' + (r.model === null ? 'never reached'
+                 : (f0(r.model) + (r.fallback ? ' <span class="badge">3&times;r&#8344; fallback</span>' : ''))) + '</td>' +
       '<td>' + (r.model === null ? '–' : sgn(r.errRep, 0)) + '</td>' +
       '<td>' + (r.model === null ? '–' : sgn(r.errTgt, 0)) + '</td></tr>';
   }
@@ -1617,8 +1657,8 @@ function themeColors() {
     axis: (cs.getPropertyValue('--chart-axis') || '#4a5765').trim(),
     text: (cs.getPropertyValue('--text') || '#101720').trim(),
     model: (cs.getPropertyValue('--ink-model') || '#0a5b8c').trim(),
-    bt: (cs.getPropertyValue('--ink-bt') || '#7a4f00').trim(),
-    obs: (cs.getPropertyValue('--ink-obs') || '#26313d').trim(),
+    bt: (cs.getPropertyValue('--ink-bt') || '#c07d00').trim(),
+    obs: (cs.getPropertyValue('--ink-obs') || '#2f3a45').trim(),
     surface: (cs.getPropertyValue('--surface') || '#ffffff').trim()
   };
 }
@@ -1739,6 +1779,13 @@ function renderStormSummary() {
   rows += '</tbody><tfoot><tr><td>all</td><td>' + a.n + '</td><td>' + a.unreached + '</td>' +
     '<td>' + sgn(a.bias) + '</td><td>' + f1(a.mae) + '</td><td>' + f1(a.rmse) + '</td>' +
     '<td>' + f1(a.p90) + '</td><td>' + sgn(a.biasTgt) + '</td><td>' + f1(a.maeTgt) + '</td></tr></tfoot>';
+  if (a.n34) {
+    rows = rows.replace('</caption>',
+      ' Of the ' + a.n34 + ' 34 kt ring points, <strong>' + a.fallback + '</strong> (' +
+      f1(a.fallbackPct) + '%) took the tool\'s 3×rₘ fallback because the modelled field never ' +
+      'reached 34 kt on that bearing — those rows compare a taper anchor against a reported ' +
+      'radius, which is a weaker statement than the rest of the column.</caption>');
+  }
   $('stormSummary').innerHTML = rows;
 }
 
@@ -1974,6 +2021,10 @@ function renderCohort() {
     stat('MAE', f1(sum.all.mae) + ' nm', 'vs reported radii') +
     stat('MAE vs target', f1(sum.all.maeTgt) + ' nm', 'vs the 0.85-scaled fit target') +
     stat('P90 |error|', f1(sum.all.p90) + ' nm', 'nine in ten ring points inside this') +
+    stat('34 kt fallback', sum.all.n34 ? (f1(sum.all.fallbackPct) + '%') : 'n/a',
+         sum.all.n34 ? (sum.all.fallback + ' of ' + sum.all.n34 +
+           ' 34 kt points used 3×rₘ, not a real crossing')
+                     : 'no 34 kt ring points in this selection') +
     stat('Median fit RMS', f1(rmsMed) + ' kt', 'weighted wind error at the fit points');
 
   // by basin x threshold
