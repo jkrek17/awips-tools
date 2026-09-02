@@ -84,8 +84,9 @@
     <a class="backlink" href="<?= baseUrl ?>">&larr; Back to the live tool</a>
     <div><span class="badge">EXPERIMENTAL &middot; NOT OPERATIONALLY VETTED</span></div>
     <h1>Findings: how well does the tool actually work?</h1>
-    <p>A standalone summary of every check run against real JTWC data - not a live view.
-       For the interactive per-storm comparison, see
+    <p>A plain summary of how well this tool's storm-size and wind-field
+       guesses match real JTWC data. This is a fixed summary, not a live
+       view - to explore a real storm yourself, see
        <a href="<?= baseUrl ?>?page=live" style="color:#fecaca;">Archived Cases</a>
        in the live tool.</p>
   </div>
@@ -97,24 +98,23 @@
     <h2><span class="num">1</span>Where this data comes from</h2>
     <div class="card">
       <ul class="clean">
-        <li><b>Live tool ("Fetch bulletins" / "Paste text"):</b> real-time JTWC
-          tropical cyclone warnings from NOAA's Telecommunications Gateway
-          (<code>tgftp.nws.noaa.gov</code>) - the same text products this
-          tool's GFE counterpart ingests operationally.</li>
+        <li><b>Live tool ("Fetch bulletins" / "Paste text"):</b> the same
+          real-time JTWC warning bulletins this tool's GFE version uses in
+          actual operations.</li>
         <li><b>Archived Cases and everything on this page:</b> JTWC's own
-          <i>post-season</i> reanalysis - the corrected, final position,
-          intensity, wind radii, RMW, and ROCI for each storm - from NOAA
-          NCEI's public
+          after-the-fact review of each storm, done once the season is
+          over. These are the corrected, final numbers - position,
+          strength, wind radii, RMW (how far the strongest winds reach),
+          and ROCI (how far the storm's whole circulation reaches) - from
+          NOAA's public
           <a href="https://www.ncei.noaa.gov/products/international-best-track-archive"
-             target="_blank">IBTrACS</a> archive
-          (agency <code>jtwc_wp</code>, WestPac basin).</li>
-        <li><b>Coverage: 2001-2024.</b> Not a cutoff we chose - JTWC's WestPac
-          wind-radii/RMW reporting is essentially absent before 2001 (checked
-          year by year), and 2025-2026 aren't finalized/ingested into IBTrACS
-          yet.</li>
-        <li>In short: the live tool shows what the model does with a
-          real-time warning; everything below shows how that same model's
-          math holds up once the true, later-corrected answer is known.</li>
+             target="_blank">IBTrACS</a> archive of past storms.</li>
+        <li><b>Years covered: 2001-2024.</b> Not a range we chose - JTWC
+          barely reported wind radii or RMW for Western Pacific storms
+          before 2001, and 2025-2026 storms haven't been finalized yet.</li>
+        <li>In short: the live tool shows what it guesses in the moment,
+          from a real-time warning. Everything below checks those same
+          guesses against the true, later-corrected answer.</li>
       </ul>
     </div>
   </section>
@@ -123,53 +123,59 @@
     <h2><span class="num">2</span>What we found</h2>
     <div class="findingGrid">
       <div class="finding">
-        <span class="tag">Rmax &middot; fixed</span>
-        <h3>Now unbiased on average, WestPac-refit</h3>
+        <span class="tag">Storm size &middot; fixed</span>
+        <h3>The size formula now guesses right on average</h3>
         <ul>
-          <li>Original Willoughby (2006) regression (Atlantic-tuned): bias
-            &minus;10.2&nbsp;nm.</li>
-          <li>Refit against 16,103 real WestPac best-track records, validated
-            out-of-sample on a held-out 20% of storms: bias improves to
-            &minus;2.7&nbsp;nm, correlation r=0.51&rarr;0.59.</li>
-          <li>This refit is what's live in the tool today.</li>
+          <li>The original formula was built and tuned using Atlantic
+            storms. Applied to the Western Pacific, it guessed too small
+            by about 10 nautical miles (nm) on average.</li>
+          <li>We rebuilt it using over 16,000 real Western Pacific storm
+            records, then tested it against storms it hadn't seen before.
+            The average miss dropped to about 3&nbsp;nm, and it tracks the
+            real answer more closely too.</li>
+          <li>This improved version is what the tool uses today.</li>
         </ul>
       </div>
       <div class="finding caution">
-        <span class="tag">Rmax &middot; caveat</span>
-        <h3>Still no skill for any one weak storm</h3>
+        <span class="tag">Storm size &middot; caveat</span>
+        <h3>Still a coin flip for any one weak storm</h3>
         <ul>
-          <li>For depressions specifically, correlation is r=0.04 - almost no
-            predictive skill storm-to-storm, even though the average is now
-            unbiased.</li>
-          <li>Treat a weak system's Rmax as a reasonable long-run average,
-            not a real prediction for that particular storm.</li>
+          <li>For weak depressions specifically, the tool has almost no
+            ability to predict any single storm's exact size - even though
+            its average across many storms is accurate.</li>
+          <li>Treat the tool's size guess for a weak system as a reasonable
+            long-run average, not a real prediction for that particular
+            storm.</li>
         </ul>
       </div>
       <div class="finding warn">
-        <span class="tag">Field size &middot; ROCI check</span>
-        <h3>Badly undersized for weak systems</h3>
+        <span class="tag">Wind field size &middot; ROCI check</span>
+        <h3>Badly too small for weak systems</h3>
         <ul>
-          <li>Checked the tool's own wind field against ROCI (radius of
-            outermost closed isobar) - a pressure-based size the model never
-            sees.</li>
-          <li>Depressions: bias &minus;83 to &minus;109&nbsp;nm depending on
-            threshold, r=0.01. Most have no reported radii to build a
-            realistic field extent from at all.</li>
-          <li>Typhoon-strength systems: roughly right, aside from the outer
-            taper reaching a bit too far at low wind thresholds.</li>
+          <li>We checked the size of the tool's wind field against ROCI -
+            how far out a storm's whole circulation reaches, a separate
+            measurement the tool never actually sees or uses.</li>
+          <li>For depressions, the tool's field runs 83 to 109&nbsp;nm too
+            small on average, and barely predicts the real size at all.
+            Most weak storms don't even have reported wind radii for the
+            tool to build a realistic size from in the first place.</li>
+          <li>For typhoon-strength storms, the size is roughly right,
+            though the outer edge stretches a bit too far at the very
+            lowest wind speeds.</li>
         </ul>
       </div>
       <div class="finding caution">
-        <span class="tag">Field shape &middot; Holland cross-check</span>
-        <h3>Least certain right next to the core</h3>
+        <span class="tag">Wind field shape</span>
+        <h3>Least certain right next to the eye</h3>
         <ul>
-          <li>Compared the tool's profile against an independent model
-            (Holland 1980), anchored the same way (same Vmax/Rmax/R34).</li>
-          <li>Disagreement is worst immediately outside the core (Rmax-R64:
-            mean 11.0&nbsp;kt, spikes to 72.5&nbsp;kt) and steadily improves
-            outward (beyond R34: 4.4&nbsp;kt).</li>
-          <li>That's also operationally the region - the eyewall - where
-            getting the wind wrong matters most.</li>
+          <li>We compared the tool's wind profile against a separate,
+            independent formula (Holland, 1980), starting from the same
+            storm strength and size.</li>
+          <li>The two disagree the most just outside the eyewall - by
+            about 11&nbsp;kt on average, and by as much as 70+&nbsp;kt in
+            the worst cases - and agree more the farther out you go.</li>
+          <li>That's also the area - the eyewall - where getting the wind
+            speed wrong matters most.</li>
         </ul>
       </div>
     </div>
@@ -181,32 +187,28 @@
       <div class="chartCard">
         <canvas id="btScatterCanvas" width="600" height="320"></canvas>
         <div class="cap">
-          Tool's predicted Rmax vs. JTWC's own post-season best-track RMW,
-          every usable WestPac record 2001-2024. Diagonal line is perfect
-          agreement; points below it are underestimates. Colored by
-          intensity category (purple = typhoon-strength, orange = tropical
-          storm, green = depression).
+          The tool's guessed storm size compared to JTWC's real, corrected
+          size, for every usable Western Pacific storm from 2001-2024. The
+          diagonal line is a perfect match; dots below it mean the tool
+          guessed too small. Colored by storm strength: purple = typhoon,
+          orange = tropical storm, green = depression.
         </div>
         <div class="stat" id="btScatterStat"></div>
       </div>
       <div class="chartCard">
         <canvas id="btZoneCanvas" width="360" height="320"></canvas>
         <div class="cap">
-          How far the tool's own wind profile and an independent model
-          (Holland 1980) disagree, by radial zone. Bar is the typical
-          (mean) disagreement; tick mark is the 90th percentile (occasional
-          larger disagreements). Tallest bar is where the field's shape is
-          least certain.
+          How much the tool's wind profile disagrees with a separate,
+          independent formula, at different distances from the storm
+          center. The bar shows the typical disagreement; the tick mark
+          shows how bad it can get in worse cases. The tallest bar is
+          where the tool is least sure of itself.
         </div>
       </div>
     </div>
   </section>
 
   <footer>
-    Full numbers, methodology, and the scripts that produced them:
-    <code>tests/tcwind_jtwc/README.md</code> in the awips-tools repository
-    (<code>verify_besttrack_rmax.py</code>, <code>verify_besttrack_roci.py</code>,
-    <code>verify_besttrack_holland.py</code>, <code>fit_westpac_rmax.py</code>).
     This tool is experimental and has not been operationally vetted -
     review every output before it informs any product.
   </footer>
@@ -263,7 +265,7 @@ function drawBestTrackScatter(data) {
   ctx.beginPath(); ctx.moveTo(x(0), y(0)); ctx.lineTo(x(AX), y(AX)); ctx.stroke();
   ctx.setLineDash([]);
 
-  let sumE = 0, sumAbsE = 0, sumSqE = 0, n = 0;
+  let sumE = 0, sumAbsE = 0, n = 0;
   ctx.globalAlpha = 0.35;
   for (const rec of data) {
     const [vmax, lat, rmw, r64min, r50min, r34min] = rec;
@@ -279,21 +281,21 @@ function drawBestTrackScatter(data) {
     ctx.fillStyle = catColor(vmax);
     ctx.beginPath(); ctx.arc(x(pred), y(rmw), 2, 0, 2 * Math.PI); ctx.fill();
     const e = pred - rmw;
-    sumE += e; sumAbsE += Math.abs(e); sumSqE += e * e; n++;
+    sumE += e; sumAbsE += Math.abs(e); n++;
   }
   ctx.globalAlpha = 1;
 
   ctx.fillStyle = '#71717a'; ctx.font = '10px system-ui, sans-serif';
-  ctx.fillText('actual RMW (nm)', 4, padT + 8);
+  ctx.fillText('storm’s real size (nm)', 4, padT + 8);
   ctx.textAlign = 'right';
-  ctx.fillText('tool’s Rmax (nm)', W - padR, H - 6);
+  ctx.fillText('tool’s guess (nm)', W - padR, H - 6);
   ctx.textAlign = 'left';
 
   if (n) {
-    const bias = sumE / n, mae = sumAbsE / n, rmse = Math.sqrt(sumSqE / n);
+    const bias = sumE / n, mae = sumAbsE / n;
     document.getElementById('btScatterStat').textContent =
-      'n=' + n + '   bias=' + (bias >= 0 ? '+' : '') + bias.toFixed(1) +
-      ' nm   MAE=' + mae.toFixed(1) + ' nm   RMSE=' + rmse.toFixed(1) + ' nm';
+      n + ' storms   ·   average error: ' + (bias >= 0 ? '+' : '') +
+      bias.toFixed(1) + ' nm   ·   typical miss: ' + mae.toFixed(1) + ' nm';
   }
 }
 
@@ -342,7 +344,7 @@ function drawHollandZoneChart(summary) {
 
   ctx.textAlign = 'right';
   ctx.fillStyle = '#71717a'; ctx.font = '10px system-ui, sans-serif';
-  ctx.fillText('bar=mean, tick=p90', W - padR, padT + 8);
+  ctx.fillText('bar = typical, tick = worse cases', W - padR, padT + 8);
   ctx.textAlign = 'left';
 }
 
