@@ -612,15 +612,6 @@ def buildVortex(latGrid, lonGrid, snapshot, rmax_nm,
     # there is anything to be asymmetric about already; keep it as a
     # shaping fallback for the radii-less case (weak/developing systems
     # where only Vmax is known), so those aren't left perfectly circular.
-    #
-    # NOTE: WTCM also subtracts the asymmetry magnitude from Vm inside the
-    # vortex itself (V = (Vm-a)*(...)) specifically so the vortex peak
-    # plus the vector add back up to Vm, not Vm+a - this function's
-    # radii-less fallback below does not do that (knot_v[0] stays snap.vmax
-    # exactly), so it can still overshoot Vmax at the point where the
-    # motion vector aligns with the tangential wind. Not fixed here - the
-    # radii-less case is a much smaller share of real use than the
-    # radii-present case this function is otherwise built around.
     if snapshot.radii:
         asymFrac = 0.0
 
@@ -633,6 +624,19 @@ def buildVortex(latGrid, lonGrid, snapshot, rmax_nm,
     knot_r = [np.full(r.shape, rmax_nm, dtype=np.float32)]
     knot_v = [snapshot.vmax]
     prev = knot_r[0]
+
+    # WTCM also subtracts the asymmetry magnitude from Vm inside the vortex
+    # itself (V = (Vm-a)*(...)) specifically so the vortex peak plus the
+    # vector added back in below sum to Vm, not Vm+a. Mirror that here:
+    # reduce the core/peak reference speed (knot_v[0], which the solid body
+    # and outer-taper formulas both key off) by the largest contribution
+    # the vector below can make, before adding that vector back in.
+    # knot_v only ever holds this single knot whenever asymFrac is nonzero
+    # here - radii present forces asymFrac to 0 above, and only the
+    # radii-less case ever reaches this - so nothing else in knot_v needs
+    # touching, and this is a no-op whenever it doesn't apply.
+    if asymFrac and snapshot.motionSpd:
+        knot_v[0] = max(snapshot.vmax - asymFrac * snapshot.motionSpd, 0.0)
     for threshold in (64, 50, 34):
         if threshold not in snapshot.radii:
             continue
@@ -655,7 +659,7 @@ def buildVortex(latGrid, lonGrid, snapshot, rmax_nm,
 
     # Solid-body rotation inside the core.
     inner = r <= knot_r[0]
-    mag = np.where(inner, snapshot.vmax * (safe_r / np.maximum(knot_r[0], 1e-3)),
+    mag = np.where(inner, knot_v[0] * (safe_r / np.maximum(knot_r[0], 1e-3)),
                    mag)
 
     # Piecewise modified-Rankine between consecutive knots.  A single global
@@ -711,7 +715,11 @@ def buildVortex(latGrid, lonGrid, snapshot, rmax_nm,
 
     # Storm-motion asymmetry, strongest near the core.
     if snapshot.motionSpd:
-        frac = asymFrac * np.clip(mag / max(snapshot.vmax, 1.0), 0.0, 1.0)
+        # knot_v[0], not snapshot.vmax: the same reduced core reference
+        # used to cap mag above, so frac still reaches its ceiling
+        # (asymFrac) exactly at the peak - see the knot_v[0] reduction
+        # comment above.
+        frac = asymFrac * np.clip(mag / max(knot_v[0], 1.0), 0.0, 1.0)
         mrad = np.radians(snapshot.motionDir)
         u = u + frac * snapshot.motionSpd * np.sin(mrad)
         v = v + frac * snapshot.motionSpd * np.cos(mrad)

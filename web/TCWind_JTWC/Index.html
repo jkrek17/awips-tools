@@ -443,24 +443,30 @@ function vortexAt(lat, lon, snap, rmax, asymFrac, inflowDeg) {
   // already; keep it as a shaping fallback for the radii-less case
   // (weak/developing systems where only Vmax is known), so those aren't
   // left perfectly circular.
-  //
-  // NOTE: WTCM also subtracts the asymmetry magnitude from Vm inside the
-  // vortex itself (V = (Vm-a)*(...)) specifically so the vortex peak
-  // plus the vector add back up to Vm, not Vm+a - the radii-less
-  // fallback here does not do that (kv[0] stays snap.vmax exactly), so
-  // it can still overshoot Vmax where the motion vector aligns with the
-  // tangential wind. Not fixed here - the radii-less case is a much
-  // smaller share of real use than the radii-present case this function
-  // is otherwise built around.
   if (Object.keys(snap.radii).length) asymFrac = 0;
 
   const [r, az] = distBearing(lat, lon, snap.lat, snap.lon);
   const [kr, kv] = knotsAt(snap, rmax, az);
+
+  // WTCM also subtracts the asymmetry magnitude from Vm inside the
+  // vortex itself (V = (Vm-a)*(...)) specifically so the vortex peak
+  // plus the vector added back in below sum to Vm, not Vm+a. Mirror that
+  // here: reduce the core/peak reference speed (kv[0], which the solid
+  // body and outer-taper formulas both key off) by the largest
+  // contribution the vector below can make, before adding that vector
+  // back in. kv only ever holds a single knot (kv=[snap.vmax]) whenever
+  // asymFrac is nonzero here - radii present forces asymFrac to 0 above,
+  // and only the radii-less case ever reaches this - so nothing else in
+  // kv needs touching, and this is a no-op whenever it doesn't apply.
+  if (asymFrac && snap.motionSpd) {
+    kv[0] = Math.max(snap.vmax - asymFrac * snap.motionSpd, 0);
+  }
+
   const safeR = Math.max(r, 1e-3);
   let mag;
 
   if (r <= kr[0]) {
-    mag = snap.vmax * (safeR / Math.max(kr[0], 1e-3));   // solid body
+    mag = kv[0] * (safeR / Math.max(kr[0], 1e-3));   // solid body
   } else {
     mag = null;
     for (let i = 0; i < kr.length - 1; i++) {
@@ -501,7 +507,10 @@ function vortexAt(lat, lon, snap, rmax, asymFrac, inflowDeg) {
   let u = -mag * Math.sin(rad), v = -mag * Math.cos(rad);
 
   if (snap.motionSpd) {
-    const frac = asymFrac * Math.min(Math.max(mag / Math.max(snap.vmax, 1), 0), 1);
+    // kv[0], not snap.vmax: the same reduced core reference used to cap
+    // mag above, so frac still reaches its ceiling (asymFrac) exactly at
+    // the peak - see the comment by the kv[0] reduction above.
+    const frac = asymFrac * Math.min(Math.max(mag / Math.max(kv[0], 1), 0), 1);
     const mr = snap.motionDir * Math.PI / 180;
     u += frac * snap.motionSpd * Math.sin(mr);
     v += frac * snap.motionSpd * Math.cos(mr);
