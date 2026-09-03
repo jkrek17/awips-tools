@@ -1083,7 +1083,33 @@ def _buildVortexGTCM(latGrid, lonGrid, snapshot, rmax_nm, outerDecayFactor,
     frac = np.clip(frac, 0.0, 1.0)
     r34_exact = probe[last] + frac * (probe[nxt] - probe[last])
 
-    r34_table = np.where(anyAbove, r34_exact, fit["rm"] * 3.0)
+    # Where the profile never reaches 34 kt at all - a weak system, or a
+    # quadrant of a marginal one where the asymmetry vector opposes the flow
+    # after the Vm-a reduction - anchor the footprint on the LOCATION OF THE
+    # PROFILE'S OWN PEAK on that azimuth, not a fixed 3*rm.  This used to
+    # jump straight to 3*rm the moment the peak fell even 0.01 kt short of
+    # 34, while r34_exact above approaches the peak's own radius as the peak
+    # approaches 34 from above (right at the threshold the outermost >=34 kt
+    # point IS the peak, by definition).  So "peak location" is the r34_exact
+    # branch's own limit, and switching to it there makes r34(az) continuous
+    # across the anyAbove boundary instead of stepping between two radii that
+    # can differ by 100+ nm.
+    #
+    # This boundary is not a rare edge case: the 34 kt targets that drive the
+    # fit (_gtcmTargets, weighted 5x) sit exactly at the quadrant bisectors
+    # (QUAD_AZ), so the fit is, by construction, trying to land the field as
+    # close to 34 kt as the least-squares average allows AT those azimuths.
+    # For a marginal storm that means the peak-over-r frequently straddles 34
+    # kt right around a bisector, which is exactly where
+    # tests/tcwind_jtwc/verify_gtcm.py's azimuthal-kink estimator samples.
+    # The 3*rm cliff there - not the fixed-bin r34(az) table below, which
+    # reproduces this jump (or its absence) faithfully at any resolution -
+    # was the azimuthalKinkKtPerDeg regression this fix addresses; confirmed
+    # by recomputing r34 exactly per grid azimuth (bypassing the table
+    # entirely), which reproduced the same jump.
+    peakIdx = np.argmax(prof2d, axis=1)
+    peakR = probe[peakIdx]
+    r34_table = np.where(anyAbove, r34_exact, peakR)
 
     # Interpolate r34(az) onto the grid's own azimuths, linear and wrapping
     # at 360 so the 0/360 seam stays continuous (azTable's last bin is
@@ -1096,10 +1122,10 @@ def _buildVortexGTCM(latGrid, lonGrid, snapshot, rmax_nm, outerDecayFactor,
 
     # Anchor the taper on the field's OWN value at r34, not on a constant 34.
     # Where the field does reach 34 kt these are the same number, because r34
-    # is solved as the radius where it does.  Where it never reaches 34 - a
-    # weak system, or a quadrant of a marginal one where the asymmetry vector
-    # opposes the flow after the Vm-a reduction - r34 falls back to 3*rm, and
-    # anchoring on 34 there made the field jump UP at that radius: a 30 kt
+    # is solved as the radius where it does.  Where it never reaches 34, r34
+    # is now the profile's own peak location on that azimuth (see above), so
+    # the anchor there is the peak wind itself, just short of 34 - anchoring
+    # on a constant 34 instead made the field jump UP at that radius: a 30 kt
     # system came out with its peak of 34 kt sitting 113 nm from the centre
     # instead of in its core.  Evaluating the profile at r34 handles both
     # branches with one expression.
