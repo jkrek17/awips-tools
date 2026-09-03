@@ -1554,7 +1554,8 @@ function renderRail(it, epoch) {
   var rot = (aDir !== null && snap.motionDir !== null && snap.motionDir !== undefined)
     ? angDiff(aDir, snap.motionDir) : null;
 
-  param(params, 'rm  peak radius', n1(fit.rm), 'nm');
+  param(params, fit.rmSource === 'climatology' ? 'rm  (climatology)' : 'rm  peak radius',
+        n1(fit.rm), 'nm');
   param(params, 'ri  size break', n1(fit.ri), 'nm');
   param(params, 'x1  inner decay', n2(fit.x1), '');
   param(params, 'x2  outer decay', n2(fit.x2), '');

@@ -1362,7 +1362,7 @@ function kv(k, v) { return '<dt>' + esc(k) + '</dt><dd>' + v + '</dd>'; }
 function renderFit(an) {
   var f = an.fit;
   var html = '';
-  html += kv('rₘ (fitted)', f1(f.rm) + ' nm' +
+  html += kv(f.rmSource === 'climatology' ? 'rₘ (climatology)' : 'rₘ (fitted)', f1(f.rm) + ' nm' +
     (an.rmw !== null && an.rmw > 0
       ? '  <span class="note">(RMW ' + f0(an.rmw) + ' nm; ' + sgn(f.rm - an.rmw) + ' nm)</span>'
       : ''));

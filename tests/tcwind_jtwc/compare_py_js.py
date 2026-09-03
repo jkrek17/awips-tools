@@ -510,7 +510,7 @@ def py_gtcm(snap, points):
     _, az = tc._distBearingGrids(lat, lon, snap.lat, snap.lon)
     return {
         "rmax": rmax,
-        "fit": dict((k, jnum(float(v)) if k != "n" else v)
+        "fit": dict((k, jnum(float(v)) if k not in ("n", "rmSource") else v)
                     for k, v in fit.items()),
         "points": [{"lat": points[i][0], "lon": points[i][1],
                     "mag": float(mag[i]), "dir": float(direc[i]),
@@ -558,6 +558,12 @@ def check_gtcm():
 
         if py["fit"]["n"] != js["fit"]["n"]:
             diffs.append("fit.n: py=%r js=%r" % (py["fit"]["n"], js["fit"]["n"]))
+        if int(py["fit"]["freeParams"]) != int(js["fit"]["freeParams"]):
+            diffs.append("fit.freeParams: py=%r js=%r"
+                         % (py["fit"]["freeParams"], js["fit"]["freeParams"]))
+        if py["fit"]["rmSource"] != js["fit"]["rmSource"]:
+            diffs.append("fit.rmSource: py=%r js=%r"
+                         % (py["fit"]["rmSource"], js["fit"]["rmSource"]))
         for k, tol in FIT_TOL.items():
             a, b = py["fit"][k], js["fit"][k]
             if a is None or b is None:

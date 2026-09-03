@@ -36,7 +36,10 @@ Two held-out experiments, both scored for BOTH vortex constructions:
 
   r34Only   Fit using ONLY the R34 quadrant radii (R50/R64 dropped from the
             snapshot before fitting/building). Predict R50 and R64 per
-            quadrant; compare to the record's real, never-fit values.
+            quadrant; compare to the record's real, never-fit values. This
+            is exactly the "34 kt-only" case fitGTCM() pins rm to
+            willoughbyRmax() climatology for (see its docstring), so the
+            gtcm column here always exercises that pinned-rm path.
   r34R50    Fit using R34 AND R50 (R64 dropped). Predict R64 per quadrant.
             Closer to a real operational bulletin than r34Only (see caveat).
 
@@ -145,7 +148,12 @@ DEFINITIONS = {
         "radii (R50/R64 removed from the snapshot before fitting); predict "
         "R50 and R64 per quadrant and score against the record's real, "
         "never-fit values. See the caveat: this is a harder task than the "
-        "tool usually faces.",
+        "tool usually faces. Since fitGTCM() pins rm to willoughbyRmax() "
+        "climatology whenever no 50/64 kt target is present - which every "
+        "record in this experiment's restricted snapshot satisfies by "
+        "construction - GTCM's r34Only column always exercises that pinned-"
+        "rm, exponent-only path, not the free-rm search r34R50 and the "
+        "tool's real Vmax>64kt bulletins use.",
     "r34R50": "Fit GTCM/perquad using R34 AND R50 (R64 removed); predict "
         "R64 per quadrant and score against the real value. Closer to a "
         "real bulletin than r34Only.",
