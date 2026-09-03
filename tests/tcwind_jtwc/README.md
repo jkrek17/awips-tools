@@ -38,6 +38,24 @@ pip install numpy          # TCWind_JTWC.py needs it; not required outside GFE o
 
 Node is only needed for `compare_py_js.py` (drives `tools_js.js`).
 
+## Exporting for AWIPS
+
+`tools/export_awips.py` (repo root) packages `GFE/procedures/TCWind_JTWC.py`
+into a self-contained bundle a forecaster can copy to a real AWIPS host and
+sanity-check with the AWIPS python (`/awips2/python/bin/python`, Python
+3.6-era) before installing it into GFE. It carries its own copy of
+`test_procedure_harness.py` and the two real fixtures under `selfcheck/`, so
+the check has no dependency on this repo's layout once it is copied over:
+
+```bash
+python3 tools/export_awips.py
+# -> dist/TCWind_JTWC_<VERSION>/  and  dist/TCWind_JTWC_<VERSION>.zip
+```
+
+See `AWIPS_TEST.md` inside the built bundle (generated from the same
+script) for the full pre-flight-to-Fcst-Wind walkthrough written for the
+forecaster running the test.
+
 ## Fixtures (`fixtures/`)
 
 Two are **real, live JTWC bulletins**, fetched verbatim from

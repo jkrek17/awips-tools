@@ -27,7 +27,22 @@ import types
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-PROC_DIR = os.path.join(HERE, "..", "..", "GFE", "procedures")
+
+# Repo layout: this file lives at tests/tcwind_jtwc/, and the procedure is
+# two levels up and back down at GFE/procedures/. AWIPS export bundle layout
+# (see tools/export_awips.py): this file is copied to selfcheck/ inside the
+# bundle, and the procedure sits one level up at the bundle root instead.
+# Try the repo layout first and fall back to the bundle root, so this exact
+# file runs unmodified in both places.
+_REPO_PROC_DIR = os.path.join(HERE, "..", "..", "GFE", "procedures")
+_BUNDLE_PROC_DIR = os.path.join(HERE, "..")
+if os.path.isfile(os.path.join(_REPO_PROC_DIR, "TCWind_JTWC.py")):
+    PROC_DIR = _REPO_PROC_DIR
+else:
+    PROC_DIR = _BUNDLE_PROC_DIR
+
+# Fixtures live alongside this file in both layouts: tests/tcwind_jtwc/
+# fixtures/ in the repo, selfcheck/fixtures/ in the exported bundle.
 FIXTURES = os.path.join(HERE, "fixtures")
 
 
