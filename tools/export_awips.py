@@ -249,7 +249,7 @@ this mode). Run it.
 
 ```
 TEST CASE (not a live storm). v%(version)s. EXPERIMENTAL, verify before
-use. Updated N WindJTWC preview grids. ...
+use. Wrote N 3-hourly WindJTWC preview grids. ...
 ```
 
 The message always starts with `TEST CASE (not a live storm).` and always
@@ -279,16 +279,18 @@ want to test (the NFDTCPWP1-5 checkboxes) and run it.
 **What the status bar should say**, roughly:
 
 ```
-v%(version)s. EXPERIMENTAL, verify before use. Updated N WindJTWC preview
-grids. <PIL> <storm name> (<count>). Peak wind written <X> kt vs bulletin
-max <Y> kt. ...
+v%(version)s. EXPERIMENTAL, verify before use. Wrote N 3-hourly WindJTWC
+preview grids. <PIL> <storm name> (<count>). Peak wind written <X> kt vs
+bulletin max <Y> kt. ...
 ```
 
-`N` is the number of preview grids written, one per forecast block. The
-peak wind written should be close to the bulletin's own reported max wind
-(see the checklist in Step 4). The message may also mention created
-blocks, skipped storm-times, or problems parsing a bulletin; read the
-whole line.
+`N` is the number of preview grids written. The tool always writes at a
+fixed 3-hourly interval across the whole run, regardless of what cadence
+your office's own Fcst Wind background happens to use nearby - the
+message says so explicitly. The peak wind written should be close to the
+bulletin's own reported max wind (see the checklist in Step 4). The
+message may also mention skipped storm-times or problems parsing a
+bulletin; read the whole line.
 
 **What `WindJTWC` is:** a temporary preview weather element, created on
 the fly by the procedure. It is not part of your site's normal parm
