@@ -1825,9 +1825,16 @@ if _IN_GFE:
                     (" ", "", "label"),
                 ]
 
+            # Section headers and blank spacer rows are plain "label" rows
+            # too, so each one still needs its own distinct text (see the
+            # note above) -- the spacers below differ only in how much
+            # whitespace they hold, which renders identically as a blank
+            # line but keeps every varDict key unique.
             VariableList += [
-                (TEST_CASE_LABEL, "No", "radio", ["No", "Yes"]),
+                ("Select the bulletins to process:", "", "label"),
                 ("Bulletins to process:", pilList, "check", pilList),
+                ("  ", "", "label"),
+                ("Choose where to write the output:", "", "label"),
                 ("Write to:", "Preview grid", "radio",
                  ["Preview grid", "Fcst Wind"]),
                 ("Run over selected time range only?", "No", "radio",
@@ -1836,9 +1843,16 @@ if _IN_GFE:
 
             if EXPERIMENTAL and REQUIRE_ACKNOWLEDGEMENT:
                 VariableList += [
+                    ("   ", "", "label"),
                     ("I understand this tool is experimental and I have "
                      "reviewed the output:", "No", "radio", ["No", "Yes"]),
                 ]
+
+            VariableList += [
+                ("    ", "", "label"),
+                ("Testing only:", "", "label"),
+                (TEST_CASE_LABEL, "No", "radio", ["No", "Yes"]),
+            ]
 
             title = "JTWC Tropical Cyclone Wind  (v%s)" % VERSION
             if EXPERIMENTAL:
