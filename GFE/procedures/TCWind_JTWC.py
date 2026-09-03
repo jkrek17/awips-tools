@@ -1777,7 +1777,8 @@ if _IN_GFE:
                     x.epoch for s in storms for x in s["taus"]
                     if x.epoch not in blockStarts))
                 for when in wanted:
-                    built, stFlag = buildFor(when, None)
+                    built, stFlag, tdCount = buildFor(when, None)
+                    skippedTD += tdCount
                     if stFlag or not built:
                         continue
                     try:
