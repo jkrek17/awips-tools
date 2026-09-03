@@ -228,9 +228,11 @@ caption { caption-side: top; text-align: left; font-size: .8rem; color: var(--te
 }
 #plan { width: 100%; height: auto; display: block; border-radius: 3px; }
 .planwrap { display: grid; gap: .6rem; grid-template-columns: 1fr; }
-@media (min-width: 900px) { .planwrap { grid-template-columns: minmax(320px, 460px) minmax(0, 1fr); } }
+@media (min-width: 900px)  { .planwrap { grid-template-columns: minmax(0, 1.45fr) minmax(270px, 0.8fr); } }
+@media (min-width: 1500px) { .planwrap { grid-template-columns: minmax(0, 1.7fr) minmax(300px, 0.7fr); } }
 .legend { display: grid; gap: .25rem; font-size: .81rem; }
-.legend .li { display: grid; grid-template-columns: 46px 1fr; gap: .45rem; align-items: center; }
+.legend .li { display: grid; grid-template-columns: 66px 1fr; gap: .45rem; align-items: center; }
+.legend .li svg + svg { margin-left: 3px; }
 .legend svg { display: block; }
 .cbar-wrap { margin-top: .35rem; }
 #cbar { width: 100%; height: 34px; display: block; }
@@ -636,8 +638,16 @@ var KM2NM = 1 / 1.852;
 // (Vienot-Brettel LMS simulation, then WCAG contrast ratio of the simulated
 // pair): 1.63:1, worst-case CIEDE2000 dE 22.1.  Against the near-black halo
 // each is drawn on: model 10.85:1, best track 4.60:1, observed 19.51:1.
-var C_MODEL = '#7ccafa';   // GTCM modelled rings and rm
-var C_BT    = '#a86c00';   // best-track reported radii
+// Colour encodes the THRESHOLD; line style encodes provenance (solid =
+// modelled, dashed = reported).  It used to be the other way round - one
+// colour for "model", another for "best track", with nine dash patterns
+// carrying 34/50/64 - which made the page's central question ("does the
+// modelled 34 kt radius match the reported one?") a comparison between two
+// differently-coloured curves picked out of nine near-identical dash styles.
+// Same colour, two styles, is the comparison the eye is actually good at.
+var THR_COLOR = { 34: '#5ec8e5', 50: '#ffd24d', 64: '#ff7ba8' };
+var C_MODEL = '#7ccafa';   // rm and other model-only marks
+var C_BT    = '#a86c00';   // legacy; retained for non-threshold marks
 var C_OBS   = '#ffffff';   // observed RMW / ROCI
 var C_HALO  = '#000814';
 var C_GRID  = '#5c7183';
@@ -646,6 +656,11 @@ var C_GRIDT = '#c3d2de';
 // Sequential, luminance-ordered, single-family ramp: safe under every CVD
 // type by construction, and capped short of white so the white observed
 // circles remain the brightest thing on the panel.
+// Banded, not continuous, with edges exactly at 34/50/64 and each band
+// tinted toward that threshold's ring colour.  A smooth ramp gave no visual
+// landmark to compare a ring against; now the modelled ring should sit on a
+// band edge, and any daylight between it and the dashed reported ring is the
+// error, readable straight off the picture.
 var RAMP = [
   [0,   [8, 13, 18]],   [15,  [15, 32, 41]],  [25,  [18, 50, 67]],
   [34,  [29, 74, 95]],  [45,  [39, 96, 118]], [55,  [47, 119, 145]],
@@ -1309,7 +1324,22 @@ function renderQuadTable(an) {
 // ---------------------------------------------------------------------------
 // Plan view
 // ---------------------------------------------------------------------------
+// Discrete bands with hard edges at 34/50/64, each tinted toward that
+// threshold's ring colour, so the modelled ring lands on a visible boundary.
+var FIELD_BANDS = [
+  [34,  [14,  21,  25]],    // below gale - near-neutral, stays quiet
+  [50,  [20,  56,  71]],    // 34-50, toward the 34 kt cyan
+  [64,  [72,  62,  30]],    // 50-64, toward the 50 kt amber
+  [999, [79,  36,  52]]     // 64+,   toward the 64 kt pink
+];
 function rampColor(v) {
+  for (var b = 0; b < FIELD_BANDS.length; b++) {
+    if (v < FIELD_BANDS[b][0]) return FIELD_BANDS[b][1];
+  }
+  return FIELD_BANDS[FIELD_BANDS.length - 1][1];
+}
+
+function rampColorSmooth(v) {
   var i;
   if (v <= RAMP[0][0]) return RAMP[0][1];
   for (i = 1; i < RAMP.length; i++) {
@@ -1372,7 +1402,7 @@ function drawPlan(an) {
   var field = an.field;
 
   ctx.clearRect(0, 0, W, H);
-  ctx.fillStyle = '#080d12';
+  ctx.fillStyle = '#0b1016';
   ctx.fillRect(0, 0, W, H);
 
   // ---- field raster -------------------------------------------------------
@@ -1431,7 +1461,7 @@ function drawPlan(an) {
   // ---- modelled rings -----------------------------------------------------
   // dash pattern carries the threshold, not colour: 34 solid, 50 long dash,
   // 64 short dash, each with a direct inline label.
-  var MODEL_DASH = { 34: [], 50: [11, 6], 64: [3, 4] };
+  var MODEL_DASH = { 34: [], 50: [], 64: [] };   // solid = modelled
   if ($('lyModel').checked) {
     for (var ti = 0; ti < THRS.length; ti++) {
       var thr = THRS[ti];
@@ -1454,12 +1484,12 @@ function drawPlan(an) {
         }
         ctx.closePath();
         ctx.stroke();
-      }, C_MODEL, 2.0, MODEL_DASH[thr]);
+      }, THR_COLOR[thr] || C_MODEL, 2.4, MODEL_DASH[thr]);
       // label on the NNE bearing where it is least likely to collide
       var lr = modelRingRadius(an.field, an.prof, an.snap, 20, thr);
       if (lr !== null && lr * scale < W / 2 - 30) {
         var lp = xy(20, lr);
-        labelHalo(ctx, thr + ' model', lp[0] + 5, lp[1] - 8, C_MODEL, 'left');
+        labelHalo(ctx, thr + ' model', lp[0] + 5, lp[1] - 8, THR_COLOR[thr] || C_MODEL, 'left');
       }
     }
   }
@@ -1468,7 +1498,7 @@ function drawPlan(an) {
   // literal quadrant arcs, each spanning its compass quadrant, plus the
   // radial spokes so an arc that is much larger or smaller than its
   // neighbour is unmistakable.
-  var BT_DASH = { 34: [9, 5], 50: [4, 4], 64: [2, 3] };
+  var BT_DASH = { 34: [8, 5], 50: [8, 5], 64: [8, 5] };  // dashed = reported
   if ($('lyBT').checked && an.rings.length) {
     for (var t2 = 0; t2 < THRS.length; t2++) {
       var th = THRS[t2];
@@ -1492,7 +1522,7 @@ function drawPlan(an) {
               if (first) { ctx.moveTo(pp[0], pp[1]); first = false; } else ctx.lineTo(pp[0], pp[1]);
             }
             ctx.stroke();
-          }, C_BT, 2.2, BT_DASH[th]);
+          }, THR_COLOR[th] || C_BT, 2.6, BT_DASH[th]);
           strokeHalo(ctx, function () {
             ctx.beginPath();
             var s0 = xy(a0, rQ * 0.9), e0 = xy(a0, rQ);
@@ -1500,11 +1530,12 @@ function drawPlan(an) {
             var s1 = xy(a1, rQ * 0.9), e1 = xy(a1, rQ);
             ctx.moveTo(s1[0], s1[1]); ctx.lineTo(e1[0], e1[1]);
             ctx.stroke();
-          }, C_BT, 1.6, []);
+          }, THR_COLOR[th] || C_BT, 1.6, []);
         })(a0, a1, rQ);
         // value label at the bisector
         var bp = xy(QUAD_AZ[Q], rQ);
-        labelHalo(ctx, th + ':' + f0(rQ), bp[0], bp[1] + (QUAD_AZ[Q] < 180 ? -10 : 12), C_BT,
+        labelHalo(ctx, th + ':' + f0(rQ), bp[0], bp[1] + (QUAD_AZ[Q] < 180 ? -10 : 12),
+                  THR_COLOR[th] || C_BT,
                   'center', 'bold 11px system-ui, sans-serif');
       }
     }
@@ -1552,7 +1583,7 @@ function drawColorBar() {
   var cv = $('cbar'), ctx = cv.getContext('2d');
   var W = cv.width, H = cv.height, barH = 20, x;
   ctx.clearRect(0, 0, W, H);
-  ctx.fillStyle = '#080d12'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#0b1016'; ctx.fillRect(0, 0, W, H);
   var maxV = 130;
   for (x = 0; x < W; x++) {
     var v = (x / (W - 1)) * maxV;
@@ -1584,24 +1615,32 @@ function swatch(color, dash, label, extra, bg) {
     '</svg><div>' + label + (extra ? ' <span class="note">' + extra + '</span>' : '') + '</div></div>';
 }
 
-function renderPlanLegend(an, half) {
-  var h = '', BG = '#080d12';
-  h += '<div class="note" style="margin-bottom:.2rem"><strong>Half-width ' + half +
-       ' nm</strong>; range rings every ' + (half <= 120 ? 30 : (half <= 300 ? 60 : 120)) +
-       ' nm. Line style, not colour, distinguishes the thresholds.</div>';
-  h += swatch(C_MODEL, [], 'GTCM modelled 34 kt radius', '', BG);
-  h += swatch(C_MODEL, [11, 6], 'GTCM modelled 50 kt radius', '', BG);
-  h += swatch(C_MODEL, [3, 4], 'GTCM modelled 64 kt radius', '', BG);
-  h += swatch(C_BT, [9, 5], 'Best-track reported 34 kt (quadrant arcs)', '', BG);
-  h += swatch(C_BT, [4, 4], 'Best-track reported 50 kt', '', BG);
-  h += swatch(C_BT, [2, 3], 'Best-track reported 64 kt', '', BG);
-  h += swatch(C_MODEL, [2, 3], 'rₘ &mdash; fitted radius of maximum wind', '', BG);
-  h += swatch(C_OBS, [6, 4], 'RMW &mdash; observed radius of maximum wind', '', BG);
-  h += swatch(C_OBS, [14, 4, 2, 4], 'ROCI &mdash; observed radius of outermost closed isobar', '', BG);
-  h += '<div class="note" style="margin-top:.25rem">rₘ and RMW are drawn together on purpose ' +
-       'and are <strong>not</strong> the same quantity &mdash; see the note at the foot of the page.</div>';
-  $('planLegend').innerHTML = h;
+function swatchSvg(color, dash, bg) {
+  return '<svg width="30" height="12" viewBox="0 0 30 12" aria-hidden="true">' +
+         '<rect width="30" height="12" fill="' + bg + '"/>' +
+         '<line x1="1" y1="6" x2="29" y2="6" stroke="' + color + '" stroke-width="2.4"' +
+         (dash && dash.length ? ' stroke-dasharray="' + dash.join(',') + '"' : '') +
+         '/></svg>';
 }
+
+function renderPlanLegend(an, half) {
+  var h = '', BG = '#0b1016';
+  h += '<div class="note" style="margin-bottom:.3rem"><strong>Half-width ' + half +
+       ' nm</strong>; range rings every ' + (half <= 120 ? 30 : (half <= 300 ? 60 : 120)) +
+       ' nm. <strong>Colour is the wind speed; line style is where it came from</strong> ' +
+       '&mdash; solid is the GTCM model, dashed is the best-track report. ' +
+       'The gap between a solid and a dashed curve of the same colour is the error.</div>';
+  var THRS_L = [34, 50, 64];
+  for (var i = 0; i < THRS_L.length; i++) {
+    var t = THRS_L[i], c = THR_COLOR[t];
+    h += '<div class="li"><span>' + swatchSvg(c, [], BG) + swatchSvg(c, [8, 5], BG) +
+         '</span><span><strong>' + t + ' kt</strong> &mdash; modelled (solid) vs reported (dashed)</span></div>';
+  }
+  h += swatch(C_MODEL, [2, 3], 'r\u2098 \u2014 fitted radius of maximum wind', '', BG);
+  h += swatch(C_OBS, [6, 4], 'RMW / ROCI \u2014 observed, from best track', '', BG);
+  return h;
+}
+
 
 // ---------------------------------------------------------------------------
 // Timeline strip
@@ -1827,8 +1866,8 @@ function updateMapForRecord(an) {
     ring.push(V.destPoint(lat, lon, a, rr));
   }
   if (ring && ring.length) {
-    L.polygon(ring, { color: C_MODEL, weight: 3, fill: false, dashArray: null })
-      .addTo(S.mapDyn).bindTooltip('GTCM modelled 34 kt footprint');
+    L.polygon(ring, { color: THR_COLOR[34], weight: 3, fill: false, dashArray: null })
+      .addTo(S.mapDyn).bindTooltip('GTCM modelled 34 kt footprint (solid)');
   }
 
   // reported 34 kt quadrant polygon
@@ -1843,8 +1882,8 @@ function updateMapForRecord(an) {
       }
     }
     if (poly.length > 3) {
-      L.polygon(poly, { color: C_BT, weight: 3, dashArray: '9,5', fill: false })
-        .addTo(S.mapDyn).bindTooltip('Best-track reported 34 kt radii');
+      L.polygon(poly, { color: THR_COLOR[34], weight: 3, dashArray: '8,5', fill: false })
+        .addTo(S.mapDyn).bindTooltip('Best-track reported 34 kt radii (dashed)');
     }
   }
 }
