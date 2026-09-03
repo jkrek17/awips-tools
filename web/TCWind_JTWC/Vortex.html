@@ -1224,6 +1224,357 @@ function describeStorm(header) {
 
 
 // ===========================================================================
+// NHC TCM (Forecast/Advisory) parser - Atlantic/East Pacific, no Python side
+// ===========================================================================
+//
+// There is NO Python reference for this parser.  GFE/procedures/
+// TCWind_JTWC.py is JTWC-only by design (see its own header comment) and
+// does not ingest NHC products, so the usual "Python wins, then Vortex.html,
+// then Code.gs" tiebreak at the top of this file does not apply here:
+// Vortex.html is canonical over its Code.gs mirror and that is the whole
+// hierarchy for parseTCM().
+//
+// The TCM ("Forecast/Advisory") product is NHC's structural equivalent of
+// JTWC's WTPN warning - position/intensity/motion/quadrant wind radii per
+// forecast hour - but its own text format differs from WTPN in nine ways;
+// each is called out at the regex or code line that handles it:
+//
+//   1. Header block: WMO line, AWIPS id, a title line carrying the system
+//      type + name + advisory number, an office line carrying the ATCF
+//      basin+number+year, then an issuance line carrying the reference
+//      date directly (RE_TCM_ISSUE) - no REMARKS-hunting the way
+//      parseJTWC()'s RE_REFDATE needs.
+//   2. Current position: "<TYPE> CENTER LOCATED NEAR lat lon AT DD/HHMMZ"
+//      (RE_TCM_CURPOS) - DD/HHMMZ, not JTWC's concatenated DDHHMMZ - and
+//      the type word can be HURRICANE/TROPICAL STORM/TROPICAL DEPRESSION/
+//      POTENTIAL TROPICAL CYCLONE/SUBTROPICAL STORM/SUBTROPICAL DEPRESSION/
+//      POST-TROPICAL CYCLONE: NHC's own vocabulary, not JTWC's SUPER
+//      TYPHOON/TYPHOON ladder.  TCM_TYPE_CONF maps it to the same
+//      CONF_TROPICAL/CONF_SUBTROPICAL/CONF_BECOMING ladder in spirit.
+//   3. Movement: "PRESENT MOVEMENT ... OR <deg> DEGREES AT <kt> KT"
+//      (RE_TCM_MOVEMENT) gives the current block's motion directly.
+//      Forecast/outlook blocks never repeat it, so the same
+//      bearingSpeed()-based backfill parseJTWC() uses is ported verbatim
+//      for those; RE_TCM_BACKFILL additionally recovers a same-6h-earlier
+//      position ("AT DD/HHMMZ CENTER WAS LOCATED NEAR ...") NHC prints
+//      specifically so the CURRENT block's motion can be backfilled too,
+//      when for some reason no PRESENT MOVEMENT line exists.
+//   4. Max wind: "MAX SUSTAINED WINDS <v> KT WITH GUSTS TO <g> KT" for the
+//      current position (RE_TCM_WINDS_CUR) vs "MAX WIND <v> KT...GUSTS
+//      <g> KT" for every FORECAST/OUTLOOK VALID block (RE_TCM_WINDS_FCST) -
+//      different wording, same two numbers.
+//   5. Wind radii: all four quadrants on ONE line, NE SE SW NW order, dot
+//      leaders, no "NM"/"QUADRANT" words ("64 KT....... 40NE  35SE  30SW
+//      40NW."). RE_TCM_RADII is anchored at the start of the line
+//      specifically so it can never match the seas-radii line right below
+//      it ("4 M SEAS....300NE ..."), which does not start with a bare
+//      "<n> KT". Quadrant tokens are then pulled out of the tail with a
+//      plain (non-/g) regex applied per matched token - see the loop below
+//      for why this file avoids a shared /g RegExp for that.  A quadrant
+//      absent from the line is left at 0, exactly parseJTWC()'s "a 000 NM
+//      quadrant contributes no fit target" convention (see gtcmTargets()) -
+//      there is no separate "not reported" state anywhere in this data
+//      model, on either parser's output.
+//   6. "AT DD/HHMMZ CENTER WAS LOCATED NEAR ..." (RE_TCM_BACKFILL) is an
+//      optional extra data point for backfilling the CURRENT block's
+//      motion, not a forecast tau of its own - it is matched and stashed
+//      in `priorPos` before the main "is this line a new block" checks,
+//      and never pushed onto `taus`.
+//   7. Each later block starts "FORECAST VALID DD/HHMMZ lat lon" (days
+//      1-3) or "OUTLOOK VALID DD/HHMMZ lat lon" (days 4-5) - RE_TCM_FCST
+//      treats both identically. Neither carries an explicit tau-hour
+//      label the way JTWC's "XX HRS, VALID AT:" does, so tau is computed
+//      from every block's own epoch once all of them are known, and is
+//      NOT set from block order (which is not guaranteed to be file
+//      order once free text is mixed in). RE_TCM_FCST also does not
+//      anchor at the line's end: a live product can append a status word
+//      directly onto the lon token with no space
+//      ("OUTLOOK VALID 07/1200Z 24.5N 147.6W...POST-TROPICAL" - confirmed
+//      against a real, live NHC product), and a terminal block can have a
+//      valid time with NO position at all
+//      ("OUTLOOK VALID 08/1200Z...DISSIPATED" - also confirmed live). The
+//      first case still parses (RE_TCM_FCST's optional trailing group
+//      captures the status word for a confidence downgrade; anything
+//      after the matched groups is simply not part of the match). The
+//      second case fails RE_TCM_FCST outright, because "\s+" between the
+//      DTG and the lat digits requires a space that is not there when no
+//      position follows - the block is silently skipped, exactly as it
+//      must be.
+//   8. Arbitrary free text between blocks (WINDS AND SEAS VARY GREATLY...,
+//      REPEAT...CENTER LOCATED..., EXTENDED OUTLOOK. NOTE...ERRORS...,
+//      REQUEST FOR 3 HOURLY SHIP REPORTS...) matches none of the regexes
+//      below and is silently skipped, the same tolerant line-scanner style
+//      parseJTWC() already uses.
+//   9. "$$" marks the end of meaningful content (forecaster sign-off
+//      follows) - RE_TCM_TERM stops the scan there outright, a hard stop,
+//      unlike parseJTWC()'s REMARKS: boundary (which still scans for the
+//      reference date past it) - the TCM's reference date is already read
+//      directly off the issuance line before the main scan even starts.
+//
+// ===========================================================================
+
+// /m: matched against the whole joined product (`full`), not line-by-line
+// like every other regex below, so `^` needs multiline mode to anchor at
+// the START OF THE TITLE LINE rather than only offset 0 of the string.
+var RE_TCM_TITLE    = /^\s*(HURRICANE|TROPICAL STORM|TROPICAL DEPRESSION|POTENTIAL TROPICAL CYCLONE|SUBTROPICAL STORM|SUBTROPICAL DEPRESSION|POST-TROPICAL CYCLONE)\s+(.+?)\s+FORECAST\/ADVISORY NUMBER\s+(\d+)/m;
+var RE_TCM_ATCFID   = /\b(AL|EP|CP)(\d{2})(\d{4})\b/;
+var RE_TCM_ISSUE    = /(\d{3,4})\s+UTC\s+[A-Z]{3}\s+([A-Z]{3})\s+(\d{1,2})\s+(\d{4})/;
+var RE_TCM_CURPOS   = /^\s*(HURRICANE|TROPICAL STORM|TROPICAL DEPRESSION|POTENTIAL TROPICAL CYCLONE|SUBTROPICAL STORM|SUBTROPICAL DEPRESSION|POST-TROPICAL CYCLONE)\s+CENTER LOCATED NEAR\s+(\d+(?:\.\d+)?)\s*([NS])\s+(\d+(?:\.\d+)?)\s*([EW])\s+AT\s+(\d{2})\/(\d{4})Z/;
+var RE_TCM_BACKFILL = /^\s*AT\s+(\d{2})\/(\d{4})Z\s+CENTER WAS LOCATED NEAR\s+(\d+(?:\.\d+)?)\s*([NS])\s+(\d+(?:\.\d+)?)\s*([EW])/;
+var RE_TCM_FCST      = /^\s*(FORECAST|OUTLOOK)\s+VALID\s+(\d{2})\/(\d{4})Z\s+(\d+(?:\.\d+)?)\s*([NS])\s+(\d+(?:\.\d+)?)\s*([EW])(?:\.\.\.([A-Z][A-Z\- ]*))?/;
+var RE_TCM_MOVEMENT = /PRESENT MOVEMENT.*?(\d+)\s*DEGREES AT\s+(\d+)\s*KT/;
+var RE_TCM_WINDS_CUR  = /MAX SUSTAINED WINDS\s+(\d+)\s*KT WITH GUSTS TO\s+(\d+)\s*KT/;
+var RE_TCM_WINDS_FCST = /MAX WIND\s+(\d+)\s*KT\.*\s*GUSTS\s+(\d+)\s*KT/;
+// Anchored start-to-(near-)end so this can never match the seas-radii line
+// right below it in a real product ("4 M SEAS....300NE ..."), which does
+// not start with a bare "<n> KT" - see structural difference 5 above.
+var RE_TCM_RADII    = /^\s*(\d+)\s*KT\.+\s*(.+?)\.?\s*$/;
+var RE_TCM_PRESSURE = /(?:ESTIMATED\s+)?MINIMUM\s+CENTRAL\s+PRESSURE\s+(\d+)\s*MB/;
+var RE_TCM_TERM     = /^\s*\$\$\s*$/;
+
+/** Confidence ladder for NHC's own system-type vocabulary, in the same
+ *  spirit as parseJTWC()'s SUPER TYPHOON/TYPHOON/TROPICAL STORM/TROPICAL
+ *  DEPRESSION ladder (see structural difference 2 above) but NOT the same
+ *  words: NHC never says SUPER TYPHOON or TYPHOON, and JTWC never says
+ *  POTENTIAL TROPICAL CYCLONE or POST-TROPICAL CYCLONE. */
+var TCM_TYPE_CONF = {
+  'HURRICANE': CONF_TROPICAL,
+  'TROPICAL STORM': CONF_TROPICAL,
+  'TROPICAL DEPRESSION': CONF_TROPICAL,
+  'POTENTIAL TROPICAL CYCLONE': CONF_TROPICAL,
+  'SUBTROPICAL STORM': CONF_SUBTROPICAL,
+  'SUBTROPICAL DEPRESSION': CONF_SUBTROPICAL,
+  'POST-TROPICAL CYCLONE': CONF_BECOMING
+};
+
+/** Parse an NHC Atlantic/East Pacific TCM (Forecast/Advisory) bulletin into
+ *  the SAME {header, taus, text} shape parseJTWC() returns for a WTPN
+ *  warning, so every downstream consumer (interpolateTrack(), fitGTCM()/
+ *  fitTauCached(), vortexFieldGTCM(), all of Index.html's rendering) works
+ *  on either parser's output completely unmodified.  See the big comment
+ *  above for how each of the nine format differences from WTPN is handled.
+ *
+ *  Field-mapping notes - the TCM product's own vocabulary differs from
+ *  WTPN's, so these fields carry adapted meanings:
+ *   - header.systemType    the advisory's own type word (HURRICANE,
+ *                          TROPICAL STORM, ...) from the title line.
+ *   - header.stormId       ATCF basin+number (e.g. "AL13", "EP09"), from
+ *                          the office line's AL132023/EP092023-style id.
+ *                          JTWC's stormId is a basin-letter-suffixed
+ *                          number ("22W"); NHC's text never repeats a
+ *                          short id like that, so this is the nearest
+ *                          stable per-storm identifier the product
+ *                          actually carries.
+ *   - header.stormName     the name from the title line ("LEE"), same
+ *                          role as JTWC's stormName.
+ *   - header.warningNumber the "FORECAST/ADVISORY NUMBER", the same role
+ *                          as JTWC's "WARNING NR".
+ *   - header.pressureMb    from "(ESTIMATED )MINIMUM CENTRAL PRESSURE",
+ *                          same field as JTWC's.
+ *   - header.refDate       [day, month, year] read directly off the
+ *                          issuance line - NOT hunted for in a REMARKS
+ *                          block the way JTWC's is (see difference 1).
+ *   - header.basin         'AT' (from an AL- ATCF id) or 'EP', or the raw
+ *                          ATCF basin letters for anything else.
+ *                          Informational only - not part of parseJTWC()'s
+ *                          header shape, so callers that do not know
+ *                          about it can safely ignore it.
+ *
+ *  taus carry exactly the fields newTau() already defines. `tau` (the
+ *  forecast hour) has no printed label in a TCM product, so it is
+ *  computed as (blockEpoch - initialEpoch) / 3600 once every block's own
+ *  epoch is known (see difference 7). */
+function parseTCM(text) {
+  var lines;
+  if (Object.prototype.toString.call(text) === '[object Array]') {
+    lines = text.slice();
+    text = lines.join('\n');
+  } else {
+    lines = String(text).split(/\r?\n/);
+  }
+  var full = lines.join('\n');
+
+  var mi = RE_TCM_ISSUE.exec(full);
+  if (!mi || !dictHas(MONTHS, mi[2])) {
+    throw new Error('Could not find a "<time> UTC <dow> <mon> <day> <year>" ' +
+                    'issuance line in the bulletin; cannot resolve DTGs.');
+  }
+  var refDay = parseInt(mi[3], 10);
+  var refMonth = MONTHS[mi[2]];
+  var refYear = parseInt(mi[4], 10);
+
+  var taus = [];
+  var cur = null;
+  var curThreshold = null;
+  // The "AT DD/HHMMZ CENTER WAS LOCATED NEAR ..." backfill point (six hours
+  // before the current position) - difference 6 above.  Not a tau.
+  var priorPos = null;
+
+  for (var j = 0; j < lines.length; j++) {
+    var ln = lines[j];
+    if (RE_TCM_TERM.test(ln)) break;   // "$$" - hard stop, difference 9
+
+    var mc = RE_TCM_CURPOS.exec(ln);
+    if (mc) {
+      cur = newTau(0);   // real tau assigned once every block's epoch is known
+      cur.epoch = dtgToEpoch(mc[6] + mc[7], refDay, refMonth, refYear);
+      var cla = parseFloat(mc[2]); if (mc[3] === 'S') cla = -cla;
+      var clo = parseFloat(mc[4]); if (mc[5] === 'W') clo = -clo;
+      cur.lat = cla; cur.lon = clo;
+      if (dictHas(TCM_TYPE_CONF, mc[1])) cur.conf = TCM_TYPE_CONF[mc[1]];
+      taus.push(cur);
+      curThreshold = null;
+      continue;
+    }
+
+    var mf = RE_TCM_FCST.exec(ln);
+    if (mf) {
+      cur = newTau(0);
+      cur.epoch = dtgToEpoch(mf[2] + mf[3], refDay, refMonth, refYear);
+      var fla = parseFloat(mf[4]); if (mf[5] === 'S') fla = -fla;
+      var flo = parseFloat(mf[6]); if (mf[7] === 'W') flo = -flo;
+      cur.lat = fla; cur.lon = flo;
+      // Difference 7: a status word can ride directly on this line
+      // ("...POST-TROPICAL") with no line break.  Downgrade confidence the
+      // same way a JTWC "BECOMING EXTRATROPICAL" line does, but do not
+      // treat it as an error either way if it names something else.
+      if (mf[8]) {
+        var status = mf[8].toUpperCase();
+        if (status.indexOf('POST-TROPICAL') >= 0 || status.indexOf('EXTRATROPICAL') >= 0) {
+          cur.conf = CONF_BECOMING;
+        } else if (status.indexOf('SUBTROPICAL') >= 0) {
+          cur.conf = CONF_SUBTROPICAL;
+        }
+      }
+      taus.push(cur);
+      curThreshold = null;
+      continue;
+    }
+
+    var mb = RE_TCM_BACKFILL.exec(ln);
+    if (mb) {
+      var pla = parseFloat(mb[3]); if (mb[4] === 'S') pla = -pla;
+      var plo = parseFloat(mb[5]); if (mb[6] === 'W') plo = -plo;
+      priorPos = { lat: pla, lon: plo,
+                   epoch: dtgToEpoch(mb[1] + mb[2], refDay, refMonth, refYear) };
+      continue;
+    }
+
+    if (cur === null) continue;
+
+    var mw1 = RE_TCM_WINDS_CUR.exec(ln);
+    if (mw1) { cur.vmax = parseFloat(mw1[1]); cur.gust = parseFloat(mw1[2]); continue; }
+
+    var mw2 = RE_TCM_WINDS_FCST.exec(ln);
+    if (mw2) { cur.vmax = parseFloat(mw2[1]); cur.gust = parseFloat(mw2[2]); continue; }
+
+    var mr = RE_TCM_RADII.exec(ln);
+    if (mr) {
+      curThreshold = parseInt(mr[1], 10);
+      if (!dictHas(cur.radii, curThreshold)) cur.radii[curThreshold] = emptyQuads();
+      // Per-token, non-/g regex on purpose: see the file-level comment at
+      // the top of the JTWC parser section about why a shared /g RegExp is
+      // never reused across calls here.  An inline /g literal on
+      // String.match() is safe (a fresh RegExp per evaluation), the loop
+      // body's plain regex is safe (no /g at all); nothing here is a
+      // module-level /g RegExp that could carry lastIndex across lines.
+      var toks = mr[2].match(/\d+\s*(?:NE|SE|SW|NW)/g) || [];
+      for (var ti = 0; ti < toks.length; ti++) {
+        var tm = /(\d+)\s*(NE|SE|SW|NW)/.exec(toks[ti]);
+        if (tm) cur.radii[curThreshold][tm[2]] = parseFloat(tm[1]);
+      }
+      continue;
+    }
+
+    var mm = RE_TCM_MOVEMENT.exec(ln);
+    if (mm) { cur.motionDir = parseFloat(mm[1]); cur.motionSpd = parseFloat(mm[2]); continue; }
+
+    if (ln.indexOf('BECOMING SUBTROPICAL') >= 0 ||
+        ln.indexOf('BECOMING EXTRATROPICAL') >= 0) {
+      cur.conf = CONF_BECOMING;
+    } else if (RE_TRANSITION.test(ln)) {
+      cur.conf = CONF_SUBTROPICAL;
+    }
+  }
+
+  // Drop anything incomplete (e.g. a DISSIPATED block with a valid time
+  // and no position - difference 7), then order by valid time.
+  taus = taus.filter(function (t) {
+    return t.lat !== null && t.epoch !== null && t.vmax !== null;
+  });
+  taus.sort(function (a, b) { return a.epoch - b.epoch; });
+
+  if (!taus.length) {
+    throw new Error('No usable FORECAST/ADVISORY position blocks parsed ' +
+                    'from this bulletin.');
+  }
+
+  // tau has no printed label in this product (difference 7) - compute it
+  // from each block's own epoch now that every one is known and sorted.
+  var t0epoch = taus[0].epoch;
+  for (var ti2 = 0; ti2 < taus.length; ti2++) {
+    taus[ti2].tau = Math.round((taus[ti2].epoch - t0epoch) / 3600);
+  }
+
+  // Once a system is flagged sub/post-tropical it stays that way
+  // downstream, exactly like parseJTWC().
+  var worst = CONF_TROPICAL;
+  for (var k = 0; k < taus.length; k++) {
+    worst = Math.min(worst, taus[k].conf);
+    taus[k].conf = worst;
+  }
+
+  // Backfill the CURRENT block's motion from the six-hour-earlier position
+  // line, when there was no PRESENT MOVEMENT line to read it from directly
+  // (difference 3/6).
+  if (taus[0].motionSpd === null && priorPos !== null) {
+    var bsp = bearingSpeed(priorPos, taus[0]);
+    taus[0].motionDir = bsp[0];
+    taus[0].motionSpd = bsp[1];
+  }
+  // Backfill everything else the same way parseJTWC() does: forward from
+  // the next tau, or carry back from the previous one.
+  for (var n = 0; n < taus.length; n++) {
+    if (taus[n].motionSpd === null) {
+      if (n + 1 < taus.length) {
+        var bs = bearingSpeed(taus[n], taus[n + 1]);
+        taus[n].motionDir = bs[0];
+        taus[n].motionSpd = bs[1];
+      } else if (n > 0) {
+        taus[n].motionDir = taus[n - 1].motionDir;
+        taus[n].motionSpd = taus[n - 1].motionSpd;
+      } else {
+        taus[n].motionDir = 0.0;
+        taus[n].motionSpd = 0.0;
+      }
+    }
+  }
+
+  var header = {
+    refDate: [refDay, refMonth, refYear],
+    systemType: null, stormId: null, stormName: null,
+    warningNumber: null, pressureMb: null, basin: null
+  };
+
+  var mt = RE_TCM_TITLE.exec(full);
+  if (mt) {
+    header.systemType = mt[1];
+    header.stormName = mt[2].replace(/\s+$/, '');
+    header.warningNumber = parseInt(mt[3], 10);
+  }
+  var ma = RE_TCM_ATCFID.exec(full);
+  if (ma) {
+    header.stormId = ma[1] + ma[2];
+    header.basin = (ma[1] === 'AL') ? 'AT' : ma[1];
+  }
+  var mp = RE_TCM_PRESSURE.exec(full);
+  if (mp) header.pressureMb = parseInt(mp[1], 10);
+
+  return { header: header, taus: taus, text: text };
+}
+
+
+// ===========================================================================
 // Exports
 // ===========================================================================
 //
@@ -1242,6 +1593,7 @@ function describeStorm(header) {
     vortexFieldGTCM: vortexFieldGTCM,
     resolveRmax: resolveRmax,
     parseJTWC: parseJTWC,
+    parseTCM: parseTCM,
     // --- shared helpers ---
     gtcmAsymmetry: gtcmAsymmetry,
     gtcmTargets: gtcmTargets,

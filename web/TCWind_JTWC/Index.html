@@ -381,8 +381,9 @@ details li { margin-bottom:5px; }
   <div id="pageNote" role="status"><?= pageNote ?></div>
 
   <header id="masthead">
-    <h1>JTWC Tropical Cyclone Wind Field
-      <small>NW Pacific &middot; GTCM / WTCM construction</small></h1>
+    <h1>Tropical Cyclone Wind Field
+      <small>JTWC (West Pacific) &middot; NHC (Atlantic, East Pacific) &middot;
+        GTCM / WTCM construction</small></h1>
     <nav aria-label="Pages">
       <a href="<?= baseUrl ?>?page=live" aria-current="page">Live</a>
       <a href="<?= baseUrl ?>?page=archive">Archive</a>
@@ -423,9 +424,11 @@ details li { margin-bottom:5px; }
   </div>
 
   <div id="paste">
-    <p>Fallback for when tgftp.nws.noaa.gov is unreachable. Paste one complete
-      WTPN warning; it is parsed on the server by the same parser the live
-      fetch uses.</p>
+    <p>Fallback for when the live source is unreachable. Paste one complete
+      bulletin - a JTWC WTPN warning or an NHC TCM Forecast/Advisory - and
+      it is parsed on the server by the same parsers the live fetch uses;
+      the server tries the WTPN parser first, then the TCM parser, so
+      either format just works.</p>
     <label for="pasteBox" style="font-size:12px;color:var(--muted)">Bulletin text</label>
     <textarea id="pasteBox" spellcheck="false"
       placeholder="WTPN31 PGTW 021500&#10;&#10;1. TYPHOON 12W (KROVANH) WARNING NR 014&#10;..."></textarea>
@@ -536,9 +539,14 @@ details li { margin-bottom:5px; }
             boundaries. The office chose coherence over ring fidelity: the
             tool's job is a physically plausible field consistent with the
             bulletin, not a reproduction of the radii.</p>
-          <p>Live data: warnings from the Joint Typhoon Warning Center
-            (JTWC), fetched from NOAA's Telecommunications Gateway
-            (tgftp.nws.noaa.gov) and cached briefly server-side. The
+          <p>Live data, three basins: JTWC West Pacific warnings (WTPN),
+            fetched from NOAA's Telecommunications Gateway
+            (tgftp.nws.noaa.gov); NHC Atlantic and East Pacific Forecast/
+            Advisories (TCM), fetched from NHC's own text server
+            (nhc.noaa.gov) - tgftp does not carry this product class.
+            Both are cached briefly server-side. All three basins are
+            built with the same GTCM/WTCM construction above; nothing
+            about the model differs by basin. The
             <a href="<?= baseUrl ?>?page=archive">Archive</a> and
             <a href="<?= baseUrl ?>?page=findings">Findings</a> pages instead
             use post-season best track from NCEI's International Best Track
@@ -1469,12 +1477,25 @@ function param(grid, label, value, unit, wide) {
   grid.appendChild(d);
 }
 
-/** JTWC intensity category in plain words, from the storm's own CURRENT
- *  Vmax at this forecast hour (not the header text, which is written once
- *  and can lag an intensifying or weakening system) - JTWC's own bands:
- *  tropical depression below 34 kt, tropical storm 34-63, typhoon 64-129,
- *  super typhoon 130+. */
-function jtwcCategoryWord_(vmaxKt) {
+/** Intensity category in plain words, from the storm's own CURRENT Vmax at
+ *  this forecast hour (not the header text, which is written once and can
+ *  lag an intensifying or weakening system) - basin-appropriate agency
+ *  vocabulary, not one ladder applied everywhere: JTWC's West Pacific
+ *  bands (tropical depression below 34 kt, tropical storm 34-63, typhoon
+ *  64-129, super typhoon 130+) for basin 'WP'; NHC's Atlantic/East Pacific
+ *  words (tropical depression / tropical storm / hurricane / major
+ *  hurricane) for 'AT'/'EP', with the major-hurricane cut approximated at
+ *  100 kt (roughly Saffir-Simpson category 3) since this is a plain-
+ *  language gloss, not a certified NHC category call. Anything else
+ *  (basin unknown, e.g. a paste with no resolvable ATCF id) falls back to
+ *  JTWC's words, the tool's original vocabulary. */
+function categoryWord_(vmaxKt, basin) {
+  if (basin === 'AT' || basin === 'EP') {
+    if (vmaxKt >= 100) return 'major hurricane';
+    if (vmaxKt >= 64) return 'hurricane';
+    if (vmaxKt >= 34) return 'tropical storm';
+    return 'tropical depression';
+  }
   if (vmaxKt >= 130) return 'super typhoon';
   if (vmaxKt >= 64) return 'typhoon';
   if (vmaxKt >= 34) return 'tropical storm';
@@ -1541,7 +1562,7 @@ function renderRail(it, epoch) {
   }
 
   if (!hasField(it)) {
-    setPlainSummary_(V.describeStorm(h) + ' is a ' + jtwcCategoryWord_(snap.vmax) +
+    setPlainSummary_(V.describeStorm(h) + ' is a ' + categoryWord_(snap.vmax, it.storm.basin) +
       ' (' + n0(snap.vmax) + ' kt max sustained wind) at ' +
       document.getElementById('tTau').textContent + ', valid ' +
       document.getElementById('tValid').textContent + '. It is below ' +
@@ -1579,7 +1600,7 @@ function renderRail(it, epoch) {
   document.getElementById('fitTargets').textContent =
     fit.n + ' target' + (fit.n === 1 ? '' : 's');
 
-  setPlainSummary_(V.describeStorm(h) + ' is a ' + jtwcCategoryWord_(snap.vmax) +
+  setPlainSummary_(V.describeStorm(h) + ' is a ' + categoryWord_(snap.vmax, it.storm.basin) +
     ' (' + n0(snap.vmax) + ' kt max sustained wind) at ' +
     document.getElementById('tTau').textContent + ', valid ' +
     document.getElementById('tValid').textContent + '. On the map, the ' +
@@ -1711,13 +1732,39 @@ function stepTime(delta) {
    Storm chips
    ----------------------------------------------------------------------- */
 
+/** pil prefix -> short chip prefix, one entry per basin's naming scheme.
+ *  Longest/most-specific prefixes are not required to come first: none of
+ *  these three is a prefix of another. Route every pil-to-chip-label spot
+ *  in this file through pilChipLabel_() rather than a one-off
+ *  .replace('NFDTCPWP', 'WP') - there were two such spots (here and the
+ *  "from WPn warning position..." origin-storm label below) before the
+ *  Atlantic/East Pacific basins existed; a third would be just as easy to
+ *  miss. */
+var PIL_CHIP_PREFIX = [
+  { pil: 'NFDTCPWP', chip: 'WP' },   // JTWC, West Pacific
+  { pil: 'TCMAT', chip: 'AT' },      // NHC, Atlantic
+  { pil: 'TCMEP', chip: 'EP' }       // NHC, East Pacific
+];
+
+/** Short, human chip label for a real pil, e.g. "NFDTCPWP3" -> "WP3",
+ *  "TCMAT2" -> "AT2", "TCMEP1" -> "EP1". Anything not matching a known
+ *  basin's prefix is returned unchanged rather than mangled. */
+function pilChipLabel_(pil) {
+  var s = String(pil);
+  for (var i = 0; i < PIL_CHIP_PREFIX.length; i++) {
+    var p = PIL_CHIP_PREFIX[i];
+    if (s.indexOf(p.pil) === 0) return p.chip + s.slice(p.pil.length);
+  }
+  return s;
+}
+
 /** Short, human pil badge. 'PASTED' (parsePasted()'s synthetic pil) reads
- *  as "Pasted"; a real NFDTCPWPn pil reads as "WPn"; anything missing or
- *  unrecognised falls back to '?' rather than throwing. */
+ *  as "Pasted"; a real pil reads as "WPn"/"ATn"/"EPn" via pilChipLabel_();
+ *  anything missing falls back to '?' rather than throwing. */
 function slotPilBadge_(pil) {
   if (!pil) return '?';
   if (pil === 'PASTED') return 'Pasted';
-  return String(pil).replace('NFDTCPWP', 'WP');
+  return pilChipLabel_(pil);
 }
 
 /** Short, human label for a dead (non-live) chip. Never echoes a raw
@@ -1824,7 +1871,7 @@ function render() {
     var dh = (epoch - t0) / 3600;
     tTau.textContent = 'τ' + (dh >= 0 ? '+' : '−') +
       (Math.abs(dh) % 1 === 0 ? Math.abs(dh).toFixed(0) : Math.abs(dh).toFixed(1));
-    tOrigin.textContent = 'from ' + originStorm.pil.replace('NFDTCPWP', 'WP') +
+    tOrigin.textContent = 'from ' + pilChipLabel_(originStorm.pil) +
       ' warning position ' + fmtZ(t0);
   } else {
     tTau.textContent = 'τ+--';
@@ -1900,11 +1947,11 @@ function render() {
    ----------------------------------------------------------------------- */
 
 /** Whether a dead slot means "no active storm here" (calm) rather than a
- *  real failure. tgftp answers HTTP 404 for any of the five NFDTCPWPn slots
- *  with no current product - normal whenever fewer than five NW Pacific
- *  systems are active, not something to show in red. Everything else
- *  (network unreachable, a bad parse, a too-thin product) is a real
- *  failure and stays red. */
+ *  real failure. The live source (tgftp for WP, NHC's text server for AT/
+ *  EP) answers HTTP 404 for any bin with no current product - normal
+ *  whenever fewer than five systems are active in that basin, not
+ *  something to show in red. Everything else (network unreachable, a bad
+ *  parse, a too-thin product) is a real failure and stays red. */
 function slotIsCalmEmpty_(sl) {
   return !sl.ok && !sl.stale && sl.errorKind === 'http' && sl.httpStatus === 404;
 }
@@ -1923,20 +1970,36 @@ function slotErrorLine_(sl) {
     (sl.hint ? '\n      ' + sl.hint : '') };
 }
 
+/** {prefix, n} for a chip label like "WP3"/"AT5"/"EP1", or null for
+ *  anything not shaped like <letters><digits>. Prefix-aware so a range
+ *  never accidentally bridges two basins (e.g. "...WP5" next to "AT1..."
+ *  never merges, even though 5-then-1 could look adjacent under some other
+ *  numbering). */
+function chipLabelParts_(w) {
+  var m = /^([A-Za-z]+)(\d+)$/.exec(String(w));
+  return m ? { prefix: m[1], n: parseInt(m[2], 10) } : null;
+}
+
 /** One calm, muted line summarising every "no active storm in this slot"
  *  (HTTP 404) slot together - e.g. "WP3 to WP5: no active storm in these
  *  slots" - so five ordinary empty slots read as one calm fact, not five
- *  errors. Returns null when there are none. */
+ *  errors. Ranges never bridge two basins (chipLabelParts_() is
+ *  prefix-aware), so a run of calm WP, AT and EP slots reads as up to
+ *  three ranges, not one that wrongly spans basins. Returns null when
+ *  there are none. */
 function calmEmptySlotsLine_(allSlots) {
   var labels = [];
   for (var i = 0; i < allSlots.length; i++) {
     if (slotIsCalmEmpty_(allSlots[i])) labels.push(slotPilBadge_(allSlots[i].pil));
   }
   if (!labels.length) return null;
-  var num = function (w) { return parseInt(String(w).replace('WP', ''), 10); };
+  var adjacent = function (a, b) {
+    var pa = chipLabelParts_(a), pb = chipLabelParts_(b);
+    return !!(pa && pb && pa.prefix === pb.prefix && pb.n === pa.n + 1);
+  };
   var ranges = [], start = labels[0], prev = labels[0];
   for (var k = 1; k < labels.length; k++) {
-    if (num(labels[k]) === num(prev) + 1) { prev = labels[k]; continue; }
+    if (adjacent(prev, labels[k])) { prev = labels[k]; continue; }
     ranges.push(start === prev ? start : start + ' to ' + prev);
     start = labels[k]; prev = labels[k];
   }
@@ -1982,7 +2045,7 @@ function ingest(results, sourceLabel) {
     }
     var calmLine2 = calmEmptySlotsLine_(slots);
     if (calmLine2) lines.push(calmLine2);
-    lines.push({ text: 'If tgftp is unreachable, use "Paste a bulletin".' });
+    lines.push({ text: 'If the live source is unreachable, use "Paste a bulletin".' });
     setStatus(lines);
     return;
   }
@@ -1994,13 +2057,13 @@ function ingest(results, sourceLabel) {
 }
 
 function load(force) {
-  setStatus([{ text: force ? 'Fetching all five WP slots from tgftp…'
+  setStatus([{ text: force ? 'Fetching all 15 bulletin slots (WP/AT/EP)…'
                            : 'Loading (server cache allowed)…' }]);
   document.getElementById('btnFetch').disabled = true;
   google.script.run
     .withSuccessHandler(function (res) {
       document.getElementById('btnFetch').disabled = false;
-      ingest(res, 'the NW Pacific bulletin slots');
+      ingest(res, 'the JTWC/NHC bulletin slots');
     })
     .withFailureHandler(function (err) {
       document.getElementById('btnFetch').disabled = false;
@@ -2008,8 +2071,8 @@ function load(force) {
         { level: 'err', text: 'getBulletins() failed: ' +
           (err && err.message ? err.message : String(err)) },
         { text: 'The page could not reach the Apps Script server at all. This ' +
-                'is not a tgftp outage. Reload the page; if it persists, paste a ' +
-                'bulletin below to keep working.' }
+                'is not a tgftp/NHC outage. Reload the page; if it persists, ' +
+                'paste a bulletin below to keep working.' }
       ]);
     })
     .getBulletins(!!force);
@@ -2037,10 +2100,12 @@ function parsePasted() {
       setStatus([
         { level: 'err', text: 'parsePasted() failed: ' +
           (err && err.message ? err.message : String(err)) },
-        { text: 'The text reached the server but did not parse as a WTPN warning. ' +
-                'Check that the whole product was pasted, including the REMARKS ' +
-                'block. The reference date lives there; without it, no DTG ' +
-                'can be resolved.' }
+        { text: 'The text reached the server but did not parse as either a ' +
+                'JTWC WTPN warning or an NHC TCM Forecast/Advisory (the ' +
+                'server tries WTPN first, then TCM). Check that the whole ' +
+                'product was pasted - a WTPN warning needs its REMARKS ' +
+                'block (the reference date lives there); a TCM needs its ' +
+                'issuance line ("<time> UTC <day> <mon> <day#> <year>").' }
       ]);
     })
     .parsePasted(txt);
@@ -2048,14 +2113,14 @@ function parsePasted() {
 
 /**
  * Merge a freshly parsed pasted storm into the existing slot list (D2 fix).
- * Pasting supplements the five live slots, it does not replace them - a
+ * Pasting supplements the live slots, it does not replace them - a
  * bare `ingest([r], ...)` here used to wipe out `slots` entirely (dropping
  * to zero chips) and, because Code.gs's parsePasted() envelope carried no
  * top-level `pil`, threw inside renderChips() on `sl.pil.replace`. Both are
  * fixed now (Code.gs sets `pil: 'PASTED'`; renderChips() no longer assumes
  * a slot has one), but this still merges rather than replaces so a paste
- * during a live fetch adds a sixth "Pasted" chip instead of hiding the
- * other five. Re-pasting replaces the previous paste (same synthetic pil).
+ * during a live fetch adds one extra "Pasted" chip instead of hiding the
+ * other slots. Re-pasting replaces the previous paste (same synthetic pil).
  */
 function ingestPasted(result) {
   var merged = [];
