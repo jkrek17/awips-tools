@@ -453,15 +453,24 @@ function nelderMead(fn, guess, step, maxIter) {
 
 /** Fit the GTCM vortex to one storm-time.  Port of fitGTCM().
  *
- *  Returns {rm, ri, x1, x2, ax, ay, a, n, freeParams, rms}.  Users Guide
- *  steps 2b-3: climatological first guess from (5)/(6); ri at the median
- *  reported radius; (rm, x1, x2) by weighted least squares on WIND error
- *  (7); then ax/ay released within GTCM_ASYM_MAX_DEV_KT with the size
- *  parameters held fixed.
+ *  Returns {rm, ri, x1, x2, ax, ay, a, n, freeParams, rms, rmSource}.
+ *  Users Guide steps 2b-3: climatological first guess from (5)/(6); ri at
+ *  the median reported radius; (rm, x1, x2) by weighted least squares on
+ *  WIND error (7); then ax/ay released within GTCM_ASYM_MAX_DEV_KT with the
+ *  size parameters held fixed.
  *
  *  The fit deliberately does NOT pass through the reported radii.  The
  *  guide minimises wind error, not radius error, because forcing the radii
- *  produces unrealistic structure. */
+ *  produces unrealistic structure.
+ *
+ *  rmSource is 'fit' unless the target set contains no 50/64 kt radii, in
+ *  which case it is 'climatology': a bulletin reporting ONLY 34 kt
+ *  quadrants carries no information at all about core size, so rm is
+ *  pinned to willoughbyRmax(vmax, lat) instead of being searched, and only
+ *  the shared decay exponent is fit.  If even that pinned-rm profile
+ *  cannot reach 34 kt at any target, the exponent clamps at GTCM_X_MIN
+ *  rather than letting rm move to compensate - see TCWind_JTWC.py's
+ *  fitGTCM() docstring, which this mirrors. */
 function fitGTCM(snap) {
   var vmax = Number(snap.vmax);
   var lat = Number(snap.lat);
@@ -477,9 +486,12 @@ function fitGTCM(snap) {
 
   var targets = gtcmTargets(snap);
   if (!targets.length) {
-    // No radii anywhere: climatology is all there is.  Guide step 2c.
+    // No radii anywhere: climatology is all there is.  Guide step 2c. (rmc
+    // is the guide's own eq. (5) climatology, not willoughbyRmax() - see
+    // TCWind_JTWC.py's fitGTCM() docstring.)
     return { rm: rmc, ri: rmc * 3.0, x1: xc, x2: xc,
-             ax: ax0, ay: ay0, a: a, n: 0, freeParams: 0, rms: NaN };
+             ax: ax0, ay: ay0, a: a, n: 0, freeParams: 0, rms: NaN,
+             rmSource: 'climatology' };
   }
 
   var nT = targets.length;
@@ -508,50 +520,81 @@ function fitGTCM(snap) {
     return npSum(terms);
   }
 
-  // Only estimate what the reported radii can identify.  rm, x1 and x2 are
-  // three free parameters; two nonzero radii constrain two numbers, and
-  // fitting all three to two targets leaves a manifold of exact solutions -
-  // every one scoring RMS 0 - with the optimiser landing anywhere on it.  On
-  // live TS 22W (KROVANH) that produced rm 7.8 nm with x1 = x2 = 0.05: a field
-  // that barely decays with radius, drawn as a flat sheet the asymmetry cut
-  // into a one-sided wedge.  Mirrors fitGTCM() in TCWind_JTWC.py.
-  var nfit = nT;
-  var freeParams = nfit >= 5 ? 3 : (nfit >= 3 ? 2 : 1);
+  // A bulletin reporting ONLY 34 kt radii carries no information at all
+  // about core size, so rm is pinned to climatology rather than searched,
+  // whatever nT is - checked before the nfit-based identifiability logic
+  // below because it changes which parameter is free even in cases nT
+  // alone would otherwise hand rm to the optimiser (up to 4 quadrants can
+  // all be 34 kt only). Mirrors fitGTCM() in TCWind_JTWC.py.
+  var hasHigherTargets = false;
+  for (var hti = 0; hti < nT; hti++) {
+    if (vt[hti] > 34.0) { hasHigherTargets = true; break; }
+  }
 
-  // rm stays near climatology when the radii cannot pin it: the guide treats
-  // the climatological value as a first guess "adjusted to better fit" the
-  // radii.  Unbounded, a thin fit walks rm outward chasing a threshold the
-  // symmetric vortex (peaking at Vm - a) may never reach.
-  var rmLo, rmHi;
-  if (freeParams === 3) { rmLo = 2.0; rmHi = 150.0; }
-  else if (freeParams === 2) { rmLo = 0.4 * rmc; rmHi = 2.5 * rmc; }
-  else { rmLo = 0.5 * rmc; rmHi = 2.0 * rmc; }
+  var rm, x1, x2, freeParams, rmSource, sizeRes;
+  if (!hasHigherTargets) {
+    rmSource = 'climatology';
+    rm = willoughbyRmax(vmax, lat);
+    freeParams = 1;             // the shared decay exponent only
 
-  var rm, x1, x2, sizeRes;
-  if (freeParams === 3) {
     sizeRes = nelderMead(function (p) {
-      var a_ = p[0], b_ = p[1], c_ = p[2];
-      if (a_ < rmLo || a_ > rmHi ||
-          !(b_ >= GTCM_X_MIN && b_ <= GTCM_X_MAX) ||
-          !(c_ >= GTCM_X_MIN && c_ <= GTCM_X_MAX)) return 1e12;
-      return err(a_, b_, c_, ax0, ay0);
-    }, [rmc, xc, xc], [Math.max(rmc * 0.35, 4.0), 0.12, 0.12], GTCM_MAX_ITER);
-    rm = sizeRes[0][0]; x1 = sizeRes[0][1]; x2 = sizeRes[0][2];
-  } else if (freeParams === 2) {
-    sizeRes = nelderMead(function (p) {
-      var a_ = p[0], b_ = p[1];
-      if (a_ < rmLo || a_ > rmHi ||
-          !(b_ >= GTCM_X_MIN && b_ <= GTCM_X_MAX)) return 1e12;
-      return err(a_, b_, b_, ax0, ay0);
-    }, [rmc, xc], [Math.max(rmc * 0.35, 4.0), 0.12], GTCM_MAX_ITER);
-    rm = sizeRes[0][0]; x1 = x2 = sizeRes[0][1];
+      var x_ = p[0];
+      if (!(x_ >= GTCM_X_MIN && x_ <= GTCM_X_MAX)) return 1e12;
+      return err(rm, x_, x_, ax0, ay0);
+    }, [xc], [0.12], GTCM_MAX_ITER);
+    // If even the pinned-rm profile cannot reach 34 kt, the optimum lies
+    // below GTCM_X_MIN and the bound clamps it there rather than letting rm
+    // drift outward to compensate - the miss is real and is left for the
+    // modelled-radius / never-reached accounting to record.
+    x1 = x2 = sizeRes[0][0];
   } else {
-    sizeRes = nelderMead(function (p) {
-      var a_ = p[0];
-      if (a_ < rmLo || a_ > rmHi) return 1e12;
-      return err(a_, xc, xc, ax0, ay0);
-    }, [rmc], [Math.max(rmc * 0.35, 4.0)], GTCM_MAX_ITER);
-    rm = sizeRes[0][0]; x1 = x2 = xc;
+    rmSource = 'fit';
+
+    // Only estimate what the reported radii can identify.  rm, x1 and x2
+    // are three free parameters; two nonzero radii constrain two numbers,
+    // and fitting all three to two targets leaves a manifold of exact
+    // solutions - every one scoring RMS 0 - with the optimiser landing
+    // anywhere on it.  On live TS 22W (KROVANH) that produced rm 7.8 nm
+    // with x1 = x2 = 0.05: a field that barely decays with radius, drawn
+    // as a flat sheet the asymmetry cut into a one-sided wedge.  Mirrors
+    // fitGTCM() in TCWind_JTWC.py.
+    var nfit = nT;
+    freeParams = nfit >= 5 ? 3 : (nfit >= 3 ? 2 : 1);
+
+    // rm stays near climatology when the radii cannot pin it: the guide
+    // treats the climatological value as a first guess "adjusted to better
+    // fit" the radii.  Unbounded, a thin fit walks rm outward chasing a
+    // threshold the symmetric vortex (peaking at Vm - a) may never reach.
+    var rmLo, rmHi;
+    if (freeParams === 3) { rmLo = 2.0; rmHi = 150.0; }
+    else if (freeParams === 2) { rmLo = 0.4 * rmc; rmHi = 2.5 * rmc; }
+    else { rmLo = 0.5 * rmc; rmHi = 2.0 * rmc; }
+
+    if (freeParams === 3) {
+      sizeRes = nelderMead(function (p) {
+        var a_ = p[0], b_ = p[1], c_ = p[2];
+        if (a_ < rmLo || a_ > rmHi ||
+            !(b_ >= GTCM_X_MIN && b_ <= GTCM_X_MAX) ||
+            !(c_ >= GTCM_X_MIN && c_ <= GTCM_X_MAX)) return 1e12;
+        return err(a_, b_, c_, ax0, ay0);
+      }, [rmc, xc, xc], [Math.max(rmc * 0.35, 4.0), 0.12, 0.12], GTCM_MAX_ITER);
+      rm = sizeRes[0][0]; x1 = sizeRes[0][1]; x2 = sizeRes[0][2];
+    } else if (freeParams === 2) {
+      sizeRes = nelderMead(function (p) {
+        var a_ = p[0], b_ = p[1];
+        if (a_ < rmLo || a_ > rmHi ||
+            !(b_ >= GTCM_X_MIN && b_ <= GTCM_X_MAX)) return 1e12;
+        return err(a_, b_, b_, ax0, ay0);
+      }, [rmc, xc], [Math.max(rmc * 0.35, 4.0), 0.12], GTCM_MAX_ITER);
+      rm = sizeRes[0][0]; x1 = x2 = sizeRes[0][1];
+    } else {
+      sizeRes = nelderMead(function (p) {
+        var a_ = p[0];
+        if (a_ < rmLo || a_ > rmHi) return 1e12;
+        return err(a_, xc, xc, ax0, ay0);
+      }, [rmc], [Math.max(rmc * 0.35, 4.0)], GTCM_MAX_ITER);
+      rm = sizeRes[0][0]; x1 = x2 = xc;
+    }
   }
 
   // Step 3: release the asymmetry, size parameters fixed.
@@ -578,7 +621,7 @@ function fitGTCM(snap) {
   }
 
   return { rm: rm, ri: ri, x1: x1, x2: x2, ax: bestAx, ay: bestAy,
-           a: a, n: nT, freeParams: freeParams,
+           a: a, n: nT, freeParams: freeParams, rmSource: rmSource,
            rms: Math.sqrt(bestE / npSum(wt)) };
 }
 
@@ -793,9 +836,10 @@ function fitTauCached(tau) {
   return tau.fit;
 }
 
-// Fit fields interpolateTrack() blends linearly between two taus. n, rms and
-// freeParams describe how well-constrained a fit is, not a field parameter,
-// so those are carried from the nearer tau instead (see interpolateTrack()).
+// Fit fields interpolateTrack() blends linearly between two taus. n, rms,
+// freeParams and rmSource describe how well-constrained a fit is, not a
+// field parameter, so those are carried from the nearer tau instead (see
+// interpolateTrack()).
 var GTCM_FIT_BLEND_KEYS = ['rm', 'ri', 'x1', 'x2', 'ax', 'ay', 'a'];
 
 /** Linear interpolation of the storm state to an arbitrary valid time.
@@ -875,6 +919,10 @@ function interpolateTrack(taus, epoch) {
     blended.n = nearer.n;
     blended.rms = nearer.rms;
     blended.freeParams = nearer.freeParams;
+    // rmSource is categorical (climatology/fit), not a number to blend - rm
+    // itself interpolates linearly either way (GTCM_FIT_BLEND_KEYS above),
+    // so this only labels which one the blended rm is nearer to.
+    blended.rmSource = nearer.rmSource;
     s.fit = blended;
     s.fitInterpolated = true;
   }
