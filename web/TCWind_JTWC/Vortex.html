@@ -653,14 +653,35 @@ function vortexFieldGTCM(snap) {
     // that would collapse the footprint onto the centre and taper the
     // entire field away. Mirrors the boolean-mask scan in
     // _buildVortexGTCM() (np.argmax on the reversed above-threshold mask).
+    // maxVal/maxK track the profile's own peak on this azimuth as a side
+    // effect of the same scan.  Only the not-found branch below actually
+    // uses them, and that is exactly the case where this loop never hits
+    // the `found` break and visits every sample anyway, so tracking the
+    // peak costs nothing extra there.
     var found = -1;
+    var maxVal = -1, maxK = 0;
     for (var k = nProbe - 1; k >= 0; k--) {
       var uk = fit.ax - sign * prof[k] * cosA;
       var vk = fit.ay + sign * prof[k] * sinA;
-      if (Math.sqrt(uk * uk + vk * vk) >= 34.0) { found = k; break; }
+      var mk = Math.sqrt(uk * uk + vk * vk);
+      if (mk > maxVal) { maxVal = mk; maxK = k; }
+      if (mk >= 34.0) { found = k; break; }
     }
     if (found < 0) {
-      r34Table[b] = fit.rm * 3.0;
+      // Never reaches 34 kt on this azimuth: anchor on the LOCATION OF THE
+      // PROFILE'S OWN PEAK, not a fixed 3*rm. Mirrors _buildVortexGTCM()'s
+      // peakR fallback - see its comment for why: r34's exact-crossing
+      // branch approaches the peak's own radius as the peak approaches 34
+      // kt from above (right at the threshold, the outermost >=34 kt point
+      // IS the peak), so this is that branch's own limit, and using it
+      // here keeps r34(az) continuous across the found/not-found boundary
+      // instead of stepping between two radii that can differ by 100+ nm -
+      // which is what caused a real slope break in the wind field wherever
+      // that boundary landed, most often right at a quadrant bisector
+      // (azimuthalKinkKtPerDeg's fixed sample points), because the 34 kt
+      // targets driving the fit (gtcmTargets(), weighted 5x) sit exactly
+      // there.  probe[k] = k + 1 nm (probe starts at 1.0, step 1.0).
+      r34Table[b] = maxK + 1;
       continue;
     }
     // Interpolate the crossing rather than snapping to the probe grid, for
