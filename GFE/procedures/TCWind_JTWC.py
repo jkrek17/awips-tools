@@ -1943,6 +1943,47 @@ if _IN_GFE:
             out.sort(key=lambda t: self._trBounds(t)[0])
             return out
 
+        @staticmethod
+        def _localBlockDuration(when, blockBounds):
+            """Block duration to use for a created block at `when`.
+
+            Offices commonly run Fcst Wind at one cadence in the near term
+            (3-hourly) and a coarser one further out (6-hourly or longer),
+            matching how JTWC itself spaces its own tau groups (12-hourly
+            out to 72 h, 24-hourly beyond).  A single grid duration for the
+            whole active time range is therefore wrong: it picks whichever
+            cadence happens to be more numerous in the current inventory -
+            which region wins can flip on nothing more than one grid being
+            repopulated - and applies it even to a created block that falls
+            in the other regime's part of the timeline.
+
+            Instead, look at what's actually in effect right where `when`
+            falls: `blockBounds` is sorted by start (from `_fcstInventory`),
+            so scan for the nearest existing block whose start is <= `when`
+            (the block cadence already established up to this point) and
+            use its duration.  If `when` precedes every existing block, fall
+            back to the nearest following block's duration.  If there are no
+            blocks at all - defensive only; `execute` already returns before
+            this is reachable when `fcstTRList` is empty - use 3 hours
+            (10800 s), the normal short-range cadence, not the old fallback
+            of 1 hour (3600 s), which matched nothing an office actually
+            runs.
+            """
+            preceding = None
+            following = None
+            for start, end in blockBounds:
+                if start <= when:
+                    if preceding is None or start > preceding[0]:
+                        preceding = (start, end)
+                else:
+                    if following is None or start < following[0]:
+                        following = (start, end)
+            if preceding is not None:
+                return preceding[1] - preceding[0]
+            if following is not None:
+                return following[1] - following[0]
+            return 10800
+
         def _smooth(self, grid, factor):
             """smoothGrid if the base class has it, box average otherwise."""
             if hasattr(self, "smoothGrid"):
@@ -2155,11 +2196,15 @@ if _IN_GFE:
             blockBounds = [self._trBounds(tr) for tr in fcstTRList]
             blockStarts = set(a for a, _b in blockBounds)
 
-            durations = [b - a for a, b in blockBounds]
-            if durations:
-                blockDur = max(set(durations), key=durations.count)
-            else:
-                blockDur = 3600
+            # NOTE: no single "global" block duration is computed here on
+            # purpose.  A run's active time range routinely spans both a
+            # 3-hourly near-term cadence and a coarser (e.g. 6-hourly)
+            # extended-range cadence, so any one duration chosen from the
+            # whole inventory would be right for one part of the timeline
+            # and wrong for the other - and, whenever the two cadences'
+            # block counts are close, unstable from run to run as the
+            # inventory is repopulated.  Each created block below instead
+            # looks up its own local cadence via `_localBlockDuration`.
 
             written = 0
             skippedST = 0
@@ -2259,7 +2304,16 @@ if _IN_GFE:
 
             # A forecast time with no block beginning at it gets one created,
             # so the last group of a bulletin is never lost just because the
-            # Fcst inventory happened to stop there.
+            # Fcst inventory happened to stop there.  Each created block's
+            # duration is looked up LOCALLY for that tau (via
+            # `_localBlockDuration`, from the nearest existing block at or
+            # before it) rather than using one duration for every created
+            # block: forcing a single site-wide "most common" duration onto
+            # every created block put 3-hourly created blocks in a 6-hourly
+            # extended-range region and vice versa, and which duration that
+            # single choice landed on could flip run to run whenever the two
+            # cadences' inventory counts were close - the "random 3 or 6 hr
+            # chunks" forecasters were seeing.
             created = []
             unplaced = []
             if CREATE_MISSING_TAU_BLOCKS:
@@ -2272,6 +2326,7 @@ if _IN_GFE:
                     if stFlag or not built:
                         continue
                     try:
+                        blockDur = self._localBlockDuration(when, blockBounds)
                         tr = TimeRange.TimeRange(
                             AbsTime.AbsTime(int(when)),
                             AbsTime.AbsTime(int(when + blockDur)))
