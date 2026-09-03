@@ -321,12 +321,12 @@
       "nStorms": 118,
       "ringFit": {
         "gtcm": {
-          "bias": -6.528819256557668,
-          "mae": 13.964125483522473,
+          "bias": -6.528834086312566,
+          "mae": 13.96414031327737,
           "n": 4041,
           "nStorms": 117,
           "p90": 28.73816883892586,
-          "rmse": 24.89616770567896
+          "rmse": 24.89617074307446
         },
         "perquad": {
           "bias": -0.030225448332024424,
@@ -997,12 +997,12 @@
       "nStorms": 90,
       "ringFit": {
         "gtcm": {
-          "bias": -4.86149902475969,
-          "mae": 16.68411454664682,
-          "n": 1870,
+          "bias": -4.876545799006515,
+          "mae": 16.711819367490957,
+          "n": 1868,
           "nStorms": 90,
-          "p90": 33.50687148217596,
-          "rmse": 33.98446567298133
+          "p90": 33.52089478835556,
+          "rmse": 34.06014311230322
         },
         "perquad": {
           "bias": -0.03665313616589725,
@@ -1335,12 +1335,12 @@
       "nStorms": 177,
       "ringFit": {
         "gtcm": {
-          "bias": -6.3383673128104965,
-          "mae": 12.7036180632619,
-          "n": 24941,
+          "bias": -6.338982778135045,
+          "mae": 12.703641055253446,
+          "n": 24936,
           "nStorms": 172,
-          "p90": 26.42639035078126,
-          "rmse": 22.221100890979898
+          "p90": 26.423389989418247,
+          "rmse": 22.221834857372357
         },
         "perquad": {
           "bias": -0.02783061502185186,
@@ -1659,12 +1659,12 @@
       "nStorms": 38,
       "ringFit": {
         "gtcm": {
-          "bias": -19.195081126307105,
-          "mae": 40.648102644537154,
+          "bias": -19.21771979955675,
+          "mae": 40.64604399535636,
           "n": 876,
           "nStorms": 38,
           "p90": 78.36032587721022,
-          "rmse": 58.71707906392351
+          "rmse": 58.716731412294955
         },
         "perquad": {
           "bias": -0.04385639887895909,
@@ -1957,12 +1957,12 @@
       "nStorms": 23,
       "ringFit": {
         "gtcm": {
-          "bias": 13.411944389317865,
-          "mae": 55.87493190380825,
+          "bias": 13.239322114186741,
+          "mae": 56.04755417893937,
           "n": 159,
           "nStorms": 23,
-          "p90": 140.9068528932722,
-          "rmse": 97.02100248127292
+          "p90": 144.8259341395434,
+          "rmse": 97.25895044095283
         },
         "perquad": {
           "bias": -0.07268500051183766,
@@ -2317,12 +2317,12 @@
       "nStorms": 195,
       "ringFit": {
         "gtcm": {
-          "bias": -5.9100218298832345,
-          "mae": 12.043582911915612,
-          "n": 31055,
+          "bias": -5.909899163152646,
+          "mae": 12.044039013970107,
+          "n": 31048,
           "nStorms": 194,
-          "p90": 24.868029871738294,
-          "rmse": 20.435679335396216
+          "p90": 24.866337002629912,
+          "rmse": 20.436674717656672
         },
         "perquad": {
           "bias": -0.027626738712715995,
@@ -2359,33 +2359,33 @@
   },
   "coherence": {
     "gtcm": {
-      "azimuthalKinkControlKtPerDeg": 0.023682998932145267,
-      "azimuthalKinkKtPerDeg": 0.0626687024430794,
+      "azimuthalKinkControlKtPerDeg": 0.008174192160357566,
+      "azimuthalKinkKtPerDeg": 0.024549590475263793,
       "byKnot": {
         "r34taper": {
-          "jumpKt": 0.0800799102584521,
-          "kinkKtPerNm": 0.3791385908503156,
-          "n": 1200
+          "jumpKt": 0.1249966804954718,
+          "kinkKtPerNm": 1.0569758724168241,
+          "n": 1169
         },
         "ri": {
-          "jumpKt": 0.1566820992032687,
-          "kinkKtPerNm": 0.6039681396700024,
+          "jumpKt": 0.17310636604903265,
+          "kinkKtPerNm": 0.7242256762511003,
           "n": 1200
         },
         "rm": {
-          "jumpKt": 0.17001346389452615,
-          "kinkKtPerNm": 1.4458285555108636,
+          "jumpKt": 0.1752145470182101,
+          "kinkKtPerNm": 1.632533862193374,
           "n": 1200
         }
       },
       "cases": 150,
       "casesStorms": 150,
-      "fieldRoughnessPctVmax": 2.1723208302849004,
-      "monotonicityViolationPct": 0.014970948616090673,
-      "radialJumpExclTaperKt": 0.16334778154889742,
-      "radialJumpKt": 0.13559182445208232,
-      "radialKinkExclTaperKtPerNm": 1.024898347590433,
-      "radialKinkKtPerNm": 0.8096450953437272
+      "fieldRoughnessPctVmax": 2.577090841301097,
+      "monotonicityViolationPct": 0.0,
+      "radialJumpExclTaperKt": 0.1741604565336214,
+      "radialJumpKt": 0.1580572191593998,
+      "radialKinkExclTaperKtPerNm": 1.178379769222237,
+      "radialKinkKtPerNm": 1.1386148055445886
     },
     "perquad": {
       "azimuthalKinkControlKtPerDeg": 0.004379367682187473,
@@ -2409,7 +2409,7 @@
       },
       "cases": 150,
       "casesStorms": 150,
-      "fieldRoughnessPctVmax": 2.5250315538080863,
+      "fieldRoughnessPctVmax": 3.4406359609726587,
       "monotonicityViolationPct": 0.0,
       "radialJumpExclTaperKt": 0.3388974059172191,
       "radialJumpKt": 0.23625720414698992,
@@ -2420,33 +2420,33 @@
   "coherenceByBasin": {
     "EP": {
       "gtcm": {
-        "azimuthalKinkControlKtPerDeg": 0.0232335607340841,
-        "azimuthalKinkKtPerDeg": 0.07170286026145467,
+        "azimuthalKinkControlKtPerDeg": 0.005804117887489696,
+        "azimuthalKinkKtPerDeg": 0.008870694067984016,
         "byKnot": {
           "r34taper": {
-            "jumpKt": 0.07493109464645385,
-            "kinkKtPerNm": 0.4001898954692807,
-            "n": 400
+            "jumpKt": 0.12926951740837583,
+            "kinkKtPerNm": 1.3264072260384152,
+            "n": 393
           },
           "ri": {
-            "jumpKt": 0.1732478493452072,
-            "kinkKtPerNm": 0.8224827262802461,
+            "jumpKt": 0.19687375754117967,
+            "kinkKtPerNm": 1.005779920003124,
             "n": 400
           },
           "rm": {
-            "jumpKt": 0.1731825602054596,
-            "kinkKtPerNm": 1.3642986684128022,
+            "jumpKt": 0.17747776925563813,
+            "kinkKtPerNm": 1.6340518979467185,
             "n": 400
           }
         },
         "cases": 50,
         "casesStorms": 50,
-        "fieldRoughnessPctVmax": 2.32626907067498,
+        "fieldRoughnessPctVmax": 3.0382827187959625,
         "monotonicityViolationPct": 0.0,
-        "radialJumpExclTaperKt": 0.1732152047753334,
-        "radialJumpKt": 0.14045383473237355,
-        "radialKinkExclTaperKtPerNm": 1.0933906973465242,
-        "radialKinkKtPerNm": 0.862323763387443
+        "radialJumpExclTaperKt": 0.18717576339840888,
+        "radialJumpKt": 0.16810019367998225,
+        "radialKinkExclTaperKtPerNm": 1.3199159089749213,
+        "radialKinkKtPerNm": 1.3220542891978495
       },
       "perquad": {
         "azimuthalKinkControlKtPerDeg": 0.004452366704652198,
@@ -2465,7 +2465,7 @@
         },
         "cases": 50,
         "casesStorms": 50,
-        "fieldRoughnessPctVmax": 2.7761500861775885,
+        "fieldRoughnessPctVmax": 4.099066054045511,
         "monotonicityViolationPct": 0.0,
         "radialJumpExclTaperKt": 0.3323661327362061,
         "radialJumpKt": 0.22419087886810302,
@@ -2475,33 +2475,33 @@
     },
     "NA": {
       "gtcm": {
-        "azimuthalKinkControlKtPerDeg": 0.041209883387566995,
-        "azimuthalKinkKtPerDeg": 0.057366202487367395,
+        "azimuthalKinkControlKtPerDeg": 0.01235811996565227,
+        "azimuthalKinkKtPerDeg": 0.057258171324999524,
         "byKnot": {
           "r34taper": {
-            "jumpKt": 0.059500151574611665,
-            "kinkKtPerNm": 0.30607416530491427,
-            "n": 400
+            "jumpKt": 0.12254295751727666,
+            "kinkKtPerNm": 1.1974740751298758,
+            "n": 379
           },
           "ri": {
-            "jumpKt": 0.1550186702609062,
-            "kinkKtPerNm": 0.6671593464758585,
+            "jumpKt": 0.17258148715132848,
+            "kinkKtPerNm": 0.8192047656915306,
             "n": 400
           },
           "rm": {
-            "jumpKt": 0.13704896926879884,
-            "kinkKtPerNm": 1.1150741297217897,
+            "jumpKt": 0.14834590166807174,
+            "kinkKtPerNm": 1.3469665776879378,
             "n": 400
           }
         },
         "cases": 50,
         "casesStorms": 50,
-        "fieldRoughnessPctVmax": 1.967398308315701,
-        "monotonicityViolationPct": 0.037365837316875185,
-        "radialJumpExclTaperKt": 0.14603381976485252,
-        "radialJumpKt": 0.11718926370143891,
-        "radialKinkExclTaperKtPerNm": 0.8911167380988241,
-        "radialKinkKtPerNm": 0.6961025471675208
+        "fieldRoughnessPctVmax": 2.5092213669457895,
+        "monotonicityViolationPct": 0.0,
+        "radialJumpExclTaperKt": 0.1604636944097001,
+        "radialJumpKt": 0.148273737427318,
+        "radialKinkExclTaperKtPerNm": 1.0830856716897341,
+        "radialKinkKtPerNm": 1.1198568378507294
       },
       "perquad": {
         "azimuthalKinkControlKtPerDeg": 0.005494462407719112,
@@ -2525,7 +2525,7 @@
         },
         "cases": 50,
         "casesStorms": 50,
-        "fieldRoughnessPctVmax": 2.3870590169999595,
+        "fieldRoughnessPctVmax": 3.653886784284418,
         "monotonicityViolationPct": 0.0,
         "radialJumpExclTaperKt": 0.2815238354252834,
         "radialJumpKt": 0.2522318953334695,
@@ -2535,33 +2535,33 @@
     },
     "WP": {
       "gtcm": {
-        "azimuthalKinkControlKtPerDeg": 0.006605552674784706,
-        "azimuthalKinkKtPerDeg": 0.05893704458041611,
+        "azimuthalKinkControlKtPerDeg": 0.006360338627930726,
+        "azimuthalKinkKtPerDeg": 0.007519906032807832,
         "byKnot": {
           "r34taper": {
-            "jumpKt": 0.10580848455429077,
-            "kinkKtPerNm": 0.4311517117767517,
-            "n": 400
+            "jumpKt": 0.12310936589084885,
+            "kinkKtPerNm": 0.6561311852593128,
+            "n": 397
           },
           "ri": {
-            "jumpKt": 0.14177977800369262,
-            "kinkKtPerNm": 0.3222623462539023,
+            "jumpKt": 0.14986385345458986,
+            "kinkKtPerNm": 0.34769234305864655,
             "n": 400
           },
           "rm": {
-            "jumpKt": 0.19980886220932007,
-            "kinkKtPerNm": 1.8581128683979988,
+            "jumpKt": 0.1998199701309204,
+            "kinkKtPerNm": 1.9165831109454659,
             "n": 400
           }
         },
         "cases": 50,
         "casesStorms": 50,
-        "fieldRoughnessPctVmax": 2.22329511186402,
+        "fieldRoughnessPctVmax": 2.1837684381615383,
         "monotonicityViolationPct": 0.0,
-        "radialJumpExclTaperKt": 0.17079432010650636,
-        "radialJumpKt": 0.1491323749224345,
-        "radialKinkExclTaperKtPerNm": 1.0901876073259507,
-        "radialKinkKtPerNm": 0.8705089754762176
+        "radialJumpExclTaperKt": 0.17484191179275513,
+        "radialJumpKt": 0.1576841668277954,
+        "radialKinkExclTaperKtPerNm": 1.1321377270020563,
+        "radialKinkKtPerNm": 0.974264212322132
       },
       "perquad": {
         "azimuthalKinkControlKtPerDeg": 0.003191273934191109,
@@ -2585,7 +2585,7 @@
         },
         "cases": 50,
         "casesStorms": 50,
-        "fieldRoughnessPctVmax": 2.411885558246712,
+        "fieldRoughnessPctVmax": 2.5689550445880474,
         "monotonicityViolationPct": 0.0,
         "radialJumpExclTaperKt": 0.4044413002071813,
         "radialJumpKt": 0.23217377848128604,
@@ -2608,33 +2608,33 @@
   },
   "coherenceDiagnostics": {
     "gtcmWithContinuousRi": {
-      "azimuthalKinkControlKtPerDeg": 0.023682998932145267,
-      "azimuthalKinkKtPerDeg": 0.0626687024430794,
+      "azimuthalKinkControlKtPerDeg": 0.008174192160357566,
+      "azimuthalKinkKtPerDeg": 0.024549590475263793,
       "byKnot": {
         "r34taper": {
-          "jumpKt": 0.0800799102584521,
-          "kinkKtPerNm": 0.3791385908503156,
-          "n": 1200
+          "jumpKt": 0.1249966804954718,
+          "kinkKtPerNm": 1.0569758724168241,
+          "n": 1169
         },
         "ri": {
-          "jumpKt": 0.1566820992032687,
-          "kinkKtPerNm": 0.6039681396700024,
+          "jumpKt": 0.17310636604903265,
+          "kinkKtPerNm": 0.7242256762511003,
           "n": 1200
         },
         "rm": {
-          "jumpKt": 0.17001346389452615,
-          "kinkKtPerNm": 1.4458285555108636,
+          "jumpKt": 0.1752145470182101,
+          "kinkKtPerNm": 1.632533862193374,
           "n": 1200
         }
       },
       "cases": 150,
       "casesStorms": 150,
-      "fieldRoughnessPctVmax": 2.1723208302849004,
-      "monotonicityViolationPct": 0.014970948616090673,
-      "radialJumpExclTaperKt": 0.16334778154889742,
-      "radialJumpKt": 0.13559182445208232,
-      "radialKinkExclTaperKtPerNm": 1.024898347590433,
-      "radialKinkKtPerNm": 0.8096450953437272
+      "fieldRoughnessPctVmax": 2.577090841301097,
+      "monotonicityViolationPct": 0.0,
+      "radialJumpExclTaperKt": 0.1741604565336214,
+      "radialJumpKt": 0.1580572191593998,
+      "radialKinkExclTaperKtPerNm": 1.178379769222237,
+      "radialKinkKtPerNm": 1.1386148055445886
     },
     "note": "HISTORICAL, NOT A LIVE BUG - kept as a regression indicator. TCWind_JTWC._gtcmProfile's continuity factor for eq. (3) was A = (ri/rm)**x1 * (rm/ri)**x2. Matching the two branches at r = ri requires the reciprocal, A = (rm/ri)**x1 * (ri/rm)**x2; as originally written the outer branch was scaled by (ri/rm)**(2*(x1-x2)) and the modelled wind STEPPED at ri. That was fixed in GFE/procedures/TCWind_JTWC.py (commit 530f876, 'Fix eq. (3) continuity factor...') before this note was last edited - the fix is live: _gtcmProfile now uses the reciprocal form, and riStep below (computed from the SHIPPED profile, every run) is the proof: it should read at or near zero. riStep measures the step in the field as built, whatever that currently is. gtcmWithContinuousRi is the whole coherence block recomputed with the continuity-preserving factor patched in at runtime (the fit is redone too, via a temporary T._gtcmProfile swap - see coherence_with_continuous_ri()), so a reader can separate what the GTCM model does from what this one line does. This diagnostic changes no source: GFE/procedures/TCWind_JTWC.py is the reference implementation and this verification does not own it - kept running every time so a regression here (riStep drifting back off zero) would be caught, not so it can keep describing a bug that is gone.",
     "riStep": {
@@ -2660,10 +2660,10 @@
       "areaRatio64": 0.7891304964136875,
       "areaRatio64Mean": 0.8053912897515565,
       "areaRatio64N": 559,
-      "meanAbsKt": 3.4335532093114027,
+      "meanAbsKt": 2.9904747266681673,
       "n": 1284,
       "nStorms": 57,
-      "p95AbsKt": 10.465099192860988
+      "p95AbsKt": 9.508682017440316
     },
     "NA": {
       "areaRatio34": 0.7846247712019524,
@@ -2675,10 +2675,10 @@
       "areaRatio64": 0.714439755484397,
       "areaRatio64Mean": 0.6824107508963746,
       "areaRatio64N": 714,
-      "meanAbsKt": 4.7164383617713845,
+      "meanAbsKt": 4.003768781218111,
       "n": 1799,
       "nStorms": 63,
-      "p95AbsKt": 13.812727138541195
+      "p95AbsKt": 12.81182654648915
     },
     "WP": {
       "areaRatio34": 0.790645371577575,
@@ -2690,10 +2690,10 @@
       "areaRatio64": 0.7984444444444444,
       "areaRatio64Mean": 0.8616194887186973,
       "areaRatio64N": 731,
-      "meanAbsKt": 3.9206984281963475,
+      "meanAbsKt": 3.7703429055421385,
       "n": 1541,
       "nStorms": 77,
-      "p95AbsKt": 11.703130562779942
+      "p95AbsKt": 11.386952284665494
     }
   },
   "fitQuality": {
@@ -4077,7 +4077,7 @@
         }
       }
     },
-    "runtimeSec": 102.8
+    "runtimeSec": 116.4
   },
   "model": {
     "departures": [
@@ -4092,14 +4092,14 @@
     "EP": {
       "gtcm": {
         "byRing": {
-          "34": 222,
+          "34": 227,
           "50": 369,
           "64": 157
         },
-        "count": 748,
+        "count": 753,
         "countStorms": 56,
         "nStorms": 57,
-        "pct": 7.58082497212932,
+        "pct": 7.6314989358467615,
         "total": 9867
       },
       "perquad": {
@@ -4144,14 +4144,14 @@
     "WP": {
       "gtcm": {
         "byRing": {
-          "34": 240,
+          "34": 242,
           "50": 432,
           "64": 175
         },
-        "count": 847,
+        "count": 849,
         "countStorms": 73,
         "nStorms": 77,
-        "pct": 6.60892634207241,
+        "pct": 6.6245318352059925,
         "total": 12816
       },
       "perquad": {
@@ -4187,12 +4187,12 @@
     "EP": {
       "gtcm": {
         "34": {
-          "bias": -6.2707703085261235,
-          "mae": 13.813193147172502,
-          "n": 4506,
+          "bias": -6.27188292498278,
+          "mae": 13.822684371537008,
+          "n": 4501,
           "nStorms": 57,
-          "p90": 25.02089827639974,
-          "rmse": 21.59270692675354
+          "p90": 25.033877425787367,
+          "rmse": 21.603883786351417
         },
         "50": {
           "bias": -6.808257903391014,
@@ -4211,12 +4211,12 @@
           "rmse": 5.873433538509328
         },
         "all": {
-          "bias": -5.518278246032221,
-          "mae": 10.166450762316256,
-          "n": 9119,
+          "bias": -5.51841489584119,
+          "mae": 10.16913742996387,
+          "n": 9114,
           "nStorms": 57,
-          "p90": 20.476484421227063,
-          "rmse": 16.547125732537733
+          "p90": 20.47667754346439,
+          "rmse": 16.551139902083122
         }
       },
       "perquad": {
@@ -4257,12 +4257,12 @@
     "NA": {
       "gtcm": {
         "34": {
-          "bias": -9.29109407980316,
-          "mae": 21.26548129426443,
+          "bias": -9.299888980463738,
+          "mae": 21.266255511829637,
           "n": 5810,
           "nStorms": 62,
           "p90": 45.26909123771459,
-          "rmse": 34.11758781580772
+          "rmse": 34.11798453816608
         },
         "50": {
           "bias": -9.101459690741999,
@@ -4281,12 +4281,12 @@
           "rmse": 10.396934501628278
         },
         "all": {
-          "bias": -8.077824589494321,
-          "mae": 15.809012522932905,
+          "bias": -8.082359813852001,
+          "mae": 15.809411760001678,
           "n": 11267,
           "nStorms": 62,
           "p90": 34.78559151759012,
-          "rmse": 26.967932251339164
+          "rmse": 26.968191064064335
         }
       },
       "perquad": {
@@ -4327,12 +4327,12 @@
     "WP": {
       "gtcm": {
         "34": {
-          "bias": -5.514576972267598,
-          "mae": 18.761198047574307,
-          "n": 5924,
+          "bias": -5.512614198885267,
+          "mae": 18.76370897263011,
+          "n": 5922,
           "nStorms": 77,
-          "p90": 34.45674322617135,
-          "rmse": 33.50668841023302
+          "p90": 34.44720624259835,
+          "rmse": 33.526590729605715
         },
         "50": {
           "bias": -5.866181523469418,
@@ -4351,12 +4351,12 @@
           "rmse": 8.051725675700835
         },
         "all": {
-          "bias": -4.9741910371509945,
-          "mae": 12.963532611036012,
-          "n": 11969,
+          "bias": -4.9731294247301365,
+          "mae": 12.963806227423358,
+          "n": 11967,
           "nStorms": 77,
-          "p90": 25.508325022323863,
-          "rmse": 24.807915985554164
+          "p90": 25.506597163197092,
+          "rmse": 24.81951089002654
         }
       },
       "perquad": {
@@ -4399,12 +4399,12 @@
     "EP": {
       "gtcm": {
         "34": {
-          "bias": 5.8564600509945155,
-          "mae": 9.702938897283122,
-          "n": 4506,
+          "bias": 5.862820474261833,
+          "mae": 9.71355629982404,
+          "n": 4501,
           "nStorms": 57,
-          "p90": 22.648225032186716,
-          "rmse": 20.883126662701205
+          "p90": 22.673715974077282,
+          "rmse": 20.894720829638814
         },
         "50": {
           "bias": 0.1393611442280337,
@@ -4423,12 +4423,12 @@
           "rmse": 5.004691894175132
         },
         "all": {
-          "bias": 3.394162811101237,
-          "mae": 7.066658547872299,
-          "n": 9119,
+          "bias": 3.3959531094254327,
+          "mae": 7.070455731006995,
+          "n": 9114,
           "nStorms": 57,
-          "p90": 15.330771131326156,
-          "rmse": 15.40595226022229
+          "p90": 15.33088364968755,
+          "rmse": 15.410176396617457
         }
       },
       "perquad": {
@@ -4469,12 +4469,12 @@
     "NA": {
       "gtcm": {
         "34": {
-          "bias": 9.069189913312158,
-          "mae": 16.293363293579475,
+          "bias": 9.06039501265158,
+          "mae": 16.291514504111696,
           "n": 5810,
           "nStorms": 62,
           "p90": 39.71842667666885,
-          "rmse": 33.46834175775543
+          "rmse": 33.4677166986636
         },
         "50": {
           "bias": 0.6351402495029964,
@@ -4493,12 +4493,12 @@
           "rmse": 9.072123921437818
         },
         "all": {
-          "bias": 5.288856869634106,
-          "mae": 12.084329669918146,
+          "bias": 5.284321645276428,
+          "mae": 12.083376313496048,
           "n": 11267,
           "nStorms": 62,
           "p90": 28.21989816060382,
-          "rmse": 25.68279634656692
+          "rmse": 25.682376316579212
         }
       },
       "perquad": {
@@ -4539,12 +4539,12 @@
     "WP": {
       "gtcm": {
         "34": {
-          "bias": 10.779692102681762,
-          "mae": 14.756305982372613,
-          "n": 5924,
+          "bias": 10.782091981459212,
+          "mae": 14.762440122761605,
+          "n": 5922,
           "nStorms": 77,
-          "p90": 34.83861130488933,
-          "rmse": 34.530738987512876
+          "p90": 34.85284870762437,
+          "rmse": 34.55063419923359
         },
         "50": {
           "bias": 3.3652506514184752,
@@ -4563,12 +4563,12 @@
           "rmse": 7.295465478428165
         },
         "all": {
-          "bias": 7.013665091180529,
-          "mae": 10.246295959325685,
-          "n": 11969,
+          "bias": 7.014223295249809,
+          "mae": 10.248577764233978,
+          "n": 11967,
           "nStorms": 77,
-          "p90": 21.040713906082246,
-          "rmse": 25.097236865298854
+          "p90": 21.043424400229533,
+          "rmse": 25.108911182104517
         }
       },
       "perquad": {
@@ -4610,22 +4610,22 @@
   "runtime": {
     "byBasin": {
       "EP": {
-        "coherenceSec": 10.0,
-        "ringFieldSec": 119.1
+        "coherenceSec": 12.3,
+        "ringFieldSec": 125.4
       },
       "NA": {
-        "coherenceSec": 11.5,
-        "ringFieldSec": 159.2
+        "coherenceSec": 10.6,
+        "ringFieldSec": 161.9
       },
       "WP": {
-        "coherenceSec": 10.6,
-        "ringFieldSec": 135.3
+        "coherenceSec": 11.3,
+        "ringFieldSec": 126.6
       }
     },
-    "holdoutSec": 102.8,
+    "holdoutSec": 116.4,
     "note": "ringFieldSec/coherenceSec are wall-clock seconds for THIS run (this machine, this --cases/--coherence-cases), not a portable benchmark - see tests/tcwind_jtwc/README.md for a worked full-archive example. compare_vortex_methods.py memoises T.fitGTCM per snapshot and uses a coarser (but still sub-nm-accurate) radial search grid than its original 12000-step version specifically to make a whole-archive default run tractable - see that module's own comments on R_STEPS and _cached_fit_gtcm.",
-    "stratifiedSec": 280.9,
-    "totalSec": 831.0
+    "stratifiedSec": 325.5,
+    "totalSec": 891.9
   },
   "scope": {
     "EP": {
