@@ -211,7 +211,7 @@ var VORTEX_FILE = 'Vortex';
 // parserFingerprint() and paste the value it reports - in the same commit
 // as the Vortex.html change, after checkParserParity() passes.
 var VORTEX_PARSER_SHA =
-  '713f94e79b531cce74218ca28d4e9b3ba9aebadcb6ad5895ff4d3812bb179541';
+  'fb46157ee43c6218aa4c90b668fffe853910a7e91465a41b98f408535d721aea';
 
 var MONTHS = {
   JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, JUN: 6,
@@ -237,7 +237,8 @@ var TCM_TYPE_CONF = {
   'POTENTIAL TROPICAL CYCLONE': CONF_TROPICAL,
   'SUBTROPICAL STORM': CONF_SUBTROPICAL,
   'SUBTROPICAL DEPRESSION': CONF_SUBTROPICAL,
-  'POST-TROPICAL CYCLONE': CONF_BECOMING
+  'POST-TROPICAL CYCLONE': CONF_BECOMING,
+  'REMNANTS OF': CONF_BECOMING
 };
 
 
@@ -953,7 +954,12 @@ function parseTCM(text) {
   var refMonth = MONTHS[mi[2]];
   var refYear = parseInt(mi[4], 10);
 
-  var TYPE = 'HURRICANE|TROPICAL STORM|TROPICAL DEPRESSION|POTENTIAL TROPICAL CYCLONE|SUBTROPICAL STORM|SUBTROPICAL DEPRESSION|POST-TROPICAL CYCLONE';
+  // REMNANTS OF: see Vortex.html's parseTCM() comment - carries no name of
+  // its own on the current-position line ("REMNANTS OF CENTER LOCATED
+  // NEAR ..."), only on the title line ("REMNANTS OF BERTHA
+  // FORECAST/ADVISORY NUMBER  19"), which this same TYPE string also feeds
+  // below (mt). Mapped to CONF_BECOMING in TCM_TYPE_CONF above.
+  var TYPE = 'HURRICANE|TROPICAL STORM|TROPICAL DEPRESSION|POTENTIAL TROPICAL CYCLONE|SUBTROPICAL STORM|SUBTROPICAL DEPRESSION|POST-TROPICAL CYCLONE|REMNANTS OF';
   var reCurpos = new RegExp('^\\s*(' + TYPE + ')\\s+CENTER LOCATED NEAR\\s+(\\d+(?:\\.\\d+)?)\\s*([NS])\\s+(\\d+(?:\\.\\d+)?)\\s*([EW])\\s+AT\\s+(\\d{2})\\/(\\d{4})Z');
   var reBackfill = /^\s*AT\s+(\d{2})\/(\d{4})Z\s+CENTER WAS LOCATED NEAR\s+(\d+(?:\.\d+)?)\s*([NS])\s+(\d+(?:\.\d+)?)\s*([EW])/;
   var reFcst = /^\s*(FORECAST|OUTLOOK)\s+VALID\s+(\d{2})\/(\d{4})Z\s+(\d+(?:\.\d+)?)\s*([NS])\s+(\d+(?:\.\d+)?)\s*([EW])(?:\.\.\.([A-Z][A-Z\- ]*))?/;

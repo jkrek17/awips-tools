@@ -1248,9 +1248,16 @@ function describeStorm(header) {
 //      (RE_TCM_CURPOS) - DD/HHMMZ, not JTWC's concatenated DDHHMMZ - and
 //      the type word can be HURRICANE/TROPICAL STORM/TROPICAL DEPRESSION/
 //      POTENTIAL TROPICAL CYCLONE/SUBTROPICAL STORM/SUBTROPICAL DEPRESSION/
-//      POST-TROPICAL CYCLONE: NHC's own vocabulary, not JTWC's SUPER
-//      TYPHOON/TYPHOON ladder.  TCM_TYPE_CONF maps it to the same
-//      CONF_TROPICAL/CONF_SUBTROPICAL/CONF_BECOMING ladder in spirit.
+//      POST-TROPICAL CYCLONE/REMNANTS OF: NHC's own vocabulary, not JTWC's
+//      SUPER TYPHOON/TYPHOON ladder.  TCM_TYPE_CONF maps it to the same
+//      CONF_TROPICAL/CONF_SUBTROPICAL/CONF_BECOMING ladder in spirit -
+//      REMNANTS OF and POST-TROPICAL CYCLONE both map to CONF_BECOMING:
+//      by definition no longer an organized tropical cyclone (confirmed
+//      against three real, live "REMNANTS OF <name> CENTER LOCATED
+//      NEAR ..." products, which carry no name on this line at all - the
+//      real name lives only on the title line, e.g. "REMNANTS OF BERTHA
+//      FORECAST/ADVISORY NUMBER  19", which RE_TCM_TITLE also lists
+//      REMNANTS OF for).
 //   3. Movement: "PRESENT MOVEMENT ... OR <deg> DEGREES AT <kt> KT"
 //      (RE_TCM_MOVEMENT) gives the current block's motion directly.
 //      Forecast/outlook blocks never repeat it, so the same
@@ -1316,10 +1323,20 @@ function describeStorm(header) {
 // /m: matched against the whole joined product (`full`), not line-by-line
 // like every other regex below, so `^` needs multiline mode to anchor at
 // the START OF THE TITLE LINE rather than only offset 0 of the string.
-var RE_TCM_TITLE    = /^\s*(HURRICANE|TROPICAL STORM|TROPICAL DEPRESSION|POTENTIAL TROPICAL CYCLONE|SUBTROPICAL STORM|SUBTROPICAL DEPRESSION|POST-TROPICAL CYCLONE)\s+(.+?)\s+FORECAST\/ADVISORY NUMBER\s+(\d+)/m;
+// REMNANTS OF: a dissipating/dissipated system NHC keeps issuing an
+// advisory on with no organized center any more - the title line still
+// carries the real storm name right after this phrase ("REMNANTS OF
+// BERTHA FORECAST/ADVISORY NUMBER  19"), but the current-position line
+// does NOT repeat a name at all ("REMNANTS OF CENTER LOCATED NEAR ...") -
+// confirmed against three real, live NHC products. It is listed in both
+// RE_TCM_TITLE (where group 2 still captures the real name that follows
+// it) and RE_TCM_CURPOS (where there is no name to capture at all), and
+// mapped to CONF_BECOMING below: by definition no longer an organized
+// tropical cyclone, same spirit as POST-TROPICAL CYCLONE.
+var RE_TCM_TITLE    = /^\s*(HURRICANE|TROPICAL STORM|TROPICAL DEPRESSION|POTENTIAL TROPICAL CYCLONE|SUBTROPICAL STORM|SUBTROPICAL DEPRESSION|POST-TROPICAL CYCLONE|REMNANTS OF)\s+(.+?)\s+FORECAST\/ADVISORY NUMBER\s+(\d+)/m;
 var RE_TCM_ATCFID   = /\b(AL|EP|CP)(\d{2})(\d{4})\b/;
 var RE_TCM_ISSUE    = /(\d{3,4})\s+UTC\s+[A-Z]{3}\s+([A-Z]{3})\s+(\d{1,2})\s+(\d{4})/;
-var RE_TCM_CURPOS   = /^\s*(HURRICANE|TROPICAL STORM|TROPICAL DEPRESSION|POTENTIAL TROPICAL CYCLONE|SUBTROPICAL STORM|SUBTROPICAL DEPRESSION|POST-TROPICAL CYCLONE)\s+CENTER LOCATED NEAR\s+(\d+(?:\.\d+)?)\s*([NS])\s+(\d+(?:\.\d+)?)\s*([EW])\s+AT\s+(\d{2})\/(\d{4})Z/;
+var RE_TCM_CURPOS   = /^\s*(HURRICANE|TROPICAL STORM|TROPICAL DEPRESSION|POTENTIAL TROPICAL CYCLONE|SUBTROPICAL STORM|SUBTROPICAL DEPRESSION|POST-TROPICAL CYCLONE|REMNANTS OF)\s+CENTER LOCATED NEAR\s+(\d+(?:\.\d+)?)\s*([NS])\s+(\d+(?:\.\d+)?)\s*([EW])\s+AT\s+(\d{2})\/(\d{4})Z/;
 var RE_TCM_BACKFILL = /^\s*AT\s+(\d{2})\/(\d{4})Z\s+CENTER WAS LOCATED NEAR\s+(\d+(?:\.\d+)?)\s*([NS])\s+(\d+(?:\.\d+)?)\s*([EW])/;
 var RE_TCM_FCST      = /^\s*(FORECAST|OUTLOOK)\s+VALID\s+(\d{2})\/(\d{4})Z\s+(\d+(?:\.\d+)?)\s*([NS])\s+(\d+(?:\.\d+)?)\s*([EW])(?:\.\.\.([A-Z][A-Z\- ]*))?/;
 var RE_TCM_MOVEMENT = /PRESENT MOVEMENT.*?(\d+)\s*DEGREES AT\s+(\d+)\s*KT/;
@@ -1344,7 +1361,8 @@ var TCM_TYPE_CONF = {
   'POTENTIAL TROPICAL CYCLONE': CONF_TROPICAL,
   'SUBTROPICAL STORM': CONF_SUBTROPICAL,
   'SUBTROPICAL DEPRESSION': CONF_SUBTROPICAL,
-  'POST-TROPICAL CYCLONE': CONF_BECOMING
+  'POST-TROPICAL CYCLONE': CONF_BECOMING,
+  'REMNANTS OF': CONF_BECOMING
 };
 
 /** Parse an NHC Atlantic/East Pacific TCM (Forecast/Advisory) bulletin into
