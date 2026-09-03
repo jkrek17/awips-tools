@@ -103,6 +103,11 @@ both blocks carries n and nStorms - some strata (ET, SS especially) are thin
 even pooled across three basins; read nStorms before trusting a stratum's
 number, and see verify_stratified.py's own caveat.
 
+A statistic that cannot be computed (e.g. a correlation r over too few
+records) is written as JSON null, never as NaN/Infinity - see
+_sanitize_nans() below; the page's gap marker is the intended rendering of
+that null.
+
 Every stat everywhere in this file - not just the three new blocks - carries
 both n (records) and nStorms (distinct storms): compare_vortex_methods.stats()
 and this script's own accumulators were extended to track storm SIDs
@@ -227,6 +232,27 @@ COHERENCE_DEFS = {
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
+
+def _sanitize_nans(obj):
+    """Recursively replace float NaN/Infinity with None.
+
+    Statistics computed over too few records (e.g. a correlation r for an
+    n=1 bucket) come back as float('nan') from numpy; json.dump's default
+    allow_nan=True would emit those as the bare token NaN, which is valid
+    JavaScript but not valid JSON - google.script.run cannot serialize a
+    NaN in a return value at all, so the whole findings object is dropped
+    client-side instead of just the one bad field. Replacing every such
+    value with None here makes it real JSON null, which the page already
+    renders as its gap marker (see val()/num() in Findings.html).
+    """
+    if isinstance(obj, float):
+        return obj if np.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return dict((k, _sanitize_nans(v)) for k, v in obj.items())
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_nans(v) for v in obj]
+    return obj
+
 
 def _one_sided_fit(x, y, x0, lo, hi):
     """Line fit to (x, y) over x0+lo .. x0+hi. Returns (slope, value at x0)."""
@@ -909,7 +935,8 @@ def main():
     findings["runtime"]["totalSec"] = round(time.time() - t_start, 1)
 
     with open(args.out, "w") as fh:
-        json.dump(findings, fh, indent=2, sort_keys=True)
+        json.dump(_sanitize_nans(findings), fh, indent=2, sort_keys=True,
+                  allow_nan=False)
         fh.write("\n")
     print("wrote %s" % args.out)
 

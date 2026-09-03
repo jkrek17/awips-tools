@@ -365,7 +365,7 @@ def write_gs(path, index, storms, findings, log):
         json.dump(storms, f, separators=(",", ":"))
         f.write(";\n\n")
         f.write("var GTCM_FINDINGS = ")
-        json.dump(findings, f, separators=(",", ":"))
+        json.dump(findings, f, separators=(",", ":"), allow_nan=False)
         f.write(";\n")
     log("wrote %s" % path)
 
