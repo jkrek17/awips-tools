@@ -382,11 +382,13 @@ footer.pg a { color:var(--accent); }
   <!-- ================================================================== -->
   <div id="techdetail">
     <h2>Technical detail</h2>
-    <p>The full basin-by-basin, ring-by-ring and knot-by-knot numbers behind
-      the cards above, plus the estimator definitions, the model&rsquo;s
-      documented departures from the NHC Users Guide, and this page&rsquo;s
-      own sourcing rules. Read this section before quoting a number from
-      this page in a briefing.</p>
+    <p>The full basin-by-basin, ring-by-ring and knot-by-knot numbers
+      behind the cards above, for GTCM, NHC&rsquo;s (National Hurricane
+      Center&rsquo;s) Gridded Tropical Cyclone Model. It covers the
+      estimator definitions, GTCM&rsquo;s documented departures from
+      NHC&rsquo;s own Users Guide, and this page&rsquo;s own sourcing
+      rules. Read it before quoting a number from this page in a
+      briefing.</p>
   </div>
 
   <section id="verdict" aria-labelledby="verdict-h">
@@ -394,45 +396,46 @@ footer.pg a { color:var(--accent); }
       <h2 id="verdict-h">The verdict</h2>
 
       <p class="punch">This tool renders a physically plausible wind field
-        that is consistent with what a JTWC bulletin says. It is not a
-        forecast. It deliberately does not try to reproduce the
-        bulletin&rsquo;s wind radii exactly.</p>
+        that is consistent with what a JTWC (Joint Typhoon Warning Center)
+        bulletin says. It is not a forecast. It does not try to reproduce
+        the bulletin&rsquo;s wind radii exactly, on purpose.</p>
 
       <p>It reads position, intensity and the 34 / 50 / 64&nbsp;kt quadrant
-        wind radii out of the bulletin and fits <b id="v-model">the
-        model</b> to them: one symmetric modified-Rankine vortex plus a
+        wind radii out of the bulletin. It fits <b id="v-model">the
+        model</b> to them: one symmetric modified Rankine vortex plus a
         wavenumber-1 asymmetry, by weighted least squares on <em>wind</em>
         error. One vortex cannot pass through twelve independently reported
         radii, so it does not try. The result is a single-peaked,
-        corner-free field whose gradient belongs to the model, not to
+        corner-free field. Its gradient belongs to the model, not to
         wherever the four quadrant bisectors happen to fall.</p>
 
-      <p>The construction it replaced (<span class="chip pq">per-quadrant</span>)
-        fitted each quadrant separately and hit every reported radius
-        exactly. That left a slope break at every quadrant bisector, because
-        interpolating reported radii around the compass puts a corner there
-        by construction. The office chose the coherent field over the exact
-        one. <b>That is a trade, not a strict improvement, and both halves
-        of it are on this page.</b></p>
+      <p>The construction it replaced
+        (<span class="chip pq">per-quadrant</span>) fitted each quadrant
+        separately and hit every reported radius exactly. That left a slope
+        break at every quadrant bisector, because interpolating reported
+        radii around the compass puts a corner there by construction. The
+        office chose the coherent field over the exact one. <b>That is a
+        trade, not a strict improvement, and both halves of it are on this
+        page.</b></p>
 
       <p id="v-summary">Across the archive, the modelled isotachs sit
         <b id="v-bias">&mdash;</b> from the radii the bulletins reported
         (mean signed error, <b id="v-mae">&mdash;</b> mean absolute error,
         <b id="v-n">&mdash;</b> ring-quadrants). Roughly
         <b id="v-never">&mdash;</b> of reported ring-quadrants are never
-        reached by the modelled field at any radius, so they contribute no
-        error at all to that average &mdash; the miss on those is total, and
+        reached by the modelled field at any radius. Those contribute no
+        error at all to that average: the miss on those is total, and
         section&nbsp;4 counts them separately.</p>
 
       <p class="tight"><b>If your decision turns on the exact radius the
-        bulletin gave, read the bulletin.</b> If it turns on the shape of the
-        wind between and beyond those radii, this construction gives a
+        bulletin gave, read the bulletin.</b> If it turns on the shape of
+        the wind between and beyond those radii, this construction gives a
         smoother field than the one it replaced (see section&nbsp;5).
         <b>It does not give a more accurate one.</b> The
         <a href="#m-holdout">held-out prediction card above</a> is the one
-        test in this suite that scores a genuine prediction: radii the fit
-        was never shown. On that test the retired per-quadrant method
-        matches or beats GTCM, and GTCM sometimes misses a 64&nbsp;kt ring
+        test in this suite that scores a genuine prediction, on radii the
+        fit was never shown. On that test the retired per-quadrant method
+        matches or beats GTCM. GTCM sometimes misses a 64&nbsp;kt ring
         outright where the per-quadrant method never does. Read that card
         before deciding what this tool is good for.</p>
 
@@ -458,13 +461,13 @@ footer.pg a { color:var(--accent); }
           <h3><span class="mark">DO NOT</span> Not what it is for</h3>
           <ul>
             <li>Reading a radius off the field and quoting it as the
-              R34/R50/R64 in the bulletin. It will be smaller
-              &mdash; see section&nbsp;2.</li>
-            <li>Anything over or near land: the boundary-layer / land
+              R34/R50/R64 in the bulletin. It will be smaller: see
+              section&nbsp;2.</li>
+            <li>Anything over or near land. The boundary-layer / land
               roughness reduction is <b>not implemented</b>, so the field is
               marine exposure everywhere.</li>
             <li>Wind outside the modelled 34&nbsp;kt radius, where a local
-              taper &mdash; not in the Users Guide &mdash; takes over.</li>
+              taper takes over that is not in the Users Guide.</li>
             <li>Any claim of accuracy against observed wind. Nothing here
               measures that.</li>
           </ul>
@@ -472,14 +475,12 @@ footer.pg a { color:var(--accent); }
         <div class="card unver">
           <h3><span class="mark">UNVERIFIED</span> Known blind spots</h3>
           <ul>
-            <li>No comparison against observations of any kind &mdash; buoy,
+            <li>No comparison against observations of any kind: not buoy,
               aircraft, scatterometer, or analysis.</li>
             <li>Forecast hours (&tau;&gt;0) are unverified: every number here
               comes from best-track analysis times.</li>
             <li>The outer taper is a local heuristic, not a documented part
               of the model.</li>
-            <li>Land roughness (Users Guide step&nbsp;4) is not
-              implemented.</li>
           </ul>
         </div>
       </div>
@@ -498,9 +499,8 @@ footer.pg a { color:var(--accent); }
 
     <div class="card">
       <p><b>What the bulletin reports</b> is the <em>maximum</em> extent of
-        that wind speed anywhere in the quadrant &mdash; the farthest point
-        at which, say, 34&nbsp;kt is analysed in the northeast
-        90&deg;.</p>
+        that wind speed anywhere in the quadrant: the farthest point at
+        which, say, 34&nbsp;kt is analysed in the northeast 90&deg;.</p>
       <p><b>What the GTCM fit aims at</b> is the quadrant <em>average</em>
         radius, because the model is one smooth vortex and the guide
         specifies the fit that way (Users Guide step&nbsp;2c). The reported
@@ -521,7 +521,7 @@ footer.pg a { color:var(--accent); }
   <!-- ================================================================== -->
   <section id="rings" aria-labelledby="rings-h">
     <h2 id="rings-h"><span class="n">3</span>Does it hit the reported radii?
-      No &mdash; here is the size of the miss</h2>
+      No: here is the size of the miss</h2>
     <p class="lede">Signed radial error, in nautical miles, of the modelled
       isotach crossing along each quadrant bisector. Negative means the
       modelled isotach is <em>inside</em> the radius it is being compared
@@ -554,14 +554,14 @@ footer.pg a { color:var(--accent); }
 
   <!-- ================================================================== -->
   <section id="coherence" aria-labelledby="coh-h">
-    <h2 id="coh-h"><span class="n">5</span>Coherence &mdash; the reason for
-      the switch</h2>
+    <h2 id="coh-h"><span class="n">5</span>Coherence: the reason for the
+      switch</h2>
     <p class="lede">This is the evidence the change of construction was made
       on, and it is the only part of this page that is new. Every measure
       below is a <em>roughness</em>: higher is rougher, for both methods,
       on the same storm-times and the same sampling grid. The definitions
-      the verification script recorded are printed next to each number, not
-      buried &mdash; a roughness statistic means nothing without its
+      the verification script recorded are printed next to each number,
+      not buried. A roughness statistic means nothing without its
       estimator.</p>
 
     <div id="cohHeadline"></div>
@@ -589,10 +589,10 @@ footer.pg a { color:var(--accent); }
   <section id="fit" aria-labelledby="fit-h">
     <h2 id="fit-h"><span class="n">7</span>The fit itself</h2>
     <p class="lede">How well one symmetric vortex plus a wavenumber-1
-      asymmetry can hold the reported structure at all, and what the fitted
-      vortex typically looks like. The wind error below is the residual of
-      the least squares at its own target points &mdash; it says the fit
-      converged on something sensible, and says nothing whatever about
+      asymmetry can hold the reported structure at all, and what the
+      fitted vortex typically looks like. The wind error below is the
+      residual of the least squares at its own target points. It says the
+      fit converged on something sensible, and nothing whatever about
       forecast accuracy.</p>
     <div id="fitTable"></div>
     <div id="fitProfile"></div>
@@ -611,11 +611,11 @@ footer.pg a { color:var(--accent); }
       <h3>Limits of the evidence on this page</h3>
       <ul class="plain">
         <li><b>No observations.</b> Every number here compares the modelled
-          field with a best-track <em>analysis</em> of storm structure. Best
-          track is itself an analysis product, produced after the fact from
-          the same kinds of data, and it carries its own uncertainty in the
-          wind radii &mdash; often tens of nautical miles. Agreement with it
-          is internal consistency, not validation.</li>
+          field with a best-track <em>analysis</em> of storm structure.
+          Best track is itself an analysis product, produced after the
+          fact from the same kinds of data. It carries its own uncertainty
+          in the wind radii, often tens of nautical miles. Agreement with
+          it is internal consistency, not validation.</li>
         <li><b>Analysis times only.</b> Every case is a best-track
           analysis time. The tool is used on forecast bulletins at
           &tau;&nbsp;=&nbsp;12&hellip;120&nbsp;h, where position, intensity
@@ -649,6 +649,8 @@ footer.pg a { color:var(--accent); }
     </div>
   </section>
 
+  <div id="footerGlossary"></div>
+
   <footer class="pg">
     <p id="footLine"></p>
     <p id="provFooter"></p>
@@ -665,6 +667,8 @@ footer.pg a { color:var(--accent); }
      the shipped model, and gtcmProfile() to draw the fitted profile shape.
      It defines none of that itself. -->
 <?!= HtmlService.createHtmlOutputFromFile('Vortex').getContent(); ?>
+
+<?!= HtmlService.createHtmlOutputFromFile('Help').getContent(); ?>
 
 <script>
 (function () {
@@ -1779,7 +1783,7 @@ function renderQuadAvg(mc) {
       'depends on it is shown.');
   }
   setNode('ringsTargetFactor', mc
-    ? fmt(mc.factor, 2) + '× that radius — the quadrant-average target'
+    ? fmt(mc.factor, 2) + '× that radius, the quadrant-average target'
     : 'the quadrant-average target');
   fill(document.getElementById('qaFig'), quadFigure(mc));
 }
@@ -1838,10 +1842,10 @@ function quadFigure(mc) {
     text: 'analysed 34 kt boundary (schematic)' }));
 
   return figure('Why the modelled isotach sits inside the reported radius',
-    'Schematic only — no measurement is plotted here. The bulletin gives ' +
-    'the farthest extent of the wind in the quadrant (dashed). The vortex is ' +
-    'fitted to the quadrant average (dotted), so the modelled isotach lands ' +
-    'inside the reported radius by design.', s,
+    'Schematic only. No measurement is plotted here. The bulletin gives ' +
+    'the farthest extent of the wind in the quadrant (dashed). The vortex ' +
+    'is fitted to the quadrant average (dotted), so the modelled isotach ' +
+    'lands inside the reported radius by design.', s,
     legend([
       { kind: 'line', label: 'analysed boundary (schematic)' },
       { kind: 'line', dash: '7 4', label: 'reported radius (quadrant maximum)' },
@@ -2016,7 +2020,7 @@ function renderRings(mc) {
     'n is the number of reported ring-quadrants the modelled field actually ' +
     'reaches, so the GTCM and per-quadrant rows are not over the same sample: ' +
     'the ring-quadrants GTCM never reaches are counted in section 4, not here. ' +
-    'p90 and RMSE are per basin only — a percentile cannot be pooled.',
+    'p90 and RMSE are per basin only: a percentile cannot be pooled.',
     head, body));
 
   // --- the definitions the verification script recorded -------------------
@@ -2088,7 +2092,7 @@ function renderNever() {
     'denominators are the reported ring-quadrants for that basin and ring; ' +
     'the per-quadrant construction is zero on every row here by construction, ' +
     'so it is not drawn.', s, legend([
-      { kind: 'solid', label: 'GTCM (shipped) — per-quadrant is 0% on every row' }
+      { kind: 'solid', label: 'GTCM (shipped); per-quadrant is 0% on every row' }
     ])));
 
   // --- table, with the consistency check shown --------------------------
@@ -2261,34 +2265,34 @@ function renderCoherence() {
   function b(t) { return el('b', { text: t }); }
 
   if (isNum(kG) && isNum(kP) && isNum(cG) && isNum(cP) && cG > 0 && cP > 0) {
-    p(['The corner is gone, and that is the whole case for the switch. ' +
-       'Across the quadrant bisectors — where the per-quadrant construction ' +
-       'joins one quadrant’s radii to the next — the mean slope break in wind ' +
+    p(['The corner is gone, and that is the whole case for the switch. At ' +
+       'the quadrant bisectors, where the per-quadrant construction joins ' +
+       'one quadrant’s radii to the next, the mean slope break in wind ' +
        'is ',
        b(fmt(kG, 4) + ' kt/deg'), ' for GTCM and ',
        b(fmt(kP, 4) + ' kt/deg'), ' for the per-quadrant field. Those numbers ' +
        'only mean something against the same estimator run where neither ' +
-       'method has a corner at all: that noise floor is ',
+       'method has a corner at all. That noise floor is ',
        b(fmt(cG, 4)), ' kt/deg for GTCM and ', b(fmt(cP, 4)),
        ' kt/deg for per-quadrant. So GTCM measures ',
        b(fmt(kG / cG, 1) + '× its own floor'),
-       (kG <= cG ? ' — at or below it, i.e. no detectable corner — ' :
-                   ' — a detectable but small corner — '),
+       (kG <= cG ? ', at or below it, so no detectable corner, ' :
+                   ', a detectable but small corner, '),
        'while the per-quadrant field measures ', b(fmt(kP / cP, 1) + '× its own floor'),
-       '. That is the artefact the office was trying to be rid of.']);
+       '. That is the artefact the office was trying to remove.']);
   } else {
     card.appendChild(el('p', {}, ['The azimuthal coherence numbers are ',
       gap('coherence.<method>.azimuthalKink*'), ' in this findings file.']));
   }
 
   if (isNum(rG) && isNum(rP) && isNum(xG) && isNum(xP)) {
-    p(['Along a radius the picture is more mixed, and the honest reading needs ' +
-       'the taper separated out. Counting every knot in each construction’s own ' +
-       'profile, the mean slope break is ', b(fmt(rG, 2) + ' kt/nm'),
+    p(['Along a radius the picture is more mixed. The honest reading needs ' +
+       'the taper separated out. Counting every knot in each construction’s ' +
+       'own profile, the mean slope break is ', b(fmt(rG, 2) + ' kt/nm'),
        ' for GTCM against ', b(fmt(rP, 2) + ' kt/nm'), ' for per-quadrant. ' +
-       'Excluding the outer taper — this tool’s own departure from the guide, ' +
-       'present in both constructions — it is ', b(fmt(xG, 2) + ' kt/nm'),
-       ' against ', b(fmt(xP, 2) + ' kt/nm'), ': what is left in the ' +
+       'Excluding the outer taper (this tool’s own departure from the guide, ' +
+       'present in both constructions), it is ', b(fmt(xG, 2) + ' kt/nm'),
+       ' against ', b(fmt(xP, 2) + ' kt/nm'), '. What is left in the ' +
        'per-quadrant field is dominated by its sharp corner at the radius of ' +
        'maximum wind, which GTCM softens but does not remove.']);
   }
@@ -2297,12 +2301,12 @@ function renderCoherence() {
     var diff = Math.abs(fG - fP), rel = diff / Math.max(fG, fP);
     p(['What the switch did NOT buy: whole-field smoothness. Measured as a ' +
        'discrete second difference over a fixed polar grid, the two fields are ' +
-       (rel < 0.1 ? 'within a few per cent of each other — ' : '') +
+       (rel < 0.1 ? 'within a few per cent of each other, ' : '') +
        'GTCM ', b(fmt(fG, 2) + '% of Vmax'), ' against per-quadrant ',
        b(fmt(fP, 2) + '%'), (rel < 0.1
          ? '. At that sampling scale this is a tie. The coherence gain is ' +
-           'concentrated where the artefacts were — the bisectors and the ' +
-           'knots — not spread over the field.'
+           'concentrated where the artefacts were, at the bisectors and the ' +
+           'knots, not spread over the field.'
          : '. GTCM is the ' + (fG < fP ? 'smoother' : 'rougher') + ' of the two ' +
            'at that sampling scale, by ' + fmt(100 * rel, 0) + '%.')]);
   }
@@ -2310,7 +2314,7 @@ function renderCoherence() {
   if (isNum(mG) && isNum(mP)) {
     p(['And a cost that is small but real: on ', b(fmt(mG, 4) + '%'),
        ' of radial samples outside the wind maximum the GTCM field increases ' +
-       'outward — it invents a secondary maximum — against ', b(fmt(mP, 4) + '%'),
+       'outward, inventing a secondary maximum, against ', b(fmt(mP, 4) + '%'),
        ' for the per-quadrant construction. ' +
        (isNum(mP) && mP === 0
          ? 'The per-quadrant construction never does this; GTCM occasionally does. '
@@ -2382,19 +2386,19 @@ function renderCoherence() {
   fill(document.getElementById('cohTable'), dataTable(
     'Every coherence measure in the findings file',
     'Higher is rougher throughout. The control row is not a comparison ' +
-    'between methods — it is the same estimator applied where neither method ' +
-    'has a corner, so each method’s bisector value should be read against its ' +
-    'own control.', head, body));
+    'between methods. It is the same estimator applied where neither method ' +
+    'has a corner, so each method’s bisector value should be read against ' +
+    'its own control.', head, body));
 
   // --- by knot -----------------------------------------------------------
   var KNOT_LABEL = {
-    rm: 'rm — the Rankine corner at the radius of maximum wind',
-    ri: 'ri — the x1 → x2 junction of eq. (3)',
-    r34taper: 'modelled R34 — where the local outer taper begins',
-    Rmax: 'Rmax — the solid-body / Rankine corner',
-    R34: 'R34 — reported ring (also where the taper begins)',
-    R50: 'R50 — reported ring',
-    R64: 'R64 — reported ring'
+    rm: 'rm: the Rankine corner at the radius of maximum wind',
+    ri: 'ri: the x1 → x2 junction of eq. (3)',
+    r34taper: 'modelled R34: where the local outer taper begins',
+    Rmax: 'Rmax: the solid-body / Rankine corner',
+    R34: 'R34: reported ring (also where the taper begins)',
+    R50: 'R50: reported ring',
+    R64: 'R64: reported ring'
   };
   var KNOT_ORDER = ['rm', 'ri', 'r34taper', 'Rmax', 'R64', 'R50', 'R34'];
   var kbody = [], meth = ['gtcm', 'perquad'], mi, ki;
@@ -2421,7 +2425,7 @@ function renderCoherence() {
   }
   if (!kbody.length) {
     fill(document.getElementById('cohKnot'), el('div', { 'class': 'card' },
-      [gap('coherence.<method>.byKnot'), ' — the per-knot breakdown is not in ' +
+      [gap('coherence.<method>.byKnot'), ': the per-knot breakdown is not in ' +
        'this findings file.']));
   } else {
     fill(document.getElementById('cohKnot'), dataTable(
@@ -2576,7 +2580,7 @@ function renderFieldDiff() {
     'where the per-quadrant area vanishes are undefined and excluded.',
     s, legend([
       { kind: 'solid', label: 'median area ratio' },
-      { kind: 'dash', label: '1.00 — the two constructions cover the same area' }
+      { kind: 'dash', label: '1.00: the two constructions cover the same area' }
     ])));
 
   var head = [[
@@ -2669,7 +2673,7 @@ function profileFigure() {
   }
   if (!series.length) {
     return el('div', { 'class': 'card' }, [gap('fitQuality.<basin>.median*'),
-      ' — the median fit parameters are not in this findings file, so the ' +
+      ': the median fit parameters are not in this findings file, so the ' +
       'profile shape cannot be drawn.']);
   }
   var rMax = Math.max(200, Math.ceil(maxR * 4 / 50) * 50);
@@ -2724,7 +2728,7 @@ function profileFigure() {
   return figure(
     'The shape the fit produces, from the median fitted parameters',
     'Drawn by calling the shipped model code (gtcmProfile in Vortex.html) with ' +
-    'the median rm, ri, x1 and x2 from the table above — one curve per basin, ' +
+    'the median rm, ri, x1 and x2 from the table above: one curve per basin, ' +
     'told apart by dash pattern and by the label at the right-hand end, not by ' +
     'colour. Wind is shown as a percentage of the profile’s own peak, so the ' +
     'curve is intensity-independent. Open circles mark the two knots (rm and ' +
@@ -2748,8 +2752,8 @@ function renderUnverified() {
     }
   } else {
     ul.appendChild(el('li', {}, [gap('model.departures'),
-      ' — the findings file lists no documented departures, which is itself ' +
-      'worth checking: the code comments in TCWind_JTWC.py describe two.']));
+      ': the findings file lists no documented departures, which is itself ' +
+      'worth checking. The code comments in TCWind_JTWC.py describe two.']));
   }
 
   var host = document.getElementById('riDiag');
@@ -2793,7 +2797,7 @@ function renderUnverified() {
       'moves the radial slope break from ',
       el('b', { text: fmt(bK, 3) + ' kt/nm' }), ' to ',
       el('b', { text: fmt(aK, 3) + ' kt/nm' }),
-      ' — ' + (Math.abs(aK - bK) < 0.05
+      ', ' + (Math.abs(aK - bK) < 0.05
         ? 'a difference too small to matter, which is what one expects when ' +
           'the shipped profile is already continuous.'
         : 'a difference large enough to matter, which would need explaining.')]));
@@ -2981,6 +2985,26 @@ function renderAll(findings) {
     }
   }
   renderGaps();
+
+  // Glossary (Help.html, one copy of everything - see README.md). Only run
+  // over the Technical detail sections, and only once renderAll() has
+  // finished building them: this page renders each section exactly once
+  // (it does not re-render on user interaction), so linkifying afterwards
+  // does not risk terms being wrapped, then discarded, on a later redraw.
+  // "In one minute" and "What we measured" are left alone on purpose, and
+  // so is #gapList: it is a raw list of dotted JSON field paths, and a
+  // path segment (".mae", ".bias", ...) is not a use of the glossary term
+  // it happens to spell.
+  if (window.TCGlossary) {
+    ['verdict', 'quadavg', 'rings', 'never', 'coherence', 'fielddiff', 'fit',
+     'unverified', 'scopeTable', 'notesBlock'].forEach(function (id) {
+      var el2 = document.getElementById(id);
+      if (el2) TCGlossary.linkify(el2);
+    });
+    var slot = document.getElementById('footerGlossary');
+    if (slot) slot.appendChild(TCGlossary.buildDetailsEl());
+  }
+
   document.getElementById('content').hidden = false;
   if (failed.length) {
     setStatus('err', [
