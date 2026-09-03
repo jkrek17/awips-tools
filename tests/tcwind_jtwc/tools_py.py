@@ -60,8 +60,21 @@ def cmd_vortex(snapshot_path, points_path):
     # different grid resolutions' correction factors against each other, not
     # actually checking whether the two ports agree. Compare the raw,
     # pre-normalization field instead - that's the part that must match.
+    # method="perquad", explicitly, regardless of what VORTEX_METHOD is set to.
+    # Index.html implements the per-quadrant construction and only that, so
+    # this harness can only ever check the two ports of THAT construction
+    # against each other. Once VORTEX_METHOD defaulted to "gtcm" this stopped
+    # being implicit, and leaving it implicit made the suite fail for a reason
+    # that has nothing to do with port parity.
+    #
+    # NOTE: this means the GTCM construction - which is now the tool's default
+    # - has NO JavaScript port and NO parity coverage. The web preview shows
+    # the per-quadrant field while the GFE procedure builds a GTCM one. Port
+    # _buildVortexGTCM()/fitGTCM() to Index.html before trusting the preview
+    # to represent what the tool produces.
     mag, direc, r, r34 = tc.buildVortex(latGrid, lonGrid, snap, rmax,
-                                         normalizePeak=False)
+                                         normalizePeak=False,
+                                         method="perquad")
 
     out = {
         "rmax": rmax,

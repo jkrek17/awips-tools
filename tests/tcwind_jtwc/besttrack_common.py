@@ -1,7 +1,24 @@
-"""Shared IBTrACS WestPac loading/record-building for the tcwind_jtwc
-verification scripts (verify_besttrack_rmax.py, verify_besttrack_roci.py,
-verify_besttrack_holland.py, prep_besttrack_data.py, fit_westpac_rmax.py).
+"""Shared IBTrACS loading/record-building for the tcwind_jtwc
+verification and data-prep scripts (verify_besttrack_rmax.py,
+verify_besttrack_roci.py, verify_besttrack_holland.py,
+prep_besttrack_data.py, fit_westpac_rmax.py).
 See README.md for what each of those actually checks.
+
+Originally WestPac-only (JTWC, agency ``jtwc_wp``). It now also handles the
+two NHC basins in the same code path, because IBTrACS stores NHC's own
+analysis in the very same ``USA_*`` columns that hold JTWC's for WestPac:
+
+    basin  agency        source                     archive window
+    -----  ------------  -------------------------  --------------
+    WP     jtwc_wp       JTWC best track            2005-2024
+    NA     hurdat_atl    NHC HURDAT2 North Atlantic 2004-2024
+    EP     hurdat_epa    NHC HURDAT2 East Pacific   2004-2024
+
+The window differs by basin on purpose and the difference is real, not a
+rounding of convenience: JTWC R50/R64 reporting only becomes reliable in
+2005 (see MIN_SEASON below), whereas NHC R64 reporting is *zero* before
+2004 and substantial from 2004 on. Each basin starts at its own first
+fully-radii-capable season.
 """
 import calendar
 import csv
@@ -14,13 +31,66 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..",
                                  "GFE", "procedures"))
 import TCWind_JTWC as tc  # noqa: E402  (needs the sys.path insert above)
 
-IBTRACS_URL = ("https://www.ncei.noaa.gov/data/international-best-track-"
-               "archive-for-climate-stewardship-ibtracs/v04r01/access/csv/"
-               "ibtracs.WP.list.v04r01.csv")
-CACHE = ("/tmp/claude-0/-home-user-awips-tools/"
-         "738f763c-b8e3-58a4-9745-13d9f53ffc1b/scratchpad/ibtracs_wp_full.csv")
+_IBTRACS_BASE = ("https://www.ncei.noaa.gov/data/international-best-track-"
+                 "archive-for-climate-stewardship-ibtracs/v04r01/access/csv/")
+
+
+def ibtracs_url(basin):
+    return "%sibtracs.%s.list.v04r01.csv" % (_IBTRACS_BASE, basin.upper())
+
+
+IBTRACS_URL = ibtracs_url("WP")   # kept: WestPac callers import this by name
 
 QUADS = ["NE", "SE", "SW", "NW"]
+
+# ---------------------------------------------------------------------------
+# Basin registry
+#
+# BASIN_AGENCY / AGENCY_BASIN map between the IBTrACS two-letter basin code
+# and the USA_AGENCY string whose rows carry that basin's operational
+# analysis in the USA_* columns.
+BASIN_AGENCY = {"WP": "jtwc_wp", "NA": "hurdat_atl", "EP": "hurdat_epa"}
+AGENCY_BASIN = dict((v, k) for k, v in BASIN_AGENCY.items())
+
+# NHC hands storms between its two basins mid-track (and IBTrACS keeps one
+# SID across the handoff), so when loading either NHC file we accept rows
+# from both NHC agencies and decide the storm's home basin from its own
+# BASIN column. Loading strictly by agency would silently truncate the
+# handful of crossers.
+BASIN_ROW_AGENCIES = {"WP": ("jtwc_wp",),
+                      "NA": ("hurdat_atl", "hurdat_epa"),
+                      "EP": ("hurdat_epa", "hurdat_atl")}
+
+
+# ---------------------------------------------------------------------------
+# Where the CSVs live.
+#
+# This used to be a hardcoded absolute path into one particular scratch
+# directory, which died the moment that directory did. It is now resolved,
+# in order:
+#   1. env IBTRACS_<BASIN>   - an explicit full path to one basin's CSV
+#   2. env IBTRACS_DIR       - a directory holding ibtracs.<BASIN>.csv
+#   3. tests/tcwind_jtwc/data/ibtracs/ibtracs.<BASIN>.csv  (repo-local)
+# and every caller can still override it with argv[1] as before.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_IBTRACS_DIR = os.path.join(_HERE, "data", "ibtracs")
+
+
+def cache_path(basin="WP"):
+    """Best guess at the local IBTrACS CSV for one basin. Existence is not
+    checked here - load_rows() reports a missing file, with the URL."""
+    basin = basin.upper()
+    env = os.environ.get("IBTRACS_%s" % basin)
+    if env:
+        return env
+    root = os.environ.get("IBTRACS_DIR") or DEFAULT_IBTRACS_DIR
+    return os.path.join(root, "ibtracs.%s.csv" % basin)
+
+
+# Backwards compatibility: the WestPac scripts import CACHE directly and
+# pass it straight to iter_storms(). It is now a live, overridable path
+# rather than a dead one, but it is still just a string.
+CACHE = cache_path("WP")
 
 # RMW/wind-radii presence before 2001 is essentially zero (checked
 # directly: 0 usable RMW records pre-2001 in this agency's data), so that
@@ -34,11 +104,35 @@ QUADS = ["NE", "SE", "SW", "NW"]
 # the Findings page numbers all agree.
 MIN_SEASON = 2005
 
+# Per-basin first season, keyed by basin code. WestPac keeps 2005 (above);
+# the NHC basins start at 2004 because NHC's R64 reporting is zero before
+# 2004 in both NA and EP and substantial from 2004 onward. Callers that do
+# not name a basin still get MIN_SEASON, so nothing WestPac-facing moves.
+BASIN_MIN_SEASON = {"WP": MIN_SEASON, "NA": 2004, "EP": 2004}
+MAX_SEASON = 2024   # 2025 is still open in IBTrACS v04r01; the archive ends 2024
 
-def load_rows(path):
+
+def load_rows(path, url=IBTRACS_URL, allow_download=True):
+    """Stream the data rows of an IBTrACS CSV (the units row is skipped).
+
+    If the file is missing and downloading is permitted, fetch it from
+    ``url`` first. Pass allow_download=False to fail loudly instead - which
+    is what the data-prep script does, since re-pulling 50 MB from NCEI on a
+    typo is worse than an error message."""
     if not os.path.exists(path):
-        print("Downloading %s ..." % IBTRACS_URL, file=sys.stderr)
-        urllib.request.urlretrieve(IBTRACS_URL, path)
+        if not allow_download:
+            raise IOError(
+                "IBTrACS CSV not found: %s\n"
+                "  Point IBTRACS_DIR (or IBTRACS_<BASIN>) at a directory "
+                "holding it, or pass the path explicitly.\n"
+                "  Source: %s" % (path, url or "(no URL known)"))
+        if not url:
+            raise IOError("IBTrACS CSV not found and no URL known: %s" % path)
+        print("Downloading %s ..." % url, file=sys.stderr)
+        d = os.path.dirname(os.path.abspath(path))
+        if d and not os.path.isdir(d):
+            os.makedirs(d)
+        urllib.request.urlretrieve(url, path)
     with open(path, newline="") as f:
         r = csv.DictReader(f)
         next(r)  # units row
@@ -142,25 +236,100 @@ def build_storm_records(rows):
     return recs
 
 
-def iter_storms(path, agency="jtwc_wp", min_season=MIN_SEASON):
+def storm_basin(rows):
+    """The IBTrACS BASIN of a storm's first row - i.e. where it was born.
+    Used instead of adding a 5th element to iter_storms()'s tuple, which
+    every existing WestPac caller unpacks by position."""
+    for row in rows:
+        b = (row.get("BASIN") or "").strip()
+        if b:
+            return b
+    return ""
+
+
+def storm_agency(rows):
+    """The USA_AGENCY that contributed the most rows to this storm."""
+    counts = {}
+    for row in rows:
+        a = (row.get("USA_AGENCY") or "").strip()
+        if a:
+            counts[a] = counts.get(a, 0) + 1
+    if not counts:
+        return ""
+    return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+
+
+def iter_storms(path, agency="jtwc_wp", min_season=MIN_SEASON,
+                max_season=None, basin=None, allow_download=True):
     """Yields (sid, name, season, rows) - rows grouped by SID, storms in
-    file order (which is already time order within IBTrACS). Defaults to
-    MIN_SEASON onward - pass min_season=None for the full, uncapped
-    archive (back to 1945 for jtwc_wp) if a caller genuinely needs it."""
+    file order (which is already time order within IBTrACS).
+
+    agency      a USA_AGENCY string, or any iterable of them. Accepting
+                several matters for the NHC files: NHC hands a storm from
+                hurdat_atl to hurdat_epa (or back) mid-track under one SID,
+                so filtering on a single agency chops the crossers in half.
+    min_season  inclusive; defaults to MIN_SEASON (2005). Pass None for the
+                full uncapped archive (back to 1945 for jtwc_wp).
+    max_season  inclusive; None means no upper bound.
+    basin       optional IBTrACS BASIN code ("NA"/"EP"/"WP"). Applied to the
+                storm's *first* row, so a storm that crosses out of the
+                basin is still yielded whole rather than truncated.
+
+    The season filter is applied per row, but every row of one storm carries
+    the same SEASON in IBTrACS, so it is effectively per storm."""
     from collections import OrderedDict
+    if isinstance(agency, str):
+        agencies = {agency}
+    elif agency is None:
+        agencies = None
+    else:
+        agencies = set(agency)
+
+    url = None
+    if basin:
+        url = ibtracs_url(basin)
+    elif agencies and len(agencies) == 1:
+        only = list(agencies)[0]
+        if only in AGENCY_BASIN:
+            url = ibtracs_url(AGENCY_BASIN[only])
+
     by_sid = OrderedDict()
     names, seasons = {}, {}
-    for row in load_rows(path):
-        if row["USA_AGENCY"].strip() != agency:
+    for row in load_rows(path, url=url or IBTRACS_URL,
+                         allow_download=allow_download):
+        if agencies is not None and row["USA_AGENCY"].strip() not in agencies:
             continue
-        if min_season and int(row["SEASON"]) < min_season:
+        season = int(row["SEASON"])
+        if min_season and season < min_season:
+            continue
+        if max_season and season > max_season:
             continue
         sid = row["SID"]
         by_sid.setdefault(sid, []).append(row)
-        names[sid] = row["NAME"]
-        seasons[sid] = row["SEASON"]
+        names.setdefault(sid, row["NAME"])
+        seasons.setdefault(sid, row["SEASON"])
     for sid, rows in by_sid.items():
+        if basin and storm_basin(rows) != basin:
+            continue
         yield sid, names[sid], seasons[sid], rows
+
+
+def iter_basin_storms(basin, path=None, min_season=None, max_season=MAX_SEASON,
+                      allow_download=False):
+    """iter_storms() wired up for one named basin: the right agency set, the
+    right first season, and the CSV wherever cache_path() finds it.
+    Yields (sid, name, season, rows) exactly as iter_storms() does."""
+    basin = basin.upper()
+    if basin not in BASIN_AGENCY:
+        raise ValueError("unknown basin %r (know %s)"
+                         % (basin, ", ".join(sorted(BASIN_AGENCY))))
+    if path is None:
+        path = cache_path(basin)
+    if min_season is None:
+        min_season = BASIN_MIN_SEASON[basin]
+    return iter_storms(path, agency=BASIN_ROW_AGENCIES[basin],
+                       min_season=min_season, max_season=max_season,
+                       basin=basin, allow_download=allow_download)
 
 
 def snapshot_from_record(rec):

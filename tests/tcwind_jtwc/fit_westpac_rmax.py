@@ -1,5 +1,33 @@
 #!/usr/bin/env python3
-"""Refit the Willoughby-form Rmax regression on WestPac best-track data.
+"""SUPERSEDED CONFIGURATION - kept for provenance, not as a current check.
+
+    Dead code on the shipped path.  Read this before quoting anything below.
+
+This script refit the Willoughby-form Rmax regression against WestPac
+best-track RMW.  VORTEX_METHOD is now "gtcm", and on that path Rmax is not
+regressed from climatology at all - fitGTCM() fits it to the reported radii,
+starting from Gridded TCM Users Guide eq. (5)/(6).  A better WestPac Rmax
+regression changes nothing about the field the tool now produces.
+
+Kept rather than deleted because it is the sole provenance for three numbers
+that are still compiled into GFE/procedures/TCWind_JTWC.py's willoughbyRmax()
+and into web/TCWind_JTWC/Index.html, both of which cite this file by name.
+Deleting it would make those coefficients unreproducible and leave two shipped
+files pointing at nothing.  willoughbyRmax() is still reachable through the
+legacy "perquad" construction, so the coefficients are not themselves dead.
+
+It cannot be re-run here: it needs the WestPac IBTrACS CSV, which is not in
+this environment.
+
+Note for anyone auditing: tests/tcwind_jtwc/README.md quotes coefficients
+A=97.892, B=-0.023895, C=0.002528 for this fit, while willoughbyRmax()
+actually carries 98.392, -0.025088, 0.003021 over a stated 2005-2024,
+n=13,834 dataset.  Those do not match.  The README is stale on several counts
+(see verify_gtcm.py's report); the source file is the authority.
+
+--- original header follows ------------------------------------------------
+
+Refit the Willoughby-form Rmax regression on WestPac best-track data.
 
 TCWind_JTWC.py's willoughbyRmax() uses Willoughby et al. (2006)'s
 Atlantic-fit coefficients:

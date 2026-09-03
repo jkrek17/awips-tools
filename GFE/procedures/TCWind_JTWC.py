@@ -55,9 +55,73 @@ TEXTDB_PATHS = ["/awips/fxa/bin/textdb", "/awips2/fxa/bin/textdb", "textdb"]
 # in the dialog, because none of them is a per-run decision.
 # ---------------------------------------------------------------------------
 
+# Which vortex construction to use.
+#
+#   "gtcm"     NHC's Gridded TCM / WTCM model, implemented from the Gridded TCM
+#              Users Guide v1.9.1 (Santos & DeMaria, 12/4/2023).  One symmetric
+#              modified Rankine vortex (Rappin et al. 2013) plus a wavenumber-1
+#              asymmetry, fit by weighted least squares to the reported radii.
+#              This is what produces NHC's Atlantic/EastPac grids, so a JTWC
+#              grid built this way looks like the ones OPC already ingests.
+#              It does not pass exactly through the reported radii, and that is
+#              deliberate: the guide minimises WIND error rather than radius
+#              error precisely because forcing the radii produces unrealistic
+#              structure (eq. 7 and the note beneath it).
+#
+#   "perquad"  Per-quadrant radial fit, tangentially interpolated between
+#              quadrant bisectors.  Reproduces every reported radius exactly.
+#              This is what NHC's legacy TCMWindTool did - equation (4) in the
+#              guide - and what this tool did before the GTCM port.  Kept for
+#              comparison; see tests/tcwind_jtwc/compare_vortex_methods.py.
+VORTEX_METHOD = "gtcm"
+
+# --- GTCM/WTCM parameters, all from the Users Guide -------------------------
+# Schwerdt (1979) asymmetry magnitude, a = A*c**B with c the storm speed in kt.
+GTCM_ASYM_A = 1.6                       # eq. (2)
+GTCM_ASYM_B = 0.63
+
+# TCM radii are the MAXIMUM extent of that wind in the quadrant; the vortex is
+# fit to the quadrant AVERAGE.  The guide converts with this factor, citing the
+# Wind Speed Probability model (DeMaria et al. 2009).
+GTCM_QUAD_AVG_FACTOR = 0.85
+
+# Weights in the error function.  The Rankine profile is flat at large radii,
+# so an unweighted fit is insensitive to the 34 kt points and decays too slowly
+# out there; the guide raises their weight to five.
+GTCM_W_34 = 5.0                         # eq. (7)
+GTCM_W_INNER = 1.0
+
+# The asymmetry is not always aligned with the motion vector, particularly at
+# higher latitudes and during extratropical transition.  After the size
+# parameters are fit, the guide lets the asymmetry components move up to this
+# far from their motion-derived first guess to further reduce the error.
+GTCM_ASYM_MAX_DEV_KT = 10.0
+
+# Equations (8) and (9) build the wind field from the tangential wind and the
+# asymmetry vector alone - there is no inflow term.  Set this True to rotate
+# the result toward the centre by INFLOW_ANGLE_DEG anyway, which departs from
+# the guide but matches what the "perquad" construction has always done.
+GTCM_APPLY_INFLOW = False
+
+# Iteration limits for the fits.  These bound run time inside GFE; the fits
+# converge well inside them on real bulletins.
+# Admissible range for the modified-Rankine size exponents.  The guide gives no
+# bounds, but eq. (6)'s own climatological value spans roughly 0.37 (a marginal
+# storm at low latitude) to 0.95 (a very intense one at high latitude), so this
+# brackets what the guide itself considers physical with headroom either side.
+# The former floor of 0.05 admitted a wind field that barely decays with radius
+# - flat out to hundreds of miles - which is not a shape any tropical cyclone
+# has, and which a thinly-constrained fit will happily run to.
+GTCM_X_MIN = 0.20
+GTCM_X_MAX = 1.20
+
+GTCM_MAX_ITER = 220
+GTCM_ASYM_STEPS = 9
+
 # Share of the storm's translation speed added to the field, which makes the
 # right of track stronger than the left.  Raising it also pushes the field
 # off the reported radii, roughly 3.4 kt of error at 0.5 on a 16 kt mover.
+# Applies to "perquad" only; "gtcm" uses GTCM_ASYM_A/B above instead.
 MOTION_ASYMMETRY_FRACTION = 0.5
 
 # Degrees the surface wind is rotated toward the center.  Open-water value;
@@ -588,12 +652,374 @@ def _azimuthalRadii(azGrid, quadDict, floor_nm):
     return np.interp(az, knots_x, knots_y)
 
 
+def _gtcmClimoRmax(vmax, lat):
+    """Climatological RMW in nm.  Users Guide eq. (5)."""
+    return float(np.exp(3.7450 - 0.01338 * float(vmax) + 0.01908 * abs(float(lat))))
+
+
+def _gtcmClimoX(vmax, lat):
+    """Climatological size parameter, non-dimensional.  Users Guide eq. (6)."""
+    return float(0.1989 + 0.00475 * float(vmax) + 0.00142 * abs(float(lat)))
+
+
+def _gtcmAsymmetry(motionSpd):
+    """Schwerdt (1979) asymmetry magnitude in kt.  Users Guide eq. (2)."""
+    if not motionSpd or motionSpd <= 0:
+        return 0.0
+    return GTCM_ASYM_A * float(motionSpd) ** GTCM_ASYM_B
+
+
+def _gtcmProfile(r, vmax, a, rm, ri, x1, x2):
+    """Symmetric modified Rankine tangential wind.  Users Guide eq. (3).
+
+        V = (Vm-a)(r/rm)            r  < rm
+            (Vm-a)(rm/r)**x1        rm <= r < ri
+            A(Vm-a)(rm/r)**x2       ri <= r          A = (ri/rm)**x1 (rm/ri)**x2
+
+    A makes V continuous across ri.  Two exponents, not one: the inner and
+    outer parts of a real vortex do not share a decay rate, and forcing them
+    to was the single biggest error in the pre-guide reconstruction of this.
+    """
+    vs = max(float(vmax) - float(a), 0.0)
+    rm = max(float(rm), 1e-3)
+    ri = max(float(ri), rm * 1.0001)
+    safe = np.maximum(np.asarray(r, dtype=float), 1e-6)
+    # A exists solely to make V continuous across ri, which the Users Guide
+    # states in words. Continuity requires
+    #     (rm/ri)**x1 == A * (rm/ri)**x2   ->   A = (rm/ri)**(x1 - x2)
+    # The guide PRINTS A = (ri/rm)**x1 (rm/ri)**x2, which does not satisfy
+    # that except in the degenerate x1 == x2 case - it is a typo, or a
+    # superscript mangled in the PDF. Transcribing it literally left a mean
+    # +4.4 kt step at ri (max +44 kt) and made the GTCM field measurably
+    # rougher than the per-quadrant construction it replaced, which is the
+    # opposite of the reason for the switch. Caught by the coherence check
+    # in tests/tcwind_jtwc/verify_gtcm.py; see its radial-value-jump column.
+    A = (rm / ri) ** (x1 - x2)
+    return np.where(safe < rm, vs * (safe / rm),
+                    np.where(safe < ri,
+                             vs * (rm / safe) ** x1,
+                             A * vs * (rm / safe) ** x2))
+
+
+def _gtcmUV(V, azDeg, ax, ay, lat):
+    """2-D wind from tangential wind plus asymmetry.  Users Guide eq. (8)/(9).
+
+    The guide writes u = ax - V sin(theta), v = ay + V cos(theta) with theta
+    measured counterclockwise from east.  This file carries azimuth as a
+    compass bearing from the centre, and theta = 90 - bearing, so sin(theta)
+    becomes cos(bearing) and cos(theta) becomes sin(bearing).
+
+    The guide is NHC's, so it only ever describes the northern hemisphere.
+    JTWC warns on southern-hemisphere basins too, where the tangential flow
+    reverses; `sign` handles that.  The asymmetry vector is not reversed - it
+    still points with the motion.
+    """
+    azr = np.radians(np.asarray(azDeg, dtype=float))
+    sign = 1.0 if lat >= 0 else -1.0
+    u = ax - sign * V * np.cos(azr)
+    v = ay + sign * V * np.sin(azr)
+    return u, v
+
+
+def _gtcmTargets(snapshot):
+    """Fit points: (radius_nm, bearing_deg, threshold_kt, weight).
+
+    Reported radii are the maximum extent in the quadrant; the vortex is fit
+    to the quadrant average, so each radius is scaled by GTCM_QUAD_AVG_FACTOR
+    first.  Weights follow eq. (7): five on the 34 kt points, one elsewhere.
+    """
+    out = []
+    for threshold in (64, 50, 34):
+        quad = snapshot.radii.get(threshold)
+        if not quad or snapshot.vmax < threshold:
+            continue
+        for q in QUADS:
+            rep = quad.get(q, 0.0)
+            if rep and rep > 0.0:
+                out.append((float(rep) * GTCM_QUAD_AVG_FACTOR, QUAD_AZ[q],
+                            float(threshold),
+                            GTCM_W_34 if threshold == 34 else GTCM_W_INNER))
+    return out
+
+
+def _nelderMead(fn, guess, step, maxIter):
+    """Small Nelder-Mead, so the fit needs no scipy inside AWIPS."""
+    n = len(guess)
+    simplex = [list(guess)]
+    for i in range(n):
+        pt = list(guess)
+        pt[i] += step[i]
+        simplex.append(pt)
+    vals = [fn(p) for p in simplex]
+    for _ in range(maxIter):
+        order = sorted(range(n + 1), key=lambda i: vals[i])
+        simplex = [simplex[i] for i in order]
+        vals = [vals[i] for i in order]
+        if abs(vals[-1] - vals[0]) <= 1e-9 * (abs(vals[0]) + 1e-9):
+            break
+        centroid = [sum(p[i] for p in simplex[:-1]) / n for i in range(n)]
+        refl = [centroid[i] + (centroid[i] - simplex[-1][i]) for i in range(n)]
+        fr = fn(refl)
+        if fr < vals[0]:
+            exp = [centroid[i] + 2.0 * (centroid[i] - simplex[-1][i])
+                   for i in range(n)]
+            fe = fn(exp)
+            simplex[-1], vals[-1] = (exp, fe) if fe < fr else (refl, fr)
+        elif fr < vals[-2]:
+            simplex[-1], vals[-1] = refl, fr
+        else:
+            con = [centroid[i] + 0.5 * (simplex[-1][i] - centroid[i])
+                   for i in range(n)]
+            fc = fn(con)
+            if fc < vals[-1]:
+                simplex[-1], vals[-1] = con, fc
+            else:
+                for i in range(1, n + 1):
+                    simplex[i] = [simplex[0][j] + 0.5 * (simplex[i][j] - simplex[0][j])
+                                  for j in range(n)]
+                    vals[i] = fn(simplex[i])
+    best = min(range(n + 1), key=lambda i: vals[i])
+    return simplex[best], vals[best]
+
+
+def fitGTCM(snapshot):
+    """Fit the GTCM vortex to one storm-time.
+
+    Returns dict(rm, ri, x1, x2, ax, ay, a, n, rms).  Users Guide steps 2b-3:
+    climatological first guess from (5)/(6); ri at the median reported radius;
+    (rm, x1, x2) by weighted least squares on WIND error (7); then ax/ay
+    released within GTCM_ASYM_MAX_DEV_KT with the size parameters held fixed.
+    """
+    vmax = float(snapshot.vmax)
+    lat = float(snapshot.lat)
+    a = _gtcmAsymmetry(snapshot.motionSpd)
+    motionDir = snapshot.motionDir if snapshot.motionDir is not None else 0.0
+    mr = np.radians(motionDir)
+    ax0, ay0 = a * np.sin(mr), a * np.cos(mr)   # eq. (1)
+
+    rmc = _gtcmClimoRmax(vmax, lat)
+    xc = _gtcmClimoX(vmax, lat)
+
+    targets = _gtcmTargets(snapshot)
+    if not targets:
+        # No radii anywhere: climatology is all there is.  Guide step 2c.
+        return dict(rm=rmc, ri=rmc * 3.0, x1=xc, x2=xc,
+                    ax=float(ax0), ay=float(ay0), a=a, n=0, freeParams=0,
+                    rms=float("nan"))
+
+    rr = np.array([t[0] for t in targets])
+    az = np.array([t[1] for t in targets])
+    vt = np.array([t[2] for t in targets])
+    wt = np.array([t[3] for t in targets])
+    ri = float(np.median(rr))
+
+    def err(rm, x1, x2, ax, ay):
+        V = _gtcmProfile(rr, vmax, a, rm, ri, x1, x2)
+        u, v = _gtcmUV(V, az, ax, ay, lat)
+        return float(np.sum(wt * (np.sqrt(u * u + v * v) - vt) ** 2))
+
+    # Only estimate what the reported radii can actually identify.  rm, x1 and
+    # x2 are three free parameters; a bulletin reporting two nonzero radii
+    # constrains two numbers.  Fitting all three to two targets leaves a whole
+    # manifold of exact solutions - every one scoring RMS 0.00 - and the
+    # optimiser lands on an arbitrary point of it.  On live TS 22W (KROVANH),
+    # two reported R34 quadrants produced rm 7.8 nm with x1 = x2 = 0.05: a wind
+    # field that barely decays with radius, drawn as a flat sheet chopped into
+    # a one-sided wedge by the asymmetry vector.  19% of two-target
+    # configurations did this.
+    #
+    # So drop a parameter when the data cannot carry it.  The Users Guide is
+    # silent here - it only says climatology is used when NO radius is
+    # reported - but estimating an unidentifiable parameter is not something a
+    # least-squares fit should be asked to do.
+    nfit = len(targets)
+    if nfit >= 5:
+        freeParams = 3          # rm, x1, x2 all identifiable
+    elif nfit >= 3:
+        freeParams = 2          # rm and one shared exponent
+    else:
+        freeParams = 1          # rm only; exponent stays at climatology
+
+    # And keep rm near climatology when the radii cannot pin it down.  The
+    # guide describes the climatological/CP rm as a first guess that is
+    # "adjusted to better fit" the reported radii - adjusted, not replaced.
+    # Unbounded, a thin fit walks rm outward chasing a 34 kt radius the
+    # symmetric vortex cannot reach: on the KROVANH case rm went to 92.8 nm
+    # against a climatological 40.8, putting the peak wind 90 nm off the
+    # centre.  That happens whenever Vm - a falls below the threshold being
+    # fitted, which for a marginal storm with a fast translation is routine:
+    # 40 kt with a = 8.4 leaves a symmetric peak of 31.6 kt, below gale.
+    rmLo, rmHi = (2.0, 150.0) if freeParams == 3 else (
+        (0.4 * rmc, 2.5 * rmc) if freeParams == 2 else (0.5 * rmc, 2.0 * rmc))
+
+    if freeParams == 3:
+        def sizeObj(p):
+            rm_, x1_, x2_ = p
+            if not (rmLo <= rm_ <= rmHi) or not (GTCM_X_MIN <= x1_ <= GTCM_X_MAX) \
+               or not (GTCM_X_MIN <= x2_ <= GTCM_X_MAX):
+                return 1e12
+            return err(rm_, x1_, x2_, ax0, ay0)
+        (rm, x1, x2), _ = _nelderMead(sizeObj, [rmc, xc, xc],
+                                      [max(rmc * 0.35, 4.0), 0.12, 0.12],
+                                      GTCM_MAX_ITER)
+    elif freeParams == 2:
+        def sizeObj(p):
+            rm_, x_ = p
+            if not (rmLo <= rm_ <= rmHi) or not (GTCM_X_MIN <= x_ <= GTCM_X_MAX):
+                return 1e12
+            return err(rm_, x_, x_, ax0, ay0)
+        (rm, xs), _ = _nelderMead(sizeObj, [rmc, xc],
+                                  [max(rmc * 0.35, 4.0), 0.12], GTCM_MAX_ITER)
+        x1 = x2 = xs
+    else:
+        def sizeObj(p):
+            rm_ = p[0]
+            if not (rmLo <= rm_ <= rmHi):
+                return 1e12
+            return err(rm_, xc, xc, ax0, ay0)
+        (rm,), _ = _nelderMead(sizeObj, [rmc], [max(rmc * 0.35, 4.0)],
+                               GTCM_MAX_ITER)
+        x1 = x2 = xc
+
+    # Step 3: release the asymmetry, size parameters fixed.
+    best = (err(rm, x1, x2, ax0, ay0), float(ax0), float(ay0))
+    if a > 0.0:
+        grid = np.linspace(-GTCM_ASYM_MAX_DEV_KT, GTCM_ASYM_MAX_DEV_KT,
+                           GTCM_ASYM_STEPS)
+        for dx in grid:
+            for dy in grid:
+                e = err(rm, x1, x2, ax0 + dx, ay0 + dy)
+                if e < best[0]:
+                    best = (e, float(ax0 + dx), float(ay0 + dy))
+        def asymObj(p):
+            dx, dy = p[0] - ax0, p[1] - ay0
+            if dx * dx + dy * dy > GTCM_ASYM_MAX_DEV_KT ** 2:
+                return 1e12
+            return err(rm, x1, x2, p[0], p[1])
+        (axf, ayf), ef = _nelderMead(asymObj, [best[1], best[2]], [2.0, 2.0], 80)
+        if ef < best[0]:
+            best = (ef, float(axf), float(ayf))
+
+    return dict(rm=float(rm), ri=ri, x1=float(x1), x2=float(x2),
+                ax=best[1], ay=best[2], a=a, n=len(targets),
+                freeParams=freeParams,
+                rms=float(np.sqrt(best[0] / np.sum(wt))))
+
+
+def _buildVortexGTCM(latGrid, lonGrid, snapshot, rmax_nm, outerDecayFactor,
+                     normalizePeak):
+    """GTCM field for one time.  Users Guide eq. (3), (8), (9).
+
+    Two deliberate departures from the guide, both documented rather than
+    silent:
+
+      * The guide's grids are missing outside the 34 kt radii and NHC leaves
+        the blend to the receiving office.  This tool inserts into a
+        background instead, so the profile is tapered exponentially beyond
+        the modelled 34 kt radius, as the "perquad" construction does.  A bare
+        Rankine tail decays too slowly to terminate on its own.
+      * Step 4's boundary-layer/land-roughness reduction is NOT implemented.
+        It needs the USGS land-surface database, which this procedure does not
+        have.  The field is therefore marine-exposure everywhere, and will be
+        too strong over land.
+    """
+    r, az = _distBearingGrids(latGrid, lonGrid, snapshot.lat, snapshot.lon)
+    fit = fitGTCM(snapshot)
+
+    V = _gtcmProfile(r, snapshot.vmax, fit["a"], fit["rm"], fit["ri"],
+                     fit["x1"], fit["x2"])
+    u, v = _gtcmUV(V, az, fit["ax"], fit["ay"], snapshot.lat)
+    mag = np.sqrt(u * u + v * v)
+
+    # Modelled 34 kt radius per azimuth, for the insert footprint and taper.
+    probe = np.linspace(1.0, 900.0, 900)
+    prof = _gtcmProfile(probe, snapshot.vmax, fit["a"], fit["rm"], fit["ri"],
+                        fit["x1"], fit["x2"])
+    uu, vv = _gtcmUV(prof[None, :], np.asarray(az).ravel()[:, None],
+                     fit["ax"], fit["ay"], snapshot.lat)
+    prof2d = np.sqrt(uu * uu + vv * vv)
+    # The OUTERMOST radius still at 34 kt.  Not the first crossing: the profile
+    # is also below 34 kt inside the eye, and taking that would collapse the
+    # footprint onto the centre and taper the entire field away.
+    above = prof2d >= 34.0
+    anyAbove = above.any(axis=1)
+    last = prof2d.shape[1] - 1 - np.argmax(above[:, ::-1], axis=1)
+
+    # Interpolate the crossing rather than snapping to the probe grid.  probe[last]
+    # is the last sample still AT or ABOVE 34 kt, so the field there is >= 34 while
+    # the taper below restarts at exactly 34 - the difference lands as a step at the
+    # footprint boundary.  On a 1 nm probe that was a 3.36 kt mean jump, which made
+    # this taper the largest single source of roughness in the GTCM field, larger
+    # than anything in the vortex itself.  Solving for the exact radius where the
+    # field equals 34 makes the boundary continuous by construction.
+    rows = np.arange(prof2d.shape[0])
+    nxt = np.minimum(last + 1, prof2d.shape[1] - 1)
+    v_hi = prof2d[rows, last]
+    v_lo = prof2d[rows, nxt]
+    span = v_hi - v_lo
+    frac = np.where(span > 1e-9, (v_hi - 34.0) / np.maximum(span, 1e-9), 0.0)
+    frac = np.clip(frac, 0.0, 1.0)
+    r34_exact = probe[last] + frac * (probe[nxt] - probe[last])
+
+    r34 = np.where(anyAbove, r34_exact, fit["rm"] * 3.0)
+    r34 = r34.reshape(r.shape).astype(np.float32)
+
+    # Anchor the taper on the field's OWN value at r34, not on a constant 34.
+    # Where the field does reach 34 kt these are the same number, because r34
+    # is solved as the radius where it does.  Where it never reaches 34 - a
+    # weak system, or a quadrant of a marginal one where the asymmetry vector
+    # opposes the flow after the Vm-a reduction - r34 falls back to 3*rm, and
+    # anchoring on 34 there made the field jump UP at that radius: a 30 kt
+    # system came out with its peak of 34 kt sitting 113 nm from the centre
+    # instead of in its core.  Evaluating the profile at r34 handles both
+    # branches with one expression.
+    az1d = np.asarray(az).ravel()
+    r341d = np.asarray(r34).ravel()
+    Vanchor = _gtcmProfile(r341d, snapshot.vmax, fit["a"], fit["rm"],
+                           fit["ri"], fit["x1"], fit["x2"])
+    ua, va = _gtcmUV(Vanchor, az1d, fit["ax"], fit["ay"], snapshot.lat)
+    anchorV = np.sqrt(ua * ua + va * va).reshape(r.shape)
+
+    decayL = np.maximum(r34 * float(outerDecayFactor), MIN_OUTER_DECAY_NM)
+    outer = r > r34
+    mag = np.where(outer, anchorV * np.exp(-(r - r34) / decayL), mag)
+
+    if GTCM_APPLY_INFLOW:
+        sign = 1.0 if snapshot.lat >= 0 else -1.0
+        metFrom = (az + sign * (90.0 - INFLOW_ANGLE_DEG)) % 360.0
+        rad = np.radians(metFrom)
+        u, v = -mag * np.sin(rad), -mag * np.cos(rad)
+    else:
+        scale = np.where(mag > 0, mag / np.maximum(np.sqrt(u * u + v * v), 1e-6), 0.0)
+        u, v = u * scale, v * scale
+
+    dirOut = (np.degrees(np.arctan2(-u, -v))) % 360.0
+
+    if normalizePeak and snapshot.vmax > 0:
+        weight = np.clip((fit["rm"] - r) / max(fit["rm"], 1e-3), 0.0, 1.0)
+        core = weight > 0.0
+        if core.any():
+            i = int(np.argmax(np.where(core, mag, -1.0)))
+            peak, w0 = float(mag.flat[i]), float(weight.flat[i])
+            if peak > 0.0 and w0 > 0.05 and peak < snapshot.vmax:
+                factor = min(1.0 + (snapshot.vmax / peak - 1.0) / w0,
+                             PEAK_NORMALIZE_MAX_FACTOR)
+                mag = mag * (1.0 + (factor - 1.0) * weight)
+
+    return (mag.astype(np.float32), dirOut.astype(np.float32), r, r34)
+
+
+
 def buildVortex(latGrid, lonGrid, snapshot, rmax_nm,
                 asymFrac=MOTION_ASYMMETRY_FRACTION,
                 inflowDeg=INFLOW_ANGLE_DEG,
                 outerDecayFactor=OUTER_DECAY_FACTOR,
-                normalizePeak=NORMALIZE_CORE_PEAK):
+                normalizePeak=NORMALIZE_CORE_PEAK,
+                method=None):
     """Return (magGrid_kt, dirGrid_deg, r_nm, r34_nm) for one time."""
+    if (method or VORTEX_METHOD) == "gtcm":
+        return _buildVortexGTCM(latGrid, lonGrid, snapshot, rmax_nm,
+                                outerDecayFactor, normalizePeak)
     # A reported quadrant radius already IS this storm's real asymmetry -
     # translation-driven or otherwise (shear, extratropical transition,
     # ...) - so adding the synthetic motion vector below on top of it is

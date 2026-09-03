@@ -1,1457 +1,2163 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <base target="_top">
 <meta charset="utf-8">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JTWC TC Wind - live</title>
+<link rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<?!= HtmlService.createHtmlOutputFromFile('Theme').getContent(); ?>
 <style>
-  :root {
-    --bg:#f1f5f9; --surface:#ffffff; --border:#e2e8f0; --border-strong:#cbd5e1;
-    --text:#1e293b; --text-muted:#52606d; --text-faint:#94a3b8;
-    --brand:#7f1d1d; --accent:#2563eb; --accent-soft:#eff6ff;
-    --radius:6px; --radius-lg:10px;
-    --shadow:0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04);
-    --font:-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+/* ===========================================================================
+   Tokens.  Every colour is defined on bare :root first and only REDEFINED
+   inside the dark media query / [data-theme] block, so no colour exists
+   solely inside a media query.
+
+   The palette was chosen numerically, not by eye.  The previous build put
+   R64 #dc2626, RMW #db2777 and ROCI #0d9488 on one map and asked the
+   forecaster to compare them; simulated under deuteranopia (Vienot, Brettel
+   & Mollon 1999) their pairwise WCAG separations are 1.05 / 1.03 / 1.02,
+   where 1.00 means indistinguishable.  Its wind-field ramp was worse: the
+   34-50 kt yellow and the 50-64 kt orange simulate to a separation of
+   1.00 - literally the same colour to a deuteranope.
+
+   What replaced it:
+
+     * The wind-field ramp is a single perceptually-ordered sequential ramp
+       (plasma) with strictly ascending relative luminance.  Worst pair of
+       ANY two bands under deuteranopia: 1.61.  Speed is the only thing
+       colour encodes on the map.
+     * Rings and the track carry NO hue at all.  They are ink-on-halo, told
+       apart by dash pattern and by a text label drawn on the ring itself.
+       A ring can therefore never be confused with a wind band.
+     * Anchored vs extrapolated field is a TEXTURE (diagonal hatch in the
+       raster), not a colour.
+     * The four quadrant curves in the profile chart are the only place
+       four hues must be told apart.  They were solved for: hues at 60 deg+
+       spacing placed on four separate L* levels so the deuteranopic
+       red/green collapse is broken by lightness.  Worst pair under
+       deuteranopia 1.53 (light) / 1.53 (dark), and they still carry a dash
+       pattern and a direct end-label.
+   ======================================================================== */
+:root {
+  color-scheme: light dark;
+
+  /* map ink: rings, track, labels.  Halo is the opposite. */
+  --ink:#0b1220;
+
+  /* profile-chart quadrant hues */
+  --q-ne:#004c36;
+
+  /* wind-field ramp - shared by both themes: it sits over map tiles, not
+     over the page background. */
+  --f1:#0d0887;
+}
+
+
+
+* { box-sizing:border-box; }
+html, body { height:100%; }
+body {
+  margin:0; background:var(--bg); color:var(--text);
+  font:14px/1.45 var(--font);
+  -webkit-font-smoothing:antialiased;
+}
+#app { display:flex; flex-direction:column; min-height:100%; height:100%; }
+
+/* --- safety banner: first thing on the page, never scrolls away ---------- */
+#safety {
+  background:var(--banner-bg); color:var(--banner-fg);
+  padding:7px 16px; font-size:12.5px; line-height:1.35;
+  display:flex; gap:10px; align-items:baseline; flex-wrap:wrap;
+}
+#safety b { font-weight:800; letter-spacing:.07em; white-space:nowrap; }
+#safety span { opacity:.94; }
+
+#pageNote {
+  display:none; padding:9px 16px; background:var(--warn-soft);
+  color:var(--text); border-bottom:2px solid var(--warn); font-weight:600;
+  font-size:13px;
+}
+
+/* --- masthead ------------------------------------------------------------ */
+#masthead {
+  display:flex; align-items:baseline; gap:14px; flex-wrap:wrap;
+  padding:9px 16px 8px; background:var(--surface);
+  border-bottom:1px solid var(--border);
+}
+#masthead h1 {
+  margin:0; font-size:15px; font-weight:700; letter-spacing:-.01em;
+  white-space:nowrap;
+}
+#masthead h1 small {
+  display:block; font-size:11px; font-weight:500; color:var(--muted);
+  letter-spacing:.02em; text-transform:uppercase; margin-top:1px;
+}
+nav { display:flex; gap:2px; margin-left:auto; align-items:center; }
+nav a {
+  color:var(--muted); text-decoration:none; font-size:12.5px; font-weight:600;
+  padding:5px 10px; border-radius:var(--r-sm); border:1px solid transparent;
+}
+nav a:hover { color:var(--text); background:var(--panel); }
+nav a[aria-current="page"] {
+  color:var(--text); background:var(--panel); border-color:var(--border);
+}
+#verTag {
+  font:11px/1 var(--mono); color:var(--muted); padding-left:10px;
+  border-left:1px solid var(--border); margin-left:6px;
+}
+
+/* --- toolbar ------------------------------------------------------------- */
+#toolbar {
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  padding:8px 16px; background:var(--surface);
+  border-bottom:1px solid var(--border);
+}
+.vr { width:1px; align-self:stretch; background:var(--border); margin:0 3px; }
+
+button, .btn {
+  font:600 12.5px/1 var(--font); padding:7px 11px; cursor:pointer;
+  background:var(--surface); color:var(--text);
+  border:1px solid var(--border-strong); border-radius:var(--r-sm);
+  display:inline-flex; align-items:center; gap:6px; text-decoration:none;
+}
+button:hover, .btn:hover { background:var(--panel); }
+button.primary { background:var(--accent); color:var(--surface); border-color:var(--accent); }
+button.primary:hover { filter:brightness(1.12); }
+button[aria-pressed="true"] {
+  background:var(--accent-soft); border-color:var(--accent); color:var(--accent);
+}
+button:disabled { opacity:.5; cursor:not-allowed; }
+:focus-visible {
+  outline:3px solid var(--accent); outline-offset:2px; border-radius:3px;
+}
+
+.layers { display:flex; gap:2px; flex-wrap:wrap; }
+.layers label {
+  display:inline-flex; align-items:center; gap:6px; font-size:12.5px;
+  color:var(--text); padding:5px 9px; border-radius:var(--r-sm);
+  border:1px solid transparent; cursor:pointer; white-space:nowrap;
+}
+.layers label:hover { background:var(--panel); }
+.layers input { accent-color:var(--accent); margin:0; }
+
+#stormChips { display:flex; gap:6px; flex-wrap:wrap; }
+.chip {
+  font:600 12px/1 var(--font); padding:6px 10px; border-radius:999px;
+  border:1px solid var(--border-strong); background:var(--surface);
+  color:var(--text); cursor:pointer; display:inline-flex; gap:7px;
+  align-items:center; white-space:nowrap;
+}
+.chip .pil { font:600 10.5px/1 var(--mono); color:var(--muted); letter-spacing:.03em; }
+.chip[aria-pressed="true"] {
+  background:var(--accent); border-color:var(--accent); color:#fff;
+}
+.chip[aria-pressed="true"] .pil { color:rgba(255,255,255,.85); }
+.chip.dead { opacity:.62; cursor:default; border-style:dashed; }
+
+/* --- timeline ------------------------------------------------------------ */
+#timeline {
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  padding:9px 16px; background:var(--panel);
+  border-bottom:1px solid var(--border);
+}
+#tReadout { display:flex; align-items:baseline; gap:12px; min-width:280px; }
+#tTau {
+  font:700 22px/1 var(--mono); letter-spacing:-.02em; color:var(--text);
+  font-variant-numeric:tabular-nums;
+}
+#tValid {
+  font:700 22px/1 var(--mono); letter-spacing:.01em; color:var(--text);
+  font-variant-numeric:tabular-nums;
+}
+#tKind {
+  font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
+  padding:3px 7px; border-radius:3px; border:1px solid var(--border-strong);
+  color:var(--muted); white-space:nowrap;
+}
+#tKind[data-kind="tau"] { color:var(--text); background:var(--sunken); border-color:var(--border-strong); }
+#tSlider { flex:1 1 220px; min-width:160px; accent-color:var(--accent); }
+#tOrigin { font-size:11.5px; color:var(--muted); font-variant-numeric:tabular-nums; }
+kbd {
+  font:600 10.5px/1 var(--mono); border:1px solid var(--border-strong);
+  border-bottom-width:2px; border-radius:3px; padding:3px 5px;
+  background:var(--surface); color:var(--muted);
+}
+
+/* --- paste drawer -------------------------------------------------------- */
+#paste {
+  display:none; padding:12px 16px; background:var(--panel);
+  border-bottom:1px solid var(--border);
+}
+#paste.open { display:block; }
+#paste textarea {
+  width:100%; height:120px; font:12px/1.4 var(--mono); padding:9px;
+  border:1px solid var(--border-strong); border-radius:var(--r-sm);
+  background:var(--surface); color:var(--text); resize:vertical;
+}
+#paste .row { display:flex; gap:10px; align-items:center; margin-top:8px; }
+#paste p { margin:0 0 8px; font-size:12.5px; color:var(--muted); }
+
+/* --- main ---------------------------------------------------------------- */
+#main {
+  flex:1 1 auto; display:grid; grid-template-columns:minmax(0,1fr) 372px;
+  min-height:0;
+}
+#mapWrap { position:relative; min-height:56vh; }
+#map { position:absolute; inset:0; background:var(--sunken); }
+.leaflet-tile { filter:var(--tile-filter); }
+.leaflet-container { font:12px/1.4 var(--font); background:var(--sunken); }
+
+#rail {
+  border-left:1px solid var(--border); background:var(--surface);
+  overflow-y:auto; min-height:0; display:flex; flex-direction:column;
+}
+.card { padding:13px 15px; border-bottom:1px solid var(--border); }
+.card h2 {
+  margin:0 0 9px; font-size:10.5px; font-weight:800; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--muted);
+}
+.card h2 .aux { float:right; font-weight:600; letter-spacing:.02em; text-transform:none; }
+
+/* storm identity */
+#focusName { font-size:16px; font-weight:700; margin:0 0 1px; letter-spacing:-.01em; }
+#focusSub { font-size:12px; color:var(--muted); margin:0 0 10px; }
+.kv { display:grid; grid-template-columns:auto 1fr; gap:3px 12px; font-size:12.5px; }
+.kv dt { color:var(--muted); }
+.kv dd { margin:0; font-variant-numeric:tabular-nums; font-weight:600; }
+
+/* fit block */
+#fitBadge {
+  display:flex; align-items:center; gap:10px; padding:9px 11px;
+  border-radius:var(--r-md); border:1px solid var(--border-strong);
+  background:var(--panel); margin-bottom:10px;
+}
+#fitRms {
+  font:800 24px/1 var(--mono); font-variant-numeric:tabular-nums;
+  letter-spacing:-.03em;
+}
+#fitRmsUnit { font:600 12px/1 var(--font); color:var(--muted); align-self:flex-end; }
+#fitVerdict { margin-left:auto; text-align:right; }
+#fitWord {
+  font:800 12px/1 var(--font); letter-spacing:.07em; text-transform:uppercase;
+  display:block;
+}
+#fitPct { font-size:11px; color:var(--muted); display:block; margin-top:3px; }
+#fitBadge[data-state="good"] { background:var(--ok-soft); border-color:var(--ok); }
+#fitBadge[data-state="good"] #fitWord, #fitBadge[data-state="good"] #fitRms { color:var(--ok); }
+#fitBadge[data-state="warn"] { background:var(--warn-soft); border-color:var(--warn); }
+#fitBadge[data-state="warn"] #fitWord, #fitBadge[data-state="warn"] #fitRms { color:var(--warn); }
+#fitBadge[data-state="bad"] { background:var(--bad-soft); border-color:var(--bad); }
+#fitBadge[data-state="bad"] #fitWord, #fitBadge[data-state="bad"] #fitRms { color:var(--bad); }
+#fitBadge[data-state="none"] #fitWord { color:var(--muted); }
+
+.params {
+  display:grid; grid-template-columns:repeat(2, minmax(0,1fr));
+  gap:1px; background:var(--border); border:1px solid var(--border);
+  border-radius:var(--r-sm); overflow:hidden;
+}
+.param { background:var(--surface); padding:7px 9px; }
+.param .lbl { font-size:10.5px; color:var(--muted); display:block; letter-spacing:.03em; }
+.param .val {
+  font:700 14px/1.2 var(--mono); font-variant-numeric:tabular-nums;
+  display:block; margin-top:2px;
+}
+.param .val small { font:500 10.5px/1 var(--font); color:var(--muted); }
+.param.wide { grid-column:1 / -1; }
+
+.note { font-size:11.5px; color:var(--muted); line-height:1.5; margin:9px 0 0; }
+.note b, .note strong { color:var(--text); }
+
+/* anchoring */
+#anchorBar {
+  display:flex; height:14px; border-radius:3px; overflow:hidden;
+  border:1px solid var(--border-strong); margin:2px 0 8px;
+}
+#anchorBar i { display:block; height:100%; }
+#anchorBar i.anch { background:var(--muted); }
+#anchorBar i.extr {
+  background:repeating-linear-gradient(45deg,
+    var(--muted) 0 2px, transparent 2px 6px);
+  background-color:var(--sunken);
+}
+.tableScroll { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+.quadTable { width:100%; min-width:250px; border-collapse:collapse; font-size:12px; }
+.quadTable th, .quadTable td {
+  text-align:right; padding:3px 0 3px 8px; font-variant-numeric:tabular-nums;
+  border-bottom:1px solid var(--border);
+}
+.quadTable th { color:var(--muted); font-weight:600; font-size:10.5px;
+  letter-spacing:.04em; text-transform:uppercase; }
+.quadTable td:first-child, .quadTable th:first-child { text-align:left; padding-left:0; }
+.quadTable tbody tr:last-child td { border-bottom:none; }
+.qdot {
+  display:inline-block; width:9px; height:9px; border-radius:2px;
+  margin-right:6px; vertical-align:-1px; border:1px solid var(--ink);
+}
+
+/* charts */
+.chartBox { background:var(--panel); border:1px solid var(--border);
+            border-radius:var(--r-sm); padding:6px; }
+canvas { display:block; width:100%; }
+.chartLegend { margin:9px 0 0; padding:0; list-style:none;
+               font-size:11.5px; color:var(--muted); line-height:1.55; }
+.chartLegend li { display:flex; gap:8px; align-items:flex-start; }
+.chartLegend .mk { flex:0 0 26px; text-align:center; color:var(--text);
+                   font-weight:700; padding-top:1px; }
+.chartLegend b { color:var(--text); font-weight:700; }
+.qKey { display:flex; gap:10px; flex-wrap:wrap; margin-top:8px; font-size:11.5px; }
+.qKey span { display:inline-flex; align-items:center; gap:5px; color:var(--text); }
+
+details { font-size:12.5px; }
+details summary {
+  cursor:pointer; font-weight:700; color:var(--text); padding:2px 0;
+  font-size:12px; letter-spacing:.02em;
+}
+details summary:hover { color:var(--accent); }
+details p { margin:8px 0 0; color:var(--muted); line-height:1.55; }
+details ul { margin:8px 0 0; padding-left:18px; color:var(--muted); line-height:1.55; }
+details li { margin-bottom:5px; }
+
+/* --- status log ---------------------------------------------------------- */
+#status {
+  border-top:1px solid var(--border); background:var(--surface);
+  padding:8px 16px; font:12px/1.6 var(--mono); color:var(--text);
+  max-height:132px; overflow:auto; white-space:pre-wrap;
+  font-variant-numeric:tabular-nums;
+}
+#status .lvl { font-weight:700; }
+#status .err { color:var(--bad); }
+#status .warnl { color:var(--warn); }
+#status .okl { color:var(--ok); }
+
+/* --- map furniture ------------------------------------------------------- */
+.legendBox {
+  background:var(--surface); color:var(--text); border:1px solid var(--border-strong);
+  border-radius:var(--r-sm); box-shadow:var(--shadow); padding:8px 10px;
+  font-size:11px; line-height:1.5; max-width:216px;
+}
+.legendBox h3 { margin:0 0 5px; font-size:10px; letter-spacing:.09em;
+                text-transform:uppercase; color:var(--muted); font-weight:800; }
+.legendBox h3:not(:first-child) { margin-top:9px; }
+.legendBox .row { display:flex; align-items:center; gap:6px; }
+.legendBox .sw { width:16px; height:10px; border:1px solid var(--border-strong);
+                 flex:0 0 auto; border-radius:2px; }
+.legendBox .ln { width:20px; height:0; border-top:2.5px solid var(--ink); flex:0 0 auto; }
+.legendBox .ln.d50 { border-top-style:dashed; }
+.legendBox .ln.d64 { border-top-style:dotted; border-top-width:3px; }
+.legendBox .ln.tgt { border-top:2px dotted var(--ink); }
+.legendBox .tex { width:16px; height:10px; flex:0 0 auto; border-radius:2px;
+                  border:1px solid var(--border-strong);
+                  background:repeating-linear-gradient(45deg,
+                    var(--muted) 0 2px, transparent 2px 6px); }
+.leaflet-container .ringLabel {
+  font:700 10px/1 var(--mono); color:var(--ink); white-space:nowrap;
+  text-shadow:0 0 3px var(--ink-halo), 0 0 3px var(--ink-halo),
+              0 0 3px var(--ink-halo), 0 0 3px var(--ink-halo);
+  letter-spacing:.04em;
+}
+
+/* --- responsive ---------------------------------------------------------- */
+@media (max-width:1100px) {
+  #main { grid-template-columns:minmax(0,1fr); }
+  #rail { border-left:none; border-top:1px solid var(--border); overflow:visible; }
+  #mapWrap { min-height:62vh; }
+  #app { height:auto; }
+}
+@media (max-width:768px) {
+  #masthead, #toolbar, #timeline, #status, .card, #paste { padding-left:12px; padding-right:12px; }
+  #tTau, #tValid { font-size:19px; }
+  #tReadout { min-width:0; }
+  nav { margin-left:0; width:100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration:.001ms !important; animation-iteration-count:1 !important;
+    transition-duration:.001ms !important; scroll-behavior:auto !important;
   }
-  * { box-sizing:border-box; }
-  html, body { margin:0; padding:0; height:100%; font-family:var(--font); color:var(--text); }
-  #wrap { display:flex; flex-direction:column; height:100%; background:var(--bg); }
-
-  #banner { background:var(--brand); color:#fff; padding:8px 14px; font-size:12.5px;
-            font-weight:700; letter-spacing:.03em; }
-  #banner span { font-weight:400; opacity:.88; letter-spacing:normal; margin-left:6px; }
-
-  #bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap;
-         padding:9px 14px; background:var(--surface); border-bottom:1px solid var(--border);
-         font-size:13px; box-shadow:var(--shadow); position:relative; z-index:2; }
-  #bar .sep { width:1px; align-self:stretch; background:var(--border); margin:0 2px; }
-  #bar label { display:inline-flex; align-items:center; gap:5px; color:var(--text-muted); }
-  #tlabel { color:var(--text-muted); font-variant-numeric:tabular-nums; }
-
-  button, .btn { font:inherit; font-weight:600; padding:6px 12px; cursor:pointer;
-         background:var(--surface); color:var(--text); border:1px solid var(--border-strong);
-         border-radius:var(--radius); transition:background .12s, border-color .12s;
-         text-decoration:none; display:inline-flex; align-items:center; gap:5px; }
-  button:hover, .btn:hover { background:#f8fafc; border-color:#94a3b8; }
-  button:active { background:#f1f5f9; }
-  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
-  button.primary:hover { background:#1d4ed8; border-color:#1d4ed8; }
-  button.is-active { background:var(--accent-soft); border-color:var(--accent); color:var(--accent); }
-  .btn.findingsLink { background:#fff7ed; border-color:#fdba74; color:#9a3412; }
-  .btn.findingsLink:hover { background:#ffedd5; }
-  select, input[type=range] { font:inherit; }
-  select { padding:5px 8px; border:1px solid var(--border-strong); border-radius:var(--radius);
-           background:var(--surface); }
-
-  /* The map is the primary surface - it must never get squeezed down to a
-     sliver by an open panel, regardless of viewport height or panel
-     content. min-height is a real fraction of the viewport (not a small
-     fixed px value), and every panel below is capped + independently
-     scrollable so it can never eat into that budget. */
-  #map { flex:1; min-height:52vh; }
-  #status { padding:8px 14px; background:var(--surface); border-top:1px solid var(--border);
-            font-size:12px; color:var(--text-muted); white-space:pre-wrap; max-height:110px;
-            overflow:auto; font-variant-numeric:tabular-nums; }
-
-  .legend { background:var(--surface); padding:8px 10px; border-radius:var(--radius);
-            font-size:11px; line-height:1.55; box-shadow:var(--shadow); border:1px solid var(--border);
-            min-width:128px; max-width:220px; }
-  .legend i { display:inline-block; width:14px; height:10px; margin-right:5px; border-radius:2px; }
-  .legendSep { border-top:1px solid var(--border); margin:6px 0; }
-  .legendNote { font-size:9.5px; color:var(--text-faint); margin-top:2px; }
-
-  #sourceNote { padding:6px 14px; background:#f8fafc; font-size:11.5px; color:var(--text-faint);
-                border-bottom:1px solid var(--border); }
-  #sourceNote a { color:var(--text-faint); text-decoration:underline; }
-
-  #paste { display:none; padding:12px 14px; background:#fffbeb;
-           border-bottom:1px solid #fde68a; }
-  #paste textarea { width:100%; height:110px; font-family:ui-monospace,monospace;
-                    font-size:11px; border:1px solid var(--border-strong); border-radius:var(--radius);
-                    padding:8px; }
-  .fit-ok { color:#166534; } .fit-bad { color:#b91c1c; font-weight:600; }
-
-  /* Safety net: even if a panel's content is unexpectedly tall, cap it and
-     let it scroll internally rather than ever pushing the map down past
-     its min-height budget above. */
-  #diag, #archived { display:none; padding:12px 14px; background:#f8fafc;
-                      border-bottom:1px solid var(--border-strong);
-                      max-height:36vh; overflow-y:auto; }
-  #diag .diagRow { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-start; }
-  #diag .diagCol { display:flex; flex-direction:column;
-                   gap:6px; align-items:flex-start; flex:0 0 auto; background:var(--surface);
-                   border:1px solid var(--border); border-radius:var(--radius-lg);
-                   box-shadow:var(--shadow); padding:10px 12px; }
-  /* Canvas has no natural CSS size of its own beyond its width/height
-     attributes, and a column flexbox's default align-items:stretch will
-     otherwise blow it up to fill the row - pin both explicitly instead
-     of relying on flex sizing. */
-  #diag canvas { background:#fff; border:1px solid var(--border); border-radius:4px;
-                 display:block; max-width:none; }
-  #histCanvas, #histCanvas + .diagCap { width:620px; }
-  #profCanvas, #profCanvas + .diagCap { width:360px; }
-  #diag .diagCap { font-size:11px; color:var(--text-muted); line-height:1.5; }
-  #diagStorm, #btStorm { margin-bottom:2px; }
-
-  .panelBar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-  button.ghost { background:transparent; border-color:transparent; color:var(--accent);
-                 font-weight:600; padding:6px 4px; }
-  button.ghost:hover { background:var(--accent-soft); border-color:var(--accent-soft); }
-  button.ghost.is-active { background:var(--accent-soft); border-color:var(--accent-soft); }
-
-  .stepBtn { padding:4px 7px; font-size:11px; line-height:1; vertical-align:middle; }
-  .hotkeyHint { font-size:10.5px; color:var(--text-faint); border:1px solid var(--border);
-                border-radius:4px; padding:2px 5px; cursor:default; }
-
-  /* Collapsed by default - reference material, not something that should
-     compete with the storm picker (and the map below it) for space every
-     time this panel opens. */
-  .guideWrap { display:none; margin-top:10px; }
-  .guide { font-size:12.5px; color:var(--text-muted); line-height:1.6; background:var(--surface);
-           border:1px solid var(--border); border-radius:var(--radius-lg); box-shadow:var(--shadow);
-           padding:14px 16px; margin:0 0 4px; max-width:1040px; }
-  .guide h3 { margin:0 0 8px; font-size:12.5px; font-weight:700; color:var(--text);
-              text-transform:uppercase; letter-spacing:.03em; }
-  .guide ul { margin:0; padding-left:20px; }
-  .guide li { margin-bottom:6px; }
-  .guide li:last-child { margin-bottom:0; }
-  .guide + .guide { margin-top:10px; }
-  .swatch { display:inline-block; width:22px; height:0; border-top:3px solid; margin-right:4px;
-            vertical-align:middle; position:relative; top:-2px; }
-  .swatch.dash { border-top-style:dashed; }
-  .swatch.dot { width:10px; height:10px; border:2px solid #1e293b; border-radius:50%;
-                background:#eab308; top:0; }
-  .swatch.dot.big { width:14px; height:14px; border-width:2.5px; border-color:#000; }
+}
 </style>
 </head>
 <body>
-<div id="wrap">
-  <div id="banner">
-    *** EXPERIMENTAL - NOT OPERATIONALLY VETTED ***
-    <span>Analytic vortex fit to the JTWC wind radii, not a gridded product. Not verified against observations. Preview only.</span>
+<div id="app">
+
+  <div id="safety" role="note">
+    <b>EXPERIMENTAL &mdash; NOT OPERATIONALLY VETTED</b>
+    <span>Analytic GTCM vortex fitted to the JTWC wind radii. Not a gridded
+      product, not verified against observations, and not a substitute for the
+      warning text.</span>
   </div>
 
-  <div id="bar">
-    <button id="reload" class="primary">Fetch bulletins</button>
-    <button id="togglePaste">Paste text</button>
-    <div class="sep"></div>
-    <button id="toggleDiag">Diagnostics</button>
-    <button id="toggleArchived">Archived Cases</button>
-    <a id="findingsLink" class="btn findingsLink" href="<?= baseUrl ?>?page=findings" target="_blank">Findings ↗</a>
-    <div class="sep"></div>
-    <label><input type="checkbox" id="layRadii" checked> Radii &amp; track</label>
-    <label><input type="checkbox" id="layField" checked> Wind field</label>
-    <label title="The raw quadrant radii exactly as reported, no smoothing between quadrants and no floor substituted for a genuine 0 - lets you compare the unprocessed input directly against the smooth ring/model output.">
-      <input type="checkbox" id="layLiteral"> Reported radii (literal)</label>
-    <label>Time
-      <button id="tPrev" class="stepBtn" title="Step back (←)" aria-label="Step back">◀</button>
-      <input type="range" id="tslider" min="0" max="0" value="0" style="width:180px">
-      <button id="tNext" class="stepBtn" title="Step forward (→)" aria-label="Step forward">▶</button>
-    </label>
-    <span id="tlabel">--</span>
-    <span class="hotkeyHint" title="Arrow keys step through the track (works anywhere on the page except a text box)">← →</span>
-    <span id="ver" style="margin-left:auto;color:var(--text-faint)"></span>
+  <div id="pageNote" role="status"><?= pageNote ?></div>
+
+  <header id="masthead">
+    <h1>JTWC Tropical Cyclone Wind Field
+      <small>NW Pacific &middot; GTCM / WTCM construction</small></h1>
+    <nav aria-label="Pages">
+      <a href="<?= baseUrl ?>?page=live" aria-current="page">Live</a>
+      <a href="<?= baseUrl ?>?page=archive">Archive</a>
+      <a href="<?= baseUrl ?>?page=findings">Findings</a>
+      <span id="verTag"><?= version ?></span>
+    </nav>
+  </header>
+
+  <div id="toolbar">
+    <button id="btnFetch" class="primary" type="button">Fetch bulletins</button>
+    <button id="btnPaste" type="button" aria-pressed="false" aria-controls="paste">
+      Paste a bulletin</button>
+    <div class="vr"></div>
+    <div class="layers" role="group" aria-label="Map layers">
+      <label><input type="checkbox" id="layField" checked> Wind field</label>
+      <label><input type="checkbox" id="layRadii" checked> Reported radii</label>
+      <label><input type="checkbox" id="layTargets" checked> Fit targets</label>
+      <label><input type="checkbox" id="layTrack" checked> Track</label>
+    </div>
+    <div class="vr"></div>
+    <div id="stormChips" role="group" aria-label="Active systems"></div>
   </div>
-  <div id="sourceNote">
-    Live data: real-time JTWC warnings from NOAA's Telecommunications
-    Gateway (tgftp.nws.noaa.gov). "Archived Cases" and "Findings" instead
-    use JTWC's post-season reanalysis via NOAA NCEI's public
-    <a href="https://www.ncei.noaa.gov/products/international-best-track-archive"
-       target="_blank">IBTrACS</a> archive &mdash; see the Findings page for details.
+
+  <div id="timeline">
+    <button id="tPrev" type="button" title="Step back one timeline step"
+            aria-label="Step back one timeline step">&#9664;</button>
+    <button id="tNext" type="button" title="Step forward one timeline step"
+            aria-label="Step forward one timeline step">&#9654;</button>
+    <div id="tReadout">
+      <span id="tTau" aria-label="Forecast hour">&tau;+--</span>
+      <span id="tValid" aria-label="Valid time">------Z</span>
+      <span id="tKind">&mdash;</span>
+    </div>
+    <input type="range" id="tSlider" min="0" max="0" value="0" step="1"
+           aria-label="Forecast time">
+    <span id="tOrigin"></span>
+    <span><kbd>&larr;</kbd> <kbd>&rarr;</kbd></span>
   </div>
 
   <div id="paste">
-    <textarea id="pastebox" placeholder="Paste a JTWC warning here, then press Parse"></textarea>
-    <button id="parsePaste" style="margin-top:6px">Parse pasted text</button>
+    <p>Fallback for when tgftp.nws.noaa.gov is unreachable. Paste one complete
+      WTPN warning; it is parsed on the server by the same parser the live
+      fetch uses.</p>
+    <label for="pasteBox" style="font-size:12px;color:var(--muted)">Bulletin text</label>
+    <textarea id="pasteBox" spellcheck="false"
+      placeholder="WTPN31 PGTW 021500&#10;&#10;1. TYPHOON 12W (KROVANH) WARNING NR 014&#10;..."></textarea>
+    <div class="row">
+      <button id="btnParse" class="primary" type="button">Parse pasted text</button>
+      <span id="pasteMsg" style="font-size:12.5px;color:var(--muted)"></span>
+    </div>
   </div>
 
-  <div id="diag">
-    <select id="diagStorm"></select>
-    <div class="diagRow">
-      <div class="diagCol">
-        <canvas id="histCanvas" width="620" height="170"></canvas>
-        <div class="diagCap">
-          Time history: <b>Vmax</b> (black) and <b>Rmax</b> (gray dashed, right
-          axis) vs forecast hour. Colored bands are each threshold's
-          quadrant min-max range (the wider the band, the more asymmetric
-          the bulletin's own radii are) with the quadrant mean as a line.
-          Vertical line marks the currently selected time.
+  <div id="main">
+    <div id="mapWrap"><div id="map"></div></div>
+
+    <aside id="rail" aria-label="Diagnostics">
+
+      <section class="card" aria-labelledby="hSystem">
+        <h2 id="hSystem">System</h2>
+        <p id="focusName">No system selected</p>
+        <p id="focusSub">Fetch bulletins to begin.</p>
+        <dl class="kv" id="focusKv"></dl>
+      </section>
+
+      <section class="card" aria-labelledby="hFit">
+        <h2 id="hFit">GTCM fit <span class="aux" id="fitTargets"></span></h2>
+        <div id="fitBadge" data-state="none">
+          <span id="fitRms">--</span><span id="fitRmsUnit">kt RMS</span>
+          <span id="fitVerdict">
+            <span id="fitWord">no fit</span>
+            <span id="fitPct">&mdash;</span>
+          </span>
         </div>
-      </div>
-      <div class="diagCol">
-        <canvas id="profCanvas" width="360" height="220"></canvas>
-        <div class="diagCap">
-          Azimuthal profile at the selected time: modeled wind speed vs
-          radius along each quadrant bearing. Dots are the bulletin's own
-          reported radii - a dot sitting on its line is a good fit; off the
-          line means the interpolation is straying from what JTWC reported.
-          In Archived Cases, a dashed gray <b>Holland</b> curve also appears:
-          an independent model anchored the same way (same Vmax/Rmax/R34).
-          Where it and the colored lines pull apart is genuine disagreement
-          between two reasonable models, worst just outside the core.
+        <div class="params" id="fitParams"></div>
+        <p class="note" id="fitNote"></p>
+      </section>
+
+      <section class="card" aria-labelledby="hAnchor">
+        <h2 id="hAnchor">Anchoring <span class="aux" id="anchorPct"></span></h2>
+        <div id="anchorBar" role="img" aria-label="Share of the drawn wind field
+             that is anchored to a reported radius versus modelled extrapolation">
+          <i class="anch" style="width:0%"></i><i class="extr" style="width:100%"></i>
         </div>
-      </div>
-    </div>
+        <p class="note" style="margin-top:0">
+          <b>Anchored</b> &mdash; a reported radius constrains the fit at this
+          range on this bearing. <b>Extrapolation</b> &mdash; hatched on the
+          map: inside the innermost reported ring (JTWC never reports an RMW),
+          and outside the outermost, where only the fitted profile and its
+          taper decide the answer.
+        </p>
+        <div class="tableScroll">
+        <table class="quadTable" id="anchorTable">
+          <thead><tr><th scope="col">Quad</th><th scope="col">R64</th>
+            <th scope="col">R50</th><th scope="col">R34</th>
+            <th scope="col">Anchored</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        </div>
+        <p class="note" id="anchorThin" style="display:none"></p>
+        <p class="note">Radii in nm as reported. <b>Anchored</b> is the span
+          between the innermost and outermost <em>fit target</em> in that
+          quadrant &mdash; 0.85 &times; the reported radius, because the
+          bulletin states the quadrant <em>maximum</em> and GTCM fits the
+          quadrant <em>average</em>.</p>
+      </section>
+
+      <section class="card" aria-labelledby="hProfile">
+        <h2 id="hProfile">Radial profile <span class="aux" id="profAux"></span></h2>
+        <div class="chartBox"><canvas id="profCanvas" height="270"
+          role="img" aria-label="Modelled wind speed against radius on each
+          quadrant bearing, with the reported radii, the 0.85-scaled fit
+          targets, and the residual at each target"></canvas></div>
+        <ul class="chartLegend">
+          <li><span class="mk">&#9472;</span><span><b>Line</b> &mdash; the GTCM
+            profile actually built, on that quadrant's bearing.</span></li>
+          <li><span class="mk">&#9670;</span><span><b>Filled diamond</b> &mdash;
+            the fit target: 0.85 &times; reported radius, at its threshold.
+            This is what the least-squares actually sees.</span></li>
+          <li><span class="mk">&#9711;</span><span><b>Open circle</b> &mdash;
+            the radius the bulletin reports, unscaled.</span></li>
+          <li><span class="mk">&#9474;</span><span><b>Stem</b> &mdash; the wind
+            residual at the target: modelled speed minus threshold. These are
+            the numbers the RMS above is the root-mean-square of.</span></li>
+        </ul>
+        <div class="qKey" id="qKey"></div>
+        <p class="note">GTCM fits <em>one</em> symmetric vortex plus a single
+          wavenumber-1 asymmetry to every target at once. It is not built to
+          pass through them and it does not: the stems are the price paid for a
+          field with no kinks at the quadrant boundaries.</p>
+      </section>
+
+      <section class="card" aria-labelledby="hHist">
+        <h2 id="hHist">Fit across the forecast</h2>
+        <div class="chartBox"><canvas id="histCanvas" height="188"
+          role="img" aria-label="Maximum sustained wind and GTCM fit RMS error
+          at each forecast hour of the selected warning"></canvas></div>
+        <p class="note">Top: <b>Vmax</b> at each &tau;. Bottom: <b>fit RMS</b>
+          at each &tau;, against the archive's 75th and 90th percentiles. A bar
+          crossing the upper line is a forecast hour whose field should be
+          treated as indicative only.</p>
+      </section>
+
+      <section class="card">
+        <details id="modelNotes">
+          <summary>Model, departures and provenance</summary>
+          <p>The field is NHC's Gridded TCM (GTCM/WTCM) as described in the
+            <em>Gridded TCM Users Guide v1.9.1</em> (Santos &amp; DeMaria,
+            4&nbsp;Dec&nbsp;2023): one symmetric modified-Rankine vortex
+            (<code>rm</code>, <code>ri</code>, <code>x1</code>, <code>x2</code>)
+            plus one wavenumber-1 asymmetry from the storm motion, fitted by
+            weighted least squares on <em>wind</em> error &mdash; weight 5 on
+            the 34&nbsp;kt targets, 1 on 50 and 64.</p>
+          <p><b>Two documented departures from the guide, both deliberate:</b></p>
+          <ul>
+            <li><b>Outer taper.</b> The guide's grids simply stop outside the
+              34&nbsp;kt radii and leave the blend to the receiving office.
+              This tool inserts into a background field, so beyond the modelled
+              34&nbsp;kt radius the profile is tapered exponentially. A bare
+              Rankine tail never terminates on its own.</li>
+            <li><b>No boundary-layer or land-roughness reduction.</b> Step 4 of
+              the guide needs the USGS land-surface database, which this
+              procedure does not have. The field is marine-exposure everywhere
+              and <b>will be too strong over land</b>.</li>
+          </ul>
+          <p>Previously this tool fitted each quadrant's radial profile
+            independently and interpolated between quadrant bisectors. That hit
+            every reported ring exactly and produced kinks at the quadrant
+            boundaries. The office chose coherence over ring fidelity; the tool's
+            job is a physically plausible field consistent with the bulletin,
+            not a reproduction of the radii.</p>
+          <p>Live data: JTWC warnings from NOAA's Telecommunications Gateway
+            (tgftp.nws.noaa.gov), cached briefly server-side. The
+            <a href="<?= baseUrl ?>?page=archive">Archive</a> and
+            <a href="<?= baseUrl ?>?page=findings">Findings</a> pages instead use
+            post-season best-track reanalysis via NCEI's IBTrACS, which shows
+            consistency with best-track analyses &mdash; a weaker claim than
+            verification against observations, which has not been done.</p>
+        </details>
+      </section>
+    </aside>
   </div>
 
-  <div id="archived">
-    <div class="panelBar">
-      <label>Storm <select id="btStorm"><option>Loading storms…</option></select></label>
-      <button id="btExit">Back to live bulletins</button>
-      <button id="btHelp" class="ghost">ⓘ How to read this</button>
-      <span id="btInfo" class="diagCap"></span>
-    </div>
-
-    <div id="archivedGuide" class="guideWrap">
-      <div class="guide">
-        <h3>What this is</h3>
-        <ul>
-          <li><b>Archived Cases</b> replays one real storm's JTWC
-            <i>post-season</i> best-track reanalysis &mdash; not a live
-            bulletin &mdash; through this same map/diagnostics view, so the
-            tool's output can be checked against the later-corrected, true
-            answer.</li>
-          <li>See the <a href="<?= baseUrl ?>?page=findings" target="_blank">Findings</a>
-            page for where this data comes from and what we've learned from
-            it in aggregate across ~16,000 records.</li>
-        </ul>
-      </div>
-
-      <div class="guide">
-        <h3>How to read the map, once a storm is picked</h3>
-        <ul>
-          <li><b>Dashed line</b> &mdash; the storm's full track;
-            <b>dots along it</b> &mdash; each reported position, colored by
-            intensity at that time (same colors as the wind field below).
-            The <b>larger black-ringed dot</b> is the storm center at the
-            selected time &mdash; step through them with the
-            <b>◀ ▶</b> buttons or the <b>← →</b> arrow keys.</li>
-          <li><span class="swatch" style="border-color:#eab308"></span>
-            <span class="swatch" style="border-color:#f97316"></span>
-            <span class="swatch" style="border-color:#dc2626"></span>
-            <b>Solid red/orange/yellow rings</b> &mdash; JTWC's own reported
-            64/50/34-kt wind radii (ground truth).</li>
-          <li><b>Colored raster</b> &mdash; the tool's modeled wind field,
-            built from those same radii.</li>
-          <li>The solid rings are already an interpolation, not the raw
-            report: JTWC only gives one number per quadrant, smoothly
-            blended between quadrant centers here. Turn on
-            <b>Reported radii (literal)</b> in the toolbar to see each
-            quadrant's own number held flat across its full 90&deg; span
-            instead, stepped at the compass boundaries - the actual,
-            unprocessed input, laid directly over both the smooth ring
-            and the raster.</li>
-          <li><span class="swatch dash" style="border-color:#db2777"></span>
-            <b>Magenta dashed ring</b> &mdash; actual reported RMW.</li>
-          <li><span class="swatch dash" style="border-color:#0d9488"></span>
-            <b>Teal dashed ring</b> &mdash; actual ROCI, a pressure-based size
-            measure, not directly comparable to a wind radius (see Findings
-            for the caveat).</li>
-          <li>What matters: where the raster's bright core sits relative to
-            the magenta ring, and how far it fades out relative to the teal
-            ring.</li>
-          <li>In <b>Diagnostics</b>, the azimuthal-profile chart also overlays
-            an independent Holland (1980) curve for the selected storm/time.</li>
-        </ul>
-      </div>
-    </div>
-  </div>
-
-  <div id="map"></div>
-  <div id="status">Loading…</div>
+  <div id="status" role="log" aria-live="polite" aria-label="Status log">Idle.</div>
 </div>
 
+<?!= HtmlService.createHtmlOutputFromFile('Vortex').getContent(); ?>
+
 <script>
-// ---------------------------------------------------------------------------
-// Tunables. These MUST match the constants block in TCWind_JTWC.py.
-// ---------------------------------------------------------------------------
-const MOTION_ASYMMETRY_FRACTION = 0.5;
-const INFLOW_ANGLE_DEG          = 22.0;
-const RMAX_OVERRIDE_NM          = 0.0;
-const OUTER_DECAY_FACTOR        = 1.0;
-const MIN_OUTER_DECAY_NM        = 30.0;
-const NORMALIZE_CORE_PEAK       = true;
-const PEAK_NORMALIZE_MAX_FACTOR = 2.0;
-const MAX_INSERT_RADIUS_FACTOR  = 5.0;
+/* ===========================================================================
+   Index.html - the live tool.
+   ---------------------------------------------------------------------------
+   ALL vortex maths and ALL bulletin parsing come from Vortex.html, included
+   immediately above.  Nothing here redefines resolveRmax, fitGTCM,
+   gtcmProfile, gtcmUV, parseJTWC or willoughbyRmax; there is exactly one
+   copy of each in the client and it is not in this file.  What this file
+   owns is presentation: the map, the timeline, the diagnostics and the
+   honesty about which parts of the picture are data and which are model.
 
-const KT2MS = 0.514444;
-const KM2NM = 1 / 1.852;
-const EARTH_R_NM = 3440.065;
-const QUADS = ['NE', 'SE', 'SW', 'NW'];
-const QUAD_AZ = { NE: 45, SE: 135, SW: 225, NW: 315 };
-// Compass quadrant BOUNDARIES (not centers) - NE spans 0-90deg, SE
-// 90-180, SW 180-270, NW 270-360. Used only by the "literal reported
-// radii" layer (see literalRadiiPolygon() below); everything else keys
-// off QUAD_AZ's quadrant centers instead.
-const QUAD_BOUNDS = { NE: [0, 90], SE: [90, 180], SW: [180, 270], NW: [270, 360] };
+   Server calls used (all present in Code.gs):
+     getBulletins(force)  parsePasted(text)  getFindings()
+   getFindings() is best-effort context only; the page is fully functional
+   when it fails or when the dataset is absent.
+   ======================================================================== */
+(function () {
+'use strict';
 
-// ---------------------------------------------------------------------------
-// Vortex math - port of TCWind_JTWC.py. Scalar rather than array based, which
-// is slower but keeps it readable next to the Python.
-// ---------------------------------------------------------------------------
-
-// Same functional form as Willoughby et al. (2006) but refit against
-// 13,834 real JTWC WestPac best-track records (2005-2024, IBTrACS, agency
-// jtwc_wp - see besttrack_common.MIN_SEASON for why 2005, not 2001)
-// rather than Willoughby's Atlantic coefficients (46.4, -0.0155, 0.0169),
-// which underestimated JTWC's own post-season RMW by ~10 nm on average.
-// Out-of-sample bias on a held-out 20% of storms: -1.9 nm vs -9.4 nm for
-// the original. MUST match willoughbyRmax() in TCWind_JTWC.py - see
-// tests/tcwind_jtwc/fit_westpac_rmax.py for how these were produced and
-// tests/tcwind_jtwc/verify_besttrack_rmax.py for the validation.
-function willoughbyRmax(vmaxKt, latDeg) {
-  const vms = vmaxKt * KT2MS;
-  return 98.392 * Math.exp(-0.025088 * vms + 0.003021 * Math.abs(latDeg)) * KM2NM;
+var V = window.TCVortex;
+if (!V) {
+  document.getElementById('status').textContent =
+    'FATAL: Vortex.html did not load, so no wind field can be built. ' +
+    'Check that Vortex.html is part of the pushed Apps Script project.';
+  return;
 }
 
-function resolveRmax(snap, overrideNm) {
-  let rmax = (overrideNm && overrideNm > 0)
-    ? overrideNm : willoughbyRmax(snap.vmax, snap.lat);
-  for (const thr of [64, 50, 34]) {
-    if (!snap.radii[thr]) continue;
-    // vmax < thr (not <=): a storm whose peak exactly equals a threshold
-    // (e.g. a 50kt storm reporting R50) still reaches it - JTWC would not
-    // report a radius for a threshold it hadn't reached, so only a
-    // *stale* radius (already below the storm's current threshold) should
-    // be excluded here.
-    if (snap.vmax < thr) continue;
-    const nz = QUADS.map(q => snap.radii[thr][q]).filter(v => v > 0);
-    if (nz.length) rmax = Math.min(rmax, 0.7 * Math.min(...nz));
-    break;
+/* Tunables live in Vortex.html so the two ports cannot drift.  Read them
+   defensively rather than restating the numbers here. */
+function tunable(name, dflt) {
+  return (typeof window[name] === 'number' || typeof window[name] === 'boolean')
+    ? window[name] : dflt;
+}
+var QAVG        = tunable('GTCM_QUAD_AVG_FACTOR', 0.85);
+var OUTER_DECAY = tunable('OUTER_DECAY_FACTOR', 1.0);
+var MIN_DECAY_NM= tunable('MIN_OUTER_DECAY_NM', 30.0);
+var INSERT_FAC  = tunable('MAX_INSERT_RADIUS_FACTOR', 5.0);
+var NORM_PEAK   = tunable('NORMALIZE_CORE_PEAK', true);
+var NORM_MAX    = tunable('PEAK_NORMALIZE_MAX_FACTOR', 2.0);
+var QUADS       = V.QUADS;
+var QUAD_AZ     = V.QUAD_AZ;
+var QUAD_BOUNDS = V.QUAD_BOUNDS;
+var THRESHOLDS  = [64, 50, 34];
+
+/* Fit-quality reference points.  NOT invented: the RMS distribution of
+   fitGTCM() over all 4,624 archived best-track storm-times in
+   tests/tcwind_jtwc/data/archive_storms.json that carry at least one usable
+   radius (WP + NA + EP, Vmax >= 34 kt).  p50 1.60, p75 2.81, p90 4.47,
+   p95 6.12, p99 9.39 kt.  Only p75 and p90 are used, as the two thresholds
+   that separate "ordinary" from "worth a second look" from "worst decile". */
+var RMS_P75 = 2.81, RMS_P90 = 4.47, RMS_N = 4624;
+
+var TD_FLOOR = 34;                 // below this the GFE tool builds nothing
+var BAND_EDGES = [20, 34, 50, 64, 80, 100];
+var BAND_TOKENS = ['--f1', '--f2', '--f3', '--f4', '--f5', '--f6'];
+var BAND_ALPHA  = [0.42, 0.52, 0.62, 0.72, 0.80, 0.88];
+var QUAD_TOKEN  = { NE: '--q-ne', SE: '--q-se', SW: '--q-sw', NW: '--q-nw' };
+var QUAD_DASH   = { NE: [], SE: [7, 3], SW: [2, 3], NW: [10, 3, 2, 3] };
+var RING_DASH   = { 34: null, 50: '9,5', 64: '2,4' };
+
+/* --------------------------------------------------------------------------
+   State
+   ----------------------------------------------------------------------- */
+var storms = [];        // [{pil, file, header, taus, label}]
+var slots = [];         // every returned bulletin slot, good or not
+var timeSteps = [];     // epochs
+var focusPil = null;
+var fieldCache = {};    // key -> vortexFieldGTCM result
+var rasterCache = {};   // key -> {url, bounds, peak}, bounded below
+var shareCache = {};    // key -> anchored area fraction
+var rasterOrder = [];
+var RASTER_CACHE_MAX = 24;
+var tauFitCache = {};   // key -> [{tau, rms, n}]
+var archiveRms = null;  // optional context from getFindings()
+var css = null;
+
+function tok(name) {
+  if (!css) css = getComputedStyle(document.documentElement);
+  return css.getPropertyValue(name).trim();
+}
+function refreshTokens() { css = null; }
+
+/* --------------------------------------------------------------------------
+   Formatting.  Every time on this page carries an explicit Z.
+   ----------------------------------------------------------------------- */
+function p2(n) { return (n < 10 ? '0' : '') + n; }
+
+function fmtZ(epoch) {
+  var d = new Date(epoch * 1000);
+  return p2(d.getUTCDate()) + p2(d.getUTCHours()) + p2(d.getUTCMinutes()) + 'Z';
+}
+function fmtZLong(epoch) {
+  var d = new Date(epoch * 1000);
+  var M = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  return p2(d.getUTCDate()) + M[d.getUTCMonth()] + ' ' +
+         p2(d.getUTCHours()) + p2(d.getUTCMinutes()) + 'Z';
+}
+function fmtLatLon(lat, lon) {
+  var la = Math.abs(lat).toFixed(1) + (lat >= 0 ? 'N' : 'S');
+  var lo = Math.abs(lon).toFixed(1) + (lon >= 0 ? 'E' : 'W');
+  return la + ' ' + lo;
+}
+function n1(x) { return (x === null || x === undefined || !isFinite(x)) ? '--' : x.toFixed(1); }
+function n0(x) { return (x === null || x === undefined || !isFinite(x)) ? '--' : Math.round(x); }
+function n2(x) { return (x === null || x === undefined || !isFinite(x)) ? '--' : x.toFixed(2); }
+
+/** Signed difference a-b wrapped into [-180, 180]. */
+function angDiff(a, b) {
+  var d = V.mod360(a - b);
+  return d > 180 ? d - 360 : d;
+}
+
+/* --------------------------------------------------------------------------
+   Status log.  Every server call reports success, emptiness or failure here;
+   nothing fails silently.
+   ----------------------------------------------------------------------- */
+var statusEl = document.getElementById('status');
+function setStatus(lines) {
+  statusEl.innerHTML = '';
+  for (var i = 0; i < lines.length; i++) {
+    var l = lines[i];
+    var span = document.createElement('span');
+    if (l.level) span.className = 'lvl ' + l.level;
+    span.textContent = l.text;
+    statusEl.appendChild(span);
+    statusEl.appendChild(document.createTextNode('\n'));
   }
-  return Math.max(rmax, 3.0);
 }
 
-// ---------------------------------------------------------------------------
-// Holland (1980) profile - an independent, published model, used ONLY as a
-// second opinion in the Best-track QC panel (never in the live tool's own
-// field). Dimensionless form, V(r) = Vmax*sqrt((Rmax/r)^B * exp(1-(Rmax/r)^B)),
-// so it needs no central pressure. MUST match verify_besttrack_holland.py.
-// ---------------------------------------------------------------------------
-
-function hollandG(x) { return x * Math.exp(1 - x); }
-
-/** Bisect g(x)=y for x in (0,1] - g is monotonic increasing there, which is
- * always the branch r >= Rmax (x = (Rmax/r)^B <= 1) puts us on. */
-function solveXForG(y) {
-  let lo = 1e-6, hi = 1.0;
-  y = Math.min(Math.max(y, hollandG(lo)), hollandG(hi));
-  for (let i = 0; i < 60; i++) {
-    const mid = (lo + hi) / 2;
-    if (hollandG(mid) < y) lo = mid; else hi = mid;
-  }
-  return (lo + hi) / 2;
+/* --------------------------------------------------------------------------
+   Reported radii, exactly as reported.
+   ---------------------------------------------------------------------------
+   Deliberately NOT smoothed around the compass.  The bulletin states one
+   number per quadrant and GTCM interpolates nothing between them - it takes
+   the four points as four independent targets.  Drawing a smooth ring here
+   would show a curve neither the bulletin nor the model believes in.  Each
+   quadrant's value is therefore held flat across its own 90 deg sector and
+   stepped radially at the compass boundary; a "000 NM" quadrant collapses to
+   the centre, exactly as reported.
+   ----------------------------------------------------------------------- */
+function quadOf(azDeg) {
+  var a = V.mod360(azDeg);
+  return a < 90 ? 'NE' : a < 180 ? 'SE' : a < 270 ? 'SW' : 'NW';
 }
 
-/** B such that Holland's V(r34Nm) = 34 kt, given Vmax/Rmax. */
-function solveHollandB(vmax, rmaxNm, r34Nm) {
-  const x = solveXForG((34 / vmax) ** 2);
-  return Math.log(x) / Math.log(rmaxNm / r34Nm);
-}
-
-function hollandVAt(vmax, rmaxNm, B, rNm) {
-  const x = (rmaxNm / rNm) ** B;
-  return vmax * Math.sqrt(Math.max(hollandG(x), 0));
-}
-
-function distBearing(lat, lon, clat, clon) {
-  const d2r = Math.PI / 180;
-  const lat1 = clat * d2r, lon1 = clon * d2r;
-  const lat2 = lat * d2r,  lon2 = (((lon + 180) % 360 + 360) % 360 - 180) * d2r;
-  const dlon = lon2 - lon1;
-  const a = Math.pow(Math.sin((lat2 - lat1) / 2), 2) +
-            Math.cos(lat1) * Math.cos(lat2) * Math.pow(Math.sin(dlon / 2), 2);
-  const dist = 2 * EARTH_R_NM * Math.asin(Math.sqrt(Math.min(Math.max(a, 0), 1)));
-  const y = Math.sin(dlon) * Math.cos(lat2);
-  const x = Math.cos(lat1) * Math.sin(lat2) -
-            Math.sin(lat1) * Math.cos(lat2) * Math.cos(dlon);
-  let brg = (Math.atan2(y, x) * 180 / Math.PI) % 360;
-  if (brg < 0) brg += 360;
-  return [dist, brg];
-}
-
-function destPoint(clat, clon, brgDeg, distNm) {
-  const d2r = Math.PI / 180, r2d = 180 / Math.PI;
-  const d = distNm / EARTH_R_NM, b = brgDeg * d2r;
-  const l1 = clat * d2r, o1 = clon * d2r;
-  const l2 = Math.asin(Math.sin(l1) * Math.cos(d) +
-                       Math.cos(l1) * Math.sin(d) * Math.cos(b));
-  const o2 = o1 + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(l1),
-                             Math.cos(d) - Math.sin(l1) * Math.sin(l2));
-  return [l2 * r2d, o2 * r2d];
-}
-
-// Web Mercator forward/inverse, in radians-of-projected-y. L.imageOverlay
-// stretches its raster linearly in pixel space between two corner LatLngs,
-// which is only correct if the raster's rows are evenly spaced in Mercator
-// y. The wind field is sampled on a plain equirectangular (equal-degree)
-// grid, so rows must be picked at the latitudes that land back on an even
-// Mercator spacing - otherwise the overlay drifts away from the storm
-// center by a few percent of the bounding box height, worse the larger the
-// box (which for a wide storm can be tens of km, clearly visible next to
-// the center marker).
-function mercY(latDeg) {
-  return Math.log(Math.tan(Math.PI / 4 + latDeg * Math.PI / 360));
-}
-function mercLat(y) {
-  return (2 * Math.atan(Math.exp(y)) - Math.PI / 2) * 180 / Math.PI;
-}
-
-/** Quadrant radii interpolated smoothly around the compass. */
-function azimuthalRadius(azDeg, quadDict, floorNm) {
-  const vals = QUADS.map(q => {
-    const v = quadDict[q] || 0;
-    return v > 0 ? v : floorNm;
-  });
-  const xs = [45, 135, 225, 315, 405];
-  const ys = vals.concat([vals[0]]);
-  let a = azDeg < 45 ? azDeg + 360 : azDeg;
-  for (let i = 0; i < xs.length - 1; i++) {
-    if (a >= xs[i] && a <= xs[i + 1]) {
-      const f = (a - xs[i]) / (xs[i + 1] - xs[i]);
-      return ys[i] + f * (ys[i + 1] - ys[i]);
-    }
-  }
-  return ys[0];
-}
-
-/** Profile knots at one azimuth: [[radius, speed], ...] outward. */
-function knotsAt(snap, rmax, az) {
-  const floor = rmax * 1.05;
-  const kr = [rmax], kv = [snap.vmax];
-  let prev = rmax;
-  for (const thr of [64, 50, 34]) {
-    if (!snap.radii[thr]) continue;
-    // See the matching comment in resolveRmax(): vmax < thr, not <=, so a
-    // storm whose peak exactly equals a reported ring's threshold (a 50kt
-    // storm reporting R50, say - not rare, since JTWC rounds Vmax to 5kt
-    // bins) still gets that ring built into its profile instead of the
-    // knot list jumping straight past it to the next-weaker ring.
-    if (snap.vmax < thr) continue;
-    let rr = azimuthalRadius(az, snap.radii[thr], floor);
-    rr = Math.max(rr, prev * 1.02);
-    kr.push(rr); kv.push(thr);
-    prev = rr;
-  }
-  return [kr, kv];
-}
-
-/** Wind speed and direction at one point, before peak normalization. */
-function vortexAt(lat, lon, snap, rmax, asymFrac, inflowDeg) {
-  // A reported quadrant radius already IS this storm's real asymmetry -
-  // translation-driven or otherwise (shear, extratropical transition,
-  // ...) - so adding the synthetic motion vector below on top of it is
-  // double counting, not reinforcement. Confirmed against NHC's own
-  // Gridded TCM (WTCM/GTCM) Users Guide: WTCM never independently shapes
-  // a per-quadrant vortex from the radii and then ALSO adds a motion
-  // vector - it has exactly one asymmetry mechanism. It fits a single
-  // SYMMETRIC modified-Rankine vortex (Rappin et al. 2013) plus one
-  // wavenumber-1 motion term (Schwerdt 1979: a = 1.6*c^0.63, c = storm
-  // speed in kt) by least-squares against ALL the reported radii
-  // together (eq. 7 in the guide), not fit per quadrant the way
-  // knotsAt() is. (Its legacy predecessor, TCMWindTool, instead did what
-  // knotsAt() does - a per-quadrant radial fit, tangentially interpolated
-  // between quadrants - but with no separate motion vector either; WTCM
-  // replaced it rather than adding the motion term on top of it.) Skip
-  // the motion term whenever there is anything to be asymmetric about
-  // already; keep it as a shaping fallback for the radii-less case
-  // (weak/developing systems where only Vmax is known), so those aren't
-  // left perfectly circular.
-  if (Object.keys(snap.radii).length) asymFrac = 0;
-
-  const [r, az] = distBearing(lat, lon, snap.lat, snap.lon);
-  const [kr, kv] = knotsAt(snap, rmax, az);
-
-  // WTCM also subtracts the asymmetry magnitude from Vm inside the
-  // vortex itself (V = (Vm-a)*(...)) specifically so the vortex peak
-  // plus the vector added back in below sum to Vm, not Vm+a. Mirror that
-  // here: reduce the core/peak reference speed (kv[0], which the solid
-  // body and outer-taper formulas both key off) by the largest
-  // contribution the vector below can make, before adding that vector
-  // back in. kv only ever holds a single knot (kv=[snap.vmax]) whenever
-  // asymFrac is nonzero here - radii present forces asymFrac to 0 above,
-  // and only the radii-less case ever reaches this - so nothing else in
-  // kv needs touching, and this is a no-op whenever it doesn't apply.
-  if (asymFrac && snap.motionSpd) {
-    kv[0] = Math.max(snap.vmax - asymFrac * snap.motionSpd, 0);
-  }
-
-  const safeR = Math.max(r, 1e-3);
-  let mag;
-
-  if (r <= kr[0]) {
-    mag = kv[0] * (safeR / Math.max(kr[0], 1e-3));   // solid body
-  } else {
-    mag = null;
-    for (let i = 0; i < kr.length - 1; i++) {
-      const r1 = kr[i], v1 = kv[i], r2 = kr[i + 1], v2 = kv[i + 1];
-      if (r > r1 && r <= r2) {
-        const ratio = Math.max(r2 / Math.max(r1, 1e-3), 1.0001);
-        // x solves v1*(r1/r2)^x = v2 exactly, so the profile passes
-        // through the reported radius/threshold at r2 by construction -
-        // that boundary match is the entire point of solving for x per
-        // segment instead of using one global exponent. Floor at 0, not
-        // some higher value like this used to have (0.05): a storm whose
-        // Vmax barely clears the next ring's threshold (a common case -
-        // e.g. 35kt Vmax vs. a 34kt ring, or 65kt vs. 64kt) combined with
-        // a wide ratio (a large reported radius relative to Rmax, equally
-        // common) naturally needs a very shallow exponent to cover that
-        // distance on only a 1kt drop. A higher floor overrides that with
-        // an unrelated, steeper minimum decay rate, which breaks the
-        // boundary match: verified on a real bulletin (35kt TS, Rmax
-        // 36.5nm, R34 120nm reported in one quadrant) that the 0.05 floor
-        // made the modeled field fall under 34kt by ~65nm instead of the
-        // reported 120nm - a 46% shortfall the tool's own "fit check"
-        // against a sample of reported points can miss, since it only
-        // ever tests exactly at the reported radius (where, per this same
-        // bug, a sample landing there could tip into the next segment or
-        // the outer taper on floating-point noise and read correctly by
-        // accident - see compare_py_js.py's "Known benign residual").
-        // v1 < v2 is unreachable (every segment is built strictly weaker
-        // than the last); v1 == v2 (the exact-threshold case) is
-        // naturally x=0 here already, with no special-casing needed.
-        let x = Math.log(v1 / v2) / Math.log(ratio);
-        x = Math.min(Math.max(x, 0), 2.5);
-        mag = v1 * Math.pow(Math.max(r1, 1e-3) / safeR, x);
-        break;
-      }
-    }
-    if (mag === null) {
-      // Outside the outermost ring: exponential taper, not extrapolation
-      // of the inner power law.
-      const anchorR = kr[kr.length - 1], anchorV = kv[kv.length - 1];
-      const L = Math.max(anchorR * OUTER_DECAY_FACTOR, MIN_OUTER_DECAY_NM);
-      mag = anchorV * Math.exp(-(r - anchorR) / L);
-    }
-  }
-
-  const sign = snap.lat >= 0 ? 1 : -1;
-  const metFrom = (((az + sign * (90 - inflowDeg)) % 360) + 360) % 360;
-  const rad = metFrom * Math.PI / 180;
-  let u = -mag * Math.sin(rad), v = -mag * Math.cos(rad);
-
-  if (snap.motionSpd) {
-    // kv[0], not snap.vmax: the same reduced core reference used to cap
-    // mag above, so frac still reaches its ceiling (asymFrac) exactly at
-    // the peak - see the comment by the kv[0] reduction above.
-    let frac = asymFrac * Math.min(Math.max(mag / Math.max(kv[0], 1), 0), 1);
-
-    // asymFrac above is forced to 0 across the whole anchored band
-    // (Rmax through the outermost reported ring) whenever any radius was
-    // reported, to avoid double-counting that ring's own real asymmetry.
-    // But Rmax itself is never a reported value - JTWC has no
-    // per-quadrant RMW - so strictly inside it (r <= Rmax) there is
-    // nothing to double-count. Give that zone its own, always-on vector,
-    // using the same MOTION_ASYMMETRY_FRACTION already vetted for the
-    // radii-less case above (not a new, separately-tuned number). Ramped
-    // to exactly 0 at the dead center (r=0) and at Rmax's own boundary
-    // (continuous with the anchored band's forced 0 just outside it, so
-    // this introduces no seam at the ring itself). This function itself
-    // does no peak recovery - drawField()'s own norm[]/factor pass above
-    // already re-scales the sampled core grid up to Vmax afterward,
-    // weighted to zero at the same first-reported-ring boundary, exactly
-    // mirroring normalizePeak() in TCWind_JTWC.py's buildVortex().
-    //
-    // UNLIKE every other correction in this file, this one cannot be
-    // checked against IBTrACS: best-track RMW is a single scalar per
-    // storm-time, never per-quadrant, so there is no ground truth
-    // anywhere in the archive for how Rmax's own wind field actually
-    // varies by azimuth. This rests on the same wavenumber-1 mechanism
-    // already used for the radii-less fallback, not on anything verified
-    // here - see tests/tcwind_jtwc/README.md. Left the far-field taper
-    // (beyond the outermost ring) alone: it is already its own
-    // unverified heuristic, and stacking a second one on top of it,
-    // more cheaply, less usefully, was not worth doing. MUST match
-    // buildVortex() in TCWind_JTWC.py.
-    if (Object.keys(snap.radii).length && MOTION_ASYMMETRY_FRACTION && r <= kr[0]) {
-      const core = Math.min(Math.max(r / Math.max(kr[0], 1e-3), 0), 1);
-      frac = MOTION_ASYMMETRY_FRACTION * 4 * core * (1 - core);
-    }
-
-    const mr = snap.motionDir * Math.PI / 180;
-    u += frac * snap.motionSpd * Math.sin(mr);
-    v += frac * snap.motionSpd * Math.cos(mr);
-  }
-
-  const outMag = Math.sqrt(u * u + v * v);
-  let outDir = (Math.atan2(-u, -v) * 180 / Math.PI) % 360;
-  if (outDir < 0) outDir += 360;
-
-  // Footprint radius for callers deciding where the insert/taper stops.
-  // With no reported radii at all (kr has only the Rmax knot), the actual
-  // decay is still anchored at Rmax - but treating Rmax itself as "R34" for
-  // footprint sizing would give a tiny, misleadingly tight footprint for a
-  // weak system with no radii reported. Matches TCWind_JTWC.py's buildVortex().
-  const r34 = kr.length > 1 ? kr[kr.length - 1] : rmax * 3;
-
-  return { mag: outMag, dir: outDir, r: r, az: az, knots: [kr, kv], r34: r34 };
-}
-
-// ---------------------------------------------------------------------------
-// Track interpolation
-// ---------------------------------------------------------------------------
-
-function interpolateTrack(taus, epoch) {
-  let lo = taus[0], hi = taus[0], f = 0;
-  if (epoch <= taus[0].epoch) { lo = hi = taus[0]; }
-  else if (epoch >= taus[taus.length - 1].epoch) {
-    lo = hi = taus[taus.length - 1];
-  } else {
-    for (let i = 0; i < taus.length - 1; i++) {
-      if (taus[i].epoch <= epoch && epoch <= taus[i + 1].epoch) {
-        lo = taus[i]; hi = taus[i + 1];
-        const span = hi.epoch - lo.epoch;
-        f = span > 0 ? (epoch - lo.epoch) / span : 0;
-        break;
-      }
-    }
-  }
-
-  let dlon = hi.lon - lo.lon;
-  if (dlon > 180) dlon -= 360; else if (dlon < -180) dlon += 360;
-
-  const s = {
-    epoch: epoch,
-    lat: lo.lat + f * (hi.lat - lo.lat),
-    lon: ((lo.lon + f * dlon + 180) % 360 + 360) % 360 - 180,
-    vmax: lo.vmax + f * (hi.vmax - lo.vmax),
-    conf: lo.conf + f * (hi.conf - lo.conf),
-    motionDir: lo.motionDir,
-    motionSpd: lo.motionSpd + f * (hi.motionSpd - lo.motionSpd),
-    // Best-track ground truth (Best-track QC panel only; undefined/null
-    // for live bulletins, which never carry an observed RMW/ROCI).
-    rmw: (lo.rmw != null && hi.rmw != null) ? lo.rmw + f * (hi.rmw - lo.rmw)
-       : (f < 0.5 ? lo.rmw : hi.rmw),
-    roci: (lo.roci != null && hi.roci != null) ? lo.roci + f * (hi.roci - lo.roci)
-        : (f < 0.5 ? lo.roci : hi.roci),
-    radii: {}
-  };
-  for (const thr of [64, 50, 34]) {
-    const a = lo.radii[thr] || { NE:0, SE:0, SW:0, NW:0 };
-    const b = hi.radii[thr] || { NE:0, SE:0, SW:0, NW:0 };
-    const vals = {};
-    let any = false;
-    for (const q of QUADS) {
-      vals[q] = a[q] + f * (b[q] - a[q]);
-      if (vals[q] > 0) any = true;
-    }
-    if (any) s.radii[thr] = vals;
-  }
-  return s;
-}
-
-// ---------------------------------------------------------------------------
-// Map
-// ---------------------------------------------------------------------------
-
-// keyboard:false - arrow keys are repurposed below to step the storm
-// forward/back through its track instead of panning the map.
-const map = L.map('map', { keyboard: false }).setView([22, 165], 4);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 10, attribution: '&copy; OpenStreetMap'
-}).addTo(map);
-
-const radiiLayer = L.layerGroup().addTo(map);
-let fieldOverlay = null;
-
-const legend = L.control({ position: 'bottomright' });
-legend.onAdd = function () {
-  const div = L.DomUtil.create('div', 'legend');
-  div.innerHTML =
-    '<b>Wind field (kt)</b><br>' +
-    '<i style="background:#7c3aed"></i>80+<br>' +
-    '<i style="background:#dc2626"></i>64-80<br>' +
-    '<i style="background:#f97316"></i>50-64<br>' +
-    '<i style="background:#eab308"></i>34-50<br>' +
-    '<i style="background:#22c55e"></i>20-34<br>' +
-    '<i style="background:#93c5fd"></i>&lt;20' +
-    '<div class="legendSep"></div>' +
-    '<b>Map symbols</b><br>' +
-    '<span class="swatch dash" style="border-color:#1e293b"></span>track<br>' +
-    '<span class="swatch dot"></span>track point (color = kt, as above)<br>' +
-    '<span class="swatch dot big"></span>current position (← → to step)<br>' +
-    '<span class="swatch" style="border-color:#dc2626"></span>64 kt radius<br>' +
-    '<span class="swatch" style="border-color:#f97316"></span>50 kt radius<br>' +
-    '<span class="swatch" style="border-color:#eab308"></span>34 kt radius<br>' +
-    '<span class="swatch dash" style="border-color:#94a3b8"></span>same, literal&#8224;<br>' +
-    '<span class="swatch dash" style="border-color:#db2777"></span>actual RMW*<br>' +
-    '<span class="swatch dash" style="border-color:#0d9488"></span>actual ROCI*<br>' +
-    '<div class="legendNote">*Archived Cases only<br>' +
-    '&#8224;same colors, quadrants unsmoothed</div>';
-  return div;
-};
-legend.addTo(map);
-
-function windColor(v) {
-  if (v >= 80) return [124, 58, 237];
-  if (v >= 64) return [220, 38, 38];
-  if (v >= 50) return [249, 115, 22];
-  if (v >= 34) return [234, 179, 8];
-  if (v >= 20) return [34, 197, 94];
-  return [147, 197, 253];
-}
-
-let storms = [];      // [{pil, header, taus, stale}]
-let timeSteps = [];   // epochs
-
-// Tropical Depression strength (Vmax < 34kt): no organized 34kt-or-
-// greater wind field to speak of, and - per JTWC's own reporting
-// practice - essentially never any wind radii to build one from even if
-// there were. Building this tool's parametric vortex for one anyway
-// would invent structure that isn't really there, not add real
-// information - matches buildFor()'s skip in TCWind_JTWC.py exactly.
-// The track itself (position history) still draws regardless; only the
-// rings/raster/current-position marker are gated on this.
-function hasOrganizedWind(it) {
-  return it.snap.vmax >= 34;
-}
-
-function rebuildTimeline() {
-  timeSteps = [];
-  if (!storms.length) return;
-  const t0 = Math.min(...storms.map(s => s.taus[0].epoch));
-  const t1 = Math.max(...storms.map(s => s.taus[s.taus.length - 1].epoch));
-  // Every tau, plus 3-hourly fill, so a forecast time is always landable.
-  const set = new Set();
-  for (const s of storms) for (const t of s.taus) set.add(t.epoch);
-  for (let t = t0; t <= t1; t += 3 * 3600) set.add(t);
-  timeSteps = Array.from(set).sort((a, b) => a - b);
-  const sl = document.getElementById('tslider');
-  sl.min = 0; sl.max = timeSteps.length - 1; sl.value = 0;
-}
-
-function fmtTime(epoch) {
-  const d = new Date(epoch * 1000);
-  const p = n => String(n).padStart(2, '0');
-  return p(d.getUTCDate()) + '/' + p(d.getUTCHours()) + p(d.getUTCMinutes()) + 'Z';
-}
-
-function activeSnaps(epoch) {
-  const out = [];
-  for (const s of storms) {
-    if (epoch < s.taus[0].epoch || epoch > s.taus[s.taus.length - 1].epoch) continue;
-    const snap = interpolateTrack(s.taus, epoch);
-    const onTau = s.taus.some(t => t.epoch === epoch);
-    out.push({ storm: s, snap: snap, rmax: resolveRmax(snap, RMAX_OVERRIDE_NM),
-               onTau: onTau });
-  }
-  return out;
-}
-
-// Every ring/track color below is deliberately reused from windColor()'s
-// fill palette (e.g. the R34 ring and the 34-50kt fill band are the same
-// yellow) so a ring's color always identifies which speed band it bounds -
-// but that means a ring drawn plainly disappears exactly where it crosses
-// its own matching fill. haloLine() draws a wider white halo underneath
-// every line/ring so it reads clearly against *any* background: map
-// tiles, the wind-field raster, ocean, or another ring - a standard
-// cartographic technique, not just a color change.
-function haloLine(kind, latlngs, opts) {
-  kind(latlngs, Object.assign({}, opts, {
-    color: '#fff', weight: (opts.weight || 2) + 2.5, opacity: .9,
-    dashArray: null, interactive: false,
-  })).addTo(radiiLayer);
-  return kind(latlngs, opts).addTo(radiiLayer);
-}
-
-// Same halo trick as haloLine(), for a point: a plain white disc behind the
-// colored marker so it stays legible sitting on top of its own matching
-// wind-field fill color, then the colored marker on top of that.
-function haloCircle(latlng, radius, opts) {
-  L.circleMarker(latlng, {
-    radius: radius + 2, color: '#fff', weight: 2, fillColor: '#fff',
-    fillOpacity: 1, interactive: false,
-  }).addTo(radiiLayer);
-  return L.circleMarker(latlng, Object.assign({ radius: radius }, opts)).addTo(radiiLayer);
-}
-
-// The raw quadrant radii exactly as reported: each quadrant's own value
-// held constant across its full 90deg compass span (no smoothing/curve
-// between quadrants, no floor substituted for a genuine 0 - a "000 NM"
-// quadrant collapses all the way to the storm center, exactly as JTWC/
-// best-track reported it), connected quadrant-to-quadrant by a straight
-// radial step at each compass boundary (0/90/180/270) - perpendicular to
-// the arcs on either side of it, hence the right-angle corners. This is
-// deliberately NOT what azimuthalRadius()/the model use (those smoothly
-// interpolate between quadrant CENTERS instead) - it exists so the exact,
-// unprocessed input can be compared side-by-side with what the tool
-// actually built from it, rather than trusting that the smooth ring is a
-// faithful copy of the report.
-function literalRadiiPolygon(lat0, lon0, quadDict) {
-  const STEP = 3; // deg, resolution of the arc across one quadrant
-  const pts = [];
-  for (const q of QUADS) {
-    const [a0, a1] = QUAD_BOUNDS[q];
-    const r = quadDict[q] || 0;
-    for (let az = a0; az < a1; az += STEP) pts.push(destPoint(lat0, lon0, az, r));
-    pts.push(destPoint(lat0, lon0, a1, r));   // exact boundary vertex
+function steppedPolygon(lat0, lon0, quadDict, scale) {
+  var pts = [], step = 3, i, q, b, r, az;
+  for (i = 0; i < QUADS.length; i++) {
+    q = QUADS[i]; b = QUAD_BOUNDS[q];
+    r = (Number(quadDict[q]) || 0) * scale;
+    for (az = b[0]; az < b[1]; az += step) pts.push(V.destPoint(lat0, lon0, az, r));
+    pts.push(V.destPoint(lat0, lon0, b[1], r));
   }
   return pts;
 }
 
-function drawRadii(items) {
-  radiiLayer.clearLayers();
-  items = items.filter(hasOrganizedWind);
-  const colors = { 64: '#dc2626', 50: '#f97316', 34: '#eab308' };
+/** Thresholds actually usable as fit targets for this snapshot. */
+function liveThresholds(snap) {
+  var out = [], i, thr;
+  for (i = 0; i < THRESHOLDS.length; i++) {
+    thr = THRESHOLDS[i];
+    if (snap.radii && snap.radii[thr] && snap.vmax >= thr) out.push(thr);
+  }
+  return out;
+}
 
-  // The point the time slider/hotkeys are currently sitting on, if any -
-  // drawn larger so stepping through the track (← →) is easy to follow.
-  const tIdx = parseInt(document.getElementById('tslider').value, 10);
-  const activeEpoch = timeSteps[tIdx];
+/**
+ * Per-quadrant anchored span, in nm, on the 0.85-scaled fit targets - the
+ * radii the least-squares actually sees.  {lo, hi, n} per quadrant; n is how
+ * many targets that quadrant contributes.  A quadrant with one target is a
+ * shell, not a band, and the table says so.
+ */
+function anchorBand(snap) {
+  var out = {}, thrs = liveThresholds(snap), i, j, q, r;
+  for (i = 0; i < QUADS.length; i++) {
+    q = QUADS[i];
+    var lo = Infinity, hi = -Infinity, n = 0;
+    for (j = 0; j < thrs.length; j++) {
+      r = Number(snap.radii[thrs[j]][q]) || 0;
+      if (r <= 0) continue;
+      r *= QAVG;
+      if (r < lo) lo = r;
+      if (r > hi) hi = r;
+      n++;
+    }
+    out[q] = n ? { lo: lo, hi: hi, n: n } : { lo: 0, hi: 0, n: 0 };
+  }
+  return out;
+}
 
-  for (const s of storms) {
-    const pts = s.taus.map(t => [t.lat, t.lon]);
-    haloLine(L.polyline, pts, { color: '#1e293b', weight: 2, opacity: .85,
-                                dashArray: '4,4' });
-    // Dots colored by intensity (same palette as the wind-field fill and
-    // the R34/R50/R64 rings) so the track itself shows the storm's
-    // history of strengthening/weakening at a glance, not just its path.
-    for (const t of s.taus) {
-      const active = t.epoch === activeEpoch;
-      const [r, g, b] = windColor(t.vmax);
-      haloCircle([t.lat, t.lon], active ? 6 : 4, {
-        color: active ? '#000' : '#1e293b', weight: active ? 2.5 : 1.5,
-        fillColor: 'rgb(' + r + ',' + g + ',' + b + ')', fillOpacity: 1,
-      }).bindTooltip(s.pil + ' ' + t.tau + 'h ' + fmtTime(t.epoch) +
-                     '<br>' + t.vmax + ' kt');
+function isAnchored(band, r, azDeg) {
+  var b = band[quadOf(azDeg)];
+  if (!b || !b.n) return false;
+  if (b.n === 1) return Math.abs(r - b.hi) <= Math.max(b.hi * 0.05, 2);
+  return r >= b.lo && r <= b.hi;
+}
+
+/* --------------------------------------------------------------------------
+   Field cache.  fitGTCM() runs a Nelder-Mead per call; caching it per
+   storm-time keeps layer toggles instant.
+   ----------------------------------------------------------------------- */
+function fieldFor(snap, key) {
+  if (!fieldCache[key]) fieldCache[key] = V.vortexFieldGTCM(snap);
+  return fieldCache[key];
+}
+
+function hasField(item) { return item.snap.vmax >= TD_FLOOR; }
+
+function activeItems(epoch) {
+  var out = [], i, s, snap;
+  for (i = 0; i < storms.length; i++) {
+    s = storms[i];
+    if (epoch < s.taus[0].epoch || epoch > s.taus[s.taus.length - 1].epoch) continue;
+    snap = V.interpolateTrack(s.taus, epoch);
+    var onTau = false;
+    for (var j = 0; j < s.taus.length; j++) if (s.taus[j].epoch === epoch) onTau = true;
+    out.push({
+      storm: s, snap: snap, onTau: onTau,
+      rmax: V.resolveRmax(snap, 0),
+      field: fieldFor(snap, s.pil + '@' + epoch),
+      band: anchorBand(snap)
+    });
+  }
+  return out;
+}
+
+/* --------------------------------------------------------------------------
+   Map
+   ----------------------------------------------------------------------- */
+var reduceMotion = window.matchMedia &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+var map = L.map('map', {
+  keyboard: false,               // arrow keys step the timeline instead
+  zoomAnimation: !reduceMotion,
+  fadeAnimation: !reduceMotion,
+  markerZoomAnimation: !reduceMotion,
+  worldCopyJump: true
+}).setView([20, 140], 4);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 10, attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+var vecLayer = L.layerGroup().addTo(map);
+var fieldOverlays = [];
+
+var legend = L.control({ position: 'bottomright' });
+legend.onAdd = function () {
+  var d = L.DomUtil.create('div', 'legendBox');
+  var rows = '', i;
+  for (i = BAND_EDGES.length - 1; i >= 0; i--) {
+    var hi = (i === BAND_EDGES.length - 1) ? '+' : '–' + BAND_EDGES[i + 1];
+    rows += '<div class="row"><span class="sw" style="background:' +
+            tok(BAND_TOKENS[i]) + '"></span>' + BAND_EDGES[i] + hi + '</div>';
+  }
+  d.innerHTML =
+    '<h3>Wind speed, kt</h3>' + rows +
+    '<h3>Field</h3>' +
+    '<div class="row"><span class="sw" style="background:' + tok('--f3') +
+      '"></span>anchored</div>' +
+    '<div class="row"><span class="tex"></span>extrapolation</div>' +
+    '<h3>Reported</h3>' +
+    '<div class="row"><span class="ln"></span>R34, as reported</div>' +
+    '<div class="row"><span class="ln d50"></span>R50</div>' +
+    '<div class="row"><span class="ln d64"></span>R64</div>' +
+    '<div class="row"><span class="ln tgt"></span>0.85&times; fit target</div>';
+  L.DomEvent.disableClickPropagation(d);
+  return d;
+};
+legend.addTo(map);
+
+/** White-cased line so a ring reads over tiles, raster or another ring. */
+function inked(kind, latlngs, opts) {
+  var halo = {};
+  for (var k in opts) if (Object.prototype.hasOwnProperty.call(opts, k)) halo[k] = opts[k];
+  halo.color = tok('--ink-halo');
+  halo.weight = (opts.weight || 2) + 3;
+  halo.opacity = 0.92;
+  halo.dashArray = null;
+  halo.interactive = false;
+  kind(latlngs, halo).addTo(vecLayer);
+  return kind(latlngs, opts).addTo(vecLayer);
+}
+
+function ringLabel(lat, lon, az, r, text) {
+  var p = V.destPoint(lat, lon, az, r);
+  L.marker(p, {
+    interactive: false,
+    icon: L.divIcon({ className: 'ringLabel', html: text,
+                      iconSize: [46, 12], iconAnchor: [23, 6] })
+  }).addTo(vecLayer);
+}
+
+function drawVectors(items, epoch) {
+  vecLayer.clearLayers();
+  var ink = tok('--ink');
+  var showTrack = document.getElementById('layTrack').checked;
+  var showRadii = document.getElementById('layRadii').checked;
+  var showTgt = document.getElementById('layTargets').checked;
+  var i, j, s, t, it;
+
+  if (showTrack) {
+    for (i = 0; i < storms.length; i++) {
+      s = storms[i];
+      var pts = [];
+      for (j = 0; j < s.taus.length; j++) pts.push([s.taus[j].lat, s.taus[j].lon]);
+      inked(L.polyline, pts, {
+        color: ink, weight: s.pil === focusPil ? 2.5 : 1.5,
+        opacity: s.pil === focusPil ? 0.95 : 0.5, dashArray: '5,5'
+      });
+      for (j = 0; j < s.taus.length; j++) {
+        t = s.taus[j];
+        var isNow = (t.epoch === epoch);
+        L.circleMarker([t.lat, t.lon], {
+          radius: isNow ? 5 : 3, color: ink, weight: isNow ? 2.5 : 1.5,
+          fillColor: bandColor(t.vmax), fillOpacity: 1,
+          opacity: s.pil === focusPil ? 1 : 0.55
+        }).addTo(vecLayer).bindTooltip(
+          s.pil + ' τ+' + t.tau + ' · ' + fmtZ(t.epoch) + ' · ' +
+          Math.round(t.vmax) + ' kt');
+      }
     }
   }
 
-  for (const it of items) {
-    const snap = it.snap, rmax = it.rmax;
-    for (const thr of [34, 50, 64]) {
-      if (!snap.radii[thr]) continue;
-      const floor = rmax * 1.05;
-      const ring = [];
-      for (let az = 0; az <= 360; az += 2) {
-        const rr = azimuthalRadius(az % 360, snap.radii[thr], floor);
-        ring.push(destPoint(snap.lat, snap.lon, az, rr));
-      }
-      haloLine(L.polygon, ring, { color: colors[thr], weight: 2.5, fill: false,
-                                  opacity: 1 })
-        .bindTooltip(thr + ' kt radius');
+  for (i = 0; i < items.length; i++) {
+    it = items[i];
+    var snap = it.snap, focused = (it.storm.pil === focusPil);
+    var thrs = liveThresholds(snap);
 
-      if (document.getElementById('layLiteral').checked) {
-        const lit = literalRadiiPolygon(snap.lat, snap.lon, snap.radii[thr]);
-        haloLine(L.polygon, lit, { color: colors[thr], weight: 1.5, fill: false,
-                                   opacity: .9, dashArray: '1,4' })
-          .bindTooltip(thr + ' kt radius, as reported (literal, unsmoothed)' +
-                       ' - NE ' + (snap.radii[thr].NE || 0) + ', SE ' +
-                       (snap.radii[thr].SE || 0) + ', SW ' +
-                       (snap.radii[thr].SW || 0) + ', NW ' +
-                       (snap.radii[thr].NW || 0) + ' nm');
+    /* A system below 34 kt still has a position worth marking - the GFE tool
+       builds no vortex for it, so it gets a hollow centre and no rings, which
+       is itself the message. */
+    if (!hasField(it)) {
+      L.circleMarker([snap.lat, snap.lon], {
+        radius: focused ? 6 : 4, color: ink, weight: focused ? 2.5 : 1.5,
+        fillColor: tok('--ink-halo'), fillOpacity: 0.85, dashArray: '2,3'
+      }).addTo(vecLayer).bindTooltip(
+        it.storm.pil + ' · ' + Math.round(snap.vmax) +
+        ' kt · below 34 kt, no field built');
+      continue;
+    }
+
+    if (showRadii) {
+      for (j = 0; j < thrs.length; j++) {
+        var thr = thrs[j];
+        inked(L.polygon, steppedPolygon(snap.lat, snap.lon, snap.radii[thr], 1), {
+          color: ink, weight: focused ? 2.5 : 1.5, fill: false,
+          opacity: focused ? 1 : 0.55, dashArray: RING_DASH[thr]
+        }).bindTooltip('R' + thr + ' as reported — NE ' +
+          n0(snap.radii[thr].NE) + ', SE ' + n0(snap.radii[thr].SE) + ', SW ' +
+          n0(snap.radii[thr].SW) + ', NW ' + n0(snap.radii[thr].NW) + ' nm');
+        if (focused) {
+          var laz = thr === 64 ? 45 : thr === 50 ? 135 : 225;
+          var lr = Number(snap.radii[thr][quadOf(laz)]) || 0;
+          if (lr > 0) ringLabel(snap.lat, snap.lon, laz, lr, 'R' + thr);
+        }
       }
     }
-    // Best-track QC only: the storm's own observed RMW, ground truth,
-    // against which rmax (the tool's estimate, dashed core the field is
-    // built from) can be judged directly.
-    if (snap.rmw) {
-      const ring = [];
-      for (let az = 0; az <= 360; az += 5) {
-        ring.push(destPoint(snap.lat, snap.lon, az, snap.rmw));
+
+    if (showTgt) {
+      for (j = 0; j < thrs.length; j++) {
+        inked(L.polygon,
+          steppedPolygon(snap.lat, snap.lon, snap.radii[thrs[j]], QAVG), {
+            color: ink, weight: focused ? 1.6 : 1, fill: false,
+            opacity: focused ? 0.95 : 0.45, dashArray: '1,3'
+          }).bindTooltip('GTCM fit target: 0.85 × R' + thrs[j] +
+                         ' (quadrant maximum → quadrant average)');
       }
-      haloLine(L.polygon, ring, { color: '#db2777', weight: 2.5, fill: false,
-                                  opacity: 1, dashArray: '3,4' })
-        .bindTooltip('actual RMW: ' + snap.rmw.toFixed(1) + ' nm (tool: ' +
-                     rmax.toFixed(1) + ' nm)');
-    }
-    // Best-track QC only: ROCI (radius of outermost closed isobar) - a
-    // pressure-based size the tool never sees, checked against where its
-    // own wind field decays away (see verify_besttrack_roci.py). Not the
-    // same physical quantity as any wind-speed radius, so it's drawn in
-    // its own color rather than alongside the R34/R50/R64 rings.
-    if (snap.roci) {
-      const ring = [];
-      for (let az = 0; az <= 360; az += 5) {
-        ring.push(destPoint(snap.lat, snap.lon, az, snap.roci));
+      if (focused && thrs.length) {
+        var tz = 315, tr = (Number(snap.radii[thrs[thrs.length - 1]].NW) || 0) * QAVG;
+        if (tr > 0) ringLabel(snap.lat, snap.lon, tz, tr, '0.85×');
       }
-      haloLine(L.polygon, ring, { color: '#0d9488', weight: 2.5, fill: false,
-                                  opacity: 1, dashArray: '2,6' })
-        .bindTooltip('actual ROCI: ' + snap.roci.toFixed(0) +
-                     ' nm (outermost closed isobar - a pressure-based ' +
-                     'size, not directly comparable to the wind ' +
-                     'radii)');
     }
-    // Current position: same intensity-color convention as the track
-    // dots above, just bigger and with a heavier black ring so the point
-    // the rest of the map (radii, field) is actually keyed to always
-    // stands out from the plain track history.
-    const [pr, pg, pb] = windColor(snap.vmax);
-    haloCircle([snap.lat, snap.lon], 7, {
-      color: '#000', weight: 2.5, fillColor: 'rgb(' + pr + ',' + pg + ',' + pb + ')',
-      fillOpacity: 1,
-    }).bindTooltip(it.storm.pil + ': ' + snap.vmax.toFixed(0) + ' kt (current)');
+
+    L.circleMarker([snap.lat, snap.lon], {
+      radius: focused ? 7 : 5, color: ink, weight: focused ? 3 : 2,
+      fillColor: bandColor(snap.vmax), fillOpacity: 1
+    }).addTo(vecLayer).bindTooltip(
+      it.storm.pil + ' · ' + Math.round(snap.vmax) + ' kt · ' +
+      fmtZ(snap.epoch));
   }
 }
 
-function drawField(items) {
-  items = items.filter(hasOrganizedWind);
-  if (fieldOverlay) { map.removeLayer(fieldOverlay); fieldOverlay = null; }
-  if (!items.length) return;
+/* --------------------------------------------------------------------------
+   Wind-field raster
+   ----------------------------------------------------------------------- */
+function bandIndex(v) {
+  var i;
+  for (i = BAND_EDGES.length - 1; i >= 0; i--) if (v >= BAND_EDGES[i]) return i;
+  return -1;
+}
+function bandColor(v) {
+  var i = bandIndex(v);
+  return i < 0 ? tok('--muted') : tok(BAND_TOKENS[i]);
+}
+function hexRgb(h) {
+  h = h.replace('#', '');
+  if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  return [parseInt(h.substr(0, 2), 16), parseInt(h.substr(2, 2), 16),
+          parseInt(h.substr(4, 2), 16)];
+}
 
-  // Bounds: the union of every storm's insert limit.
-  let north = -90, south = 90, east = -180, west = 180;
-  for (const it of items) {
-    const maxR = Math.max(...QUADS.map(q =>
-      (it.snap.radii[34] ? it.snap.radii[34][q] : 0) || it.rmax * 3));
-    const pad = Math.max(maxR * MAX_INSERT_RADIUS_FACTOR, 120) / 60.0;
-    north = Math.max(north, it.snap.lat + pad);
-    south = Math.min(south, it.snap.lat - pad);
-    const padLon = pad / Math.max(Math.cos(it.snap.lat * Math.PI / 180), .3);
-    east = Math.max(east, it.snap.lon + padLon);
-    west = Math.min(west, it.snap.lon - padLon);
+/* L.imageOverlay stretches its raster linearly in PIXEL space, which is
+   linear in Mercator y, not in latitude.  Sampling on an equal-degree grid
+   and handing it to imageOverlay slides the field a few percent of the box
+   height away from the centre - tens of km for a large storm.  Pick each
+   row's latitude so it lands back where it belongs. */
+function mercY(lat) { return Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)); }
+function mercLat(y) { return (2 * Math.atan(Math.exp(y)) - Math.PI / 2) * 180 / Math.PI; }
+
+/** Small bounded LRU: a redrawn storm-time is free the second time. */
+function cacheRaster(key, val) {
+  if (!rasterCache[key]) rasterOrder.push(key);
+  rasterCache[key] = val;
+  while (rasterOrder.length > RASTER_CACHE_MAX) {
+    delete rasterCache[rasterOrder.shift()];
+  }
+}
+
+function clearField() {
+  for (var i = 0; i < fieldOverlays.length; i++) map.removeLayer(fieldOverlays[i]);
+  fieldOverlays = [];
+}
+
+/**
+ * One raster per storm, not one union raster.
+ *
+ * The union is what the previous build drew, and it degrades badly the moment
+ * two systems are far apart: a fixed 260x220 grid stretched across the whole
+ * NW Pacific puts 6+ nm in a cell and the eye disappears.  Per-storm rasters
+ * keep every field at full sampling regardless of how the basin is arranged,
+ * and they remove the "which storm owns this cell" question entirely, which
+ * matters here because the anchored/extrapolated texture is a per-storm fact.
+ *
+ * THREE RENDERING SHORTCUTS, all confined to the raster.  Every number the
+ * rail reports - the fit, the profile chart, the anchored share - still goes
+ * through the shared field.at() unmodified.
+ *
+ *  1. field.at() is not called per cell.  Its magnitude is recomposed from
+ *     the SAME shared exports it uses - gtcmProfile, gtcmUV, distBearing -
+ *     with the taper applied exactly as Vortex.html applies it.  Nothing is
+ *     redefined; the composition just skips the direction bookkeeping the
+ *     raster does not need.
+ *  2. The modelled 34 kt radius is a function of azimuth alone, so it is
+ *     tabulated once per storm on a 0.5 deg grid instead of binary-searched
+ *     per cell.  Measured worst deviation from the exact field.at() over a
+ *     full raster: 0.025 kt - two orders of magnitude inside the 0.5 kt
+ *     port-parity tolerance, and far inside one colour band.
+ *  3. Cells beyond a conservative reject radius - 1.9 x the largest modelled
+ *     R34, or R34 + 2.5 decay lengths, whichever is further - are dropped on
+ *     a flat-earth distance before any vortex maths runs.  The exponential
+ *     taper is under the 20 kt draw floor well inside that, so nothing
+ *     visible is lost; see the derivation at the cut itself.
+ *
+ * Together these take a redraw from ~1040 ms per storm to ~130 ms, which is
+ * the difference between a timeline you can hold an arrow key on and one you
+ * cannot.  Finished rasters are then cached per storm-time, so stepping back
+ * over ground already covered costs nothing.
+ */
+function drawFieldFor(it) {
+  var key = it.storm.pil + '@' + it.snap.epoch;
+  var hit = rasterCache[key];
+  if (hit) {
+    var ovc = L.imageOverlay(hit.url, hit.bounds, { opacity: 1, interactive: false });
+    ovc.addTo(map);
+    fieldOverlays.push(ovc);
+    return hit.peak;
   }
 
-  const NX = 260, NY = 220;
-  const cv = document.createElement('canvas');
+  var maxR = 0, q;
+  for (q = 0; q < 4; q++) {
+    var r34q = it.snap.radii[34] ? Number(it.snap.radii[34][QUADS[q]]) || 0 : 0;
+    if (r34q > maxR) maxR = r34q;
+  }
+  if (!maxR) maxR = it.field.fit.rm * 3;
+  var pad = Math.max(maxR * 2.2, 150) / 60.0;
+  var north = it.snap.lat + pad, south = it.snap.lat - pad;
+  var padLon = pad / Math.max(Math.cos(it.snap.lat * Math.PI / 180), 0.3);
+  var east = it.snap.lon + padLon, west = it.snap.lon - padLon;
+
+  var NX = 260, NY = 220, i, ix, iy;
+  var cv = document.createElement('canvas');
   cv.width = NX; cv.height = NY;
-  const ctx = cv.getContext('2d');
-  const img = ctx.createImageData(NX, NY);
+  var ctx = cv.getContext('2d');
+  var img = ctx.createImageData(NX, NY);
+  var yN = mercY(north), yS = mercY(south);
+  var fit = it.field.fit, rm = Math.max(fit.rm, 1e-3);
+  var clat = it.snap.lat, clon = it.snap.lon, vmax = it.snap.vmax;
 
-  // Latitude of raster row iy, chosen so that L.imageOverlay's linear
-  // stretch (linear in Mercator y) puts it back at the right place on the
-  // map. See the mercY/mercLat comment above.
-  const yN = mercY(north), yS = mercY(south);
-  function rowLat(iy) {
-    const f = (iy + .5) / NY;
-    return mercLat(yN - f * (yN - yS));
+  // r34 by azimuth, tabulated once (shortcut 2)
+  var LUTN = 720, lut = new Float64Array(LUTN), r34Max = 0;
+  for (i = 0; i < LUTN; i++) {
+    lut[i] = it.field.r34At(i * 360 / LUTN);
+    if (lut[i] > r34Max) r34Max = lut[i];
+  }
+  /* Reject radius for shortcut 3.  The taper is 34*exp(-(r-r34)/L) with
+     L = max(r34*OUTER_DECAY, MIN_OUTER_DECAY_NM), so the 20 kt draw floor is
+     crossed at r - r34 = L*ln(1.7) = 0.53L.  Cutting at 1.9x r34 covers that
+     for a large storm and the additive term covers a small one, where L is
+     floored at MIN_OUTER_DECAY_NM and the decay is therefore slower than the
+     multiplicative bound assumes. */
+  var cutNm = Math.max(r34Max * 1.9, r34Max + 2.5 * MIN_DECAY_NM);
+  var cosLat = Math.max(Math.cos(clat * Math.PI / 180), 0.05);
+
+  var rgb = [];
+  for (i = 0; i < BAND_TOKENS.length; i++) rgb.push(hexRgb(tok(BAND_TOKENS[i])));
+
+  var lats = new Array(NY), lons = new Array(NX);
+  for (iy = 0; iy < NY; iy++) lats[iy] = mercLat(yN - ((iy + 0.5) / NY) * (yN - yS));
+  for (ix = 0; ix < NX; ix++) lons[ix] = west + (ix + 0.5) * (east - west) / NX;
+
+  var mag = new Float32Array(NX * NY);
+  var wgt = new Float32Array(NX * NY);   // peak-normalisation weight, kept
+  var anch = new Uint8Array(NX * NY);
+  var best = -1, bestW = 0;
+
+  for (iy = 0; iy < NY; iy++) {
+    var dLat = lats[iy] - clat;
+    for (ix = 0; ix < NX; ix++) {
+      var k = iy * NX + ix;
+      // shortcut 3: flat-earth reject before any vortex maths
+      var dLon = V.mod360(lons[ix] - clon + 180) - 180;
+      var approx = 60 * Math.sqrt(dLat * dLat + dLon * dLon * cosLat * cosLat);
+      if (approx > cutNm) continue;
+
+      var db = V.distBearing(lats[iy], lons[ix], clat, clon);
+      var r = db[0], az = db[1];
+      // shortcut 1: the shared primitives, magnitude only
+      var Vt = V.gtcmProfile(r, vmax, fit.a, fit.rm, fit.ri, fit.x1, fit.x2);
+      var uv = V.gtcmUV(Vt, az, fit.ax, fit.ay, clat);
+      var m = Math.sqrt(uv[0] * uv[0] + uv[1] * uv[1]);
+      var r34 = lut[Math.round(az * LUTN / 360) % LUTN];
+      if (r > r34) {
+        m = 34.0 * Math.exp(-(r - r34) / Math.max(r34 * OUTER_DECAY, MIN_DECAY_NM));
+      }
+      if (r > r34 * INSERT_FAC) continue;
+      mag[k] = m;
+      anch[k] = isAnchored(it.band, r, az) ? 1 : 0;
+      // Peak-core normalisation is measured on this same pass, and its
+      // weight is kept rather than recomputed: the paint pass would
+      // otherwise need r again, and r costs a great-circle solve.
+      var w = (rm - r) / rm;
+      if (w > 1) w = 1; if (w < 0) w = 0;
+      wgt[k] = w;
+      if (w > 0 && m > best) { best = m; bestW = w; }
+    }
   }
 
-  // Per-storm peak normalization, matching the GFE tool: find the strongest
-  // sampled core cell and scale so it reaches Vmax, tapering to zero at the
-  // innermost reported ring so the radii do not move.
-  const norm = items.map(() => ({ factor: 1, innerR: null }));
-  if (NORMALIZE_CORE_PEAK) {
-    items.forEach((it, k) => {
-      const [kr] = knotsAt(it.snap, it.rmax, 45);
-      const innerR = kr.length > 1 ? kr[1] : kr[0];
-      norm[k].innerR = innerR;
-      let best = 0, bestW = 0;
-      for (let iy = 0; iy < NY; iy++) {
-        const lat = rowLat(iy);
-        for (let ix = 0; ix < NX; ix++) {
-          const lon = west + (ix + .5) * (east - west) / NX;
-          const res = vortexAt(lat, lon, it.snap, it.rmax,
-                               MOTION_ASYMMETRY_FRACTION, INFLOW_ANGLE_DEG);
-          const w = Math.min(Math.max((innerR - res.r) / Math.max(innerR, 1e-3), 0), 1);
-          if (w > 0 && res.mag > best) { best = res.mag; bestW = w; }
-        }
-      }
-      if (best > 0 && bestW > 0.05 && best < it.snap.vmax) {
-        norm[k].factor = Math.min(
-          1 + (it.snap.vmax / best - 1) / bestW, PEAK_NORMALIZE_MAX_FACTOR);
-      }
-    });
+  /* Peak-core normalisation, mirroring _buildVortexGTCM() in
+     TCWind_JTWC.py: weight = clip((rm - r)/rm, 0, 1), rescale the strongest
+     sampled core cell up to Vmax.  It is a property of the raster it is
+     measured on - it rescales relative to the strongest *sampled* cell - so
+     it belongs here and not in Vortex.html.  The GFE grid and this preview
+     therefore agree in construction but not bit for bit: they measure the
+     peak on different grids, which is why the status line reports the raster
+     peak next to Vmax whenever they part company. */
+  var norm = 1;
+  if (NORM_PEAK && vmax > 0 && best > 0 && bestW > 0.05 && best < vmax) {
+    norm = Math.min(1 + (vmax / best - 1) / bestW, NORM_MAX);
   }
 
-  let peak = 0;
-  for (let iy = 0; iy < NY; iy++) {
-    const lat = rowLat(iy);
-    for (let ix = 0; ix < NX; ix++) {
-      const lon = west + (ix + .5) * (east - west) / NX;
-      let best = 0;
-      items.forEach((it, k) => {
-        const res = vortexAt(lat, lon, it.snap, it.rmax,
-                             MOTION_ASYMMETRY_FRACTION, INFLOW_ANGLE_DEG);
-        if (res.r > res.r34 * MAX_INSERT_RADIUS_FACTOR) return;
-        let m = res.mag;
-        if (norm[k].factor > 1) {
-          const w = Math.min(Math.max(
-            (norm[k].innerR - res.r) / Math.max(norm[k].innerR, 1e-3), 0), 1);
-          m *= 1 + (norm[k].factor - 1) * w;
-        }
-        if (m > best) best = m;
-      });
-      const o = (iy * NX + ix) * 4;
-      if (best < 15) { img.data[o + 3] = 0; continue; }
-      const c = windColor(best);
+  var peak = 0;
+  for (iy = 0; iy < NY; iy++) {
+    for (ix = 0; ix < NX; ix++) {
+      var kk = iy * NX + ix, o = kk * 4;
+      var mm = mag[kk];
+      if (!mm) { img.data[o + 3] = 0; continue; }
+      if (norm > 1) mm *= 1 + (norm - 1) * wgt[kk];
+      var bi = bandIndex(mm);
+      if (bi < 0) { img.data[o + 3] = 0; continue; }
+      var c = rgb[bi], a = BAND_ALPHA[bi];
+      /* Anchored vs extrapolated is a TEXTURE, never a colour: a diagonal
+         hatch of period 8 raster px, coarse enough to survive the browser's
+         smoothing when Leaflet scales the overlay up. */
+      if (!anch[kk]) a *= (((ix + iy) % 8) < 3) ? 0.92 : 0.30;
       img.data[o] = c[0]; img.data[o + 1] = c[1]; img.data[o + 2] = c[2];
-      img.data[o + 3] = 165;
-      if (best > peak) peak = best;
+      img.data[o + 3] = Math.round(a * 255);
+      if (mm > peak) peak = mm;
     }
   }
   ctx.putImageData(img, 0, 0);
-  fieldOverlay = L.imageOverlay(cv.toDataURL(),
-    [[south, west], [north, east]], { opacity: .75 });
-  if (document.getElementById('layField').checked) fieldOverlay.addTo(map);
+  var url = cv.toDataURL(), bounds = [[south, west], [north, east]];
+  cacheRaster(key, { url: url, bounds: bounds, peak: peak });
+  var ov = L.imageOverlay(url, bounds, { opacity: 1, interactive: false });
+  ov.addTo(map);
+  fieldOverlays.push(ov);
   return peak;
 }
 
-/** Check the rendered profile against the numbers the bulletin states. */
-function fitCheck(items) {
-  let worst = 0, n = 0;
-  for (const it of items.filter(hasOrganizedWind)) {
-    for (const thr of [64, 50, 34]) {
-      if (!it.snap.radii[thr]) continue;
-      for (const q of QUADS) {
-        const rr = it.snap.radii[thr][q];
-        if (rr <= 0) continue;
-        const p = destPoint(it.snap.lat, it.snap.lon, QUAD_AZ[q], rr);
-        const res = vortexAt(p[0], p[1], it.snap, it.rmax, 0, INFLOW_ANGLE_DEG);
-        worst = Math.max(worst, Math.abs(res.mag - thr));
-        n++;
-      }
+function drawField(items) {
+  clearField();
+  if (!document.getElementById('layField').checked) return null;
+  var peak = 0, i;
+  for (i = 0; i < items.length; i++) {
+    if (!hasField(items[i])) continue;
+    var p = drawFieldFor(items[i]);
+    if (p > peak) peak = p;
+  }
+  return peak || null;
+}
+
+/**
+ * Area-weighted share of this storm's field (>= 20 kt) that is anchored.
+ * Sampled on its own polar grid rather than read off the raster, so the
+ * number does not change when the map is panned or the viewport resized.
+ */
+function anchoredShare(it) {
+  var ck = it.storm.pil + '@' + it.snap.epoch;
+  if (Object.prototype.hasOwnProperty.call(shareCache, ck)) return shareCache[ck];
+  var f = it.field, band = it.band;
+  var anch = 0, tot = 0, az, r, rMax = 0, i;
+  for (i = 0; i < 4; i++) {
+    var rr = f.r34At(QUAD_AZ[QUADS[i]]);
+    if (rr > rMax) rMax = rr;
+  }
+  rMax = Math.max(rMax * 1.6, 60);
+  for (az = 0; az < 360; az += 5) {
+    for (r = 2; r <= rMax; r += 2) {
+      var p = V.destPoint(it.snap.lat, it.snap.lon, az, r);
+      if (f.at(p[0], p[1]).mag < 20) continue;
+      tot += r;
+      if (isAnchored(band, r, az)) anch += r;
     }
   }
-  return { worst: worst, count: n };
+  var out = tot > 0 ? anch / tot : 0;
+  shareCache[ck] = out;
+  return out;
 }
 
-function render() {
-  if (!timeSteps.length) return;
-  const idx = parseInt(document.getElementById('tslider').value, 10);
-  const epoch = timeSteps[idx];
-  const items = activeSnaps(epoch);
-
-  document.getElementById('tlabel').textContent =
-    fmtTime(epoch) + (items.some(i => i.onTau) ? '  (forecast time)' : '');
-
-  radiiLayer.clearLayers();
-  if (document.getElementById('layRadii').checked) drawRadii(items);
-  const peak = document.getElementById('layField').checked
-    ? drawField(items) : (drawField(items), null);
-
-  const fc = fitCheck(items);
-  const cls = fc.worst < 0.5 ? 'fit-ok' : 'fit-bad';
-  const lines = items.map(it =>
-    hasOrganizedWind(it)
-    ? it.storm.pil + ' ' + it.storm.label + ': ' +
-      it.snap.vmax.toFixed(0) + ' kt, Rmax ' + it.rmax.toFixed(1) + ' nm' +
-      (it.snap.rmw ? ' (actual RMW ' + it.snap.rmw.toFixed(1) + ' nm, error ' +
-        (it.rmax - it.snap.rmw >= 0 ? '+' : '') +
-        (it.rmax - it.snap.rmw).toFixed(1) + ' nm)' : '') +
-      (it.snap.conf < 1 ? ' [post-transition, confidence ' +
-        it.snap.conf.toFixed(2) + ']' : '')
-    : it.storm.pil + ' ' + it.storm.label + ': ' + it.snap.vmax.toFixed(0) +
-      ' kt - below tropical storm strength, no wind field built' +
-      ' (matches the real GFE tool, which leaves the background grid' +
-      ' untouched here too)');
-  document.getElementById('status').innerHTML =
-    lines.join('\n') +
-    (peak ? '\npeak in field: ' + peak.toFixed(0) + ' kt' : '') +
-    '\n<span class="' + cls + '">fit check: worst error at a reported radius ' +
-    fc.worst.toFixed(2) + ' kt across ' + fc.count + ' points</span>';
-
-  updateDiagnostics(items, epoch);
+/* --------------------------------------------------------------------------
+   Charts.  Canvas, sized to its container, redrawn on resize and on theme
+   change.  Axis text uses --muted (7.5:1 on --panel), never a fainter grey:
+   numbers are never the faintest thing on the page.
+   ----------------------------------------------------------------------- */
+function prepCanvas(cv) {
+  var dpr = window.devicePixelRatio || 1;
+  var w = Math.max(cv.clientWidth || cv.parentNode.clientWidth - 12, 200);
+  var h = parseInt(cv.getAttribute('height'), 10);
+  cv.width = Math.round(w * dpr);
+  cv.height = Math.round(h * dpr);
+  cv.style.height = h + 'px';
+  var ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  ctx.font = '10px ' + tok('--font').replace(/"/g, '');
+  return { ctx: ctx, w: w, h: h };
 }
 
-// ---------------------------------------------------------------------------
-// Diagnostics: time-history and azimuthal-profile panels. Neither feeds
-// back into the map or the insert - they're read-only QC views onto the
-// same taus/vortexAt() the map already uses, for judging the tool rather
-// than running it.
-// ---------------------------------------------------------------------------
-
-const THRESH_COLOR = { 64: '#dc2626', 50: '#f97316', 34: '#eab308' };
-const QUAD_COLOR = { NE: '#dc2626', SE: '#f97316', SW: '#2563eb', NW: '#16a34a' };
-
-function diagVisible() {
-  return document.getElementById('diag').style.display === 'block';
-}
-
-function populateDiagStorm() {
-  const sel = document.getElementById('diagStorm');
-  const prev = sel.value;
-  sel.innerHTML = '';
-  for (const s of storms) {
-    const opt = document.createElement('option');
-    opt.value = s.pil;
-    opt.textContent = s.pil + ' ' + s.label;
-    sel.appendChild(opt);
-  }
-  if (storms.some(s => s.pil === prev)) sel.value = prev;
-}
-
-/** Time-history: Vmax, Rmax, and each threshold's quadrant min/mean/max. */
-function drawHistory(storm, nowEpoch) {
-  const cv = document.getElementById('histCanvas');
-  const ctx = cv.getContext('2d');
-  const W = cv.width, H = cv.height;
-  ctx.clearRect(0, 0, W, H);
-  if (!storm || storm.taus.length < 2) return;
-
-  const padL = 34, padR = 34, padT = 10, padB = 20;
-  const taus = storm.taus;
-  const t0 = taus[0].epoch, t1 = taus[taus.length - 1].epoch;
-  const x = e => padL + (W - padL - padR) * (t1 > t0 ? (e - t0) / (t1 - t0) : 0);
-
-  const vmaxMax = Math.max(...taus.map(t => t.vmax)) * 1.15;
-  const yV = v => H - padB - (H - padT - padB) * (v / Math.max(vmaxMax, 1));
-
-  const rmaxes = taus.map(t => resolveRmax(t, RMAX_OVERRIDE_NM));
-  const rmaxMax = Math.max(...rmaxes) * 1.25;
-  const yR = r => H - padB - (H - padT - padB) * (r / Math.max(rmaxMax, 1));
-
-  // Axes.
-  ctx.strokeStyle = '#d4d4d8'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, H - padB);
-  ctx.lineTo(W - padR, H - padB); ctx.stroke();
-  ctx.fillStyle = '#71717a'; ctx.font = '10px system-ui, sans-serif';
-  ctx.fillText('kt', 4, padT + 8);
-  ctx.textAlign = 'right';
-  ctx.fillText('Rmax nm', W - 2, padT + 8);
-  ctx.textAlign = 'left';
-  for (const t of taus) {
-    ctx.fillText(String(t.tau), x(t.epoch) - 4, H - padB + 12);
-  }
-
-  // Quadrant min/mean/max band per threshold.
-  for (const thr of [34, 50, 64]) {
-    const pts = taus
-      .filter(t => t.radii[thr])
-      .map(t => {
-        const vals = QUADS.map(q => t.radii[thr][q]).filter(v => v > 0);
-        if (!vals.length) return null;
-        return { epoch: t.epoch, min: Math.min(...vals), max: Math.max(...vals),
-                 mean: vals.reduce((a, b) => a + b, 0) / vals.length };
-      })
-      .filter(Boolean);
-    if (pts.length < 2) continue;
-    const rMax2 = Math.max(rmaxMax, Math.max(...pts.map(p => p.max)) * 1.1);
-    const yR2 = r => H - padB - (H - padT - padB) * (r / rMax2);
-    ctx.fillStyle = THRESH_COLOR[thr] + '33';
-    ctx.beginPath();
-    pts.forEach((p, i) => (i ? ctx.lineTo(x(p.epoch), yR2(p.max))
-                             : ctx.moveTo(x(p.epoch), yR2(p.max))));
-    for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(x(pts[i].epoch), yR2(pts[i].min));
-    ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = THRESH_COLOR[thr]; ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    pts.forEach((p, i) => (i ? ctx.lineTo(x(p.epoch), yR2(p.mean))
-                             : ctx.moveTo(x(p.epoch), yR2(p.mean))));
-    ctx.stroke();
-  }
-
-  // Rmax, dashed gray, right axis.
-  ctx.strokeStyle = '#71717a'; ctx.setLineDash([3, 3]); ctx.lineWidth = 1.5;
+function axisFrame(ctx, x0, y0, x1, y1) {
+  ctx.strokeStyle = tok('--border-strong');
+  ctx.lineWidth = 1;
   ctx.beginPath();
-  taus.forEach((t, i) => (i ? ctx.lineTo(x(t.epoch), yR(rmaxes[i]))
-                            : ctx.moveTo(x(t.epoch), yR(rmaxes[i]))));
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  // Vmax, solid black, left axis.
-  ctx.strokeStyle = '#111'; ctx.lineWidth = 2;
-  ctx.beginPath();
-  taus.forEach((t, i) => (i ? ctx.lineTo(x(t.epoch), yV(t.vmax))
-                            : ctx.moveTo(x(t.epoch), yV(t.vmax))));
-  ctx.stroke();
-  for (const t of taus) {
-    ctx.fillStyle = t.conf < 1 ? '#a1a1aa' : '#111';
-    ctx.beginPath(); ctx.arc(x(t.epoch), yV(t.vmax), 3, 0, 2 * Math.PI); ctx.fill();
-  }
-
-  // Current-time marker.
-  if (nowEpoch >= t0 && nowEpoch <= t1) {
-    ctx.strokeStyle = '#0ea5e9'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.moveTo(x(nowEpoch), padT); ctx.lineTo(x(nowEpoch), H - padB);
-    ctx.stroke();
-  }
+  ctx.moveTo(x0 + 0.5, y0); ctx.lineTo(x0 + 0.5, y1 + 0.5);
+  ctx.lineTo(x1, y1 + 0.5); ctx.stroke();
 }
 
-/** Azimuthal profile: modeled wind vs radius along each quadrant bearing. */
-function drawProfile(storm, snap, rmax) {
-  const cv = document.getElementById('profCanvas');
-  const ctx = cv.getContext('2d');
-  const W = cv.width, H = cv.height;
-  ctx.clearRect(0, 0, W, H);
-  if (!storm || !snap) return;
-
-  const padL = 34, padR = 8, padT = 10, padB = 20;
-  const reported = [];
-  for (const thr of [64, 50, 34]) {
-    if (!snap.radii[thr]) continue;
-    for (const q of QUADS) {
-      const rr = snap.radii[thr][q];
-      if (rr > 0) reported.push(rr);
-    }
-  }
-  const rMaxAxis = Math.max(rmax * 3, ...reported, 20) * 1.15;
-  const vMaxAxis = Math.max(snap.vmax, 34) * 1.15;
-  const x = r => padL + (W - padL - padR) * (r / rMaxAxis);
-  const y = v => H - padB - (H - padT - padB) * (v / vMaxAxis);
-
-  ctx.strokeStyle = '#d4d4d8'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, H - padB);
-  ctx.lineTo(W - padR, H - padB); ctx.stroke();
-  ctx.fillStyle = '#71717a'; ctx.font = '10px system-ui, sans-serif';
-  ctx.fillText('kt', 4, padT + 8);
-  ctx.fillText('nm', W - padR - 14, H - 4);
-
-  // Rmax marker.
-  ctx.strokeStyle = '#a1a1aa'; ctx.setLineDash([2, 3]); ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(x(rmax), padT); ctx.lineTo(x(rmax), H - padB); ctx.stroke();
-  ctx.setLineDash([]);
-
-  const N = 80;
-  for (const q of QUADS) {
-    const az = QUAD_AZ[q];
-    ctx.strokeStyle = QUAD_COLOR[q]; ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    for (let i = 0; i <= N; i++) {
-      const r = rMaxAxis * i / N;
-      const p = destPoint(snap.lat, snap.lon, az, Math.max(r, 0.01));
-      const res = vortexAt(p[0], p[1], snap, rmax, MOTION_ASYMMETRY_FRACTION, INFLOW_ANGLE_DEG);
-      const px = x(r), py = y(res.mag);
-      i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
-    }
-    ctx.stroke();
-
-    for (const thr of [64, 50, 34]) {
-      if (!snap.radii[thr]) continue;
-      const rr = snap.radii[thr][q];
-      if (rr <= 0) continue;
-      ctx.fillStyle = QUAD_COLOR[q];
-      ctx.beginPath(); ctx.arc(x(rr), y(thr), 3, 0, 2 * Math.PI); ctx.fill();
-    }
-  }
-
-  // Best-track QC only: an independent second opinion (Holland 1980),
-  // anchored to the same Vmax/Rmax plus the storm's own mean R34 - so it
-  // agrees with the tool AT Rmax and R34 by construction, and the gap
-  // between the two curves everywhere else is genuine model disagreement,
-  // not just one of them missing a data point the other has. See
-  // verify_besttrack_holland.py.
-  let drewHolland = false;
-  if (snap.rmw && snap.radii[34]) {
-    const rmw = snap.rmw;
-    const r34vals = QUADS.map(q => snap.radii[34][q]).filter(v => v > 0);
-    const r34mean = r34vals.length ? r34vals.reduce((a, b) => a + b, 0) / r34vals.length : 0;
-    if (r34mean > rmw && snap.vmax > 34) {
-      const B = solveHollandB(snap.vmax, rmw, r34mean);
-      if (B > 0.3 && B < 3.0) {
-        drewHolland = true;
-        ctx.strokeStyle = '#3f3f46'; ctx.lineWidth = 1.5; ctx.setLineDash([5, 3]);
-        ctx.beginPath();
-        for (let i = 0; i <= N; i++) {
-          const r = Math.max(rMaxAxis * i / N, rmw * 0.5);
-          const v = hollandVAt(snap.vmax, rmw, B, Math.max(r, rmw));
-          const px = x(r), py = y(v);
-          i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
-        }
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
-    }
-  }
-
-  const legendEntries = QUADS.map(q => [q, QUAD_COLOR[q]]);
-  if (drewHolland) legendEntries.push(['Holland', '#3f3f46']);
-  let ly = padT + 8;
-  ctx.font = '10px system-ui, sans-serif';
-  ctx.fillStyle = 'rgba(255,255,255,.85)';
-  ctx.fillRect(W - padR - 48, padT, 48, 12 * legendEntries.length + 4);
-  for (const [label, color] of legendEntries) {
-    ctx.fillStyle = color;
-    ctx.fillRect(W - padR - 42, ly - 6, 8, 8);
-    ctx.fillText(label, W - padR - 30, ly + 2);
-    ly += 12;
-  }
-}
-
-function updateDiagnostics(items, nowEpoch) {
-  if (!diagVisible()) return;
-  const sel = document.getElementById('diagStorm');
-  const pil = sel.value;
-  const storm = storms.find(s => s.pil === pil) || storms[0];
-  drawHistory(storm, nowEpoch);
-  const it = items.find(i => i.storm === storm);
-  if (it) {
-    drawProfile(storm, it.snap, it.rmax);
-  } else if (storm) {
-    // Selected storm isn't active at this time step (outside its taus span
-    // or off the current timeline entirely) - still show its own initial
-    // snapshot so the panel isn't just blank.
-    drawProfile(storm, storm.taus[0], resolveRmax(storm.taus[0], RMAX_OVERRIDE_NM));
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Best-track QC panel - real JTWC post-season best-track data (IBTrACS),
-// not a live bulletin. Reuses every map/diagnostics function above by
-// building a "storm" object in the exact shape ingest() builds from a
-// parsed bulletin (same {pil, header, taus, label}), so nothing else in
-// this file needs to know the data didn't come from parseJTWC().
-// ---------------------------------------------------------------------------
-
-let bestTrackSample = null;
-
-function buildBestTrackStorm(entry) {
-  const taus = entry.records.map((r, i) => ({
-    tau: i * 6, epoch: r.epoch, lat: r.lat, lon: r.lon, vmax: r.vmax,
-    gust: null, radii: r.radii || {}, motionDir: r.motionDir,
-    motionSpd: r.motionSpd, conf: 1.0, rmw: r.rmw, roci: r.roci,
-  }));
-  return {
-    pil: 'BEST-TRACK', file: entry.sid,
-    header: { systemType: null, stormId: entry.sid, stormName: entry.name,
-              warningNumber: null, pressureMb: null, refDate: null },
-    taus: taus,
-    label: entry.name + ' ' + entry.season + ' (JTWC best track)',
-  };
-}
-
-function selectBestTrackStorm(idx) {
-  const entry = bestTrackSample[idx];
-  storms = [buildBestTrackStorm(entry)];
-  populateDiagStorm();
-  rebuildTimeline();
-  render();
-  const lats = entry.records.map(r => r.lat), lons = entry.records.map(r => r.lon);
-  map.fitBounds([[Math.min(...lats) - 2, Math.min(...lons) - 2],
-                 [Math.max(...lats) + 2, Math.max(...lons) + 2]]);
-}
-
-function loadBestTrackSample() {
-  const sel = document.getElementById('btStorm');
-  google.script.run.withSuccessHandler(sample => {
-    bestTrackSample = sample;
-    sel.innerHTML = '';
-    sample.forEach((s, i) => {
-      const opt = document.createElement('option');
-      opt.value = i;
-      opt.textContent = s.name + ' ' + s.season + ' (' + s.records.length + ' pts)';
-      sel.appendChild(opt);
-    });
-    selectBestTrackStorm(0);
-  }).withFailureHandler(e => {
-    document.getElementById('btInfo').textContent = 'Failed to load storms: ' + e.message;
-  }).getBestTrackSample();
-}
-
-// ---------------------------------------------------------------------------
-// Wiring
-// ---------------------------------------------------------------------------
-
-function ingest(results) {
-  storms = [];
-  const notes = [];
-  for (const r of results) {
-    if (!r.ok) { notes.push(r.file + ': ' + (r.error || 'no data')); continue; }
-    if (r.stale) {
-      notes.push(r.file + ': stale, ' +
-        (r.ageHours !== undefined ? r.ageHours.toFixed(0) + ' h old' : 'period ended'));
-      continue;
-    }
-    const s = r.storm;
-    s.label = [s.header.systemType, s.header.stormId,
-               s.header.stormName ? '(' + s.header.stormName + ')' : '']
-      .filter(Boolean).join(' ');
-    storms.push(s);
-  }
-  populateDiagStorm();
-  rebuildTimeline();
-  if (!storms.length) {
-    document.getElementById('status').textContent =
-      'No live storms.\n' + notes.join('\n');
-    radiiLayer.clearLayers();
-    if (fieldOverlay) { map.removeLayer(fieldOverlay); fieldOverlay = null; }
+function drawProfile(it) {
+  var cv = document.getElementById('profCanvas');
+  var g = prepCanvas(cv), ctx = g.ctx, W = g.w, H = g.h;
+  document.getElementById('profAux').textContent = '';
+  if (!it || !hasField(it)) {
+    ctx.fillStyle = tok('--muted');
+    ctx.fillText(it ? 'Below 34 kt — no field built.' : 'No system selected.', 10, 22);
     return;
   }
-  const lats = storms.flatMap(s => s.taus.map(t => t.lat));
-  const lons = storms.flatMap(s => s.taus.map(t => t.lon));
-  map.fitBounds([[Math.min(...lats) - 2, Math.min(...lons) - 2],
-                 [Math.max(...lats) + 2, Math.max(...lons) + 2]]);
-  render();
-  if (notes.length) {
-    document.getElementById('status').textContent += '\n' + notes.join('\n');
+
+  var snap = it.snap, fit = it.field.fit, thrs = liveThresholds(snap);
+  var padL = 34, padR = 36, padT = 12, padB = 26;
+  var maxRep = 0, i, j, q, thr, r;
+  for (i = 0; i < thrs.length; i++) for (j = 0; j < 4; j++) {
+    r = Number(snap.radii[thrs[i]][QUADS[j]]) || 0;
+    if (r > maxRep) maxRep = r;
+  }
+  var rAxis = Math.max(maxRep * 1.2, fit.rm * 4, 60);
+  var vAxis = Math.max(snap.vmax * 1.1, 45);
+  var X = function (rr) { return padL + (W - padL - padR) * (rr / rAxis); };
+  var Y = function (vv) { return H - padB - (H - padT - padB) * (vv / vAxis); };
+
+  document.getElementById('profAux').textContent =
+    '0–' + Math.round(rAxis) + ' nm';
+
+  // threshold gridlines, labelled - they are what the targets sit on
+  ctx.strokeStyle = tok('--border');
+  ctx.fillStyle = tok('--muted');
+  ctx.lineWidth = 1;
+  for (i = 0; i < THRESHOLDS.length; i++) {
+    thr = THRESHOLDS[i];
+    if (thr > vAxis) continue;
+    ctx.beginPath();
+    ctx.moveTo(padL, Y(thr) + 0.5); ctx.lineTo(W - padR, Y(thr) + 0.5);
+    ctx.stroke();
+    ctx.textAlign = 'right';
+    ctx.fillText(String(thr), padL - 4, Y(thr) + 3);
+  }
+  ctx.textAlign = 'right';
+  ctx.fillText(String(Math.round(vAxis)), padL - 4, Y(vAxis) + 3);
+  ctx.textAlign = 'left';
+  ctx.fillText('kt', 2, padT + 2);
+  ctx.textAlign = 'center';
+  for (i = 0; i <= 4; i++) {
+    var rv = rAxis * i / 4;
+    ctx.fillText(String(Math.round(rv)), X(rv), H - padB + 12);
+  }
+  ctx.textAlign = 'right';
+  ctx.fillText('nm', W - 2, H - 4);
+  axisFrame(ctx, padL, padT, W - padR, H - padB);
+
+  // rm / ri guides
+  ctx.strokeStyle = tok('--muted');
+  ctx.setLineDash([1, 3]);
+  var guides = [[fit.rm, 'rm'], [fit.ri, 'ri']];
+  for (i = 0; i < guides.length; i++) {
+    if (!(guides[i][0] > 0) || guides[i][0] > rAxis) continue;
+    ctx.beginPath();
+    ctx.moveTo(X(guides[i][0]), padT); ctx.lineTo(X(guides[i][0]), H - padB);
+    ctx.stroke();
+    ctx.fillStyle = tok('--muted');
+    ctx.textAlign = 'left';
+    ctx.fillText(guides[i][1], X(guides[i][0]) + 2, padT + 8);
+  }
+  ctx.setLineDash([]);
+
+  // modelled profile per quadrant bearing
+  var N = 120;
+  for (j = 0; j < 4; j++) {
+    q = QUADS[j];
+    var az = QUAD_AZ[q], col = tok(QUAD_TOKEN[q]);
+    ctx.strokeStyle = col; ctx.lineWidth = 1.8;
+    ctx.setLineDash(QUAD_DASH[q]);
+    ctx.beginPath();
+    var lastY = 0;
+    for (i = 0; i <= N; i++) {
+      var rr = Math.max(rAxis * i / N, 0.01);
+      var p = V.destPoint(snap.lat, snap.lon, az, rr);
+      var m = it.field.at(p[0], p[1]).mag;
+      lastY = Y(m);
+      if (i) ctx.lineTo(X(rr), lastY); else ctx.moveTo(X(rr), lastY);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    /* Direct end-label, so a quadrant is never identified by hue alone.  The
+       letters are drawn in --text (>= 14:1 on --panel), not in the curve
+       colour: three of the four curve colours sit between 3:1 and 4.5:1
+       against the chart ground, which is fine for a line and not fine for
+       type.  The colour appears as a chip beside the letters instead. */
+    var ly = Math.min(Math.max(lastY, padT + 8), H - padB - 2);
+    ctx.fillStyle = col;
+    ctx.fillRect(W - padR + 2, ly - 4, 7, 7);
+    ctx.fillStyle = tok('--text');
+    ctx.textAlign = 'left';
+    ctx.fillText(q, W - padR + 12, ly + 3);
+  }
+
+  // reported radii, fit targets, residual stems
+  for (j = 0; j < 4; j++) {
+    q = QUADS[j];
+    var qc = tok(QUAD_TOKEN[q]);
+    for (i = 0; i < thrs.length; i++) {
+      thr = thrs[i];
+      var rep = Number(snap.radii[thr][q]) || 0;
+      if (rep <= 0) continue;
+      var tgt = rep * QAVG;
+      var pt = V.destPoint(snap.lat, snap.lon, QUAD_AZ[q], Math.max(tgt, 0.01));
+      var mod = it.field.at(pt[0], pt[1]).mag;
+
+      // residual stem: what the least-squares is minimising, drawn to scale
+      ctx.strokeStyle = qc; ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(X(tgt), Y(thr)); ctx.lineTo(X(tgt), Y(mod)); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(X(tgt) - 3, Y(mod)); ctx.lineTo(X(tgt) + 3, Y(mod)); ctx.stroke();
+
+      // 0.85 shift: thin connector from reported to target
+      ctx.setLineDash([1, 2]);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(X(tgt), Y(thr)); ctx.lineTo(X(rep), Y(thr)); ctx.stroke();
+      ctx.setLineDash([]);
+
+      // open circle: reported radius, as the bulletin states it
+      ctx.strokeStyle = qc; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.arc(X(rep), Y(thr), 3.6, 0, 2 * Math.PI); ctx.stroke();
+
+      // filled diamond: the fit target
+      ctx.fillStyle = qc;
+      ctx.beginPath();
+      ctx.moveTo(X(tgt), Y(thr) - 4.4); ctx.lineTo(X(tgt) + 4.4, Y(thr));
+      ctx.lineTo(X(tgt), Y(thr) + 4.4); ctx.lineTo(X(tgt) - 4.4, Y(thr));
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = tok('--panel'); ctx.lineWidth = 1; ctx.stroke();
+    }
   }
 }
 
-function load(force) {
-  document.getElementById('status').textContent = 'Fetching…';
-  google.script.run
-    .withSuccessHandler(ingest)
-    .withFailureHandler(e => {
-      document.getElementById('status').textContent =
-        'Fetch failed: ' + e.message + '\nUse Paste text instead.';
-    })
-    .getBulletins(!!force);
+function drawHistory(storm, epoch) {
+  var cv = document.getElementById('histCanvas');
+  var g = prepCanvas(cv), ctx = g.ctx, W = g.w, H = g.h;
+  if (!storm || storm.taus.length < 2) {
+    ctx.fillStyle = tok('--muted');
+    ctx.fillText('No forecast series.', 10, 22);
+    return;
+  }
+  var fits = tauFits(storm);
+  var padL = 34, padR = 12, padT = 10, padB = 20, gap = 14;
+  var hTop = Math.round((H - padT - padB - gap) * 0.46);
+  var yTop0 = padT, yTop1 = padT + hTop;
+  var yBot0 = yTop1 + gap, yBot1 = H - padB;
+
+  var t0 = storm.taus[0].epoch, t1 = storm.taus[storm.taus.length - 1].epoch;
+  var X = function (e) {
+    return padL + (W - padL - padR) * (t1 > t0 ? (e - t0) / (t1 - t0) : 0);
+  };
+
+  var vMax = 0, rMax = Math.max(RMS_P90 * 1.35, 1), i;
+  for (i = 0; i < storm.taus.length; i++) if (storm.taus[i].vmax > vMax) vMax = storm.taus[i].vmax;
+  for (i = 0; i < fits.length; i++) if (isFinite(fits[i].rms) && fits[i].rms > rMax) rMax = fits[i].rms;
+  vMax = Math.max(vMax * 1.15, 40);
+  var YV = function (v) { return yTop1 - (yTop1 - yTop0) * (v / vMax); };
+  var YR = function (r) { return yBot1 - (yBot1 - yBot0) * (r / rMax); };
+
+  ctx.fillStyle = tok('--muted');
+  ctx.textAlign = 'right';
+  ctx.fillText(String(Math.round(vMax)) + ' kt', padL - 3, yTop0 + 8);
+  ctx.fillText('0', padL - 3, yTop1 + 3);
+  ctx.fillText(rMax.toFixed(1), padL - 3, yBot0 + 8);
+  ctx.fillText('0', padL - 3, yBot1 + 3);
+  ctx.textAlign = 'left';
+  ctx.fillText('RMS kt', 2, yBot0 - 3);
+  axisFrame(ctx, padL, yTop0, W - padR, yTop1);
+  axisFrame(ctx, padL, yBot0, W - padR, yBot1);
+
+  // archive reference lines, labelled - not decoration, they set the badge
+  var refs = [[RMS_P75, 'p75'], [RMS_P90, 'p90']];
+  ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
+  for (i = 0; i < refs.length; i++) {
+    if (refs[i][0] > rMax) continue;
+    ctx.strokeStyle = i ? tok('--bad') : tok('--warn');
+    ctx.beginPath();
+    ctx.moveTo(padL, YR(refs[i][0]) + 0.5); ctx.lineTo(W - padR, YR(refs[i][0]) + 0.5);
+    ctx.stroke();
+    ctx.fillStyle = i ? tok('--bad') : tok('--warn');
+    ctx.textAlign = 'right';
+    ctx.fillText(refs[i][1], W - padR - 1, YR(refs[i][0]) - 2);
+  }
+  ctx.setLineDash([]);
+
+  // RMS bars
+  var bw = Math.max(Math.min((W - padL - padR) / (storm.taus.length * 1.7), 16), 4);
+  for (i = 0; i < fits.length; i++) {
+    var f = fits[i];
+    if (!isFinite(f.rms)) continue;
+    var col = f.rms >= RMS_P90 ? tok('--bad') : f.rms >= RMS_P75 ? tok('--warn') : tok('--ok');
+    ctx.fillStyle = col;
+    var yv = YR(f.rms);
+    ctx.fillRect(X(f.epoch) - bw / 2, yv, bw, yBot1 - yv);
+    if (f.n === 0) {
+      ctx.fillStyle = tok('--muted');
+      ctx.textAlign = 'center';
+      ctx.fillText('—', X(f.epoch), yBot1 - 2);
+    }
+  }
+
+  // Vmax line + TD floor
+  ctx.strokeStyle = tok('--border-strong'); ctx.setLineDash([2, 3]); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(padL, YV(TD_FLOOR) + 0.5);
+  ctx.lineTo(W - padR, YV(TD_FLOOR) + 0.5); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.strokeStyle = tok('--text'); ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (i = 0; i < storm.taus.length; i++) {
+    var xx = X(storm.taus[i].epoch), yy = YV(storm.taus[i].vmax);
+    if (i) ctx.lineTo(xx, yy); else ctx.moveTo(xx, yy);
+  }
+  ctx.stroke();
+  ctx.fillStyle = tok('--text');
+  for (i = 0; i < storm.taus.length; i++) {
+    ctx.beginPath();
+    ctx.arc(X(storm.taus[i].epoch), YV(storm.taus[i].vmax), 2.6, 0, 2 * Math.PI);
+    ctx.fill();
+  }
+
+  // tau labels
+  ctx.fillStyle = tok('--muted');
+  ctx.textAlign = 'center';
+  for (i = 0; i < storm.taus.length; i++) {
+    ctx.fillText(String(storm.taus[i].tau), X(storm.taus[i].epoch), H - 6);
+  }
+
+  // current time
+  if (epoch >= t0 && epoch <= t1) {
+    ctx.strokeStyle = tok('--accent'); ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(X(epoch), yTop0); ctx.lineTo(X(epoch), yBot1); ctx.stroke();
+  }
 }
 
-// Step the storm forward/back one track point at a time - the tPrev/tNext
-// buttons for discoverability, arrow keys for speed once you know they're
-// there (see the '← →' hint next to the slider).
+function tauFits(storm) {
+  if (tauFitCache[storm.pil]) return tauFitCache[storm.pil];
+  var out = [], i;
+  for (i = 0; i < storm.taus.length; i++) {
+    var t = storm.taus[i];
+    if (t.vmax < TD_FLOOR) { out.push({ epoch: t.epoch, rms: NaN, n: 0 }); continue; }
+    var f = V.fitGTCM(t);
+    out.push({ epoch: t.epoch, rms: f.rms, n: f.n });
+  }
+  tauFitCache[storm.pil] = out;
+  return out;
+}
+
+/* --------------------------------------------------------------------------
+   Rail
+   ----------------------------------------------------------------------- */
+function kv(dl, k, v) {
+  var dt = document.createElement('dt'); dt.textContent = k;
+  var dd = document.createElement('dd'); dd.textContent = v;
+  dl.appendChild(dt); dl.appendChild(dd);
+}
+
+function param(grid, label, value, unit, wide) {
+  var d = document.createElement('div');
+  d.className = 'param' + (wide ? ' wide' : '');
+  var l = document.createElement('span'); l.className = 'lbl'; l.textContent = label;
+  var v = document.createElement('span'); v.className = 'val';
+  v.textContent = value;
+  if (unit) {
+    var s = document.createElement('small');
+    s.textContent = ' ' + unit;
+    v.appendChild(s);
+  }
+  d.appendChild(l); d.appendChild(v);
+  grid.appendChild(d);
+}
+
+function renderRail(it, epoch) {
+  var nameEl = document.getElementById('focusName');
+  var subEl = document.getElementById('focusSub');
+  var kvEl = document.getElementById('focusKv');
+  var params = document.getElementById('fitParams');
+  var badge = document.getElementById('fitBadge');
+  var tbody = document.querySelector('#anchorTable tbody');
+  kvEl.innerHTML = ''; params.innerHTML = ''; tbody.innerHTML = '';
+
+  if (!it) {
+    nameEl.textContent = storms.length ? 'Not active at this time' : 'No system selected';
+    subEl.textContent = storms.length
+      ? 'The selected system has no position at this timeline step.'
+      : 'Fetch bulletins, or paste one, to begin.';
+    badge.setAttribute('data-state', 'none');
+    document.getElementById('fitRms').textContent = '--';
+    document.getElementById('fitWord').textContent = 'no fit';
+    document.getElementById('fitPct').textContent = '—';
+    document.getElementById('fitTargets').textContent = '';
+    document.getElementById('fitNote').textContent = '';
+    document.getElementById('anchorPct').textContent = '';
+    setAnchorBar(0);
+    hideThinNote();
+    drawProfile(null);
+    return;
+  }
+
+  var s = it.storm, snap = it.snap, h = s.header, fit = it.field.fit;
+  nameEl.textContent = V.describeStorm(h);
+  subEl.textContent = s.pil + ' · ' + s.file + ' · valid ' + fmtZLong(epoch) +
+    (it.onTau ? '' : ' (interpolated)');
+
+  kv(kvEl, 'Position', fmtLatLon(snap.lat, snap.lon));
+  kv(kvEl, 'Max sustained', n0(snap.vmax) + ' kt');
+  kv(kvEl, 'Motion', n0(snap.motionDir) + '° at ' + n0(snap.motionSpd) + ' kt');
+  if (h.pressureMb) kv(kvEl, 'Min central pressure', h.pressureMb + ' mb');
+  if (snap.conf < 1) {
+    kv(kvEl, 'Confidence', n2(snap.conf) + ' (post-transition)');
+  }
+
+  if (!hasField(it)) {
+    badge.setAttribute('data-state', 'none');
+    document.getElementById('fitRms').textContent = '--';
+    document.getElementById('fitWord').textContent = 'no field';
+    document.getElementById('fitPct').textContent = 'below 34 kt';
+    document.getElementById('fitTargets').textContent = '';
+    document.getElementById('fitNote').textContent =
+      'Below tropical-storm strength. The GFE tool builds no vortex here and ' +
+      'leaves the background grid untouched, so neither does this preview.';
+    document.getElementById('anchorPct').textContent = '';
+    setAnchorBar(0);
+    hideThinNote();
+    drawProfile(it);
+    return;
+  }
+
+  // --- fit ----------------------------------------------------------------
+  var rms = fit.rms;
+  var state, word, pct;
+  if (!fit.n) {
+    state = 'warn'; word = 'climatology only'; pct = 'no radii reported';
+  } else if (!isFinite(rms)) {
+    state = 'none'; word = 'no RMS'; pct = '—';
+  } else if (rms >= RMS_P90) {
+    state = 'bad'; word = 'poor'; pct = 'worst decile of ' + RMS_N + ' archive fits';
+  } else if (rms >= RMS_P75) {
+    state = 'warn'; word = 'elevated'; pct = 'p75–p90 of ' + RMS_N + ' archive fits';
+  } else {
+    state = 'good'; word = 'typical'; pct = 'below p75 of ' + RMS_N + ' archive fits';
+  }
+  badge.setAttribute('data-state', state);
+  document.getElementById('fitRms').textContent = fit.n && isFinite(rms) ? rms.toFixed(2) : '--';
+  document.getElementById('fitWord').textContent = word;
+  document.getElementById('fitPct').textContent = pct;
+  document.getElementById('fitTargets').textContent =
+    fit.n + ' target' + (fit.n === 1 ? '' : 's');
+
+  var aMag = Math.sqrt(fit.ax * fit.ax + fit.ay * fit.ay);
+  var aDir = aMag > 1e-6 ? V.mod360(Math.atan2(fit.ax, fit.ay) * 180 / Math.PI) : null;
+  var rot = (aDir !== null && snap.motionDir !== null && snap.motionDir !== undefined)
+    ? angDiff(aDir, snap.motionDir) : null;
+
+  param(params, 'rm  peak radius', n1(fit.rm), 'nm');
+  param(params, 'ri  size break', n1(fit.ri), 'nm');
+  param(params, 'x1  inner decay', n2(fit.x1), '');
+  param(params, 'x2  outer decay', n2(fit.x2), '');
+  var asymWeak = aMag < 0.5;
+  param(params, 'asymmetry |a|, fitted', n2(aMag), 'kt');
+  param(params, 'rotated off motion',
+        (rot === null || asymWeak) ? 'n/a'
+          : (rot > 0 ? '+' : '') + rot.toFixed(0) + '°', '');
+  /* Shown because a forecaster who used the per-quadrant version of this tool
+     will look for it, and needs to be told plainly that it no longer drives
+     anything: _buildVortexGTCM() takes rmax_nm and ignores it, using the
+     fitted rm instead. */
+  param(params, 'Willoughby Rmax — not used by GTCM', n1(it.rmax), 'nm', true);
+
+  var notes = [];
+  if (!fit.n) {
+    notes.push('No usable radii in this bulletin, so rm, ri, x1 and x2 are the ' +
+      'guide’s climatology (eq. 5 and 6) and nothing here is constrained by ' +
+      'the report. Treat the field as a placeholder.');
+  } else {
+    notes.push('rm, ri, x1 and x2 are fitted. The asymmetry starts on the motion ' +
+      'vector at the Schwerdt (1979) magnitude a = 1.6c^0.63 = ' + n2(fit.a) +
+      ' kt and is then released up to 10 kt; least squares settled it at ' +
+      n2(aMag) + ' kt. ' +
+      (asymWeak
+        ? 'That is close enough to zero that its direction carries no meaning: ' +
+          'the reported radii are near-symmetric, or the fit could not use a ' +
+          'wavenumber-1 term to improve them.'
+        : (rot === null ? ''
+          : (Math.abs(rot) >= 60
+            ? 'It has swung ' + Math.abs(rot).toFixed(0) + '° off the motion ' +
+              'vector, so the reported radii are broadest in a direction the ' +
+              'storm is not moving — shear or transition, not translation.'
+            : 'It sits ' + Math.abs(rot).toFixed(0) + '° off the motion vector.'))));
+  }
+  if (fit.x1 >= 1.95 || fit.x2 >= 1.95 || fit.x1 <= 0.06 || fit.x2 <= 0.06) {
+    notes.push('A size exponent has hit its bound (0.05–2.0): the radii could ' +
+      'not be reconciled inside the model’s admissible shapes.');
+  }
+  if (fit.rm >= 149 || fit.rm <= 2.1) {
+    notes.push('rm has hit its bound (2–150 nm).');
+  }
+  document.getElementById('fitNote').textContent = notes.join(' ');
+
+  // --- anchoring ----------------------------------------------------------
+  var share = anchoredShare(it);
+  setAnchorBar(share);
+  document.getElementById('anchorPct').textContent =
+    Math.round(share * 100) + '% anchored';
+
+  var thrsAll = liveThresholds(it.snap);
+  var maxTargetsInAQuadrant = 0;
+  for (var qi = 0; qi < 4; qi++) {
+    if (it.band[QUADS[qi]].n > maxTargetsInAQuadrant) {
+      maxTargetsInAQuadrant = it.band[QUADS[qi]].n;
+    }
+  }
+  var thin = document.getElementById('anchorThin');
+  if (maxTargetsInAQuadrant <= 1) {
+    thin.style.display = 'block';
+    thin.textContent = maxTargetsInAQuadrant === 0
+      ? 'No quadrant reports a radius at all. Nothing in this field is anchored: '
+        + 'rm, ri, x1 and x2 are climatology and the whole picture is model.'
+      : 'Only one threshold is reported, so each quadrant constrains the fit at '
+        + 'a single range and nowhere else. The radial shape between the eye and '
+        + 'that radius, and everything beyond it, is the fitted Rankine form — '
+        + 'which is why almost the entire field is hatched.';
+  } else {
+    thin.style.display = 'none';
+    thin.textContent = '';
+  }
+  for (var i = 0; i < 4; i++) {
+    var q = QUADS[i], b = it.band[q];
+    var tr = document.createElement('tr');
+    var td0 = document.createElement('td');
+    var dot = document.createElement('span');
+    dot.className = 'qdot';
+    dot.style.background = tok(QUAD_TOKEN[q]);
+    td0.appendChild(dot);
+    td0.appendChild(document.createTextNode(q));
+    tr.appendChild(td0);
+    for (var j = 0; j < THRESHOLDS.length; j++) {
+      var thr = THRESHOLDS[j];
+      var td = document.createElement('td');
+      var has = thrsAll.indexOf(thr) >= 0;
+      var val = has ? (Number(snap.radii[thr][q]) || 0) : 0;
+      td.textContent = has ? (val > 0 ? String(Math.round(val)) : '000') : '—';
+      if (has && val <= 0) td.style.color = tok('--muted');
+      tr.appendChild(td);
+    }
+    var tdA = document.createElement('td');
+    tdA.textContent = !b.n ? 'none'
+      : b.n === 1 ? Math.round(b.hi) + ' only'
+      : Math.round(b.lo) + '–' + Math.round(b.hi);
+    if (!b.n) tdA.style.color = tok('--muted');
+    tr.appendChild(tdA);
+    tbody.appendChild(tr);
+  }
+
+  drawProfile(it);
+}
+
+function hideThinNote() {
+  var el = document.getElementById('anchorThin');
+  el.style.display = 'none';
+  el.textContent = '';
+}
+
+function setAnchorBar(share) {
+  var bar = document.getElementById('anchorBar');
+  var pc = Math.round(Math.min(Math.max(share, 0), 1) * 100);
+  bar.children[0].style.width = pc + '%';
+  bar.children[1].style.width = (100 - pc) + '%';
+  bar.setAttribute('aria-label',
+    pc + ' percent of the drawn wind field is anchored to a reported radius; ' +
+    (100 - pc) + ' percent is modelled extrapolation');
+}
+
+function renderQuadKey() {
+  var el = document.getElementById('qKey');
+  el.innerHTML = '';
+  for (var i = 0; i < 4; i++) {
+    var q = QUADS[i];
+    var sp = document.createElement('span');
+    var sw = document.createElement('span');
+    sw.style.cssText = 'display:inline-block;width:22px;height:0;border-top:2.5px ' +
+      (QUAD_DASH[q].length ? 'dashed' : 'solid') + ' ' + tok(QUAD_TOKEN[q]);
+    sp.appendChild(sw);
+    sp.appendChild(document.createTextNode(q + ' ' + QUAD_AZ[q] + '°'));
+    el.appendChild(sp);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Timeline
+   ----------------------------------------------------------------------- */
+function rebuildTimeline() {
+  timeSteps = [];
+  var sl = document.getElementById('tSlider');
+  if (!storms.length) { sl.min = 0; sl.max = 0; sl.value = 0; return; }
+  var t0 = Infinity, t1 = -Infinity, i, j, set = {};
+  for (i = 0; i < storms.length; i++) {
+    var ts = storms[i].taus;
+    if (ts[0].epoch < t0) t0 = ts[0].epoch;
+    if (ts[ts.length - 1].epoch > t1) t1 = ts[ts.length - 1].epoch;
+    for (j = 0; j < ts.length; j++) set[ts[j].epoch] = 1;
+  }
+  for (var t = t0; t <= t1; t += 3 * 3600) set[t] = 1;
+  for (var k in set) if (Object.prototype.hasOwnProperty.call(set, k)) {
+    timeSteps.push(parseInt(k, 10));
+  }
+  timeSteps.sort(function (a, b) { return a - b; });
+  sl.min = 0; sl.max = Math.max(timeSteps.length - 1, 0); sl.value = 0;
+}
+
+function currentEpoch() {
+  if (!timeSteps.length) return null;
+  var i = parseInt(document.getElementById('tSlider').value, 10) || 0;
+  return timeSteps[Math.min(Math.max(i, 0), timeSteps.length - 1)];
+}
+
 function stepTime(delta) {
-  const sl = document.getElementById('tslider');
-  const max = parseInt(sl.max, 10);
+  var sl = document.getElementById('tSlider');
+  var max = parseInt(sl.max, 10);
   if (!max) return;
-  const next = Math.min(max, Math.max(0, parseInt(sl.value, 10) + delta));
+  var next = Math.min(max, Math.max(0, (parseInt(sl.value, 10) || 0) + delta));
   if (next === parseInt(sl.value, 10)) return;
   sl.value = next;
   render();
 }
-document.getElementById('tPrev').onclick = () => stepTime(-1);
-document.getElementById('tNext').onclick = () => stepTime(1);
-// Global left/right-arrow hotkeys, except while typing in a text field or
-// select (there they should do what they normally do) - the slider itself
-// already handles its own arrow keys natively, so leave those alone too.
-document.addEventListener('keydown', e => {
-  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-  const tag = (e.target.tagName || '').toLowerCase();
-  if (tag === 'input' || tag === 'select' || tag === 'textarea' ||
-      e.target.id === 'tslider' || e.target.isContentEditable) return;
-  stepTime(e.key === 'ArrowRight' ? 1 : -1);
+
+/* --------------------------------------------------------------------------
+   Storm chips
+   ----------------------------------------------------------------------- */
+function renderChips() {
+  var box = document.getElementById('stormChips');
+  box.innerHTML = '';
+  if (!slots.length) return;
+  for (var i = 0; i < slots.length; i++) {
+    var sl = slots[i];
+    var live = null, j;
+    for (j = 0; j < storms.length; j++) if (storms[j].pil === sl.pil) live = storms[j];
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip' + (live ? '' : ' dead');
+    var pil = document.createElement('span');
+    pil.className = 'pil';
+    pil.textContent = sl.pil.replace('NFDTCPWP', 'WP');
+    b.appendChild(pil);
+    var lbl = document.createElement('span');
+    if (live) {
+      var h = live.header;
+      lbl.textContent = h.stormName || h.stormId || 'system';
+      b.setAttribute('aria-pressed', String(live.pil === focusPil));
+      b.title = V.describeStorm(h);
+      (function (pilName) {
+        b.addEventListener('click', function () { focusStorm(pilName); });
+      })(live.pil);
+    } else {
+      lbl.textContent = sl.stale ? 'stale' : (sl.errorKind || 'no data');
+      b.disabled = true;
+      b.title = (sl.error || 'no product') + (sl.hint ? ' — ' + sl.hint : '');
+    }
+    b.appendChild(lbl);
+    box.appendChild(b);
+  }
+}
+
+function focusStorm(pil) {
+  focusPil = pil;
+  renderChips();
+  render();
+  var s = null, i;
+  for (i = 0; i < storms.length; i++) if (storms[i].pil === pil) s = storms[i];
+  if (s) fitToStorm(s);
+}
+
+function fitToStorm(s) {
+  var latMin = 90, latMax = -90, lonMin = 180, lonMax = -180, i;
+  for (i = 0; i < s.taus.length; i++) {
+    var t = s.taus[i];
+    latMin = Math.min(latMin, t.lat); latMax = Math.max(latMax, t.lat);
+    lonMin = Math.min(lonMin, t.lon); lonMax = Math.max(lonMax, t.lon);
+  }
+  map.fitBounds([[latMin - 3, lonMin - 3], [latMax + 3, lonMax + 3]],
+                { animate: !reduceMotion });
+}
+
+/* --------------------------------------------------------------------------
+   Render
+   ----------------------------------------------------------------------- */
+function render() {
+  var epoch = currentEpoch();
+  var tTau = document.getElementById('tTau');
+  var tValid = document.getElementById('tValid');
+  var tKind = document.getElementById('tKind');
+  var tOrigin = document.getElementById('tOrigin');
+
+  if (epoch === null) {
+    tTau.textContent = 'τ+--';
+    tValid.textContent = '------Z';
+    tKind.textContent = '—';
+    tKind.removeAttribute('data-kind');
+    tOrigin.textContent = '';
+    vecLayer.clearLayers();
+    clearField();
+    renderRail(null, null);
+    drawHistory(null, null);
+    return;
+  }
+
+  var items = activeItems(epoch);
+  var focus = null, i;
+  for (i = 0; i < items.length; i++) if (items[i].storm.pil === focusPil) focus = items[i];
+  var focusStormObj = null;
+  for (i = 0; i < storms.length; i++) if (storms[i].pil === focusPil) focusStormObj = storms[i];
+
+  var originStorm = focusStormObj || storms[0];
+  if (originStorm) {
+    var t0 = originStorm.taus[0].epoch;
+    var dh = (epoch - t0) / 3600;
+    tTau.textContent = 'τ' + (dh >= 0 ? '+' : '−') +
+      (Math.abs(dh) % 1 === 0 ? Math.abs(dh).toFixed(0) : Math.abs(dh).toFixed(1));
+    tOrigin.textContent = 'from ' + originStorm.pil.replace('NFDTCPWP', 'WP') +
+      ' warning position ' + fmtZ(t0);
+  } else {
+    tTau.textContent = 'τ+--';
+    tOrigin.textContent = '';
+  }
+  tValid.textContent = fmtZ(epoch);
+  var onTau = false;
+  for (i = 0; i < items.length; i++) if (items[i].onTau) onTau = true;
+  tKind.textContent = onTau ? 'warning time' : 'interpolated';
+  tKind.setAttribute('data-kind', onTau ? 'tau' : 'interp');
+
+  drawVectors(items, epoch);
+  var peak = drawField(items);
+  renderRail(focus, epoch);
+  drawHistory(focusStormObj, epoch);
+
+  var lines = [];
+  for (i = 0; i < items.length; i++) {
+    var it = items[i], mark = it.storm.pil === focusPil ? '▸ ' : '  ';
+    if (hasField(it)) {
+      lines.push({ text: mark + it.storm.pil + '  ' + V.describeStorm(it.storm.header) +
+        '  ·  ' + n0(it.snap.vmax) + ' kt  ·  rm ' + n1(it.field.fit.rm) +
+        ' nm  ·  RMS ' + (isFinite(it.field.fit.rms) ? n2(it.field.fit.rms) : 'n/a') +
+        ' kt over ' + it.field.fit.n + ' targets' });
+    } else {
+      lines.push({ text: mark + it.storm.pil + '  ' + V.describeStorm(it.storm.header) +
+        '  ·  ' + n0(it.snap.vmax) + ' kt — below 34 kt, no field built ' +
+        '(the GFE tool leaves the background grid untouched here too)' });
+    }
+  }
+  if (peak) {
+    /* The raster is a preview, not the GFE grid.  Peak-core normalisation
+       measures the strongest SAMPLED cell, so a storm with a very small rm
+       can be under-sampled here and never reach Vmax on screen even though
+       the model does.  Say so rather than letting the map quietly contradict
+       the bulletin. */
+    var vmaxNow = 0;
+    for (i = 0; i < items.length; i++) {
+      if (hasField(items[i]) && items[i].snap.vmax > vmaxNow) vmaxNow = items[i].snap.vmax;
+    }
+    lines.push({
+      level: (vmaxNow - peak > 5) ? 'warnl' : null,
+      text: '   peak in the drawn raster: ' + n0(peak) + ' kt' +
+        ((vmaxNow - peak > 5)
+          ? '  (Vmax ' + n0(vmaxNow) + ' kt — the preview raster is coarser ' +
+            'than the GFE grid and under-samples a small eyewall; the model ' +
+            'itself still peaks at Vmax)'
+          : '')
+    });
+  }
+  if (archiveRms !== null) {
+    /* A different statistic from the p75/p90 above: this is the aggregate
+       RMS over the whole WestPac archive, not a percentile of per-fit RMS.
+       Labelled so the two are not read as the same number. */
+    lines.push({ text: '   for scale — aggregate WestPac fit RMS across the ' +
+      'whole archive (Findings, fitQuality.WP.rmsWindErrKt): ' +
+      n2(archiveRms) + ' kt' });
+  }
+  for (i = 0; i < slots.length; i++) {
+    var sl = slots[i];
+    if (sl.ok && !sl.stale) continue;
+    if (sl.stale) {
+      lines.push({ level: 'warnl', text: '   ' + sl.pil + '  stale: ' +
+        (sl.ageHours !== undefined && sl.ageHours !== null
+          ? Math.round(sl.ageHours) + ' h since its own analysis time'
+          : 'its forecast period has ended') + ' — not drawn' });
+    } else {
+      lines.push({ level: 'err', text: '   ' + sl.pil + '  ' +
+        (sl.errorKind || 'error') + ': ' + (sl.error || 'no data') +
+        (sl.hint ? '\n      ' + sl.hint : '') });
+    }
+  }
+  if (!lines.length) lines.push({ text: 'No system is active at this time.' });
+  setStatus(lines);
+}
+
+/* --------------------------------------------------------------------------
+   Server calls
+   ----------------------------------------------------------------------- */
+function ingest(results, sourceLabel) {
+  slots = results || [];
+  storms = [];
+  fieldCache = {}; tauFitCache = {};
+  rasterCache = {}; rasterOrder = []; shareCache = {};
+  var i;
+  for (i = 0; i < slots.length; i++) {
+    var r = slots[i];
+    if (!r.ok || r.stale || !r.storm) continue;
+    var s = r.storm;
+    s.pil = s.pil || r.pil || r.file;
+    s.file = s.file || r.file;
+    storms.push(s);
+  }
+
+  var stillThere = false;
+  for (i = 0; i < storms.length; i++) if (storms[i].pil === focusPil) stillThere = true;
+  if (!stillThere) focusPil = storms.length ? storms[0].pil : null;
+
+  renderChips();
+  rebuildTimeline();
+
+  if (!storms.length) {
+    vecLayer.clearLayers();
+    clearField();
+    renderRail(null, null);
+    drawHistory(null, null);
+    var lines = [{ level: 'warnl',
+      text: 'No drawable system from ' + sourceLabel + '. ' + slots.length +
+            ' slot' + (slots.length === 1 ? '' : 's') + ' checked:' }];
+    for (i = 0; i < slots.length; i++) {
+      var sl = slots[i];
+      lines.push({
+        level: sl.stale ? 'warnl' : 'err',
+        text: '   ' + sl.pil + '  ' +
+          (sl.stale ? 'stale (' + (sl.ageHours !== undefined && sl.ageHours !== null
+            ? Math.round(sl.ageHours) + ' h old' : 'period ended') + ')'
+            : (sl.errorKind || 'error') + ': ' + (sl.error || 'no data')) +
+          (sl.hint ? '\n      ' + sl.hint : '')
+      });
+    }
+    lines.push({ text: 'If tgftp is unreachable, use "Paste a bulletin".' });
+    setStatus(lines);
+    return;
+  }
+
+  var s0 = null;
+  for (i = 0; i < storms.length; i++) if (storms[i].pil === focusPil) s0 = storms[i];
+  if (s0) fitToStorm(s0);
+  render();
+}
+
+function load(force) {
+  setStatus([{ text: force ? 'Fetching all five WP slots from tgftp…'
+                           : 'Loading (server cache allowed)…' }]);
+  document.getElementById('btnFetch').disabled = true;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      document.getElementById('btnFetch').disabled = false;
+      ingest(res, 'the NW Pacific bulletin slots');
+    })
+    .withFailureHandler(function (err) {
+      document.getElementById('btnFetch').disabled = false;
+      setStatus([
+        { level: 'err', text: 'getBulletins() failed: ' +
+          (err && err.message ? err.message : String(err)) },
+        { text: 'The page could not reach the Apps Script server at all — this ' +
+                'is not a tgftp outage. Reload the page; if it persists, paste a ' +
+                'bulletin below to keep working.' }
+      ]);
+    })
+    .getBulletins(!!force);
+}
+
+function parsePasted() {
+  var txt = document.getElementById('pasteBox').value;
+  var msg = document.getElementById('pasteMsg');
+  if (!txt.replace(/\s/g, '')) {
+    msg.textContent = 'Nothing to parse.';
+    return;
+  }
+  msg.textContent = 'Parsing…';
+  document.getElementById('btnParse').disabled = true;
+  google.script.run
+    .withSuccessHandler(function (r) {
+      document.getElementById('btnParse').disabled = false;
+      msg.textContent = 'Parsed ' + (r.storm && r.storm.taus ? r.storm.taus.length : 0) +
+        ' forecast times.';
+      ingest([r], 'the pasted bulletin');
+    })
+    .withFailureHandler(function (err) {
+      document.getElementById('btnParse').disabled = false;
+      msg.textContent = '';
+      setStatus([
+        { level: 'err', text: 'parsePasted() failed: ' +
+          (err && err.message ? err.message : String(err)) },
+        { text: 'The text reached the server but did not parse as a WTPN warning. ' +
+                'Check that the whole product was pasted, including the REMARKS ' +
+                'block — the reference date lives there and without it no DTG ' +
+                'can be resolved.' }
+      ]);
+    })
+    .parsePasted(txt);
+}
+
+/**
+ * Best-effort context only.  getFindings() exists in Code.gs, but this page
+ * does not depend on it: if the dataset is absent, the call fails, or the
+ * shape is not what is expected, the badge still works off the archive
+ * percentiles compiled into RMS_P75/RMS_P90 above and nothing is shown.
+ */
+function loadFindingsContext() {
+  if (!window.google || !google.script || !google.script.run) return;
+  google.script.run
+    .withSuccessHandler(function (f) {
+      try {
+        var fq = f && f.fitQuality;
+        if (!fq) return;
+        var basin = fq.WP || fq.wp || null;
+        var v = basin && basin.rmsWindErrKt;
+        if (typeof v === 'number' && isFinite(v)) { archiveRms = v; render(); }
+      } catch (e) { /* context is optional; never let it break the page */ }
+    })
+    .withFailureHandler(function () { /* optional context; stay silent */ })
+    .getFindings();
+}
+
+/* --------------------------------------------------------------------------
+   Wiring
+   ----------------------------------------------------------------------- */
+document.getElementById('btnFetch').addEventListener('click', function () { load(true); });
+document.getElementById('btnParse').addEventListener('click', parsePasted);
+document.getElementById('btnPaste').addEventListener('click', function () {
+  var p = document.getElementById('paste');
+  var open = !p.classList.contains('open');
+  p.classList.toggle('open', open);
+  this.setAttribute('aria-pressed', String(open));
+  if (open) document.getElementById('pasteBox').focus();
+});
+document.getElementById('tPrev').addEventListener('click', function () { stepTime(-1); });
+document.getElementById('tNext').addEventListener('click', function () { stepTime(1); });
+document.getElementById('tSlider').addEventListener('input', render);
+
+var layerIds = ['layField', 'layRadii', 'layTargets', 'layTrack'];
+for (var li = 0; li < layerIds.length; li++) {
+  document.getElementById(layerIds[li]).addEventListener('change', render);
+}
+
+/* Arrow keys step the timeline from anywhere on the page except a text
+   control, where they must keep doing what they normally do.  The slider
+   handles its own arrows natively. */
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' &&
+      e.key !== 'Home' && e.key !== 'End') return;
+  var t = e.target || {}, tag = (t.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'select' || tag === 'textarea' || t.isContentEditable) return;
+  var sl = document.getElementById('tSlider');
+  if (e.key === 'Home') { sl.value = sl.min; render(); }
+  else if (e.key === 'End') { sl.value = sl.max; render(); }
+  else stepTime(e.key === 'ArrowRight' ? 1 : -1);
   e.preventDefault();
 });
 
-document.getElementById('reload').onclick = () => load(true);
-document.getElementById('tslider').oninput = render;
-document.getElementById('layRadii').onchange = render;
-document.getElementById('layLiteral').onchange = render;
-document.getElementById('layField').onchange = () => {
-  if (!document.getElementById('layField').checked && fieldOverlay) {
-    map.removeLayer(fieldOverlay);
-  }
-  render();
-};
-document.getElementById('togglePaste').onclick = (ev) => {
-  const p = document.getElementById('paste');
-  const show = p.style.display !== 'block';
-  p.style.display = show ? 'block' : 'none';
-  ev.currentTarget.classList.toggle('is-active', show);
-};
-document.getElementById('toggleDiag').onclick = (ev) => {
-  const d = document.getElementById('diag');
-  const show = d.style.display !== 'block';
-  d.style.display = show ? 'block' : 'none';
-  ev.currentTarget.classList.toggle('is-active', show);
-  if (show) render();
-};
-document.getElementById('diagStorm').onchange = render;
-document.getElementById('toggleArchived').onclick = (ev) => {
-  const p = document.getElementById('archived');
-  const show = p.style.display !== 'block';
-  p.style.display = show ? 'block' : 'none';
-  ev.currentTarget.classList.toggle('is-active', show);
-  if (show && !bestTrackSample) loadBestTrackSample();
-};
-document.getElementById('btStorm').onchange = e => selectBestTrackStorm(parseInt(e.target.value, 10));
-document.getElementById('btExit').onclick = () => {
-  document.getElementById('archived').style.display = 'none';
-  document.getElementById('toggleArchived').classList.remove('is-active');
-  load(false);
-};
-document.getElementById('btHelp').onclick = (ev) => {
-  const g = document.getElementById('archivedGuide');
-  const show = g.style.display !== 'block';
-  g.style.display = show ? 'block' : 'none';
-  ev.currentTarget.classList.toggle('is-active', show);
-};
-document.getElementById('parsePaste').onclick = () => {
-  const txt = document.getElementById('pastebox').value;
-  if (!txt.trim()) return;
-  document.getElementById('status').textContent = 'Parsing…';
-  google.script.run
-    .withSuccessHandler(r => ingest([r]))
-    .withFailureHandler(e => {
-      document.getElementById('status').textContent = 'Parse failed: ' + e.message;
-    })
-    .parsePasted(txt);
-};
+/* Theme change: canvas colours are read from CSS tokens at draw time, so
+   drop the cached computed style and redraw. */
+if (window.matchMedia) {
+  var mq = window.matchMedia('(prefers-color-scheme: dark)');
+  var onTheme = function () {
+    refreshTokens();
+    rasterCache = {}; rasterOrder = [];   // the ramp colours just changed
+    renderQuadKey();
+    if (legend._container) { map.removeControl(legend); legend.addTo(map); }
+    render();
+  };
+  if (mq.addEventListener) mq.addEventListener('change', onTheme);
+  else if (mq.addListener) mq.addListener(onTheme);
+}
 
-document.getElementById('ver').textContent = 'v2026-09-02a';
+var resizeTimer = null;
+window.addEventListener('resize', function () {
+  if (resizeTimer) clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(function () {
+    map.invalidateSize();
+    var epoch = currentEpoch();
+    var items = epoch === null ? [] : activeItems(epoch);
+    var focus = null;
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].storm.pil === focusPil) focus = items[i];
+    }
+    drawProfile(focus);
+    var fs = null;
+    for (i = 0; i < storms.length; i++) if (storms[i].pil === focusPil) fs = storms[i];
+    drawHistory(fs, epoch);
+  }, 160);
+});
+
+/* The server injects its own "unknown page" banner right after <body> when
+   ?page= was not recognised.  This page renders pageNote itself, so show
+   ours and remove the duplicate. */
+(function () {
+  var mine = document.getElementById('pageNote');
+  if (mine && mine.textContent.replace(/\s/g, '')) {
+    mine.style.display = 'block';
+    var dupes = document.querySelectorAll('[data-server-note]');
+    for (var i = 0; i < dupes.length; i++) {
+      dupes[i].parentNode.removeChild(dupes[i]);
+    }
+  }
+})();
+
+renderQuadKey();
+render();
 load(false);
+loadFindingsContext();
+
+})();
 </script>
 </body>
 </html>
