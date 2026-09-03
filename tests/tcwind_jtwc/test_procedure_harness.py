@@ -146,16 +146,25 @@ class _FakeSmartScriptBase(object):
         self._inv_start = None
         self._inv_end = None
         self._inv_step = 3 * 3600
+        self._inv_blocks = None
         self._lat = None
         self._lon = None
 
     def configure(self, texts, now_epoch, inv_start, inv_end,
-                 lat, lon, inv_step=3 * 3600):
+                 lat, lon, inv_step=3 * 3600, inv_blocks=None):
+        """`inv_blocks`, when given, is an explicit list of (start_epoch,
+        end_epoch) tuples used verbatim as the fake Fcst Wind inventory -
+        for building a mixed-cadence inventory (part 3-hourly, part
+        6-hourly) that the uniform inv_start/inv_end/inv_step generator
+        below can't express. `inv_start`/`inv_end`/`inv_step` are then
+        unused (still required as positional-friendly args for callers that
+        don't need the explicit form)."""
         self.texts = texts
         self._now_epoch = now_epoch
         self._inv_start = inv_start
         self._inv_end = inv_end
         self._inv_step = inv_step
+        self._inv_blocks = inv_blocks
         self._lat = lat
         self._lon = lon
 
@@ -185,6 +194,12 @@ class _FakeSmartScriptBase(object):
         import AbsTime
         import TimeRange
         out = []
+        if self._inv_blocks is not None:
+            for start, end in self._inv_blocks:
+                blockTR = TimeRange.TimeRange(
+                    AbsTime.AbsTime(start), AbsTime.AbsTime(end))
+                out.append(_FakeGridInfo(blockTR))
+            return out
         cur = self._inv_start
         while cur < self._inv_end:
             blockTR = TimeRange.TimeRange(
@@ -400,6 +415,109 @@ def case_krovanh():
     return fails, proc
 
 
+def case_mixed_cadence_krovanh():
+    """Regression case for the "grids get created in random 3 or 6 hour
+    chunks" bug: a fake Fcst Wind inventory that is 3-hourly out to 72h and
+    6-hourly from 72h to 96h - mirroring real office practice and the
+    KROVANH fixture's own tau spacing (12-hourly out to 72h, 24-hourly
+    beyond). Two deliberate gaps force CREATE_MISSING_TAU_BLOCKS to build a
+    block in EACH cadence region:
+
+      - the block that would start at 60h is left out of the 3-hourly
+        run, so the 60h tau (12-hourly in the bulletin, still inside the
+        3-hourly inventory region) has no block and must be created.
+      - the 6-hourly run stops short of 96h (blocks 72-78, 78-84, 84-90
+        only), so the 96h and 120h taus both have no block and must be
+        created.
+
+    Before the fix, a single site-wide "most common" duration (whichever
+    cadence had more blocks in this inventory - 24 x 3h vs 3 x 6h, so 3h)
+    got applied to EVERY created block, including the one at 96h that
+    belongs in the 6-hourly region. After the fix, each created block's
+    duration is looked up locally from the nearest preceding block, so the
+    60h block comes out 3-hourly and the 96h (and 120h) blocks come out
+    6-hourly."""
+    fails = []
+
+    text = _load_fixture("real_2026-09-02_wtpn31_krovanh.txt")
+    taus, header = tc.parseJTWC(text)
+    analysisEpoch = taus[0].epoch
+    nowEpoch = analysisEpoch + 3 * 3600
+
+    invBlocks = []
+    t = analysisEpoch
+    for _ in range(24):     # 0h .. 72h, 3-hourly
+        if t == analysisEpoch + 60 * 3600:
+            t += 3 * 3600
+            continue        # the deliberate gap: no block starts at 60h
+        invBlocks.append((t, t + 3 * 3600))
+        t += 3 * 3600
+    t = analysisEpoch + 72 * 3600
+    for _ in range(3):      # 72h, 78h, 84h - stop short of 96h
+        invBlocks.append((t, t + 6 * 3600))
+        t += 6 * 3600
+
+    latGrid, lonGrid = _mesh()
+
+    proc = tc.Procedure(dbss=None)
+    proc.configure(
+        texts={"NFDTCPWP1": text},
+        now_epoch=nowEpoch,
+        inv_start=None,
+        inv_end=None,
+        lat=latGrid,
+        lon=lonGrid,
+        inv_blocks=invBlocks)
+
+    varDict = {
+        "Bulletins to process:": ["NFDTCPWP1"],
+        "Write to:": "Fcst Wind",
+        "Run over selected time range only?": "No",
+        "I understand this tool is experimental and I have reviewed "
+        "the output:": "Yes",
+    }
+
+    proc.execute(None, None, varDict)
+
+    if not proc.created:
+        fails.append("no grids were written at all")
+
+    # Pull (start_epoch, end_epoch, duration) for every grid actually
+    # written, keyed by its start epoch, straight from the fake createGrid
+    # recorder's captured TimeRange (args[4], per _storeGrid's call shape).
+    written = {}
+    for args, _kwargs in proc.created:
+        tr = args[4]
+        start = tr.startTime().unixTime()
+        end = tr.endTime().unixTime()
+        written[start] = end - start
+
+    when3h = analysisEpoch + 60 * 3600
+    when6h = analysisEpoch + 96 * 3600
+
+    if when3h not in written:
+        fails.append("expected a created block starting at the 60h tau "
+                     "(%d); grids written at: %r"
+                     % (when3h, sorted(written)))
+    elif written[when3h] != 10800:
+        fails.append("60h tau falls in the 3-hourly inventory region "
+                     "(nearest preceding block is 3h) but the created "
+                     "block's duration was %d s, not 10800 s"
+                     % written[when3h])
+
+    if when6h not in written:
+        fails.append("expected a created block starting at the 96h tau "
+                     "(%d); grids written at: %r"
+                     % (when6h, sorted(written)))
+    elif written[when6h] != 21600:
+        fails.append("96h tau falls in the 6-hourly inventory region "
+                     "(nearest preceding block is 6h) but the created "
+                     "block's duration was %d s, not 21600 s"
+                     % written[when6h])
+
+    return fails, proc
+
+
 def case_saudel():
     """Real, live bulletin with NO wind radii at all (Tropical Depression
     17W/SAUDEL, entirely below 34 kt throughout its forecast). Every tau
@@ -527,6 +645,8 @@ def case_test_case_preview_default():
 def main():
     cases = [
         ("krovanh_create_missing_tau_block", case_krovanh),
+        ("mixed_cadence_krovanh_local_block_duration",
+         case_mixed_cadence_krovanh),
         ("saudel_weak_no_radii_runs_clean", case_saudel),
         ("test_case_forces_preview_despite_fcst_wind_and_ack",
          case_test_case_forces_preview_despite_fcst_wind_and_ack),
