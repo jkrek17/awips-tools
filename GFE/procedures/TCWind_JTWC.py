@@ -94,8 +94,28 @@ GTCM_W_INNER = 1.0
 # The asymmetry is not always aligned with the motion vector, particularly at
 # higher latitudes and during extratropical transition.  After the size
 # parameters are fit, the guide lets the asymmetry components move up to this
-# far from their motion-derived first guess to further reduce the error.
+# far from their motion-derived first guess to further reduce the error. This
+# is a search radius only; GTCM_ASYM_MIN_CAP_KT below now binds first (see
+# its comment), so most candidates this radius alone would still admit are
+# rejected for magnitude before they are ever reached.
 GTCM_ASYM_MAX_DEV_KT = 10.0
+
+# Hard ceiling on the FITTED asymmetry magnitude |(ax, ay)|, relative to the
+# motion-derived first guess `a = GTCM_ASYM_A * c**GTCM_ASYM_B`:
+#   |(ax, ay)| <= max(1.5 * a, GTCM_ASYM_MIN_CAP_KT)
+# Unbound, a one-sided radii report (gales reported only in the quadrants
+# facing the motion vector, 000 nm behind it) pulls |(ax, ay)| up toward
+# `a + GTCM_ASYM_MAX_DEV_KT` to chase the lopsided WIND error, which drags
+# the symmetric amplitude vs = Vmax - |(ax, ay)| down with it. On a live 40
+# kt storm with gales reported only in the two eastern quadrants this put
+# |(ax, ay)| at 15.8 kt against a motion value of 8.1 kt, collapsing vs to
+# 24 kt and modelling 5 kt only 34 nm upwind of the centre of a 40 kt storm
+# - a reported 000 nm quadrant means no gales there, not calm air. Capping
+# the magnitude at 1.5x the motion value keeps the weak side physical while
+# still letting the fit lean asymmetric; direction is unconstrained. The
+# GTCM_ASYM_MIN_CAP_KT floor lets a slow-moving or stationary storm (a near
+# or at 0) take a modest asymmetry rather than being locked to (0, 0).
+GTCM_ASYM_MIN_CAP_KT = 3.0
 
 # Equations (8) and (9) build the wind field from the tangential wind and the
 # asymmetry vector alone - there is no inflow term.  Set this True to rotate
@@ -891,8 +911,12 @@ def fitGTCM(snapshot):
     Returns dict(rm, ri, x1, x2, ax, ay, a, n, freeParams, rms, rmSource).
     Users Guide steps 2b-3: climatological first guess from (5)/(6); ri at
     the median reported radius; (rm, x1, x2) by weighted least squares on
-    WIND error (7); then ax/ay released within GTCM_ASYM_MAX_DEV_KT with the
-    size parameters held fixed.
+    WIND error (7); then ax/ay released within GTCM_ASYM_MAX_DEV_KT of that
+    first guess, size parameters held fixed, but only among candidates whose
+    magnitude |(ax, ay)| does not exceed
+    max(1.5 * a, GTCM_ASYM_MIN_CAP_KT) - see that constant's comment.  The
+    magnitude cap binds first whenever it is tighter than the deviation
+    radius, which for anything but a fast-moving storm it is.
 
     rmSource is "fit" unless the target set contains no 50/64 kt radii, in
     which case it is "climatology": a bulletin (or best-track record)
@@ -1039,24 +1063,39 @@ def fitGTCM(snapshot):
                                    GTCM_MAX_ITER)
             x1 = x2 = xc
 
-    # Step 3: release the asymmetry, size parameters fixed.
+    # Step 3: release the asymmetry, size parameters fixed.  Candidates are
+    # bounded two ways: the GTCM_ASYM_MAX_DEV_KT deviation disk around the
+    # motion-derived first guess (ax0, ay0), as before, AND - new - the
+    # GTCM_ASYM_MIN_CAP_KT-floored magnitude cap around the ORIGIN.  The
+    # magnitude cap is what stops a one-sided radii report from starving the
+    # weak side; see its comment.  asymCap >= a always (1.5x with a floor),
+    # so (ax0, ay0) itself - magnitude exactly a - is always admissible, and
+    # the floor means the cap is never zero even when a is (a stationary
+    # storm can still pick up a modest asymmetry from the grid/Nelder-Mead
+    # search below, so this no longer needs an `if a > 0.0` guard).
+    asymCap = max(1.5 * a, GTCM_ASYM_MIN_CAP_KT)
+    asymCap2 = asymCap * asymCap
     best = (err(rm, x1, x2, ax0, ay0), float(ax0), float(ay0))
-    if a > 0.0:
-        grid = np.linspace(-GTCM_ASYM_MAX_DEV_KT, GTCM_ASYM_MAX_DEV_KT,
-                           GTCM_ASYM_STEPS)
-        for dx in grid:
-            for dy in grid:
-                e = err(rm, x1, x2, ax0 + dx, ay0 + dy)
-                if e < best[0]:
-                    best = (e, float(ax0 + dx), float(ay0 + dy))
-        def asymObj(p):
-            dx, dy = p[0] - ax0, p[1] - ay0
-            if dx * dx + dy * dy > GTCM_ASYM_MAX_DEV_KT ** 2:
-                return 1e12
-            return err(rm, x1, x2, p[0], p[1])
-        (axf, ayf), ef = _nelderMead(asymObj, [best[1], best[2]], [2.0, 2.0], 80)
-        if ef < best[0]:
-            best = (ef, float(axf), float(ayf))
+    grid = np.linspace(-GTCM_ASYM_MAX_DEV_KT, GTCM_ASYM_MAX_DEV_KT,
+                       GTCM_ASYM_STEPS)
+    for dx in grid:
+        for dy in grid:
+            axc, ayc = ax0 + dx, ay0 + dy
+            if axc * axc + ayc * ayc > asymCap2:
+                continue          # magnitude cap rejects this candidate
+            e = err(rm, x1, x2, axc, ayc)
+            if e < best[0]:
+                best = (e, float(axc), float(ayc))
+    def asymObj(p):
+        dx, dy = p[0] - ax0, p[1] - ay0
+        if dx * dx + dy * dy > GTCM_ASYM_MAX_DEV_KT ** 2:
+            return 1e12
+        if p[0] * p[0] + p[1] * p[1] > asymCap2:
+            return 1e12
+        return err(rm, x1, x2, p[0], p[1])
+    (axf, ayf), ef = _nelderMead(asymObj, [best[1], best[2]], [2.0, 2.0], 80)
+    if ef < best[0]:
+        best = (ef, float(axf), float(ayf))
 
     return dict(rm=float(rm), ri=ri, x1=float(x1), x2=float(x2),
                 ax=best[1], ay=best[2], a=a, n=len(targets),

@@ -324,8 +324,12 @@ def snapshot_cases():
       exact-threshold vmax vmax == a reported threshold - the case the `<`
                            guard exists to keep, and the one a `<=` copy
                            silently drops.
-      no motion            motionSpd 0, so a = 0 and fitGTCM() skips the
-                           whole asymmetry-release stage.
+      no motion            motionSpd 0, so a = 0 and the motion-derived
+                           first guess (ax0, ay0) is (0, 0); the asymmetry-
+                           release stage still runs (GTCM_ASYM_MIN_CAP_KT
+                           floors the magnitude cap above 0), so a JS port
+                           that special-cased `a == 0` to skip it would
+                           diverge here.
       dateline / seam      centre on the dateline, so sample azimuths land
                            either side of the 0/360 longitude wrap as well
                            as the 0/360 azimuth wrap.

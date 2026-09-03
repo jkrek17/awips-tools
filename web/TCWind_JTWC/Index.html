@@ -1576,9 +1576,15 @@ function renderRail(it, epoch) {
       'guide’s climatology (eq. 5 and 6) and nothing here is constrained by ' +
       'the report. Treat the field as a placeholder.');
   } else {
+    // GTCM_ASYM_MIN_CAP_KT is a Vortex.html global, shared with this page's
+    // script tag - see the GTCM_X_MIN/GTCM_X_MAX comment just below for why
+    // that sharing keeps this note from drifting off the real cap.
+    var asymCap = Math.max(1.5 * fit.a, GTCM_ASYM_MIN_CAP_KT);
     notes.push('rm, ri, x1 and x2 are fitted. The asymmetry starts on the motion ' +
       'vector at the Schwerdt (1979) magnitude a = 1.6c^0.63 = ' + n2(fit.a) +
-      ' kt and is then released up to 10 kt; least squares settled it at ' +
+      ' kt; direction is then free but magnitude is capped at 1.5x that (' +
+      n2(asymCap) + ' kt here) so a report with gales on one side only ' +
+      'cannot starve the weak side. Least squares settled it at ' +
       n2(aMag) + ' kt. ' +
       (asymWeak
         ? 'That is close enough to zero that its direction carries no meaning: ' +

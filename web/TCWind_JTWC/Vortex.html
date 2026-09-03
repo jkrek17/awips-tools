@@ -35,7 +35,18 @@ var GTCM_ASYM_B            = 0.63;
 var GTCM_QUAD_AVG_FACTOR   = 0.85;   // quadrant max -> quadrant average
 var GTCM_W_34              = 5.0;    // eq. (7) weights
 var GTCM_W_INNER           = 1.0;
-var GTCM_ASYM_MAX_DEV_KT   = 10.0;   // how far ax/ay may leave the motion vector
+var GTCM_ASYM_MAX_DEV_KT   = 10.0;   // search radius; MAX_DEV alone no longer
+                                      // decides admissibility - MIN_CAP below
+                                      // now binds first, see its comment.
+// Cap on the FITTED asymmetry magnitude |(ax, ay)|:
+//   |(ax, ay)| <= max(1.5 * a, GTCM_ASYM_MIN_CAP_KT), a = motion-derived
+// first guess.  Unbound, a one-sided radii report pulls |(ax, ay)| toward
+// a + GTCM_ASYM_MAX_DEV_KT chasing the lopsided WIND error, dragging the
+// symmetric amplitude vs = Vmax - |(ax, ay)| down with it and starving the
+// weak side (a reported 000 nm quadrant means no gales there, not calm
+// air). The floor lets a slow/stationary storm (a near or at 0) still take
+// a modest asymmetry.  MUST match TCWind_JTWC.py.
+var GTCM_ASYM_MIN_CAP_KT   = 3.0;
 var GTCM_APPLY_INFLOW      = false;  // the guide has no inflow term
 // Admissible range for the size exponents.  eq. (6)'s own climatological
 // value spans about 0.37 to 0.95 across realistic Vmax/latitude, so this
@@ -456,8 +467,12 @@ function nelderMead(fn, guess, step, maxIter) {
  *  Returns {rm, ri, x1, x2, ax, ay, a, n, freeParams, rms, rmSource}.
  *  Users Guide steps 2b-3: climatological first guess from (5)/(6); ri at
  *  the median reported radius; (rm, x1, x2) by weighted least squares on
- *  WIND error (7); then ax/ay released within GTCM_ASYM_MAX_DEV_KT with the
- *  size parameters held fixed.
+ *  WIND error (7); then ax/ay released within GTCM_ASYM_MAX_DEV_KT of that
+ *  first guess, size parameters held fixed, but only among candidates whose
+ *  magnitude |(ax, ay)| does not exceed max(1.5 * a, GTCM_ASYM_MIN_CAP_KT) -
+ *  see that constant's comment.  The magnitude cap binds first whenever it
+ *  is tighter than the deviation radius, which for anything but a
+ *  fast-moving storm it is.
  *
  *  The fit deliberately does NOT pass through the reported radii.  The
  *  guide minimises wind error, not radius error, because forcing the radii
@@ -597,27 +612,39 @@ function fitGTCM(snap) {
     }
   }
 
-  // Step 3: release the asymmetry, size parameters fixed.
+  // Step 3: release the asymmetry, size parameters fixed.  Candidates are
+  // bounded two ways: the GTCM_ASYM_MAX_DEV_KT deviation disk around the
+  // motion-derived first guess (ax0, ay0), as before, AND - new - the
+  // GTCM_ASYM_MIN_CAP_KT-floored magnitude cap around the ORIGIN.  The
+  // magnitude cap is what stops a one-sided radii report from starving the
+  // weak side; see its comment.  asymCap >= a always (1.5x with a floor),
+  // so (ax0, ay0) itself - magnitude exactly a - is always admissible, and
+  // the floor means the cap is never zero even when a is (a stationary
+  // storm can still pick up a modest asymmetry from the search below, so
+  // this no longer needs an `if (a > 0.0)` guard). Mirrors TCWind_JTWC.py.
+  var asymCap = Math.max(1.5 * a, GTCM_ASYM_MIN_CAP_KT);
+  var asymCap2 = asymCap * asymCap;
   var bestE = err(rm, x1, x2, ax0, ay0);
   var bestAx = ax0, bestAy = ay0;
-  if (a > 0.0) {
-    var grid = npLinspace(-GTCM_ASYM_MAX_DEV_KT, GTCM_ASYM_MAX_DEV_KT,
-                          GTCM_ASYM_STEPS);
-    for (var gi = 0; gi < grid.length; gi++) {
-      for (var gj = 0; gj < grid.length; gj++) {
-        var e = err(rm, x1, x2, ax0 + grid[gi], ay0 + grid[gj]);
-        if (e < bestE) { bestE = e; bestAx = ax0 + grid[gi]; bestAy = ay0 + grid[gj]; }
-      }
+  var grid = npLinspace(-GTCM_ASYM_MAX_DEV_KT, GTCM_ASYM_MAX_DEV_KT,
+                        GTCM_ASYM_STEPS);
+  for (var gi = 0; gi < grid.length; gi++) {
+    for (var gj = 0; gj < grid.length; gj++) {
+      var axc = ax0 + grid[gi], ayc = ay0 + grid[gj];
+      if (axc * axc + ayc * ayc > asymCap2) continue;  // magnitude cap rejects
+      var e = err(rm, x1, x2, axc, ayc);
+      if (e < bestE) { bestE = e; bestAx = axc; bestAy = ayc; }
     }
-    var asymObj = function (p) {
-      var dx = p[0] - ax0, dy = p[1] - ay0;
-      if (dx * dx + dy * dy > GTCM_ASYM_MAX_DEV_KT * GTCM_ASYM_MAX_DEV_KT) return 1e12;
-      return err(rm, x1, x2, p[0], p[1]);
-    };
-    var asymRes = nelderMead(asymObj, [bestAx, bestAy], [2.0, 2.0], 80);
-    if (asymRes[1] < bestE) {
-      bestE = asymRes[1]; bestAx = asymRes[0][0]; bestAy = asymRes[0][1];
-    }
+  }
+  var asymObj = function (p) {
+    var dx = p[0] - ax0, dy = p[1] - ay0;
+    if (dx * dx + dy * dy > GTCM_ASYM_MAX_DEV_KT * GTCM_ASYM_MAX_DEV_KT) return 1e12;
+    if (p[0] * p[0] + p[1] * p[1] > asymCap2) return 1e12;
+    return err(rm, x1, x2, p[0], p[1]);
+  };
+  var asymRes = nelderMead(asymObj, [bestAx, bestAy], [2.0, 2.0], 80);
+  if (asymRes[1] < bestE) {
+    bestE = asymRes[1]; bestAx = asymRes[0][0]; bestAy = asymRes[0][1];
   }
 
   return { rm: rm, ri: ri, x1: x1, x2: x2, ax: bestAx, ay: bestAy,
