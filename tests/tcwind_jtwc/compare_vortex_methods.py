@@ -48,6 +48,7 @@ import argparse
 import json
 import math
 import os
+import random
 import sys
 
 import numpy as np
@@ -65,12 +66,78 @@ ARCHIVE_STORMS = os.path.join(DATA, "archive_storms.json")
 BASINS = ("WP", "NA", "EP")
 METHODS = ("perquad", "gtcm")
 THRESHOLDS = (64, 50, 34)
+DEFAULT_SEED = 42
 
-# Radial resolution for locating a threshold crossing.  0.05 nm is far finer
-# than any GFE grid and finer than the 5 nm the radii are reported at, so it
-# contributes nothing measurable to the numbers below.
+# ---------------------------------------------------------------------------
+# T.fitGTCM() is memoised here, keyed on the snapshot's own content.
+#
+# _buildVortexGTCM() re-fits from scratch on EVERY call - it has no notion
+# that ring_errors() below asks it to build the same storm-time's field
+# along four different quadrant rays (and field_difference() a fifth time,
+# on a full polar grid), and the fit depends only on the snapshot, never on
+# the grid it is asked to evaluate on. Measured effect: a 60-case WP
+# `evaluate()` run went from ~2.05 s/case to well under 1 s/case with this
+# on (see the runtime numbers in tests/tcwind_jtwc/README.md and the
+# verify_gtcm.py --out JSON's own generation note). This changes no
+# GFE/procedures/TCWind_JTWC.py source - it wraps the function this module
+# already imports, so every caller that goes through `T.fitGTCM` (including
+# TCWind_JTWC.py's own `_buildVortexGTCM`, which looks the name up in the
+# same module namespace this patches) benefits, with no behavior change:
+# same inputs, same fit, just not recomputed three or four times over.
+_FIT_CACHE = {}
+_ORIG_FIT_GTCM = T.fitGTCM
+
+
+def _snapshot_key(snap):
+    radii = tuple(sorted(
+        (t, tuple(sorted(v.items()))) for t, v in (snap.radii or {}).items()))
+    return (round(float(snap.vmax), 6), round(float(snap.lat), 6),
+            round(float(snap.lon), 6), round(float(snap.motionDir or 0.0), 6),
+            round(float(snap.motionSpd or 0.0), 6), radii)
+
+
+def _cached_fit_gtcm(snap):
+    key = _snapshot_key(snap)
+    fit = _FIT_CACHE.get(key)
+    if fit is None:
+        fit = _ORIG_FIT_GTCM(snap)
+        _FIT_CACHE[key] = fit
+    return fit
+
+
+T.fitGTCM = _cached_fit_gtcm
+
+
+def clear_fit_cache():
+    """Drop every cached fit.
+
+    The cache key is the snapshot's content only - it does not know which
+    implementation of T._gtcmProfile is active. verify_gtcm.py's continuity
+    diagnostic (coherence_with_continuous_ri()) temporarily swaps that
+    function out from under fitGTCM to answer "how much of GTCM's measured
+    incoherence is the one eq.(3) line"; without clearing the cache around
+    that swap, a snapshot already fit under the normal profile would keep
+    returning its stale (wrong-profile) cached fit instead of being re-fit
+    under the patched one. Call this immediately before AND after any such
+    swap.
+    """
+    _FIT_CACHE.clear()
+
+# Radial resolution for locating a threshold crossing.  0.2 nm (600/3000) is
+# still far finer than any GFE grid and finer than the 5 nm the radii are
+# reported at, so it contributes nothing measurable to the numbers below -
+# confirmed directly: dropping from 12000 to 3000 steps moves a measured
+# crossing radius by <0.01 nm on a sample case, for a ~28x wall-clock win.
+# That win matters here specifically because _buildVortexGTCM() re-derives
+# its per-azimuth outer-taper radius (a 900-point radial probe) for EVERY
+# point of whatever grid it is handed, including a ray built only to locate
+# one crossing - so this grid's point count, not fitGTCM's own cost, is what
+# dominates a ring_errors() call. Not this module's bug to fix (it is in
+# GFE/procedures/TCWind_JTWC.py, which this test suite does not own), so the
+# fix here is to stop asking for more radial resolution than the crossing
+# search needs.
 R_MAX_NM = 600.0
-R_STEPS = 12000
+R_STEPS = 3000
 
 
 def _ray(clat, clon, brg_deg, dists_nm):
@@ -176,22 +243,55 @@ def load_storms(basin):
     return _load_archive(basin)
 
 
-def load_cases(basin, limit=None):
-    """Usable storm-times for one basin, in a fixed order.
+def load_cases(basin, limit=None, seed=DEFAULT_SEED):
+    """Usable storm-times for one basin, sampled ACROSS storms.
 
-    Deterministic by construction: storms in sid order, records in track
-    order, truncated at `limit`.  No sampling, so re-running gives the same
-    cases, and a larger `limit` is a superset of a smaller one.
+    Seeded round-robin, not file order: storms are shuffled once (seeded, so
+    re-running gives the same cases), then cases are drawn one at a time from
+    each storm in that shuffled order - every storm's earliest usable record
+    first, then every storm's second, and so on - before truncating at
+    `limit`. This is deliberately the fix for the failure mode a small
+    `--cases` used to have: the old version walked storms in file order and
+    simply truncated, so `--cases 24` on WP landed on 2 storms (the first two
+    in file order) contributing every one of their usable records before a
+    third storm was ever touched, and the equivalent NA/EP runs did the same.
+    A caller asking for N cases now gets cases spread across up to N distinct
+    storms (fewer only if the basin itself has fewer usable storms than N).
+
+    Still deterministic and still a prefix property: the full round-robin
+    order is built once and then sliced, so a larger `limit` is a superset of
+    a smaller one, and `seed=None` falls back to storms in load_storms()'s
+    own (sid/file) order - the old behavior - for a caller that wants it.
     """
-    cases = []
+    pools = []
     for sid, _season, recs in load_storms(basin):
-        for rec in recs:
-            if not usable(rec):
-                continue
-            cases.append((sid, rec))
-            if limit and len(cases) >= limit:
-                return cases
+        u = [r for r in recs if usable(r)]
+        if u:
+            pools.append((sid, u))
+    order = list(range(len(pools)))
+    if seed is not None:
+        random.Random(seed).shuffle(order)
+
+    cases = []
+    round_idx = 0
+    while limit is None or len(cases) < limit:
+        added = False
+        for oi in order:
+            sid, recs = pools[oi]
+            if round_idx < len(recs):
+                cases.append((sid, recs[round_idx]))
+                added = True
+                if limit and len(cases) >= limit:
+                    break
+        if not added:
+            break
+        round_idx += 1
     return cases
+
+
+def case_storms(cases):
+    """Distinct storm SIDs among a list of (sid, record) cases."""
+    return set(sid for sid, _rec in cases)
 
 
 def basin_scope(basin):
@@ -259,12 +359,24 @@ def field_difference(snap):
     return float(diff.mean()), float(np.percentile(diff, 95)), areas
 
 
-def stats(vals):
-    """n / bias / MAE / RMSE / p90|err| for a list of signed errors."""
-    v = np.asarray(vals, dtype=float)
-    if not len(v):
+def stats(pairs):
+    """(value, sid) pairs -> n / nStorms / bias / MAE / RMSE / p90|err|.
+
+    n is the record/observation count (a ring-quadrant, a case, ...);
+    nStorms is the count of DISTINCT storms behind those n observations -
+    consecutive records of one storm are highly autocorrelated (same
+    Vmax+-5kt, same radii +- one report, same motion), so n alone
+    overstates how much independent evidence a stat rests on. A bare list
+    of values (no sid) is also accepted for backward compatibility, in
+    which case nStorms falls back to n (each value assumed independent).
+    """
+    if not pairs:
         return None
-    return dict(n=int(len(v)), bias=float(v.mean()),
+    if pairs and not isinstance(pairs[0], (tuple, list)):
+        pairs = [(v, i) for i, v in enumerate(pairs)]
+    v = np.asarray([p[0] for p in pairs], dtype=float)
+    storms = set(p[1] for p in pairs)
+    return dict(n=int(len(v)), nStorms=len(storms), bias=float(v.mean()),
                 mae=float(np.abs(v).mean()),
                 rmse=float(math.sqrt(float((v ** 2).mean()))),
                 p90=float(np.percentile(np.abs(v), 90)))
@@ -288,25 +400,32 @@ def evaluate(cases, progress=None):
     # A reported ring the field never reaches at all is a worse failure than a
     # displaced one, and averaging only the hits would hide it entirely.
     missed = dict((m, dict((t, 0) for t in THRESHOLDS)) for m in METHODS)
+    missed_storms = dict((m, dict((t, set()) for t in THRESHOLDS))
+                         for m in METHODS)
     diffs, p95s = [], []
+    diff_sids = []
     area_ratios = {34: [], 50: [], 64: []}
+    eval_storms = set()
     n = 0
 
     for sid, rec in cases:
         snap = _snapshot(rec)
         if not snap.radii:
             continue
+        eval_storms.add(sid)
         for method in METHODS:
             for threshold, rep, got in ring_errors(snap, method):
                 if got is None:
                     missed[method][threshold] += 1
+                    missed_storms[method][threshold].add(sid)
                 else:
-                    per_thr[method][threshold].append(got - rep)
+                    per_thr[method][threshold].append((got - rep, sid))
                     per_thr_fit[method][threshold].append(
-                        got - rep * T.GTCM_QUAD_AVG_FACTOR)
+                        (got - rep * T.GTCM_QUAD_AVG_FACTOR, sid))
         m, p, areas = field_difference(snap)
         diffs.append(m)
         p95s.append(p)
+        diff_sids.append(sid)
         for threshold, ratio in areas.items():
             if np.isfinite(ratio):
                 area_ratios[threshold].append(ratio)
@@ -333,13 +452,21 @@ def evaluate(cases, progress=None):
         gone = sum(missed[method].values())
         hit = sum(len(v) for v in per_thr[method].values())
         total = gone + hit
+        gone_storms = set()
+        hit_storms = set()
+        for t in THRESHOLDS:
+            gone_storms |= missed_storms[method][t]
+            hit_storms |= set(sid for _v, sid in per_thr[method][t])
         never[method] = {"count": gone, "total": total,
                          "pct": (100.0 * gone / total) if total else 0.0,
+                         "nStorms": len(gone_storms | hit_storms),
+                         "countStorms": len(gone_storms),
                          "byRing": dict((str(t), missed[method][t])
                                         for t in THRESHOLDS)}
 
     field = {"meanAbsKt": float(np.mean(diffs)) if diffs else float("nan"),
-             "p95AbsKt": float(np.mean(p95s)) if p95s else float("nan")}
+             "p95AbsKt": float(np.mean(p95s)) if p95s else float("nan"),
+             "n": len(diffs), "nStorms": len(set(diff_sids))}
     for threshold in (34, 50, 64):
         vals = area_ratios[threshold]
         # Median, not mean: the ratio is unbounded above and a single case
@@ -351,8 +478,8 @@ def evaluate(cases, progress=None):
         field["areaRatio%dMean" % threshold] = (float(np.mean(vals)) if vals
                                                 else float("nan"))
         field["areaRatio%dN" % threshold] = len(vals)
-    return {"cases": n, "ringFit": block(per_thr),
-            "ringFitVsTarget": block(per_thr_fit),
+    return {"cases": n, "storms": len(eval_storms),
+            "ringFit": block(per_thr), "ringFitVsTarget": block(per_thr_fit),
             "neverReached": never, "fieldDiff": field}
 
 
@@ -361,7 +488,8 @@ def evaluate(cases, progress=None):
 # ---------------------------------------------------------------------------
 
 def _print_basin(basin, res):
-    print("Vortex method comparison - %s, %d storm-times\n" % (basin, res["cases"]))
+    print("Vortex method comparison - %s, %d storm-times, %d distinct storms\n"
+          % (basin, res["cases"], res["storms"]))
     print("1. RING REPRODUCTION (not a skill score - see the module docstring)")
     print("   %-9s %-6s %7s %9s %9s %9s %9s"
           % ("method", "ring", "n", "bias", "MAE", "RMSE", "p90|err|"))
@@ -410,14 +538,21 @@ def main():
     ap.add_argument("--basin", default="WP",
                     help="WP, NA, EP or all (default WP)")
     ap.add_argument("--cases", type=int, default=200,
-                    help="storm-times per basin (default 200)")
+                    help="storm-times per basin (default 200), sampled by "
+                         "seeded round-robin across storms, not truncated "
+                         "in file order; 0 or negative means the whole "
+                         "basin's usable population")
+    ap.add_argument("--seed", type=int, default=DEFAULT_SEED,
+                    help="storm-shuffle seed for --cases sampling "
+                         "(default %d)" % DEFAULT_SEED)
     ap.add_argument("--json", help="also write the summary to this path")
     args = ap.parse_args()
 
     basins = BASINS if args.basin.lower() == "all" else (args.basin.upper(),)
+    limit = args.cases if args.cases and args.cases > 0 else None
     summary = {}
     for basin in basins:
-        cases = load_cases(basin, args.cases)
+        cases = load_cases(basin, limit, seed=args.seed)
         if not cases:
             print("%s: no data (archive files not generated?)\n" % basin)
             continue
