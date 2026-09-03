@@ -1,14 +1,15 @@
 # TCWind_JTWC test / evaluation suite
 
 Regression and verification tooling for `GFE/procedures/TCWind_JTWC.py`
-and its web-preview port, `web/TCWind_JTWC/{Code.gs,Index.html}`. Six
-independent questions, six scripts (`besttrack_common.py` is shared
+and its web-preview port, `web/TCWind_JTWC/{Code.gs,Index.html}`. Seven
+independent questions, seven scripts (`besttrack_common.py` is shared
 plumbing, not a check on its own):
 
 | Question | Script |
 |---|---|
 | Does the parser still produce what we expect on known inputs? | `test_parser_golden.py` |
 | Do the Python and JS ports actually agree with each other? | `compare_py_js.py` |
+| Does the GFE `Procedure` (dialog-less, end to end) still run against real bulletins outside AWIPS? | `test_procedure_harness.py` |
 | Is the tool's physics (Rmax) actually right, checked against ground truth? | `verify_besttrack_rmax.py` |
 | Can that regression be made to fit WestPac better? | `fit_westpac_rmax.py` |
 | Where does that ground truth for the web app come from? | `prep_besttrack_data.py` |
