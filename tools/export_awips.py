@@ -303,7 +303,7 @@ These are expected behavior, not bugs. Do not report them as problems
   reported radii are lopsided (gales on one side only, e.g. from wind
   shear or an asymmetric structure), the far side of the modelled field
   can look weaker than you might expect. This is a deliberate cap in the
-  fit (see `GTCM_ASYM_MIN_CAP_KT` in the tunables block at the top of the
+  fit (the fitted asymmetry is limited to 1.5 times the motion-derived value; see the GTCM_ASYM tunables at the top of the
   file) meant to stop the fit from overreacting to a one-sided report;
   flag it if it looks wrong on a specific storm, but expect some of this.
 
