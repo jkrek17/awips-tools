@@ -9,13 +9,15 @@ modules provide, imports TCWind_JTWC.py fresh against the fakes so
 `Procedure.execute()` exactly the way GFE would: with a fully-built
 varDict (bypassing the interactive dialog), a real parsed bulletin behind
 `getTextProductFromDB`, a synthetic lat/lon grid and background wind, and
-an inventory of pre-existing "Fcst Wind" blocks that is deliberately made
-to stop short of the bulletin's last forecast hour - so the
-CREATE_MISSING_TAU_BLOCKS path (`buildFor(when, None)` inside the missing-
-tau loop) actually runs. That is precisely the path Task 1's fix touches:
-on the unfixed code, `buildFor()` returns a 3-tuple and the loop's
-`built, stFlag = buildFor(when, None)` raises ValueError after some grids
-have already been written.
+an inventory of pre-existing "Fcst Wind" blocks.
+
+`Procedure.execute()` writes its own fixed `OUTPUT_GRID_INTERVAL_SECONDS`
+-wide (3-hourly, by default) time series across the whole bulletin span,
+independent of the background Fcst Wind inventory's own block boundaries
+or cadence - so several cases here deliberately build a background
+inventory that is narrower than the bulletin's span, or mixes 3-hourly
+and 6-hourly blocks, to prove the written grids' own timing never takes
+its cue from that inventory.
 
     python3 test_procedure_harness.py
 """
@@ -377,12 +379,17 @@ def _run_test_case(write_to, ack="No", now_epoch=None):
 # Cases
 # ---------------------------------------------------------------------------
 
-def case_krovanh():
+def case_krovanh_full_span_3_hourly():
     """Real, live bulletin with full quadrant radii (Tropical Storm
-    22W/KROVANH). The fake inventory is built 3-hourly from the analysis
-    time out to 96h - one short of the bulletin's last forecast hour
-    (120h) - so CREATE_MISSING_TAU_BLOCKS has to build that last block
-    itself. That is exactly the path Task 1's fix is in."""
+    22W/KROVANH). The fake background Fcst Wind inventory deliberately
+    covers only part of the bulletin's span - 3-hourly from the analysis
+    time out to 96h, stopping one tau group short of the bulletin's last
+    forecast hour (120h) - so the fixed-interval series has to write
+    blocks over a stretch the background inventory doesn't natively have
+    at all. The point: the written grids come out complete and uniformly
+    3-hourly across the WHOLE 0-120h span regardless, because this tool
+    computes its own time series rather than following the background's
+    block boundaries."""
     fails = []
 
     proc, taus, header = _run(
@@ -397,46 +404,71 @@ def case_krovanh():
         fails.append("peak written %.1f kt not within 3 kt of bulletin "
                      "max %.1f kt" % (peak, bulletinPeak))
 
-    # The 120h forecast time falls outside the fake inventory (which stops
-    # at 96h), so it must have been created via CREATE_MISSING_TAU_BLOCKS.
-    lastEpoch = taus[-1].epoch
-    createdLabel = time.strftime("%d/%H%MZ", time.gmtime(lastEpoch))
-    finalMsg = _final_status(proc)
-    if "Created blocks at" not in finalMsg or createdLabel not in finalMsg:
-        fails.append("expected the final status to report a created block "
-                     "at %s (the forecast hour with no pre-existing Fcst "
-                     "Wind block); got: %r" % (createdLabel, finalMsg))
+    interval = tc.OUTPUT_GRID_INTERVAL_SECONDS
+    written = {}
+    for args, _kwargs in proc.created:
+        tr = args[4]
+        start = tr.startTime().unixTime()
+        end = tr.endTime().unixTime()
+        written[start] = end - start
+
+    for start, dur in written.items():
+        if dur != interval:
+            fails.append("block starting at %d has duration %d s, not the "
+                         "fixed %d s interval" % (start, dur, interval))
+        if start % interval != 0:
+            fails.append("block start %d is not a multiple of the %d s "
+                         "interval" % (start, interval))
+
+    # The series must cover the WHOLE bulletin span (0-120h), including
+    # the 96h-120h stretch the background inventory never had any blocks
+    # in at all - proving this tool's own time series, not the
+    # background's coverage, decides what gets written.
+    spanStart, spanEnd = taus[0].epoch, taus[-1].epoch
+    expected = set(range(spanStart, spanEnd + 1, interval))
+    missing = expected - set(written)
+    if missing:
+        fails.append("missing 3-hourly blocks at %r; the fixed-interval "
+                     "series must cover the whole span regardless of what "
+                     "the background inventory covers"
+                     % [time.strftime("%d/%H%MZ", time.gmtime(w))
+                        for w in sorted(missing)])
 
     stormName = header.get("stormName") or ""
+    finalMsg = _final_status(proc)
     if not stormName or stormName not in finalMsg:
         fails.append("final status does not mention the storm (%r): %r"
                      % (stormName, finalMsg))
+    if "3-hourly" not in finalMsg:
+        fails.append("final status does not mention the 3-hourly cadence "
+                     "it wrote at: %r" % finalMsg)
 
     return fails, proc
 
 
-def case_mixed_cadence_krovanh():
+def case_mixed_cadence_background_still_writes_3_hourly():
     """Regression case for the "grids get created in random 3 or 6 hour
-    chunks" bug: a fake Fcst Wind inventory that is 3-hourly out to 72h and
-    6-hourly from 72h to 96h - mirroring real office practice and the
-    KROVANH fixture's own tau spacing (12-hourly out to 72h, 24-hourly
-    beyond). Two deliberate gaps force CREATE_MISSING_TAU_BLOCKS to build a
-    block in EACH cadence region:
+    chunks" bug report: a fake Fcst Wind inventory that is 3-hourly out to
+    72h and 6-hourly from 72h to 90h - mirroring real office practice and
+    the KROVANH fixture's own tau spacing (12-hourly out to 72h, 24-hourly
+    beyond) - with two deliberate gaps (no block starting at 60h, and the
+    6-hourly run stopping short of 96h) so the background inventory itself
+    can't be mistaken for a complete source of block boundaries either.
 
-      - the block that would start at 60h is left out of the 3-hourly
-        run, so the 60h tau (12-hourly in the bulletin, still inside the
-        3-hourly inventory region) has no block and must be created.
-      - the 6-hourly run stops short of 96h (blocks 72-78, 78-84, 84-90
-        only), so the 96h and 120h taus both have no block and must be
-        created.
-
-    Before the fix, a single site-wide "most common" duration (whichever
-    cadence had more blocks in this inventory - 24 x 3h vs 3 x 6h, so 3h)
-    got applied to EVERY created block, including the one at 96h that
-    belongs in the 6-hourly region. After the fix, each created block's
-    duration is looked up locally from the nearest preceding block, so the
-    60h block comes out 3-hourly and the 96h (and 120h) blocks come out
-    6-hourly."""
+    An earlier fix keyed each created block's duration off whatever
+    cadence was locally in effect in this same mixed inventory, so a
+    block created in the 3-hourly region came out 3-hourly and one
+    created in the 6-hourly region came out 6-hourly - which was still
+    wrong, just differently: the OFFICE'S inventory, not this bulletin,
+    was deciding the tool's own output granularity, and which region a
+    given created block landed in could shift run to run. Under the
+    fixed design there is no such lookup at all: every block this run
+    writes, everywhere across the whole span, must come out with the
+    fixed OUTPUT_GRID_INTERVAL_SECONDS duration and a start on that
+    interval's own boundary, regardless of what duration the nearest
+    background block happens to have. This asserts that for EVERY block
+    the run actually writes, not just the two taus the old test singled
+    out."""
     fails = []
 
     text = _load_fixture("real_2026-09-02_wtpn31_krovanh.txt")
@@ -482,38 +514,107 @@ def case_mixed_cadence_krovanh():
     if not proc.created:
         fails.append("no grids were written at all")
 
-    # Pull (start_epoch, end_epoch, duration) for every grid actually
-    # written, keyed by its start epoch, straight from the fake createGrid
-    # recorder's captured TimeRange (args[4], per _storeGrid's call shape).
-    written = {}
+    # Pull (start_epoch, end_epoch, duration) for EVERY grid actually
+    # written this run, straight from the fake createGrid recorder's
+    # captured TimeRange (args[4], per _storeGrid's call shape) - not just
+    # the two taus that happen to sit in each cadence region, since the
+    # whole point of the fix is that NEITHER region's cadence has any
+    # effect on ANY block this run writes.
+    interval = tc.OUTPUT_GRID_INTERVAL_SECONDS
     for args, _kwargs in proc.created:
         tr = args[4]
         start = tr.startTime().unixTime()
         end = tr.endTime().unixTime()
-        written[start] = end - start
+        dur = end - start
+        if dur != interval:
+            fails.append("block starting at %d has duration %d s; the "
+                         "mixed-cadence background inventory must have no "
+                         "effect - every block must be the fixed %d s "
+                         "interval" % (start, dur, interval))
+        if start % interval != 0:
+            fails.append("block start %d is not a multiple of the fixed "
+                         "%d s interval" % (start, interval))
 
-    when3h = analysisEpoch + 60 * 3600
-    when6h = analysisEpoch + 96 * 3600
+    return fails, proc
 
-    if when3h not in written:
-        fails.append("expected a created block starting at the 60h tau "
-                     "(%d); grids written at: %r"
-                     % (when3h, sorted(written)))
-    elif written[when3h] != 10800:
-        fails.append("60h tau falls in the 3-hourly inventory region "
-                     "(nearest preceding block is 3h) but the created "
-                     "block's duration was %d s, not 10800 s"
-                     % written[when3h])
 
-    if when6h not in written:
-        fails.append("expected a created block starting at the 96h tau "
-                     "(%d); grids written at: %r"
-                     % (when6h, sorted(written)))
-    elif written[when6h] != 21600:
-        fails.append("96h tau falls in the 6-hourly inventory region "
-                     "(nearest preceding block is 6h) but the created "
-                     "block's duration was %d s, not 21600 s"
-                     % written[when6h])
+def case_selected_time_range_only_respects_bounds():
+    """"Run over selected time range only?" = Yes with a `timeRange`
+    narrower than the bulletin's full 0-120h span, and deliberately OFF
+    the fixed interval's own boundaries (25h/58h past the analysis time,
+    neither a multiple of 3h) to exercise the snap-without-a-fencepost-
+    -gap rule: the effective lower bound rounds UP to the next 3-hourly
+    boundary (27h) and the upper bound rounds DOWN to the previous one
+    (57h). Every block this run writes must start inside the original
+    selected range, on a 3-hour boundary, and none may start outside it -
+    proving `selectedTimeOnly` still bounds the run the same way it
+    always has, now applied to this tool's own fixed-interval series
+    rather than to the background inventory's own blocks."""
+    fails = []
+
+    import AbsTime
+    import TimeRange
+
+    text = _load_fixture("real_2026-09-02_wtpn31_krovanh.txt")
+    taus, header = tc.parseJTWC(text)
+    analysisEpoch = taus[0].epoch
+    lastEpoch = taus[-1].epoch
+    nowEpoch = analysisEpoch + 3 * 3600
+
+    interval = tc.OUTPUT_GRID_INTERVAL_SECONDS
+    selStart = analysisEpoch + 25 * 3600   # not a 3h boundary
+    selEnd = analysisEpoch + 58 * 3600     # not a 3h boundary either
+
+    latGrid, lonGrid = _mesh()
+
+    proc = tc.Procedure(dbss=None)
+    proc.configure(
+        texts={"NFDTCPWP1": text},
+        now_epoch=nowEpoch,
+        inv_start=analysisEpoch,
+        inv_end=lastEpoch + 3 * 3600,
+        lat=latGrid,
+        lon=lonGrid)
+
+    selectedTR = TimeRange.TimeRange(
+        AbsTime.AbsTime(selStart), AbsTime.AbsTime(selEnd))
+
+    varDict = {
+        "Bulletins to process:": ["NFDTCPWP1"],
+        "Write to:": "Fcst Wind",
+        "Run over selected time range only?": "Yes",
+        "I understand this tool is experimental and I have reviewed "
+        "the output:": "Yes",
+    }
+
+    proc.execute(None, selectedTR, varDict)
+
+    if not proc.created:
+        fails.append("no grids were written at all")
+
+    starts = set()
+    for args, _kwargs in proc.created:
+        tr = args[4]
+        start = tr.startTime().unixTime()
+        starts.add(start)
+        if start % interval != 0:
+            fails.append("block start %d is not a multiple of the %d s "
+                         "interval" % (start, interval))
+        if start < selStart or start > selEnd:
+            fails.append("block starting at %d falls outside the "
+                         "selected range [%d, %d]"
+                         % (start, selStart, selEnd))
+
+    expectedLo = -(-selStart // interval) * interval   # ceil -> 27h
+    expectedHi = (selEnd // interval) * interval        # floor -> 57h
+    if expectedLo not in starts:
+        fails.append("expected a block at the snapped lower bound %d "
+                     "(27h, ceiled up from the selected 25h start); got "
+                     "starts %r" % (expectedLo, sorted(starts)))
+    if expectedHi not in starts:
+        fails.append("expected a block at the snapped upper bound %d "
+                     "(57h, floored down from the selected 58h end); got "
+                     "starts %r" % (expectedHi, sorted(starts)))
 
     return fails, proc
 
@@ -644,9 +745,11 @@ def case_test_case_preview_default():
 
 def main():
     cases = [
-        ("krovanh_create_missing_tau_block", case_krovanh),
-        ("mixed_cadence_krovanh_local_block_duration",
-         case_mixed_cadence_krovanh),
+        ("krovanh_full_span_3_hourly", case_krovanh_full_span_3_hourly),
+        ("mixed_cadence_background_still_writes_3_hourly",
+         case_mixed_cadence_background_still_writes_3_hourly),
+        ("selected_time_range_only_respects_bounds",
+         case_selected_time_range_only_respects_bounds),
         ("saudel_weak_no_radii_runs_clean", case_saudel),
         ("test_case_forces_preview_despite_fcst_wind_and_ack",
          case_test_case_forces_preview_despite_fcst_wind_and_ack),
