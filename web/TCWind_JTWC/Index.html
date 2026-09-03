@@ -203,9 +203,20 @@ kbd {
 /* --- main ---------------------------------------------------------------- */
 #main {
   flex:1 1 auto; display:grid; grid-template-columns:minmax(0,1fr) 372px;
+  grid-template-rows:minmax(0,1fr);
   min-height:0;
 }
-#mapWrap { position:relative; min-height:56vh; }
+/* No min-height here on the fixed-height desktop layout (>1100px, #app is
+   height:100%): the row now stretches to fill #main exactly
+   (grid-template-rows:minmax(0,1fr) above), and a min-height floor here
+   fights that when the paste panel is open and the status log has grown to
+   several lines, leaving #main shorter than 56vh - #mapWrap/#rail used to
+   spill past #main's bottom edge, under the #status bar that follows it in
+   flow, making #rail's own overflow-y:auto scrollbar unreachable instead of
+   the content simply scrolling inside it. Below 1100px #app switches to
+   height:auto (ordinary page scroll) where a floor is exactly what a stacked
+   map needs, so the min-height media override just below still sets one. */
+#mapWrap { position:relative; }
 #map { position:absolute; inset:0; background:var(--sunken); }
 .leaflet-tile { filter:var(--tile-filter); }
 .leaflet-container { font:12px/1.4 var(--font); background:var(--sunken); }
@@ -331,6 +342,9 @@ details li { margin-bottom:5px; }
 #status .err { color:var(--bad); }
 #status .warnl { color:var(--warn); }
 #status .okl { color:var(--ok); }
+/* Calm fact, not a problem (e.g. an unused warning slot) - muted colour,
+   normal weight, so it never reads with the same urgency as .err/.warnl. */
+#status .muted { color:var(--muted); font-weight:400; }
 
 /* --- map furniture ------------------------------------------------------- */
 .legendBox {
@@ -452,6 +466,12 @@ details li { margin-bottom:5px; }
 
     <aside id="rail" aria-label="Diagnostics">
 
+      <section class="card" id="plainCard" aria-labelledby="hPlain">
+        <h2 id="hPlain">What you are looking at</h2>
+        <p id="plainSummary">Fetch bulletins, or paste one, to see a storm
+          here.</p>
+      </section>
+
       <section class="card" aria-labelledby="hSystem">
         <h2 id="hSystem">System</h2>
         <p id="focusName">No system selected</p>
@@ -478,13 +498,6 @@ details li { margin-bottom:5px; }
              that is anchored to a reported radius versus modelled extrapolation">
           <i class="anch" style="width:0%"></i><i class="extr" style="width:100%"></i>
         </div>
-        <p class="note" style="margin-top:0">
-          <b>Anchored</b> &mdash; a reported radius constrains the fit at this
-          range on this bearing. <b>Extrapolation</b> &mdash; hatched on the
-          map: inside the innermost reported ring (JTWC never reports an RMW),
-          and outside the outermost, where only the fitted profile and its
-          taper decide the answer.
-        </p>
         <div class="tableScroll">
         <table class="quadTable" id="anchorTable">
           <thead><tr><th scope="col">Quad</th><th scope="col">R64</th>
@@ -494,11 +507,21 @@ details li { margin-bottom:5px; }
         </table>
         </div>
         <p class="note" id="anchorThin" style="display:none"></p>
-        <p class="note">Radii in nm as reported. <b>Anchored</b> is the span
-          between the innermost and outermost <em>fit target</em> in that
-          quadrant &mdash; 0.85 &times; the reported radius, because the
-          bulletin states the quadrant <em>maximum</em> and GTCM fits the
-          quadrant <em>average</em>.</p>
+        <details id="anchorHelp">
+          <summary>How to read this</summary>
+          <p class="note" style="margin-top:0">
+            <b>Anchored</b>: a reported radius constrains the fit at this
+            range on this bearing. <b>Extrapolation</b>, hatched on the map:
+            inside the innermost reported ring (JTWC never reports an RMW),
+            and outside the outermost, where only the fitted profile and its
+            taper decide the answer.
+          </p>
+          <p class="note">Radii in nm as reported. <b>Anchored</b> is the
+            span between the innermost and outermost fit target in that
+            quadrant: 0.85 times the reported radius, because the bulletin
+            states the quadrant maximum and GTCM fits the quadrant
+            average.</p>
+        </details>
       </section>
 
       <section class="card" aria-labelledby="hProfile">
@@ -507,23 +530,28 @@ details li { margin-bottom:5px; }
           role="img" aria-label="Modelled wind speed against radius on each
           quadrant bearing, with the reported radii, the 0.85-scaled fit
           targets, and the residual at each target"></canvas></div>
-        <ul class="chartLegend">
-          <li><span class="mk">&#9472;</span><span><b>Line</b> &mdash; the GTCM
-            profile actually built, on that quadrant's bearing.</span></li>
-          <li><span class="mk">&#9670;</span><span><b>Filled diamond</b> &mdash;
-            the fit target: 0.85 &times; reported radius, at its threshold.
-            This is what the least-squares actually sees.</span></li>
-          <li><span class="mk">&#9711;</span><span><b>Open circle</b> &mdash;
-            the radius the bulletin reports, unscaled.</span></li>
-          <li><span class="mk">&#9474;</span><span><b>Stem</b> &mdash; the wind
-            residual at the target: modelled speed minus threshold. These are
-            the numbers the RMS above is the root-mean-square of.</span></li>
-        </ul>
         <div class="qKey" id="qKey"></div>
-        <p class="note">GTCM fits <em>one</em> symmetric vortex plus a single
-          wavenumber-1 asymmetry to every target at once. It is not built to
-          pass through them and it does not: the stems are the price paid for a
-          field with no kinks at the quadrant boundaries.</p>
+        <details id="profileHelp">
+          <summary>How to read this</summary>
+          <ul class="chartLegend">
+            <li><span class="mk">&#9472;</span><span><b>Line</b>: the GTCM
+              profile actually built, on that quadrant's bearing.</span></li>
+            <li><span class="mk">&#9670;</span><span><b>Filled diamond</b>:
+              the fit target, 0.85 times the reported radius, at its
+              threshold. This is what the least-squares fit actually
+              sees.</span></li>
+            <li><span class="mk">&#9711;</span><span><b>Open circle</b>: the
+              radius the bulletin reports, unscaled.</span></li>
+            <li><span class="mk">&#9474;</span><span><b>Stem</b>: the wind
+              residual at the target, modelled speed minus threshold. These
+              are the numbers the RMS above is the root-mean-square
+              of.</span></li>
+          </ul>
+          <p class="note">GTCM fits one symmetric vortex plus a single
+            wavenumber-1 asymmetry to every target at once. It is not built
+            to pass through them and it does not: the stems are the price
+            paid for a field with no kinks at the quadrant boundaries.</p>
+        </details>
       </section>
 
       <section class="card" aria-labelledby="hHist">
@@ -540,13 +568,14 @@ details li { margin-bottom:5px; }
       <section class="card">
         <details id="modelNotes">
           <summary>Model, departures and provenance</summary>
-          <p>The field is NHC's Gridded TCM (GTCM/WTCM) as described in the
-            <em>Gridded TCM Users Guide v1.9.1</em> (Santos &amp; DeMaria,
-            4&nbsp;Dec&nbsp;2023): one symmetric modified-Rankine vortex
-            (<code>rm</code>, <code>ri</code>, <code>x1</code>, <code>x2</code>)
-            plus one wavenumber-1 asymmetry from the storm motion, fitted by
-            weighted least squares on <em>wind</em> error &mdash; weight 5 on
-            the 34&nbsp;kt targets, 1 on 50 and 64.</p>
+          <p>The field is NHC's Gridded TCM (GTCM/WTCM), the wind-field model
+            described in the <em>Gridded TCM Users Guide v1.9.1</em> (Santos
+            &amp; DeMaria, 4&nbsp;Dec&nbsp;2023): one symmetric
+            modified-Rankine vortex (<code>rm</code>, <code>ri</code>,
+            <code>x1</code>, <code>x2</code>) plus one wavenumber-1 asymmetry
+            from the storm motion, fitted by weighted least squares on
+            <em>wind</em> error. Weight 5 on the 34&nbsp;kt targets, 1 on 50
+            and 64.</p>
           <p><b>Two documented departures from the guide, both deliberate:</b></p>
           <ul>
             <li><b>Outer taper.</b> The guide's grids simply stop outside the
@@ -561,19 +590,24 @@ details li { margin-bottom:5px; }
           </ul>
           <p>Previously this tool fitted each quadrant's radial profile
             independently and interpolated between quadrant bisectors. That hit
-            every reported ring exactly and produced kinks at the quadrant
-            boundaries. The office chose coherence over ring fidelity; the tool's
-            job is a physically plausible field consistent with the bulletin,
-            not a reproduction of the radii.</p>
-          <p>Live data: JTWC warnings from NOAA's Telecommunications Gateway
-            (tgftp.nws.noaa.gov), cached briefly server-side. The
+            every reported ring exactly, but produced kinks at the quadrant
+            boundaries. The office chose coherence over ring fidelity: the
+            tool's job is a physically plausible field consistent with the
+            bulletin, not a reproduction of the radii.</p>
+          <p>Live data: warnings from the Joint Typhoon Warning Center
+            (JTWC), fetched from NOAA's Telecommunications Gateway
+            (tgftp.nws.noaa.gov) and cached briefly server-side. The
             <a href="<?= baseUrl ?>?page=archive">Archive</a> and
-            <a href="<?= baseUrl ?>?page=findings">Findings</a> pages instead use
-            post-season best-track reanalysis via NCEI's IBTrACS, which shows
-            consistency with best-track analyses &mdash; a weaker claim than
-            verification against observations, which has not been done.</p>
+            <a href="<?= baseUrl ?>?page=findings">Findings</a> pages instead
+            use post-season best track from NCEI's International Best Track
+            Archive for Climate Stewardship (IBTrACS). Matching that record
+            is consistency with a reanalysis, a weaker claim than
+            verification against live observations, which has not been
+            done.</p>
         </details>
       </section>
+
+      <section class="card" id="glossaryCard"></section>
     </aside>
   </div>
 
@@ -581,6 +615,8 @@ details li { margin-bottom:5px; }
 </div>
 
 <?!= HtmlService.createHtmlOutputFromFile('Vortex').getContent(); ?>
+
+<?!= HtmlService.createHtmlOutputFromFile('Help').getContent(); ?>
 
 <script>
 /* ===========================================================================
@@ -704,7 +740,11 @@ function setStatus(lines) {
   for (var i = 0; i < lines.length; i++) {
     var l = lines[i];
     var span = document.createElement('span');
-    if (l.level) span.className = 'lvl ' + l.level;
+    // 'muted' is a calm fact (e.g. an unused warning slot), not a problem -
+    // it skips the bold .lvl treatment so it never reads with the urgency
+    // of a real .err/.warnl line.
+    if (l.level === 'muted') span.className = 'muted';
+    else if (l.level) span.className = 'lvl ' + l.level;
     span.textContent = l.text;
     statusEl.appendChild(span);
     statusEl.appendChild(document.createTextNode('\n'));
@@ -931,7 +971,7 @@ function drawVectors(items, epoch) {
         inked(L.polygon, steppedPolygon(snap.lat, snap.lon, snap.radii[thr], 1), {
           color: ink, weight: focused ? 2.5 : 1.5, fill: false,
           opacity: focused ? 1 : 0.55, dashArray: RING_DASH[thr]
-        }).bindTooltip('R' + thr + ' as reported — NE ' +
+        }).bindTooltip('R' + thr + ' as reported: NE ' +
           n0(snap.radii[thr].NE) + ', SE ' + n0(snap.radii[thr].SE) + ', SW ' +
           n0(snap.radii[thr].SW) + ', NW ' + n0(snap.radii[thr].NW) + ' nm');
         if (focused) {
@@ -1249,7 +1289,7 @@ function drawProfile(it) {
   document.getElementById('profAux').textContent = '';
   if (!it || !hasField(it)) {
     ctx.fillStyle = tok('--muted');
-    ctx.fillText(it ? 'Below 34 kt — no field built.' : 'No system selected.', 10, 22);
+    ctx.fillText(it ? 'Below 34 kt, no field built.' : 'No system selected.', 10, 22);
     return;
   }
 
@@ -1520,6 +1560,37 @@ function param(grid, label, value, unit, wide) {
   grid.appendChild(d);
 }
 
+/** JTWC intensity category in plain words, from the storm's own CURRENT
+ *  Vmax at this forecast hour (not the header text, which is written once
+ *  and can lag an intensifying or weakening system) - JTWC's own bands:
+ *  tropical depression below 34 kt, tropical storm 34-63, typhoon 64-129,
+ *  super typhoon 130+. */
+function jtwcCategoryWord_(vmaxKt) {
+  if (vmaxKt >= 130) return 'super typhoon';
+  if (vmaxKt >= 64) return 'typhoon';
+  if (vmaxKt >= 34) return 'tropical storm';
+  return 'tropical depression';
+}
+
+/** Plain-language gloss of the fit-quality word already shown in the GTCM
+ *  fit badge - same RMS-vs-archive-percentile verdict computed just above,
+ *  reworded so the "What you are looking at" card and the technical badge
+ *  never disagree. */
+function plainFitVerdict_(word) {
+  switch (word) {
+    case 'typical':  return 'Good match';
+    case 'elevated': return 'Fair match';
+    case 'poor':     return 'Rough match';
+    case 'climatology only': return 'No radii reported';
+    default: return 'Not scored';
+  }
+}
+
+function setPlainSummary_(text) {
+  var el = document.getElementById('plainSummary');
+  if (el) el.textContent = text;
+}
+
 function renderRail(it, epoch) {
   var nameEl = document.getElementById('focusName');
   var subEl = document.getElementById('focusSub');
@@ -1534,6 +1605,10 @@ function renderRail(it, epoch) {
     subEl.textContent = storms.length
       ? 'The selected system has no position at this timeline step.'
       : 'Fetch bulletins, or paste one, to begin.';
+    setPlainSummary_(storms.length
+      ? 'The selected storm has no position at this forecast time. Step ' +
+        'the timeline back, or pick another storm chip.'
+      : 'Fetch bulletins, or paste one, to see a storm here.');
     badge.setAttribute('data-state', 'none');
     document.getElementById('fitRms').textContent = '--';
     document.getElementById('fitWord').textContent = 'no fit';
@@ -1561,6 +1636,11 @@ function renderRail(it, epoch) {
   }
 
   if (!hasField(it)) {
+    setPlainSummary_(V.describeStorm(h) + ' is a ' + jtwcCategoryWord_(snap.vmax) +
+      ' (' + n0(snap.vmax) + ' kt max sustained wind) at ' +
+      document.getElementById('tTau').textContent + ', valid ' +
+      document.getElementById('tValid').textContent + '. It is below ' +
+      'tropical-storm strength, so this tool draws no wind field for it.');
     badge.setAttribute('data-state', 'none');
     document.getElementById('fitRms').textContent = '--';
     document.getElementById('fitWord').textContent = 'no field';
@@ -1597,6 +1677,15 @@ function renderRail(it, epoch) {
   document.getElementById('fitTargets').textContent =
     fit.n + ' target' + (fit.n === 1 ? '' : 's');
 
+  setPlainSummary_(V.describeStorm(h) + ' is a ' + jtwcCategoryWord_(snap.vmax) +
+    ' (' + n0(snap.vmax) + ' kt max sustained wind) at ' +
+    document.getElementById('tTau').textContent + ', valid ' +
+    document.getElementById('tValid').textContent + '. The shaded field on ' +
+    'the map is this tool’s own estimate of wind speed, built only from the ' +
+    'numbers in the warning text, not a gridded forecast. Fit to the ' +
+    'reported radii: ' + plainFitVerdict_(word) +
+    ((fit.n && isFinite(rms)) ? ' (' + rms.toFixed(1) + ' kt RMS)' : '') + '.');
+
   var aMag = Math.sqrt(fit.ax * fit.ax + fit.ay * fit.ay);
   var aDir = aMag > 1e-6 ? V.mod360(Math.atan2(fit.ax, fit.ay) * 180 / Math.PI) : null;
   var rot = (aDir !== null && snap.motionDir !== null && snap.motionDir !== undefined)
@@ -1615,7 +1704,7 @@ function renderRail(it, epoch) {
      will look for it, and needs to be told plainly that it no longer drives
      anything: _buildVortexGTCM() takes rmax_nm and ignores it, using the
      fitted rm instead. */
-  param(params, 'Willoughby Rmax — not used by GTCM', n1(it.rmax), 'nm', true);
+  param(params, 'Willoughby Rmax (not used by GTCM)', n1(it.rmax), 'nm', true);
 
   var notes = [];
   if (!fit.n) {
@@ -1635,12 +1724,18 @@ function renderRail(it, epoch) {
           : (Math.abs(rot) >= 60
             ? 'It has swung ' + Math.abs(rot).toFixed(0) + '° off the motion ' +
               'vector, so the reported radii are broadest in a direction the ' +
-              'storm is not moving — shear or transition, not translation.'
+              'storm is not moving: shear or transition, not translation.'
             : 'It sits ' + Math.abs(rot).toFixed(0) + '° off the motion vector.'))));
   }
-  if (fit.x1 >= 1.95 || fit.x2 >= 1.95 || fit.x1 <= 0.06 || fit.x2 <= 0.06) {
-    notes.push('A size exponent has hit its bound (0.05–2.0): the radii could ' +
-      'not be reconciled inside the model’s admissible shapes.');
+  // GTCM_X_MIN/GTCM_X_MAX are Vortex.html globals (a plain `var` in its own
+  // inline script block, shared with this page's script tag - not
+  // duplicated here) so this note can never drift from the exponent's real
+  // bounds the way a hardcoded "(0.05-2.0)" string once did.
+  var xNearLo = GTCM_X_MIN + 0.02, xNearHi = GTCM_X_MAX - 0.02;
+  if (fit.x1 >= xNearHi || fit.x2 >= xNearHi || fit.x1 <= xNearLo || fit.x2 <= xNearLo) {
+    notes.push('A size exponent has hit its bound (' + GTCM_X_MIN.toFixed(2) + '-' +
+      GTCM_X_MAX.toFixed(2) + '): the radii could not be reconciled inside ' +
+      'the model’s admissible shapes.');
   }
   if (fit.rm >= 149 || fit.rm <= 2.1) {
     notes.push('rm has hit its bound (2–150 nm).');
@@ -1668,7 +1763,7 @@ function renderRail(it, epoch) {
         + 'rm, ri, x1 and x2 are climatology and the whole picture is model.'
       : 'Only one threshold is reported, so each quadrant constrains the fit at '
         + 'a single range and nowhere else. The radial shape between the eye and '
-        + 'that radius, and everything beyond it, is the fitted Rankine form — '
+        + 'that radius, and everything beyond it, is the fitted Rankine form, '
         + 'which is why almost the entire field is hatched.';
   } else {
     thin.style.display = 'none';
@@ -1777,12 +1872,37 @@ function stepTime(delta) {
 /* --------------------------------------------------------------------------
    Storm chips
    ----------------------------------------------------------------------- */
+
+/** Short, human pil badge. 'PASTED' (parsePasted()'s synthetic pil) reads
+ *  as "Pasted"; a real NFDTCPWPn pil reads as "WPn"; anything missing or
+ *  unrecognised falls back to '?' rather than throwing. */
+function slotPilBadge_(pil) {
+  if (!pil) return '?';
+  if (pil === 'PASTED') return 'Pasted';
+  return String(pil).replace('NFDTCPWP', 'WP');
+}
+
+/** Short, human label for a dead (non-live) chip. Never echoes a raw
+ *  machine errorKind like "http" - a 404 on an unused slot is normal and
+ *  reads as "empty", not as an error. */
+function slotDeadLabel_(sl) {
+  if (sl.stale) return 'stale';
+  switch (sl.errorKind) {
+    case 'http':  return (sl.httpStatus === 404) ? 'empty' : 'error';
+    case 'fetch': return 'offline';
+    case 'empty': return 'empty';
+    case 'thin':  return 'thin';
+    case 'parse': return 'error';
+    default:      return 'no data';
+  }
+}
+
 function renderChips() {
   var box = document.getElementById('stormChips');
   box.innerHTML = '';
   if (!slots.length) return;
   for (var i = 0; i < slots.length; i++) {
-    var sl = slots[i];
+    var sl = slots[i] || {};
     var live = null, j;
     for (j = 0; j < storms.length; j++) if (storms[j].pil === sl.pil) live = storms[j];
     var b = document.createElement('button');
@@ -1790,7 +1910,7 @@ function renderChips() {
     b.className = 'chip' + (live ? '' : ' dead');
     var pil = document.createElement('span');
     pil.className = 'pil';
-    pil.textContent = sl.pil.replace('NFDTCPWP', 'WP');
+    pil.textContent = slotPilBadge_(sl.pil);
     b.appendChild(pil);
     var lbl = document.createElement('span');
     if (live) {
@@ -1802,9 +1922,9 @@ function renderChips() {
         b.addEventListener('click', function () { focusStorm(pilName); });
       })(live.pil);
     } else {
-      lbl.textContent = sl.stale ? 'stale' : (sl.errorKind || 'no data');
+      lbl.textContent = slotDeadLabel_(sl);
       b.disabled = true;
-      b.title = (sl.error || 'no product') + (sl.hint ? ' — ' + sl.hint : '');
+      b.title = (sl.error || 'no product') + (sl.hint ? '. ' + sl.hint : '');
     }
     b.appendChild(lbl);
     box.appendChild(b);
@@ -1893,7 +2013,7 @@ function render() {
         ' kt over ' + it.field.fit.n + ' targets' });
     } else {
       lines.push({ text: mark + it.storm.pil + '  ' + V.describeStorm(it.storm.header) +
-        '  ·  ' + n0(it.snap.vmax) + ' kt — below 34 kt, no field built ' +
+        '  ·  ' + n0(it.snap.vmax) + ' kt, below 34 kt, no field built ' +
         '(the GFE tool leaves the background grid untouched here too)' });
     }
   }
@@ -1911,7 +2031,7 @@ function render() {
       level: (vmaxNow - peak > 5) ? 'warnl' : null,
       text: '   peak in the drawn raster: ' + n0(peak) + ' kt' +
         ((vmaxNow - peak > 5)
-          ? '  (Vmax ' + n0(vmaxNow) + ' kt — the preview raster is coarser ' +
+          ? '  (Vmax ' + n0(vmaxNow) + ' kt: the preview raster is coarser ' +
             'than the GFE grid and under-samples a small eyewall; the model ' +
             'itself still peaks at Vmax)'
           : '')
@@ -1921,24 +2041,18 @@ function render() {
     /* A different statistic from the p75/p90 above: this is the aggregate
        RMS over the whole WestPac archive, not a percentile of per-fit RMS.
        Labelled so the two are not read as the same number. */
-    lines.push({ text: '   for scale — aggregate WestPac fit RMS across the ' +
+    lines.push({ text: '   for scale, aggregate WestPac fit RMS across the ' +
       'whole archive (Findings, fitQuality.WP.rmsWindErrKt): ' +
       n2(archiveRms) + ' kt' });
   }
   for (i = 0; i < slots.length; i++) {
     var sl = slots[i];
     if (sl.ok && !sl.stale) continue;
-    if (sl.stale) {
-      lines.push({ level: 'warnl', text: '   ' + sl.pil + '  stale: ' +
-        (sl.ageHours !== undefined && sl.ageHours !== null
-          ? Math.round(sl.ageHours) + ' h since its own analysis time'
-          : 'its forecast period has ended') + ' — not drawn' });
-    } else {
-      lines.push({ level: 'err', text: '   ' + sl.pil + '  ' +
-        (sl.errorKind || 'error') + ': ' + (sl.error || 'no data') +
-        (sl.hint ? '\n      ' + sl.hint : '') });
-    }
+    if (slotIsCalmEmpty_(sl)) continue;
+    lines.push(slotErrorLine_(sl));
   }
+  var calmLine = calmEmptySlotsLine_(slots);
+  if (calmLine) lines.push(calmLine);
   if (!lines.length) lines.push({ text: 'No system is active at this time.' });
   setStatus(lines);
 }
@@ -1946,6 +2060,53 @@ function render() {
 /* --------------------------------------------------------------------------
    Server calls
    ----------------------------------------------------------------------- */
+
+/** Whether a dead slot means "no active storm here" (calm) rather than a
+ *  real failure. tgftp answers HTTP 404 for any of the five NFDTCPWPn slots
+ *  with no current product - normal whenever fewer than five NW Pacific
+ *  systems are active, not something to show in red. Everything else
+ *  (network unreachable, a bad parse, a too-thin product) is a real
+ *  failure and stays red. */
+function slotIsCalmEmpty_(sl) {
+  return !sl.ok && !sl.stale && sl.errorKind === 'http' && sl.httpStatus === 404;
+}
+
+/** One status line for a single dead (non-live) slot that is NOT a calm
+ *  empty slot - a stale storm or a real failure. */
+function slotErrorLine_(sl) {
+  if (sl.stale) {
+    return { level: 'warnl', text: '   ' + sl.pil + '  stale: ' +
+      (sl.ageHours !== undefined && sl.ageHours !== null
+        ? Math.round(sl.ageHours) + ' h since its own analysis time'
+        : 'its forecast period has ended') + ' - not drawn' };
+  }
+  return { level: 'err', text: '   ' + sl.pil + '  ' +
+    (sl.errorKind || 'error') + ': ' + (sl.error || 'no data') +
+    (sl.hint ? '\n      ' + sl.hint : '') };
+}
+
+/** One calm, muted line summarising every "no active storm in this slot"
+ *  (HTTP 404) slot together - e.g. "WP3 to WP5: no active storm in these
+ *  slots" - so five ordinary empty slots read as one calm fact, not five
+ *  errors. Returns null when there are none. */
+function calmEmptySlotsLine_(allSlots) {
+  var labels = [];
+  for (var i = 0; i < allSlots.length; i++) {
+    if (slotIsCalmEmpty_(allSlots[i])) labels.push(slotPilBadge_(allSlots[i].pil));
+  }
+  if (!labels.length) return null;
+  var num = function (w) { return parseInt(String(w).replace('WP', ''), 10); };
+  var ranges = [], start = labels[0], prev = labels[0];
+  for (var k = 1; k < labels.length; k++) {
+    if (num(labels[k]) === num(prev) + 1) { prev = labels[k]; continue; }
+    ranges.push(start === prev ? start : start + ' to ' + prev);
+    start = labels[k]; prev = labels[k];
+  }
+  ranges.push(start === prev ? start : start + ' to ' + prev);
+  return { level: 'muted', text: '   ' + ranges.join(', ') + ': no active ' +
+    'storm in ' + (labels.length === 1 ? 'this slot' : 'these slots') };
+}
+
 function ingest(results, sourceLabel) {
   slots = results || [];
   storms = [];
@@ -1978,15 +2139,11 @@ function ingest(results, sourceLabel) {
             ' slot' + (slots.length === 1 ? '' : 's') + ' checked:' }];
     for (i = 0; i < slots.length; i++) {
       var sl = slots[i];
-      lines.push({
-        level: sl.stale ? 'warnl' : 'err',
-        text: '   ' + sl.pil + '  ' +
-          (sl.stale ? 'stale (' + (sl.ageHours !== undefined && sl.ageHours !== null
-            ? Math.round(sl.ageHours) + ' h old' : 'period ended') + ')'
-            : (sl.errorKind || 'error') + ': ' + (sl.error || 'no data')) +
-          (sl.hint ? '\n      ' + sl.hint : '')
-      });
+      if (slotIsCalmEmpty_(sl)) continue;
+      lines.push(slotErrorLine_(sl));
     }
+    var calmLine2 = calmEmptySlotsLine_(slots);
+    if (calmLine2) lines.push(calmLine2);
     lines.push({ text: 'If tgftp is unreachable, use "Paste a bulletin".' });
     setStatus(lines);
     return;
@@ -2012,7 +2169,7 @@ function load(force) {
       setStatus([
         { level: 'err', text: 'getBulletins() failed: ' +
           (err && err.message ? err.message : String(err)) },
-        { text: 'The page could not reach the Apps Script server at all — this ' +
+        { text: 'The page could not reach the Apps Script server at all. This ' +
                 'is not a tgftp outage. Reload the page; if it persists, paste a ' +
                 'bulletin below to keep working.' }
       ]);
@@ -2033,8 +2190,8 @@ function parsePasted() {
     .withSuccessHandler(function (r) {
       document.getElementById('btnParse').disabled = false;
       msg.textContent = 'Parsed ' + (r.storm && r.storm.taus ? r.storm.taus.length : 0) +
-        ' forecast times.';
-      ingest([r], 'the pasted bulletin');
+        ' forecast times. Added as a "Pasted" chip and selected.';
+      ingestPasted(r);
     })
     .withFailureHandler(function (err) {
       document.getElementById('btnParse').disabled = false;
@@ -2044,11 +2201,32 @@ function parsePasted() {
           (err && err.message ? err.message : String(err)) },
         { text: 'The text reached the server but did not parse as a WTPN warning. ' +
                 'Check that the whole product was pasted, including the REMARKS ' +
-                'block — the reference date lives there and without it no DTG ' +
+                'block. The reference date lives there; without it, no DTG ' +
                 'can be resolved.' }
       ]);
     })
     .parsePasted(txt);
+}
+
+/**
+ * Merge a freshly parsed pasted storm into the existing slot list (D2 fix).
+ * Pasting supplements the five live slots, it does not replace them - a
+ * bare `ingest([r], ...)` here used to wipe out `slots` entirely (dropping
+ * to zero chips) and, because Code.gs's parsePasted() envelope carried no
+ * top-level `pil`, threw inside renderChips() on `sl.pil.replace`. Both are
+ * fixed now (Code.gs sets `pil: 'PASTED'`; renderChips() no longer assumes
+ * a slot has one), but this still merges rather than replaces so a paste
+ * during a live fetch adds a sixth "Pasted" chip instead of hiding the
+ * other five. Re-pasting replaces the previous paste (same synthetic pil).
+ */
+function ingestPasted(result) {
+  var merged = [];
+  for (var i = 0; i < slots.length; i++) {
+    if (slots[i].pil !== result.pil) merged.push(slots[i]);
+  }
+  merged.push(result);
+  if (result.ok && result.storm) focusPil = result.storm.pil; // select it
+  ingest(merged, 'the pasted bulletin');
 }
 
 /**
@@ -2160,6 +2338,20 @@ renderQuadKey();
 render();
 load(false);
 loadFindingsContext();
+
+/* Glossary (Help.html, one copy of everything - see README.md).  Only run
+   over STATIC prose containers: any element whose .textContent this page's
+   own code overwrites on every render() (fitNote, focusSub, the plain-
+   language card, ...) would just have its wrapped terms discarded on the
+   next redraw, so those are deliberately left alone. */
+if (window.TCGlossary) {
+  ['anchorHelp', 'profileHelp', 'modelNotes', 'paste'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) TCGlossary.linkify(el);
+  });
+  var slot = document.getElementById('glossaryCard');
+  if (slot) slot.appendChild(TCGlossary.buildDetailsEl());
+}
 
 })();
 </script>
