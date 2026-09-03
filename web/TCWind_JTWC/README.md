@@ -19,6 +19,7 @@ root `README.md` for what the project is and why it is built this way.
 | `Code.gs` | server: bulletin fetch and cache, `doGet()` routing, the archive/findings data endpoints, and the server-side parser |
 | `Vortex.html` | **the** client-side GTCM vortex + JTWC parser. Included by every page |
 | `Theme.html` | **the** design system: tokens, both themes, typography. Included by every page |
+| `Help.html` | **the** shared glossary: hover/tap term tooltips plus a drop-in glossary `<details>` block. Included by Index.html and Archive.html; Findings.html will adopt it later |
 | `Index.html`, `Archive.html`, `Findings.html` | the three pages |
 | `BestTrackData.gs` | generated archive payload, ~2 MB. Never hand-edit — regenerate with `tests/tcwind_jtwc/prep_besttrack_data.py` |
 | `appsscript.json` | manifest. `webapp.access` is `DOMAIN` |
@@ -31,6 +32,13 @@ separate bugs in this project: a second `resolveRmax()` using `<=` where the
 tool used `<`, a second `parseJTWC()`, a second `r34` calculation in the
 verification, and a second colour palette. Three of them shipped wrong numbers
 or wrong rendering.
+
+`Help.html` follows the same rule for a smaller thing: the glossary. Before it
+existed, adding a tooltip meant writing the same term/definition pair on
+whichever page needed it next, which is exactly how the palette and
+`resolveRmax()` drifted the first time. One `GLOSSARY` list, one `linkify()`
+function, one drop-in `<details>` block — see the comment at the top of
+`Help.html` for how a page uses it.
 
 **No page may define its own copy of anything in `Vortex.html`** — not
 `resolveRmax`, `fitGTCM`, `gtcmProfile`, `gtcmUV`, `parseJTWC`, or
