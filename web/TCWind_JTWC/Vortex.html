@@ -971,6 +971,11 @@ function interpolateTrack(taus, epoch) {
 // at ~72 columns and are full of runs of spaces and mid-phrase line breaks.
 
 var RE_REFDATE  = /\b(\d{2})([A-Z]{3})(\d{2})\b/;
+// WMO abbreviated header line ("WTPN35 PGTW 242100"): T1T2A1A2ii, an
+// originating station, then a DDHHMM group. Used only by parseJTWC()'s
+// no-DDMMMYY fallback (see its own comment) - gives the reference DAY
+// only, never month/year.
+var RE_WMO_HEADER = /^[A-Z]{4}\d{2}\s+[A-Z]{4}\s+(\d{2})(\d{2})(\d{2})\s*$/m;
 var RE_POSITION = /(\d{6})Z\s*---\s*(?:NEAR\s+)?(\d+(?:\.\d+)?)\s*([NS])\s+(\d+(?:\.\d+)?)\s*([EW])/;
 var RE_TAU      = /^\s*(\d+)\s+HRS,\s+VALID AT:/;
 var RE_WARNPOS  = /^\s*WARNING POSITION:/;
@@ -1037,8 +1042,13 @@ function bearingSpeed(t1, t2) {
 }
 
 /** Parse a WTPN warning into a time-ordered list of tau objects.
+ *  `nowSecs` is unix seconds for "now"; only consulted by the no-DDMMMYY
+ *  fallback below (real wall clock when omitted - callers pass it only to
+ *  pin the fallback for a deterministic test). It plays no part at all
+ *  when the bulletin carries a normal DDMMMYY reference date. Port of
+ *  parseJTWC() in TCWind_JTWC.py.
  *  Returns {taus, header, text}. */
-function parseJTWC(text) {
+function parseJTWC(text, nowSecs) {
   var lines;
   if (Object.prototype.toString.call(text) === '[object Array]') {
     lines = text.slice();
@@ -1050,7 +1060,11 @@ function parseJTWC(text) {
     lines = String(text).split(/\r?\n/);
   }
 
-  // Reference date lives in the remarks block ("27AUG26.").
+  // Reference date lives in the remarks block ("27AUG26."), on every
+  // fixture seen until today. Real, live counter-example: a JTWC bulletin
+  // (WTPN35 PGTW, SOULIK, extratropical transition) whose REMARKS opens
+  // straight into the synopsis with no DDMMMYY token anywhere - confirmed
+  // by inspecting the real product text, not assumed.
   var refDay = null, refMonth = null, refYear = null;
   for (var i = 0; i < lines.length; i++) {
     var md = RE_REFDATE.exec(lines[i]);
@@ -1061,9 +1075,31 @@ function parseJTWC(text) {
       break;
     }
   }
+
   if (refDay === null) {
-    throw new Error('Could not find a DDMMMYY reference date in the bulletin ' +
-                    'remarks; cannot resolve DTGs.');
+    // Fallback: no DDMMMYY anywhere in the bulletin. The WMO abbreviated
+    // header line ("WTPN35 PGTW 242100") gives the reference DAY directly
+    // (24) but not month/year, so resolve those by combining that day
+    // with wall-clock "now" through the exact same rollover rule
+    // dtgToEpoch() already uses for every DTG in the bulletin against its
+    // own reference day - seeded from "now" instead of a remarks-derived
+    // date. A day far from today's rolls to the adjacent month/year,
+    // precisely as any other far-from-reference DTG already does.
+    var mh = RE_WMO_HEADER.exec(lines.join('\n'));
+    if (mh === null) {
+      throw new Error('Could not find a DDMMMYY reference date in the ' +
+                      'bulletin remarks, and no WMO header DDHHMM group ' +
+                      'to fall back to; cannot resolve DTGs.');
+    }
+    if (nowSecs === undefined || nowSecs === null) nowSecs = Date.now() / 1000;
+    var now = new Date(nowSecs * 1000);
+    var fallbackEpoch = dtgToEpoch(mh[1] + mh[2] + mh[3],
+                                    now.getUTCDate(), now.getUTCMonth() + 1,
+                                    now.getUTCFullYear());
+    var resolved = new Date(fallbackEpoch * 1000);
+    refDay = resolved.getUTCDate();
+    refMonth = resolved.getUTCMonth() + 1;
+    refYear = resolved.getUTCFullYear();
   }
 
   var taus = [];

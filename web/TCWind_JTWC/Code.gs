@@ -211,7 +211,7 @@ var VORTEX_FILE = 'Vortex';
 // parserFingerprint() and paste the value it reports - in the same commit
 // as the Vortex.html change, after checkParserParity() passes.
 var VORTEX_PARSER_SHA =
-  'fb46157ee43c6218aa4c90b668fffe853910a7e91465a41b98f408535d721aea';
+  'b6a1055814a9c55f75772f7642c20848cf8ac46ba07f9c8fecd68728568353e7';
 
 var MONTHS = {
   JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, JUN: 6,
@@ -533,7 +533,11 @@ function getBulletins(force) {
 
     try {
       var parseFn = (basin === 'WP') ? parseJTWC : parseTCM;
-      var storm = parseFn(text);
+      // nowSecs: already computed above; only consulted by parseJTWC()'s
+      // no-DDMMMYY fallback (see its own comment) and ignored by
+      // parseTCM() (extra arg, unused) - changes nothing for either
+      // parser's normal case.
+      var storm = parseFn(text, nowSecs);
       if (storm.taus.length < 2) {
         entry.error = 'only ' + storm.taus.length + ' usable forecast times';
         entry.errorKind = 'thin';
@@ -747,9 +751,18 @@ function emptyQuads() {
 }
 
 
-function parseJTWC(text) {
+// RE_WMO_HEADER-equivalent: WMO abbreviated header line ("WTPN35 PGTW
+// 242100"). Used only by the no-DDMMMYY fallback below - see Vortex.html's
+// parseJTWC() comment. Gives the reference DAY only, never month/year.
+var RE_WMO_HEADER = /^[A-Z]{4}\d{2}\s+[A-Z]{4}\s+(\d{2})(\d{2})(\d{2})\s*$/m;
+
+function parseJTWC(text, nowSecs) {
   var lines = text.split(/\r?\n/);
 
+  // Reference date lives in the remarks block ("27AUG26."), on every
+  // fixture seen until today. Real, live counter-example: a JTWC bulletin
+  // whose REMARKS opens straight into the synopsis with no DDMMMYY token
+  // anywhere at all - see the fallback below.
   var refDay = null, refMonth = null, refYear = null;
   for (var i = 0; i < lines.length; i++) {
     var m = /\b(\d{2})([A-Z]{3})(\d{2})\b/.exec(lines[i]);
@@ -760,8 +773,28 @@ function parseJTWC(text) {
       break;
     }
   }
+
   if (refDay === null) {
-    throw new Error('no DDMMMYY reference date in remarks; cannot resolve DTGs');
+    // Fallback: no DDMMMYY anywhere in the bulletin. The WMO header's
+    // DDHHMM group gives the reference DAY directly, but not month/year -
+    // resolve those by combining that day with wall-clock "now" through
+    // the exact same rollover rule dtgToEpoch() already uses for every
+    // DTG against its own reference day, seeded from "now" instead of a
+    // remarks-derived date.
+    var mh = RE_WMO_HEADER.exec(lines.join('\n'));
+    if (mh === null) {
+      throw new Error('no DDMMMYY reference date in remarks, and no WMO ' +
+                      'header DDHHMM group to fall back to; cannot resolve DTGs');
+    }
+    if (nowSecs === undefined || nowSecs === null) nowSecs = Date.now() / 1000;
+    var now = new Date(nowSecs * 1000);
+    var fallbackEpoch = dtgToEpoch(mh[1] + mh[2] + mh[3],
+                                    now.getUTCDate(), now.getUTCMonth() + 1,
+                                    now.getUTCFullYear());
+    var resolved = new Date(fallbackEpoch * 1000);
+    refDay = resolved.getUTCDate();
+    refMonth = resolved.getUTCMonth() + 1;
+    refYear = resolved.getUTCFullYear();
   }
 
   var taus = [];

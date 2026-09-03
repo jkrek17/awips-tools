@@ -438,6 +438,16 @@ CONF_SUBTROPICAL = 0.25
 # ---------------------------------------------------------------------------
 
 RE_REFDATE = re.compile(r"\b(\d{2})([A-Z]{3})(\d{2})\b")
+# WMO abbreviated header line ("WTPN35 PGTW 242100"): T1T2A1A2ii, an
+# originating station, then a DDHHMM group. Confirmed real, live fallback
+# case: a JTWC bulletin whose REMARKS opens straight into the synopsis with
+# no "DDMMMYY." token anywhere at all (WTPN35 PGTW, SOULIK, 22W, extra-
+# tropical transition) - RE_REFDATE then finds nothing anywhere in the
+# bulletin. This gives the reference DAY only (no month/year); see the
+# fallback in parseJTWC() below for how that day is combined with the
+# current wall-clock month/year.
+RE_WMO_HEADER = re.compile(
+    r"^[A-Z]{4}\d{2}\s+[A-Z]{4}\s+(\d{2})(\d{2})(\d{2})\s*$", re.MULTILINE)
 RE_POSITION = re.compile(
     r"(\d{6})Z\s*---\s*(?:NEAR\s+)?(\d+(?:\.\d+)?)\s*([NS])\s+(\d+(?:\.\d+)?)\s*([EW])")
 RE_TAU = re.compile(r"^\s*(\d+)\s+HRS,\s+VALID AT:")
@@ -510,8 +520,13 @@ def _dtg_to_epoch(ddhhmm, ref_day, ref_month, ref_year):
     return calendar.timegm((year, month, dd, hh, mm, 0, 0, 0, 0))
 
 
-def parseJTWC(text):
+def parseJTWC(text, nowSecs=None):
     """Parse a WTPN warning into a time-ordered list of Tau objects.
+
+    `nowSecs` is unix seconds for "now"; only consulted by the no-DDMMMYY
+    fallback below (real wall clock when omitted - callers pass it only to
+    pin the fallback for a deterministic test). It plays no part at all
+    when the bulletin carries a normal DDMMMYY reference date.
 
     Returns (taus, header) where header is a dict of odds and ends.
     """
@@ -520,7 +535,11 @@ def parseJTWC(text):
     else:
         lines = text.split("\n")
 
-    # Reference date lives in the remarks block ("27AUG26.").
+    # Reference date lives in the remarks block ("27AUG26."), on every
+    # fixture seen until today. Real, live counter-example: a JTWC bulletin
+    # (WTPN35 PGTW, SOULIK, extratropical transition) whose REMARKS opens
+    # straight into the synopsis with no DDMMMYY token anywhere - confirmed
+    # by inspecting the real product text, not assumed.
     ref_day = ref_month = ref_year = None
     for ln in lines:
         m = RE_REFDATE.search(ln)
@@ -529,9 +548,32 @@ def parseJTWC(text):
             ref_month = MONTHS[m.group(2)]
             ref_year = 2000 + int(m.group(3))
             break
+
     if ref_day is None:
-        raise ValueError("Could not find a DDMMMYY reference date in the "
-                         "bulletin remarks; cannot resolve DTGs.")
+        # Fallback: no DDMMMYY anywhere in the bulletin. The WMO
+        # abbreviated header line ("WTPN35 PGTW 242100") gives the
+        # reference DAY directly (24) but not month/year, so resolve those
+        # by combining that day with wall-clock "now" through the exact
+        # same rollover rule _dtg_to_epoch() already uses for every DTG in
+        # the bulletin against its own reference day - seeded from "now"
+        # instead of a remarks-derived date. A day far from today's rolls
+        # to the adjacent month/year, precisely as any other far-from-
+        # reference DTG already does.
+        mh = RE_WMO_HEADER.search("\n".join(lines))
+        if mh is None:
+            raise ValueError(
+                "Could not find a DDMMMYY reference date in the bulletin "
+                "remarks, and no WMO header DDHHMM group to fall back to; "
+                "cannot resolve DTGs.")
+        if nowSecs is None:
+            nowSecs = time.time()
+        now = time.gmtime(nowSecs)
+        fallback_epoch = _dtg_to_epoch(mh.group(1) + mh.group(2) + mh.group(3),
+                                       now.tm_mday, now.tm_mon, now.tm_year)
+        resolved = time.gmtime(fallback_epoch)
+        ref_day = resolved.tm_mday
+        ref_month = resolved.tm_mon
+        ref_year = resolved.tm_year
 
     taus = []
     cur = None
@@ -2119,7 +2161,11 @@ if _IN_GFE:
                     if not raw:
                         continue          # empty slot, entirely normal
                     try:
-                        taus, header = parseJTWC(raw)
+                        # nowSecs: GFE's own clock, already computed above -
+                        # only consulted by parseJTWC()'s no-DDMMMYY
+                        # fallback (see its docstring), so this changes
+                        # nothing for the normal case.
+                        taus, header = parseJTWC(raw, nowSecs)
                     except Exception as exc:
                         problems.append("%s: %s" % (pil, exc))
                         continue
