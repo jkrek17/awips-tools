@@ -53,6 +53,12 @@ exposed in the dialog: none of them is a per-run decision.
 The parser and vortex math have no AWIPS dependencies, so the file runs
 standalone for testing.
 
+The dialog's "Run test case" toggle runs the procedure end to end against a
+bundled real bulletin, translated onto the office's own grid and rebased onto
+"now" — useful for confirming the install and seeing example output with no
+live storm in the text database (outside NW Pacific season, or between
+storms). It always writes to the preview grid only, never Fcst Wind.
+
 ### The web app
 
 Three pages, served from one Apps Script deployment:

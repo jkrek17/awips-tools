@@ -234,6 +234,35 @@ replacing `<SITE>` with your site identifier. This is a Site-level install
 and is visible to everyone, so it should only be used once User-level
 testing here is done.
 
+## Step 2.5: run the built-in test case (optional, but recommended first)
+
+Before ever touching a real bulletin, confirm the install works end to end
+using the procedure's own bundled test storm — no live storm, no network,
+and no dependence on what JTWC has (or has not) issued today.
+
+From the **Populate** menu, run **TCWind_JTWC**. In the dialog, set
+**Run test case (no live storm needed):** to **Yes**, and leave everything
+else at its default (the **Bulletins to process:** checklist is ignored in
+this mode). Run it.
+
+**What the status bar should say**, roughly:
+
+```
+TEST CASE (not a live storm). v%(version)s. EXPERIMENTAL, verify before
+use. Updated N WindJTWC preview grids. ...
+```
+
+The message always starts with `TEST CASE (not a live storm).` and always
+reports `WindJTWC preview grids` — this mode can only ever write to the
+preview grid, never Fcst Wind, even if **Write to:** is set to **Fcst
+Wind** (the status bar says so if you try).
+
+A preview grid should appear centered in your own office's domain, with a
+peak wind near the bundled bulletin's reported Vmax (see Step 4's
+checklist below for what a healthy field looks like generally). If this
+step looks right, Step 3 with a real bulletin should too; if it does not,
+report it the same way as a self-check failure, before moving on.
+
 ## Step 3: first run, in GFE Practice mode
 
 Do this in a GFE **Practice** database, not Operational.

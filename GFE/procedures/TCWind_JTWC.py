@@ -18,6 +18,13 @@
 # run standalone for testing:
 #   python TCWind_JTWC.py sample_bulletin.txt
 #
+# The dialog's "Run test case" toggle runs the tool end to end against a
+# bundled real bulletin (TEST_CASE_BULLETIN, a real WTPN31 KROVANH warning)
+# translated onto the office's own grid and rebased onto "now", so a
+# forecaster can see example output with zero live storms in the text
+# database (outside NW Pacific season, or between storms) - no network and
+# no live bulletin required. It always writes to the preview grid only.
+#
 # Author: (OPC)
 # ----------------------------------------------------------------------------
 
@@ -48,6 +55,145 @@ JTWC_PILS_WESTPAC = ["NFDTCPWP1", "NFDTCPWP2", "NFDTCPWP3",
 
 # Locations of the command-line textdb, tried in order for the fallback.
 TEXTDB_PATHS = ["/awips/fxa/bin/textdb", "/awips2/fxa/bin/textdb", "textdb"]
+
+
+# ---------------------------------------------------------------------------
+# Test case bulletin
+#
+# Real WTPN31 warning for Tropical Storm 22W (KROVANH), issued 2026-09-02,
+# captured verbatim from tests/tcwind_jtwc/fixtures/real_2026-09-02_wtpn31_krovanh.txt
+# (also used by tests/tcwind_jtwc/test_procedure_harness.py). It carries
+# full R34 quadrant radii across nine forecast hours (0-120h). It exists
+# ONLY to back the dialog's "Run test case" toggle below, so a forecaster
+# can see example output with zero live storms in the text database (e.g.
+# outside NW Pacific season, or between storms) - it is never retrieved
+# from textdb and never represents a real, current storm.
+# ---------------------------------------------------------------------------
+
+TEST_CASE_BULLETIN = """WTPN31 PGTW 020900
+MSGID/GENADMIN/JOINT TYPHOON WRNCEN PEARL HARBOR HI//
+SUBJ/TROPICAL STORM 22W (KROVANH) WARNING NR 005//
+RMKS/
+1. TROPICAL STORM 22W (KROVANH) WARNING NR 005
+   UPGRADED FROM TROPICAL DEPRESSION 22W
+   02 ACTIVE TROPICAL CYCLONES IN NORTHWESTPAC
+   MAX SUSTAINED WINDS BASED ON ONE-MINUTE AVERAGE
+   WIND RADII VALID OVER OPEN WATER ONLY
+    ---
+   WARNING POSITION:
+   020600Z --- NEAR 23.1N 132.4E
+     MOVEMENT PAST SIX HOURS - 310 DEGREES AT 06 KTS
+     POSITION ACCURATE TO WITHIN 030 NM
+     POSITION BASED ON CENTER LOCATED BY SATELLITE
+   PRESENT WIND DISTRIBUTION:
+   MAX SUSTAINED WINDS - 035 KT, GUSTS 045 KT
+   WIND RADII VALID OVER OPEN WATER ONLY
+   RADIUS OF 034 KT WINDS - 120 NM NORTHEAST QUADRANT
+                            090 NM SOUTHEAST QUADRANT
+                            080 NM SOUTHWEST QUADRANT
+                            100 NM NORTHWEST QUADRANT
+   REPEAT POSIT: 23.1N 132.4E
+    ---
+   FORECASTS:
+   12 HRS, VALID AT:
+   021800Z --- 24.7N 130.9E
+   MAX SUSTAINED WINDS - 035 KT, GUSTS 045 KT
+   WIND RADII VALID OVER OPEN WATER ONLY
+   RADIUS OF 034 KT WINDS - 130 NM NORTHEAST QUADRANT
+                            080 NM SOUTHEAST QUADRANT
+                            080 NM SOUTHWEST QUADRANT
+                            100 NM NORTHWEST QUADRANT
+   VECTOR TO 24 HR POSIT: 325 DEG/ 11 KTS
+    ---
+   24 HRS, VALID AT:
+   030600Z --- 26.5N 129.5E
+   MAX SUSTAINED WINDS - 040 KT, GUSTS 050 KT
+   WIND RADII VALID OVER OPEN WATER ONLY
+   RADIUS OF 034 KT WINDS - 130 NM NORTHEAST QUADRANT
+                            080 NM SOUTHEAST QUADRANT
+                            080 NM SOUTHWEST QUADRANT
+                            100 NM NORTHWEST QUADRANT
+   VECTOR TO 36 HR POSIT: 325 DEG/ 09 KTS
+    ---
+   36 HRS, VALID AT:
+   031800Z --- 28.0N 128.4E
+   MAX SUSTAINED WINDS - 040 KT, GUSTS 050 KT
+   WIND RADII VALID OVER OPEN WATER ONLY
+   RADIUS OF 034 KT WINDS - 130 NM NORTHEAST QUADRANT
+                            080 NM SOUTHEAST QUADRANT
+                            080 NM SOUTHWEST QUADRANT
+                            100 NM NORTHWEST QUADRANT
+   VECTOR TO 48 HR POSIT: 330 DEG/ 03 KTS
+    ---
+   EXTENDED OUTLOOK:
+   48 HRS, VALID AT:
+   040600Z --- 28.6N 128.0E
+   MAX SUSTAINED WINDS - 045 KT, GUSTS 055 KT
+   WIND RADII VALID OVER OPEN WATER ONLY
+   RADIUS OF 034 KT WINDS - 190 NM NORTHEAST QUADRANT
+                            090 NM SOUTHEAST QUADRANT
+                            090 NM SOUTHWEST QUADRANT
+                            160 NM NORTHWEST QUADRANT
+   VECTOR TO 60 HR POSIT: 180 DEG/ 02 KTS
+    ---
+   60 HRS, VALID AT:
+   041800Z --- 28.3N 128.0E
+   MAX SUSTAINED WINDS - 040 KT, GUSTS 050 KT
+   WIND RADII VALID OVER OPEN WATER ONLY
+   RADIUS OF 034 KT WINDS - 190 NM NORTHEAST QUADRANT
+                            080 NM SOUTHEAST QUADRANT
+                            090 NM SOUTHWEST QUADRANT
+                            160 NM NORTHWEST QUADRANT
+   VECTOR TO 72 HR POSIT: 160 DEG/ 04 KTS
+    ---
+   72 HRS, VALID AT:
+   050600Z --- 27.5N 128.3E
+   MAX SUSTAINED WINDS - 040 KT, GUSTS 050 KT
+   WIND RADII VALID OVER OPEN WATER ONLY
+   RADIUS OF 034 KT WINDS - 190 NM NORTHEAST QUADRANT
+                            080 NM SOUTHEAST QUADRANT
+                            080 NM SOUTHWEST QUADRANT
+                            160 NM NORTHWEST QUADRANT
+   VECTOR TO 96 HR POSIT: 150 DEG/ 03 KTS
+    ---
+   LONG RANGE OUTLOOK:
+    ---
+   96 HRS, VALID AT:
+   060600Z --- 26.4N 129.0E
+   MAX SUSTAINED WINDS - 035 KT, GUSTS 045 KT
+   WIND RADII VALID OVER OPEN WATER ONLY
+   RADIUS OF 034 KT WINDS - 190 NM NORTHEAST QUADRANT
+                            080 NM SOUTHEAST QUADRANT
+                            080 NM SOUTHWEST QUADRANT
+                            160 NM NORTHWEST QUADRANT
+   VECTOR TO 120 HR POSIT: 110 DEG/ 03 KTS
+    ---
+   120 HRS, VALID AT:
+   070600Z --- 26.0N 130.2E
+   MAX SUSTAINED WINDS - 035 KT, GUSTS 045 KT
+   WIND RADII VALID OVER OPEN WATER ONLY
+   RADIUS OF 034 KT WINDS - 190 NM NORTHEAST QUADRANT
+                            080 NM SOUTHEAST QUADRANT
+                            080 NM SOUTHWEST QUADRANT
+                            150 NM NORTHWEST QUADRANT
+    ---
+REMARKS:
+020900Z POSITION NEAR 23.5N 132.0E. 02SEP26. TROPICAL STORM 22W
+(KROVANH), LOCATED APPROXIMATELY 323 NM SOUTHEAST OF KADENA AB, HAS
+TRACKED NORTHWESTWARD AT 06 KNOTS OVER THE PAST SIX HOURS. MINIMUM
+CENTRAL PRESSURE AT 020600Z IS 994 MB. MAXIMUM SIGNIFICANT WAVE HEIGHT
+AT 020600Z IS 18 FEET. NEXT WARNINGS AT 021500Z, 022100Z, 030300Z AND
+030900Z. REFER TO TROPICAL DEPRESSION 17W (SAUDEL) WARNINGS (WTPN32
+PGTW) FOR SIX-HOURLY UPDATES.//
+NNNN
+
+
+"""
+
+# Dialog label for the "Run test case" toggle.  Also the varDict key it is
+# read back under (see _buildVarDict()/execute()) - a module constant so the
+# two stay in sync and the test harness can reuse it exactly.
+TEST_CASE_LABEL = "Run test case (no live storm needed):"
 
 
 # ---------------------------------------------------------------------------
@@ -533,6 +679,74 @@ def _bearing_speed(t1, t2):
     dist = 2.0 * EARTH_R_NM * np.arcsin(np.sqrt(min(max(a, 0.0), 1.0)))
     dt = max(t2.epoch - t1.epoch, 1) / 3600.0
     return float(brg), float(dist / dt)
+
+
+def _gridCenterLatLon(latGrid, lonGrid):
+    """Center lat/lon of a GFE grid, wrapped to -180..180.
+
+    Latitude is a plain mean. Longitude uses a circular mean (mean of unit
+    vectors, then atan2) rather than a plain mean of the raw values, so a
+    grid straddling the dateline (e.g. a Guam office's domain, which spans
+    it) still centers correctly instead of averaging +179 and -179 into 0.
+    """
+    clat = float(np.mean(latGrid))
+    lonRad = np.radians(np.asarray(lonGrid, dtype=np.float64))
+    clon = float(np.degrees(np.arctan2(np.mean(np.sin(lonRad)),
+                                       np.mean(np.cos(lonRad)))))
+    return clat, clon
+
+
+def _rebaseTestCaseTrack(taus, header, nowSecs, latGrid, lonGrid):
+    """Rebase TEST_CASE_BULLETIN's parsed track onto "now" and the active
+    grid, so the built-in test case never looks stale and always lands
+    somewhere the forecaster can see it, regardless of where or when it is
+    run.
+
+    Time: every tau's epoch is shifted by one constant offset so taus[0]
+    (the analysis time) lands MAX_BULLETIN_AGE_HOURS-safe - 3 hours before
+    `nowSecs` - which is what a bulletin that just came in looks like. The
+    header's DDMMMYY reference date is shifted to match, for display. This
+    does not re-parse the DDMMMYY string; it adjusts the already-parsed
+    epochs directly, then derives a display date from the new taus[0].
+
+    Space: every tau's lat/lon is translated by the constant offset that
+    puts taus[0]'s position exactly at the grid's own center (see
+    _gridCenterLatLon()). The track's shape and motion vector are
+    untouched - motionDir/motionSpd are never read here - only position
+    translates, so the storm keeps moving the same way relative to itself,
+    just centered somewhere the forecaster's own grid actually covers.
+    Longitude is wrapped back to -180..180 after the shift, the same
+    convention interpolateTrack() uses for the dateline.
+
+    Mutates and returns (taus, header); taus are freshly parsed from
+    TEST_CASE_BULLETIN by the caller each run, so this is not run on
+    anything shared across runs.
+    """
+    if not taus:
+        return taus, header
+
+    targetEpoch0 = nowSecs - 3 * 3600.0
+    epochShift = targetEpoch0 - taus[0].epoch
+    for t in taus:
+        t.epoch += epochShift
+
+    refStruct = time.gmtime(taus[0].epoch)
+    header = dict(header)
+    header["refDate"] = (refStruct.tm_mday, refStruct.tm_mon, refStruct.tm_year)
+
+    clat, clon = _gridCenterLatLon(latGrid, lonGrid)
+    dlat = clat - taus[0].lat
+    dlon = clon - taus[0].lon
+    if dlon > 180.0:
+        dlon -= 360.0
+    elif dlon < -180.0:
+        dlon += 360.0
+
+    for t in taus:
+        t.lat += dlat
+        t.lon = ((t.lon + dlon + 180.0) % 360.0) - 180.0
+
+    return taus, header
 
 
 # ---------------------------------------------------------------------------
@@ -1612,6 +1826,7 @@ if _IN_GFE:
                 ]
 
             VariableList += [
+                (TEST_CASE_LABEL, "No", "radio", ["No", "Yes"]),
                 ("Bulletins to process:", pilList, "check", pilList),
                 ("Write to:", "Preview grid", "radio",
                  ["Preview grid", "Fcst Wind"]),
@@ -1792,13 +2007,30 @@ if _IN_GFE:
                 if varDict is None:
                     return
 
+            testCase = varDict.get(TEST_CASE_LABEL, "No") == "Yes"
+
             pils = list(varDict.get("Bulletins to process:") or [])
 
-            if not pils:
+            # Test case mode uses its own bundled storm, not any selected
+            # PIL, so the "no bulletins selected" guard does not apply to it
+            # (nor does the "Bulletins to process:" checklist otherwise
+            # matter - it is simply ignored below).
+            if not pils and not testCase:
                 self.statusBarMsg("No bulletins selected.", "S")
                 return
 
             preview = varDict.get("Write to:", "Preview grid") == "Preview grid"
+
+            # Safety property, enforced in code rather than only by dialog
+            # wiring: a synthetic test-case storm must never land in Fcst
+            # Wind, no matter what "Write to:" says or whether the
+            # forecaster acknowledged writing to Fcst. Force preview before
+            # the acknowledgement gate below even runs, and say so once in
+            # the final status message.
+            forcedPreviewMsg = ""
+            if testCase and not preview:
+                preview = True
+                forcedPreviewMsg = "Test case always writes to the preview grid. "
 
             # Writing to Fcst needs an explicit acknowledgement while the
             # tool is experimental.  Preview runs never do, so nothing stops
@@ -1839,38 +2071,50 @@ if _IN_GFE:
                 utcHr = self._gmtime().timetuple().tm_hour
                 activeTR = self.createTimeRange(utcHr - 6, utcHr + 175, "Zulu")
 
+            # Needed by the test-case track translation below, so this is
+            # fetched before the storms are collected rather than after, as
+            # a live-bulletin-only run used to do.
+            latGrid, lonGrid = self.getLatLonGrids()
+
             # --- collect every bulletin with a live storm in it -------
             storms = []
             stale = []
             problems = []
-            for pil in pils:
-                raw = self._retrieveBulletin(pil)
-                if not raw:
-                    continue          # empty slot, entirely normal
-                try:
-                    taus, header = parseJTWC(raw)
-                except Exception as exc:
-                    problems.append("%s: %s" % (pil, exc))
-                    continue
-                if len(taus) < 2:
-                    problems.append("%s: only %d usable forecast times"
-                                    % (pil, len(taus)))
-                    continue
+            if testCase:
+                taus, header = parseJTWC(TEST_CASE_BULLETIN)
+                taus, header = _rebaseTestCaseTrack(
+                    taus, header, nowSecs, latGrid, lonGrid)
+                storms.append(
+                    {"pil": "TESTCASE", "taus": taus, "header": header})
+            else:
+                for pil in pils:
+                    raw = self._retrieveBulletin(pil)
+                    if not raw:
+                        continue          # empty slot, entirely normal
+                    try:
+                        taus, header = parseJTWC(raw)
+                    except Exception as exc:
+                        problems.append("%s: %s" % (pil, exc))
+                        continue
+                    if len(taus) < 2:
+                        problems.append("%s: only %d usable forecast times"
+                                        % (pil, len(taus)))
+                        continue
 
-                # textdb hands back whatever was last stored under this PIL,
-                # so a dissipated storm sits there indefinitely.  Judge the
-                # slot by the bulletin's own analysis time.
-                ageHours = (nowSecs - taus[0].epoch) / 3600.0
-                if ageHours > MAX_BULLETIN_AGE_HOURS:
-                    stale.append("%s %s is %.0f h old"
-                                 % (pil, describeStorm(header), ageHours))
-                    continue
-                if taus[-1].epoch <= nowSecs:
-                    stale.append("%s %s forecast period has ended"
-                                 % (pil, describeStorm(header)))
-                    continue
+                    # textdb hands back whatever was last stored under this
+                    # PIL, so a dissipated storm sits there indefinitely.
+                    # Judge the slot by the bulletin's own analysis time.
+                    ageHours = (nowSecs - taus[0].epoch) / 3600.0
+                    if ageHours > MAX_BULLETIN_AGE_HOURS:
+                        stale.append("%s %s is %.0f h old"
+                                     % (pil, describeStorm(header), ageHours))
+                        continue
+                    if taus[-1].epoch <= nowSecs:
+                        stale.append("%s %s forecast period has ended"
+                                     % (pil, describeStorm(header)))
+                        continue
 
-                storms.append({"pil": pil, "taus": taus, "header": header})
+                    storms.append({"pil": pil, "taus": taus, "header": header})
 
             if not storms:
                 msg = "No live bulletins found in %s." % ", ".join(pils)
@@ -1896,12 +2140,11 @@ if _IN_GFE:
 
             # Fragment so partially overlapping blocks can be written.  A
             # preview run must not touch Fcst at all, and fragmenting would
-            # rewrite its inventory, so it is skipped.
+            # rewrite its inventory, so it is skipped.  testCase always
+            # forces preview above, so this never fires for it either.
             if not preview:
                 self._fragment(activeTR)
                 fcstTRList = self._fcstInventory(activeTR)
-
-            latGrid, lonGrid = self.getLatLonGrids()
 
             # A grid block is valid from its start time onward, so a
             # forecast time populates the block that BEGINS at it.  Every
@@ -2044,9 +2287,11 @@ if _IN_GFE:
                             time.strftime("%d/%H%MZ", time.gmtime(when)))
 
             if not written:
-                self.statusBarMsg(
-                    "Parsed %d live bulletin(s), but no Fcst Wind grids fell "
-                    "inside their valid periods." % len(storms), "S")
+                msg = "Parsed %d live bulletin(s), but no Fcst Wind grids " \
+                      "fell inside their valid periods." % len(storms)
+                if testCase:
+                    msg = "TEST CASE (not a live storm). " + msg
+                self.statusBarMsg(msg, "S")
                 return
 
             parts = []
@@ -2059,7 +2304,12 @@ if _IN_GFE:
 
             where = "%s preview grids" % PREVIEW_ELEMENT if preview \
                 else "Fcst Wind grids"
-            msg = "v%s. " % VERSION
+            msg = ""
+            if testCase:
+                msg += "TEST CASE (not a live storm). "
+            if forcedPreviewMsg:
+                msg += forcedPreviewMsg
+            msg += "v%s. " % VERSION
             if EXPERIMENTAL:
                 msg += "EXPERIMENTAL, verify before use. "
             msg += "Updated %d %s. " % (written, where) + "; ".join(parts) + "."

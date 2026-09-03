@@ -313,6 +313,51 @@ def _peak_written_kt(proc):
     return peak
 
 
+def _run_test_case(write_to, ack="No", now_epoch=None):
+    """Run Procedure.execute() with the "Run test case (no live storm
+    needed):" toggle set to "Yes" - no fixture, no textdb, the procedure's
+    own bundled TEST_CASE_BULLETIN. Builds a Fcst Wind inventory (3-hourly,
+    same convention as _run()) wide enough to cover the rebased track,
+    computed from TEST_CASE_BULLETIN's own (pre-rebase) span so this stays
+    correct if the bundled bulletin ever changes.
+
+    Returns (proc, origTaus, nowEpoch, latGrid, lonGrid). origTaus is the
+    freshly, independently parsed (never rebased) TEST_CASE_BULLETIN, for
+    computing expectations (bulletin peak Vmax, track duration) without
+    depending on the procedure's internal state.
+    """
+    origTaus, _origHeader = tc.parseJTWC(tc.TEST_CASE_BULLETIN)
+    if now_epoch is None:
+        now_epoch = int(time.time())
+
+    expectedAnalysis = now_epoch - 3 * 3600
+    duration = origTaus[-1].epoch - origTaus[0].epoch
+    expectedLast = expectedAnalysis + duration
+
+    latGrid, lonGrid = _mesh()
+
+    proc = tc.Procedure(dbss=None)
+    proc.configure(
+        texts={},
+        now_epoch=now_epoch,
+        inv_start=expectedAnalysis,
+        inv_end=expectedLast + 3 * 3600,
+        lat=latGrid,
+        lon=lonGrid)
+
+    varDict = {
+        tc.TEST_CASE_LABEL: "Yes",
+        "Bulletins to process:": [],
+        "Write to:": write_to,
+        "Run over selected time range only?": "No",
+        "I understand this tool is experimental and I have reviewed "
+        "the output:": ack,
+    }
+
+    proc.execute(None, None, varDict)
+    return proc, origTaus, now_epoch, latGrid, lonGrid
+
+
 # ---------------------------------------------------------------------------
 # Cases
 # ---------------------------------------------------------------------------
@@ -375,6 +420,106 @@ def case_saudel():
     return fails, proc
 
 
+def case_test_case_forces_preview_despite_fcst_wind_and_ack():
+    """"Run test case" = Yes, "Write to:" = Fcst Wind, acknowledgement =
+    Yes. This is the safety-property case: even though the forecaster
+    picked Fcst Wind AND acknowledged writing to it, a synthetic test
+    storm must never land there - the override has to be enforced in code,
+    not just by graying the dialog out. Also checks the track was
+    translated onto the fake grid's own center, and that the peak written
+    tracks the bundled bulletin's own Vmax."""
+    fails = []
+
+    proc, origTaus, nowEpoch, latGrid, lonGrid = _run_test_case(
+        write_to="Fcst Wind", ack="Yes")
+
+    if not proc.created:
+        fails.append("no grids were written at all")
+
+    finalMsg = _final_status(proc)
+    if "TEST CASE" not in finalMsg:
+        fails.append("final status does not say TEST CASE: %r" % finalMsg)
+    if "Test case always writes to the preview grid." not in finalMsg:
+        fails.append("final status does not explain the forced-preview "
+                     "override even though Write to: was Fcst Wind and "
+                     "the acknowledgement was Yes: %r" % finalMsg)
+    if "Fcst Wind grids" in finalMsg:
+        fails.append("final status reports writing to real Fcst Wind "
+                     "grids: %r" % finalMsg)
+
+    # Code-level safety check on every grid actually written this run: the
+    # element name must always be the preview element, and the temporary
+    # (createGrid(..., descriptiveName=...)) branch must be the one that
+    # ran - _storeGrid() only passes descriptiveName on the temporary
+    # (preview) path, so its presence is direct evidence createGrid was
+    # never called with temporary=False here.
+    for args, kwargs in proc.created:
+        element = args[1]
+        if element != tc.PREVIEW_ELEMENT:
+            fails.append("createGrid called with element %r, not the "
+                         "preview element %r" % (element, tc.PREVIEW_ELEMENT))
+        if "descriptiveName" not in kwargs:
+            fails.append("createGrid call missing descriptiveName kwarg - "
+                         "the non-temporary (real Fcst Wind) branch ran: "
+                         "args=%r kwargs=%r" % (args, kwargs))
+
+    # The track must be translated so tau 0 sits at the fake grid's own
+    # center - computed the same way the procedure does (tc._gridCenterLatLon
+    # on the exact grid getLatLonGrids() returned), independently re-run
+    # here on a fresh, unrebased parse of TEST_CASE_BULLETIN.
+    freshTaus, freshHeader = tc.parseJTWC(tc.TEST_CASE_BULLETIN)
+    rebasedTaus, _rebasedHeader = tc._rebaseTestCaseTrack(
+        freshTaus, freshHeader, nowEpoch, latGrid, lonGrid)
+    clat, clon = tc._gridCenterLatLon(latGrid, lonGrid)
+    latCell = abs(float(latGrid[1, 0] - latGrid[0, 0]))
+    lonCell = abs(float(lonGrid[0, 1] - lonGrid[0, 0]))
+    tol = 0.5 * max(latCell, lonCell)
+    tau0 = rebasedTaus[0]
+    if abs(tau0.lat - clat) > tol or abs(tau0.lon - clon) > tol:
+        fails.append(
+            "translated tau-0 (%.3f, %.3f) is not within half a grid cell "
+            "(%.4f deg) of the fake grid's own center (%.3f, %.3f)"
+            % (tau0.lat, tau0.lon, tol, clat, clon))
+
+    bulletinPeak = max(t.vmax for t in origTaus)
+    peak = _peak_written_kt(proc)
+    if abs(peak - bulletinPeak) > 5.0:
+        fails.append("peak written %.1f kt not within a few kt of the "
+                     "bundled bulletin's max %.1f kt" % (peak, bulletinPeak))
+
+    return fails, proc
+
+
+def case_test_case_preview_default():
+    """Lighter case: "Run test case" = Yes with "Write to:" left at its
+    normal default, Preview grid. Confirms test mode works there too, not
+    only under the forced-override path above."""
+    fails = []
+
+    proc, origTaus, _nowEpoch, _latGrid, _lonGrid = _run_test_case(
+        write_to="Preview grid", ack="No")
+
+    if not proc.created:
+        fails.append("no grids were written at all")
+
+    finalMsg = _final_status(proc)
+    if "TEST CASE" not in finalMsg:
+        fails.append("final status does not say TEST CASE: %r" % finalMsg)
+
+    for args, _kwargs in proc.created:
+        if args[1] != tc.PREVIEW_ELEMENT:
+            fails.append("createGrid used element %r, expected preview "
+                         "element %r" % (args[1], tc.PREVIEW_ELEMENT))
+
+    bulletinPeak = max(t.vmax for t in origTaus)
+    peak = _peak_written_kt(proc)
+    if abs(peak - bulletinPeak) > 5.0:
+        fails.append("peak written %.1f kt not within a few kt of the "
+                     "bundled bulletin's max %.1f kt" % (peak, bulletinPeak))
+
+    return fails, proc
+
+
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
@@ -383,6 +528,9 @@ def main():
     cases = [
         ("krovanh_create_missing_tau_block", case_krovanh),
         ("saudel_weak_no_radii_runs_clean", case_saudel),
+        ("test_case_forces_preview_despite_fcst_wind_and_ack",
+         case_test_case_forces_preview_despite_fcst_wind_and_ack),
+        ("test_case_preview_default", case_test_case_preview_default),
     ]
 
     failed = 0
