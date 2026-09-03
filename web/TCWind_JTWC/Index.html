@@ -26,9 +26,12 @@
    What replaced it:
 
      * The wind-field ramp is a single perceptually-ordered sequential ramp
-       (plasma) with strictly ascending relative luminance.  Worst pair of
-       ANY two bands under deuteranopia: 1.61.  Speed is the only thing
-       colour encodes on the map.
+       (plasma) with strictly ascending relative luminance from 20 kt up.
+       Worst pair of any two of THOSE bands under deuteranopia: 1.61.  Below
+       20 kt is one pale tint of the ramp's own darkest hue, not a further
+       descent into near-black - see Theme.html for why - and it sits far
+       enough from that darkest band in lightness to stay unambiguous.
+       Speed is the only thing colour encodes on the map.
      * Rings and the track carry NO hue at all.  They are ink-on-halo, told
        apart by dash pattern and by a text label drawn on the ring itself.
        A ring can therefore never be confused with a wind band.
@@ -333,6 +336,10 @@ details li { margin-bottom:5px; }
 .legendBox .ln.d50 { border-top-style:dashed; }
 .legendBox .ln.d64 { border-top-style:dotted; border-top-width:3px; }
 .legendBox .ln.tgt { border-top:2px dotted var(--ink); }
+/* Modelled 34 kt edge: part of the wind-field band colours, not the ink/halo
+   "reported" vocabulary above, so it borrows --f2 (the 34-50 kt band's own
+   colour) instead of --ink. */
+.legendBox .ln.m34 { border-top-color:var(--f2); }
 .leaflet-container .ringLabel {
   font:700 10px/1 var(--mono); color:var(--ink); white-space:nowrap;
   text-shadow:0 0 3px var(--ink-halo), 0 0 3px var(--ink-halo),
@@ -606,8 +613,8 @@ var THRESHOLDS  = [64, 50, 34];
 var RMS_P75 = 2.81, RMS_P90 = 4.47, RMS_N = 4624;
 
 var TD_FLOOR = 34;                 // below this the GFE tool builds nothing
-var BAND_EDGES = [20, 34, 50, 64, 80, 100];
-var BAND_TOKENS = ['--f1', '--f2', '--f3', '--f4', '--f5', '--f6'];
+var BAND_EDGES = [10, 20, 34, 50, 64, 80, 100];
+var BAND_TOKENS = ['--f0', '--f1', '--f2', '--f3', '--f4', '--f5', '--f6'];
 // Plain colour raster: every band is drawn fully opaque in its own colour,
 // and the WHOLE layer is then laid over the basemap at one fixed opacity
 // (Leaflet's imageOverlay `opacity` option) so the streets and coastline
@@ -786,6 +793,7 @@ legend.onAdd = function () {
   }
   d.innerHTML =
     '<h3>Modelled wind speed, kt</h3>' + rows +
+    '<div class="row"><span class="ln m34"></span>Modelled 34 kt edge</div>' +
     '<h3>Reported</h3>' +
     '<div class="row"><span class="ln"></span>R34, as reported</div>' +
     '<div class="row"><span class="ln d50"></span>R50</div>' +
@@ -1024,12 +1032,17 @@ function drawFieldFor(it) {
     if (lut[i] > r34Max) r34Max = lut[i];
   }
   /* Reject radius for shortcut 3.  The taper is 34*exp(-(r-r34)/L) with
-     L = max(r34*OUTER_DECAY, MIN_OUTER_DECAY_NM), so the 20 kt draw floor is
-     crossed at r - r34 = L*ln(1.7) = 0.53L.  Cutting at 1.9x r34 covers that
-     for a large storm and the additive term covers a small one, where L is
-     floored at MIN_OUTER_DECAY_NM and the decay is therefore slower than the
-     multiplicative bound assumes. */
-  var cutNm = Math.max(r34Max * 1.9, r34Max + 2.5 * MIN_DECAY_NM);
+     L = max(r34*OUTER_DECAY, MIN_OUTER_DECAY_NM), so the draw floor -
+     BAND_EDGES[0], the bottom of the palette - is crossed at
+     r - r34 = L*ln(34/BAND_EDGES[0]).  At the 10 kt floor that is
+     L*ln(3.4) = 1.224L, versus L*ln(1.7) = 0.531L back when the palette
+     still bottomed out at 20 kt - the floor moved down by a factor of
+     ln(3.4)/ln(1.7) = 2.31 in how far out the taper has to travel.  Cutting
+     at 3.1x r34 covers that for a large storm and the additive term covers
+     a small one, where L is floored at MIN_OUTER_DECAY_NM and the decay is
+     therefore slower than the multiplicative bound assumes; both constants
+     are simply the old 1.9 / 2.5 scaled by that same 2.31. */
+  var cutNm = Math.max(r34Max * 3.1, r34Max + 5.8 * MIN_DECAY_NM);
   var cosLat = Math.max(Math.cos(clat * Math.PI / 180), 0.05);
 
   var rgb = [];
@@ -1114,6 +1127,31 @@ function drawFieldFor(it) {
   return peak;
 }
 
+/**
+ * The modelled 34 kt boundary, traced at 2 deg azimuth steps straight from
+ * field.r34At() - the exact same per-azimuth lookup drawFieldFor() samples
+ * to paint the raster, not a re-derivation - so the line and the raster's
+ * own edge always agree. It is part of the wind-field layer (drawn and
+ * cleared alongside the raster, no checkbox of its own) and coloured in the
+ * 34-50 kt band's own hue (--f2) so it reads as "the model's 34 kt", set
+ * next to the ink-on-halo "R34, as reported" ring for an at-a-glance
+ * comparison of the two.
+ */
+function drawR34Edge(it) {
+  var pts = [], az;
+  for (az = 0; az < 360; az += 2) {
+    pts.push(V.destPoint(it.snap.lat, it.snap.lon, az, it.field.r34At(az)));
+  }
+  var color = tok('--f2');
+  var halo = L.polygon(pts, {
+    color: tok('--ink-halo'), weight: 4, opacity: 0.85, fill: false, interactive: false
+  }).addTo(map);
+  var line = L.polygon(pts, {
+    color: color, weight: 1.5, opacity: 0.95, fill: false, interactive: false
+  }).addTo(map);
+  fieldOverlays.push(halo, line);
+}
+
 function drawField(items) {
   clearField();
   if (!document.getElementById('layField').checked) return null;
@@ -1122,6 +1160,7 @@ function drawField(items) {
     if (!hasField(items[i])) continue;
     var p = drawFieldFor(items[i]);
     if (p > peak) peak = p;
+    drawR34Edge(items[i]);
   }
   return peak || null;
 }

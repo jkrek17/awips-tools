@@ -62,7 +62,19 @@
   /* --- wind-field ramp --------------------------------------------------
      Plasma: perceptually uniform, monotonic in lightness, and readable to
      every common colour-vision type. Shared by both themes because it sits
-     over map tiles, not over the page background. */
+     over map tiles, not over the page background.
+
+     --f0 (10-20 kt) is the one deliberate exception to "monotonic in
+     lightness up the ramp": it is a pale tint of --f1's own hue rather than
+     a darker step below it. A one-sided storm's weak side is 10-20 kt, not
+     0 kt, and drawing nothing there reads as "no wind" instead of "weak
+     wind" - the failure this band exists to fix. Going darker to continue
+     plasma's math would make the weakest band look the most solid of all
+     against OSM's own dark-grey roads and labels; pale reads as "weak" the
+     way it does on every other met wind/precip scale, and it stays far
+     enough from --f1 in lightness that the two are never mistaken for one
+     another. */
+  --f0:#9e9ccf;
   --f1:#0d0887; --f2:#6a00a8; --f3:#b12a90;
   --f4:#e16462; --f5:#fca636; --f6:#f0f921;
 
