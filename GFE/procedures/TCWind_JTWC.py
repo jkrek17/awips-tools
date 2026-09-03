@@ -118,6 +118,22 @@ GTCM_X_MAX = 1.20
 GTCM_MAX_ITER = 220
 GTCM_ASYM_STEPS = 9
 
+# The modelled 34 kt radius (insert footprint/taper anchor) is solved by
+# probing the symmetric profile out to this many nm, then finding where the
+# asymmetric field crosses 34 kt.  It depends on azimuth alone - the fit
+# (rm, ri, x1, x2, ax, ay) is the same everywhere on one grid - so it is
+# solved once per azimuth bin on this fixed table and linearly interpolated
+# (wrapping at 360) onto the grid's own azimuths, rather than broadcasting
+# the probe against every grid point. That broadcast used to make the cost
+# scale with grid size: on a 500x500 domain, 250,000 points x 900 probe
+# samples is a 225,000,000-element intermediate array, computed twice over
+# (34 s, 6.9 GB peak). Solving it on GTCM_R34_AZ_BINS azimuths instead costs
+# 360 x 900 = 324,000 elements, independent of grid resolution. 1 degree
+# bins keep the azimuthal interpolation error on r34 well under the 1 nm
+# parity tolerance (tests/tcwind_jtwc/compare_py_js.py).
+GTCM_R34_PROBE_MAX_NM = 900
+GTCM_R34_AZ_BINS = 360
+
 # Share of the storm's translation speed added to the field, which makes the
 # right of track stronger than the left.  Raising it also pushes the field
 # off the reported radii, roughly 3.4 kt of error at 0.5 on a 16 kt mover.
@@ -224,9 +240,15 @@ QUAD_AZ = {"NE": 45.0, "SE": 135.0, "SW": 225.0, "NW": 315.0}
 MONTHS = {"JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
           "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12}
 
-# Confidence weight applied to the vortex as the system loses tropical
-# structure.  The Rankine assumption stops being defensible once JTWC flags
-# subtropical transition, so we hand the field back to the background.
+# Not a blend weight - see INSERT_AFTER_SUBTROPICAL's only consumer, in
+# execute()'s buildFor(): once a storm-time's conf drops below 1.0 (i.e.
+# from CONF_BECOMING onward) it is skipped entirely, all or nothing, and
+# only when INSERT_AFTER_SUBTROPICAL is False. With the tunable's default of
+# True that branch never runs and conf has no effect on the output at all.
+# The Rankine assumption stops being defensible once JTWC flags subtropical
+# transition; these values exist to let an office opt into handing the
+# field back to the background at that point, in one all-or-nothing step,
+# not a continuous fade.
 CONF_TROPICAL = 1.00
 CONF_BECOMING = 0.60
 CONF_SUBTROPICAL = 0.25
@@ -277,6 +299,7 @@ class Tau(object):
         self.motionDir = None       # heading toward next position
         self.motionSpd = None       # kt
         self.conf = CONF_TROPICAL
+        self.fit = None             # cache: fitGTCM(self), set by _fitTau()
 
     def quad(self, threshold):
         """Radii dict for a threshold, zeros if the threshold is absent."""
@@ -506,6 +529,41 @@ class Snapshot(object):
         self.radii = {}
         self.motionDir = self.motionSpd = None
         self.conf = CONF_TROPICAL
+        self.fit = None             # GTCM fit params for this instant, or
+                                    # None if the caller (e.g. a hand-built
+                                    # snapshot in a verification script)
+                                    # never set one - _buildVortexGTCM()
+                                    # falls back to fitGTCM(self) then.
+        self.fitInterpolated = False  # True if .fit was blended from two
+                                      # taus rather than fit directly
+
+
+def _fitTau(tau):
+    """GTCM fit for one Tau's own reported radii, lazily computed and
+    cached on the Tau (see Tau.fit).
+
+    interpolateTrack() used to fit the LINEARLY INTERPOLATED radii at the
+    requested epoch instead of this. That manufactures targets nobody
+    reported: a threshold missing at one tau interpolates from zero, so a
+    64-kt ring that has not appeared yet shows up a few nm wide midway to
+    the tau where it does, and the shared (rm, x1, x2) fit swings to chase
+    it - on one probed 12h span that pulled rm from 35 nm down to 8.5 nm and
+    back up, non-monotonic, for a storm whose reported radii only grew
+    smoothly. fitGTCM() needs nothing a Tau doesn't already carry (vmax,
+    lat, motion, radii - the same fields interpolateTrack() puts on a
+    Snapshot), so each tau is fit exactly once, from what JTWC actually
+    reported at that tau, and interpolateTrack() blends the two RESULTS
+    instead of blending their inputs and re-fitting.
+    """
+    if tau.fit is None:
+        tau.fit = fitGTCM(tau)
+    return tau.fit
+
+
+# Fit fields interpolateTrack() blends linearly between two taus. n, rms and
+# freeParams describe how well-constrained a fit is, not a field parameter,
+# so those are carried from the nearer tau instead (see interpolateTrack()).
+_GTCM_FIT_BLEND_KEYS = ("rm", "ri", "x1", "x2", "ax", "ay", "a")
 
 
 def interpolateTrack(taus, epoch):
@@ -542,14 +600,34 @@ def interpolateTrack(taus, epoch):
     s.motionDir = lo.motionDir
     s.motionSpd = lo.motionSpd + f * (hi.motionSpd - lo.motionSpd)
 
-    # Radii: a threshold missing at one end interpolates from zero, so a
+    # Radii: still interpolated, for drawing the reported-radii rings on the
+    # map. A threshold missing at one end interpolates from zero, so a
     # 64-kt ring that first appears at 24h grows in rather than popping.
+    # The wind FIELD no longer comes from fitting these interpolated values
+    # - see _fitTau()'s docstring - it is built from s.fit below instead.
     for threshold in (64, 50, 34):
         a = lo.quad(threshold)
         b = hi.quad(threshold)
         vals = dict((q, a[q] + f * (b[q] - a[q])) for q in QUADS)
         if max(vals.values()) > 0.0:
             s.radii[threshold] = vals
+
+    # The vortex FIELD comes from interpolating each tau's OWN fit (each
+    # fit exactly once, from that tau's own reported radii, and cached).
+    loFit = _fitTau(lo)
+    if hi is lo:
+        s.fit = dict(loFit)
+        s.fitInterpolated = False
+    else:
+        hiFit = _fitTau(hi)
+        blended = dict((k, loFit[k] + f * (hiFit[k] - loFit[k]))
+                       for k in _GTCM_FIT_BLEND_KEYS)
+        nearer = hiFit if f >= 0.5 else loFit
+        blended["n"] = nearer["n"]
+        blended["rms"] = nearer["rms"]
+        blended["freeParams"] = nearer["freeParams"]
+        s.fit = blended
+        s.fitInterpolated = True
     return s
 
 
@@ -679,6 +757,26 @@ def _gtcmProfile(r, vmax, a, rm, ri, x1, x2):
     A makes V continuous across ri.  Two exponents, not one: the inner and
     outer parts of a real vortex do not share a decay rate, and forcing them
     to was the single biggest error in the pre-guide reconstruction of this.
+
+    `a` must be the magnitude of the (ax, ay) asymmetry vector actually
+    applied on top of V by _gtcmUV(), not necessarily the Schwerdt estimate
+    fitGTCM() also computes under the same name. As azimuth sweeps 360deg at
+    a fixed r, |wind| = |V*t_hat + (ax, ay)| traces a full circle of radius
+    V centred on (ax, ay), so its maximum over azimuth is V + |(ax, ay)|.
+    Passing the actual |(ax, ay)| here makes that V + |(ax, ay)| equal Vmax
+    exactly at r = rm - (Vmax - |(ax, ay)|) + |(ax, ay)| = Vmax - regardless
+    of what the fit's step 3 did to (ax, ay). Passing the fixed Schwerdt `a`
+    instead (the first guess/cap fitGTCM() returns) only gives that identity
+    when (ax, ay) never moved from its motion-derived first guess; once step
+    3 shrinks it - which it is free to do, to reduce wind-radius error - the
+    analytic peak fell up to ~15% short of Vmax with no way for
+    NORMALIZE_CORE_PEAK to reach it (its weight is 0 at r = rm, exactly
+    where the shortfall lives). Every caller of this function for the
+    GTCM field or its r34 probe must pass the actual |(ax, ay)|, computed
+    once as amag = hypot(fit["ax"], fit["ay"]); only fitGTCM()'s own
+    rm/x1/x2-sizing steps, which hold (ax, ay) at the first guess, may pass
+    the plain Schwerdt value (and get the same number either way, since
+    |(ax0, ay0)| == a by construction).
     """
     vs = max(float(vmax) - float(a), 0.0)
     rm = max(float(rm), 1e-3)
@@ -785,10 +883,11 @@ def _nelderMead(fn, guess, step, maxIter):
 def fitGTCM(snapshot):
     """Fit the GTCM vortex to one storm-time.
 
-    Returns dict(rm, ri, x1, x2, ax, ay, a, n, rms).  Users Guide steps 2b-3:
-    climatological first guess from (5)/(6); ri at the median reported radius;
-    (rm, x1, x2) by weighted least squares on WIND error (7); then ax/ay
-    released within GTCM_ASYM_MAX_DEV_KT with the size parameters held fixed.
+    Returns dict(rm, ri, x1, x2, ax, ay, a, n, freeParams, rms).  Users
+    Guide steps 2b-3: climatological first guess from (5)/(6); ri at the
+    median reported radius; (rm, x1, x2) by weighted least squares on WIND
+    error (7); then ax/ay released within GTCM_ASYM_MAX_DEV_KT with the size
+    parameters held fixed.
     """
     vmax = float(snapshot.vmax)
     lat = float(snapshot.lat)
@@ -814,7 +913,14 @@ def fitGTCM(snapshot):
     ri = float(np.median(rr))
 
     def err(rm, x1, x2, ax, ay):
-        V = _gtcmProfile(rr, vmax, a, rm, ri, x1, x2)
+        # amag, not the closed-over `a`: see _gtcmProfile()'s docstring.
+        # During the rm/x1/x2-sizing steps ax==ax0, ay==ay0 always, so
+        # amag == a there by construction (no behaviour change). Step 3
+        # below is the one place ax/ay actually move, and it needs the
+        # core's amplitude to track whatever it is testing, not stay
+        # pinned to the first guess it may be moving away from.
+        amag = float(np.hypot(ax, ay))
+        V = _gtcmProfile(rr, vmax, amag, rm, ri, x1, x2)
         u, v = _gtcmUV(V, az, ax, ay, lat)
         return float(np.sum(wt * (np.sqrt(u * u + v * v) - vt) ** 2))
 
@@ -924,18 +1030,34 @@ def _buildVortexGTCM(latGrid, lonGrid, snapshot, rmax_nm, outerDecayFactor,
         too strong over land.
     """
     r, az = _distBearingGrids(latGrid, lonGrid, snapshot.lat, snapshot.lon)
-    fit = fitGTCM(snapshot)
+    fit = snapshot.fit if getattr(snapshot, "fit", None) is not None \
+        else fitGTCM(snapshot)
 
-    V = _gtcmProfile(r, snapshot.vmax, fit["a"], fit["rm"], fit["ri"],
+    # Use the magnitude of the asymmetry vector actually applied, not the
+    # Schwerdt first guess fit["a"] - see _gtcmProfile()'s docstring. This
+    # is what makes the analytic field's peak over azimuth hit Vmax exactly
+    # at r = rm, whatever the fit's step 3 did to (ax, ay).
+    amag = float(np.hypot(fit["ax"], fit["ay"]))
+
+    V = _gtcmProfile(r, snapshot.vmax, amag, fit["rm"], fit["ri"],
                      fit["x1"], fit["x2"])
     u, v = _gtcmUV(V, az, fit["ax"], fit["ay"], snapshot.lat)
     mag = np.sqrt(u * u + v * v)
 
     # Modelled 34 kt radius per azimuth, for the insert footprint and taper.
-    probe = np.linspace(1.0, 900.0, 900)
-    prof = _gtcmProfile(probe, snapshot.vmax, fit["a"], fit["rm"], fit["ri"],
+    # This depends on azimuth ALONE - fit/amag are the same everywhere on
+    # this grid - so solve it once on a fixed azimuth table
+    # (GTCM_R34_AZ_BINS bins) and interpolate onto the grid's own azimuths,
+    # rather than broadcasting the probe against every grid point. See
+    # GTCM_R34_AZ_BINS's comment: that broadcast used to cost
+    # grid_points x GTCM_R34_PROBE_MAX_NM, computed twice over (34 s, 6.9 GB
+    # peak on a 500x500 domain); this costs GTCM_R34_AZ_BINS x
+    # GTCM_R34_PROBE_MAX_NM regardless of grid size.
+    probe = np.linspace(1.0, GTCM_R34_PROBE_MAX_NM, GTCM_R34_PROBE_MAX_NM)
+    prof = _gtcmProfile(probe, snapshot.vmax, amag, fit["rm"], fit["ri"],
                         fit["x1"], fit["x2"])
-    uu, vv = _gtcmUV(prof[None, :], np.asarray(az).ravel()[:, None],
+    azTable = np.linspace(0.0, 360.0, GTCM_R34_AZ_BINS, endpoint=False)
+    uu, vv = _gtcmUV(prof[None, :], azTable[:, None],
                      fit["ax"], fit["ay"], snapshot.lat)
     prof2d = np.sqrt(uu * uu + vv * vv)
     # The OUTERMOST radius still at 34 kt.  Not the first crossing: the profile
@@ -961,7 +1083,15 @@ def _buildVortexGTCM(latGrid, lonGrid, snapshot, rmax_nm, outerDecayFactor,
     frac = np.clip(frac, 0.0, 1.0)
     r34_exact = probe[last] + frac * (probe[nxt] - probe[last])
 
-    r34 = np.where(anyAbove, r34_exact, fit["rm"] * 3.0)
+    r34_table = np.where(anyAbove, r34_exact, fit["rm"] * 3.0)
+
+    # Interpolate r34(az) onto the grid's own azimuths, linear and wrapping
+    # at 360 so the 0/360 seam stays continuous (azTable's last bin is
+    # centered below 360, so it and azTable[0] must both anchor the wrap).
+    azTableWrap = np.concatenate([azTable, [360.0]])
+    r34TableWrap = np.concatenate([r34_table, r34_table[:1]])
+    azFlat = np.asarray(az, dtype=float).ravel() % 360.0
+    r34 = np.interp(azFlat, azTableWrap, r34TableWrap)
     r34 = r34.reshape(r.shape).astype(np.float32)
 
     # Anchor the taper on the field's OWN value at r34, not on a constant 34.
@@ -975,7 +1105,7 @@ def _buildVortexGTCM(latGrid, lonGrid, snapshot, rmax_nm, outerDecayFactor,
     # branches with one expression.
     az1d = np.asarray(az).ravel()
     r341d = np.asarray(r34).ravel()
-    Vanchor = _gtcmProfile(r341d, snapshot.vmax, fit["a"], fit["rm"],
+    Vanchor = _gtcmProfile(r341d, snapshot.vmax, amag, fit["rm"],
                            fit["ri"], fit["x1"], fit["x2"])
     ua, va = _gtcmUV(Vanchor, az1d, fit["ax"], fit["ay"], snapshot.lat)
     anchorV = np.sqrt(ua * ua + va * va).reshape(r.shape)

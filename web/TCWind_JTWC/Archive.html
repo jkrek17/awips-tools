@@ -740,9 +740,14 @@ function snapOf(rec) {
  *  _buildVortexGTCM() uses.  Built once per record and shared by every ring
  *  search, because gtcmProfile() does not depend on azimuth. */
 function profileOf(snap, fit) {
+  // Magnitude of the asymmetry vector actually applied, not the Schwerdt
+  // first guess fit.a - see Vortex.html's gtcmProfile() docstring. Using
+  // fit.a here would silently undershoot every ring this page reports
+  // whenever fitGTCM()'s step 3 moved (ax, ay) away from that first guess.
+  var amag = Math.sqrt(fit.ax * fit.ax + fit.ay * fit.ay);
   var p = new Array(PROBE_MAX), i;
   for (i = 0; i < PROBE_MAX; i++) {
-    p[i] = V.gtcmProfile(i + 1, snap.vmax, fit.a, fit.rm, fit.ri, fit.x1, fit.x2);
+    p[i] = V.gtcmProfile(i + 1, snap.vmax, amag, fit.rm, fit.ri, fit.x1, fit.x2);
   }
   return p;
 }

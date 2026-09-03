@@ -1071,6 +1071,10 @@ function drawFieldFor(it) {
   var yN = mercY(north), yS = mercY(south);
   var fit = it.field.fit, rm = Math.max(fit.rm, 1e-3);
   var clat = it.snap.lat, clon = it.snap.lon, vmax = it.snap.vmax;
+  // Magnitude of the asymmetry vector actually applied, not the Schwerdt
+  // first guess fit.a - see Vortex.html's gtcmProfile() docstring. Mirrors
+  // vortexFieldGTCM()'s amag exactly, so the raster and field.at() agree.
+  var amag = Math.sqrt(fit.ax * fit.ax + fit.ay * fit.ay);
 
   // r34 by azimuth, tabulated once (shortcut 2)
   var LUTN = 720, lut = new Float64Array(LUTN), r34Max = 0;
@@ -1111,7 +1115,7 @@ function drawFieldFor(it) {
       var db = V.distBearing(lats[iy], lons[ix], clat, clon);
       var r = db[0], az = db[1];
       // shortcut 1: the shared primitives, magnitude only
-      var Vt = V.gtcmProfile(r, vmax, fit.a, fit.rm, fit.ri, fit.x1, fit.x2);
+      var Vt = V.gtcmProfile(r, vmax, amag, fit.rm, fit.ri, fit.x1, fit.x2);
       var uv = V.gtcmUV(Vt, az, fit.ax, fit.ay, clat);
       var m = Math.sqrt(uv[0] * uv[0] + uv[1] * uv[1]);
       var r34 = lut[Math.round(az * LUTN / 360) % LUTN];

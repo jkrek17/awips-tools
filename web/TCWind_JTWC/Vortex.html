@@ -50,6 +50,11 @@ var GTCM_ASYM_STEPS        = 9;
 // mirrors `probe = np.linspace(1.0, 900.0, 900)` in _buildVortexGTCM(),
 // which is exactly the integers 1..900 nm.
 var GTCM_R34_PROBE_MAX_NM  = 900;
+// Number of azimuth bins that radius is solved on before being linearly
+// interpolated (wrapping at 360) onto whatever azimuth is actually asked
+// for.  MUST match GTCM_R34_AZ_BINS in TCWind_JTWC.py - see its comment for
+// why this table exists and why 1 degree bins are fine grained enough.
+var GTCM_R34_AZ_BINS       = 360;
 
 // --- shared with the retired per-quadrant construction --------------------
 var MOTION_ASYMMETRY_FRACTION = 0.5;
@@ -294,19 +299,27 @@ function gtcmAsymmetry(motionSpd) {
  *
  *  The comparisons are strictly `<` on both sides, matching the nested
  *  np.where() in _gtcmProfile().  At r == rm the two branches agree, so the
- *  choice there is cosmetic; at r == ri they do NOT (see below), so it is
- *  load-bearing and the parity suite probes exactly on both radii.
+ *  choice there is cosmetic; at r == ri they do too, because A is chosen to
+ *  make them (see below).
  *
- *  KNOWN DEFECT, REPRODUCED DELIBERATELY.  A is supposed to make V
- *  continuous across ri, and it does not.  Continuity requires
- *  A = (rm/ri)**(x1-x2); TCWind_JTWC.py has A = (ri/rm)**x1 * (rm/ri)**x2,
- *  which is (rm/ri)**(x2-x1) - the reciprocal.  The profile therefore steps
- *  at ri whenever x1 != x2, by up to ~12 kt on the fits in the parity
- *  suite.  This port copies the reference expression verbatim, bug and all,
- *  because the Python is the reference implementation and the two must
- *  agree.  Do NOT "fix" it here: fix it in TCWind_JTWC.py and this file in
- *  the same change, or parity breaks and the GFE grid and the web preview
- *  stop showing the same field. */
+ *  A exists solely to make V continuous across ri.  Continuity requires
+ *  A = (rm/ri)**(x1-x2); the Users Guide PRINTS
+ *  A = (ri/rm)**x1 * (rm/ri)**x2, which is (rm/ri)**(x2-x1) - the
+ *  reciprocal, and does not satisfy that except when x1 == x2.  It is a
+ *  typo, or a superscript mangled in the PDF.  This port uses the corrected
+ *  expression, matching TCWind_JTWC.py's _gtcmProfile() (see its comment for
+ *  the full derivation and what transcribing the guide's printed formula
+ *  literally did to the field). Fix BOTH files in the same change if this
+ *  ever needs revisiting, or parity breaks and the GFE grid and the web
+ *  preview stop showing the same field.
+ *
+ *  `a` must be the magnitude of the (ax, ay) asymmetry vector actually
+ *  applied by gtcmUV(), not necessarily the Schwerdt estimate fitGTCM()
+ *  also computes under the same name - see TCWind_JTWC.py's _gtcmProfile()
+ *  docstring for the full reasoning. Every caller building the GTCM field or
+ *  its r34 table must pass amag = Math.sqrt(ax*ax + ay*ay); only
+ *  fitGTCM()'s own rm/x1/x2-sizing steps, which hold (ax, ay) at the first
+ *  guess, may pass the plain Schwerdt value. */
 function gtcmProfile(r, vmax, a, rm, ri, x1, x2) {
   var vs = Math.max(Number(vmax) - Number(a), 0.0);
   rm = Math.max(Number(rm), 1e-3);
@@ -440,11 +453,11 @@ function nelderMead(fn, guess, step, maxIter) {
 
 /** Fit the GTCM vortex to one storm-time.  Port of fitGTCM().
  *
- *  Returns {rm, ri, x1, x2, ax, ay, a, n, rms}.  Users Guide steps 2b-3:
- *  climatological first guess from (5)/(6); ri at the median reported
- *  radius; (rm, x1, x2) by weighted least squares on WIND error (7); then
- *  ax/ay released within GTCM_ASYM_MAX_DEV_KT with the size parameters
- *  held fixed.
+ *  Returns {rm, ri, x1, x2, ax, ay, a, n, freeParams, rms}.  Users Guide
+ *  steps 2b-3: climatological first guess from (5)/(6); ri at the median
+ *  reported radius; (rm, x1, x2) by weighted least squares on WIND error
+ *  (7); then ax/ay released within GTCM_ASYM_MAX_DEV_KT with the size
+ *  parameters held fixed.
  *
  *  The fit deliberately does NOT pass through the reported radii.  The
  *  guide minimises wind error, not radius error, because forcing the radii
@@ -479,8 +492,15 @@ function fitGTCM(snap) {
   var terms = new Array(nT);
 
   function err(rm, x1, x2, ax, ay) {
+    // amag, not the closed-over `a`: see gtcmProfile()'s docstring. During
+    // the rm/x1/x2-sizing steps ax===ax0, ay===ay0 always, so amag===a there
+    // by construction (no behaviour change); step 3 below is the one place
+    // ax/ay actually move, and the core's amplitude must track whatever it
+    // is testing rather than stay pinned to the first guess it may be
+    // moving away from. Mirrors TCWind_JTWC.py's fitGTCM().
+    var amag = Math.sqrt(ax * ax + ay * ay);
     for (var k = 0; k < nT; k++) {
-      var V = gtcmProfile(rr[k], vmax, a, rm, ri, x1, x2);
+      var V = gtcmProfile(rr[k], vmax, amag, rm, ri, x1, x2);
       var uv = gtcmUV(V, az[k], ax, ay, lat);
       var d = Math.sqrt(uv[0] * uv[0] + uv[1] * uv[1]) - vt[k];
       terms[k] = wt[k] * (d * d);
@@ -569,7 +589,9 @@ function fitGTCM(snap) {
  *      dirAt(lat, lon)  -> meteorological direction the wind is FROM, deg
  *      at(lat, lon)     -> {mag, dir, r, r34, az}
  *      r34At(azDeg)     -> modelled 34 kt radius on that bearing, nm
- *      fit              -> the fitGTCM() result
+ *      fit              -> the fit actually used (snap.fit if the caller set
+ *                          one - e.g. interpolateTrack()'s blended fit -
+ *                          otherwise fitGTCM(snap) computed here)
  *
  *  Two deliberate departures from the guide, documented rather than
  *  silent, and both must be disclosed in the UI:
@@ -589,124 +611,97 @@ function fitGTCM(snap) {
  *  field, not to the point-wise model.  This is the raw field, which is the
  *  part that has to agree between the two ports. */
 function vortexFieldGTCM(snap) {
-  var fit = fitGTCM(snap);
+  var fit = snap.fit || fitGTCM(snap);
   var vmax = Number(snap.vmax);
   var lat = Number(snap.lat);
   var clat = Number(snap.lat), clon = Number(snap.lon);
+
+  // Magnitude of the asymmetry vector actually applied, not the Schwerdt
+  // first guess fit.a - see gtcmProfile()'s docstring.  This is what makes
+  // the analytic field's peak over azimuth hit Vmax exactly at r = rm,
+  // whatever fitGTCM()'s step 3 did to (ax, ay).  Mirrors
+  // _buildVortexGTCM()'s `amag` exactly.
+  var amag = Math.sqrt(fit.ax * fit.ax + fit.ay * fit.ay);
 
   // probe = np.linspace(1.0, 900.0, 900)  ->  exactly 1, 2, ... 900 nm.
   var nProbe = GTCM_R34_PROBE_MAX_NM;
   var prof = new Array(nProbe);
   for (var i = 0; i < nProbe; i++) {
-    prof[i] = gtcmProfile(i + 1, vmax, fit.a, fit.rm, fit.ri, fit.x1, fit.x2);
+    prof[i] = gtcmProfile(i + 1, vmax, amag, fit.rm, fit.ri, fit.x1, fit.x2);
   }
   var sign = (lat >= 0) ? 1.0 : -1.0;
-  var amag2 = fit.ax * fit.ax + fit.ay * fit.ay;
 
-  // Suffix maximum of the profile: sufMax[i] = max(prof[i..end]).  It is
-  // non-increasing by construction, which prof itself is NOT - eq. (3)
-  // steps at ri (see the KNOWN DEFECT note on gtcmProfile), so a binary
-  // search straight on prof would be wrong.  The largest i with
-  // prof[i] >= T is the same as the largest i with sufMax[i] >= T, and
-  // that one is binary-searchable.
-  var sufMax = new Array(nProbe);
-  var run = -Infinity;
-  for (i = nProbe - 1; i >= 0; i--) {
-    if (prof[i] > run) run = prof[i];
-    sufMax[i] = run;
+  /** Modelled 34 kt radius per azimuth, for the insert footprint and taper.
+   *  This depends on azimuth ALONE - fit/amag are the same everywhere for
+   *  one snapshot - so it is solved once on a fixed table of
+   *  GTCM_R34_AZ_BINS azimuths and linearly interpolated (wrapping at 360)
+   *  onto whatever azimuth is asked for, exactly mirroring
+   *  _buildVortexGTCM()'s azimuth table in TCWind_JTWC.py (see
+   *  GTCM_R34_AZ_BINS's comment there). Both ports must do the same
+   *  approximation, not merely agree to within tolerance, so this is a
+   *  literal port of that loop rather than the previous bespoke
+   *  binary-search shortcut - which was exact per point but is no longer
+   *  what the reference implementation does. */
+  var nBins = GTCM_R34_AZ_BINS;
+  var azStep = 360.0 / nBins;
+  var r34Table = new Array(nBins);
+  for (var b = 0; b < nBins; b++) {
+    var azr = (b * azStep) * DEG2RAD;
+    var cosA = Math.cos(azr), sinA = Math.sin(azr);
+    // The OUTERMOST probe index still at or above 34 kt, not the first
+    // crossing: the profile is also below 34 kt inside the eye, and taking
+    // that would collapse the footprint onto the centre and taper the
+    // entire field away. Mirrors the boolean-mask scan in
+    // _buildVortexGTCM() (np.argmax on the reversed above-threshold mask).
+    var found = -1;
+    for (var k = nProbe - 1; k >= 0; k--) {
+      var uk = fit.ax - sign * prof[k] * cosA;
+      var vk = fit.ay + sign * prof[k] * sinA;
+      if (Math.sqrt(uk * uk + vk * vk) >= 34.0) { found = k; break; }
+    }
+    if (found < 0) {
+      r34Table[b] = fit.rm * 3.0;
+      continue;
+    }
+    // Interpolate the crossing rather than snapping to the probe grid, for
+    // the same reason _buildVortexGTCM() does: prof[found] is the last
+    // sample still AT or ABOVE 34 kt, so the field there is >= 34 while the
+    // taper below restarts at exactly 34 - solving for the exact radius
+    // where the field equals 34 makes the boundary continuous.
+    var nxt = Math.min(found + 1, nProbe - 1);
+    var uHi = fit.ax - sign * prof[found] * cosA, vHi = fit.ay + sign * prof[found] * sinA;
+    var uLo = fit.ax - sign * prof[nxt] * cosA,   vLo = fit.ay + sign * prof[nxt] * sinA;
+    var vHiMag = Math.sqrt(uHi * uHi + vHi * vHi);
+    var vLoMag = Math.sqrt(uLo * uLo + vLo * vLo);
+    var span = vHiMag - vLoMag;
+    var frac = span > 1e-9 ? (vHiMag - 34.0) / span : 0.0;
+    if (frac < 0) frac = 0; else if (frac > 1) frac = 1;
+    // probe[k] = k + 1 nm (probe starts at 1.0, step 1.0).
+    r34Table[b] = (found + 1) + frac * ((nxt + 1) - (found + 1));
   }
 
-  /** The OUTERMOST probe radius still at 34 kt, not the first crossing:
-   *  the profile is also below 34 kt inside the eye, and taking that would
-   *  collapse the footprint onto the centre and taper the whole field away.
-   *
-   *  Python scans all 900 probes for every grid point.  Doing that here
-   *  costs ~1.7 s for a 260x220 raster, which is not a redraw a forecaster
-   *  will sit through, so the search is narrowed algebraically first and
-   *  then confirmed with the same floating-point test Python uses:
-   *
-   *      |wind|^2 = |a|^2 + V^2 + 2 s k V,   k = ay sin(az) - ax cos(az)
-   *
-   *  is a quadratic in V, so |wind| >= 34 is exactly V >= V*, with
-   *  V* = -s k + sqrt(k^2 + 1156 - |a|^2).  Binary-searching sufMax for V*
-   *  lands on the answer or within a bit or two of it; the surrounding
-   *  handful of indices are then checked with the literal sqrt(u^2+v^2)
-   *  expression, so a last-bit disagreement between the two formulations
-   *  cannot move the result.  A full downward scan remains as a fallback
-   *  that should never run. */
+  /** r34Table linearly interpolated onto an arbitrary azimuth, wrapping the
+   *  360/0 seam - the JS equivalent of np.interp() against the table
+   *  extended by one wrap point in _buildVortexGTCM(). */
   function r34At(azDeg) {
-    var azr = azDeg * DEG2RAD;
-    var k = fit.ay * Math.sin(azr) - fit.ax * Math.cos(azr);
-    var disc = k * k + 1156.0 - amag2;
-    var guess;
-    if (disc <= 0) {
-      // No real root: |wind| exceeds 34 kt at every radius, asymmetry alone.
-      guess = nProbe - 1;
-    } else {
-      var vStar = -sign * k + Math.sqrt(disc);
-      if (vStar <= 0) {
-        guess = nProbe - 1;
-      } else if (sufMax[0] < vStar) {
-        guess = -1;
-      } else {
-        var lo = 0, hi = nProbe - 1;      // sufMax[lo] >= vStar
-        while (lo < hi) {
-          var mid = (lo + hi + 1) >> 1;
-          if (sufMax[mid] >= vStar) lo = mid; else hi = mid - 1;
-        }
-        guess = lo;
-      }
-    }
-
-    var found = -1;
-    var from = Math.min(guess + 3, nProbe - 1);
-    var to = Math.max(guess - 3, 0);
-    for (var j = from; j >= to; j--) {
-      if (aboveThreshold(j, azDeg)) { found = j; break; }
-    }
-    if (found < 0 && guess >= 0) {
-      for (var j2 = nProbe - 1; j2 >= 0; j2--) {
-        if (aboveThreshold(j2, azDeg)) { found = j2; break; }
-      }
-    }
-
-    // Interpolate the crossing instead of snapping to the whole-nm probe.
-    // probe[found] is the last sample still AT or ABOVE 34 kt, so the field
-    // there is >= 34 while the taper restarts at exactly 34 - the difference
-    // shows up as a step at the footprint boundary (3.36 kt on average before
-    // this, the largest single source of roughness in the GTCM field).
-    // Solving for the radius where the field equals 34 makes it continuous.
-    // Mirrors the same interpolation in _buildVortexGTCM().
-    if (found < 0) return Math.fround(fit.rm * 3.0);
-    var rHi = found + 1;
-    if (found >= nProbe - 1) return Math.fround(rHi);
-    var vHi = magAtProbe(found, azDeg);
-    var vLo = magAtProbe(found + 1, azDeg);
-    var span = vHi - vLo;
-    var frac = span > 1e-9 ? (vHi - 34.0) / span : 0.0;
-    if (frac < 0) frac = 0; else if (frac > 1) frac = 1;
+    var az = mod360(azDeg);
+    var pos = az / azStep;
+    var i0 = Math.floor(pos);
+    if (i0 >= nBins) i0 = nBins - 1;
+    var i1 = (i0 + 1) % nBins;
+    var frac = pos - i0;
+    var v = r34Table[i0] + frac * (r34Table[i1] - r34Table[i0]);
     // Python casts the r34 grid to float32 (real AWIPS grid precision), so
     // fround here too rather than leave a systematic sub-nm offset between
     // the two ports.
-    return Math.fround(rHi + frac);
-  }
-
-  /** Total field magnitude at a probe index, on one bearing. */
-  function magAtProbe(idx, azDeg) {
-    var uv = gtcmUV(prof[idx], azDeg, fit.ax, fit.ay, lat);
-    return Math.sqrt(uv[0] * uv[0] + uv[1] * uv[1]);
-  }
-
-  /** The literal test Python applies, bit for bit. */
-  function aboveThreshold(idx, azDeg) {
-    return magAtProbe(idx, azDeg) >= 34.0;
+    return Math.fround(v);
   }
 
   function at(plat, plon) {
     var db = distBearing(plat, plon, clat, clon);
     var r = db[0], az = db[1];
 
-    var V = gtcmProfile(r, vmax, fit.a, fit.rm, fit.ri, fit.x1, fit.x2);
+    var V = gtcmProfile(r, vmax, amag, fit.rm, fit.ri, fit.x1, fit.x2);
     var uv = gtcmUV(V, az, fit.ax, fit.ay, lat);
     var u = uv[0], v = uv[1];
     var mag = Math.sqrt(u * u + v * v);
@@ -722,7 +717,7 @@ function vortexFieldGTCM(snap) {
       // the same wherever the field actually reaches 34 kt, since that is how
       // r34 is solved; where it never does, r34 falls back to 3*rm and a
       // constant 34 made the field step UP there.  Mirrors _buildVortexGTCM().
-      var Va = gtcmProfile(r34, vmax, fit.a, fit.rm, fit.ri, fit.x1, fit.x2);
+      var Va = gtcmProfile(r34, vmax, amag, fit.rm, fit.ri, fit.x1, fit.x2);
       var uva = gtcmUV(Va, az, fit.ax, fit.ay, lat);
       var anchorV = Math.sqrt(uva[0] * uva[0] + uva[1] * uva[1]);
       mag = anchorV * Math.exp(-(r - r34) / decayL);
@@ -758,8 +753,34 @@ function vortexFieldGTCM(snap) {
 // Track interpolation
 // ===========================================================================
 
+/** GTCM fit for one tau's own reported radii, lazily computed and cached on
+ *  the tau object (tau.fit).  Port of _fitTau().
+ *
+ *  interpolateTrack() used to fit the LINEARLY INTERPOLATED radii at the
+ *  requested epoch instead of this.  That manufactures targets nobody
+ *  reported: a threshold missing at one tau interpolates from zero, so a
+ *  64-kt ring that has not appeared yet shows up a few nm wide midway to the
+ *  tau where it does, and the shared (rm, x1, x2) fit swings to chase it.
+ *  fitGTCM() needs nothing a tau doesn't already carry (vmax, lat, motion,
+ *  radii - the same fields interpolateTrack() puts on its snapshot), so
+ *  each tau is fit exactly once, from what JTWC actually reported at that
+ *  tau, and interpolateTrack() blends the two RESULTS instead of blending
+ *  their inputs and re-fitting.  See TCWind_JTWC.py's _fitTau() docstring
+ *  for the full reasoning and the case this fixes. */
+function fitTauCached(tau) {
+  if (!tau.fit) tau.fit = fitGTCM(tau);
+  return tau.fit;
+}
+
+// Fit fields interpolateTrack() blends linearly between two taus. n, rms and
+// freeParams describe how well-constrained a fit is, not a field parameter,
+// so those are carried from the nearer tau instead (see interpolateTrack()).
+var GTCM_FIT_BLEND_KEYS = ['rm', 'ri', 'x1', 'x2', 'ax', 'ay', 'a'];
+
 /** Linear interpolation of the storm state to an arbitrary valid time.
- *  Port of interpolateTrack(). */
+ *  Port of interpolateTrack().  Also sets .fit (see fitTauCached()) and
+ *  .fitInterpolated on the returned snapshot - vortexFieldGTCM() uses .fit
+ *  directly when present rather than calling fitGTCM() again. */
 function interpolateTrack(taus, epoch) {
   var lo = taus[0], hi = taus[0], f = 0;
   if (epoch <= taus[0].epoch) {
@@ -811,6 +832,30 @@ function interpolateTrack(taus, epoch) {
       if (vals[qq] > 0) any = true;
     }
     if (any) s.radii[thr] = vals;
+  }
+
+  // The vortex FIELD comes from interpolating each tau's OWN fit (each fit
+  // exactly once, from that tau's own reported radii, and cached), not from
+  // re-fitting the interpolated (and partly synthetic) radii above - see
+  // fitTauCached()'s docstring.
+  var loFit = fitTauCached(lo);
+  if (hi === lo) {
+    s.fit = {};
+    for (var lk in loFit) if (loFit.hasOwnProperty(lk)) s.fit[lk] = loFit[lk];
+    s.fitInterpolated = false;
+  } else {
+    var hiFit = fitTauCached(hi);
+    var blended = {};
+    for (var bi = 0; bi < GTCM_FIT_BLEND_KEYS.length; bi++) {
+      var bk = GTCM_FIT_BLEND_KEYS[bi];
+      blended[bk] = loFit[bk] + f * (hiFit[bk] - loFit[bk]);
+    }
+    var nearer = (f >= 0.5) ? hiFit : loFit;
+    blended.n = nearer.n;
+    blended.rms = nearer.rms;
+    blended.freeParams = nearer.freeParams;
+    s.fit = blended;
+    s.fitInterpolated = true;
   }
   return s;
 }
@@ -1065,7 +1110,7 @@ function parseJTWC(text) {
 function newTau(tau) {
   return { tau: tau, epoch: null, lat: null, lon: null, vmax: null,
            gust: null, radii: {}, motionDir: null, motionSpd: null,
-           conf: CONF_TROPICAL };
+           conf: CONF_TROPICAL, fit: null };
 }
 
 /** Short human label for a parsed system.  Port of describeStorm(). */
