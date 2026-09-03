@@ -355,11 +355,24 @@ WIND_AVERAGING_FACTOR = 1.0
 NORMALIZE_CORE_PEAK = True
 PEAK_NORMALIZE_MAX_FACTOR = 2.0
 
-# A grid block is valid from its start time on, so each forecast time
-# populates the block that begins at it.  If no block begins there, create
-# one, otherwise the final group of a bulletin is silently lost whenever the
-# Fcst inventory happens to stop at that hour.
-CREATE_MISSING_TAU_BLOCKS = True
+# The tool owns its own output cadence.  It always writes fixed-width grid
+# blocks spanning the whole bulletin, regardless of what cadence the
+# office's own background Fcst Wind inventory happens to use nearby.
+#
+# An earlier version instead matched each written block's duration to
+# whatever cadence was locally in effect in the existing Fcst Wind
+# inventory (offices commonly run 3-hourly near term and 6-hourly further
+# out, mirroring how JTWC itself spaces its own forecast groups).  That
+# made the office's OWN inventory - not the bulletin, not this tool -
+# decide the tool's output granularity, and produced exactly the "grids
+# get created in random 3 or 6 hour chunks" behavior forecasters reported:
+# whichever cadence a created block happened to land near came along for
+# the ride.  Now the tool computes its own fixed-interval time series
+# across the span up front and writes every block at that interval,
+# splitting a coarser background block wherever a write lands inside one.
+# A future office could change the interval deliberately by editing this
+# constant, but the default behavior is strict, uniform 3-hourly output.
+OUTPUT_GRID_INTERVAL_SECONDS = 3 * 3600  # 3 hours, always, regardless of the background Fcst Wind grid cadence.
 
 # Name of the scratch weather element used for preview runs.  It is created
 # on the fly as a temporary parm, so it needs no serverConfig entry, is not
@@ -1957,47 +1970,6 @@ if _IN_GFE:
             out.sort(key=lambda t: self._trBounds(t)[0])
             return out
 
-        @staticmethod
-        def _localBlockDuration(when, blockBounds):
-            """Block duration to use for a created block at `when`.
-
-            Offices commonly run Fcst Wind at one cadence in the near term
-            (3-hourly) and a coarser one further out (6-hourly or longer),
-            matching how JTWC itself spaces its own tau groups (12-hourly
-            out to 72 h, 24-hourly beyond).  A single grid duration for the
-            whole active time range is therefore wrong: it picks whichever
-            cadence happens to be more numerous in the current inventory -
-            which region wins can flip on nothing more than one grid being
-            repopulated - and applies it even to a created block that falls
-            in the other regime's part of the timeline.
-
-            Instead, look at what's actually in effect right where `when`
-            falls: `blockBounds` is sorted by start (from `_fcstInventory`),
-            so scan for the nearest existing block whose start is <= `when`
-            (the block cadence already established up to this point) and
-            use its duration.  If `when` precedes every existing block, fall
-            back to the nearest following block's duration.  If there are no
-            blocks at all - defensive only; `execute` already returns before
-            this is reachable when `fcstTRList` is empty - use 3 hours
-            (10800 s), the normal short-range cadence, not the old fallback
-            of 1 hour (3600 s), which matched nothing an office actually
-            runs.
-            """
-            preceding = None
-            following = None
-            for start, end in blockBounds:
-                if start <= when:
-                    if preceding is None or start > preceding[0]:
-                        preceding = (start, end)
-                else:
-                    if following is None or start < following[0]:
-                        following = (start, end)
-            if preceding is not None:
-                return preceding[1] - preceding[0]
-            if following is not None:
-                return following[1] - following[0]
-            return 10800
-
         def _smooth(self, grid, factor):
             """smoothGrid if the base class has it, box average otherwise."""
             if hasattr(self, "smoothGrid"):
@@ -2196,29 +2168,46 @@ if _IN_GFE:
             # Fragment so partially overlapping blocks can be written.  A
             # preview run must not touch Fcst at all, and fragmenting would
             # rewrite its inventory, so it is skipped.  testCase always
-            # forces preview above, so this never fires for it either.
+            # forces preview above, so this never fires for it either. This
+            # is a defensive safety net for writing into whatever the
+            # background inventory looks like - it is not what decides this
+            # tool's own output cadence; that is fixed below regardless of
+            # what fragmentCmd leaves behind.
             if not preview:
                 self._fragment(activeTR)
-                fcstTRList = self._fcstInventory(activeTR)
 
-            # A grid block is valid from its start time onward, so a
-            # forecast time populates the block that BEGINS at it.  Every
-            # block is evaluated at its own start; blocks between two
-            # forecast times interpolate to their start.  This means a tau
-            # landing on a block start is hit exactly, which is how the
-            # forecast peak reaches the grid.
-            blockBounds = [self._trBounds(tr) for tr in fcstTRList]
-            blockStarts = set(a for a, _b in blockBounds)
+            # The tool computes its own fixed 3-hourly (OUTPUT_GRID_INTERVAL_
+            # SECONDS) time series across the whole bulletin span and writes
+            # a block at every point in it, splitting a coarser background
+            # block wherever a write lands inside one.  It never looks at
+            # the background Fcst Wind inventory's own block boundaries to
+            # decide where or how wide to write - see OUTPUT_GRID_INTERVAL_
+            # SECONDS's comment in the tunables block for why.
+            #
+            # `spanStart`/`spanEnd` are tau epochs and so should already sit
+            # on interval boundaries, but that is not trusted blindly: floor
+            # the start down and ceiling the end up to the nearest interval
+            # boundary, so the series is never a fencepost short of the
+            # bulletins' own limits even if a tau ever lands off-boundary.
+            interval = OUTPUT_GRID_INTERVAL_SECONDS
+            seriesLo = (int(spanStart) // interval) * interval
+            seriesHi = -(-int(spanEnd) // interval) * interval  # ceil
 
-            # NOTE: no single "global" block duration is computed here on
-            # purpose.  A run's active time range routinely spans both a
-            # 3-hourly near-term cadence and a coarser (e.g. 6-hourly)
-            # extended-range cadence, so any one duration chosen from the
-            # whole inventory would be right for one part of the timeline
-            # and wrong for the other - and, whenever the two cadences'
-            # block counts are close, unstable from run to run as the
-            # inventory is repopulated.  Each created block below instead
-            # looks up its own local cadence via `_localBlockDuration`.
+            if selectedTimeOnly:
+                # Bounded within the selected range too, snapped the same
+                # way: round the selected range's start UP and its end DOWN
+                # to the nearest interval boundary so nothing is ever
+                # written outside it, without clipping a boundary that
+                # already sits exactly on one (no fencepost gap either way).
+                trLo, trHi = self._trBounds(activeTR)
+                seriesLo = max(seriesLo, -(-int(trLo) // interval) * interval)
+                seriesHi = min(seriesHi, (int(trHi) // interval) * interval)
+
+            series = []
+            when = seriesLo
+            while when <= seriesHi:
+                series.append(when)
+                when += interval
 
             written = 0
             skippedST = 0
@@ -2298,12 +2287,19 @@ if _IN_GFE:
                                  direc.astype(np.float32)), tr, preview)
                 return float(mag[footprint].max())
 
-            for tr in fcstTRList:
-                trStart, _trEnd = self._trBounds(tr)
-                if trStart < spanStart or trStart > spanEnd:
-                    continue
+            # One loop, one series: every point in `series` gets its own
+            # fixed-width block, written whether or not the background Fcst
+            # Wind inventory already has a block starting there.  A tau
+            # that lands off the interval's own boundaries never occurs in
+            # practice (every JTWC tau is itself a multiple of 3 hours),
+            # but nothing here depends on that - each `when` gets evaluated
+            # at its own instant via `interpolateTrack` regardless.
+            for when in series:
+                tr = TimeRange.TimeRange(
+                    AbsTime.AbsTime(int(when)),
+                    AbsTime.AbsTime(int(when + interval)))
 
-                built, stFlag, tdCount = buildFor(trStart, tr)
+                built, stFlag, tdCount = buildFor(when, tr)
                 skippedTD += tdCount
                 if stFlag:
                     skippedST += 1
@@ -2315,45 +2311,6 @@ if _IN_GFE:
                 if peak:
                     peakWritten = max(peakWritten, peak)
                     written += 1
-
-            # A forecast time with no block beginning at it gets one created,
-            # so the last group of a bulletin is never lost just because the
-            # Fcst inventory happened to stop there.  Each created block's
-            # duration is looked up LOCALLY for that tau (via
-            # `_localBlockDuration`, from the nearest existing block at or
-            # before it) rather than using one duration for every created
-            # block: forcing a single site-wide "most common" duration onto
-            # every created block put 3-hourly created blocks in a 6-hourly
-            # extended-range region and vice versa, and which duration that
-            # single choice landed on could flip run to run whenever the two
-            # cadences' inventory counts were close - the "random 3 or 6 hr
-            # chunks" forecasters were seeing.
-            created = []
-            unplaced = []
-            if CREATE_MISSING_TAU_BLOCKS:
-                wanted = sorted(set(
-                    x.epoch for s in storms for x in s["taus"]
-                    if x.epoch not in blockStarts))
-                for when in wanted:
-                    built, stFlag, tdCount = buildFor(when, None)
-                    skippedTD += tdCount
-                    if stFlag or not built:
-                        continue
-                    try:
-                        blockDur = self._localBlockDuration(when, blockBounds)
-                        tr = TimeRange.TimeRange(
-                            AbsTime.AbsTime(int(when)),
-                            AbsTime.AbsTime(int(when + blockDur)))
-                        peak = writeBlock(tr, built)
-                    except Exception as exc:
-                        unplaced.append("%s (%s)" % (
-                            time.strftime("%d/%H%MZ", time.gmtime(when)), exc))
-                        continue
-                    if peak:
-                        peakWritten = max(peakWritten, peak)
-                        written += 1
-                        created.append(
-                            time.strftime("%d/%H%MZ", time.gmtime(when)))
 
             if not written:
                 msg = "Parsed %d live bulletin(s), but no Fcst Wind grids " \
@@ -2373,6 +2330,7 @@ if _IN_GFE:
 
             where = "%s preview grids" % PREVIEW_ELEMENT if preview \
                 else "Fcst Wind grids"
+            intervalHours = interval // 3600
             msg = ""
             if testCase:
                 msg += "TEST CASE (not a live storm). "
@@ -2381,14 +2339,14 @@ if _IN_GFE:
             msg += "v%s. " % VERSION
             if EXPERIMENTAL:
                 msg += "EXPERIMENTAL, verify before use. "
-            msg += "Updated %d %s. " % (written, where) + "; ".join(parts) + "."
+            # Every block this run writes comes from the same fixed-interval
+            # series, so there is no longer a separate "updated" vs.
+            # "created" distinction to report - just the total written and
+            # the (always 3-hourly, by default) interval used.
+            msg += "Wrote %d %d-hourly %s. " % (
+                written, intervalHours, where) + "; ".join(parts) + "."
             msg += " Peak wind written %.0f kt vs bulletin max %.0f kt." % (
                 peakWritten, bulletinPeak)
-            if created:
-                msg += " Created blocks at " + ", ".join(created) + "."
-            if unplaced:
-                msg += " Could not create a block at " + \
-                       "; ".join(unplaced) + "."
             if skippedST:
                 msg += " Skipped %d storm-times after subtropical " \
                        "transition." % skippedST
