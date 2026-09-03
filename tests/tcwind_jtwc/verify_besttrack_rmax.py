@@ -79,12 +79,18 @@ import urllib.request
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..",
                                  "GFE", "procedures"))
 import TCWind_JTWC as tc
-from besttrack_common import MIN_SEASON
+from besttrack_common import MIN_SEASON, cache_path
 
 IBTRACS_URL = ("https://www.ncei.noaa.gov/data/international-best-track-"
                "archive-for-climate-stewardship-ibtracs/v04r01/access/csv/"
                "ibtracs.WP.list.v04r01.csv")
-CACHE = "/tmp/claude-0/-home-user-awips-tools/738f763c-b8e3-58a4-9745-13d9f53ffc1b/scratchpad/ibtracs_wp_full.csv"
+# Was a hardcoded absolute path into one prior review session's scratch
+# directory - dead the moment that directory did, and unreachable from any
+# other environment. Now resolved the same way every OTHER script in this
+# suite resolves its IBTrACS path (besttrack_common.cache_path(): env
+# IBTRACS_WP, then IBTRACS_DIR, then tests/tcwind_jtwc/data/ibtracs/), still
+# overridable by argv[1] as before.
+CACHE = cache_path("WP")
 
 QUADS = ["NE", "SE", "SW", "NW"]
 

@@ -1,5 +1,21 @@
 #!/usr/bin/env python3
-"""Does the tool's accuracy hold up in the situations that matter most
+"""SUPERSEDED for the Findings pipeline - kept as a standalone, CSV-driven
+check, not deleted, but tests/tcwind_jtwc/data/gtcm_findings.json's byNature
+/byLand blocks come from verify_stratified.py now, not from this script.
+Three differences, all fixed in the successor: verify_stratified.py covers
+all three archive basins (this script is WP-only), scores BOTH vortex
+constructions (this script only ever called resolveRmax() - the LEGACY
+"perquad" Rmax source, not read at all under the shipped VORTEX_METHOD=
+"gtcm" default; see verify_holdout.py's header for the _buildVortexGTCM
+dead-parameter detail), and is wired into gtcm_findings.json/Findings.html
+(this script's output never reached either). This script still runs and its
+resolveRmax()-vs-RMW-by-nature/land numbers are still real - useful for
+auditing that one legacy code path specifically - just read them as
+describing "perquad"'s Rmax source, not the shipped default.
+
+--- original header follows -------------------------------------------------
+
+Does the tool's accuracy hold up in the situations that matter most
 operationally - near land, and during extratropical transition - or does
 it quietly get worse exactly when a real forecaster would need it most?
 
