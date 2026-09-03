@@ -19,7 +19,14 @@
  * It does NOT do vortex math.  All wind-field math lives in exactly one
  * place, Vortex.html, and runs client-side.  See "PARSER DUPLICATION"
  * below for the one function that is deliberately duplicated here and how
- * the two copies are kept honest.
+ * the two copies are kept honest.  Theme.html (design tokens) and
+ * Help.html (the shared glossary: term tooltips plus one drop-in
+ * <details> glossary block) are two more single-copy client includes -
+ * Code.gs never touches either, it only has to keep shipping them so the
+ * pages that `<?!= HtmlService.createHtmlOutputFromFile(...) ?>` them do
+ * not break. See PAGES below for the top-level templates doGet() serves;
+ * Vortex/Theme/Help are partials, included BY those, never routed to
+ * directly.
  *
  * Deploy with clasp (see README.md), or Extensions > Apps Script >
  * Deploy > New deployment > Web app.
@@ -432,12 +439,28 @@ function getBulletins(force) {
 }
 
 
-/** Parse pasted bulletin text. Used when tgftp is unreachable. */
+/**
+ * Parse pasted bulletin text. Used when tgftp is unreachable.
+ *
+ * The returned envelope matches getBulletins()'s per-slot shape exactly
+ * (top-level file/pil/ok/error/errorKind/hint/stale/ageHours/storm) so the
+ * client can push it into the same `slots` array getBulletins() fills,
+ * instead of needing a special case. `pil` is the literal string 'PASTED'
+ * (there is no real WTPN product id for hand-pasted text) so chip/status
+ * code that does `sl.pil.replace(...)` never sees an undefined field.
+ */
 function parsePasted(text) {
   var storm = parseJTWC(text);
   storm.file = 'pasted';
-  storm.pil = 'pasted';
-  return { file: 'pasted', ok: true, error: null, stale: false, storm: storm };
+  storm.pil = 'PASTED';
+  var ageHours = null;
+  if (storm.taus && storm.taus.length) {
+    var nowSecs = Math.floor(new Date().getTime() / 1000);
+    ageHours = (nowSecs - storm.taus[0].epoch) / 3600.0;
+  }
+  return { file: 'pasted', pil: 'PASTED', ok: true, error: null,
+           errorKind: null, hint: null, stale: false, ageHours: ageHours,
+           cached: false, storm: storm };
 }
 
 

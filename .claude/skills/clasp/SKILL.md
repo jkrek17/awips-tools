@@ -69,13 +69,14 @@ clasp status          # confirm the file list first
 clasp push --force
 ```
 
-Eight tracked files: `appsscript.json`, `Code.gs`, `BestTrackData.gs`,
-`Index.html`, `Archive.html`, `Findings.html`, `Vortex.html`, `Theme.html`.
-`.clasp.json` and `README.md` are untracked and stay local.
+Nine tracked files: `appsscript.json`, `Code.gs`, `BestTrackData.gs`,
+`Index.html`, `Archive.html`, `Findings.html`, `Vortex.html`, `Theme.html`,
+`Help.html`. `.clasp.json` and `README.md` are untracked and stay local.
 
-`Vortex.html` (shared vortex + parser JS) and `Theme.html` (design tokens) are
-included by all three pages via
-`HtmlService.createHtmlOutputFromFile(...)`. If either fails to upload, every
+`Vortex.html` (shared vortex + parser JS), `Theme.html` (design tokens) and
+`Help.html` (shared glossary tooltips) are
+included by the pages that need them via
+`HtmlService.createHtmlOutputFromFile(...)`. If any fails to upload, every
 page breaks rather than degrading - so check the push list, do not assume.
 
 `BestTrackData.gs` is ~2 MB and **generated**. Never hand-edit it; regenerate
