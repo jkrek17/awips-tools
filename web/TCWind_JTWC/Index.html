@@ -32,8 +32,6 @@
      * Rings and the track carry NO hue at all.  They are ink-on-halo, told
        apart by dash pattern and by a text label drawn on the ring itself.
        A ring can therefore never be confused with a wind band.
-     * Anchored vs extrapolated field is a TEXTURE (diagonal hatch in the
-       raster), not a colour.
      * The four quadrant curves in the profile chart are the only place
        four hues must be told apart.  They were solved for: hues at 60 deg+
        spacing placed on four separate L* levels so the deuteranopic
@@ -281,33 +279,6 @@ kbd {
 .note { font-size:11.5px; color:var(--muted); line-height:1.5; margin:9px 0 0; }
 .note b, .note strong { color:var(--text); }
 
-/* anchoring */
-#anchorBar {
-  display:flex; height:14px; border-radius:3px; overflow:hidden;
-  border:1px solid var(--border-strong); margin:2px 0 8px;
-}
-#anchorBar i { display:block; height:100%; }
-#anchorBar i.anch { background:var(--muted); }
-#anchorBar i.extr {
-  background:repeating-linear-gradient(45deg,
-    var(--muted) 0 2px, transparent 2px 6px);
-  background-color:var(--sunken);
-}
-.tableScroll { overflow-x:auto; -webkit-overflow-scrolling:touch; }
-.quadTable { width:100%; min-width:250px; border-collapse:collapse; font-size:12px; }
-.quadTable th, .quadTable td {
-  text-align:right; padding:3px 0 3px 8px; font-variant-numeric:tabular-nums;
-  border-bottom:1px solid var(--border);
-}
-.quadTable th { color:var(--muted); font-weight:600; font-size:10.5px;
-  letter-spacing:.04em; text-transform:uppercase; }
-.quadTable td:first-child, .quadTable th:first-child { text-align:left; padding-left:0; }
-.quadTable tbody tr:last-child td { border-bottom:none; }
-.qdot {
-  display:inline-block; width:9px; height:9px; border-radius:2px;
-  margin-right:6px; vertical-align:-1px; border:1px solid var(--ink);
-}
-
 /* charts */
 .chartBox { background:var(--panel); border:1px solid var(--border);
             border-radius:var(--r-sm); padding:6px; }
@@ -362,10 +333,6 @@ details li { margin-bottom:5px; }
 .legendBox .ln.d50 { border-top-style:dashed; }
 .legendBox .ln.d64 { border-top-style:dotted; border-top-width:3px; }
 .legendBox .ln.tgt { border-top:2px dotted var(--ink); }
-.legendBox .tex { width:16px; height:10px; flex:0 0 auto; border-radius:2px;
-                  border:1px solid var(--border-strong);
-                  background:repeating-linear-gradient(45deg,
-                    var(--muted) 0 2px, transparent 2px 6px); }
 .leaflet-container .ringLabel {
   font:700 10px/1 var(--mono); color:var(--ink); white-space:nowrap;
   text-shadow:0 0 3px var(--ink-halo), 0 0 3px var(--ink-halo),
@@ -425,7 +392,7 @@ details li { margin-bottom:5px; }
     <div class="layers" role="group" aria-label="Map layers">
       <label><input type="checkbox" id="layField" checked> Wind field</label>
       <label><input type="checkbox" id="layRadii" checked> Reported radii</label>
-      <label><input type="checkbox" id="layTargets" checked> Fit targets</label>
+      <label><input type="checkbox" id="layTargets"> Fit targets</label>
       <label><input type="checkbox" id="layTrack" checked> Track</label>
     </div>
     <div class="vr"></div>
@@ -490,38 +457,6 @@ details li { margin-bottom:5px; }
         </div>
         <div class="params" id="fitParams"></div>
         <p class="note" id="fitNote"></p>
-      </section>
-
-      <section class="card" aria-labelledby="hAnchor">
-        <h2 id="hAnchor">Anchoring <span class="aux" id="anchorPct"></span></h2>
-        <div id="anchorBar" role="img" aria-label="Share of the drawn wind field
-             that is anchored to a reported radius versus modelled extrapolation">
-          <i class="anch" style="width:0%"></i><i class="extr" style="width:100%"></i>
-        </div>
-        <div class="tableScroll">
-        <table class="quadTable" id="anchorTable">
-          <thead><tr><th scope="col">Quad</th><th scope="col">R64</th>
-            <th scope="col">R50</th><th scope="col">R34</th>
-            <th scope="col">Anchored</th></tr></thead>
-          <tbody></tbody>
-        </table>
-        </div>
-        <p class="note" id="anchorThin" style="display:none"></p>
-        <details id="anchorHelp">
-          <summary>How to read this</summary>
-          <p class="note" style="margin-top:0">
-            <b>Anchored</b>: a reported radius constrains the fit at this
-            range on this bearing. <b>Extrapolation</b>, hatched on the map:
-            inside the innermost reported ring (JTWC never reports an RMW),
-            and outside the outermost, where only the fitted profile and its
-            taper decide the answer.
-          </p>
-          <p class="note">Radii in nm as reported. <b>Anchored</b> is the
-            span between the innermost and outermost fit target in that
-            quadrant: 0.85 times the reported radius, because the bulletin
-            states the quadrant maximum and GTCM fits the quadrant
-            average.</p>
-        </details>
       </section>
 
       <section class="card" aria-labelledby="hProfile">
@@ -673,7 +608,11 @@ var RMS_P75 = 2.81, RMS_P90 = 4.47, RMS_N = 4624;
 var TD_FLOOR = 34;                 // below this the GFE tool builds nothing
 var BAND_EDGES = [20, 34, 50, 64, 80, 100];
 var BAND_TOKENS = ['--f1', '--f2', '--f3', '--f4', '--f5', '--f6'];
-var BAND_ALPHA  = [0.42, 0.52, 0.62, 0.72, 0.80, 0.88];
+// Plain colour raster: every band is drawn fully opaque in its own colour,
+// and the WHOLE layer is then laid over the basemap at one fixed opacity
+// (Leaflet's imageOverlay `opacity` option) so the streets and coastline
+// stay legible under it. No per-band alpha, no texture.
+var FIELD_OPACITY = 0.65;
 var QUAD_TOKEN  = { NE: '--q-ne', SE: '--q-se', SW: '--q-sw', NW: '--q-nw' };
 var QUAD_DASH   = { NE: [], SE: [7, 3], SW: [2, 3], NW: [10, 3, 2, 3] };
 var RING_DASH   = { 34: null, 50: '9,5', 64: '2,4' };
@@ -687,7 +626,6 @@ var timeSteps = [];     // epochs
 var focusPil = null;
 var fieldCache = {};    // key -> vortexFieldGTCM result
 var rasterCache = {};   // key -> {url, bounds, peak}, bounded below
-var shareCache = {};    // key -> anchored area fraction
 var rasterOrder = [];
 var RASTER_CACHE_MAX = 24;
 var tauFitCache = {};   // key -> [{tau, rms, n}]
@@ -788,37 +726,6 @@ function liveThresholds(snap) {
   return out;
 }
 
-/**
- * Per-quadrant anchored span, in nm, on the 0.85-scaled fit targets - the
- * radii the least-squares actually sees.  {lo, hi, n} per quadrant; n is how
- * many targets that quadrant contributes.  A quadrant with one target is a
- * shell, not a band, and the table says so.
- */
-function anchorBand(snap) {
-  var out = {}, thrs = liveThresholds(snap), i, j, q, r;
-  for (i = 0; i < QUADS.length; i++) {
-    q = QUADS[i];
-    var lo = Infinity, hi = -Infinity, n = 0;
-    for (j = 0; j < thrs.length; j++) {
-      r = Number(snap.radii[thrs[j]][q]) || 0;
-      if (r <= 0) continue;
-      r *= QAVG;
-      if (r < lo) lo = r;
-      if (r > hi) hi = r;
-      n++;
-    }
-    out[q] = n ? { lo: lo, hi: hi, n: n } : { lo: 0, hi: 0, n: 0 };
-  }
-  return out;
-}
-
-function isAnchored(band, r, azDeg) {
-  var b = band[quadOf(azDeg)];
-  if (!b || !b.n) return false;
-  if (b.n === 1) return Math.abs(r - b.hi) <= Math.max(b.hi * 0.05, 2);
-  return r >= b.lo && r <= b.hi;
-}
-
 /* --------------------------------------------------------------------------
    Field cache.  fitGTCM() runs a Nelder-Mead per call; caching it per
    storm-time keeps layer toggles instant.
@@ -841,8 +748,7 @@ function activeItems(epoch) {
     out.push({
       storm: s, snap: snap, onTau: onTau,
       rmax: V.resolveRmax(snap, 0),
-      field: fieldFor(snap, s.pil + '@' + epoch),
-      band: anchorBand(snap)
+      field: fieldFor(snap, s.pil + '@' + epoch)
     });
   }
   return out;
@@ -879,11 +785,7 @@ legend.onAdd = function () {
             tok(BAND_TOKENS[i]) + '"></span>' + BAND_EDGES[i] + hi + '</div>';
   }
   d.innerHTML =
-    '<h3>Wind speed, kt</h3>' + rows +
-    '<h3>Field</h3>' +
-    '<div class="row"><span class="sw" style="background:' + tok('--f3') +
-      '"></span>anchored</div>' +
-    '<div class="row"><span class="tex"></span>extrapolation</div>' +
+    '<h3>Modelled wind speed, kt</h3>' + rows +
     '<h3>Reported</h3>' +
     '<div class="row"><span class="ln"></span>R34, as reported</div>' +
     '<div class="row"><span class="ln d50"></span>R50</div>' +
@@ -1054,12 +956,11 @@ function clearField() {
  * two systems are far apart: a fixed 260x220 grid stretched across the whole
  * NW Pacific puts 6+ nm in a cell and the eye disappears.  Per-storm rasters
  * keep every field at full sampling regardless of how the basin is arranged,
- * and they remove the "which storm owns this cell" question entirely, which
- * matters here because the anchored/extrapolated texture is a per-storm fact.
+ * and they remove the "which storm owns this cell" question entirely.
  *
  * THREE RENDERING SHORTCUTS, all confined to the raster.  Every number the
- * rail reports - the fit, the profile chart, the anchored share - still goes
- * through the shared field.at() unmodified.
+ * rail reports - the fit, the profile chart - still goes through the shared
+ * field.at() unmodified.
  *
  *  1. field.at() is not called per cell.  Its magnitude is recomposed from
  *     the SAME shared exports it uses - gtcmProfile, gtcmUV, distBearing -
@@ -1086,7 +987,7 @@ function drawFieldFor(it) {
   var key = it.storm.pil + '@' + it.snap.epoch;
   var hit = rasterCache[key];
   if (hit) {
-    var ovc = L.imageOverlay(hit.url, hit.bounds, { opacity: 1, interactive: false });
+    var ovc = L.imageOverlay(hit.url, hit.bounds, { opacity: FIELD_OPACITY, interactive: false });
     ovc.addTo(map);
     fieldOverlays.push(ovc);
     return hit.peak;
@@ -1140,7 +1041,6 @@ function drawFieldFor(it) {
 
   var mag = new Float32Array(NX * NY);
   var wgt = new Float32Array(NX * NY);   // peak-normalisation weight, kept
-  var anch = new Uint8Array(NX * NY);
   var best = -1, bestW = 0;
 
   for (iy = 0; iy < NY; iy++) {
@@ -1164,7 +1064,6 @@ function drawFieldFor(it) {
       }
       if (r > r34 * INSERT_FAC) continue;
       mag[k] = m;
-      anch[k] = isAnchored(it.band, r, az) ? 1 : 0;
       // Peak-core normalisation is measured on this same pass, and its
       // weight is kept rather than recomputed: the paint pass would
       // otherwise need r again, and r costs a great-circle solve.
@@ -1197,20 +1096,19 @@ function drawFieldFor(it) {
       if (norm > 1) mm *= 1 + (norm - 1) * wgt[kk];
       var bi = bandIndex(mm);
       if (bi < 0) { img.data[o + 3] = 0; continue; }
-      var c = rgb[bi], a = BAND_ALPHA[bi];
-      /* Anchored vs extrapolated is a TEXTURE, never a colour: a diagonal
-         hatch of period 8 raster px, coarse enough to survive the browser's
-         smoothing when Leaflet scales the overlay up. */
-      if (!anch[kk]) a *= (((ix + iy) % 8) < 3) ? 0.92 : 0.30;
+      // Plain colour raster: full-strength band colour, no per-band alpha
+      // and no texture. The layer's own opacity (FIELD_OPACITY) is what
+      // lets the basemap show through.
+      var c = rgb[bi];
       img.data[o] = c[0]; img.data[o + 1] = c[1]; img.data[o + 2] = c[2];
-      img.data[o + 3] = Math.round(a * 255);
+      img.data[o + 3] = 255;
       if (mm > peak) peak = mm;
     }
   }
   ctx.putImageData(img, 0, 0);
   var url = cv.toDataURL(), bounds = [[south, west], [north, east]];
   cacheRaster(key, { url: url, bounds: bounds, peak: peak });
-  var ov = L.imageOverlay(url, bounds, { opacity: 1, interactive: false });
+  var ov = L.imageOverlay(url, bounds, { opacity: FIELD_OPACITY, interactive: false });
   ov.addTo(map);
   fieldOverlays.push(ov);
   return peak;
@@ -1226,34 +1124,6 @@ function drawField(items) {
     if (p > peak) peak = p;
   }
   return peak || null;
-}
-
-/**
- * Area-weighted share of this storm's field (>= 20 kt) that is anchored.
- * Sampled on its own polar grid rather than read off the raster, so the
- * number does not change when the map is panned or the viewport resized.
- */
-function anchoredShare(it) {
-  var ck = it.storm.pil + '@' + it.snap.epoch;
-  if (Object.prototype.hasOwnProperty.call(shareCache, ck)) return shareCache[ck];
-  var f = it.field, band = it.band;
-  var anch = 0, tot = 0, az, r, rMax = 0, i;
-  for (i = 0; i < 4; i++) {
-    var rr = f.r34At(QUAD_AZ[QUADS[i]]);
-    if (rr > rMax) rMax = rr;
-  }
-  rMax = Math.max(rMax * 1.6, 60);
-  for (az = 0; az < 360; az += 5) {
-    for (r = 2; r <= rMax; r += 2) {
-      var p = V.destPoint(it.snap.lat, it.snap.lon, az, r);
-      if (f.at(p[0], p[1]).mag < 20) continue;
-      tot += r;
-      if (isAnchored(band, r, az)) anch += r;
-    }
-  }
-  var out = tot > 0 ? anch / tot : 0;
-  shareCache[ck] = out;
-  return out;
 }
 
 /* --------------------------------------------------------------------------
@@ -1597,8 +1467,7 @@ function renderRail(it, epoch) {
   var kvEl = document.getElementById('focusKv');
   var params = document.getElementById('fitParams');
   var badge = document.getElementById('fitBadge');
-  var tbody = document.querySelector('#anchorTable tbody');
-  kvEl.innerHTML = ''; params.innerHTML = ''; tbody.innerHTML = '';
+  kvEl.innerHTML = ''; params.innerHTML = '';
 
   if (!it) {
     nameEl.textContent = storms.length ? 'Not active at this time' : 'No system selected';
@@ -1615,9 +1484,6 @@ function renderRail(it, epoch) {
     document.getElementById('fitPct').textContent = '—';
     document.getElementById('fitTargets').textContent = '';
     document.getElementById('fitNote').textContent = '';
-    document.getElementById('anchorPct').textContent = '';
-    setAnchorBar(0);
-    hideThinNote();
     drawProfile(null);
     return;
   }
@@ -1649,9 +1515,6 @@ function renderRail(it, epoch) {
     document.getElementById('fitNote').textContent =
       'Below tropical-storm strength. The GFE tool builds no vortex here and ' +
       'leaves the background grid untouched, so neither does this preview.';
-    document.getElementById('anchorPct').textContent = '';
-    setAnchorBar(0);
-    hideThinNote();
     drawProfile(it);
     return;
   }
@@ -1680,9 +1543,9 @@ function renderRail(it, epoch) {
   setPlainSummary_(V.describeStorm(h) + ' is a ' + jtwcCategoryWord_(snap.vmax) +
     ' (' + n0(snap.vmax) + ' kt max sustained wind) at ' +
     document.getElementById('tTau').textContent + ', valid ' +
-    document.getElementById('tValid').textContent + '. The shaded field on ' +
-    'the map is this tool’s own estimate of wind speed, built only from the ' +
-    'numbers in the warning text, not a gridded forecast. Fit to the ' +
+    document.getElementById('tValid').textContent + '. On the map, the ' +
+    'coloured area is the tool’s estimate of wind speed, built only from ' +
+    'the numbers in the warning text, not a gridded forecast. Fit to the ' +
     'reported radii: ' + plainFitVerdict_(word) +
     ((fit.n && isFinite(rms)) ? ' (' + rms.toFixed(1) + ' kt RMS)' : '') + '.');
 
@@ -1742,78 +1605,7 @@ function renderRail(it, epoch) {
   }
   document.getElementById('fitNote').textContent = notes.join(' ');
 
-  // --- anchoring ----------------------------------------------------------
-  var share = anchoredShare(it);
-  setAnchorBar(share);
-  document.getElementById('anchorPct').textContent =
-    Math.round(share * 100) + '% anchored';
-
-  var thrsAll = liveThresholds(it.snap);
-  var maxTargetsInAQuadrant = 0;
-  for (var qi = 0; qi < 4; qi++) {
-    if (it.band[QUADS[qi]].n > maxTargetsInAQuadrant) {
-      maxTargetsInAQuadrant = it.band[QUADS[qi]].n;
-    }
-  }
-  var thin = document.getElementById('anchorThin');
-  if (maxTargetsInAQuadrant <= 1) {
-    thin.style.display = 'block';
-    thin.textContent = maxTargetsInAQuadrant === 0
-      ? 'No quadrant reports a radius at all. Nothing in this field is anchored: '
-        + 'rm, ri, x1 and x2 are climatology and the whole picture is model.'
-      : 'Only one threshold is reported, so each quadrant constrains the fit at '
-        + 'a single range and nowhere else. The radial shape between the eye and '
-        + 'that radius, and everything beyond it, is the fitted Rankine form, '
-        + 'which is why almost the entire field is hatched.';
-  } else {
-    thin.style.display = 'none';
-    thin.textContent = '';
-  }
-  for (var i = 0; i < 4; i++) {
-    var q = QUADS[i], b = it.band[q];
-    var tr = document.createElement('tr');
-    var td0 = document.createElement('td');
-    var dot = document.createElement('span');
-    dot.className = 'qdot';
-    dot.style.background = tok(QUAD_TOKEN[q]);
-    td0.appendChild(dot);
-    td0.appendChild(document.createTextNode(q));
-    tr.appendChild(td0);
-    for (var j = 0; j < THRESHOLDS.length; j++) {
-      var thr = THRESHOLDS[j];
-      var td = document.createElement('td');
-      var has = thrsAll.indexOf(thr) >= 0;
-      var val = has ? (Number(snap.radii[thr][q]) || 0) : 0;
-      td.textContent = has ? (val > 0 ? String(Math.round(val)) : '000') : '—';
-      if (has && val <= 0) td.style.color = tok('--muted');
-      tr.appendChild(td);
-    }
-    var tdA = document.createElement('td');
-    tdA.textContent = !b.n ? 'none'
-      : b.n === 1 ? Math.round(b.hi) + ' only'
-      : Math.round(b.lo) + '–' + Math.round(b.hi);
-    if (!b.n) tdA.style.color = tok('--muted');
-    tr.appendChild(tdA);
-    tbody.appendChild(tr);
-  }
-
   drawProfile(it);
-}
-
-function hideThinNote() {
-  var el = document.getElementById('anchorThin');
-  el.style.display = 'none';
-  el.textContent = '';
-}
-
-function setAnchorBar(share) {
-  var bar = document.getElementById('anchorBar');
-  var pc = Math.round(Math.min(Math.max(share, 0), 1) * 100);
-  bar.children[0].style.width = pc + '%';
-  bar.children[1].style.width = (100 - pc) + '%';
-  bar.setAttribute('aria-label',
-    pc + ' percent of the drawn wind field is anchored to a reported radius; ' +
-    (100 - pc) + ' percent is modelled extrapolation');
 }
 
 function renderQuadKey() {
@@ -2111,7 +1903,7 @@ function ingest(results, sourceLabel) {
   slots = results || [];
   storms = [];
   fieldCache = {}; tauFitCache = {};
-  rasterCache = {}; rasterOrder = []; shareCache = {};
+  rasterCache = {}; rasterOrder = [];
   var i;
   for (i = 0; i < slots.length; i++) {
     var r = slots[i];
@@ -2345,7 +2137,7 @@ loadFindingsContext();
    language card, ...) would just have its wrapped terms discarded on the
    next redraw, so those are deliberately left alone. */
 if (window.TCGlossary) {
-  ['anchorHelp', 'profileHelp', 'modelNotes', 'paste'].forEach(function (id) {
+  ['profileHelp', 'modelNotes', 'paste'].forEach(function (id) {
     var el = document.getElementById(id);
     if (el) TCGlossary.linkify(el);
   });

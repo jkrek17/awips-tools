@@ -439,7 +439,7 @@ footer.pagefoot details p { margin: .3rem 0; }
               <canvas id="plan" width="720" height="720"
                       role="img" aria-label="Storm-relative GTCM wind field"></canvas>
               <div class="cbar-wrap"><canvas id="cbar" width="720" height="68"
-                      role="img" aria-label="Wind speed colour scale, knots"></canvas></div>
+                      role="img" aria-label="Modelled wind speed colour scale, knots"></canvas></div>
             </div>
             <div class="scrubbar" style="margin-top:.45rem">
               <label for="rangeSel" class="note">Half-width</label>
@@ -1689,7 +1689,7 @@ function drawColorBar() {
     labelHalo(ctx, String(ticks[i]), Math.min(Math.max(tx, 8), W - 8), 4 + barH + 14,
               C_GRIDT, 'center', 'bold 11px system-ui, sans-serif');
   }
-  labelHalo(ctx, 'wind speed, kt', W - 4, 12, C_GRIDT, 'right', 'bold 11px system-ui, sans-serif');
+  labelHalo(ctx, 'modelled wind speed, kt', W - 4, 12, C_GRIDT, 'right', 'bold 11px system-ui, sans-serif');
 }
 
 /** Legend swatch.  `bg` is only supplied for the plan-view legend, whose
