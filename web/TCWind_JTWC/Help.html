@@ -139,7 +139,47 @@ var TERMS = [
     'Wherever the modelled field is drawn without a reported radius to ' +
     'anchor it: inside the innermost reported ring, and outside the ' +
     'outermost one. Only the fitted vortex shape - not a reported number - ' +
-    'decides the wind speed there. Shown hatched on the map.']
+    'decides the wind speed there. Shown hatched on the map.'],
+  ['held-out test',
+    'A prediction check: fit the vortex to some of the reported radii ' +
+    '(say 34 and 50 kt), then score it against a radius withheld from ' +
+    'that fit (64 kt). The only test on the Findings page that scores a ' +
+    'genuine prediction, rather than agreement with data the fit already ' +
+    'saw.'],
+  ['coherence',
+    'How smooth the modelled field is - the absence of the corners and ' +
+    'slope breaks a per-quadrant construction leaves at the compass ' +
+    'bisectors. A roughness measure, not an accuracy measure: it says ' +
+    'nothing about whether the field is closer to the truth.'],
+  ['noise floor',
+    'The same roughness estimator run where the construction has no ' +
+    'corner to find, giving the size of a slope break that is too small ' +
+    'to mean anything. A measured roughness only means something read ' +
+    'against its own noise floor.'],
+  ['bias',
+    'Mean signed error: the average of modelled minus reported, so a ' +
+    'negative bias means the modelled isotach sits inside the reported ' +
+    'radius on average. Unlike mean absolute error, a positive miss and ' +
+    'a negative miss can cancel in this number.'],
+  ['MAE',
+    'Mean Absolute Error: the average size of the miss, ignoring its ' +
+    'direction. Unlike bias, MAE cannot hide a large miss one way behind ' +
+    'a large miss the other way.'],
+  ['correlation r',
+    'The Pearson correlation between modelled and reported (or held-out) ' +
+    'radii across cases, from -1 to 1: how well the two track each other. ' +
+    'A high r does not by itself mean the two are close in size - see ' +
+    'bias and MAE for that.'],
+  ['never reached',
+    'A reported ring-quadrant the modelled isotach does not cross at any ' +
+    'radius, because one symmetric vortex could not hold that much ' +
+    'structure. Excluded from bias and MAE, since there is no crossing to ' +
+    'measure, and counted separately as a total miss.'],
+  ['extratropical transition',
+    'The process by which a tropical cyclone loses its warm core and ' +
+    'takes on the frontal structure of a mid-latitude storm. GTCM fits a ' +
+    'single symmetric vortex, and fits transitioning storms worse than ' +
+    'purely tropical ones.']
 ];
 
 var IBTRACS_RE_CACHE = null;

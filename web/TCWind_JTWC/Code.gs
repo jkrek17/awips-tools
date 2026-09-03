@@ -125,7 +125,7 @@
  * the three disagree: Python wins, then Vortex.html, then this file.
  */
 
-var VERSION = '2026-09-02b';
+var VERSION = '2026-09-03a';
 
 var BULLETIN_BASE = 'https://tgftp.nws.noaa.gov/data/raw/wt/';
 

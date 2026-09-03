@@ -211,7 +211,7 @@ REQUIRE_ACKNOWLEDGEMENT = True
 
 # Shown in the dialog title and the status bar.  Bump it on every install so
 # there is never any doubt about which copy GFE actually loaded.
-VERSION = "2026-09-02a"
+VERSION = "2026-09-03a"
 
 # A bulletin older than this is treated as a dead slot and skipped.  textdb
 # returns whatever was last stored under a PIL, so without this check a storm

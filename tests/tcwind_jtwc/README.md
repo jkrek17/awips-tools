@@ -2,8 +2,9 @@
 
 Regression and verification tooling for `GFE/procedures/TCWind_JTWC.py`
 and its web-preview port, `web/TCWind_JTWC/{Code.gs,Index.html,Vortex.html,
-Archive.html,Findings.html}`. Thirteen questions, thirteen scripts
-(`besttrack_common.py` is shared plumbing, not a check on its own):
+Archive.html,Findings.html,Theme.html,Help.html}`. Thirteen questions,
+thirteen scripts (`besttrack_common.py` is shared plumbing, not a check
+on its own):
 
 | Question | Script |
 |---|---|
@@ -242,79 +243,46 @@ documented in `verify_holdout.py`'s and `verify_gtcm.py`'s docstrings) for
 the full per-quadrant, per-basin breakdown, and `byNature`/`byLand` for
 whether this holds up near land and during storm transition.
 
-## Archived Cases and Findings panels (in the web app)
+## Archive and Findings pages (in the web app)
 
-`prep_besttrack_data.py` turns the same IBTrACS WP-basin archive into
-three datasets baked into the deployed web app itself
-(`web/TCWind_JTWC/BestTrackData.gs`, ~1 MB, generated - don't hand-edit;
-`tests/tcwind_jtwc/data/*.json` holds the same data for reference), and
-exposed via `getBestTrackSample()`/`getBestTrackScatter()`/
-`getHollandZoneSummary()` in `Code.gs`, the same `google.script.run`
-idiom as fetching live bulletins. These feed two separate destinations
-- "Archived Cases" (a panel inside the map tool, `web/TCWind_JTWC/
-Index.html`, for the storm-by-storm viewer) and "Findings" (its own
-standalone page, `web/TCWind_JTWC/Findings.html`, for the aggregate
-charts and a written summary) - so picking a case to inspect and
-reading the overall verification results aren't competing for the same
-screen, and Findings has its own linkable/shareable URL
-(`<web app URL>?page=findings`) rather than living as a panel toggled
-inside the live tool. `Code.gs`'s `doGet(e)` routes on `e.parameter.page`
-to serve one template or the other, both via `HtmlService.createTemplateFromFile`
-so each can inject the deployment's own URL (`<?= baseUrl ?>`, from
-`ScriptApp.getService().getUrl()`) for the link between them:
+`prep_besttrack_data.py` turns three basins of IBTrACS best track (WP
+from JTWC, NA/EP from NHC HURDAT2 - see its own docstring for the exact
+provenance of each) into `web/TCWind_JTWC/BestTrackData.gs` (generated,
+do not hand-edit; `tests/tcwind_jtwc/data/archive_index.json` and
+`archive_storms.json` hold the same data for reference/regeneration).
+That file also embeds `tests/tcwind_jtwc/data/gtcm_findings.json`
+verbatim (or `--rebundle` to refresh just that embed after re-running
+`verify_gtcm.py`, without touching the archive or needing a CSV).
+`Code.gs` serves it via three functions, the same `google.script.run`
+idiom as fetching live bulletins: `getArchiveIndex()` (light per-storm
+metadata, no track points, for the storm picker), `getArchiveStorm(sid)`
+(one storm's full record series), and `getFindings()` (the entire
+`gtcm_findings.json` object).
 
-- **A 100-storm random sample** (2001-2024, seeded, so it's
-  reproducible; capped at 100 so the storm-picker dropdown and the map
-  stay responsive - the underlying archive has ~2,200 eligible storms),
-  each with its full track: position, Vmax, reported wind radii, and
-  observed RMW/ROCI wherever JTWC's post-season analysis reported them.
-  The "Archived Cases" tab builds a synthetic `storm` object from
-  whichever one is picked, in the exact shape a parsed live bulletin
-  produces, so every existing map/diagnostics function (`drawRadii`,
-  `drawField`, `resolveRmax`, the time-history and azimuthal-profile
-  charts) draws it with no changes at all. The only new drawing code
-  is a dashed ring each for the storm's actual RMW (magenta) and ROCI
-  (teal), a Rmax-vs-RMW delta in the status line, and - in the
-  azimuthal-profile chart - an overlaid Holland (1980) curve, solved
-  from the same Vmax/Rmax/R34 anchors, so its divergence from the
-  tool's own quadrant curves is visible per-storm.
-- **Every usable record in the full archive** (~16,200, not just the
-  100-storm sample), compacted to `[vmax, lat, rmw, r64min, r50min,
-  r34min]` per record - just enough for the client to run the real
-  `resolveRmax()` unmodified (its clamp only ever needs the minimum
-  nonzero quadrant at a threshold, so that's all that's shipped, rather
-  than duplicating the clamp formula in the prep script). Drawn as a
-  scatter (predicted Rmax vs actual RMW, colored by intensity category,
-  with a live-computed bias/MAE/RMSE) - this is `verify_besttrack_rmax.py`
-  made visible and explorable in the tool itself, rather than a
-  terminal report.
-- **The Holland zone-divergence summary** (mean/90th-percentile
-  |tool-Holland| per radial zone, from `verify_besttrack_holland.py`'s
-  own computation, condensed) - drawn as a small bar chart next to the
-  scatter, so the "near-core disagreement is worst" finding is visible
-  as a chart rather than only as a paragraph of numbers.
+These feed two separate pages, not panels inside the live tool: `?page=archive`
+(`Archive.html`) is the storm-by-storm browser - pick a storm and see it
+rendered exactly like a live bulletin would be (`drawRadii`, `drawField`,
+the time-history and azimuthal-profile charts, all unchanged), plus a
+second tab that pools ring-fit and held-out statistics client-side over
+whatever subset of the archive is currently filtered, broken out by
+basin, storm nature and individual storm. `?page=findings`
+(`Findings.html`) is the aggregate findings page: a short "In one
+minute" summary, "What we measured and how" cards, then the full
+technical detail behind every number, all read live from
+`getFindings()` - the page hardcodes no statistics of its own.
+`Code.gs`'s `doGet(e)` routes `e.parameter.page` to whichever template,
+via `HtmlService.createTemplateFromFile`, injecting `baseUrl`, `page`,
+`pageNote` and `version` into all three so each can link to the others
+and show a consistent build string.
 
-Both panels carry a written guide (not just chart captions): Archived
-Cases explains how to read the map's rings/raster for whichever storm
-is picked; Findings explains where the live data and the best-track
-data each come from and states the headline conclusions from all three
-checks in plain language - so a forecaster using either tab doesn't
-have to separately go read this file or the scripts' terminal output
-to know what to make of it.
-
-2001 is the cutoff for both datasets: JTWC's WestPac wind-radii/RMW
-reporting is present on well under half of records before that, so an
-older storm would show the panel "failing" when really there's just
-nothing to compare against.
-
-Re-run `prep_besttrack_data.py` (needs a WP-basin IBTrACS CSV, same as
-the other scripts) and re-push `BestTrackData.gs` whenever it's worth
-refreshing this - e.g. after a season closes out and JTWC's best track
-for it is finalized. As of this writing, 2001-2024 is not a cutoff we
-chose: it's the full range with usable data. JTWC's WestPac wind-radii/
-RMW reporting is essentially absent before 2001 (checked year by year,
-0% coverage), and 2025-2026 aren't in IBTrACS yet even in a freshly
-re-fetched copy - best-track finalization runs a season or more behind.
+Re-run `prep_besttrack_data.py` (needs the basin CSVs, or `--rebundle`
+for the findings-only refresh) and re-push `BestTrackData.gs` whenever
+it is worth refreshing this - e.g. after a season closes out and best
+track for it is finalized. The season windows themselves (WP 2005-2024,
+NA/EP 2004-2024) are not arbitrary: 64 kt radii are reported as zero
+everywhere before those years in the respective basins, so an earlier
+storm would show the tool "failing" when there is simply nothing to
+compare against.
 
 ## Beyond Rmax: is the wind field's *shape* actually right?
 
