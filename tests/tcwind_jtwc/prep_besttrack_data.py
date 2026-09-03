@@ -45,6 +45,11 @@ Usage:
     # or explicitly
     python3 prep_besttrack_data.py --na ibtracs.NA.csv --ep ibtracs.EP.csv
 
+    # Re-bundle only: after re-running verify_gtcm.py, rewrite
+    # BestTrackData.gs's GTCM_FINDINGS from the new data/gtcm_findings.json
+    # without touching the archive and without any CSV. See rebundle().
+    python3 prep_besttrack_data.py --rebundle
+
 Nothing here downloads anything: a missing CSV is an error naming the path
 and the NCEI URL, not a 50 MB surprise fetch.
 """
@@ -370,6 +375,67 @@ def human(n):
         else "%.2f MB" % (n / 1048576.0)
 
 
+def rebundle(args, log):
+    """--rebundle path: re-emit BestTrackData.gs from what is ALREADY on
+    disk, with no CSV and no re-derivation.
+
+    Reads data/archive_index.json and data/archive_storms.json exactly as
+    a previous full run left them (they already carry WP+NA+EP combined -
+    see write_gs()/main()'s INDEX_JSON/STORMS_JSON writes below), re-reads
+    data/gtcm_findings.json (verify_gtcm.py's current output), and calls
+    write_gs() with all three. Nothing here touches archive_index.json,
+    archive_storms.json, or besttrack_sample.json: this exists so a fresh
+    verify_gtcm.py run can be bundled into the deployed .gs file without a
+    100-storm WP resample or an NA/EP CSV, which is normally the whole
+    reason (see D1 in the web review: BestTrackData.gs can go stale
+    relative to gtcm_findings.json whenever only the findings change) this
+    script is re-run at all.
+
+    besttrack_sample.json (the WP-only source load_westpac() reads) is
+    deliberately NOT read here: archive_index.json/archive_storms.json
+    already carry WP's contribution from the run that produced them, so
+    re-reading the WP sample would be redundant - it is only ever needed
+    again if the archive itself is being rebuilt, which --rebundle
+    explicitly does not do.
+    """
+    if not os.path.exists(INDEX_JSON) or not os.path.exists(STORMS_JSON):
+        raise SystemExit(
+            "--rebundle needs %s and %s to already exist (run this script "
+            "once, normally, first) - it only re-bundles, it does not "
+            "build the archive." % (INDEX_JSON, STORMS_JSON))
+    with open(INDEX_JSON) as f:
+        index = json.load(f)
+    with open(STORMS_JSON) as f:
+        storms = json.load(f)
+    log("--rebundle: read %d storms from %s, %d storms from %s (archive "
+        "itself untouched)"
+        % (len(index), os.path.relpath(INDEX_JSON, os.path.join(HERE, "..", "..")),
+           len(storms), os.path.relpath(STORMS_JSON, os.path.join(HERE, "..", ".."))))
+
+    findings = None
+    if os.path.exists(args.findings):
+        with open(args.findings) as f:
+            findings = json.load(f)
+        log("bundled %s (%s) as GTCM_FINDINGS"
+            % (args.findings, human(os.path.getsize(args.findings))))
+    else:
+        log("WARNING: %s does not exist - GTCM_FINDINGS will be null. Run "
+            "verify_gtcm.py first if that is not what you want."
+            % args.findings)
+
+    write_gs(GS_OUT, index, storms, findings, log)
+
+    log("")
+    log("ARCHIVE TOTAL (unchanged by --rebundle): %d storms, %d records"
+        % (len(index), sum(e["n"] for e in index)))
+    n = os.path.getsize(GS_OUT)
+    flag = "  *** OVER the %s soft limit ***" % human(GS_SOFT_LIMIT) \
+        if n > GS_SOFT_LIMIT else ""
+    log("  %-52s %10s%s" % (os.path.relpath(GS_OUT, os.path.join(HERE, "..", "..")),
+                            human(n), flag))
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--na", default=None, help="IBTrACS North Atlantic CSV")
@@ -382,6 +448,15 @@ def main():
     ap.add_argument("--n-nhc", type=int, default=N_NHC_STORMS,
                     help="cap on NA+EP storms (default %d)" % N_NHC_STORMS)
     ap.add_argument("--seed", type=int, default=SEED)
+    ap.add_argument("--rebundle", action="store_true",
+                    help="re-bundle only: skip NA/EP CSV re-derivation and "
+                         "WP resampling entirely, and rewrite "
+                         "BestTrackData.gs from the EXISTING "
+                         "data/archive_index.json, data/archive_storms.json "
+                         "and data/gtcm_findings.json. Does not touch the "
+                         "archive itself - use this after re-running "
+                         "verify_gtcm.py to bundle fresh findings without "
+                         "CSVs. See rebundle()'s docstring.")
     args = ap.parse_args()
 
     lines = []
@@ -389,6 +464,9 @@ def main():
     def log(msg):
         print(msg)
         lines.append(msg)
+
+    if args.rebundle:
+        return rebundle(args, log)
 
     paths = {"NA": args.na or cache_path("NA"),
              "EP": args.ep or cache_path("EP")}
