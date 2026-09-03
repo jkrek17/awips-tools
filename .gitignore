@@ -3,3 +3,6 @@ __pycache__/
 *.pyo
 *.pyd
 
+
+# Agent worktrees created for isolated subagent runs
+.claude/worktrees/
