@@ -105,6 +105,16 @@ GTCM_APPLY_INFLOW = False
 
 # Iteration limits for the fits.  These bound run time inside GFE; the fits
 # converge well inside them on real bulletins.
+# Admissible range for the modified-Rankine size exponents.  The guide gives no
+# bounds, but eq. (6)'s own climatological value spans roughly 0.37 (a marginal
+# storm at low latitude) to 0.95 (a very intense one at high latitude), so this
+# brackets what the guide itself considers physical with headroom either side.
+# The former floor of 0.05 admitted a wind field that barely decays with radius
+# - flat out to hundreds of miles - which is not a shape any tropical cyclone
+# has, and which a thinly-constrained fit will happily run to.
+GTCM_X_MIN = 0.20
+GTCM_X_MAX = 1.20
+
 GTCM_MAX_ITER = 220
 GTCM_ASYM_STEPS = 9
 
@@ -794,7 +804,8 @@ def fitGTCM(snapshot):
     if not targets:
         # No radii anywhere: climatology is all there is.  Guide step 2c.
         return dict(rm=rmc, ri=rmc * 3.0, x1=xc, x2=xc,
-                    ax=float(ax0), ay=float(ay0), a=a, n=0, rms=float("nan"))
+                    ax=float(ax0), ay=float(ay0), a=a, n=0, freeParams=0,
+                    rms=float("nan"))
 
     rr = np.array([t[0] for t in targets])
     az = np.array([t[1] for t in targets])
@@ -807,15 +818,68 @@ def fitGTCM(snapshot):
         u, v = _gtcmUV(V, az, ax, ay, lat)
         return float(np.sum(wt * (np.sqrt(u * u + v * v) - vt) ** 2))
 
-    def sizeObj(p):
-        rm, x1, x2 = p
-        if rm < 2.0 or rm > 150.0 or not (0.05 <= x1 <= 2.0) or not (0.05 <= x2 <= 2.0):
-            return 1e12
-        return err(rm, x1, x2, ax0, ay0)
+    # Only estimate what the reported radii can actually identify.  rm, x1 and
+    # x2 are three free parameters; a bulletin reporting two nonzero radii
+    # constrains two numbers.  Fitting all three to two targets leaves a whole
+    # manifold of exact solutions - every one scoring RMS 0.00 - and the
+    # optimiser lands on an arbitrary point of it.  On live TS 22W (KROVANH),
+    # two reported R34 quadrants produced rm 7.8 nm with x1 = x2 = 0.05: a wind
+    # field that barely decays with radius, drawn as a flat sheet chopped into
+    # a one-sided wedge by the asymmetry vector.  19% of two-target
+    # configurations did this.
+    #
+    # So drop a parameter when the data cannot carry it.  The Users Guide is
+    # silent here - it only says climatology is used when NO radius is
+    # reported - but estimating an unidentifiable parameter is not something a
+    # least-squares fit should be asked to do.
+    nfit = len(targets)
+    if nfit >= 5:
+        freeParams = 3          # rm, x1, x2 all identifiable
+    elif nfit >= 3:
+        freeParams = 2          # rm and one shared exponent
+    else:
+        freeParams = 1          # rm only; exponent stays at climatology
 
-    (rm, x1, x2), _ = _nelderMead(sizeObj, [rmc, xc, xc],
-                                  [max(rmc * 0.35, 4.0), 0.12, 0.12],
-                                  GTCM_MAX_ITER)
+    # And keep rm near climatology when the radii cannot pin it down.  The
+    # guide describes the climatological/CP rm as a first guess that is
+    # "adjusted to better fit" the reported radii - adjusted, not replaced.
+    # Unbounded, a thin fit walks rm outward chasing a 34 kt radius the
+    # symmetric vortex cannot reach: on the KROVANH case rm went to 92.8 nm
+    # against a climatological 40.8, putting the peak wind 90 nm off the
+    # centre.  That happens whenever Vm - a falls below the threshold being
+    # fitted, which for a marginal storm with a fast translation is routine:
+    # 40 kt with a = 8.4 leaves a symmetric peak of 31.6 kt, below gale.
+    rmLo, rmHi = (2.0, 150.0) if freeParams == 3 else (
+        (0.4 * rmc, 2.5 * rmc) if freeParams == 2 else (0.5 * rmc, 2.0 * rmc))
+
+    if freeParams == 3:
+        def sizeObj(p):
+            rm_, x1_, x2_ = p
+            if not (rmLo <= rm_ <= rmHi) or not (GTCM_X_MIN <= x1_ <= GTCM_X_MAX) \
+               or not (GTCM_X_MIN <= x2_ <= GTCM_X_MAX):
+                return 1e12
+            return err(rm_, x1_, x2_, ax0, ay0)
+        (rm, x1, x2), _ = _nelderMead(sizeObj, [rmc, xc, xc],
+                                      [max(rmc * 0.35, 4.0), 0.12, 0.12],
+                                      GTCM_MAX_ITER)
+    elif freeParams == 2:
+        def sizeObj(p):
+            rm_, x_ = p
+            if not (rmLo <= rm_ <= rmHi) or not (GTCM_X_MIN <= x_ <= GTCM_X_MAX):
+                return 1e12
+            return err(rm_, x_, x_, ax0, ay0)
+        (rm, xs), _ = _nelderMead(sizeObj, [rmc, xc],
+                                  [max(rmc * 0.35, 4.0), 0.12], GTCM_MAX_ITER)
+        x1 = x2 = xs
+    else:
+        def sizeObj(p):
+            rm_ = p[0]
+            if not (rmLo <= rm_ <= rmHi):
+                return 1e12
+            return err(rm_, xc, xc, ax0, ay0)
+        (rm,), _ = _nelderMead(sizeObj, [rmc], [max(rmc * 0.35, 4.0)],
+                               GTCM_MAX_ITER)
+        x1 = x2 = xc
 
     # Step 3: release the asymmetry, size parameters fixed.
     best = (err(rm, x1, x2, ax0, ay0), float(ax0), float(ay0))
@@ -838,6 +902,7 @@ def fitGTCM(snapshot):
 
     return dict(rm=float(rm), ri=ri, x1=float(x1), x2=float(x2),
                 ax=best[1], ay=best[2], a=a, n=len(targets),
+                freeParams=freeParams,
                 rms=float(np.sqrt(best[0] / np.sum(wt))))
 
 

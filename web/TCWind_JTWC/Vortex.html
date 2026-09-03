@@ -37,6 +37,12 @@ var GTCM_W_34              = 5.0;    // eq. (7) weights
 var GTCM_W_INNER           = 1.0;
 var GTCM_ASYM_MAX_DEV_KT   = 10.0;   // how far ax/ay may leave the motion vector
 var GTCM_APPLY_INFLOW      = false;  // the guide has no inflow term
+// Admissible range for the size exponents.  eq. (6)'s own climatological
+// value spans about 0.37 to 0.95 across realistic Vmax/latitude, so this
+// brackets what the guide considers physical.  The former 0.05 floor admitted
+// a field that barely decays with radius.  MUST match TCWind_JTWC.py.
+var GTCM_X_MIN             = 0.20;
+var GTCM_X_MAX             = 1.20;
 var GTCM_MAX_ITER          = 220;
 var GTCM_ASYM_STEPS        = 9;
 
@@ -460,7 +466,7 @@ function fitGTCM(snap) {
   if (!targets.length) {
     // No radii anywhere: climatology is all there is.  Guide step 2c.
     return { rm: rmc, ri: rmc * 3.0, x1: xc, x2: xc,
-             ax: ax0, ay: ay0, a: a, n: 0, rms: NaN };
+             ax: ax0, ay: ay0, a: a, n: 0, freeParams: 0, rms: NaN };
   }
 
   var nT = targets.length;
@@ -482,19 +488,51 @@ function fitGTCM(snap) {
     return npSum(terms);
   }
 
-  function sizeObj(p) {
-    var rm = p[0], x1 = p[1], x2 = p[2];
-    if (rm < 2.0 || rm > 150.0 ||
-        !(x1 >= 0.05 && x1 <= 2.0) || !(x2 >= 0.05 && x2 <= 2.0)) {
-      return 1e12;
-    }
-    return err(rm, x1, x2, ax0, ay0);
-  }
+  // Only estimate what the reported radii can identify.  rm, x1 and x2 are
+  // three free parameters; two nonzero radii constrain two numbers, and
+  // fitting all three to two targets leaves a manifold of exact solutions -
+  // every one scoring RMS 0 - with the optimiser landing anywhere on it.  On
+  // live TS 22W (KROVANH) that produced rm 7.8 nm with x1 = x2 = 0.05: a field
+  // that barely decays with radius, drawn as a flat sheet the asymmetry cut
+  // into a one-sided wedge.  Mirrors fitGTCM() in TCWind_JTWC.py.
+  var nfit = nT;
+  var freeParams = nfit >= 5 ? 3 : (nfit >= 3 ? 2 : 1);
 
-  var sizeRes = nelderMead(sizeObj, [rmc, xc, xc],
-                           [Math.max(rmc * 0.35, 4.0), 0.12, 0.12],
-                           GTCM_MAX_ITER);
-  var rm = sizeRes[0][0], x1 = sizeRes[0][1], x2 = sizeRes[0][2];
+  // rm stays near climatology when the radii cannot pin it: the guide treats
+  // the climatological value as a first guess "adjusted to better fit" the
+  // radii.  Unbounded, a thin fit walks rm outward chasing a threshold the
+  // symmetric vortex (peaking at Vm - a) may never reach.
+  var rmLo, rmHi;
+  if (freeParams === 3) { rmLo = 2.0; rmHi = 150.0; }
+  else if (freeParams === 2) { rmLo = 0.4 * rmc; rmHi = 2.5 * rmc; }
+  else { rmLo = 0.5 * rmc; rmHi = 2.0 * rmc; }
+
+  var rm, x1, x2, sizeRes;
+  if (freeParams === 3) {
+    sizeRes = nelderMead(function (p) {
+      var a_ = p[0], b_ = p[1], c_ = p[2];
+      if (a_ < rmLo || a_ > rmHi ||
+          !(b_ >= GTCM_X_MIN && b_ <= GTCM_X_MAX) ||
+          !(c_ >= GTCM_X_MIN && c_ <= GTCM_X_MAX)) return 1e12;
+      return err(a_, b_, c_, ax0, ay0);
+    }, [rmc, xc, xc], [Math.max(rmc * 0.35, 4.0), 0.12, 0.12], GTCM_MAX_ITER);
+    rm = sizeRes[0][0]; x1 = sizeRes[0][1]; x2 = sizeRes[0][2];
+  } else if (freeParams === 2) {
+    sizeRes = nelderMead(function (p) {
+      var a_ = p[0], b_ = p[1];
+      if (a_ < rmLo || a_ > rmHi ||
+          !(b_ >= GTCM_X_MIN && b_ <= GTCM_X_MAX)) return 1e12;
+      return err(a_, b_, b_, ax0, ay0);
+    }, [rmc, xc], [Math.max(rmc * 0.35, 4.0), 0.12], GTCM_MAX_ITER);
+    rm = sizeRes[0][0]; x1 = x2 = sizeRes[0][1];
+  } else {
+    sizeRes = nelderMead(function (p) {
+      var a_ = p[0];
+      if (a_ < rmLo || a_ > rmHi) return 1e12;
+      return err(a_, xc, xc, ax0, ay0);
+    }, [rmc], [Math.max(rmc * 0.35, 4.0)], GTCM_MAX_ITER);
+    rm = sizeRes[0][0]; x1 = x2 = xc;
+  }
 
   // Step 3: release the asymmetry, size parameters fixed.
   var bestE = err(rm, x1, x2, ax0, ay0);
@@ -520,7 +558,8 @@ function fitGTCM(snap) {
   }
 
   return { rm: rm, ri: ri, x1: x1, x2: x2, ax: bestAx, ay: bestAy,
-           a: a, n: nT, rms: Math.sqrt(bestE / npSum(wt)) };
+           a: a, n: nT, freeParams: freeParams,
+           rms: Math.sqrt(bestE / npSum(wt)) };
 }
 
 /** The GTCM wind field for one storm-time.  Port of _buildVortexGTCM().
