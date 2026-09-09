@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  EXPERIMENTAL. Debug field: relative vorticity at 850 hPa alone, no
+  vertical difference and no smoothing. Exists only to verify grid
+  orientation - see "Orientation verification" in D2D/README.md. Compare
+  its sign against D2D's own relative vorticity field at 850 mb on a known
+  hurricane; if they disagree, set Y_INCREASES_NORTHWARD = False in
+  CycloneCore.py.
+
+  VERIFY: if your AWIPS version does not support "Module.function" method
+  names, copy executeVorticity into its own file CycloneCoreVort.py with
+  `execute` as the function name and use Method name="CycloneCoreVort"
+  below instead.
+-->
+<DerivedParameter abbreviation="cpsZ850" name="CPS debug: 850 hPa rel vort (orientation check)" unit="/s">
+    <Method name="CycloneCore.executeVorticity" levels="Surface">
+        <Field abbreviation="uW" level="850MB"/>
+        <Field abbreviation="vW" level="850MB"/>
+        <Field abbreviation="dx"/>
+        <Field abbreviation="dy"/>
+    </Method>
+</DerivedParameter>

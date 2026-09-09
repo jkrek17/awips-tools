@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  EXPERIMENTAL. Cyclone core structure, upper troposphere:
+  relative vorticity at 600 hPa minus relative vorticity at 300 hPa, smoothed
+  over ~100 km. Positive = warm core, negative = cold core. Read it only at a
+  closed MSLP low; see D2D/README.md.
+
+  VERIFY: same checks as the comment in VTL.xml (fixed-level Field spelling,
+  dx/dy pseudo-fields and ConstantField support, levels= value for this
+  AWIPS version).
+-->
+<DerivedParameter abbreviation="VTU" name="CPS Upper Core (vort 600-300)" unit="/s">
+    <Method name="CycloneCore" levels="Surface">
+        <Field abbreviation="uW" level="600MB"/>
+        <Field abbreviation="vW" level="600MB"/>
+        <Field abbreviation="uW" level="300MB"/>
+        <Field abbreviation="vW" level="300MB"/>
+        <Field abbreviation="dx"/>
+        <Field abbreviation="dy"/>
+        <ConstantField value="100.0"/>
+    </Method>
+</DerivedParameter>

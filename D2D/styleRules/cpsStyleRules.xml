@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  EXPERIMENTAL. Starting-point style rules for VTL/VTU (cyclone core
+  structure). This is NOT a drop-in file: merge the <styleRule> elements
+  below into the site's own gridImageryStyleRules.xml (imagery/colormap
+  part) and gridContourStyleRules.xml (contour part). Element and
+  attribute names must match whatever your AWIPS version's base files
+  use - VERIFY against those base files before merging; the shapes below
+  follow the common gridImageryStyleRules / gridContourStyleRules schema
+  but versions do drift.
+
+  Range chosen to be +/-2e-4 /s, a few times a typical strong tropical
+  cyclone's core vorticity difference between 850 and 600 hPa, centered on
+  zero with a diverging colormap so warm core (positive) and cold core
+  (negative) read as different colors at a glance.
+-->
+<styleRuleset>
+    <!-- Imagery / colormap part: merge into gridImageryStyleRules.xml -->
+    <styleRule>
+        <paramLevelMatch>
+            <parameter>VTL</parameter>
+        </paramLevelMatch>
+        <paramLevelMatch>
+            <parameter>VTU</parameter>
+        </paramLevelMatch>
+        <imageStyle>
+            <defaultColormap>Grid/Difference</defaultColormap>
+            <displayUnit>/s</displayUnit>
+            <range>
+                <minValue>-2.0e-4</minValue>
+                <maxValue>2.0e-4</maxValue>
+            </range>
+        </imageStyle>
+    </styleRule>
+
+    <!-- Contour part: merge into gridContourStyleRules.xml -->
+    <styleRule>
+        <paramLevelMatch>
+            <parameter>VTL</parameter>
+        </paramLevelMatch>
+        <paramLevelMatch>
+            <parameter>VTU</parameter>
+        </paramLevelMatch>
+        <contourStyle>
+            <displayUnit>/s</displayUnit>
+            <contourValues>
+                <values>-2.0e-4,-1.8e-4,-1.6e-4,-1.4e-4,-1.2e-4,-1.0e-4,-0.8e-4,-0.6e-4,-0.4e-4,-0.2e-4,0.2e-4,0.4e-4,0.6e-4,0.8e-4,1.0e-4,1.2e-4,1.4e-4,1.6e-4,1.8e-4,2.0e-4</values>
+            </contourValues>
+            <lineStyle>SOLID</lineStyle>
+            <!-- Zero itself is intentionally excluded from contourValues above
+                 (it is the warm/cold-core boundary, not a magnitude worth
+                 drawing); emphasize it separately if your schema supports a
+                 zeroLine / emphasized-value element. -->
+        </contourStyle>
+    </styleRule>
+</styleRuleset>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  EXPERIMENTAL. Volume Browser fields-menu contribution for the CPS core
+  structure derived parameters (VTL, VTU, cpsZ850). See D2D/README.md.
+
+  VERIFY against cave_static/base/menus/volumebrowser/ on your AWIPS
+  version - the contribute element names, attributes (xsi:type values,
+  "key" vs. another attribute for the parameter abbreviation), and whether
+  this needs to be wired into a parent menu file via an <include> rather
+  than dropped into the directory alone. AWIPS versions differ here; treat
+  this file as a starting point, not a drop-in.
+-->
+<menuTemplate xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <contribute xsi:type="titleItem" titleText="------ CPS Core (experimental) ------" id="cpsCoreTitle"/>
+    <contribute xsi:type="menuItem" menuText="CPS Lower Core (VTL)" key="VTL" indentText="false" id="cpsVTL"/>
+    <contribute xsi:type="menuItem" menuText="CPS Upper Core (VTU)" key="VTU" indentText="false" id="cpsVTU"/>
+    <contribute xsi:type="menuItem" menuText="CPS debug 850 vort" key="cpsZ850" indentText="false" id="cpsZ850"/>
+</menuTemplate>

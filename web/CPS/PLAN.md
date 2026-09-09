@@ -1,6 +1,10 @@
 # Cyclone Phase Space, self-hosted web version
 
-**Status:** plan, nothing built yet.
+**Status:** phase 1 (the math module `cps/hart.py` and its tests) is
+done. The web pipeline and page (phases 2 to 5) are deferred: the
+current starting point is the AWIPS D2D derived-parameter version under
+`D2D/`, which needs no tracker, download, server, or page. See
+`D2D/README.md`. This document remains the plan for the web version.
 **Scope:** an interactive replacement for the static FSU cyclone phase
 space plots (https://moe.met.fsu.edu/cyclonephase/), computed from
 public NOAA GFS output and served from one Linux box with no paid or

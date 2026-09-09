@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  EXPERIMENTAL. Cyclone core structure, lower troposphere:
+  relative vorticity at 850 hPa minus relative vorticity at 600 hPa, smoothed
+  over ~100 km. Positive = warm core, negative = cold core. Read it only at a
+  closed MSLP low; see D2D/README.md.
+
+  VERIFY against an existing definition in
+  /awips2/edex/data/utility/common_static/base/derivedParameters/definitions/
+  (for example LI.xml or Thickness.xml) that on your AWIPS version:
+    - fixed-level Field references use the "850MB" spelling,
+    - the "dx"/"dy" pseudo-fields and <ConstantField> are accepted,
+    - "Surface" is the right levels= value to make this show under a
+      surface plane in the Volume Browser (alternatively use levels="MSL").
+-->
+<DerivedParameter abbreviation="VTL" name="CPS Lower Core (vort 850-600)" unit="/s">
+    <Method name="CycloneCore" levels="Surface">
+        <Field abbreviation="uW" level="850MB"/>
+        <Field abbreviation="vW" level="850MB"/>
+        <Field abbreviation="uW" level="600MB"/>
+        <Field abbreviation="vW" level="600MB"/>
+        <Field abbreviation="dx"/>
+        <Field abbreviation="dy"/>
+        <ConstantField value="100.0"/>
+    </Method>
+</DerivedParameter>
