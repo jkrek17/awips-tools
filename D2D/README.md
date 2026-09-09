@@ -297,3 +297,19 @@ causes, distinguishable from the cause line in the CAVE log:
    `executeIndex`): CAVE is still running the first CycloneCore.py.
    Replace the file on EDEX and restart CAVE; the embedded interpreter
    caches modules until restart.
+
+**Dipole (positive next to negative) on CPSidx or VTL at a low.** Two
+causes:
+
+1. Vertical tilt, which is physical. The low-level vortex and the upper
+   vortex sit in different places on a sheared or baroclinic system, so
+   a pointwise level difference is positive under one and negative under
+   the other. Hart's 500 km circle integrates over this; the pointwise
+   method does not. Fix: raise the smoothKm ConstantField in CPScat.xml
+   and CPSidx.xml from 100 to 250 (a 500 km box, close to Hart's radius)
+   or 350 for large extratropical lows. The box mean of vorticity is
+   circulation over the box, so this is the intended move toward a
+   vortex-scale number.
+2. Wrong grid orientation, which is a bug. Then cpsZ850 itself shows
+   lobes rather than a single blob at a hurricane. Run the orientation
+   check above.
