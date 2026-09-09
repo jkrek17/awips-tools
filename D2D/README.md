@@ -1,4 +1,4 @@
-# D2D cyclone core structure (VTL, VTU, cpsZ850)
+# D2D cyclone core structure (VTL, VTU, CPScat, CPSidx, cpsZ850)
 
 *** EXPERIMENTAL. NOT OPERATIONALLY VETTED. *** This is a pointwise D2D
 derived-parameter shortcut, not Hart's (2003) Cyclone Phase Space
@@ -14,6 +14,9 @@ over the whole grid.
   relative vorticity at 600 hPa, smoothed over a ~100 km box.
 - **VTU** ("CPS Upper Core"): relative vorticity at 600 hPa minus
   relative vorticity at 300 hPa, same smoothing.
+- **CPScat** and **CPSidx** ("CPS Core Class" / "CPS Core Index"):
+  VTL and VTU combined into a single field, blanked (NaN) outside a
+  cyclonic vortex. See "Combined fields" below.
 - **cpsZ850**: relative vorticity at 850 hPa alone, no vertical
   difference, no smoothing. Debug-only field for the orientation check
   below.
@@ -65,6 +68,105 @@ For now: south of the equator, mentally flip the sign of VTL/VTU (or
 just remember "weakening circulation with height = warm core"
 regardless of the number's sign).
 
+## Combined fields: CPScat and CPSidx
+
+VTL and VTU are two separate fields, and reading two overlaid fields
+by eye to decide "is this warm-core or cold-core, and how much" is
+exactly the kind of thing a derived parameter can do for a forecaster
+instead. **CPScat** and **CPSidx** do that: both are computed from the
+same three-level vorticity (see `CycloneCore.core_fields`) as VTL/VTU,
+but combined into one field each, and both are **blanked (NaN)
+outside of a cyclonic vortex** using the smoothed 850 hPa relative
+vorticity as a mask -- see "Vortex mask" below.
+
+### CPScat: categorical core class
+
+`CPScat` buckets VTL and VTU into 5 integer categories:
+
+| code | meaning                          | condition                                   |
+|-----:|----------------------------------|----------------------------------------------|
+|    4 | deep warm core                   | `vtl > band` and `vtu > band`                 |
+|    3 | shallow warm core                | `vtl > band` and `vtu <= band`                |
+|    1 | cold core                        | `\|vtl\| <= band` and `vtu < -band`           |
+|    2 | neutral                          | `\|vtl\| <= band` and `vtu >= -band`          |
+|    0 | mid-level vortex (rare, transient) | `vtl < -band` and `vtu > band`              |
+|    1 | cold core                        | `vtl < -band` and `vtu <= band`               |
+
+(code 1, cold core, has two rows because it covers both "VTL is
+neutral but VTU is cold" and "VTL is cold" -- see
+`CycloneCore.classify`'s docstring for the full decision table and how
+the boundary values are assigned.) `band` is `DEFAULT_NEUTRAL_BAND`
+unless overridden by CPScat.xml's `<ConstantField>`.
+
+### CPSidx: continuous core index
+
+`CPSidx` is `2*tanh(vtl/scale) + tanh(vtu/scale)`, a single number
+from -3 to +3: about +3 is a deep warm core (both terms saturated
+positive), +1 to +2 a shallow warm core, near 0 neutral, negative cold
+core. `scale` is `DEFAULT_INDEX_SCALE` unless overridden by
+CPSidx.xml's `<ConstantField>`. Use CPSidx where a continuous
+trend matters (e.g. animating tropical transition); use CPScat where
+a discrete label is easier to read at a glance or contour.
+
+### Vortex mask
+
+Both fields are masked to NaN wherever the smoothed 850 hPa relative
+vorticity (computed once inside `core_fields`, the same smoothing as
+VTL/VTU) is below `vortex_min` (`DEFAULT_VORTEX_MIN`), or wherever any
+of VTL, VTU, or that vorticity is itself NaN (missing data). The point
+is to keep "warm core"/"cold core" language from being printed over a
+jet streak or open trough that just happens to have some vorticity
+shear but is not a cyclonic vortex at all -- the same caveat VTL/VTU
+carry in prose ("read it only near a closed low"), enforced here in
+the data instead of left to the forecaster's judgment.
+
+```
+DEFAULT_NEUTRAL_BAND = 3.0e-5   # 1/s; |VTL| or |VTU| below this is "neutral"
+DEFAULT_VORTEX_MIN   = 5.0e-5   # 1/s; classify only where smoothed 850 hPa
+                                 # relative vorticity exceeds this
+DEFAULT_INDEX_SCALE  = 1.0e-4   # 1/s; scale for CPSidx's tanh squashing
+```
+
+All three are just starting points (see the comments beside each
+constant in `CycloneCore.py`) -- they have not been calibrated against
+real cases.
+
+### Calibration procedure
+
+1. Pick three known systems from past cases: a mature hurricane (deep
+   warm core), a deep extratropical low (cold core), and a
+   subtropical storm (shallow/transitional warm core).
+2. Install CPScat/CPSidx (below) alongside VTL/VTU and load VTL/VTU
+   as point values (Volume Browser sampling, or a script against the
+   same grids) at each system's surface low center, across a few
+   forecast hours per case.
+3. Set `band` (`DEFAULT_NEUTRAL_BAND`) to roughly **half the smallest
+   clear signal** you see -- e.g. if the weakest genuinely-warm-core
+   case still shows `vtl` around 6e-5, set `band` near 3e-5 so it
+   clears the neutral zone without also swallowing genuine noise.
+4. Set `vortex_min` (`DEFAULT_VORTEX_MIN`) **just below the smoothed
+   850 hPa vorticity of the weakest low you still want classified** --
+   low enough that your subtropical/weak case is not masked out, high
+   enough that random open-wave vorticity does not get labeled.
+5. Re-run all three cases against the new constants (pass them as
+   the `band`/`vortexMin`/`scale` `<ConstantField>` values, or call
+   `classify`/`continuous_index` directly) and check the codes/index
+   match forecaster judgment before trusting either field
+   operationally at your site.
+
+### Known limitation: Southern Hemisphere masking
+
+The vortex mask is the smoothed 850 hPa relative vorticity itself, and
+(as above) that vorticity is **negative**, not positive, for a
+Southern Hemisphere cyclone. `zeta_lo < vortex_min` is therefore true
+almost everywhere in the SH, and CPScat/CPSidx come out **entirely
+NaN over SH cyclones** -- not merely sign-flipped like VTL/VTU, but
+blanked outright. The fix is the same TODO as VTL/VTU's: a latitude
+pseudo-field to flip the mask's sign (and threshold) south of the
+equator. Not implemented. For now, CPScat/CPSidx are Northern
+Hemisphere fields only; use VTL/VTU with the mental sign-flip
+described above for SH systems instead.
+
 ## Install
 
 EDEX, site-level `common_static`:
@@ -72,6 +174,8 @@ EDEX, site-level `common_static`:
 ```
 /awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/definitions/VTL.xml
 /awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/definitions/VTU.xml
+/awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/definitions/CPScat.xml
+/awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/definitions/CPSidx.xml
 /awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/definitions/cpsZ850.xml
 /awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/functions/CycloneCore.py
 ```

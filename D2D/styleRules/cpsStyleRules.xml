@@ -1,18 +1,20 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <!--
-  EXPERIMENTAL. Starting-point style rules for VTL/VTU (cyclone core
-  structure). This is NOT a drop-in file: merge the <styleRule> elements
-  below into the site's own gridImageryStyleRules.xml (imagery/colormap
-  part) and gridContourStyleRules.xml (contour part). Element and
-  attribute names must match whatever your AWIPS version's base files
-  use - VERIFY against those base files before merging; the shapes below
-  follow the common gridImageryStyleRules / gridContourStyleRules schema
-  but versions do drift.
+  EXPERIMENTAL. Starting-point style rules for VTL/VTU/CPScat/CPSidx
+  (cyclone core structure). This is NOT a drop-in file: merge the
+  <styleRule> elements below into the site's own gridImageryStyleRules.xml
+  (imagery/colormap part) and gridContourStyleRules.xml (contour part).
+  Element and attribute names must match whatever your AWIPS version's
+  base files use - VERIFY against those base files before merging; the
+  shapes below follow the common gridImageryStyleRules /
+  gridContourStyleRules schema but versions do drift.
 
-  Range chosen to be +/-2e-4 /s, a few times a typical strong tropical
-  cyclone's core vorticity difference between 850 and 600 hPa, centered on
-  zero with a diverging colormap so warm core (positive) and cold core
-  (negative) read as different colors at a glance.
+  VTL/VTU range chosen to be +/-2e-4 /s, a few times a typical strong
+  tropical cyclone's core vorticity difference between 850 and 600 hPa,
+  centered on zero with a diverging colormap so warm core (positive) and
+  cold core (negative) read as different colors at a glance. CPScat and
+  CPSidx (see below, further down this file) combine VTL and VTU into one
+  field each and need their own imagery styleRules.
 -->
 <styleRuleset>
     <!-- Imagery / colormap part: merge into gridImageryStyleRules.xml -->
@@ -29,6 +31,58 @@
             <range>
                 <minValue>-2.0e-4</minValue>
                 <maxValue>2.0e-4</maxValue>
+            </range>
+        </imageStyle>
+    </styleRule>
+
+    <!--
+      CPScat is categorical (0 mid-vortex, 1 cold, 2 neutral, 3 shallow
+      warm, 4 deep warm), NOT a continuous physical quantity, so the range
+      below is offset by half a category (-0.5 to 4.5) purely so each
+      integer code lands in the middle of one color bin rather than on a
+      boundary between two. A generic sequential/diverging colormap will
+      make adjacent categories blur together; this wants a 5-color
+      categorical colormap with no implied ordering by shade, e.g.:
+        0 (mid-level vortex) -> gray
+        1 (cold core)        -> blue
+        2 (neutral)           -> light gray or white
+        3 (shallow warm core) -> orange
+        4 (deep warm core)    -> red
+      A custom colormap file for this would go under the site's colormaps
+      directory, VERIFY the exact path for your AWIPS version - typically
+      something like
+      /awips2/edex/data/utility/common_static/site/<SITE>/colormaps/ (a
+      .cmap file), referenced here via <defaultColormap> the same way
+      Grid/Difference is referenced above.
+    -->
+    <styleRule>
+        <paramLevelMatch>
+            <parameter>CPScat</parameter>
+        </paramLevelMatch>
+        <imageStyle>
+            <defaultColormap>Grid/Difference</defaultColormap>
+            <range>
+                <minValue>-0.5</minValue>
+                <maxValue>4.5</maxValue>
+            </range>
+        </imageStyle>
+    </styleRule>
+
+    <!--
+      CPSidx is a continuous dimensionless index, -3 (cold core) to +3
+      (deep warm core), 0 = neutral - a diverging colormap centered on
+      zero, same idea as VTL/VTU's Grid/Difference above but over the
+      index's own -3..3 range instead of VTL/VTU's physical 1/s range.
+    -->
+    <styleRule>
+        <paramLevelMatch>
+            <parameter>CPSidx</parameter>
+        </paramLevelMatch>
+        <imageStyle>
+            <defaultColormap>Grid/Difference</defaultColormap>
+            <range>
+                <minValue>-3.0</minValue>
+                <maxValue>3.0</maxValue>
             </range>
         </imageStyle>
     </styleRule>

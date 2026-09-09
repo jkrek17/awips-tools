@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  EXPERIMENTAL. Combined cyclone core class: buckets VTL and VTU into one
+  categorical field (0 mid-level vortex, 1 cold core, 2 neutral, 3 shallow
+  warm core, 4 deep warm core), blanked (NaN) outside a cyclonic vortex -
+  see CycloneCore.classify() and D2D/README.md.
+
+  VERIFY: same checks as VTL.xml (fixed-level Field spelling, dx/dy
+  pseudo-fields and ConstantField support, levels= value). Since this has
+  no natural physical unit, no unit="" attribute is set below; VERIFY that
+  your AWIPS version accepts a DerivedParameter with no unit attribute for
+  a dimensionless/categorical field - if the definition fails to load, add
+  unit="" or whatever your base derivedParameters use for dimensionless
+  parameters (see an existing categorical field, if your site has one, for
+  the convention).
+-->
+<DerivedParameter abbreviation="CPScat" name="CPS Core Class (0 mid-vortex,1 cold,2 neutral,3 shallow warm,4 deep warm)">
+    <Method name="CycloneCore.executeClass" levels="Surface">
+        <Field abbreviation="uW" level="850MB"/>
+        <Field abbreviation="vW" level="850MB"/>
+        <Field abbreviation="uW" level="600MB"/>
+        <Field abbreviation="vW" level="600MB"/>
+        <Field abbreviation="uW" level="300MB"/>
+        <Field abbreviation="vW" level="300MB"/>
+        <Field abbreviation="dx"/>
+        <Field abbreviation="dy"/>
+        <!-- smoothKm -->
+        <ConstantField value="100.0"/>
+        <!-- neutral band (1/s) -->
+        <ConstantField value="3.0e-5"/>
+        <!-- vortex min (1/s) -->
+        <ConstantField value="5.0e-5"/>
+    </Method>
+</DerivedParameter>

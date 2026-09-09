@@ -240,5 +240,295 @@ def test_southern_hemisphere_warm_core_reads_negative():
     np.testing.assert_allclose(_interior(result).astype(np.float64), expected, rtol=1e-6)
 
 
+# ---------------------------------------------------------------------------
+# (j): classify() decision table
+# ---------------------------------------------------------------------------
+
+
+def test_classify_decision_table():
+    band = 3.0e-5
+    zeta_ok = 1.0e-4  # comfortably above the default vortex_min
+
+    # (vtl, vtu, expected code), covering every row of the table, including
+    # boundary values exactly at +band, -band, and 0.
+    cases = [
+        # deep warm core: vtl > band, vtu > band
+        (5.0e-5, 5.0e-5, 4),
+        (band + 1e-6, band + 1e-6, 4),
+        # shallow warm core: vtl > band, vtu <= band
+        (5.0e-5, 0.0, 3),
+        (5.0e-5, band, 3),  # vtu exactly at +band -> "<=" side
+        (5.0e-5, -5.0e-5, 3),
+        # cold core: |vtl| <= band, vtu < -band
+        (0.0, -5.0e-5, 1),
+        (band, -5.0e-5, 1),  # vtl exactly at +band -> "|vtl| <= band" side
+        (-band, -5.0e-5, 1),  # vtl exactly at -band -> "|vtl| <= band" side
+        # neutral: |vtl| <= band, vtu >= -band
+        (0.0, 0.0, 2),
+        (0.0, -band, 2),  # vtu exactly at -band -> ">=" side
+        (band, band, 2),
+        (-band, 0.0, 2),
+        # mid-level vortex: vtl < -band, vtu > band
+        (-5.0e-5, 5.0e-5, 0),
+        # cold core: vtl < -band, vtu <= band
+        (-5.0e-5, 0.0, 1),
+        (-5.0e-5, band, 1),  # vtu exactly at +band -> "<=" side
+        (-5.0e-5, -5.0e-5, 1),
+    ]
+
+    vtl = np.array([c[0] for c in cases])
+    vtu = np.array([c[1] for c in cases])
+    expected = np.array([c[2] for c in cases], dtype=float)
+    zeta_lo = np.full_like(vtl, zeta_ok)
+
+    code = cc.classify(vtl, vtu, zeta_lo, band=band, vortex_min=5.0e-5)
+    assert code.dtype == np.float32
+    np.testing.assert_array_equal(code, expected)
+
+
+def test_classify_masks_below_vortex_min():
+    band = 3.0e-5
+    vortex_min = 5.0e-5
+    vtl = np.array([5.0e-5, -5.0e-5, 0.0])
+    vtu = np.array([5.0e-5, 5.0e-5, 0.0])
+    zeta_lo = np.full_like(vtl, vortex_min - 1.0e-6)  # just below threshold
+
+    code = cc.classify(vtl, vtu, zeta_lo, band=band, vortex_min=vortex_min)
+    assert np.all(np.isnan(code))
+
+
+def test_classify_nan_input_propagates():
+    band = 3.0e-5
+    vtl = np.array([np.nan, 5.0e-5])
+    vtu = np.array([5.0e-5, 5.0e-5])
+    zeta_lo = np.array([1.0e-4, 1.0e-4])
+
+    code = cc.classify(vtl, vtu, zeta_lo, band=band, vortex_min=5.0e-5)
+    assert np.isnan(code[0])
+    assert code[1] == 4.0
+
+
+# ---------------------------------------------------------------------------
+# (k): continuous_index()
+# ---------------------------------------------------------------------------
+
+
+def test_continuous_index_extremes_and_masking():
+    zeta_ok = 1.0e-4
+    scale = 1.0e-4
+    large = 1.0e2 * scale  # tanh saturates hard by this point
+
+    idx_deep_warm = cc.continuous_index(np.array([large]), np.array([large]), np.array([zeta_ok]), scale=scale)
+    np.testing.assert_allclose(idx_deep_warm, 3.0, atol=1e-3)
+
+    idx_cold = cc.continuous_index(np.array([-large]), np.array([-large]), np.array([zeta_ok]), scale=scale)
+    np.testing.assert_allclose(idx_cold, -3.0, atol=1e-3)
+
+    idx_neutral = cc.continuous_index(np.array([0.0]), np.array([0.0]), np.array([zeta_ok]), scale=scale)
+    np.testing.assert_allclose(idx_neutral, 0.0, atol=1e-6)
+
+    idx_shallow = cc.continuous_index(np.array([large]), np.array([0.0]), np.array([zeta_ok]), scale=scale)
+    np.testing.assert_allclose(idx_shallow, 2.0, atol=1e-3)
+
+    idx_masked = cc.continuous_index(np.array([large]), np.array([large]), np.array([1.0e-6]), scale=scale)
+    assert np.all(np.isnan(idx_masked))
+
+
+def test_continuous_index_monotonic_in_vtl():
+    zeta_ok = 1.0e-4
+    scale = 1.0e-4
+    vtl = np.linspace(-5.0e-4, 5.0e-4, 21)
+    vtu_fixed = np.zeros_like(vtl)
+    zeta_lo = np.full_like(vtl, zeta_ok)
+
+    idx = cc.continuous_index(vtl, vtu_fixed, zeta_lo, scale=scale)
+    assert np.all(np.diff(idx) > 0)
+
+
+# ---------------------------------------------------------------------------
+# (l): core_fields() on a three-level solid-body vortex
+# ---------------------------------------------------------------------------
+
+
+def test_core_fields_three_level_vortex():
+    x, y = _grid()
+    W_lo, W_mid, W_hi = 1.0e-4, 0.6e-4, 0.2e-4
+    u_lo, v_lo = -W_lo * y, W_lo * x
+    u_mid, v_mid = -W_mid * y, W_mid * x
+    u_hi, v_hi = -W_hi * y, W_hi * x
+
+    vtl, vtu, zeta_lo_smoothed = cc.core_fields(
+        u_lo, v_lo, u_mid, v_mid, u_hi, v_hi, _SPACING_M, _SPACING_M, smooth_km=0.0
+    )
+
+    expected_vtl = 2.0 * (W_lo - W_mid)
+    expected_vtu = 2.0 * (W_mid - W_hi)
+    expected_zeta_lo = 2.0 * W_lo
+
+    # float64 compare before any float32 cast, per the task's analytic
+    # expectations.
+    np.testing.assert_allclose(_interior(vtl), expected_vtl, rtol=1e-6)
+    np.testing.assert_allclose(_interior(vtu), expected_vtu, rtol=1e-6)
+    np.testing.assert_allclose(_interior(zeta_lo_smoothed), expected_zeta_lo, rtol=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# (m): executeClass() on the three-level vortex
+# ---------------------------------------------------------------------------
+
+
+def test_execute_class_deep_warm_core():
+    x, y = _grid()
+    W_lo, W_mid, W_hi = 1.0e-4, 0.6e-4, 0.2e-4
+    u_lo, v_lo = -W_lo * y, W_lo * x
+    u_mid, v_mid = -W_mid * y, W_mid * x
+    u_hi, v_hi = -W_hi * y, W_hi * x
+
+    code = cc.executeClass(
+        u_lo, v_lo, u_mid, v_mid, u_hi, v_hi, _SPACING_M, _SPACING_M,
+        smoothKm=0.0, band=3.0e-5, vortexMin=5.0e-5,
+    )
+    assert code.dtype == np.float32
+    np.testing.assert_allclose(_interior(code), 4.0)
+
+
+def test_execute_class_cold_core_needs_lower_vortex_min():
+    # W_lo=0.2e-4, W_mid=0.6e-4, W_hi=1.0e-4: zeta_lo = 2*W_lo = 0.4e-4,
+    # which is BELOW the default vortex_min (5e-5), so with the default
+    # threshold this comes out fully masked (NaN), not classified as cold.
+    x, y = _grid()
+    W_lo, W_mid, W_hi = 0.2e-4, 0.6e-4, 1.0e-4
+    u_lo, v_lo = -W_lo * y, W_lo * x
+    u_mid, v_mid = -W_mid * y, W_mid * x
+    u_hi, v_hi = -W_hi * y, W_hi * x
+
+    masked_with_default = cc.executeClass(
+        u_lo, v_lo, u_mid, v_mid, u_hi, v_hi, _SPACING_M, _SPACING_M,
+        smoothKm=0.0, band=3.0e-5,
+    )
+    assert np.all(np.isnan(_interior(masked_with_default)))
+
+    code = cc.executeClass(
+        u_lo, v_lo, u_mid, v_mid, u_hi, v_hi, _SPACING_M, _SPACING_M,
+        smoothKm=0.0, band=3.0e-5, vortexMin=1.0e-5,
+    )
+    np.testing.assert_allclose(_interior(code), 1.0)
+
+
+def test_execute_class_mid_level_vortex():
+    # W_lo=0.5e-4, W_mid=1.0e-4, W_hi=0.5e-4: vtl = 2*(0.5-1.0)e-4 = -1e-4,
+    # vtu = 2*(1.0-0.5)e-4 = +1e-4 -> mid-level vortex (code 0).
+    x, y = _grid()
+    W_lo, W_mid, W_hi = 0.5e-4, 1.0e-4, 0.5e-4
+    u_lo, v_lo = -W_lo * y, W_lo * x
+    u_mid, v_mid = -W_mid * y, W_mid * x
+    u_hi, v_hi = -W_hi * y, W_hi * x
+
+    code = cc.executeClass(
+        u_lo, v_lo, u_mid, v_mid, u_hi, v_hi, _SPACING_M, _SPACING_M,
+        smoothKm=0.0, band=3.0e-5, vortexMin=1.0e-5,
+    )
+    np.testing.assert_allclose(_interior(code), 0.0)
+
+
+def test_execute_class_weak_rotation_all_masked():
+    # Weak all-equal solid-body rotation at every level: zeta_lo = 2*W is
+    # below the default vortex_min, so every point is masked NaN.
+    x, y = _grid()
+    W = 1.0e-6
+    u, v = -W * y, W * x
+
+    code = cc.executeClass(u, v, u, v, u, v, _SPACING_M, _SPACING_M, smoothKm=0.0)
+    assert np.all(np.isnan(code))
+
+
+# ---------------------------------------------------------------------------
+# (n): executeIndex()
+# ---------------------------------------------------------------------------
+
+
+def test_execute_index_deep_warm_and_cold():
+    x, y = _grid()
+
+    # Wider level-to-level separation than the executeClass fixture so
+    # vtl/scale and vtu/scale (both = 2 here, scale = DEFAULT_INDEX_SCALE)
+    # push tanh well past its half-saturation point:
+    # idx = 3*tanh(2) ~= 2.89 > 2.
+    W_lo, W_mid, W_hi = 2.0e-4, 1.0e-4, 0.0
+    u_lo, v_lo = -W_lo * y, W_lo * x
+    u_mid, v_mid = -W_mid * y, W_mid * x
+    u_hi, v_hi = -W_hi * y, W_hi * x
+    idx_warm = cc.executeIndex(
+        u_lo, v_lo, u_mid, v_mid, u_hi, v_hi, _SPACING_M, _SPACING_M,
+        smoothKm=0.0, vortexMin=5.0e-5,
+    )
+    assert idx_warm.dtype == np.float32
+    assert np.all(_interior(idx_warm) > 2.0)
+
+    W_lo2, W_mid2, W_hi2 = 0.2e-4, 0.6e-4, 1.0e-4
+    u_lo2, v_lo2 = -W_lo2 * y, W_lo2 * x
+    u_mid2, v_mid2 = -W_mid2 * y, W_mid2 * x
+    u_hi2, v_hi2 = -W_hi2 * y, W_hi2 * x
+    idx_cold = cc.executeIndex(
+        u_lo2, v_lo2, u_mid2, v_mid2, u_hi2, v_hi2, _SPACING_M, _SPACING_M,
+        smoothKm=0.0, vortexMin=1.0e-5,
+    )
+    assert np.all(_interior(idx_cold) < -1.0)
+
+
+# ---------------------------------------------------------------------------
+# (o): scalar constants as 1-element arrays
+# ---------------------------------------------------------------------------
+
+
+def test_execute_class_and_index_constant_coercion():
+    x, y = _grid()
+    W_lo, W_mid, W_hi = 1.0e-4, 0.6e-4, 0.2e-4
+    u_lo, v_lo = -W_lo * y, W_lo * x
+    u_mid, v_mid = -W_mid * y, W_mid * x
+    u_hi, v_hi = -W_hi * y, W_hi * x
+
+    baseline_code = cc.executeClass(
+        u_lo, v_lo, u_mid, v_mid, u_hi, v_hi, _SPACING_M, _SPACING_M,
+        smoothKm=0.0, band=3.0e-5, vortexMin=5.0e-5,
+    )
+    array_code = cc.executeClass(
+        u_lo, v_lo, u_mid, v_mid, u_hi, v_hi, _SPACING_M, _SPACING_M,
+        smoothKm=np.array([0.0]), band=np.array([3.0e-5]), vortexMin=np.array([5.0e-5]),
+    )
+    np.testing.assert_allclose(array_code, baseline_code)
+
+    baseline_idx = cc.executeIndex(
+        u_lo, v_lo, u_mid, v_mid, u_hi, v_hi, _SPACING_M, _SPACING_M,
+        smoothKm=0.0, scale=1.0e-4, vortexMin=5.0e-5,
+    )
+    array_idx = cc.executeIndex(
+        u_lo, v_lo, u_mid, v_mid, u_hi, v_hi, _SPACING_M, _SPACING_M,
+        smoothKm=np.array([0.0]), scale=np.array([1.0e-4]), vortexMin=np.array([5.0e-5]),
+    )
+    np.testing.assert_allclose(array_idx, baseline_idx)
+
+
+# ---------------------------------------------------------------------------
+# (p): Southern Hemisphere masking of CPScat
+# ---------------------------------------------------------------------------
+
+
+def test_southern_hemisphere_class_entirely_masked():
+    # Clockwise (Southern Hemisphere cyclonic) rotation, weakening with
+    # height at each level -- physically a deep warm core, but relative
+    # vorticity is negative for a SH cyclone, so the vortex mask
+    # (zeta_lo < vortex_min) blanks it entirely rather than merely
+    # flipping its sign. Documented limitation (see D2D/README.md).
+    x, y = _grid()
+    W_lo, W_mid, W_hi = -1.0e-4, -0.6e-4, -0.2e-4
+    u_lo, v_lo = -W_lo * y, W_lo * x
+    u_mid, v_mid = -W_mid * y, W_mid * x
+    u_hi, v_hi = -W_hi * y, W_hi * x
+
+    code = cc.executeClass(u_lo, v_lo, u_mid, v_mid, u_hi, v_hi, _SPACING_M, _SPACING_M, smoothKm=0.0)
+    assert np.all(np.isnan(code))
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))

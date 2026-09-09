@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  EXPERIMENTAL. Combined cyclone core index: a single continuous number
+  from -3 (cold core) to +3 (deep warm core) squashing VTL and VTU
+  together, blanked (NaN) outside a cyclonic vortex - see
+  CycloneCore.continuous_index() and D2D/README.md.
+
+  VERIFY: same checks as VTL.xml (fixed-level Field spelling, dx/dy
+  pseudo-fields and ConstantField support, levels= value). No unit=""
+  attribute is set below since this is a dimensionless index; VERIFY that
+  your AWIPS version accepts a DerivedParameter with no unit attribute -
+  if the definition fails to load, add unit="" or whatever your base
+  derivedParameters use for dimensionless parameters.
+-->
+<DerivedParameter abbreviation="CPSidx" name="CPS Core Index (-3 cold to +3 deep warm)">
+    <Method name="CycloneCore.executeIndex" levels="Surface">
+        <Field abbreviation="uW" level="850MB"/>
+        <Field abbreviation="vW" level="850MB"/>
+        <Field abbreviation="uW" level="600MB"/>
+        <Field abbreviation="vW" level="600MB"/>
+        <Field abbreviation="uW" level="300MB"/>
+        <Field abbreviation="vW" level="300MB"/>
+        <Field abbreviation="dx"/>
+        <Field abbreviation="dy"/>
+        <!-- smoothKm -->
+        <ConstantField value="100.0"/>
+        <!-- index scale (1/s) -->
+        <ConstantField value="1.0e-4"/>
+        <!-- vortex min (1/s) -->
+        <ConstantField value="5.0e-5"/>
+    </Method>
+</DerivedParameter>

@@ -36,6 +36,24 @@ Northern/Southern Hemisphere sign caveat, and the orientation
 verification procedure that must be done once per AWIPS site before
 this is trusted (see Y_INCREASES_NORTHWARD below).
 
+Two more derived parameters, CPScat and CPSidx, combine VTL and VTU
+into a single field instead of making a forecaster eyeball two. Both
+are computed pointwise, just like VTL/VTU, but both are also BLANKED
+(NaN) outside of a cyclonic vortex, using the smoothed 850 hPa
+relative vorticity as a mask (see `classify`/`continuous_index`
+below): a point is only classified where that vorticity exceeds
+`DEFAULT_VORTEX_MIN` (or the site's chosen threshold), which is meant
+to keep "warm core"/"cold core" language from leaking into the
+open-trough/jet-streak regions VTL/VTU alone can't tell apart from a
+real low. CPScat buckets VTL/VTU into 5 categories (mid-level vortex,
+cold core, neutral, shallow warm core, deep warm core); CPSidx
+squashes them into one continuous number from -3 (cold) to +3 (deep
+warm) via tanh. Because the mask is relative vorticity and cyclonic
+vorticity is NEGATIVE in the Southern Hemisphere, this mask blanks SH
+cyclones entirely -- the same known limitation as VTL/VTU's sign
+(see D2D/README.md), TODO: a latitude pseudo-field to flip the mask's
+sign south of the equator.
+
 This file must import nothing from outside itself plus the standard
 library and numpy: in AWIPS it runs inside CAVE's embedded Python
 interpreter, which only has numpy and whatever else lives in the same
@@ -54,11 +72,19 @@ __all__ = [
     "Y_INCREASES_NORTHWARD",
     "DEFAULT_SMOOTH_KM",
     "MISSING_THRESHOLD",
+    "DEFAULT_NEUTRAL_BAND",
+    "DEFAULT_VORTEX_MIN",
+    "DEFAULT_INDEX_SCALE",
     "relative_vorticity",
     "box_smooth",
     "cells_for_km",
+    "core_fields",
+    "classify",
+    "continuous_index",
     "execute",
     "executeVorticity",
+    "executeClass",
+    "executeIndex",
 ]
 
 # ---------------------------------------------------------------------------
@@ -82,6 +108,21 @@ DEFAULT_SMOOTH_KM = 100.0
 #: Anything below this threshold, or non-finite (NaN/Inf), is treated as
 #: missing.
 MISSING_THRESHOLD = -99990.0
+
+#: 1/s; |VTL| or |VTU| below this is "neutral" for CPScat/CPSidx -- i.e. not
+#: clearly warm-core or cold-core, just noise around zero. Tune after
+#: calibration on real cases (see D2D/README.md "Calibration procedure").
+DEFAULT_NEUTRAL_BAND = 3.0e-5
+
+#: 1/s; CPScat/CPSidx classify a point only where the smoothed 850 hPa
+#: relative vorticity exceeds this (cyclonic in the NH) -- see `classify`'s
+#: vortex mask. Everywhere else the output is NaN. Tune after calibration.
+DEFAULT_VORTEX_MIN = 5.0e-5
+
+#: 1/s; scale for CPSidx's continuous index tanh squashing -- roughly the
+#: |VTL|/|VTU| magnitude that reads as "fully" warm/cold (tanh saturates by
+#: about 3x this). Tune after calibration.
+DEFAULT_INDEX_SCALE = 1.0e-4
 
 
 # ---------------------------------------------------------------------------
@@ -281,6 +322,197 @@ def executeVorticity(u, v, dx, dy):
 
 
 # ---------------------------------------------------------------------------
+# Combined fields (CPScat, CPSidx): VTL + VTU + a vortex mask
+# ---------------------------------------------------------------------------
+
+
+def core_fields(
+    uLo: np.ndarray,
+    vLo: np.ndarray,
+    uMid: np.ndarray,
+    vMid: np.ndarray,
+    uHi: np.ndarray,
+    vHi: np.ndarray,
+    dx: np.ndarray,
+    dy: np.ndarray,
+    smooth_km: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Shared building blocks for CPScat/CPSidx: VTL, VTU, and the mask field.
+
+    Computes relative vorticity at the three levels (lo/mid/hi, in
+    decreasing pressure -- e.g. 850/600/300 hPa) exactly once each, then
+    returns `(vtl, vtu, zeta_lo_smoothed)` where
+
+        vtl             = box_smooth(zeta_lo - zeta_mid, cells)
+        vtu             = box_smooth(zeta_mid - zeta_hi, cells)
+        zeta_lo_smoothed = box_smooth(zeta_lo, cells)
+
+    with `cells = cells_for_km(smooth_km, dx, dy)`. Because the mid level
+    is shared between the lower and upper differences, this gives exactly
+    the same VTL and VTU as the separate `execute()` calls in VTL.xml and
+    VTU.xml would, provided the same three levels are used -- it is just
+    computed once instead of twice.
+
+    `zeta_lo_smoothed` (the smoothed 850 hPa relative vorticity, in the
+    usual bracketing) is the vortex mask input for `classify()` and
+    `continuous_index()`: it is what tells those functions whether a grid
+    point is inside a cyclonic circulation at all.
+    """
+    zeta_lo = relative_vorticity(uLo, vLo, dx, dy)
+    zeta_mid = relative_vorticity(uMid, vMid, dx, dy)
+    zeta_hi = relative_vorticity(uHi, vHi, dx, dy)
+
+    cells = cells_for_km(smooth_km, dx, dy)
+    vtl = box_smooth(zeta_lo - zeta_mid, cells)
+    vtu = box_smooth(zeta_mid - zeta_hi, cells)
+    zeta_lo_smoothed = box_smooth(zeta_lo, cells)
+    return vtl, vtu, zeta_lo_smoothed
+
+
+def classify(
+    vtl: np.ndarray,
+    vtu: np.ndarray,
+    zeta_lo: np.ndarray,
+    band: float = DEFAULT_NEUTRAL_BAND,
+    vortex_min: float = DEFAULT_VORTEX_MIN,
+) -> np.ndarray:
+    """Bucket VTL/VTU into a 5-category core class, masked to cyclonic points.
+
+    `zeta_lo` is the vortex mask input (smoothed 850 hPa relative vorticity,
+    from `core_fields`). A point is masked to NaN if `zeta_lo < vortex_min`
+    (not cyclonic enough, or on the wrong side of the equator -- see the
+    module docstring's Southern Hemisphere note) or if any of `vtl`, `vtu`,
+    `zeta_lo` is NaN there. Everywhere else, the code is decided by this
+    table (applied elementwise, `band = DEFAULT_NEUTRAL_BAND` by default):
+
+        vtl condition        vtu condition   code  meaning
+        --------------------  --------------  ----  -----------------------
+        vtl >  band           vtu >  band      4    deep warm core
+        vtl >  band           vtu <= band      3    shallow warm core
+        |vtl| <= band         vtu <  -band      1    cold core
+        |vtl| <= band         vtu >= -band      2    neutral
+        vtl <  -band          vtu >  band       0    mid-level vortex (rare,
+                                                      transient)
+        vtl <  -band          vtu <= band       1    cold core
+
+    The three `vtl` conditions (`> band`, `|.| <= band`, `< -band`) and,
+    within each, the two `vtu` conditions partition the real line exactly
+    once each, so every finite, unmasked `(vtl, vtu)` pair matches exactly
+    one row above -- boundary values (`vtl` or `vtu` exactly `+-band`) are
+    written explicitly into one side of each split, not left ambiguous.
+
+    Returns a float32 array (NaN where masked, otherwise one of
+    0.0/1.0/2.0/3.0/4.0).
+    """
+    vtl = np.asarray(vtl, dtype=float)
+    vtu = np.asarray(vtu, dtype=float)
+    zeta_lo = np.asarray(zeta_lo, dtype=float)
+
+    conditions = [
+        (vtl > band) & (vtu > band),
+        (vtl > band) & (vtu <= band),
+        (np.abs(vtl) <= band) & (vtu < -band),
+        (np.abs(vtl) <= band) & (vtu >= -band),
+        (vtl < -band) & (vtu > band),
+        (vtl < -band) & (vtu <= band),
+    ]
+    choices = [4, 3, 1, 2, 0, 1]
+    code = np.select(conditions, choices, default=np.nan)
+
+    masked = (zeta_lo < vortex_min) | ~np.isfinite(vtl) | ~np.isfinite(vtu) | ~np.isfinite(zeta_lo)
+    code = np.where(masked, np.nan, code)
+    return code.astype(np.float32)
+
+
+def continuous_index(
+    vtl: np.ndarray,
+    vtu: np.ndarray,
+    zeta_lo: np.ndarray,
+    scale: float = DEFAULT_INDEX_SCALE,
+    vortex_min: float = DEFAULT_VORTEX_MIN,
+) -> np.ndarray:
+    """Continuous cold-to-warm-core index, masked to cyclonic points.
+
+    `2*tanh(vtl/scale) + tanh(vtu/scale)`, so the range is -3 to +3: near
+    +3 is a deep warm core (both terms saturated positive), +1 to +2 a
+    shallow warm core (vtl saturated, vtu near zero or negative), near 0 is
+    neutral, and negative is cold core. Masked to NaN by the same rule as
+    `classify()`: `zeta_lo < vortex_min`, or any of `vtl`, `vtu`, `zeta_lo`
+    NaN.
+
+    Returns a float32 array.
+    """
+    vtl = np.asarray(vtl, dtype=float)
+    vtu = np.asarray(vtu, dtype=float)
+    zeta_lo = np.asarray(zeta_lo, dtype=float)
+
+    index = 2.0 * np.tanh(vtl / scale) + np.tanh(vtu / scale)
+
+    masked = (zeta_lo < vortex_min) | ~np.isfinite(vtl) | ~np.isfinite(vtu) | ~np.isfinite(zeta_lo)
+    index = np.where(masked, np.nan, index)
+    return index.astype(np.float32)
+
+
+def executeClass(
+    uLo,
+    vLo,
+    uMid,
+    vMid,
+    uHi,
+    vHi,
+    dx,
+    dy,
+    smoothKm=DEFAULT_SMOOTH_KM,
+    band=DEFAULT_NEUTRAL_BAND,
+    vortexMin=DEFAULT_VORTEX_MIN,
+):
+    """AWIPS derived-parameter entry point for CPScat (CPScat.xml).
+
+    `uLo`/`vLo`, `uMid`/`vMid`, `uHi`/`vHi` are the wind components at the
+    lower, middle, and upper levels (e.g. 850/600/300 hPa). `dx`, `dy` are
+    the grid spacing pseudo-fields (meters). `smoothKm`, `band`,
+    `vortexMin` may each arrive as a float, a 0-d numpy array, or a
+    1-element numpy array (AWIPS `<ConstantField>` values) and are coerced
+    with `_coerce_scalar`.
+
+    Computes `core_fields()` then `classify()`; see `classify`'s docstring
+    for the decision table. Returns a float32 array, NaN outside cyclonic
+    vortices (per the vortex mask), otherwise 0-4.
+    """
+    smooth_km = _coerce_scalar(smoothKm)
+    band_v = _coerce_scalar(band)
+    vortex_min_v = _coerce_scalar(vortexMin)
+    vtl, vtu, zeta_lo = core_fields(uLo, vLo, uMid, vMid, uHi, vHi, dx, dy, smooth_km)
+    return classify(vtl, vtu, zeta_lo, band=band_v, vortex_min=vortex_min_v)
+
+
+def executeIndex(
+    uLo,
+    vLo,
+    uMid,
+    vMid,
+    uHi,
+    vHi,
+    dx,
+    dy,
+    smoothKm=DEFAULT_SMOOTH_KM,
+    scale=DEFAULT_INDEX_SCALE,
+    vortexMin=DEFAULT_VORTEX_MIN,
+):
+    """AWIPS derived-parameter entry point for CPSidx (CPSidx.xml).
+
+    Same inputs as `executeClass`, `scale` in place of `band` (see
+    `continuous_index`'s docstring). Returns a float32 array, NaN outside
+    cyclonic vortices, otherwise in [-3, 3].
+    """
+    smooth_km = _coerce_scalar(smoothKm)
+    scale_v = _coerce_scalar(scale)
+    vortex_min_v = _coerce_scalar(vortexMin)
+    vtl, vtu, zeta_lo = core_fields(uLo, vLo, uMid, vMid, uHi, vHi, dx, dy, smooth_km)
+    return continuous_index(vtl, vtu, zeta_lo, scale=scale_v, vortex_min=vortex_min_v)
+
+
+# ---------------------------------------------------------------------------
 # Standalone sanity check
 # ---------------------------------------------------------------------------
 
@@ -309,3 +541,15 @@ if __name__ == "__main__":
     result = execute(u_lo, v_lo, u_hi, v_hi, spacing_m, spacing_m, smoothKm=0.0)
     print("execute() interior (expect 2*(W_lo-W_hi) = %.6e):" % (2.0 * (W_lo - W_hi)))
     print(result[interior, interior].mean())
+
+    # Three-level solid-body vortex, W_lo > W_mid > W_hi: a textbook deep
+    # warm core (cyclonic circulation weakens steadily with height).
+    W_mid = 0.6e-4  # rad/s, between W_lo and W_hi
+    u_mid, v_mid = -W_mid * y, W_mid * x
+
+    cls = executeClass(u_lo, v_lo, u_mid, v_mid, u_hi, v_hi, spacing_m, spacing_m, smoothKm=0.0)
+    idx = executeIndex(u_lo, v_lo, u_mid, v_mid, u_hi, v_hi, spacing_m, spacing_m, smoothKm=0.0)
+    print("executeClass() interior (expect 4.0, deep warm core):")
+    print(cls[interior, interior].mean())
+    print("executeIndex() interior value (positive, deep warm core):")
+    print(idx[interior, interior].mean())
