@@ -15,6 +15,22 @@
   cold core (negative) read as different colors at a glance. CPScat and
   CPSidx (see below, further down this file) combine VTL and VTU into one
   field each and need their own imagery styleRules.
+
+  Colormaps: this package ships two custom .cmap files instead of
+  referencing a base colormap like Grid/Difference, because a base
+  colormap of that name is not guaranteed to exist at every site. They
+  install under the site colormaps directory, typically
+  /awips2/edex/data/utility/common_static/site/<SITE>/colormaps/CPS/
+  (VERIFY the exact path for your AWIPS version). The "CPS/" prefix used
+  in <defaultColormap> below is that subdirectory name - CAVE resolves
+  "CPS/CoreDiverging" to the CoreDiverging.cmap file inside a "CPS"
+  colormaps subdirectory, the same way base colormaps like "Grid/Difference"
+  resolve to a "Grid" subdirectory.
+
+    CPS/CoreDiverging.cmap - 64 entry diverging blue/red ramp, transparent
+      near the center. Used for VTL, VTU, and CPSidx.
+    CPS/CoreClass.cmap - 5 entry categorical colormap (gray/blue/pale
+      gray/orange/red). Used for CPScat only.
 -->
 <styleRuleset>
     <!-- Imagery / colormap part: merge into gridImageryStyleRules.xml -->
@@ -26,7 +42,7 @@
             <parameter>VTU</parameter>
         </paramLevelMatch>
         <imageStyle>
-            <defaultColormap>Grid/Difference</defaultColormap>
+            <defaultColormap>CPS/CoreDiverging</defaultColormap>
             <displayUnit>/s</displayUnit>
             <range>
                 <minValue>-2.0e-4</minValue>
@@ -36,42 +52,9 @@
     </styleRule>
 
     <!--
-      CPScat is categorical (0 mid-vortex, 1 cold, 2 neutral, 3 shallow
-      warm, 4 deep warm), NOT a continuous physical quantity, so the range
-      below is offset by half a category (-0.5 to 4.5) purely so each
-      integer code lands in the middle of one color bin rather than on a
-      boundary between two. A generic sequential/diverging colormap will
-      make adjacent categories blur together; this wants a 5-color
-      categorical colormap with no implied ordering by shade, e.g.:
-        0 (mid-level vortex) -> gray
-        1 (cold core)        -> blue
-        2 (neutral)           -> light gray or white
-        3 (shallow warm core) -> orange
-        4 (deep warm core)    -> red
-      A custom colormap file for this would go under the site's colormaps
-      directory, VERIFY the exact path for your AWIPS version - typically
-      something like
-      /awips2/edex/data/utility/common_static/site/<SITE>/colormaps/ (a
-      .cmap file), referenced here via <defaultColormap> the same way
-      Grid/Difference is referenced above.
-    -->
-    <styleRule>
-        <paramLevelMatch>
-            <parameter>CPScat</parameter>
-        </paramLevelMatch>
-        <imageStyle>
-            <defaultColormap>Grid/Difference</defaultColormap>
-            <range>
-                <minValue>-0.5</minValue>
-                <maxValue>4.5</maxValue>
-            </range>
-        </imageStyle>
-    </styleRule>
-
-    <!--
       CPSidx is a continuous dimensionless index, -3 (cold core) to +3
       (deep warm core), 0 = neutral - a diverging colormap centered on
-      zero, same idea as VTL/VTU's Grid/Difference above but over the
+      zero, same CPS/CoreDiverging colormap as VTL/VTU above but over the
       index's own -3..3 range instead of VTL/VTU's physical 1/s range.
     -->
     <styleRule>
@@ -79,7 +62,7 @@
             <parameter>CPSidx</parameter>
         </paramLevelMatch>
         <imageStyle>
-            <defaultColormap>Grid/Difference</defaultColormap>
+            <defaultColormap>CPS/CoreDiverging</defaultColormap>
             <range>
                 <minValue>-3.0</minValue>
                 <maxValue>3.0</maxValue>
@@ -87,7 +70,54 @@
         </imageStyle>
     </styleRule>
 
+    <!--
+      CPScat is categorical (0 mid-vortex, 1 cold, 2 neutral, 3 shallow
+      warm, 4 deep warm), NOT a continuous physical quantity, so the range
+      below is offset by half a category (-0.5 to 4.5) purely so each
+      integer code lands in the middle of one color bin rather than on a
+      boundary between two. CPS/CoreClass.cmap is a purpose-built 5-color
+      categorical colormap with no implied ordering by shade:
+        0 (mid-level vortex)  -> gray
+        1 (cold core)         -> blue
+        2 (neutral)           -> pale gray, half transparent
+        3 (shallow warm core) -> orange
+        4 (deep warm core)    -> red
+      Interpolation between colors must be OFF for a categorical map -
+      CAVE should hold each color flat across its bin instead of blending
+      toward the next code's color. If this schema has a smoothing or
+      interpolate flag on <imageStyle> (e.g. <isDirectional>, an
+      "interpolate" attribute, or similar), set/clear it accordingly -
+      VERIFY the exact element/attribute name against your AWIPS version's
+      base imagery style rules, since a continuous-field example is not
+      guaranteed to show the categorical-map flag.
+    -->
+    <styleRule>
+        <paramLevelMatch>
+            <parameter>CPScat</parameter>
+        </paramLevelMatch>
+        <imageStyle>
+            <defaultColormap>CPS/CoreClass</defaultColormap>
+            <range>
+                <minValue>-0.5</minValue>
+                <maxValue>4.5</maxValue>
+            </range>
+        </imageStyle>
+    </styleRule>
+
     <!-- Contour part: merge into gridContourStyleRules.xml -->
+    <!--
+      Values below are a reduced set (8 contours instead of the previous
+      20) at +/-0.5e-4 spacing so VTL/VTU contour plots are not too
+      cluttered. Labels will print in raw 1/s (e.g. "0.0002") because
+      displayUnit here is /s, the same unit the values are already in.
+      If your site's base absolute-vorticity contour rule instead uses a
+      scaled display unit for labeling (e.g. "1e-5/s" so a value of
+      2.0e-4 /s prints as "20" instead of "0.0002"), copy that same
+      displayUnit value into this contourStyle so VTL/VTU labels are
+      legible at a glance instead of printing in scientific-notation-ish
+      decimals - VERIFY what unit your base rule actually uses and what
+      it is named there (displayUnit may not be the exact element name).
+    -->
     <styleRule>
         <paramLevelMatch>
             <parameter>VTL</parameter>
@@ -98,7 +128,7 @@
         <contourStyle>
             <displayUnit>/s</displayUnit>
             <contourValues>
-                <values>-2.0e-4,-1.8e-4,-1.6e-4,-1.4e-4,-1.2e-4,-1.0e-4,-0.8e-4,-0.6e-4,-0.4e-4,-0.2e-4,0.2e-4,0.4e-4,0.6e-4,0.8e-4,1.0e-4,1.2e-4,1.4e-4,1.6e-4,1.8e-4,2.0e-4</values>
+                <values>-2.0e-4,-1.5e-4,-1.0e-4,-0.5e-4,0.5e-4,1.0e-4,1.5e-4,2.0e-4</values>
             </contourValues>
             <lineStyle>SOLID</lineStyle>
             <!-- Zero itself is intentionally excluded from contourValues above

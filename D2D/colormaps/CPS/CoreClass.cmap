@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  CoreClass: 5 entry categorical colormap for CPScat (cyclone core
+  class, see D2D/README.md). Pair this with a styleRule range of
+  -0.5 to 4.5 so each integer code below lands in the middle of one
+  color bin instead of on a boundary between two:
+
+    code 0  mid-level vortex     gray            (0.55, 0.55, 0.55, 1.0)
+    code 1  cold core            blue            (0.15, 0.35, 0.85, 1.0)
+    code 2  neutral              pale gray, half
+                                  transparent     (0.85, 0.85, 0.85, 0.5)
+    code 3  shallow warm core    orange          (0.95, 0.60, 0.15, 1.0)
+    code 4  deep warm core       red             (0.85, 0.10, 0.10, 1.0)
+
+  Code 2 (neutral) is half transparent for the same reason the center
+  of CoreDiverging.cmap is fully transparent: near-zero/neutral core
+  structure is not worth painting as an opaque fill over MSLP contours
+  plotted underneath.
+
+  File format: a root <colorMap> element containing an ordered list of
+  <color r="" g="" b="" a=""/> entries, each component a float from
+  0.0 to 1.0, in code order (this file's first <color> is code 0, and
+  so on). This follows the AWIPS/CAVE ColorMap XML schema documented
+  for gridded imagery colormaps; no .cmap file existed anywhere in
+  this repo or on this machine to check by example, so VERIFY the
+  element name ("colorMap") and attribute names (r, g, b, a) against
+  an actual .cmap file under your site's or the base build's
+  common_static/.../colormaps directory before installing this, since
+  the schema can drift between AWIPS versions.
+-->
+<colorMap>
+        <color r="0.55" g="0.55" b="0.55" a="1.0"/>
+        <color r="0.15" g="0.35" b="0.85" a="1.0"/>
+        <color r="0.85" g="0.85" b="0.85" a="0.5"/>
+        <color r="0.95" g="0.60" b="0.15" a="1.0"/>
+        <color r="0.85" g="0.10" b="0.10" a="1.0"/>
+</colorMap>

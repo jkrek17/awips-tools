@@ -203,6 +203,20 @@ Merge its imagery `<styleRule>` block into the site's
 `gridContourStyleRules.xml`, matching whatever element/attribute names
 your site's base files actually use.
 
+Colormaps (referenced by the imagery style rules above instead of a
+base colormap like `Grid/Difference`, which is not guaranteed to exist
+at every site):
+
+```
+/awips2/edex/data/utility/common_static/site/<SITE>/colormaps/CPS/CoreDiverging.cmap
+/awips2/edex/data/utility/common_static/site/<SITE>/colormaps/CPS/CoreClass.cmap
+```
+
+(VERIFY the exact colormaps path for your AWIPS version.) `CoreDiverging`
+is used by VTL, VTU, and CPSidx; `CoreClass` is used by CPScat only. See
+the comments inside each `.cmap` file and in `cpsStyleRules.xml` for the
+color/category tables and the file-format VERIFY note.
+
 ## Orientation verification (do this once per site, before trusting the sign)
 
 D2D derived parameters receive grids exactly as AWIPS stores them, and
@@ -231,12 +245,20 @@ A useful overlay/4-panel for a tropical or transitioning system:
 
 1. MSLP contours (locate the closed low).
 2. VTL as filled imagery (diverging colormap, warm core pops as one
-   color, cold core the other).
+   color, cold core the other). VTL/VTU and CPSidx fills are
+   intentionally transparent near zero (the neutral, near-boundary
+   values) so the MSLP contours from step 1 still show through
+   underneath instead of being painted over.
 3. VTU as contours, overlaid on the same panel or a second panel, to
    see whether the lower and upper troposphere agree.
 4. 10 m wind barbs, for context on the surface circulation.
 5. 850-500 hPa thickness, for a classic warm/cold-core cross-check
    against a field forecasters already trust.
+
+CPScat should be displayed as filled imagery, not as contours - it is
+a categorical code (see "CPScat: categorical core class" above), and
+contouring a categorical field draws misleading lines through what are
+really just five discrete color bins.
 
 A 4-panel layout (MSLP+VTL, VTU alone, 10 m wind, 850-500 thickness)
 or a single overlay of all five on one map both work; which is more
