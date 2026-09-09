@@ -44,7 +44,11 @@ def test_relative_vorticity_solid_body_rotation_scalar_spacing():
     W = 1.0e-4
     u, v = -W * y, W * x
 
-    zeta = cc.relative_vorticity(u, v, _SPACING_M, _SPACING_M)
+    # mode=0: the standard numpy layout (axis 0 = y increasing northward).
+    # The module's real default is ORIENTATION_MODE = 1, tuned for AWIPS
+    # sites, not for describing this layout -- see the standard_orientation
+    # fixture in conftest.py for tests that want the default itself.
+    zeta = cc.relative_vorticity(u, v, _SPACING_M, _SPACING_M, mode=0)
 
     expected = 2.0 * W
     np.testing.assert_allclose(_interior(zeta), expected, rtol=1e-9)
@@ -58,31 +62,148 @@ def test_relative_vorticity_solid_body_rotation_array_spacing():
     dx = np.full_like(x, _SPACING_M)
     dy = np.full_like(x, _SPACING_M)
 
-    zeta_scalar = cc.relative_vorticity(u, v, _SPACING_M, _SPACING_M)
-    zeta_array = cc.relative_vorticity(u, v, dx, dy)
+    zeta_scalar = cc.relative_vorticity(u, v, _SPACING_M, _SPACING_M, mode=0)
+    zeta_array = cc.relative_vorticity(u, v, dx, dy, mode=0)
 
     np.testing.assert_allclose(_interior(zeta_array), _interior(zeta_scalar), rtol=1e-12)
     np.testing.assert_allclose(_interior(zeta_array), 2.0 * W, rtol=1e-9)
 
 
 # ---------------------------------------------------------------------------
-# (c): Y_INCREASES_NORTHWARD flips the du/dy term
+# (c): ORIENTATION_MODE flips the du/dy term (modes 0 vs 1), and modes 2/3
+# additionally correct for arrays that arrive transposed (x on axis 0, y on
+# axis 1) -- the second AWIPS grid convention that can produce the same
+# lobed, deformation-like cpsZ850 pattern a flipped y axis produces.
 # ---------------------------------------------------------------------------
 
 
-def test_y_orientation_flips_shear_sign(monkeypatch):
+def test_orientation_mode_flips_shear_sign():
+    # Pure shear: u = a*y, v = 0 on the standard layout (axis 0 = y
+    # increasing northward). Analytically, zeta = dv/dx - du/dy = 0 - a = -a
+    # under mode 0; mode 1 negates the du/dy term, flipping the sign to +a.
     x, y = _grid()
     a = 3.0e-5
     u = a * y
     v = np.zeros_like(x)
 
-    monkeypatch.setattr(cc, "Y_INCREASES_NORTHWARD", True)
-    zeta_north_up = cc.relative_vorticity(u, v, _SPACING_M, _SPACING_M)
-    np.testing.assert_allclose(_interior(zeta_north_up), -a, rtol=1e-9)
+    zeta_mode0 = cc.relative_vorticity(u, v, _SPACING_M, _SPACING_M, mode=0)
+    np.testing.assert_allclose(_interior(zeta_mode0), -a, rtol=1e-9)
 
-    monkeypatch.setattr(cc, "Y_INCREASES_NORTHWARD", False)
-    zeta_north_down = cc.relative_vorticity(u, v, _SPACING_M, _SPACING_M)
-    np.testing.assert_allclose(_interior(zeta_north_down), a, rtol=1e-9)
+    zeta_mode1 = cc.relative_vorticity(u, v, _SPACING_M, _SPACING_M, mode=1)
+    np.testing.assert_allclose(_interior(zeta_mode1), a, rtol=1e-9)
+
+
+def test_solid_body_rotation_mode0_explicit_and_via_default(standard_orientation):
+    # Same solid-body vortex as above: mode=0 gives 2W explicitly, and
+    # mode=None (the "use ORIENTATION_MODE" default) gives the same 2W
+    # once ORIENTATION_MODE is monkeypatched to 0 by the fixture -- i.e.
+    # mode=None and mode=0 really are the same computation when
+    # ORIENTATION_MODE == 0.
+    x, y = _grid()
+    W = 1.0e-4
+    u, v = -W * y, W * x
+    expected = 2.0 * W
+
+    zeta_explicit = cc.relative_vorticity(u, v, _SPACING_M, _SPACING_M, mode=0)
+    np.testing.assert_allclose(_interior(zeta_explicit), expected, rtol=1e-9)
+
+    zeta_default = cc.relative_vorticity(u, v, _SPACING_M, _SPACING_M)
+    np.testing.assert_allclose(_interior(zeta_default), expected, rtol=1e-9)
+
+
+def _rect_grid(ny, nx, spacing=_SPACING_M):
+    """A non-square (ny, nx) grid, axis 0 = y, axis 1 = x -- large enough,
+    and non-square enough, that a transposition bug in relative_vorticity
+    would either raise (shape mismatch) or be caught by the interior-value
+    check rather than passing by accident on a square grid.
+    """
+    y_coords = (np.arange(ny) - ny // 2) * spacing
+    x_coords = (np.arange(nx) - nx // 2) * spacing
+    x, y = np.meshgrid(x_coords, y_coords)
+    return x, y
+
+
+def test_relative_vorticity_transposed_mode2():
+    # A site whose arrays arrive transposed (axis 0 = x, axis 1 = y
+    # increasing northward): hand relative_vorticity the SAME solid-body
+    # vortex as above but transposed, as that site's AWIPS would, and mode
+    # 2 must still recover 2W everywhere in the interior -- with the
+    # output shaped like the (transposed) inputs given, not like the
+    # untransposed vortex.
+    ny, nx = 41, 61  # deliberately non-square: shape mistakes fail loudly
+    x, y = _rect_grid(ny, nx)
+    W = 1.0e-4
+    u, v = -W * y, W * x  # shape (ny, nx)
+    dx2d = np.full((ny, nx), _SPACING_M)
+    dy2d = np.full((ny, nx), _SPACING_M)
+
+    zeta = cc.relative_vorticity(u.T, v.T, dx2d.T, dy2d.T, mode=2)
+
+    assert zeta.shape == (nx, ny)
+    np.testing.assert_allclose(_interior(zeta), 2.0 * W, rtol=1e-9)
+
+
+def test_relative_vorticity_transposed_and_flipped_mode3():
+    # Same transposed convention as mode 2, but the site's y axis also
+    # increases southward: build that by flipping the standard vortex's y
+    # axis (axis 0) before transposing, exactly as such a site's raw
+    # arrays would look. Mode 3 must still recover 2W, with the output
+    # shaped like the given (transposed) inputs.
+    ny, nx = 41, 61
+    x, y = _rect_grid(ny, nx)
+    W = 1.0e-4
+    u, v = -W * y, W * x
+    dx2d = np.full((ny, nx), _SPACING_M)
+    dy2d = np.full((ny, nx), _SPACING_M)
+
+    u_raw = u[::-1].T
+    v_raw = v[::-1].T
+    dx_raw = dx2d[::-1].T
+    dy_raw = dy2d[::-1].T
+
+    zeta = cc.relative_vorticity(u_raw, v_raw, dx_raw, dy_raw, mode=3)
+
+    assert zeta.shape == (nx, ny)
+    np.testing.assert_allclose(_interior(zeta), 2.0 * W, rtol=1e-9)
+
+
+def test_relative_vorticity_transposed_input_with_mode0_is_not_2w():
+    # This is what documents why the mode exists: feeding the SAME
+    # transposed-convention arrays from the mode-2 test above into mode 0
+    # (i.e. treating them as if axis 0 were already y) does NOT recover
+    # 2W -- it comes out near zero, a deformation-like artifact of
+    # differentiating along the wrong axes, not the true vorticity. This
+    # is the pointwise analogue of the lobed cpsZ850 pattern the real
+    # AWIPS site saw: a single positive blob (vorticity) misread as
+    # something else (deformation) because of the axis mismatch.
+    ny, nx = 41, 61
+    x, y = _rect_grid(ny, nx)
+    W = 1.0e-4
+    u, v = -W * y, W * x
+
+    zeta_wrong = cc.relative_vorticity(u.T, v.T, _SPACING_M, _SPACING_M, mode=0)
+
+    assert zeta_wrong.shape == (nx, ny)
+    assert not np.allclose(_interior(zeta_wrong), 2.0 * W, rtol=1e-3)
+    np.testing.assert_allclose(_interior(zeta_wrong), 0.0, atol=1e-9)
+
+
+def test_execute_vorticity_mode_as_array():
+    x, y = _grid()
+    W = 1.0e-4
+    u, v = -W * y, W * x
+
+    result = cc.executeVorticity(u.T, v.T, _SPACING_M, _SPACING_M, mode=np.array([2.0]))
+
+    assert result.dtype == np.float32
+    np.testing.assert_allclose(_interior(result).astype(np.float64), 2.0 * W, rtol=1e-5)
+
+
+def test_relative_vorticity_invalid_mode_raises():
+    x, y = _grid()
+    u, v = np.zeros_like(x), np.zeros_like(x)
+    with pytest.raises(ValueError):
+        cc.relative_vorticity(u, v, _SPACING_M, _SPACING_M, mode=4)
 
 
 # ---------------------------------------------------------------------------
@@ -90,7 +211,11 @@ def test_y_orientation_flips_shear_sign(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_execute_vertical_difference_and_level_swap():
+def test_execute_vertical_difference_and_level_swap(standard_orientation):
+    # execute() has no mode parameter of its own (see CycloneCore.py) --
+    # it always uses ORIENTATION_MODE via relative_vorticity's default, so
+    # this test needs the standard_orientation fixture to describe the
+    # standard layout instead of the module's real (AWIPS-tuned) default.
     x, y = _grid()
     w_lo = 1.0e-4
     w_hi = 0.4e-4
@@ -222,7 +347,7 @@ def test_execute_smoothkm_coercion():
 # ---------------------------------------------------------------------------
 
 
-def test_southern_hemisphere_warm_core_reads_negative():
+def test_southern_hemisphere_warm_core_reads_negative(standard_orientation):
     x, y = _grid()
     # Clockwise (Southern Hemisphere cyclonic) rotation, weakening with
     # height -- physically a warm core, but relative vorticity itself is
@@ -350,7 +475,7 @@ def test_continuous_index_monotonic_in_vtl():
 # ---------------------------------------------------------------------------
 
 
-def test_core_fields_three_level_vortex():
+def test_core_fields_three_level_vortex(standard_orientation):
     x, y = _grid()
     W_lo, W_mid, W_hi = 1.0e-4, 0.6e-4, 0.2e-4
     u_lo, v_lo = -W_lo * y, W_lo * x
@@ -377,7 +502,7 @@ def test_core_fields_three_level_vortex():
 # ---------------------------------------------------------------------------
 
 
-def test_execute_class_deep_warm_core():
+def test_execute_class_deep_warm_core(standard_orientation):
     x, y = _grid()
     W_lo, W_mid, W_hi = 1.0e-4, 0.6e-4, 0.2e-4
     u_lo, v_lo = -W_lo * y, W_lo * x
@@ -392,7 +517,7 @@ def test_execute_class_deep_warm_core():
     np.testing.assert_allclose(_interior(code), 4.0)
 
 
-def test_execute_class_cold_core_needs_lower_vortex_min():
+def test_execute_class_cold_core_needs_lower_vortex_min(standard_orientation):
     # W_lo=0.2e-4, W_mid=0.6e-4, W_hi=1.0e-4: zeta_lo = 2*W_lo = 0.4e-4,
     # which is BELOW the default vortex_min (5e-5), so with the default
     # threshold this comes out fully masked (NaN), not classified as cold.
@@ -415,7 +540,7 @@ def test_execute_class_cold_core_needs_lower_vortex_min():
     np.testing.assert_allclose(_interior(code), 1.0)
 
 
-def test_execute_class_mid_level_vortex():
+def test_execute_class_mid_level_vortex(standard_orientation):
     # W_lo=0.5e-4, W_mid=1.0e-4, W_hi=0.5e-4: vtl = 2*(0.5-1.0)e-4 = -1e-4,
     # vtu = 2*(1.0-0.5)e-4 = +1e-4 -> mid-level vortex (code 0).
     x, y = _grid()
@@ -447,7 +572,7 @@ def test_execute_class_weak_rotation_all_masked():
 # ---------------------------------------------------------------------------
 
 
-def test_execute_index_deep_warm_and_cold():
+def test_execute_index_deep_warm_and_cold(standard_orientation):
     x, y = _grid()
 
     # Wider level-to-level separation than the executeClass fixture so
@@ -481,7 +606,7 @@ def test_execute_index_deep_warm_and_cold():
 # ---------------------------------------------------------------------------
 
 
-def test_execute_class_and_index_constant_coercion():
+def test_execute_class_and_index_constant_coercion(standard_orientation):
     x, y = _grid()
     W_lo, W_mid, W_hi = 1.0e-4, 0.6e-4, 0.2e-4
     u_lo, v_lo = -W_lo * y, W_lo * x

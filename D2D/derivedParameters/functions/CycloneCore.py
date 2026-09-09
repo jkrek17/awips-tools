@@ -34,7 +34,7 @@ just the vertical shear of vorticity for whatever happens to be there
 does not apply. See D2D/README.md for the reading guide, the
 Northern/Southern Hemisphere sign caveat, and the orientation
 verification procedure that must be done once per AWIPS site before
-this is trusted (see Y_INCREASES_NORTHWARD below).
+this is trusted (see ORIENTATION_MODE below).
 
 Two more derived parameters, CPScat and CPSidx, combine VTL and VTU
 into a single field instead of making a forecaster eyeball two. Both
@@ -69,7 +69,7 @@ from __future__ import annotations
 import numpy as np
 
 __all__ = [
-    "Y_INCREASES_NORTHWARD",
+    "ORIENTATION_MODE",
     "DEFAULT_SMOOTH_KM",
     "MISSING_THRESHOLD",
     "DEFAULT_NEUTRAL_BAND",
@@ -91,14 +91,34 @@ __all__ = [
 # Tunables / grid-orientation flag
 # ---------------------------------------------------------------------------
 
-#: Whether row index (axis 0) increases toward the north on the grids AWIPS
-#: hands to this function. True is correct for the great majority of AWIPS
-#: D2D grids (row 0 at the south edge). See D2D/README.md "Orientation
-#: verification" for the one-time check every site should do: load the
-#: cpsZ850 debug field and D2D's own relative vorticity at 850 mb on a
-#: known hurricane and compare signs. Flip this to False if cpsZ850 comes
-#: out with the opposite sign of D2D's own relative vorticity.
-Y_INCREASES_NORTHWARD = True
+#: Grid orientation mode used by relative_vorticity() (and, through its
+#: default, by execute()/core_fields()/executeClass()/executeIndex()) when
+#: no explicit `mode` argument is given. AWIPS hands this function 2D wind
+#: and grid-spacing arrays whose axis layout is a property of the site's
+#: grid projection and storage order, which this file cannot know in
+#: advance. Four conventions are distinguishable from here:
+#:
+#:   0: axis 0 = y increasing northward, axis 1 = x (the numpy-default
+#:      assumption: row 0 is the south edge, columns run east).
+#:   1: axis 0 = y increasing SOUTHWARD, axis 1 = x (row 0 is the north
+#:      edge instead, so the du/dy term's sign is flipped relative to
+#:      mode 0).
+#:   2: arrays transposed: axis 0 = x, axis 1 = y increasing northward.
+#:   3: arrays transposed AND y increasing southward (mode 2 with the
+#:      du/dy flip of mode 1 as well).
+#:
+#: Mode 0 was observed to give a lobed, deformation-like cpsZ850 pattern
+#: around a hurricane on a real AWIPS site -- instead of a single positive
+#: blob -- which is what running mode-0's vorticity formula over a
+#: transposed-axis grid (mode 2) or a south-up grid (mode 1) looks like.
+#: That is why the default here is 1, not 0. Use the cpsZ850 debug field
+#: (D2D/derivedParameters/definitions/cpsZ850.xml), whose `mode`
+#: ConstantField can be edited without touching this file, to find which
+#: mode makes cpsZ850 match D2D's own relative vorticity at 850 mb on a
+#: known hurricane (see D2D/README.md "Orientation verification"), then
+#: set this constant to that value -- it is shared by VTL, VTU, CPScat,
+#: and CPSidx, all of which call relative_vorticity() with mode=None.
+ORIENTATION_MODE = 1
 
 #: Default half-width of the smoothing box, in kilometers, used by execute()
 #: when the definition XML's <ConstantField> is not supplied or is missing.
@@ -152,20 +172,44 @@ def _missing_mask(*arrays: np.ndarray) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 
-def relative_vorticity(u: np.ndarray, v: np.ndarray, dx: np.ndarray, dy: np.ndarray) -> np.ndarray:
+def relative_vorticity(
+    u: np.ndarray, v: np.ndarray, dx: np.ndarray, dy: np.ndarray, mode: int | None = None
+) -> np.ndarray:
     """Relative vorticity zeta = dv/dx - du/dy, via centered differences.
 
-    `u`, `v` are 2D wind component arrays (m/s) of identical shape, indexed
-    [y, x] (axis 0 is the north-south grid direction, axis 1 is east-west).
-    `dx`, `dy` are the grid spacing in meters along x and y respectively;
-    each may be a scalar or a 2D array of the same shape as `u`/`v` (AWIPS
+    `u`, `v` are 2D wind component arrays (m/s) of identical shape. `dx`,
+    `dy` are the grid spacing in meters along x and y respectively; each
+    may be a scalar or a 2D array of the same shape as `u`/`v` (AWIPS
     supplies these as "dx"/"dy" pseudo-fields that vary across the grid on
     most map projections).
 
-    `np.gradient` is used for the centered difference: `dv/dx` along axis
-    1, `du/dy` along axis 0. If `Y_INCREASES_NORTHWARD` is False, the
-    du/dy term is negated (equivalent to flipping the sign convention of
-    the y axis without touching the input arrays).
+    `mode` selects which of the four grid-orientation conventions
+    described at `ORIENTATION_MODE` (module level) the *input* arrays are
+    actually in; `None` (the default) means "use `ORIENTATION_MODE`",
+    read fresh from the module on every call so a monkeypatch or a later
+    assignment to it takes effect without touching this function. Modes
+    0 and 1 assume `u`/`v`/`dx`/`dy` are already laid out [y, x] (axis 0
+    north-south, axis 1 east-west) and differ only in whether axis 0
+    increases northward (0) or southward (1, which negates the du/dy
+    term -- equivalent to flipping the sign convention of the y axis
+    without touching the input arrays).
+
+    Modes 2 and 3 are for a site where the arrays instead arrive
+    transposed, axis 0 = x and axis 1 = y: `u`, `v`, and any 2D `dx`/`dy`
+    (a scalar spacing is left alone -- transposing a 0-d array is a
+    no-op anyway) are transposed on the way in so axis 0 = y and axis 1 =
+    x, matching modes 0/1, and the zeta result is transposed back on the
+    way out so its shape and axis layout match the *original*, untransposed
+    inputs. `dx` and `dy` are transposed, not swapped: the value at
+    `dx[i, j]` is still "the x-direction spacing at this grid point" after
+    transposing (`dx.T[j, i] == dx[i, j]`), it has just been relabeled
+    into the [y, x] layout the differencing below expects, and is still
+    divided into the axis-1 (x) gradient -- exactly as `dy.T` is still
+    divided into the axis-0 (y) gradient. Nothing about which pseudo-field
+    means "x spacing" versus "y spacing" changes; only the array layout
+    each is expressed in does. Mode 3 additionally negates du/dy like
+    mode 1, since a transposed grid can independently have its (new) y
+    axis run either direction.
 
     Missing values (see `_missing_mask`) in `u`, `v`, `dx`, or `dy` are set
     to NaN before differencing and any resulting NaN is left as NaN in the
@@ -173,11 +217,29 @@ def relative_vorticity(u: np.ndarray, v: np.ndarray, dx: np.ndarray, dy: np.ndar
     input point contaminates its immediate neighbors' derivative too --
     this is unavoidable with a centered-difference stencil and is why
     `execute()` smooths afterward rather than trying to patch it up.
+
+    Raises `ValueError` if `mode` (after defaulting) is not one of 0, 1,
+    2, 3.
     """
     u = np.asarray(u, dtype=float)
     v = np.asarray(v, dtype=float)
     dx = np.asarray(dx, dtype=float)
     dy = np.asarray(dy, dtype=float)
+
+    if mode is None:
+        mode = ORIENTATION_MODE
+    mode = int(mode)
+    if mode not in (0, 1, 2, 3):
+        raise ValueError(f"mode must be 0, 1, 2, or 3; got {mode!r}")
+
+    transposed = mode in (2, 3)
+    if transposed:
+        u = u.T
+        v = v.T
+        if dx.ndim == 2:
+            dx = dx.T
+        if dy.ndim == 2:
+            dy = dy.T
 
     bad = _missing_mask(u, v, dx, dy)
     bad = np.broadcast_to(bad, u.shape)
@@ -188,11 +250,15 @@ def relative_vorticity(u: np.ndarray, v: np.ndarray, dx: np.ndarray, dy: np.ndar
     dv_dx = np.gradient(v_clean, axis=1) / dx
     du_dy = np.gradient(u_clean, axis=0) / dy
 
-    if not Y_INCREASES_NORTHWARD:
+    if mode in (1, 3):
         du_dy = -du_dy
 
     zeta = dv_dx - du_dy
     zeta = np.where(bad, np.nan, zeta)
+
+    if transposed:
+        zeta = zeta.T
+
     return zeta
 
 
@@ -310,15 +376,24 @@ def execute(uLo, vLo, uHi, vHi, dx, dy, smoothKm=DEFAULT_SMOOTH_KM):
     return smoothed.astype(np.float32)
 
 
-def executeVorticity(u, v, dx, dy):
+def executeVorticity(u, v, dx, dy, mode=None):
     """AWIPS debug entry point: relative vorticity alone, float32, 1/s.
 
     Used by the cpsZ850 definition (D2D/derivedParameters/definitions/
-    cpsZ850.xml) so a site can compare its sign against D2D's own
-    relative vorticity field on a known hurricane -- see the "Orientation
-    verification" procedure in D2D/README.md.
+    cpsZ850.xml) so a site can compare its sign and pattern against
+    D2D's own relative vorticity field on a known hurricane -- see the
+    "Orientation verification" procedure in D2D/README.md. `mode` is the
+    cpsZ850.xml `<ConstantField>` value, letting a site try each of the
+    four `ORIENTATION_MODE` conventions (see CycloneCore.py's module
+    docstring) without editing this file; it may arrive as a float, a 0-d
+    numpy array, or a 1-element numpy array (an AWIPS `<ConstantField>`
+    value) and is coerced with `_coerce_scalar` to an int when given.
+    `None` (the ConstantField omitted) falls through to
+    `relative_vorticity`'s own default, `ORIENTATION_MODE`.
     """
-    return relative_vorticity(u, v, dx, dy).astype(np.float32)
+    if mode is not None:
+        mode = int(_coerce_scalar(mode))
+    return relative_vorticity(u, v, dx, dy, mode=mode).astype(np.float32)
 
 
 # ---------------------------------------------------------------------------
@@ -517,6 +592,15 @@ def executeIndex(
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    # This demo describes the plain numpy grid layout (mode 0: axis 0 = y
+    # increasing northward), not ORIENTATION_MODE's real default (1,
+    # tuned for AWIPS sites -- see the comment above that constant and
+    # D2D/README.md "Orientation verification"). Setting it here is a
+    # plain module-level assignment (this block runs at module scope),
+    # so relative_vorticity()/execute()/etc. below, which all default to
+    # "use ORIENTATION_MODE", pick it up with no other change needed.
+    ORIENTATION_MODE = 0
+
     # Solid-body vortex: u = -W*y, v = W*x on a uniform grid, in local
     # meters centered on the domain. Analytic relative vorticity of a
     # solid-body rotation is 2*W everywhere (no edge effects, unlike a

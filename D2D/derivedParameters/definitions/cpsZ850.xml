@@ -3,9 +3,10 @@
   EXPERIMENTAL. Debug field: relative vorticity at 850 hPa alone, no
   vertical difference and no smoothing. Exists only to verify grid
   orientation - see "Orientation verification" in D2D/README.md. Compare
-  its sign against D2D's own relative vorticity field at 850 mb on a known
-  hurricane; if they disagree, set Y_INCREASES_NORTHWARD = False in
-  CycloneCore.py.
+  it against D2D's own relative vorticity field at 850 mb on a known
+  hurricane: a single positive blob matching D2D's field means the mode
+  below is right; a lobed, deformation-like pattern (or an outright sign
+  mismatch) means try the next mode.
 
   VERIFY: if your AWIPS version does not support "Module.function" method
   names, copy executeVorticity into its own file CycloneCoreVort.py with
@@ -18,5 +19,8 @@
         <Field abbreviation="vW" level="850MB"/>
         <Field abbreviation="dx"/>
         <Field abbreviation="dy"/>
+        <!-- orientation mode 0..3, see CycloneCore.py; try 1, then 2, then 3
+             until cpsZ850 matches D2D relative vorticity at 850 mb -->
+        <ConstantField value="1"/>
     </Method>
 </DerivedParameter>

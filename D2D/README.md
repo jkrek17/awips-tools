@@ -220,22 +220,49 @@ color/category tables and the file-format VERIFY note.
 ## Orientation verification (do this once per site, before trusting the sign)
 
 D2D derived parameters receive grids exactly as AWIPS stores them, and
-whether row index (grid axis 0) increases toward the north or the
-south is a property of the grid's projection and storage, not
-something this file can know in advance. `CycloneCore.py` assumes
-`Y_INCREASES_NORTHWARD = True`, which is correct for the great
-majority of AWIPS D2D grids, but verify it:
+the array layout -- whether row index (axis 0) increases toward the
+north or the south, and whether the axes are x/y or y/x at all -- is a
+property of the grid's projection and storage, not something this file
+can know in advance. `CycloneCore.py` calls this layout the
+`ORIENTATION_MODE`, an integer 0-3 (see the comment block above that
+constant in `CycloneCore.py` for exactly what each mode means); the
+module default is `1`, which is correct for most AWIPS D2D grids, but
+verify it at your site with the procedure below before trusting VTL,
+VTU, CPScat, or CPSidx's sign.
 
-1. Install `cpsZ850.xml` (above) alongside VTL/VTU.
+The debug field `cpsZ850.xml` (relative vorticity at 850 hPa alone, no
+vertical difference, no smoothing) carries its own `mode`
+`<ConstantField>`, set to `1` out of the box, so a site can try modes
+by editing one number in the XML instead of editing and redeploying
+`CycloneCore.py` for every guess:
+
+1. Install `cpsZ850.xml` (above) alongside VTL/VTU, with its `mode`
+   `<ConstantField>` left at `1`.
 2. In the Volume Browser, load **cpsZ850** and D2D's own base
    **relative vorticity** field, both at 850 mb, over a real Northern
    Hemisphere hurricane (i.e. a system you know is cyclonic there).
-3. Compare signs at the storm's core:
-   - **Both positive** (or both negative, but matching) -- orientation
-     is correct, no change needed.
-   - **Opposite signs** -- open `derivedParameters/functions/
-     CycloneCore.py` and set `Y_INCREASES_NORTHWARD = False` at the top
-     of the file, then repeat the check.
+3. Compare the two fields at the storm's core:
+   - **cpsZ850 is a single positive blob matching D2D's field**
+     (same sign, same single-centered shape) -- mode 1 is correct.
+     Done: set `ORIENTATION_MODE = 1` in `CycloneCore.py` (already the
+     default) and skip to step 5.
+   - **cpsZ850 is lobed** (a deformation-like pattern, not a single
+     blob) **or has the opposite sign** -- edit `cpsZ850.xml`'s
+     `<ConstantField>` from `1` to `2`, reload the field (restart CAVE
+     if your version does not reload an edited definition on its own),
+     and compare again.
+4. Repeat step 3's comparison with mode `3` if mode `2` did not match
+   either. One of 1, 2, or 3 matches for every known AWIPS grid
+   convention; if none do, something else is wrong (see
+   Troubleshooting) -- do not guess past mode 3.
+5. Once a mode's cpsZ850 matches D2D's own relative vorticity, open
+   `derivedParameters/functions/CycloneCore.py`, set `ORIENTATION_MODE`
+   to that value at the top of the file, and restart CAVE. VTL, VTU,
+   CPScat, and CPSidx all call `relative_vorticity()` with no explicit
+   mode, so they pick up `ORIENTATION_MODE` from the module as soon as
+   it is redeployed -- the `mode` constant in `cpsZ850.xml` only
+   overrides the module default for that one debug field, and has no
+   effect on the other four fields.
 
 Do this before relying on VTL/VTU's sign for any real decision.
 
@@ -311,5 +338,7 @@ causes:
    circulation over the box, so this is the intended move toward a
    vortex-scale number.
 2. Wrong grid orientation, which is a bug. Then cpsZ850 itself shows
-   lobes rather than a single blob at a hurricane. Run the orientation
-   check above.
+   lobes (or the wrong sign) rather than a single blob matching D2D's
+   own relative vorticity at a hurricane. Run the "Orientation
+   verification" procedure above to find the right `ORIENTATION_MODE`
+   for your site.
