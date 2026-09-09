@@ -284,3 +284,16 @@ python3 D2D/derivedParameters/functions/CycloneCore.py
 
 It builds a synthetic solid-body vortex and prints the analytic and
 computed vorticity/execute() values side by side.
+
+## Troubleshooting
+
+**DataCubeException on CPScat or CPSidx while VTL/VTU work.** Two known
+causes, distinguishable from the cause line in the CAVE log:
+
+1. Unit parsing or a null pointer in the derived parameter description:
+   the definition had no `unit` attribute. Both files now declare
+   `unit=""`. If that is also rejected, try `unit="1"`.
+2. A Python traceback ending in `has no attribute 'executeClass'` (or
+   `executeIndex`): CAVE is still running the first CycloneCore.py.
+   Replace the file on EDEX and restart CAVE; the embedded interpreter
+   caches modules until restart.

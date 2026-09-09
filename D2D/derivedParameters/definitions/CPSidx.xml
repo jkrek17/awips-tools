@@ -6,13 +6,14 @@
   CycloneCore.continuous_index() and D2D/README.md.
 
   VERIFY: same checks as VTL.xml (fixed-level Field spelling, dx/dy
-  pseudo-fields and ConstantField support, levels= value). No unit=""
-  attribute is set below since this is a dimensionless index; VERIFY that
-  your AWIPS version accepts a DerivedParameter with no unit attribute -
-  if the definition fails to load, add unit="" or whatever your base
-  derivedParameters use for dimensionless parameters.
+  pseudo-fields and ConstantField support, levels= value). The field is
+  dimensionless, so unit="" is declared explicitly: a definition with no
+  unit attribute at all was observed to raise a DataCubeException on
+  request while VTL/VTU (which carry unit="/s") loaded fine. If your
+  version rejects unit="" as well, unit="1" is the next thing to try, and
+  unit="/s" is a last resort that works but mislabels sampled values.
 -->
-<DerivedParameter abbreviation="CPSidx" name="CPS Core Index (-3 cold to +3 deep warm)">
+<DerivedParameter abbreviation="CPSidx" name="CPS Core Index (-3 cold to +3 deep warm)" unit="">
     <Method name="CycloneCore.executeIndex" levels="Surface">
         <Field abbreviation="uW" level="850MB"/>
         <Field abbreviation="vW" level="850MB"/>
