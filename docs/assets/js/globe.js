@@ -1159,8 +1159,79 @@ window.HF = window.HF || {};
 
   function onWheel(evt) {
     evt.preventDefault();
+
+    // A scroll mid-transition would otherwise fight startTransition()'s
+    // tween every animation frame, each pulling the view a different way -
+    // treat wheel input as the user taking the camera back.
+    transition = null;
+
+    var rect = canvas.getBoundingClientRect();
+    var px = evt.clientX - rect.left, py = evt.clientY - rect.top;
+    var anchor = unproject(px, py);   // [lonDeg, latDeg] under the cursor, pre-zoom
+
     var factor = Math.pow(1.0016, -evt.deltaY);
-    view.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, view.zoom * factor));
+    var newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, view.zoom * factor));
+
+    // Re-aim the view so the same geographic point ends up back under the
+    // cursor at the new zoom, instead of the zoom just scaling about the
+    // view centre. unproject() holds the view fixed and solves for the
+    // point under a screen pixel; here it's the reverse - the point (the
+    // anchor above) and its pixel are the known quantities, and the view's
+    // (lambda, phi) is what we solve for.
+    //
+    // Project's x/y/c are just the anchor's unit vector re-expressed in an
+    // orthonormal frame built from the view (east/north/"out of the
+    // screen"), so (X, Y, c) below are exactly that triple for the pixel
+    // we want the anchor to land on at the new zoom. Recovering the view
+    // from a point and its coordinates in the view's own frame comes out
+    // to two candidate solutions (the quadratic in K below) rather than
+    // one - picking the wrong one would still land the anchor on the
+    // right pixel (both roots satisfy the same X/Y/c) but could flip the
+    // camera to a wild, discontinuous orientation, so the branch is chosen
+    // by which one stays on the same side of the anchor's meridian as the
+    // *current* (pre-zoom) view - a scroll only ever nudges the view a
+    // little, so that side can't have flipped.
+    //
+    // Falls back to the plain centre-anchored zoom below (no rotation
+    // change) when: the cursor was off the sphere's disc to begin with
+    // (anchor is null); the zoom didn't actually move because it was
+    // already sitting on MIN_ZOOM/MAX_ZOOM (newZoom === view.zoom, checked
+    // against the post-clamp value so repeated scrolling at a clamp can't
+    // drift the view at all); the anchor point falls outside the disc at
+    // the new zoom (rho2 > 1, e.g. zooming out shrank the sphere past the
+    // cursor); or the anchor's own latitude can't reach that far off its
+    // meridian at that pixel regardless of view (k2 < 0 - every point's
+    // east/west screen offset is capped by cos(latitude), so a pixel can
+    // demand more than a given parallel can ever supply). Any of these
+    // means there's no view that puts the anchor back under the cursor, so
+    // the old rotation is left alone and only the zoom takes effect.
+    if (anchor && newZoom !== view.zoom) {
+      var R = baseR * newZoom;
+      if (R) {
+        var X = (px - cx) / R, Y = (cy - py) / R;
+        var rho2 = X * X + Y * Y;
+        if (rho2 <= 1) {
+          var c = Math.sqrt(Math.max(0, 1 - rho2));
+          var lat = anchor[1] * DEG, lon = anchor[0] * DEG;
+          var sinPhi = Math.sin(lat), cosPhi = Math.cos(lat);
+          var k2 = cosPhi * cosPhi - X * X;
+          if (k2 >= 0) {
+            var kMag = Math.sqrt(k2);
+            var kSign = Math.cos(lon - view.lambda) < 0 ? -1 : 1;
+            var k = kSign * kMag;
+            var denom = k * k + sinPhi * sinPhi;
+            if (denom > 1e-9) {
+              var sinPhiV = (sinPhi * c - k * Y) / denom;
+              var cosPhiV = (k * c + sinPhi * Y) / denom;
+              view.phi = clampPhi(Math.atan2(sinPhiV, cosPhiV));
+              view.lambda = lon - Math.atan2(X, k);
+            }
+          }
+        }
+      }
+    }
+
+    view.zoom = newZoom;
     dirty = true;
     scheduleFrame();
   }

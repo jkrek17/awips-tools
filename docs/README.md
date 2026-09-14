@@ -22,6 +22,10 @@ apply to every tab at once, including the summary tiles at the top.
 
 ```
 index.html              structure only
+favicon.svg             site icon; kept at top level (not under assets/) so a
+                        relative href="favicon.svg" resolves the same way in
+                        the normal docs/ layout and in a --flat, single-
+                        directory deploy
 assets/app.css          light and dark palettes, both explicitly chosen
 assets/js/util.js       payload decoding, formatting, statistics, tooltips
 assets/js/charts.js     small SVG chart set (columns, histogram, scatter, trace)
