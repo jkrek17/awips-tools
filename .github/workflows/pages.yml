@@ -130,6 +130,22 @@ jobs:
   # stamp that is stripped before comparing anyway: it costs nothing here
   # and keeps this comparison correct on its own terms rather than
   # relying on docs/ and flat/ having been captured in the same instant.
+  #
+  # Not every docs/ file is meant to reach flat/, though: tools/publish.py
+  # defines NOT_DEPLOYED, a set of docs-relative paths (currently just
+  # data/qc-report.txt) that `--deploy ... --flat` deliberately declines
+  # to copy. This check has to agree with publish.py about exactly that
+  # set, or it fails for a reason that has nothing to do with a stale
+  # flat/: a correctly-regenerated flat/ that is simply missing a file
+  # publish.py never intended to put there. The fix is not to hardcode
+  # that path here too - two copies of the same exclusion list will agree
+  # right up until someone updates one and forgets the other, which is
+  # exactly the class of bug this whole job exists to catch elsewhere.
+  # Instead the script below reads NOT_DEPLOYED directly out of
+  # tools/publish.py's source (see load_not_deployed() and its own
+  # comment for why that's done with `ast` rather than an import), so
+  # there is exactly one place - publish.py itself - that says which
+  # files skip the flat/ deploy, and this job can never drift from it.
   flat-sync:
     runs-on: ubuntu-latest
     steps:
@@ -142,11 +158,75 @@ jobs:
       - name: Fail if flat/ is stale against docs/
         run: |
           python3 - <<'PY'
-          import json, os, re, sys
+          import ast, json, os, re, sys
 
           DOCS_DIR, FLAT_DIR = 'docs', 'flat'
+          PUBLISH_PY = os.path.join('tools', 'publish.py')
           # Written by `tools/publish.py --deploy ... --flat`, not site content.
           MANIFEST_NAME = '.awips-publish-manifest.json'
+
+          def load_not_deployed():
+              # Read publish.py's NOT_DEPLOYED constant WITHOUT importing
+              # publish.py, by parsing its source with `ast` and pulling the
+              # literal value off the module-level assignment.
+              #
+              # The alternative - `sys.path.insert(0, 'tools'); import
+              # publish; publish.NOT_DEPLOYED` - was considered and rejected.
+              # publish.py is, as of this writing, import-safe (every
+              # top-level statement is a def/class/import/assignment/
+              # docstring, with the sole top-level `if` being the
+              # `__name__ == "__main__"` guard), and it transitively imports
+              # tools/build_hf_lows.py, which was checked the same way and is
+              # equally import-safe (stdlib-only imports, no top-level calls
+              # besides two harmless dict/os.path assignments, same
+              # `__main__` guard pattern). So importing would work today.
+              # But "importing publish.py is safe" is a property of publish.py
+              # and build_hf_lows.py's current contents, not a contract either
+              # file has signed - nothing stops a future commit from adding,
+              # say, a module-level argparse default that shells out, or an
+              # eager sanity check against the network fetch config described
+              # in publish.py's own docstring. This job's only interest in
+              # publish.py is one literal set of strings; running an entire
+              # second script (plus whatever it imports) to get it is far
+              # more access than the job needs, and it would silently regain
+              # that access the moment either file's import-safety regresses,
+              # with nothing here to notice. Parsing the AST executes no code
+              # from either file, so it stays correct regardless of what
+              # publish.py or build_hf_lows.py grow into later.
+              source = open(PUBLISH_PY, encoding='utf-8').read()
+              tree = ast.parse(source, filename=PUBLISH_PY)
+              for node in tree.body:
+                  if not isinstance(node, ast.Assign):
+                      continue
+                  if not any(isinstance(t, ast.Name) and t.id == 'NOT_DEPLOYED'
+                            for t in node.targets):
+                      continue
+                  try:
+                      value = ast.literal_eval(node.value)
+                  except (ValueError, SyntaxError):
+                      continue
+                  if isinstance(value, (set, frozenset)) and all(
+                          isinstance(v, str) for v in value):
+                      return set(value)
+              # Renamed, removed, or no longer a plain set-of-strings literal.
+              # Fail loudly rather than guess: silently falling back to an
+              # empty set would compare every docs/ file against flat/ again,
+              # reintroducing the exact false MISSING FROM FLAT failure this
+              # constant exists to prevent; silently skipping the check
+              # instead would hide real drift. Neither is an acceptable
+              # substitute for a human updating this script to match
+              # whatever publish.py changed to.
+              print(f'::error::flat-sync could not find a module-level '
+                    f"`NOT_DEPLOYED = {{...}}` set-of-strings constant in "
+                    f'{PUBLISH_PY}. This check skips exactly the docs/ files '
+                    f'publish.py declines to deploy to flat/, and it does '
+                    f'that by reading NOT_DEPLOYED out of publish.py so the '
+                    f'two can never disagree - if that constant was renamed, '
+                    f'removed, or changed shape, update the parsing in this '
+                    f'workflow step to match.')
+              sys.exit(1)
+
+          NOT_DEPLOYED = load_not_deployed()
 
           def iter_docs_files():
               for dirpath, _dirnames, filenames in os.walk(DOCS_DIR):
@@ -200,7 +280,27 @@ jobs:
                   f"({', '.join(sorted(rels))}) - flat/{base} can't be checked "
                   f"against either one.")
 
-          docs_basenames = set(by_base) - set(collisions)
+          # Basenames of the docs/ files publish.py's NOT_DEPLOYED keeps out
+          # of flat/ on purpose - matched by exact docs-relative path, not
+          # bare basename, so this can't misfire against some unrelated
+          # docs/ file that happens to share a name with an excluded one.
+          # Dropping these out of docs_basenames (rather than, say, out of
+          # by_base itself) removes them from both the "MISSING FROM FLAT"
+          # requirement and the byte-comparison loop below, while leaving
+          # them in by_base so a flat/<name> that still happens to exist -
+          # e.g. a copy left over from before it was added to NOT_DEPLOYED -
+          # keeps resolving to its real docs/ counterpart instead of
+          # tripping "MISSING FROM DOCS". In short: once publish.py excludes
+          # a file, this check stops caring whether flat/ has it, lacks it,
+          # or disagrees with it - publish.py isn't keeping it in sync
+          # either way, so flagging any of those as drift would be a false
+          # alarm, not a genuine mistake to catch.
+          excluded_bases = {
+              os.path.basename(rel) for rel in NOT_DEPLOYED
+              if rel in by_base.get(os.path.basename(rel), [])
+          }
+
+          docs_basenames = set(by_base) - set(collisions) - excluded_bases
           flat_basenames = {n for n in os.listdir(FLAT_DIR)
                             if os.path.isfile(os.path.join(FLAT_DIR, n))
                             and n != MANIFEST_NAME}
