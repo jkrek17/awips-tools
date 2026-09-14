@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -58,10 +58,10 @@
 </header>
 
 <nav class="tabs" role="tablist" aria-label="Views">
-  <button role="tab" class="tab is-active" data-panel="map" aria-selected="true">Map</button>
-  <button role="tab" class="tab" data-panel="clim" aria-selected="false">Climatology</button>
-  <button role="tab" class="tab" data-panel="events" aria-selected="false">Events</button>
-  <button role="tab" class="tab" data-panel="method" aria-selected="false">Method</button>
+  <button type="button" role="tab" class="tab is-active" data-panel="map" aria-selected="true">Map</button>
+  <button type="button" role="tab" class="tab" data-panel="clim" aria-selected="false">Climatology</button>
+  <button type="button" role="tab" class="tab" data-panel="events" aria-selected="false">Events</button>
+  <button type="button" role="tab" class="tab" data-panel="method" aria-selected="false">Method</button>
 </nav>
 </div>
 
@@ -104,7 +104,7 @@
   <i class="filter-break brk-2" aria-hidden="true"></i>
 
   <div class="filter">
-    <label for="fPressure">Min central pressure &le; <output id="fPressureOut">1060</output> hPa</label>
+    <label for="fPressure">Min central pressure &le; <span id="fPressureOut">1060</span> hPa</label>
     <input type="range" id="fPressure" min="900" max="1010" step="5" value="1010">
   </div>
 

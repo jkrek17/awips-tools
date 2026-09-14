@@ -33,7 +33,10 @@ This repo is public, and the two decades of hand-entered archive CSVs under
 `data/hf_lows/` are committed to it - that's intentional, confirmed by the
 archive's owner, not an oversight. Edit, commit and push here; a GitHub
 Actions workflow (`.github/workflows/pages.yml`) rebuilds `docs/` from those
-committed CSVs and publishes it to GitHub Pages on every push to `main`.
+committed CSVs and publishes it to GitHub Pages on every push to `main`. That
+workflow also runs `html-validate` over `docs/` before publishing - the same
+check (and defaults) the forecaster's downstream `ocean-weather-gov` CI runs
+- so an invalid page fails here instead of blocking their merge request.
 
 ```bash
 # 1. export each basin tab of the workbook over the CSVs in data/hf_lows/
@@ -136,6 +139,33 @@ into an existing web root as one atomic directory swap, so the live site is
 never caught half-updated mid-copy, prints exactly what it wrote, and leaves
 anything already in that directory that the site doesn't own untouched.
 Without `--yes` it shows the delta report and waits for you to type `y`.
+
+### Flat deploys (`--flat`)
+
+Some web servers are only reachable through an upload UI that takes
+individual files, not a directory tree - it cannot recreate `docs/`'s
+`assets/` and `data/` subdirectories. `--flat` handles that: it writes every
+file directly into the target with no subdirectories, and rewrites the
+deployed copy of `index.html` so its `src=`/`href=` references point at the
+bare filenames instead. `docs/index.html` itself is never modified - only the
+copy written to the target.
+
+```bash
+python3 tools/publish.py --no-fetch --deploy /var/www/flat --flat --yes
+```
+
+Before writing anything, `--flat` re-checks the assumption that makes
+flattening safe - no two files share a basename, and no CSS/JS outside
+`index.html` hardcodes an `assets/...` or `data/...` path - and refuses to
+deploy, naming exactly what it found, if either check fails.
+
+Don't point a flat deploy and a normal deploy at the same directory. Each
+mode leaves the other layout's files in place unless this tool's own manifest
+in that directory already tracks them (i.e. this tool made the previous
+deploy there in the *other* mode); mixing them can leave stale files sitting
+next to the current site, and `--flat`/normal will warn if it finds files
+that look like the other layout in the target. Use a dedicated directory
+per layout.
 
 ### Moving to cron
 

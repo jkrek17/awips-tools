@@ -60,11 +60,23 @@ docs/ into TARGET as a single directory swap so the live site is never caught
 half-updated, and leaves anything under TARGET that this tool did not put
 there alone.
 
+--flat additionally collapses that copy into a single directory: every file
+lands directly in TARGET with no assets/ or data/ subdirectories, and
+docs/index.html is rewritten so its src=/href= attributes point at the bare
+filenames instead. This exists for the one NOAA web server whose upload UI
+can only take individual files into one folder, not whole directories - it
+cannot reproduce docs/'s assets/ and data/ layout, so the flattened build is
+the only thing it can receive. Before writing anything, --flat verifies the
+assumption that makes this safe (no two files share a basename, and no CSS/JS
+outside index.html hardcodes an assets/... or data/... path) and refuses to
+deploy rather than guess if that assumption ever stops holding.
+
 Usage:
     python3 tools/publish.py                       # fetch, build, report - no writes to TARGET
     python3 tools/publish.py --no-fetch             # build from CSVs already on disk
     python3 tools/publish.py --deploy /var/www/hf   # also publish, after confirmation
     python3 tools/publish.py --deploy /var/www/hf --yes   # publish unattended (e.g. cron)
+    python3 tools/publish.py --deploy /var/www/flat --flat --yes  # flat, single-folder deploy
 """
 
 from __future__ import annotations
@@ -72,6 +84,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import ssl
 import subprocess
@@ -494,11 +507,179 @@ def iter_site_files():
             yield os.path.relpath(full, DOCS_DIR)
 
 
-def deploy(target: str) -> None:
+# ---------------------------------------------------------------------------
+# --flat: collapsing docs/ into a single directory for the NOAA web UI that
+# can only upload individual files, never a directory tree.
+#
+# This is only safe because docs/index.html is the *only* file that contains
+# path references into assets/ or data/ - everything else is loaded by the
+# <script>/<link>/<a> tags in index.html, which we rewrite to bare filenames
+# below. Before touching anything we re-verify that assumption rather than
+# trust it forever: a basename collision or a stray hardcoded path in the
+# hand-written CSS/JS under docs/assets would make the flattened site silently
+# broken, so both are checked and refused rather than guessed past.
+# ---------------------------------------------------------------------------
+
+ASSETS_DIR = os.path.join(DOCS_DIR, "assets")
+
+# Local (non-external) reference: not a data: URI, not an absolute http(s)/
+# protocol-relative URL, not a bare in-page anchor or a mailto/tel/javascript
+# pseudo-scheme. Anything else is a path into this site and, in flat mode,
+# gets rewritten (index.html) or must not exist at all (everywhere else).
+_EXTERNAL_PREFIXES = ("data:", "http://", "https://", "//", "#",
+                      "mailto:", "tel:", "javascript:")
+
+
+def is_local_ref(value: str) -> bool:
+    value = value.strip()
+    if not value:
+        return False
+    return not value.lower().startswith(_EXTERNAL_PREFIXES)
+
+
+_HTML_ATTR_RE = re.compile(r'(?P<pre>\b(?:src|href)\s*=\s*)(?P<q>["\'])(?P<val>.*?)(?P=q)')
+
+
+def flatten_html(html: str) -> str:
+    """Rewrite src=/href= attributes that point at local files to their bare
+    basename. Leaves data:, http(s):, protocol-relative, #, mailto: and
+    javascript: values untouched, and changes nothing else in the markup."""
+
+    def repl(m: re.Match) -> str:
+        val = m.group("val")
+        if not is_local_ref(val):
+            return m.group(0)
+        return f'{m.group("pre")}{m.group("q")}{os.path.basename(val)}{m.group("q")}'
+
+    return _HTML_ATTR_RE.sub(repl, html)
+
+
+_CSS_URL_RE = re.compile(r'url\(\s*(["\']?)(.*?)\1\s*\)', re.IGNORECASE)
+_JS_LOCAL_PATH_STR_RE = re.compile(r'''["'](?:assets|data)/[^"']*["']''')
+
+
+def scan_flatten_hazards() -> list[str]:
+    """Look for path references outside index.html that would break once the
+    assets/ and data/ subdirectories are gone: url(...) in CSS, and hardcoded
+    "assets/..." / "data/..." string literals in JS. Scoped to docs/assets -
+    the hand-written app code - not docs/data, which holds only generated
+    data payloads (e.g. a CSV source path recorded as descriptive text, not a
+    reference anything loads by). Returns human-readable "file:line: ..."
+    problem descriptions; an empty list means the scan found nothing."""
+    problems = []
+    if not os.path.isdir(ASSETS_DIR):
+        return problems
+    for dirpath, _dirnames, filenames in os.walk(ASSETS_DIR):
+        for name in filenames:
+            full = os.path.join(dirpath, name)
+            rel = os.path.relpath(full, DOCS_DIR)
+            with open(full, encoding="utf-8") as fh:
+                lines = fh.readlines()
+            if name.endswith(".css"):
+                for lineno, line in enumerate(lines, 1):
+                    for m in _CSS_URL_RE.finditer(line):
+                        if is_local_ref(m.group(2)):
+                            problems.append(
+                                f"{rel}:{lineno}: {m.group(0)!r} - a local url() "
+                                f"reference that a flat, single-directory deploy "
+                                f"cannot satisfy")
+            elif name.endswith(".js"):
+                for lineno, line in enumerate(lines, 1):
+                    for m in _JS_LOCAL_PATH_STR_RE.finditer(line):
+                        problems.append(
+                            f"{rel}:{lineno}: {m.group(0)!r} - a hardcoded "
+                            f"assets/... or data/... path string that a flat, "
+                            f"single-directory deploy cannot satisfy")
+    return problems
+
+
+def find_basename_collisions(site_files: list[str]) -> dict[str, list[str]]:
+    by_base: dict[str, list[str]] = {}
+    for rel in site_files:
+        by_base.setdefault(os.path.basename(rel), []).append(rel)
+    return {base: rels for base, rels in by_base.items() if len(rels) > 1}
+
+
+def check_flatten_safety(site_files: list[str]) -> None:
+    """Refuse rather than guess if flattening would be unsafe. Called before
+    any files are written."""
+    collisions = find_basename_collisions(site_files)
+    if collisions:
+        detail = "\n".join(f"  {base}: {', '.join(sorted(rels))}"
+                            for base, rels in sorted(collisions.items()))
+        raise SystemExit(
+            "Refusing --flat deploy: these files would collide onto the same flat "
+            "filename, and one would silently overwrite the other:\n" + detail +
+            "\nRename one of each pair (or otherwise fix the build) before using --flat.")
+
+    hazards = scan_flatten_hazards()
+    if hazards:
+        raise SystemExit(
+            "Refusing --flat deploy: found reference(s) outside index.html that assume "
+            "the assets/ and data/ subdirectories exist, so a flattened build would be "
+            "broken in a way that is not obvious from looking at it:\n" +
+            "\n".join(f"  {p}" for p in hazards) +
+            "\nFix these (or revisit publish.py's --flat support if they are "
+            "intentional) before deploying flat.")
+
+
+# Bare filenames that only ever appear at the top level in a *flat* deploy -
+# used to spot a stale flat layout sitting where a normal deploy is about to
+# add assets/ and data/ subdirectories alongside it (and vice versa: a stale
+# assets/ or data/ subdirectory sitting where a flat deploy is about to add
+# bare files). Deliberately excludes index.html and README.md, which are
+# top-level in both layouts and so are not evidence of either one.
+FLAT_MARKER_BASENAMES = sorted({
+    os.path.basename(rel) for rel in
+    ["assets/app.css", "assets/charts.css", "assets/globe.css",
+     "assets/js/util.js", "assets/js/charts.js", "assets/js/globe.js", "assets/js/app.js",
+     "data/hf-lows.js", "data/coastlines.js", "data/currents.js", "data/hf-lows.json"]
+})
+
+
+def detect_mixed_layout(target: str, flat: bool) -> list[str]:
+    """Warn (never silently) when TARGET shows evidence of the *other*
+    layout - files this run will not remove and that could otherwise linger
+    and still be served."""
+    warnings = []
+    nested_dirs = [d for d in ("assets", "data") if os.path.isdir(os.path.join(target, d))]
+    flat_files = [b for b in FLAT_MARKER_BASENAMES if os.path.isfile(os.path.join(target, b))]
+
+    if flat and nested_dirs:
+        warnings.append(
+            "target already has " + " and ".join(f"{d}/" for d in nested_dirs) +
+            " from what looks like a normal (non-flat) deploy. This --flat run will "
+            "only remove files it can match to a previous flat deploy's manifest here; "
+            "if this target was never deployed flat before, those subdirectories (and "
+            "everything in them) will be left behind and could still be reachable on "
+            "the server. Remove them by hand, or use a dedicated target directory for "
+            "the flat deploy.")
+    if not flat and flat_files:
+        warnings.append(
+            "target already has flat-layout file(s) at the top level: " +
+            ", ".join(flat_files) + " - from what looks like a previous --flat deploy. "
+            "This normal deploy will add assets/ and data/ subdirectories alongside "
+            "them; the new index.html will not reference the old flat copies, but they "
+            "will remain on disk unless this tool's manifest already tracks them. "
+            "Remove them by hand, or keep using --flat for this target.")
+    return warnings
+
+
+def deploy(target: str, flat: bool = False) -> None:
     target = validate_deploy_target(target)
     parent = os.path.dirname(target)
 
     site_files = sorted(iter_site_files())
+
+    if flat:
+        # Re-verify the assumption that makes flattening safe, every time -
+        # do not just trust that it still holds because it did last time.
+        check_flatten_safety(site_files)
+        dest_of = {rel: os.path.basename(rel) for rel in site_files}
+    else:
+        dest_of = {rel: rel for rel in site_files}
+    dest_files = sorted(set(dest_of.values()))
+
     manifest_path = os.path.join(target, MANIFEST_NAME)
     previous_manifest = []
     if os.path.exists(manifest_path):
@@ -517,21 +698,33 @@ def deploy(target: str) -> None:
             shutil.copytree(target, staging, dirs_exist_ok=True)
 
         # Drop files this tool deployed previously but the new build no
-        # longer produces, so removed pages/assets don't linger forever.
-        stale = sorted(set(previous_manifest) - set(site_files))
+        # longer produces (including, when switching --flat on or off
+        # against a target this tool has deployed to before, everything the
+        # previous layout put there) so removed pages/assets don't linger.
+        stale = sorted(set(previous_manifest) - set(dest_files))
         for rel in stale:
             p = os.path.join(staging, rel)
             if os.path.isfile(p) or os.path.islink(p):
                 os.remove(p)
 
-        for rel in site_files:
+        for rel, dest in dest_of.items():
             src = os.path.join(DOCS_DIR, rel)
-            dst = os.path.join(staging, rel)
-            os.makedirs(os.path.dirname(dst), exist_ok=True)
-            shutil.copy2(src, dst)
+            dst = os.path.join(staging, dest)
+            dst_dir = os.path.dirname(dst)
+            if dst_dir:
+                os.makedirs(dst_dir, exist_ok=True)
+            if flat and rel == "index.html":
+                # The one file that carries path references - rewrite them
+                # to bare filenames rather than byte-copying.
+                with open(src, encoding="utf-8") as fh:
+                    html = flatten_html(fh.read())
+                with open(dst, "w", encoding="utf-8") as fh:
+                    fh.write(html)
+            else:
+                shutil.copy2(src, dst)
 
         with open(os.path.join(staging, MANIFEST_NAME), "w", encoding="utf-8") as fh:
-            json.dump({"files": site_files}, fh)
+            json.dump({"files": dest_files, "flat": flat}, fh)
 
         # The swap itself: move the live directory aside, move staging into
         # its place, then discard the old one. Two renames back-to-back, with
@@ -550,8 +743,10 @@ def deploy(target: str) -> None:
             shutil.rmtree(staging, ignore_errors=True)
         raise
 
-    total_size = sum(os.path.getsize(os.path.join(DOCS_DIR, rel)) for rel in site_files)
-    print(f"Deployed {len(site_files)} files ({total_size / 1024:.0f} KB) to {target}")
+    total_size = sum(os.path.getsize(os.path.join(target, dest)) for dest in dest_files)
+    layout = "flat" if flat else "directory"
+    print(f"Deployed {len(dest_files)} files ({total_size / 1024:.0f} KB) to {target} "
+          f"({layout} layout)")
     if stale:
         print(f"Removed {len(stale)} stale file(s) no longer produced by the build:")
         for rel in stale:
@@ -574,10 +769,20 @@ def main() -> int:
     ap.add_argument("--deploy", metavar="PATH",
                      help="after building and reporting the delta, copy docs/ into this "
                           "existing web-root directory")
+    ap.add_argument("--flat", action="store_true",
+                     help="with --deploy, write every file directly into the target "
+                          "directory instead of recreating docs/'s assets/ and data/ "
+                          "subdirectories, and rewrite index.html's local src=/href= "
+                          "references to match. Use this when the target is reached "
+                          "through a web UI that can only upload individual files into "
+                          "one folder, not whole directories.")
     ap.add_argument("--yes", action="store_true",
                      help="with --deploy, skip the confirmation prompt (for cron; without "
                           "it a human has to type y first)")
     args = ap.parse_args()
+
+    if args.flat and args.deploy is None:
+        ap.error("--flat only makes sense together with --deploy")
 
     if not args.no_fetch:
         do_fetch()
@@ -599,15 +804,23 @@ def main() -> int:
     # Validate before asking for confirmation - a human should never be
     # prompted to approve a deploy that was always going to be refused.
     target = validate_deploy_target(args.deploy)
+    if args.flat:
+        # Same principle: a doomed --flat deploy is refused before the
+        # confirmation prompt, not after someone has typed y.
+        check_flatten_safety(sorted(iter_site_files()))
+
+    for warning in detect_mixed_layout(target, args.flat):
+        print(f"\nWARNING: {warning}")
 
     print()
+    mode = "flat, single-directory" if args.flat else "docs/"
     if not args.yes:
-        reply = input(f"Deploy docs/ to {target!r}? [y/N] ").strip().lower()
+        reply = input(f"Deploy {mode} to {target!r}? [y/N] ").strip().lower()
         if reply != "y":
             print("Not deploying.")
             return 0
 
-    deploy(target)
+    deploy(target, flat=args.flat)
     return 0
 
 
