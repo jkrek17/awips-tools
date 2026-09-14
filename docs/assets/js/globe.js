@@ -44,9 +44,27 @@ window.HF = window.HF || {};
   var CLICK_SLOP = 4;                    // px of movement still counted as a click
   var HOVER_THROTTLE_MS = 30;
 
-  var GRATICULE_LON_STEP = 30;
-  var GRATICULE_LAT_STEP = 15;
+  // Graticule spacing adapts to zoom (see graticuleStep()) rather than being
+  // one fixed constant - 10 degrees is the standard-view default, coarser
+  // when zoomed well out so 36 meridians don't turn into a cage, finer when
+  // zoomed well in.
   var GRATICULE_SAMPLE_DEG = 3;          // sampling interval along each graticule line
+
+  // Fix density grid: ported from the flat map's HF.maps.densityGrid (now
+  // removed) rather than reimplemented - same cell size, same counting, so
+  // the numbers don't change just because the rendering moved to a sphere.
+  // 2 deg of latitude is ~120 nm; 5 deg of longitude is ~210 nm at 45N, so
+  // cells are roughly square through the storm track belt.
+  var CELL_LAT = 2;
+  var CELL_LON = 5;
+  // The flat map needed a per-view longitude frame so a single basin's cells
+  // never split across the map's own seam. A sphere has no seam to avoid,
+  // but the *binning* still shouldn't split a populated cell across +-180 -
+  // Atlantic fixes never reach this origin (max observed +10) so they shift
+  // uniformly with no effect on grouping, while Pacific fixes (which do
+  // straddle the antimeridian) bin contiguously. One fixed origin, always
+  // applied, replaces the old basin-dependent frame argument.
+  var DENSITY_LON_ORIGIN = 20;
 
   /* ------------------------------------------------------------- state */
 
@@ -80,6 +98,16 @@ window.HF = window.HF || {};
   var hitPoints = [];                    // rebuilt each draw(): [{x, y, low}]
   var lastHoverT = 0;
   var hoveredKey = undefined;            // undefined = "not computed yet"
+
+  var curLayer = 'tracks';               // 'tracks' | 'density' | 'genesis' | 'peak'
+  var curGrid = null;                    // cached computeDensityGrid() result, layer 'density' only
+  var hoveredCellKey = null;             // "latIdx:lonIdx", density layer only
+  var densityRamp = null;                // --seq-1..7, resolved lazily and reset on theme change
+
+  // Rotate/zoom transition (basin switches, "fit to events", double-click
+  // reset) - a short tween layered onto the same dirty/scheduleFrame loop
+  // drags and inertia already drive, rather than a second animation path.
+  var transition = null;                 // {fromLambda, dl, fromPhi, toPhi, fromZoom, toZoom, t0, dur}
 
   function reducedMotion() {
     return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
