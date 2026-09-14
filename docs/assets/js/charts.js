@@ -271,26 +271,58 @@ window.HF = window.HF || {};
       var y = PAD.top + f.plotH - (spec.meanLine.value / scale.max) * f.plotH;
       g.appendChild(svgEl('line', { class: 'c-mean', x1: PAD.left, x2: PAD.left + f.plotW, y1: y, y2: y }));
 
-      // Anchored at the left edge, inset from the axis, instead of the right:
-      // the right edge is where the last column - often the tallest, most
-      // recent season - and its own value label live, so a right-aligned
-      // label there is bound to collide with real data sooner or later.
-      // Flip above/below the line based on how close it sits to the plot's
-      // top or bottom so the label is never pushed off the frame either.
-      var nearTop = (y - PAD.top) < 16;
-      var mlblY = nearTop ? y + 14 : y - 6;
+      // A fixed edge (say, always the right) eventually sits on top of
+      // whichever column happens to land there - which is exactly how this
+      // collided originally, with a recent/tall season pinned to the right.
+      // Instead, find a run of columns wide enough for the label whose bars
+      // all stay clear of the mean line (checked from the right end first
+      // since that is where the label has conventionally sat, then the
+      // left) and label the line right there - a genuinely clear point
+      // regardless of how many columns there are, how wide each is, or
+      // where the mean falls.
+      var clearGap = 16;
       var mlblText = spec.meanLine.label;
       var mlblW = textWidth(mlblText, 11);
+      var topYs = spec.data.map(function (d) {
+        return d.total ? PAD.top + f.plotH - (d.total / scale.max) * f.plotH : PAD.top + f.plotH;
+      });
+      var n = topYs.length;
+      // The label is wider than one column pitch as soon as the chart has
+      // many narrow columns, so a "clear" spot has to mean every column the
+      // label's width will actually cover, not just the one it is centred
+      // on - otherwise a wide label centred over a clear column still
+      // overlaps a tall neighbour just past its edge.
+      var span = Math.max(1, Math.ceil(mlblW / slot)) + 1;
+      var half = Math.floor(span / 2);
+      var runClear = function (center) {
+        for (var i = center - half; i <= center + half; i++) {
+          if (i >= 0 && i < n && !(topYs[i] > y + clearGap)) return false;
+        }
+        return true;
+      };
+      var pick = n - 1;
+      var k, found = false;
+      for (k = n - 1; k >= 0; k--) { if (runClear(k)) { pick = k; found = true; break; } }
+      if (!found) {
+        for (k = 0; k < n; k++) { if (runClear(k)) { pick = k; found = true; break; } }
+      }
 
-      // A small surface-coloured backing keeps the label legible even if it
-      // still lands over a bar or another label - sized from the same
-      // text-measuring helper rather than a fixed guess, so it fits any
-      // mean label at any width.
+      // Flip above/below the line based on how close it sits to the plot's
+      // top so the label is never pushed off the frame at that end either.
+      var nearTop = (y - PAD.top) < 16;
+      var mlblY = nearTop ? y + 14 : y - 6;
+      var pickCx = PAD.left + slot * pick + slot / 2;
+      var mlblX = Math.min(Math.max(pickCx - mlblW / 2, PAD.left + 3), PAD.left + f.plotW - mlblW - 3);
+
+      // A surface-coloured backing still keeps the label legible in the rare
+      // chart where every column sits close to the mean and no fully clear
+      // spot exists - sized from the same text-measuring helper so it fits
+      // any label at any width.
       g.appendChild(svgEl('rect', {
-        class: 'c-label-bg', x: PAD.left + 3, y: mlblY - 11, width: mlblW + 6, height: 14,
-        fill: HF.cssVar('--surface'), opacity: 0.85, rx: 2
+        class: 'c-label-bg', x: mlblX - 3, y: mlblY - 11, width: mlblW + 6, height: 14,
+        fill: HF.cssVar('--surface'), opacity: 0.92, rx: 2
       }));
-      var mlbl = svgEl('text', { class: 'c-label', x: PAD.left + 6, y: mlblY, 'text-anchor': 'start' });
+      var mlbl = svgEl('text', { class: 'c-label', x: mlblX, y: mlblY, 'text-anchor': 'start' });
       mlbl.textContent = mlblText;
       g.appendChild(mlbl);
     }

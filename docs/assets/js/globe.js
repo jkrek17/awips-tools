@@ -23,11 +23,19 @@ window.HF = window.HF || {};
 
   var DEG = Math.PI / 180;
 
-  // Default view: both basins and the Arctic land bridge between them
-  // visible at once - the whole reason this view exists instead of a flat
-  // map. 200E == -160 in the -180..180 convention the data uses.
-  var DEFAULT_LAMBDA_DEG = -160;
-  var DEFAULT_PHI_DEG = 55;
+  // Default view: both basins splayed symmetrically around the pole rather
+  // than one sitting near the horizon. Picked empirically from the archive
+  // itself, not guessed: the circular mean fix longitude is -39.7 for the
+  // Atlantic and -179.5 (essentially the dateline) for the Pacific - about
+  // 140 apart the short way round, over Canada and the Arctic (the other
+  // way round, over Eurasia, is the wide ~220 gap and would foreshorten
+  // both basins badly). Centring on the midpoint of the short gap puts
+  // each basin about 70 of longitude off-axis, comfortably on the near
+  // side rather than crowding the horizon. Phi is pulled up near the pole
+  // (rather than the ~50N the tracks are centred on) so both belts curve
+  // away from the centre symmetrically instead of one filling the middle.
+  var DEFAULT_LAMBDA_DEG = -110;
+  var DEFAULT_PHI_DEG = 68;
 
   var MIN_ZOOM = 0.6, MAX_ZOOM = 6;
   var MAX_PHI = 89 * DEG;               // clamp shy of the exact pole
@@ -184,11 +192,24 @@ window.HF = window.HF || {};
     // Track/fix colours (pressure ramp, event class, category) are read on
     // demand via HF.pressureColor/classColor/categoryColor, which already
     // pull from --seq-*, --critical, --ink-muted etc; this palette only
-    // covers the globe's own chrome - sphere, graticule, land.
+    // covers the globe's own chrome - sphere, graticule, land - and stays
+    // strictly neutral so it never competes with the blue pressure ramp or
+    // the magenta terrain-forced tracks.
+    //
+    // --surface and --surface-sunk alone are too close in value to read as
+    // land vs. ocean at this size (a few percent lightness apart), so the
+    // ocean disc gets an extra low-alpha wash toward --ink on top of its
+    // base tone - a compositing trick, not a new hardcoded colour: --ink is
+    // near-black in light mode and near-white in dark mode, so the wash
+    // pushes the ocean away from the land tone in whichever direction each
+    // theme needs. The coastline itself is stroked in --ink-2 (a mid-value
+    // token meant for secondary text) so it reads as a firm line against
+    // both fills in both themes, not a hairline.
     pal = {
       ocean: readColor('--surface-sunk', '#f2f2ee'),
+      oceanWash: readColor('--ink', '#0b0b0b'),
       land: readColor('--surface', '#fcfcfb'),
-      coast: readColor('--border-strong', '#c3c2b7'),
+      coast: readColor('--ink-2', '#52514e'),
       grid: readColor('--grid', '#e1e0d9'),
       outline: readColor('--border-strong', '#c3c2b7')
     };
@@ -266,8 +287,7 @@ window.HF = window.HF || {};
     // The coastline itself is stroked separately, per visible arc with no
     // closing edge - the horizon bridge above is not a real coastline, and
     // the sphere outline drawn later already marks the disc's rim.
-    ctx.lineWidth = 0.75;
-    for (i = 0; i < allSegments.length; i++) strokePath(allSegments[i], 0.75, pal.coast);
+    for (i = 0; i < allSegments.length; i++) strokePath(allSegments[i], 0.9, pal.coast);
   }
 
   /** Fill one ring's visible arcs as a single closed path, connecting the
@@ -299,8 +319,36 @@ window.HF = window.HF || {};
     ctx.arc(cx, cy, R, a1, a1 + delta, delta < 0);
   }
 
-  function trackColor(low) {
-    return low.cls && low.cls !== 'low' ? HF.classColor(low.cls) : HF.pressureColor(low.minP);
+  /** Mean pressure of a segment's two endpoint fixes, for HF.pressureColor.
+      Falls back to whichever endpoint has a value if only one does, or null
+      (letting HF.pressureColor pick its own no-data colour) if neither. */
+  function segmentPressure(a, b) {
+    if (a.pres != null && b.pres != null) return (a.pres + b.pres) / 2;
+    if (a.pres != null) return a.pres;
+    if (b.pres != null) return b.pres;
+    return null;
+  }
+
+  /** Stroke one fix-to-fix edge, clipped to the visible hemisphere, in the
+      given colour. Horizon clipping is per-edge here (rather than the
+      shared visibleSegments() arc-batching used for coastlines/graticule)
+      because each edge can carry its own colour off the pressure ramp - a
+      deepening track visibly ramps warmer along its length instead of
+      drawing as one flat colour for the whole event. */
+  function strokeEdge(a, b, color) {
+    var pa = project(a.lon, a.lat), pb = project(b.lon, b.lat);
+    if (!pa.visible && !pb.visible) return;
+    var p0 = pa, p1 = pb;
+    if (pa.visible !== pb.visible) {
+      var cross = horizonCrossing([a.lon, a.lat], [b.lon, b.lat]);
+      var pc = project(cross[0], cross[1]);
+      if (pa.visible) p1 = pc; else p0 = pc;
+    }
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(p0.x, p0.y);
+    ctx.lineTo(p1.x, p1.y);
+    ctx.stroke();
   }
 
   function drawTracks() {
@@ -357,11 +405,16 @@ window.HF = window.HF || {};
 
     var R = baseR * view.zoom;
 
-    // 1. ocean disc
+    // 1. ocean disc - base tone plus a low-alpha ink wash (see computePalette)
+    // so it reads as a distinct value from the land fill in both themes.
     ctx.beginPath();
     ctx.arc(cx, cy, R, 0, Math.PI * 2);
     ctx.fillStyle = pal.ocean;
     ctx.fill();
+    ctx.fillStyle = pal.oceanWash;
+    ctx.globalAlpha = 0.12;
+    ctx.fill();
+    ctx.globalAlpha = 1;
 
     // 2. graticule
     drawGraticule();
