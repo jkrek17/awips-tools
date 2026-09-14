@@ -36,6 +36,19 @@
   --seq-1: #cde2fb; --seq-2: #9ec5f4; --seq-3: #6da7ec;
   --seq-4: #3987e5; --seq-5: #256abf; --seq-6: #184f95; --seq-7: #0d366b;
 
+  /* Per-fix MSLP "intensity" ramp: pale amber (shallow, ~1010 hPa) -> orange
+     -> red -> deep magenta (<945 hPa). 1 = shallowest, 7 = deepest. On this
+     light surface the ramp runs light -> dark (deepest = darkest), the same
+     convention as --seq-*. Validated with the dataviz skill's
+     validate_palette.js in ordinal mode against this surface - do not hand-edit
+     without re-running it. --mslp-none is the existing muted-ink value, for
+     fixes with no analyzed pressure. --terrain is the categorical slot for
+     terrain-forced (no-pressure) event classes, kept off the ramp's hues. */
+  --mslp-1: #fa9a00; --mslp-2: #e97807; --mslp-3: #de4802; --mslp-4: #ca0202;
+  --mslp-5: #9e0047; --mslp-6: #74014c; --mslp-7: #4d0044;
+  --mslp-none: var(--ink-muted);
+  --terrain:   #4a3aa7;
+
   --grid:          #e1e0d9;
   --axis:          #c3c2b7;
 
@@ -112,6 +125,17 @@
     --accent-soft:   #16263a;
     --seq-1: #0d366b; --seq-2: #184f95; --seq-3: #256abf;
     --seq-4: #3987e5; --seq-5: #6da7ec; --seq-6: #9ec5f4; --seq-7: #cde2fb;
+
+    /* MSLP ramp, chosen fresh for this dark surface (not the light steps
+       flipped) - on a dark ground the ramp runs dark -> light so the deepest
+       lows (--mslp-7) still read as the brightest, highest-contrast marks.
+       Validated the same way as the light steps; re-run validate_palette.js
+       --mode dark before hand-editing. */
+    --mslp-1: #784700; --mslp-2: #a74d01; --mslp-3: #de3400; --mslp-4: #ff4d29;
+    --mslp-5: #ff7aa8; --mslp-6: #ff9fd6; --mslp-7: #ffc2f8;
+    --mslp-none: var(--ink-muted);
+    --terrain:   #9085e9;
+
     --grid:          #2c2c2a;
     --axis:          #383835;
     --shadow-1:  0 1px 2px rgba(0,0,0,.5);
@@ -144,6 +168,12 @@
   --accent-soft:   #16263a;
   --seq-1: #0d366b; --seq-2: #184f95; --seq-3: #256abf;
   --seq-4: #3987e5; --seq-5: #6da7ec; --seq-6: #9ec5f4; --seq-7: #cde2fb;
+
+  --mslp-1: #784700; --mslp-2: #a74d01; --mslp-3: #de3400; --mslp-4: #ff4d29;
+  --mslp-5: #ff7aa8; --mslp-6: #ff9fd6; --mslp-7: #ffc2f8;
+  --mslp-none: var(--ink-muted);
+  --terrain:   #9085e9;
+
   --grid:          #2c2c2a;
   --axis:          #383835;
   --shadow-1:  0 1px 2px rgba(0,0,0,.5);

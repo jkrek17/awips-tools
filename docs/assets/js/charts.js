@@ -572,11 +572,20 @@ window.HF = window.HF || {};
       svg.appendChild(lab);
     });
 
-    var d = pts.map(function (f, i) { return (i ? 'L' : 'M') + xOf(i) + ' ' + yOf(f.pres); }).join(' ');
-    svg.appendChild(svgEl('path', {
-      d: d, fill: 'none', stroke: HF.cssVar('--accent'), 'stroke-width': 2,
-      'stroke-linejoin': 'round', 'stroke-linecap': 'round'
-    }));
+    // Colour the line itself by the same per-fix MSLP ramp as the dots (and
+    // the map tracks), rather than a flat accent stroke, so a trace that
+    // deepens visibly ramps along its length the same way everywhere else
+    // pressure is encoded. Every point here already has an analyzed
+    // pressure (pts was filtered above), so each segment always resolves to
+    // a real ramp colour, never --mslp-none.
+    for (var si = 1; si < pts.length; si++) {
+      var segColor = HF.pressureColor((pts[si - 1].pres + pts[si].pres) / 2);
+      svg.appendChild(svgEl('line', {
+        x1: xOf(si - 1), y1: yOf(pts[si - 1].pres), x2: xOf(si), y2: yOf(pts[si].pres),
+        stroke: segColor, 'stroke-width': 2,
+        'stroke-linejoin': 'round', 'stroke-linecap': 'round'
+      }));
+    }
 
     // The deepest analyzed fix is the headline number of the trace - call it
     // out directly rather than making the reader hover for it.
@@ -589,7 +598,7 @@ window.HF = window.HF || {};
       var isMin = f === minFix;
       var cx = xOf(i), cy = yOf(f.pres);
       var dot = svgEl('circle', {
-        cx: cx, cy: cy, r: isMin ? 5 : 4, fill: HF.categoryColor(f.cat),
+        cx: cx, cy: cy, r: isMin ? 5 : 4, fill: HF.pressureColor(f.pres),
         stroke: HF.cssVar('--surface'), 'stroke-width': isMin ? 2 : 1.5
       });
       svg.appendChild(dot);
