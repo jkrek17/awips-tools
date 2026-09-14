@@ -69,6 +69,28 @@ jobs:
               print('docs/data matches a fresh build of data/hf_lows/.')
           PY
 
+      # The forecaster's downstream repo (ocean-weather-gov) runs this exact
+      # check - `npm install -g html-validate` then `html-validate` with no
+      # config file, i.e. the tool's defaults - over their copy of docs/
+      # (which they keep at www/htdocs). Run it here too, before the artifact
+      # is uploaded, so a page that would fail their CI fails ours first,
+      # where it's cheap, instead of blocking a merge request over there.
+      #
+      # Version: pinned rather than "latest" like they run. Their pipeline
+      # always installs whatever is newest, so pinning here means we can
+      # in theory diverge from them - a rule they'd catch and we wouldn't,
+      # or vice versa. But an unpinned `npm install -g html-validate` here
+      # means html-validate can ship a new/stricter default rule at any
+      # time and turn our build red with no change on our side, on a push
+      # we don't control the timing of. Pinning trades a little drift for
+      # reproducible, deliberate upgrades: bump the version below in its
+      # own commit when we choose to, and see the diff in review. Bump
+      # periodically to keep drift from their "latest" small.
+      - name: Validate published HTML (html-validate)
+        run: |
+          npm install -g html-validate@11.15.0
+          html-validate docs
+
       - uses: actions/configure-pages@v5
         with:
           # Create the Pages site on the first run instead of requiring

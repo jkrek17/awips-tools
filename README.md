@@ -33,7 +33,10 @@ This repo is public, and the two decades of hand-entered archive CSVs under
 `data/hf_lows/` are committed to it - that's intentional, confirmed by the
 archive's owner, not an oversight. Edit, commit and push here; a GitHub
 Actions workflow (`.github/workflows/pages.yml`) rebuilds `docs/` from those
-committed CSVs and publishes it to GitHub Pages on every push to `main`.
+committed CSVs and publishes it to GitHub Pages on every push to `main`. That
+workflow also runs `html-validate` over `docs/` before publishing - the same
+check (and defaults) the forecaster's downstream `ocean-weather-gov` CI runs
+- so an invalid page fails here instead of blocking their merge request.
 
 ```bash
 # 1. export each basin tab of the workbook over the CSVs in data/hf_lows/
