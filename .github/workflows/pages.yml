@@ -1,7 +1,9 @@
 # Publishes the HF extratropical low archive to GitHub Pages.
 #
-# One-time setup: Settings > Pages > Build and deployment > Source =
-# "GitHub Actions". Without that this workflow builds but cannot deploy.
+# configure-pages runs with enablement: true, so the first successful run turns
+# Pages on by itself. If your account or organization blocks Pages, that call
+# fails and you have to enable it by hand: Settings > Pages > Build and
+# deployment > Source = "GitHub Actions".
 #
 # The site data is regenerated from the CSVs in data/hf_lows/ on every run, so
 # the published page can never drift from the committed source data - even if
@@ -43,15 +45,31 @@ jobs:
       - name: Rebuild site data from the CSV archive
         run: python3 tools/build_hf_lows.py
 
-      - name: Fail if the committed data is stale
+      # Every build stamps a fresh "generated" time, so a plain git diff always
+      # reports a change. Compare the payload with that one field removed, which
+      # is the only comparison that says anything about the data.
+      - name: Warn if the committed data is stale
         run: |
-          if ! git diff --quiet -- docs/data; then
-            echo "::warning::docs/data was out of date with data/hf_lows; the"
-            echo "::warning::published site uses the freshly built version."
-            git --no-pager diff --stat -- docs/data
-          fi
+          python3 - <<'PY'
+          import json, subprocess
+          fresh = json.load(open('docs/data/hf-lows.json'))
+          committed = json.loads(
+              subprocess.check_output(['git', 'show', 'HEAD:docs/data/hf-lows.json']))
+          fresh.pop('generated', None)
+          committed.pop('generated', None)
+          if fresh != committed:
+              print('::warning::docs/data is out of date with data/hf_lows/. The '
+                    'published site uses the freshly built version; re-run '
+                    'tools/build_hf_lows.py and commit to keep them in step.')
+          else:
+              print('docs/data matches a fresh build of data/hf_lows/.')
+          PY
 
       - uses: actions/configure-pages@v5
+        with:
+          # Create the Pages site on the first run instead of requiring
+          # someone to flip the repository setting first.
+          enablement: true
 
       - uses: actions/upload-pages-artifact@v3
         with:
