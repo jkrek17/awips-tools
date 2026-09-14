@@ -670,8 +670,12 @@
     }
 
     box.appendChild(HF.el('h3', {}, 'Minimum pressure'));
+    // Ascending (weakest -> deepest) so the bar and its end labels always
+    // match HF.PRESSURE_BANDS's own breakpoints and text, whatever they
+    // currently are - never hardcode a specific hPa value here.
+    var bandsAsc = HF.PRESSURE_BANDS.slice().reverse();
     var bar = HF.el('div', { class: 'legend-scale' });
-    HF.PRESSURE_BANDS.slice().reverse().forEach(function (band) {
+    bandsAsc.forEach(function (band) {
       var seg = HF.el('span');
       seg.style.background = HF.pressureColor(band.v);
       seg.title = band.label + ' hPa';
@@ -679,8 +683,8 @@
     });
     box.appendChild(bar);
     var ends = HF.el('div', { class: 'legend-ends' });
-    ends.appendChild(HF.el('span', {}, '\u2265 1000'));
-    ends.appendChild(HF.el('span', {}, '< 940 hPa'));
+    ends.appendChild(HF.el('span', {}, bandsAsc[0].label + ' hPa'));
+    ends.appendChild(HF.el('span', {}, bandsAsc[bandsAsc.length - 1].label + ' hPa'));
     box.appendChild(ends);
     var terrain = lows.filter(function (l) { return l.cls !== 'low'; }).length;
     if (terrain) {

@@ -206,6 +206,10 @@ window.HF = window.HF || {};
     // chart where they'd comfortably fit.
     var labelGap = 4;
     var lastLabelRight = -Infinity;
+    // Tracked so the mean line's own label (below) can defensively clear
+    // out from underneath any value label its backing would otherwise
+    // half-cover, without a live layout query.
+    var valueLabels = [];
 
     var crosshair = svgEl('line', { class: 'c-crosshair' });
     var groups = spec.data.map(function () { return []; });
@@ -235,12 +239,17 @@ window.HF = window.HF || {};
         var text = String(d.total);
         var half = textWidth(text, 10.5, 600) / 2;
         if (cx - half >= lastLabelRight + labelGap) {
+          var labelY = Math.max(PAD.top + 9, topY - 5);
           var lbl = svgEl('text', {
-            class: 'c-value', x: cx, y: Math.max(PAD.top + 9, topY - 5), 'text-anchor': 'middle'
+            class: 'c-value', x: cx, y: labelY, 'text-anchor': 'middle'
           });
           lbl.textContent = text;
           g.appendChild(lbl);
           lastLabelRight = cx + half;
+          // Cap-height/descender of a 10.5px label (padded a couple of px
+          // for font-metric slop), used only to check the mean label's
+          // backing against this box later.
+          valueLabels.push({ el: lbl, x0: cx - half, x1: cx + half, y0: labelY - 11, y1: labelY + 4 });
         }
       }
 
@@ -274,52 +283,37 @@ window.HF = window.HF || {};
       // A fixed edge (say, always the right) eventually sits on top of
       // whichever column happens to land there - which is exactly how this
       // collided originally, with a recent/tall season pinned to the right.
-      // Instead, find a run of columns wide enough for the label whose bars
-      // all stay clear of the mean line (checked from the right end first
-      // since that is where the label has conventionally sat, then the
-      // left) and label the line right there - a genuinely clear point
-      // regardless of how many columns there are, how wide each is, or
-      // where the mean falls.
+      // Bias to whichever edge's outermost column currently clears the
+      // line by the widest margin, then - since a chart can have every
+      // column hovering near the mean, with no edge reliably clear - fall
+      // back to removing any value label the backing still ends up over,
+      // rather than trying to hunt for a guaranteed-empty spot. A hidden
+      // number under an opaque "mean" tag reads as deliberate; overlapping
+      // text does not.
       var clearGap = 16;
       var mlblText = spec.meanLine.label;
       var mlblW = textWidth(mlblText, 11);
-      var topYs = spec.data.map(function (d) {
-        return d.total ? PAD.top + f.plotH - (d.total / scale.max) * f.plotH : PAD.top + f.plotH;
-      });
-      var n = topYs.length;
-      // The label is wider than one column pitch as soon as the chart has
-      // many narrow columns, so a "clear" spot has to mean every column the
-      // label's width will actually cover, not just the one it is centred
-      // on - otherwise a wide label centred over a clear column still
-      // overlaps a tall neighbour just past its edge.
-      var span = Math.max(1, Math.ceil(mlblW / slot)) + 1;
-      var half = Math.floor(span / 2);
-      var runClear = function (center) {
-        for (var i = center - half; i <= center + half; i++) {
-          if (i >= 0 && i < n && !(topYs[i] > y + clearGap)) return false;
-        }
-        return true;
-      };
-      var pick = n - 1;
-      var k, found = false;
-      for (k = n - 1; k >= 0; k--) { if (runClear(k)) { pick = k; found = true; break; } }
-      if (!found) {
-        for (k = 0; k < n; k++) { if (runClear(k)) { pick = k; found = true; break; } }
-      }
+      var lastD = spec.data[spec.data.length - 1], firstD = spec.data[0];
+      var lastTopY = lastD.total ? PAD.top + f.plotH - (lastD.total / scale.max) * f.plotH : PAD.top + f.plotH;
+      var firstTopY = firstD.total ? PAD.top + f.plotH - (firstD.total / scale.max) * f.plotH : PAD.top + f.plotH;
+      var onRight = (lastTopY - y) >= (firstTopY - y) || (firstTopY - y) < clearGap;
 
       // Flip above/below the line based on how close it sits to the plot's
       // top so the label is never pushed off the frame at that end either.
       var nearTop = (y - PAD.top) < 16;
       var mlblY = nearTop ? y + 14 : y - 6;
-      var pickCx = PAD.left + slot * pick + slot / 2;
-      var mlblX = Math.min(Math.max(pickCx - mlblW / 2, PAD.left + 3), PAD.left + f.plotW - mlblW - 3);
+      var mlblX = onRight ? PAD.left + f.plotW - mlblW - 6 : PAD.left + 6;
 
-      // A surface-coloured backing still keeps the label legible in the rare
-      // chart where every column sits close to the mean and no fully clear
-      // spot exists - sized from the same text-measuring helper so it fits
-      // any label at any width.
+      var bg = { x0: mlblX - 3, x1: mlblX - 3 + mlblW + 6, y0: mlblY - 11, y1: mlblY - 11 + 14 };
+      valueLabels.forEach(function (v) {
+        if (v.x0 < bg.x1 && bg.x0 < v.x1 && v.y0 < bg.y1 && bg.y0 < v.y1) v.el.remove();
+      });
+
+      // A surface-coloured backing keeps the label legible against whatever
+      // bar colour still sits beneath it, sized from the same text-measuring
+      // helper so it fits any label at any width.
       g.appendChild(svgEl('rect', {
-        class: 'c-label-bg', x: mlblX - 3, y: mlblY - 11, width: mlblW + 6, height: 14,
+        class: 'c-label-bg', x: bg.x0, y: bg.y0, width: mlblW + 6, height: 14,
         fill: HF.cssVar('--surface'), opacity: 0.92, rx: 2
       }));
       var mlbl = svgEl('text', { class: 'c-label', x: mlblX, y: mlblY, 'text-anchor': 'start' });

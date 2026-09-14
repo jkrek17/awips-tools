@@ -356,25 +356,37 @@ window.HF = window.HF || {};
     var style = styleForCount(lows.length);
     var selected = null;
 
+    ctx.lineCap = 'round';    // smooths the join between adjacent-colour segments
     for (var i = 0; i < lows.length; i++) {
       var low = lows[i];
       if (low.key === selectedKey) { selected = low; continue; }
       drawOneTrack(low, style, false);
     }
     if (selected) drawOneTrack(selected, style, true);
+    ctx.lineCap = 'butt';
   }
 
   function drawOneTrack(low, style, isSelected) {
-    var coords = new Array(low.fixes.length);
-    for (var i = 0; i < low.fixes.length; i++) coords[i] = [low.fixes[i].lon, low.fixes[i].lat];
-
+    var fixes = low.fixes;
     var terrain = low.cls && low.cls !== 'low';
-    var color = trackColor(low);
     var weight = isSelected ? Math.max(2.4, style.weight + 1.6) : (terrain ? style.weight + 0.3 : style.weight);
     var opacity = isSelected ? 1 : Math.min(1, style.opacity + (terrain ? 0.15 : 0));
+    var terrainColor = terrain ? HF.classColor(low.cls) : null;
 
     ctx.globalAlpha = opacity;
-    strokePath(visibleSegments(coords), weight, color, terrain ? [4, 3] : null);
+    ctx.lineWidth = weight;
+    ctx.setLineDash(terrain ? [4, 3] : []);
+    var i;
+    for (i = 0; i < fixes.length - 1; i++) {
+      var a = fixes[i], b = fixes[i + 1];
+      // Terrain-forced events have no analyzed pressure at all, so they stay
+      // one flat classColor; synoptic lows ramp per segment off the mean
+      // pressure of each edge's two endpoints, so a deepening track visibly
+      // warms along its length rather than drawing as one flat colour.
+      var color = terrain ? terrainColor : HF.pressureColor(segmentPressure(a, b));
+      strokeEdge(a, b, color);
+    }
+    ctx.setLineDash([]);
     ctx.globalAlpha = 1;
 
     // Hit points from every fix, visible ones only - built once here and
