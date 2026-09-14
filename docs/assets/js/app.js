@@ -23,7 +23,6 @@
   };
 
   var TABLE_LIMIT = 300;
-  var globeReady = false;    // the globe is heavier to spin up than the flat map, so it waits until first needed
   var detailTrigger = null;  // element to return focus to when the detail drawer closes
   var announceTimer = null;  // debounces the aria-live result-count text
 
@@ -428,8 +427,7 @@
       renderDetail(low);
       document.body.classList.add('has-detail');
       resizeActiveView();
-      if (usingGlobe()) { ensureGlobe(); HF.globe.focus(low); }
-      else HF.maps.focus(low);
+      HF.globe.focus(low);
     } else {
       // Escape is also wired globally and fires even with nothing selected;
       // only steal focus back when a drawer was actually open to close.
@@ -544,99 +542,64 @@
   }
 
   /* ------------------------------------------------------------- view mode
-     Both basins meet at the Arctic, and no flat projection shows that
-     honestly, so "both" swaps the flat Leaflet map for a rotatable
-     orthographic globe; a single basin keeps the flat tiled map. The two
-     views share the same filtered lows, selection and theme - this section
-     is the only place that decides which one is on screen. */
+     The globe is the only map view - both basins meet at the Arctic and no
+     flat projection shows that honestly, so there is no flat-map fallback
+     for a single basin either. Tracks, fix density, first fix and peak
+     intensity are all layers HF.globe knows how to draw; this section just
+     keeps the globe's size/visibility/rotation in step with the active tab
+     and the basin filter. */
 
-  function usingGlobe() { return state.basin === 'both'; }
-
-  // The map's layer switcher (density/genesis/peak) and "Fit to events" only
-  // make sense against the flat projection; the globe only ever draws
-  // tracks, so map-note/legend text keys off this rather than state.layer
-  // directly whenever the globe might be showing.
-  function activeLayer() { return usingGlobe() ? 'tracks' : state.layer; }
-
-  function ensureGlobe() {
-    if (globeReady) return;
-    HF.globe.init('globe', select);
-    HF.globe.applyTheme();
-    globeReady = true;
-  }
-
-  /** Leaflet/the globe both no-op a resize on a hidden container, so this is
-      safe to call whenever the view might have just become visible; the
-      timeout lets the "hidden" attribute's layout change land first. */
+  /** The globe no-ops a resize on a hidden panel, so this is safe to call
+      whenever the map tab might have just become visible; the timeout lets
+      the "hidden" attribute's layout change land first. */
   function resizeActiveView() {
-    setTimeout(function () {
-      if (usingGlobe()) { if (globeReady) HF.globe.resize(); }
-      else HF.maps.invalidate();
-    }, 0);
+    setTimeout(function () { HF.globe.resize(); }, 0);
   }
 
-  /** Toggle the flat-map/globe containers and the controls that only apply
-      to the flat map, and make sure whichever view is now current has the
-      right size and is the only one animating. Call after anything that can
-      change the basin or the active tab. */
+  /** Only animate while the map tab is actually on screen. Call after
+      anything that can change the active tab. */
   function syncMapMode() {
-    var globeOn = usingGlobe();
-    if (globeOn) ensureGlobe();
-
-    document.getElementById('map').hidden = globeOn;
-    document.getElementById('globeWrap').hidden = !globeOn;
-
-    var segmented = document.querySelector('#panel-map .segmented');
-    var fitBtn = document.getElementById('fitBounds');
-    if (segmented) segmented.hidden = globeOn;
-    if (fitBtn) fitBtn.hidden = globeOn;
-
-    if (globeReady) HF.globe.setVisible(globeOn && state.tab === 'map');
+    HF.globe.setVisible(state.tab === 'map');
     if (state.tab === 'map') resizeActiveView();
   }
 
+  /** Selecting a basin re-points the globe at it, derived from that basin's
+      own filtered events rather than a guessed centre; "Both basins" returns
+      to the default pole-centred view that shows the whole storm track belt. */
   function applyBasinSideEffects() {
-    HF.maps.setFrame(state.basin);
-    HF.maps.resetView(state.basin);
-    syncMapMode();
+    if (state.basin === 'both') HF.globe.resetView();
+    else HF.globe.fitTo(filtered());
   }
 
   /* ------------------------------------------------------------ map chrome */
 
   function renderMap(lows) {
-    if (usingGlobe()) {
-      ensureGlobe();
-      HF.globe.render(lows, state.selectedKey);
-    } else {
-      HF.maps.render(lows, state.layer, state.selectedKey);
-    }
+    HF.globe.render(lows, state.selectedKey, state.layer);
     renderLegend(lows);
 
-    var layer = activeLayer();
+    var layer = state.layer;
     var note = document.getElementById('mapNote');
     if (layer === 'density') {
-      note.textContent = 'Hurricane force fixes per ' + HF.maps.CELL_LAT + '° × ' +
-        HF.maps.CELL_LON + '° cell, over the filtered seasons.';
+      note.textContent = 'Hurricane force fixes per ' + HF.globe.CELL_LAT + '° × ' +
+        HF.globe.CELL_LON + '° cell, over the filtered seasons.';
     } else if (layer === 'genesis') {
       note.textContent = 'First tracked fix of each event — where the archive picked the low up, not true cyclogenesis.';
     } else if (layer === 'peak') {
       note.textContent = 'Position of each event’s lowest analyzed pressure; marker size grows as pressure falls.';
     } else {
       note.textContent = lows.length > 300
-        ? lows.length.toLocaleString() + ' tracks \u2014 thinned so the overlap reads as density. ' +
+        ? lows.length.toLocaleString() + ' tracks — thinned so the overlap reads as density. ' +
           'Filter, or switch to Fix density, for a cleaner picture.'
         : lows.length.toLocaleString() + ' track' + (lows.length === 1 ? '' : 's') +
           ' shown. Click one for its fixes.';
-      if (usingGlobe()) {
-        note.textContent += ' Both basins meet at the pole, so this is a rotatable globe — drag to rotate, scroll to zoom, double-click to reset. Layer and fit controls apply to the flat map only.';
-      }
+      note.textContent += ' Drag to rotate, scroll to zoom, double-click to reset.';
     }
   }
 
   function renderLegend(lows) {
     lows = lows || [];
     var box = HF.clear(document.getElementById('mapLegend'));
-    var layer = activeLayer();
+    var layer = state.layer;
 
     if (layer === 'density') {
       box.appendChild(HF.el('h3', {}, 'HF fixes per cell'));
@@ -669,7 +632,10 @@
       return;
     }
 
-    box.appendChild(HF.el('h3', {}, 'Minimum pressure'));
+    // Each track segment is coloured by the MSLP at that point, not by the
+    // event's lifetime minimum - the heading and note below must say so, or
+    // this reads as the (now wrong) old one-colour-per-event legend.
+    box.appendChild(HF.el('h3', {}, 'Pressure along track'));
     // Ascending (weakest -> deepest) so the bar and its end labels always
     // match HF.PRESSURE_BANDS's own breakpoints and text, whatever they
     // currently are - never hardcode a specific hPa value here.
@@ -698,6 +664,8 @@
       row.style.marginTop = '6px';
       box.appendChild(row);
     }
+    box.appendChild(HF.el('p', { class: 'legend-note' },
+      'Colour is the analyzed MSLP at each point along the track, not the event’s overall minimum.'));
     if (state.selectedKey) {
       box.appendChild(HF.el('p', { class: 'legend-note' },
         'Markers on the selected track are coloured by category at that fix.'));
@@ -1111,7 +1079,7 @@
     });
 
     document.getElementById('fitBounds').addEventListener('click', function () {
-      HF.maps.fitTo(filtered());
+      HF.globe.fitTo(filtered());
     });
     document.getElementById('exportCsv').addEventListener('click', exportCsv);
     document.getElementById('detailClose').addEventListener('click', function () { select(null); });
@@ -1127,8 +1095,7 @@
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(function () {
         if (state.tab === 'clim') renderCharts(filtered());
-        if (usingGlobe()) { if (globeReady) HF.globe.resize(); }
-        else HF.maps.invalidate();
+        HF.globe.resize();
       }, 180);
     });
   }
@@ -1145,8 +1112,7 @@
     var next = currentlyDark() ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', next);
     try { localStorage.setItem('hf-theme', next); } catch (err) { /* private mode */ }
-    HF.maps.applyTheme();
-    if (globeReady) HF.globe.applyTheme();
+    HF.globe.applyTheme();
     render();
   }
 
@@ -1197,16 +1163,15 @@
       renderQc();
       renderMethod();
 
-      // Unhide before initializing the map/globe and doing the first render,
-      // so Leaflet and the canvas both measure a real, laid-out container
-      // instead of a hidden (zero-size) one.
+      // Unhide before initializing the globe and doing the first render, so
+      // the canvas measures a real, laid-out container instead of a hidden
+      // (zero-size) one.
       loadingEl.hidden = true;
       if (mainEl) mainEl.hidden = false;
       if (kpisEl) kpisEl.hidden = false;
 
-      HF.maps.init('map', select);
-      HF.maps.setFrame(state.basin);
-      HF.maps.resetView(state.basin);
+      HF.globe.init('globe', select);
+      HF.globe.applyTheme();
       syncMapMode();
       render();
     }, 0);

@@ -25,8 +25,19 @@
   /* ---- data / categorical (do not change) ------------------------------ */
   --atl:           #2a78d6;
   --pac:           #eb6834;
-  --accent:        #2a78d6;
-  --accent-soft:   #eaf2fd;
+
+  /* ---- chrome accent (NOAA/NWS-flavoured blues; UI only, never data) ----
+     Deliberately distinct from --atl: --accent sits well outside the
+     just-noticeable-difference band from --atl/--pac (OKLab ΔE ~22/~41
+     respectively - see charts.css/app.css comment above the dark block for
+     the equivalent dark-mode numbers), so a link or active tab is never
+     mistaken for an Atlantic-series mark. --chrome-navy is the masthead
+     band; --chrome-navy-ink(-soft) is text on top of it. */
+  --chrome-navy:      #0a3161;
+  --chrome-navy-ink:      #ffffff;
+  --chrome-navy-ink-soft: #cfe0f3;
+  --accent:        #0a3f73;
+  --accent-soft:   #e4edf8;
 
   --critical:      #d03b3b;
   --serious:       #ec835a;
@@ -121,7 +132,14 @@
     --ink-muted:     #898781;
     --atl:           #3987e5;
     --pac:           #d95926;
-    --accent:        #3987e5;
+
+    /* Chosen fresh for this dark surface, not the light steps flipped: a
+       light-ish periwinkle reads clearly as "chrome accent" on a dark page
+       while staying OKLab ΔE ~17 from --atl (#3987e5) and ~28 from --pac
+       (#d95926) - comfortably clear of the JND band. --chrome-navy is
+       raised off pure navy so it doesn't muddy into --page/--surface. */
+    --chrome-navy:      #123a63;
+    --accent:        #93b8e6;
     --accent-soft:   #16263a;
     --seq-1: #0d366b; --seq-2: #184f95; --seq-3: #256abf;
     --seq-4: #3987e5; --seq-5: #6da7ec; --seq-6: #9ec5f4; --seq-7: #cde2fb;
@@ -164,7 +182,9 @@
   --ink-muted:     #898781;
   --atl:           #3987e5;
   --pac:           #d95926;
-  --accent:        #3987e5;
+
+  --chrome-navy:      #123a63;
+  --accent:        #93b8e6;
   --accent-soft:   #16263a;
   --seq-1: #0d366b; --seq-2: #184f95; --seq-3: #256abf;
   --seq-4: #3987e5; --seq-5: #6da7ec; --seq-6: #9ec5f4; --seq-7: #cde2fb;
@@ -239,15 +259,24 @@ a { color: var(--accent); }
   display: flex; align-items: center; justify-content: space-between;
   gap: var(--sp-4); flex-wrap: wrap;
   padding: var(--sp-3) var(--sp-5);
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  background: var(--chrome-navy);
+  border-bottom: 1px solid rgba(0, 0, 0, .2);
 }
-.brand h1 { margin: 0; font-size: var(--fs-xl); font-weight: 650; letter-spacing: -.01em; }
+.brand h1 { margin: 0; font-size: var(--fs-xl); font-weight: 650; letter-spacing: -.01em; color: var(--chrome-navy-ink); }
 .brand .sub {
-  margin: 2px 0 0; font-size: var(--fs-sm); color: var(--ink-2);
+  margin: 2px 0 0; font-size: var(--fs-sm); color: var(--chrome-navy-ink-soft);
   font-variant-numeric: tabular-nums;
 }
 .topbar-actions { display: flex; align-items: center; gap: var(--sp-3); }
+
+/* the masthead band is dark in both themes, so its own icon button gets an
+   on-dark treatment rather than the light --surface chip used elsewhere. */
+.topbar .icon-btn {
+  background: rgba(255, 255, 255, .12);
+  color: var(--chrome-navy-ink-soft);
+  border-color: rgba(255, 255, 255, .45);
+}
+.topbar .icon-btn:hover { background: rgba(255, 255, 255, .22); color: var(--chrome-navy-ink); }
 
 .badge {
   font-size: var(--fs-xs); font-weight: 650; letter-spacing: .04em; text-transform: uppercase;
@@ -277,7 +306,7 @@ a { color: var(--accent); }
   transition: color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
 }
 .tab:hover { color: var(--ink); }
-.tab.is-active { color: var(--ink); border-bottom-color: var(--accent); }
+.tab.is-active { color: var(--accent); border-bottom-color: var(--accent); }
 
 /* --------------------------------------------------------------- filters */
 
@@ -318,9 +347,9 @@ input[type="search"] { min-width: 170px; max-width: 240px; flex: 1 1 auto; }
 
 .btn {
   cursor: pointer; font-weight: 600; padding: 0 var(--sp-3);
-  transition: background var(--dur-1) var(--ease);
+  transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
 }
-.btn:hover { background: var(--surface-sunk); }
+.btn:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 
 .check { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-base); color: var(--ink-2); height: var(--control-h); }
 .check abbr { text-decoration: none; border-bottom: 1px dotted var(--border-strong); }
@@ -383,6 +412,7 @@ input[type="search"] { min-width: 170px; max-width: 240px; flex: 1 1 auto; }
 .kpi {
   display: flex; flex-direction: column;
   background: var(--surface); border: 1px solid var(--border);
+  border-top: 3px solid var(--accent);
   border-radius: var(--radius-lg); padding: var(--sp-3) var(--sp-4); box-shadow: var(--shadow-1);
 }
 .kpi .k-label {
@@ -535,7 +565,8 @@ main { padding: 0 var(--sp-5) var(--sp-6); }
 .data-table th, .data-table td { padding: 7px 10px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--border); }
 .data-table thead th {
   position: sticky; top: 0; z-index: 1;
-  background: var(--surface-sunk); color: var(--ink-2);
+  background: var(--accent-soft); color: var(--ink-2);
+  border-bottom: 2px solid var(--accent);
   font-size: var(--fs-xs); font-weight: 650; text-transform: uppercase; letter-spacing: var(--tracking);
   cursor: pointer; user-select: none;
 }
@@ -561,7 +592,10 @@ main { padding: 0 var(--sp-5) var(--sp-6); }
 /* ----------------------------------------------------------------- prose */
 
 .prose { padding: var(--sp-5) var(--sp-6); max-width: 74ch; }
-.prose h2 { font-size: var(--fs-md); font-weight: 650; margin: var(--sp-6) 0 var(--sp-2); }
+.prose h2 {
+  font-size: var(--fs-md); font-weight: 650; margin: var(--sp-6) 0 var(--sp-2);
+  padding-bottom: 6px; border-bottom: 2px solid var(--accent);
+}
 .prose h2:first-child { margin-top: 0; }
 .prose p, .prose li { color: var(--ink-2); font-size: var(--fs-base); }
 .prose code { font-family: var(--mono); font-size: var(--fs-sm); background: var(--surface-sunk); padding: 1px 4px; border-radius: 3px; }
@@ -649,6 +683,14 @@ main { padding: 0 var(--sp-5) var(--sp-6); }
     --border: #ccc; --border-strong: #999;
     --ink: #000; --ink-2: #333; --ink-muted: #555;
     --shadow-1: none; --shadow-2: none; --shadow-ov: none; --shadow: none; --shadow-lg: none;
+
+    /* the masthead band must not print as a solid colour fill - collapse
+       the chrome accent tokens to ink-economical neutrals for print. */
+    --chrome-navy: transparent;
+    --chrome-navy-ink: #000;
+    --chrome-navy-ink-soft: #333;
+    --accent: #333;
+    --accent-soft: transparent;
   }
   body { background: #fff; }
   .shell-sticky { position: static; }
