@@ -3,3 +3,5 @@ __pycache__/
 *.pyo
 *.pyd
 
+# Publish-tool endpoint config (token secret; never commit)
+tools/publish.local.json

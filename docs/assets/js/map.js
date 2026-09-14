@@ -61,25 +61,6 @@ window.HF = window.HF || {};
   var tileNote = null;
   var state = { frame: 'pacific', onSelect: null, selectedKey: null };
 
-  /* --------------------------------------------------------- own stylesheet
-     This file owns docs/assets/map.css; index.html is edited by another
-     agent, so the stylesheet is attached here rather than via a <link> tag
-     that would need to live in the page. */
-  (function ensureStylesheet() {
-    if (document.querySelector('link[data-hf-map-css]')) return;
-    var script = document.currentScript ||
-      (function () { var s = document.getElementsByTagName('script'); return s[s.length - 1]; })();
-    var href = 'assets/map.css';                    // fallback: page-relative
-    if (script && script.src) {
-      try { href = new URL('../map.css', script.src).href; } catch (err) { /* keep fallback */ }
-    }
-    var link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = href;
-    link.setAttribute('data-hf-map-css', '1');
-    document.head.appendChild(link);
-  })();
-
   maps.init = function (elementId, onSelect) {
     if (typeof L === 'undefined') {      // vendored Leaflet missing or blocked
       var host = document.getElementById(elementId);

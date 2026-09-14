@@ -76,9 +76,9 @@ window.HF = window.HF || {};
   // pixel width instead of a fixed "every Nth label" rule that overlaps on a
   // narrow card and leaves a wide one sparser than it needs to be.
   var measureCtx = null;
-  function textWidth(str, sizePx) {
+  function textWidth(str, sizePx, weight) {
     if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
-    measureCtx.font = (sizePx || 10.5) + 'px ' + (HF.cssVar('--font') || 'sans-serif');
+    measureCtx.font = (weight || 400) + ' ' + (sizePx || 10.5) + 'px ' + (HF.cssVar('--font') || 'sans-serif');
     return measureCtx.measureText(String(str)).width;
   }
 
@@ -102,12 +102,22 @@ window.HF = window.HF || {};
     }
   }
 
-  function axisTitle(g, text, x, y, anchor, rotate) {
+  // maxWidth (optional): shrink the font just enough to fit a long caption
+  // into a narrow card instead of letting it spill over the card edge -
+  // some captions ("Bergerons over the best 18-24 h window...") are long
+  // enough that at 11px they overflow a ~330px card.
+  function axisTitle(g, text, x, y, anchor, rotate, maxWidth) {
     var node = svgEl('text', {
       class: 'c-axis-title', x: x, y: y, 'text-anchor': anchor || 'middle'
     });
     if (rotate) node.setAttribute('transform', 'rotate(-90 ' + x + ' ' + y + ')');
     node.textContent = text;
+    if (maxWidth) {
+      var tw = textWidth(text, 11, 600);
+      // An inline style, not a presentation attribute: .c-axis-title's own
+      // font-size in app.css otherwise wins the cascade over an attribute.
+      if (tw > maxWidth) node.style.fontSize = Math.max(8, 11 * (maxWidth / tw)).toFixed(1) + 'px';
+    }
     g.appendChild(node);
   }
 
@@ -250,8 +260,8 @@ window.HF = window.HF || {};
       g.appendChild(mlbl);
     }
 
-    axisTitle(g, spec.yTitle || 'Events', 12, PAD.top + f.plotH / 2, 'middle', true);
-    if (spec.xTitle) axisTitle(g, spec.xTitle, PAD.left + f.plotW / 2, f.h - 4);
+    axisTitle(g, spec.yTitle || 'Events', 12, PAD.top + f.plotH / 2, 'middle', true, f.plotH * 0.92);
+    if (spec.xTitle) axisTitle(g, spec.xTitle, PAD.left + f.plotW / 2, f.h - 4, undefined, false, f.plotW * 0.96);
     if (spec.series.length > 1) legend(container, spec.series);
   };
 
@@ -347,8 +357,8 @@ window.HF = window.HF || {};
       g.appendChild(tl);
     }
 
-    axisTitle(g, spec.yTitle || 'Events', 12, PAD.top + f.plotH / 2, 'middle', true);
-    if (spec.xTitle) axisTitle(g, spec.xTitle, PAD.left + f.plotW / 2, f.h - 4);
+    axisTitle(g, spec.yTitle || 'Events', 12, PAD.top + f.plotH / 2, 'middle', true, f.plotH * 0.92);
+    if (spec.xTitle) axisTitle(g, spec.xTitle, PAD.left + f.plotW / 2, f.h - 4, undefined, false, f.plotW * 0.96);
     if (spec.footnote) {
       container.appendChild(HF.el('p', { class: 'chart-footnote' }, spec.footnote));
     }
@@ -464,8 +474,8 @@ window.HF = window.HF || {};
       g.appendChild(hit);
     });
 
-    axisTitle(g, spec.yTitle || '', 12, PAD.top + f.plotH / 2, 'middle', true);
-    if (spec.xTitle) axisTitle(g, spec.xTitle, PAD.left + f.plotW / 2, f.h - 4);
+    axisTitle(g, spec.yTitle || '', 12, PAD.top + f.plotH / 2, 'middle', true, f.plotH * 0.92);
+    if (spec.xTitle) axisTitle(g, spec.xTitle, PAD.left + f.plotW / 2, f.h - 4, undefined, false, f.plotW * 0.96);
     if (spec.series) legend(container, spec.series);
   };
 

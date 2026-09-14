@@ -413,6 +413,7 @@ window.HF = window.HF || {};
     var px = evt.clientX - rect.left, py = evt.clientY - rect.top;
     var hit = nearestHit(px, py);
     var key = hit ? hit.low.key : null;
+    if (window.__HF_DEBUG__) console.log('handleHover', px, py, 'hit=', key, 'nPts=', hitPoints.length);
 
     if (key !== hoveredKey) {
       hoveredKey = key;
