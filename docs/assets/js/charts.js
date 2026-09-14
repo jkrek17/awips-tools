@@ -46,19 +46,47 @@ window.HF = window.HF || {};
              plotW: w - PAD.left - PAD.right, plotH: h - PAD.top - PAD.bottom };
   }
 
-  function empty(container, message) {
+  /** Sized to match the chart it stands in for, so switching a filter on and
+      off doesn't jolt the card's height, with a quiet dashed marker so an
+      empty result reads as "confirmed: nothing here" rather than a glitch. */
+  function empty(container, message, height) {
     HF.clear(container);
-    container.appendChild(HF.el('p', { class: 'chart-empty' }, message || 'No events match the current filters.'));
+    var box = HF.el('div', { class: 'chart-empty', style: 'min-height:' + (height || H) + 'px' });
+    box.appendChild(HF.el('p', {}, message || 'No events match the current filters.'));
+    container.appendChild(box);
   }
 
-  /** Round a maximum up to a readable axis top, and pick a tick step. */
-  function niceScale(max) {
-    if (max <= 0) return { max: 1, step: 1 };
-    var raw = max / 5;
+  /** Round a maximum up to a readable axis top, and pick a tick step aimed at
+      roughly `ticks` gridlines (default 5). */
+  function niceStep(range, ticks) {
+    if (range <= 0) return 1;
+    var raw = range / Math.max(1, ticks || 5);
     var mag = Math.pow(10, Math.floor(Math.log(raw) / Math.LN10));
     var norm = raw / mag;
-    var step = (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 2.5 ? 2.5 : norm <= 5 ? 5 : 10) * mag;
+    return (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 2.5 ? 2.5 : norm <= 5 ? 5 : 10) * mag;
+  }
+
+  function niceScale(max, ticks) {
+    if (max <= 0) return { max: 1, step: 1 };
+    var step = niceStep(max, ticks);
     return { max: Math.ceil(max / step) * step, step: step };
+  }
+
+  // Text-width measurement so tick density can adapt to the chart's real
+  // pixel width instead of a fixed "every Nth label" rule that overlaps on a
+  // narrow card and leaves a wide one sparser than it needs to be.
+  var measureCtx = null;
+  function textWidth(str, sizePx) {
+    if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
+    measureCtx.font = (sizePx || 10.5) + 'px ' + (HF.cssVar('--font') || 'sans-serif');
+    return measureCtx.measureText(String(str)).width;
+  }
+
+  /** How many of `n` evenly-spaced labels of (up to) `labelPx` width fit in
+      `availPx` without touching; returns a step so every step-th is shown. */
+  function tickStep(n, labelPx, availPx, gapPx) {
+    var perTick = availPx / Math.max(1, n);
+    return Math.max(1, Math.ceil((labelPx + (gapPx || 6)) / perTick));
   }
 
   function yAxis(g, scale, plotH, plotW, fmt) {
@@ -102,12 +130,40 @@ window.HF = window.HF || {};
     node.addEventListener('mouseleave', HF.hideTip);
   }
 
+  /** Wires one interactive slot (a column or a histogram bin): dims every
+      other group's bars, lights up this one, slides a crosshair to it, and
+      shows the tooltip - all from a single hit rect. `groups` is a flat
+      array of bar-element arrays, one per slot, so a stacked column's whole
+      stack highlights together. */
+  function hookHover(hit, groups, idx, crosshair, cx, top, bottom, html) {
+    hit.addEventListener('mouseenter', function (e) {
+      for (var j = 0; j < groups.length; j++) {
+        var dim = j !== idx;
+        for (var k = 0; k < groups[j].length; k++) groups[j][k].classList.toggle('is-dim', dim);
+      }
+      if (crosshair) {
+        crosshair.setAttribute('x1', cx); crosshair.setAttribute('x2', cx);
+        crosshair.setAttribute('y1', top); crosshair.setAttribute('y2', bottom);
+        crosshair.classList.add('is-visible');
+      }
+      HF.showTip(html, e);
+    });
+    hit.addEventListener('mousemove', HF.moveTip);
+    hit.addEventListener('mouseleave', function () {
+      for (var j = 0; j < groups.length; j++) {
+        for (var k = 0; k < groups[j].length; k++) groups[j][k].classList.remove('is-dim');
+      }
+      if (crosshair) crosshair.classList.remove('is-visible');
+      HF.hideTip();
+    });
+  }
+
   /* -------------------------------------------------------------- columns */
 
   /**
    * Stacked column chart.
-   * spec: {data:[{label, tick, parts:{key:count}, total, tip}],
-   *        series:[{key,label,color}], yTitle, meanLine:{value,label}, onClick}
+   * spec: {data:[{label, tick, tickRotate, parts:{key:count}, total, tip, season}],
+   *        series:[{key,label,color}], yTitle, xTitle, meanLine:{value,label}, onClick}
    */
   charts.columns = function (container, spec) {
     if (!spec.data.length) return empty(container);
@@ -122,10 +178,23 @@ window.HF = window.HF || {};
     var slot = f.plotW / spec.data.length;
     var barW = Math.max(3, Math.min(slot - 3, 34));
 
+    // Tick density adapts to the real pixel width: measure the widest tick
+    // label and thin (or, if still tight, rotate) so labels never collide.
+    var maxTickW = 0;
+    spec.data.forEach(function (d) { if (d.tick) maxTickW = Math.max(maxTickW, textWidth(d.tick, 10.5)); });
+    var wantsRotate = spec.data.some(function (d) { return d.tickRotate; });
+    var rotate = wantsRotate || (maxTickW + 8 > slot && slot < 46);
+    var step = tickStep(spec.data.length, rotate ? 12 : maxTickW, f.plotW, rotate ? 3 : 8);
+    var canLabelTotals = slot >= 24;
+
+    var crosshair = svgEl('line', { class: 'c-crosshair' });
+    var groups = spec.data.map(function () { return []; });
+
     spec.data.forEach(function (d, i) {
       var cx = PAD.left + slot * i + slot / 2;
       var x = cx - barW / 2;
       var yCursor = PAD.top + f.plotH;
+      var topY = d.total ? PAD.top + f.plotH - (d.total / scale.max) * f.plotH : null;
 
       spec.series.forEach(function (s) {
         var value = d.parts[s.key] || 0;
@@ -139,22 +208,31 @@ window.HF = window.HF || {};
           fill: s.color, rx: 2
         });
         g.appendChild(rect);
+        groups[i].push(rect);
       });
+
+      if (canLabelTotals && d.total) {
+        var lbl = svgEl('text', {
+          class: 'c-value', x: cx, y: Math.max(PAD.top + 9, topY - 5), 'text-anchor': 'middle'
+        });
+        lbl.textContent = d.total;
+        g.appendChild(lbl);
+      }
 
       var hit = svgEl('rect', {
         class: 'c-hit', x: PAD.left + slot * i, y: PAD.top,
         width: slot, height: f.plotH
       });
-      attachTip(hit, d.tip);
+      hookHover(hit, groups, i, crosshair, cx, PAD.top, PAD.top + f.plotH, d.tip);
       if (spec.onClick) hit.addEventListener('click', function () { spec.onClick(d); });
       g.appendChild(hit);
 
-      if (d.tick) {
+      if (d.tick && i % step === 0) {
         var t = svgEl('text', {
           class: 'c-tick', x: cx, y: PAD.top + f.plotH + 14, 'text-anchor': 'middle'
         });
         t.textContent = d.tick;
-        if (d.tickRotate) {
+        if (rotate) {
           t.setAttribute('transform', 'rotate(-60 ' + cx + ' ' + (PAD.top + f.plotH + 14) + ')');
           t.setAttribute('text-anchor', 'end');
         }
@@ -162,12 +240,14 @@ window.HF = window.HF || {};
       }
     });
 
+    g.appendChild(crosshair);
+
     if (spec.meanLine && spec.meanLine.value != null) {
       var y = PAD.top + f.plotH - (spec.meanLine.value / scale.max) * f.plotH;
       g.appendChild(svgEl('line', { class: 'c-mean', x1: PAD.left, x2: PAD.left + f.plotW, y1: y, y2: y }));
-      var lbl = svgEl('text', { class: 'c-label', x: PAD.left + f.plotW - 6, y: y - 6, 'text-anchor': 'end' });
-      lbl.textContent = spec.meanLine.label;
-      g.appendChild(lbl);
+      var mlbl = svgEl('text', { class: 'c-label', x: PAD.left + f.plotW - 6, y: y - 6, 'text-anchor': 'end' });
+      mlbl.textContent = spec.meanLine.label;
+      g.appendChild(mlbl);
     }
 
     axisTitle(g, spec.yTitle || 'Events', 12, PAD.top + f.plotH / 2, 'middle', true);
@@ -178,7 +258,8 @@ window.HF = window.HF || {};
   /* ------------------------------------------------------------ histogram */
 
   /**
-   * spec: {bins:[{x0,x1,count}], color, xTitle, yTitle, fmtBin, threshold:{x,label}}
+   * spec: {bins:[{x0,x1,count,items}], color (string or fn(bin)), xTitle,
+   *        yTitle, fmtBin, fmtTick, threshold:{x,label}, footnote}
    */
   charts.histogram = function (container, spec) {
     if (!spec.bins.length) return empty(container);
@@ -195,36 +276,67 @@ window.HF = window.HF || {};
     var xOf = function (v) { return PAD.left + ((v - lo) / (hi - lo)) * f.plotW; };
     var slot = f.plotW / spec.bins.length;
 
+    // A handful of bins is few enough to label every one directly; past that,
+    // only the tallest bar earns a callout so a dense histogram stays clean.
+    var labelAll = spec.bins.length <= 8;
+
+    var maxTickW = 0;
     spec.bins.forEach(function (b) {
+      maxTickW = Math.max(maxTickW, textWidth(spec.fmtTick ? spec.fmtTick(b.x0) : b.x0, 10.5));
+    });
+    var step = tickStep(spec.bins.length, maxTickW, f.plotW, 10);
+
+    var crosshair = svgEl('line', { class: 'c-crosshair' });
+    var groups = spec.bins.map(function () { return []; });
+
+    spec.bins.forEach(function (b, i) {
       var h = (b.count / scale.max) * f.plotH;
       var x = xOf(b.x0);
+      var cx = x + slot / 2;
       if (b.count) {
         var fill = typeof spec.color === 'function'
           ? spec.color(b)
           : (spec.color || HF.cssVar('--accent'));
-        g.appendChild(svgEl('rect', {
+        var bar = svgEl('rect', {
           class: 'c-bar', x: x + 1, y: PAD.top + f.plotH - h,
           width: Math.max(1, slot - 2), height: Math.max(1, h),
           fill: fill, rx: 2
-        }));
+        });
+        g.appendChild(bar);
+        groups[i].push(bar);
+        if (labelAll || b.count === max) {
+          var lbl = svgEl('text', {
+            class: 'c-value', x: cx, y: Math.max(PAD.top + 9, PAD.top + f.plotH - h - 5), 'text-anchor': 'middle'
+          });
+          lbl.textContent = b.count;
+          g.appendChild(lbl);
+        }
       }
       var hit = svgEl('rect', { class: 'c-hit', x: x, y: PAD.top, width: slot, height: f.plotH });
       var label = spec.fmtBin ? spec.fmtBin(b) : (b.x0 + '–' + b.x1);
-      attachTip(hit, '<b>' + label + '</b><div class="t-row">' + b.count +
-                     ' event' + (b.count === 1 ? '' : 's') + '</div>');
+      hookHover(hit, groups, i, crosshair, cx, PAD.top, PAD.top + f.plotH,
+        '<b>' + label + '</b><div class="t-row">' + b.count +
+        ' event' + (b.count === 1 ? '' : 's') + '</div>');
       g.appendChild(hit);
+
+      if (i % step === 0) {
+        var t = svgEl('text', {
+          class: 'c-tick', x: xOf(b.x0), y: PAD.top + f.plotH + 14, 'text-anchor': 'middle'
+        });
+        t.textContent = spec.fmtTick ? spec.fmtTick(b.x0) : b.x0;
+        g.appendChild(t);
+      }
     });
 
-    // Ticks every Nth bin edge so labels never collide.
-    var every = Math.ceil(spec.bins.length / 9);
-    spec.bins.forEach(function (b, i) {
-      if (i % every) return;
-      var t = svgEl('text', {
-        class: 'c-tick', x: xOf(b.x0), y: PAD.top + f.plotH + 14, 'text-anchor': 'middle'
-      });
-      t.textContent = spec.fmtTick ? spec.fmtTick(b.x0) : b.x0;
-      g.appendChild(t);
-    });
+    g.appendChild(crosshair);
+
+    // A domain that crosses zero (deepening vs. filling, say) gets its own
+    // quiet reference line - the sign change is the meaningful boundary, not
+    // just another gridline.
+    if (lo < 0 && hi > 0) {
+      var zx = xOf(0);
+      g.appendChild(svgEl('line', { class: 'c-zero', x1: zx, x2: zx, y1: PAD.top, y2: PAD.top + f.plotH }));
+    }
 
     if (spec.threshold && spec.threshold.x >= lo && spec.threshold.x <= hi) {
       var tx = xOf(spec.threshold.x);
@@ -246,11 +358,12 @@ window.HF = window.HF || {};
 
   /**
    * spec: {points:[{x,y,color,tip,item}], xTitle, yTitle, xDomain, yDomain,
-   *        yInvert, onClick}
+   *        yInvert, series, height, onClick, showMedian}
    */
   charts.scatter = function (container, spec) {
-    if (!spec.points.length) return empty(container);
-    var f = frame(container, spec.height || 320);
+    var h = spec.height || 320;
+    if (!spec.points.length) return empty(container, null, h);
+    var f = frame(container, h);
     var g = svgEl('g', {});
     f.svg.appendChild(g);
 
@@ -265,8 +378,10 @@ window.HF = window.HF || {};
       return PAD.top + (spec.yInvert ? t : 1 - t) * f.plotH;
     };
 
-    // Gridlines on both axes, recessive.
-    var yStep = niceScale(yDom[1] - yDom[0]).step;
+    // Gridlines on both axes, recessive - tick counts scale to the plot's
+    // real pixel size so a narrow card doesn't crowd its labels.
+    var yTicks = Math.max(2, Math.min(8, Math.floor(f.plotH / 34)));
+    var yStep = niceStep(yDom[1] - yDom[0], yTicks);
     for (var v = Math.ceil(yDom[0] / yStep) * yStep; v <= yDom[1]; v += yStep) {
       var y = yOf(v);
       g.appendChild(svgEl('line', { class: 'c-grid', x1: PAD.left, x2: PAD.left + f.plotW, y1: y, y2: y }));
@@ -274,7 +389,8 @@ window.HF = window.HF || {};
       lab.textContent = Math.round(v);
       g.appendChild(lab);
     }
-    var xStep = niceScale(xDom[1] - xDom[0]).step;
+    var xTicks = Math.max(2, Math.min(9, Math.floor(f.plotW / 56)));
+    var xStep = niceStep(xDom[1] - xDom[0], xTicks);
     for (var u = Math.ceil(xDom[0] / xStep) * xStep; u <= xDom[1]; u += xStep) {
       var x = xOf(u);
       g.appendChild(svgEl('line', { class: 'c-grid', x1: x, x2: x, y1: PAD.top, y2: PAD.top + f.plotH }));
@@ -287,15 +403,65 @@ window.HF = window.HF || {};
       y1: PAD.top + f.plotH, y2: PAD.top + f.plotH
     }));
 
+    // The median is honest to compute and worth showing given how heavily
+    // this many points overlap; it is labelled as exactly that, never as a
+    // fitted trend.
+    var showMedian = spec.showMedian !== false && spec.points.length >= 5;
+    if (showMedian) {
+      var mx = HF.median(xs), my = HF.median(ys);
+      if (my != null) {
+        var myPix = yOf(my);
+        g.appendChild(svgEl('line', { class: 'c-median', x1: PAD.left, x2: PAD.left + f.plotW, y1: myPix, y2: myPix }));
+        var myLbl = svgEl('text', { class: 'c-label', x: PAD.left + f.plotW - 4, y: myPix - 5, 'text-anchor': 'end' });
+        myLbl.textContent = 'median ' + Math.round(my);
+        g.appendChild(myLbl);
+      }
+      if (mx != null) {
+        var mxPix = xOf(mx);
+        g.appendChild(svgEl('line', { class: 'c-median', x1: mxPix, x2: mxPix, y1: PAD.top, y2: PAD.top + f.plotH }));
+      }
+    }
+
+    var guideX = svgEl('line', { class: 'c-guide' });
+    var guideY = svgEl('line', { class: 'c-guide' });
+    g.appendChild(guideX); g.appendChild(guideY);
+
+    // Overplotted by design (~1900 points): small marks, a surface ring so
+    // overlaps stay separable, and a state class on the <svg> (rather than a
+    // per-point loop) so hovering one point dims the rest cheaply.
     spec.points.forEach(function (p) {
+      var cx = xOf(p.x), cy = yOf(p.y);
       var dot = svgEl('circle', {
-        cx: xOf(p.x), cy: yOf(p.y), r: 3.1, fill: p.color,
-        'fill-opacity': 0.72, stroke: HF.cssVar('--surface'), 'stroke-width': 0.8
+        class: 'c-dot', cx: cx, cy: cy, r: 2.3, fill: p.color,
+        'fill-opacity': 0.62, stroke: HF.cssVar('--surface'), 'stroke-width': 0.8
       });
-      dot.style.cursor = spec.onClick ? 'pointer' : 'default';
-      attachTip(dot, p.tip);
-      if (spec.onClick) dot.addEventListener('click', function () { spec.onClick(p.item); });
       g.appendChild(dot);
+
+      var hit = svgEl('circle', { class: 'c-dot-hit', cx: cx, cy: cy, r: 6.5 });
+      hit.style.cursor = spec.onClick ? 'pointer' : 'default';
+      hit.addEventListener('mouseenter', function (e) {
+        f.svg.classList.add('is-hovering');
+        dot.classList.add('is-hover');
+        dot.setAttribute('r', 5);
+        g.appendChild(dot);
+        g.appendChild(hit);
+        guideX.setAttribute('x1', PAD.left); guideX.setAttribute('x2', cx);
+        guideX.setAttribute('y1', cy); guideX.setAttribute('y2', cy);
+        guideY.setAttribute('x1', cx); guideY.setAttribute('x2', cx);
+        guideY.setAttribute('y1', PAD.top + f.plotH); guideY.setAttribute('y2', cy);
+        guideX.classList.add('is-visible'); guideY.classList.add('is-visible');
+        HF.showTip(p.tip, e);
+      });
+      hit.addEventListener('mousemove', HF.moveTip);
+      hit.addEventListener('mouseleave', function () {
+        f.svg.classList.remove('is-hovering');
+        dot.classList.remove('is-hover');
+        dot.setAttribute('r', 2.3);
+        guideX.classList.remove('is-visible'); guideY.classList.remove('is-visible');
+        HF.hideTip();
+      });
+      if (spec.onClick) hit.addEventListener('click', function () { spec.onClick(p.item); });
+      g.appendChild(hit);
     });
 
     axisTitle(g, spec.yTitle || '', 12, PAD.top + f.plotH / 2, 'middle', true);
@@ -308,7 +474,7 @@ window.HF = window.HF || {};
   /** Small line chart of central pressure through one event's track. */
   charts.trace = function (container, fixes) {
     var pts = fixes.filter(function (f) { return f.pres != null; });
-    if (pts.length < 2) return empty(container, 'Not enough analyzed pressures to plot a trace.');
+    if (pts.length < 2) return empty(container, 'Not enough analyzed pressures to plot a trace.', 130);
 
     HF.clear(container);
     var w = Math.max(260, container.clientWidth || 380);
@@ -341,14 +507,43 @@ window.HF = window.HF || {};
       'stroke-linejoin': 'round', 'stroke-linecap': 'round'
     }));
 
+    // The deepest analyzed fix is the headline number of the trace - call it
+    // out directly rather than making the reader hover for it.
+    var minFix = pts.reduce(function (a, b) { return b.pres < a.pres ? b : a; });
+
+    var crosshair = svgEl('line', { class: 'c-crosshair' });
+    svg.appendChild(crosshair);
+
     pts.forEach(function (f, i) {
+      var isMin = f === minFix;
+      var cx = xOf(i), cy = yOf(f.pres);
       var dot = svgEl('circle', {
-        cx: xOf(i), cy: yOf(f.pres), r: 4, fill: HF.categoryColor(f.cat),
-        stroke: HF.cssVar('--surface'), 'stroke-width': 1.5
+        cx: cx, cy: cy, r: isMin ? 5 : 4, fill: HF.categoryColor(f.cat),
+        stroke: HF.cssVar('--surface'), 'stroke-width': isMin ? 2 : 1.5
       });
-      attachTip(dot, '<b>' + HF.fmtDateShort(f.date) + '</b>' +
-                     '<div class="t-row">' + f.pres + ' hPa &middot; ' + f.cat + '</div>');
       svg.appendChild(dot);
+      var hit = svgEl('circle', { class: 'c-dot-hit', cx: cx, cy: cy, r: 9 });
+      hit.addEventListener('mouseenter', function (e) {
+        crosshair.setAttribute('x1', cx); crosshair.setAttribute('x2', cx);
+        crosshair.setAttribute('y1', pad.top); crosshair.setAttribute('y2', pad.top + plotH);
+        crosshair.classList.add('is-visible');
+        HF.showTip('<b>' + HF.fmtDateShort(f.date) + '</b>' +
+          '<div class="t-row">' + f.pres + ' hPa &middot; ' + f.cat + '</div>', e);
+      });
+      hit.addEventListener('mousemove', HF.moveTip);
+      hit.addEventListener('mouseleave', function () {
+        crosshair.classList.remove('is-visible');
+        HF.hideTip();
+      });
+      svg.appendChild(hit);
+
+      if (isMin) {
+        var lbl = svgEl('text', {
+          class: 'c-value', x: cx, y: cy - 9, 'text-anchor': cx > w - 40 ? 'end' : (cx < 40 ? 'start' : 'middle')
+        });
+        lbl.textContent = f.pres + ' hPa min';
+        svg.appendChild(lbl);
+      }
     });
 
     var xlab = svgEl('text', { class: 'c-tick', x: pad.left, y: h - 5 });

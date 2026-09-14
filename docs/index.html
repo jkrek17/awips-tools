@@ -8,9 +8,13 @@
 <meta name="description" content="Archive and climatology of hurricane force extratropical lows in the North Atlantic and North Pacific.">
 <link rel="stylesheet" href="assets/vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="assets/app.css">
+<link rel="stylesheet" href="assets/charts.css">
+<link rel="stylesheet" href="assets/map.css">
+<link rel="stylesheet" href="assets/globe.css">
 </head>
 <body>
 
+<div class="shell-sticky">
 <header class="topbar">
   <div class="brand">
     <h1>Hurricane Force Extratropical Low Archive</h1>
@@ -31,6 +35,7 @@
   <button role="tab" class="tab" data-panel="qc" aria-selected="false">Data quality</button>
   <button role="tab" class="tab" data-panel="method" aria-selected="false">Method</button>
 </nav>
+</div>
 
 <section class="filters" aria-label="Filters">
   <div class="filter">
@@ -61,10 +66,14 @@
     </div>
   </div>
 
+  <i class="filter-break brk-1" aria-hidden="true"></i>
+
   <div class="filter filter-grow">
     <label id="monthsLabel">Months</label>
     <div class="chips" id="fMonths" role="group" aria-labelledby="monthsLabel"></div>
   </div>
+
+  <i class="filter-break brk-2" aria-hidden="true"></i>
 
   <div class="filter">
     <label for="fPressure">Min central pressure &le; <output id="fPressureOut">1060</output> hPa</label>
@@ -82,7 +91,11 @@
   </div>
 </section>
 
+<div id="activeFilters" class="active-filters" aria-live="polite"></div>
+
 <section class="kpis" id="kpis" aria-label="Summary statistics"></section>
+<div id="loading" class="loading" hidden aria-hidden="true"></div>
+<p id="resultCount" class="sr-only" aria-live="polite"></p>
 
 <main>
   <!-- Map ------------------------------------------------------------- -->
@@ -99,6 +112,10 @@
     </div>
     <div class="map-wrap">
       <div id="map"></div>
+      <div id="globeWrap" class="globe-wrap" hidden>
+        <canvas id="globe"></canvas>
+        <p class="globe-attrib">Coastlines: Natural Earth (public domain)</p>
+      </div>
       <div class="map-legend" id="mapLegend" aria-hidden="false"></div>
     </div>
   </section>
@@ -332,6 +349,18 @@
         publishes it.
       </p>
       <p class="muted" id="sourceLine"></p>
+
+      <h2>Credits</h2>
+      <dl class="defs">
+        <dt>Leaflet 1.9.4</dt>
+        <dd>Mapping library. BSD-2-Clause licence; vendored locally under <code>assets/vendor/leaflet/</code> rather than loaded from a CDN.</dd>
+        <dt>Basemap tiles</dt>
+        <dd>Esri &mdash; &ldquo;Esri, GEBCO, NOAA, National Geographic, Garmin, HERE, Geonames.org, and other contributors.&rdquo;</dd>
+        <dt>Coastlines</dt>
+        <dd>Natural Earth, public domain.</dd>
+        <dt>Event data</dt>
+        <dd>The hurricane force low archive workbook &mdash; see Rebuilding, above.</dd>
+      </dl>
     </div>
   </section>
 </main>
@@ -362,6 +391,8 @@
 <script src="assets/js/util.js"></script>
 <script src="assets/js/charts.js"></script>
 <script src="assets/js/map.js"></script>
+<script src="data/coastlines.js"></script>
+<script src="assets/js/globe.js"></script>
 <script src="assets/js/app.js"></script>
 </body>
 </html>

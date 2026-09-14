@@ -1,6 +1,13 @@
 /* Leaflet layers for the archive: tracks, gridded fix density, first-fix and
    peak-intensity points.
 
+   Basemap: Esri's hosted REST tile services (see TILES below). Those are the
+   only runtime network calls this file makes; everything else is vendored.
+   Esri's ocean/dark-canvas tile endpoints are addressed z/y/x, which reads
+   oddly against Leaflet's usual z/x/y examples but is unrelated to it -
+   L.TileLayer substitutes {x}/{y}/{z} by name wherever they appear in the
+   template, so the template below is correct as written.
+
    Longitude frames: the Pacific tracks cross the dateline, so every view other
    than Atlantic-only is drawn in a 0-360 frame centred on 180. Within a track,
    consecutive longitudes are then unwrapped so a crossing draws as one
@@ -11,21 +18,67 @@ window.HF = window.HF || {};
 (function (maps, HF) {
   'use strict';
 
-  var TILES = {
-    light: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-    dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-  };
-  var ATTRIB = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+  /* ------------------------------------------------------------- basemap */
 
-  // Density grid cell size. 2 deg of latitude is ~120 nm; 5 deg of longitude is
-  // ~210 nm at 45N, so cells are roughly square through the storm track belt.
+  var ESRI = 'https://services.arcgisonline.com/ArcGIS/rest/services/';
+
+  var OCEAN_ATTRIB = 'Esri, GEBCO, NOAA, National Geographic, Garmin, HERE, ' +
+    'Geonames.org, and other contributors';
+  var DARK_ATTRIB = 'Esri, HERE, Garmin, &copy; OpenStreetMap contributors';
+
+  // The app only ever needs z2-z8 (single-basin ocean views); both services
+  // support far higher native zoom (Ocean Base tops out at 13), so the map's
+  // own maxZoom is clamped well below what either service could serve.
+  var MIN_ZOOM = 2;
+  var MAX_ZOOM = 8;
+
+  var TILES = {
+    light: {
+      base: { url: ESRI + 'Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}', attribution: OCEAN_ATTRIB },
+      ref: { url: ESRI + 'Ocean/World_Ocean_Reference/MapServer/tile/{z}/{y}/{x}', attribution: OCEAN_ATTRIB }
+    },
+    dark: {
+      base: { url: ESRI + 'Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', attribution: DARK_ATTRIB }
+    }
+  };
+
+  // Ensure a request repeatedly fails (rather than one dropped tile) before
+  // giving up on a layer - avoids flashing the fallback note on a single
+  // blip, and avoids retrying a truly unreachable host forever.
+  var TILE_FAIL_LIMIT = 5;
+
+  /* ---------------------------------------------------------- density grid */
+
+  // 2 deg of latitude is ~120 nm; 5 deg of longitude is ~210 nm at 45N, so
+  // cells are roughly square through the storm track belt.
   var CELL_LAT = 2;
   var CELL_LON = 5;
 
   var map = null;
-  var tileLayer = null;
+  var baseLayer = null;
+  var refLayer = null;
   var layerGroup = null;
-  var state = { frame: 'pacific', onSelect: null };
+  var tileNote = null;
+  var state = { frame: 'pacific', onSelect: null, selectedKey: null };
+
+  /* --------------------------------------------------------- own stylesheet
+     This file owns docs/assets/map.css; index.html is edited by another
+     agent, so the stylesheet is attached here rather than via a <link> tag
+     that would need to live in the page. */
+  (function ensureStylesheet() {
+    if (document.querySelector('link[data-hf-map-css]')) return;
+    var script = document.currentScript ||
+      (function () { var s = document.getElementsByTagName('script'); return s[s.length - 1]; })();
+    var href = 'assets/map.css';                    // fallback: page-relative
+    if (script && script.src) {
+      try { href = new URL('../map.css', script.src).href; } catch (err) { /* keep fallback */ }
+    }
+    var link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = href;
+    link.setAttribute('data-hf-map-css', '1');
+    document.head.appendChild(link);
+  })();
 
   maps.init = function (elementId, onSelect) {
     if (typeof L === 'undefined') {      // vendored Leaflet missing or blocked
@@ -41,16 +94,41 @@ window.HF = window.HF || {};
     map = L.map(elementId, {
       worldCopyJump: false,
       preferCanvas: true,
-      minZoom: 2,
-      maxZoom: 8,
+      minZoom: MIN_ZOOM,
+      maxZoom: MAX_ZOOM,
       zoomControl: true,
       attributionControl: true
     });
+    map.attributionControl.setPosition('bottomleft');
+    map.attributionControl.setPrefix(false);
     map.setView([48, 180], 3);
+
+    L.control.scale({ position: 'bottomleft', metric: true, imperial: false, maxWidth: 110 }).addTo(map);
+    new HF_NauticalScale({ position: 'bottomleft', maxWidth: 110 }).addTo(map);
+    tileNote = new HF_TileNote({ position: 'topright' }).addTo(map);
+
     maps.applyTheme();
     layerGroup = L.layerGroup().addTo(map);
     return map;
   };
+
+  /* --------------------------------------------------------- tile fallback */
+
+  /** Wire load/error tracking onto one tile layer; `onGiveUp` fires once the
+      layer has failed enough times in a row that it is not worth keeping. */
+  function watchTiles(layer, onGiveUp) {
+    var fails = 0;
+    var gaveUp = false;
+    layer.on('tileload', function () { fails = 0; });
+    layer.on('tileerror', function () {
+      if (gaveUp) return;              // layer already removed; ignore stragglers
+      fails++;
+      if (fails >= TILE_FAIL_LIMIT) {
+        gaveUp = true;
+        onGiveUp(layer);
+      }
+    });
+  }
 
   /** Swap the basemap when the colour theme changes. */
   maps.applyTheme = function () {
@@ -58,12 +136,33 @@ window.HF = window.HF || {};
     var dark = document.documentElement.getAttribute('data-theme') === 'dark' ||
       (!document.documentElement.getAttribute('data-theme') &&
         window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    if (tileLayer) map.removeLayer(tileLayer);
-    tileLayer = L.tileLayer(dark ? TILES.dark : TILES.light, {
-      attribution: ATTRIB, subdomains: 'abcd', maxZoom: 8, crossOrigin: true
+
+    if (baseLayer) map.removeLayer(baseLayer);
+    if (refLayer) { map.removeLayer(refLayer); refLayer = null; }
+    if (tileNote) tileNote.hide();
+
+    var set = dark ? TILES.dark : TILES.light;
+    baseLayer = L.tileLayer(set.base.url, {
+      attribution: set.base.attribution, maxZoom: MAX_ZOOM, crossOrigin: true
     });
-    tileLayer.addTo(map);
-    tileLayer.bringToBack();
+    baseLayer.addTo(map);
+    baseLayer.bringToBack();
+    watchTiles(baseLayer, function (layer) {
+      if (map.hasLayer(layer)) map.removeLayer(layer);
+      if (tileNote) tileNote.show();
+    });
+
+    // Place-label overlay only exists for the ocean (light) basemap, and only
+    // matters cosmetically - a failure here degrades quietly with no note.
+    if (set.ref) {
+      refLayer = L.tileLayer(set.ref.url, {
+        attribution: set.ref.attribution, maxZoom: MAX_ZOOM, crossOrigin: true, opacity: 0.9
+      });
+      refLayer.addTo(map);
+      watchTiles(refLayer, function (layer) {
+        if (map.hasLayer(layer)) map.removeLayer(layer);
+      });
+    }
   };
 
   /* ----------------------------------------------------------- projection */
@@ -102,11 +201,14 @@ window.HF = window.HF || {};
     return changed;
   };
 
+  // A flat map now only ever has to frame a single basin - when both are
+  // selected the app swaps in a separate globe view instead - so "both" just
+  // needs a sane fallback rather than a carefully tuned centre.
   maps.resetView = function (basin) {
     if (!map) return;
-    if (basin === 'atl') map.setView([50, -38], 3);
-    else if (basin === 'pac') map.setView([45, 185], 3);
-    else map.setView([50, 225], 2);
+    if (basin === 'atl') map.setView([50, -36], 3);
+    else if (basin === 'pac') map.setView([44, 190], 3);
+    else map.setView([45, 230], 2);
   };
 
   /** Zoom to whatever the filters currently select. */
@@ -130,6 +232,7 @@ window.HF = window.HF || {};
 
   maps.render = function (lows, layer, selectedKey) {
     if (!map) return;
+    state.selectedKey = selectedKey;
     layerGroup.clearLayers();
 
     if (layer === 'density') return renderDensity(lows);
@@ -175,7 +278,8 @@ window.HF = window.HF || {};
       interactive: true
     });
     line.on('mouseover', function (e) {
-      line.setStyle({ weight: isSelected ? 5 : Math.max(3, base.weight + 2), opacity: 1 });
+      line.setStyle({ weight: isSelected ? 5.5 : Math.max(3.5, base.weight + 2.5), opacity: 1 });
+      line.bringToFront();
       HF.showTip(trackTip(low), e.originalEvent);
     });
     line.on('mousemove', function (e) { HF.moveTip(e.originalEvent); });
@@ -201,21 +305,24 @@ window.HF = window.HF || {};
 
   function fixMarker(fix, low) {
     var pt = trackLatLngs([fix], state.frame)[0];
+    var baseR = fix.cat === 'HF' ? 5.5 : 4.5;
     var marker = L.circleMarker(pt, {
-      radius: fix.cat === 'HF' ? 5.5 : 4.5,
+      radius: baseR,
       color: HF.cssVar('--surface'),
       weight: 1.5,
       fillColor: HF.categoryColor(fix.cat),
       fillOpacity: 1
     });
     marker.on('mouseover', function (e) {
+      marker.setStyle({ radius: baseR + 2, weight: 2 });
+      marker.bringToFront();
       HF.showTip('<b>' + HF.fmtDate(fix.date) + '</b>' +
         '<div class="t-row">' + (HF.CATEGORIES[fix.cat] || { label: fix.cat }).label + '</div>' +
         '<div class="t-row">' + (fix.pres != null ? fix.pres + ' hPa' : 'pressure not analyzed') +
         ' &middot; ' + HF.fmtLatLon(fix.lat, fix.lon) + '</div>', e.originalEvent);
     });
     marker.on('mousemove', function (e) { HF.moveTip(e.originalEvent); });
-    marker.on('mouseout', HF.hideTip);
+    marker.on('mouseout', function () { marker.setStyle({ radius: baseR, weight: 1.5 }); HF.hideTip(); });
     marker.on('click', function () { if (state.onSelect) state.onSelect(low); });
     return marker;
   }
@@ -230,7 +337,10 @@ window.HF = window.HF || {};
       seasons[low.season] = true;
       low.fixes.forEach(function (fix) {
         var latIdx = Math.floor(fix.lat / CELL_LAT);
-        var lonIdx = Math.floor(toFrame(fix.lon, 'pacific') / CELL_LON);
+        // Bin in whatever frame the map is currently drawn in - not always
+        // 'pacific' - so cells line up with the tracks/points layers when the
+        // Atlantic-only (unshifted) frame is active.
+        var lonIdx = Math.floor(toFrame(fix.lon, state.frame) / CELL_LON);
         var key = latIdx + ':' + lonIdx;
         if (!cells[key]) {
           cells[key] = { latIdx: latIdx, lonIdx: lonIdx, count: 0, hf: 0, events: {} };
@@ -301,19 +411,29 @@ window.HF = window.HF || {};
       var lon = kind === 'peak' ? low.minPLon : low.lon0;
       if (lat == null || lon == null) return;
 
+      var isSelected = low.key === state.selectedKey;
       var color = kind === 'peak'
         ? (low.cls !== 'low' ? HF.classColor(low.cls) : HF.pressureColor(low.minP))
         : HF.basinColor(low.basin);
+      var baseR = kind === 'peak' ? radiusForPressure(low.minP) : 4;
       var marker = L.circleMarker([lat, toFrame(lon, state.frame)], {
-        radius: kind === 'peak' ? radiusForPressure(low.minP) : 4,
-        color: HF.cssVar('--surface'),
-        weight: 0.8,
+        radius: isSelected ? baseR + 2.5 : baseR,
+        color: isSelected ? HF.cssVar('--ink') : HF.cssVar('--surface'),
+        weight: isSelected ? 2.5 : 0.8,
         fillColor: color,
-        fillOpacity: 0.78
+        fillOpacity: isSelected ? 1 : 0.78
       });
-      marker.on('mouseover', function (e) { HF.showTip(trackTip(low), e.originalEvent); });
+      if (isSelected) marker.bringToFront();
+      marker.on('mouseover', function (e) {
+        marker.setStyle({ radius: (isSelected ? baseR + 2.5 : baseR) + 2, fillOpacity: 1 });
+        marker.bringToFront();
+        HF.showTip(trackTip(low), e.originalEvent);
+      });
       marker.on('mousemove', function (e) { HF.moveTip(e.originalEvent); });
-      marker.on('mouseout', HF.hideTip);
+      marker.on('mouseout', function () {
+        marker.setStyle({ radius: isSelected ? baseR + 2.5 : baseR, fillOpacity: isSelected ? 1 : 0.78 });
+        HF.hideTip();
+      });
       marker.on('click', function () { if (state.onSelect) state.onSelect(low); });
       layerGroup.addLayer(marker);
     });
@@ -332,5 +452,58 @@ window.HF = window.HF || {};
 
   maps.CELL_LAT = CELL_LAT;
   maps.CELL_LON = CELL_LON;
+
+  /* ------------------------------------------------------- custom controls */
+
+  // Leaflet ships metric/imperial scale bars but not nautical miles, which is
+  // what a marine product actually wants; this mirrors L.Control.Scale's own
+  // "round to a tidy number, size the bar to match" approach.
+  var HF_NauticalScale = L.Control.extend({
+    options: { position: 'bottomleft', maxWidth: 110 },
+    onAdd: function (theMap) {
+      this._map = theMap;
+      var container = L.DomUtil.create('div', 'leaflet-control-scale hf-scale-nm');
+      this._line = L.DomUtil.create('div', 'leaflet-control-scale-line', container);
+      theMap.on('moveend', this._update, this);
+      this._update();
+      return container;
+    },
+    onRemove: function (theMap) { theMap.off('moveend', this._update, this); },
+    _update: function () {
+      var size = this._map.getSize();
+      var y = size.y / 2;
+      var maxMeters = this._map.distance(
+        this._map.containerPointToLatLng([0, y]),
+        this._map.containerPointToLatLng([this.options.maxWidth, y]));
+      var maxNm = maxMeters / 1852;
+      var nm = this._round(maxNm);
+      if (!nm) { this._line.style.width = '0'; this._line.innerHTML = ''; return; }
+      this._line.style.width = Math.round(this.options.maxWidth * (nm / maxNm)) + 'px';
+      this._line.innerHTML = nm + ' nm';
+    },
+    _round: function (num) {
+      if (!isFinite(num) || num <= 0) return 0;
+      var pow10 = Math.pow(10, Math.floor(Math.log(num) / Math.LN10));
+      var d = num / pow10;
+      d = d >= 5 ? 5 : d >= 2 ? 2 : 1;
+      return pow10 * d;
+    }
+  });
+
+  // Quiet, corner-anchored notice for when the tile services can't be
+  // reached (restricted networks are a real deployment target) - data layers
+  // keep working regardless, this just explains the blank/grey basemap.
+  var HF_TileNote = L.Control.extend({
+    options: { position: 'topright' },
+    onAdd: function () {
+      this._el = L.DomUtil.create('div', 'hf-tile-note');
+      this._el.textContent = 'Basemap unavailable — showing tracks only';
+      this._el.hidden = true;
+      L.DomEvent.disableClickPropagation(this._el);
+      return this._el;
+    },
+    show: function () { if (this._el) this._el.hidden = false; },
+    hide: function () { if (this._el) this._el.hidden = true; }
+  });
 
 })(window.HF.maps = window.HF.maps || {}, window.HF);
