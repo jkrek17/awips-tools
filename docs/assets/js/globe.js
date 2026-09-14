@@ -267,12 +267,20 @@ window.HF = window.HF || {};
     // theme needs. The coastline itself is stroked in --ink-2 (a mid-value
     // token meant for secondary text) so it reads as a firm line against
     // both fills in both themes, not a hairline.
+    // The graticule used to read --grid, a token meant for hairline UI
+    // borders - it sits within a couple percent of lightness of the ocean
+    // fill in both themes, which is why it read as a ghost ("I can barely
+    // see it"). --ink-muted/--ink-2 are text-contrast tokens instead, so the
+    // grid now holds real contrast against the ocean disc in both palettes
+    // while staying strictly neutral grey - never mistaken for the blue/
+    // orange track or pressure-ramp colours drawn on top of it.
     pal = {
       ocean: readColor('--surface-sunk', '#f2f2ee'),
       oceanWash: readColor('--ink', '#0b0b0b'),
       land: readColor('--surface', '#fcfcfb'),
       coast: readColor('--ink-2', '#52514e'),
-      grid: readColor('--grid', '#e1e0d9'),
+      grid: readColor('--ink-muted', '#898781'),
+      gridMajor: readColor('--ink-2', '#52514e'),
       outline: readColor('--border-strong', '#c3c2b7')
     };
   }
@@ -312,33 +320,55 @@ window.HF = window.HF || {};
   /** 10 degrees is the standard-view default the user asked for, but 36
       meridians x 17 parallels at that spacing reads as a cage once zoomed
       well out - so this coarsens at low zoom and, since 10 degrees leaves
-      room to spare once zoomed well in, tightens back up there too. Lines
-      stay the same recessive weight/alpha at every step: the graticule is
-      context, never competing with the tracks. */
+      room to spare once zoomed well in, tightens back up there too. Every
+      step still keeps the same minor/major structure (see drawGraticule) so
+      the grid reads consistently as zoom changes. */
   function graticuleStep() {
     if (view.zoom < 0.85) return { lon: 30, lat: 30 };
     if (view.zoom >= 2.5) return { lon: 5, lat: 5 };
     return { lon: 10, lat: 10 };
   }
 
+  /** True for the equator and every meridian/parallel at a 30-degree
+      multiple - the lines a forecaster actually orients off of. Drawn
+      heavier and darker than the rest so the grid has structure (a coarse
+      reference lattice plus finer in-between lines) instead of being
+      uniformly busy at whatever step graticuleStep() picks. */
+  function isMajorGratLine(deg) {
+    var m = Math.round(deg) % 30;
+    if (m < 0) m += 30;
+    return m === 0;
+  }
+
+  /** The grid was reported "barely visible": --grid (a hairline-border
+      token) sits within a couple percent lightness of the ocean fill in
+      both themes. Fixed by reading text-contrast tokens instead (see
+      computePalette) and by pushing width/alpha together rather than either
+      alone - a wider, more opaque stroke reads as a firm line rather than a
+      soft smudge at these thin canvas widths. Minor (10 deg) lines carry
+      the base contrast; major lines (equator, 30 deg multiples) go a step
+      further on both axes so the grid has a coarse structure to read at a
+      glance, with land drawn on top afterward so none of this ever
+      competes with the track/pressure colours drawn later still. */
   function drawGraticule() {
     var step = graticuleStep();
-    var lines = [];
+    var minor = [], major = [];
     var lon;
     for (lon = -180; lon < 180; lon += step.lon) {
       var meridian = [];
       for (var lat = -90; lat <= 90; lat += GRATICULE_SAMPLE_DEG) meridian.push([lon, lat]);
-      lines.push(meridian);
+      (isMajorGratLine(lon) ? major : minor).push(meridian);
     }
     for (var lat0 = -90 + step.lat; lat0 < 90; lat0 += step.lat) {
       var parallel = [];
       for (lon = -180; lon <= 180; lon += GRATICULE_SAMPLE_DEG) parallel.push([lon, lat0]);
-      lines.push(parallel);
+      (isMajorGratLine(lat0) ? major : minor).push(parallel);
     }
-    ctx.globalAlpha = 0.6;
-    for (var i = 0; i < lines.length; i++) {
-      strokePath(visibleSegments(lines[i]), 0.6, pal.grid);
-    }
+    var i;
+    ctx.globalAlpha = 0.62;
+    for (i = 0; i < minor.length; i++) strokePath(visibleSegments(minor[i]), 0.8, pal.grid);
+    ctx.globalAlpha = 0.88;
+    for (i = 0; i < major.length; i++) strokePath(visibleSegments(major[i]), 1.2, pal.gridMajor);
     ctx.globalAlpha = 1;
   }
 
