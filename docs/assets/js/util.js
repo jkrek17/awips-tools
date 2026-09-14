@@ -33,6 +33,12 @@ window.HF = window.HF || {};
         for (var j = 0; j < fixFields.length; j++) fix[fixFields[j]] = f[j];
         return fix;
       });
+      // The build script keys each low internally as "<basin>:<id>" but that
+      // field never made it into lowFields on the wire (it's ~29 KB of
+      // derivable strings across 1932 records) - reproduce it here so
+      // selection ("low.key === selectedKey") actually singles one out
+      // instead of every decoded low sharing an undefined key.
+      low.key = low.basin + ':' + low.id;
       return low;
     });
 

@@ -197,6 +197,16 @@ window.HF = window.HF || {};
     var step = tickStep(spec.data.length, rotate ? 12 : maxTickW, f.plotW, rotate ? 3 : 8);
     var canLabelTotals = slot >= 24;
 
+    // Direct value labels are suppressed pairwise, not thinned by a blanket
+    // Nth rule: walk left to right and only draw a label once it clears the
+    // previous one's measured right edge, so a run of narrow numbers (say,
+    // most months) still all get labelled while only the specific pair whose
+    // widths actually collide (a wide "395" next to a wide "367") drops one.
+    // The first candidate always draws, so labels never vanish entirely on a
+    // chart where they'd comfortably fit.
+    var labelGap = 4;
+    var lastLabelRight = -Infinity;
+
     var crosshair = svgEl('line', { class: 'c-crosshair' });
     var groups = spec.data.map(function () { return []; });
 
@@ -222,11 +232,16 @@ window.HF = window.HF || {};
       });
 
       if (canLabelTotals && d.total) {
-        var lbl = svgEl('text', {
-          class: 'c-value', x: cx, y: Math.max(PAD.top + 9, topY - 5), 'text-anchor': 'middle'
-        });
-        lbl.textContent = d.total;
-        g.appendChild(lbl);
+        var text = String(d.total);
+        var half = textWidth(text, 10.5, 600) / 2;
+        if (cx - half >= lastLabelRight + labelGap) {
+          var lbl = svgEl('text', {
+            class: 'c-value', x: cx, y: Math.max(PAD.top + 9, topY - 5), 'text-anchor': 'middle'
+          });
+          lbl.textContent = text;
+          g.appendChild(lbl);
+          lastLabelRight = cx + half;
+        }
       }
 
       var hit = svgEl('rect', {
@@ -255,8 +270,28 @@ window.HF = window.HF || {};
     if (spec.meanLine && spec.meanLine.value != null) {
       var y = PAD.top + f.plotH - (spec.meanLine.value / scale.max) * f.plotH;
       g.appendChild(svgEl('line', { class: 'c-mean', x1: PAD.left, x2: PAD.left + f.plotW, y1: y, y2: y }));
-      var mlbl = svgEl('text', { class: 'c-label', x: PAD.left + f.plotW - 6, y: y - 6, 'text-anchor': 'end' });
-      mlbl.textContent = spec.meanLine.label;
+
+      // Anchored at the left edge, inset from the axis, instead of the right:
+      // the right edge is where the last column - often the tallest, most
+      // recent season - and its own value label live, so a right-aligned
+      // label there is bound to collide with real data sooner or later.
+      // Flip above/below the line based on how close it sits to the plot's
+      // top or bottom so the label is never pushed off the frame either.
+      var nearTop = (y - PAD.top) < 16;
+      var mlblY = nearTop ? y + 14 : y - 6;
+      var mlblText = spec.meanLine.label;
+      var mlblW = textWidth(mlblText, 11);
+
+      // A small surface-coloured backing keeps the label legible even if it
+      // still lands over a bar or another label - sized from the same
+      // text-measuring helper rather than a fixed guess, so it fits any
+      // mean label at any width.
+      g.appendChild(svgEl('rect', {
+        class: 'c-label-bg', x: PAD.left + 3, y: mlblY - 11, width: mlblW + 6, height: 14,
+        fill: HF.cssVar('--surface'), opacity: 0.85, rx: 2
+      }));
+      var mlbl = svgEl('text', { class: 'c-label', x: PAD.left + 6, y: mlblY, 'text-anchor': 'start' });
+      mlbl.textContent = mlblText;
       g.appendChild(mlbl);
     }
 

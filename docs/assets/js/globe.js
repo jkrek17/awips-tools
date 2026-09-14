@@ -181,15 +181,16 @@ window.HF = window.HF || {};
   }
 
   function computePalette() {
+    // Track/fix colours (pressure ramp, event class, category) are read on
+    // demand via HF.pressureColor/classColor/categoryColor, which already
+    // pull from --seq-*, --critical, --ink-muted etc; this palette only
+    // covers the globe's own chrome - sphere, graticule, land.
     pal = {
       ocean: readColor('--surface-sunk', '#f2f2ee'),
       land: readColor('--surface', '#fcfcfb'),
       coast: readColor('--border-strong', '#c3c2b7'),
       grid: readColor('--grid', '#e1e0d9'),
-      outline: readColor('--border-strong', '#c3c2b7'),
-      muted: readColor('--ink-muted', '#898781'),
-      ink: readColor('--ink', '#0b0b0b'),
-      critical: readColor('--critical', '#d03b3b')
+      outline: readColor('--border-strong', '#c3c2b7')
     };
   }
 
@@ -313,7 +314,6 @@ window.HF = window.HF || {};
       drawOneTrack(low, style, false);
     }
     if (selected) drawOneTrack(selected, style, true);
-    if (window.__HF_DEBUG__) window.__HF_GLOBE_HITS__ = hitPoints;
   }
 
   function drawOneTrack(low, style, isSelected) {
@@ -444,7 +444,6 @@ window.HF = window.HF || {};
     var px = evt.clientX - rect.left, py = evt.clientY - rect.top;
     var hit = nearestHit(px, py);
     var key = hit ? hit.low.key : null;
-    if (window.__HF_DEBUG__) console.log('handleHover', px, py, 'hit=', key, 'nPts=', hitPoints.length);
 
     if (key !== hoveredKey) {
       hoveredKey = key;
