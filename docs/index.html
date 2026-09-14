@@ -43,6 +43,16 @@
   </div>
 
   <div class="filter">
+    <label for="fClass">Event type</label>
+    <select id="fClass">
+      <option value="all">All events</option>
+      <option value="low">Synoptic lows only</option>
+      <option value="nopres">No analyzed centre</option>
+      <option value="tipjet">Tip jet candidates</option>
+    </select>
+  </div>
+
+  <div class="filter">
     <label for="fSeason0">Seasons</label>
     <div class="range-pair">
       <select id="fSeason0"></select>
@@ -84,6 +94,7 @@
         <button type="button" class="seg" data-layer="genesis">First fix</button>
         <button type="button" class="seg" data-layer="peak">Peak intensity</button>
       </div>
+      <button type="button" class="btn" id="fitBounds">Fit to events</button>
       <p class="tool-note" id="mapNote"></p>
     </div>
     <div class="map-wrap">
@@ -144,6 +155,18 @@
           </p>
         </figcaption>
         <div class="chart" id="chartBergeron"></div>
+      </figure>
+
+      <figure class="card chart-card">
+        <figcaption>
+          <h2>Events with no analyzed centre</h2>
+          <p>
+            Hurricane force with no central pressure anywhere in the track.
+            Most sit within 550&nbsp;km of Cape Farewell &mdash; Greenland tip
+            jets, not cyclone centres.
+          </p>
+        </figcaption>
+        <div class="chart" id="chartNoCentre"></div>
       </figure>
 
       <figure class="card chart-card chart-wide">
@@ -212,6 +235,40 @@
       <h2>Category codes</h2>
       <dl class="defs" id="catDefs"></dl>
 
+      <h2>Events with no analyzed central pressure</h2>
+      <p>
+        A little over 2&nbsp;% of Atlantic fixes carry
+        <code>NOPRES</code> instead of a pressure, and their median position is
+        60.0&deg;N, 42.1&deg;W &mdash; Cape Farewell, the southern tip of
+        Greenland. These are overwhelmingly <strong>tip jet</strong> and
+        barrier jet events: the flow accelerates around and along the Greenland
+        terrain and produces hurricane force winds with no closed low centre to
+        analyze. They peak in December&ndash;February, run short (a median of
+        two fixes), and are frequent enough &mdash; a few per season, more in
+        recent ones &mdash; that ignoring them would misstate the climatology.
+      </p>
+      <p>
+        Because a missing pressure here means &ldquo;there is no centre&rdquo;
+        rather than &ldquo;the centre was not measured&rdquo;, these events are
+        given their own class instead of being mixed into pressure statistics:
+      </p>
+      <dl class="defs" id="classDefs"></dl>
+      <p>
+        The classification needs <em>both</em> conditions. Location alone is not
+        diagnostic: 185 ordinary pressure-bearing lows also track through the
+        same region. Treat the tip jet label as a well-supported candidate flag,
+        not a verified classification &mdash; confirming one takes the surface
+        analysis and a wind field, which this archive does not carry.
+      </p>
+      <p>
+        Every pressure-based figure on this page &mdash; the median, the
+        distribution, the deepening rates &mdash; is computed over events with
+        an analyzed centre. The event counts, seasonal cycle and maps include
+        every class, so counts and pressure statistics deliberately describe
+        slightly different populations. Use the <strong>Event type</strong>
+        filter to isolate either one.
+      </p>
+
       <h2>Derived quantities</h2>
       <dl class="defs">
         <dt>Minimum central pressure</dt>
@@ -253,6 +310,13 @@
 
       <h2>Known limitations</h2>
       <ul>
+        <li>
+          The default view starts at the 2004&ndash;05 season. Pacific entries
+          begin in February&nbsp;2002 and Atlantic in September&nbsp;2003, so
+          earlier seasons are partial; they are still in the data and can be
+          selected, but they are marked provisional and are excluded from the
+          default period of record.
+        </li>
         <li>Positions and pressures are analyst estimates recorded to the nearest tenth of a degree and whole hPa; no reanalysis has been applied.</li>
         <li>Counts per season reflect both real variability and changes in analysis practice over 20+ years. A trend here is not necessarily a climate signal.</li>
         <li>Where one archive ID covered two unrelated lows, the build split it into lettered events (<code>&hellip;a</code>, <code>&hellip;b</code>). See Data quality.</li>

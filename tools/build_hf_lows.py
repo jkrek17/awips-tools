@@ -69,6 +69,36 @@ PRESSURE_SENTINELS = {"NOPRES", "XXX", "NA", "N/A", "MISSING", "-", ""}
 PRESSURE_MIN, PRESSURE_MAX = 880.0, 1060.0
 SYNOPTIC_HOURS = (0, 6, 12, 18)
 
+# Period of record. Both basins are only consistently covered from the 2004-05
+# season: the Pacific tab begins in February 2002 and the Atlantic in September
+# 2003, so earlier seasons are short-counted rather than quiet. Earlier seasons
+# stay in the payload and remain selectable on the page, but the default view
+# starts here so per-season statistics are not distorted by partial coverage.
+RECORD_START = 2004
+
+# Cape Farewell, the southern tip of Greenland. Forward and reverse tip jets
+# accelerate around this terrain and routinely produce hurricane force winds
+# with no closed low centre to analyze a pressure for; barrier jets down the
+# southeast coast do the same. Events with no analyzed pressure anywhere in
+# their track, centred in this region, are flagged as terrain-forced candidates
+# rather than being quietly dropped from a pressure-based climatology.
+CAPE_FAREWELL = (59.8, -43.9)
+TIPJET_RADIUS_KM = 550.0
+TIPJET_FIX_FRACTION = 0.5
+
+EVENT_CLASSES = {
+    "low": {"label": "Synoptic low",
+            "desc": "A central pressure was analyzed for at least one fix."},
+    "tipjet": {"label": "Terrain-forced (tip jet candidate)",
+               "desc": "No analyzed central pressure anywhere in the track, and most "
+                       "fixes within %d km of Cape Farewell - the signature of a "
+                       "Greenland tip jet or barrier jet rather than a cyclone centre."
+                       % int(TIPJET_RADIUS_KM)},
+    "nocentre": {"label": "No analyzed centre",
+                 "desc": "No analyzed central pressure anywhere in the track, away from "
+                         "the Greenland terrain-forced region. Cause not established."},
+}
+
 # Wire format. Lows and fixes are emitted as plain arrays in these orders; the
 # page turns them back into objects. Append to the end when adding a field -
 # never reorder, or an old cached payload decodes into the wrong columns.
@@ -76,7 +106,7 @@ LOW_FIELDS = [
     "id", "basin", "season", "num", "start", "end", "durH", "n", "peak",
     "hfN", "hfH", "minP", "minPAt", "minPLat", "minPLon", "lat0", "lon0",
     "latMax", "deep24", "berg", "bomb", "distNm", "spdKt", "spdMaxKt",
-    "idOk", "timesSuspect", "split", "month", "fixes",
+    "idOk", "timesSuspect", "split", "month", "cls", "noPresN", "glFixes", "fixes",
 ]
 FIX_FIELDS = ["date", "lat", "lon", "cat", "pres"]
 
@@ -447,6 +477,28 @@ def split_reused_ids(low, qc):
     return out
 
 
+def classify(low):
+    """Split pressure-less events from synoptic lows, and flag the tip jets.
+
+    No analyzed pressure is not missing data in the usual sense: for a tip jet
+    there is no cyclone centre to analyze. Lumping those in with synoptic lows
+    makes every pressure statistic a statement about a different population
+    than the event count, so they get their own class.
+    """
+    fixes = low["fixes"]
+    near = sum(1 for f in fixes
+               if great_circle_nm(f[1], f[2], *CAPE_FAREWELL) * 1.852 <= TIPJET_RADIUS_KM)
+    low["glFixes"] = near
+    low["noPresN"] = sum(1 for f in fixes if f[4] is None)
+
+    if any(f[4] is not None for f in fixes):
+        low["cls"] = "low"
+    elif fixes and near / len(fixes) >= TIPJET_FIX_FRACTION:
+        low["cls"] = "tipjet"
+    else:
+        low["cls"] = "nocentre"
+
+
 def derive(low, qc):
     """Add the per-low climatology metrics the page displays."""
     fixes = sorted(low["fixes"], key=lambda f: f[0])
@@ -575,6 +627,8 @@ def build():
             continue
         for part in split_reused_ids(low, qc):
             derive(part, qc)
+            classify(part)
+            qc.bump("class_" + part["cls"])
             out.append(part)
 
     out.sort(key=lambda l: (l["start"], l["basin"]))
@@ -593,6 +647,8 @@ def build():
         "generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "basins": basin_info,
         "categories": CATEGORIES,
+        "eventClasses": EVENT_CLASSES,
+        "recordStart": RECORD_START,
         "seasons": [{"start": s, "label": season_label(s)} for s in seasons],
         "lowFields": LOW_FIELDS,
         "fixFields": FIX_FIELDS,

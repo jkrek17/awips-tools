@@ -10,6 +10,7 @@
   var state = {
     tab: 'map',
     basin: 'both',
+    cls: 'all',
     season0: null,
     season1: null,
     months: {},            // month number -> true when active; empty = all
@@ -27,6 +28,13 @@
 
   function passes(low) {
     if (state.basin !== 'both' && low.basin !== state.basin) return false;
+
+    if (state.cls === 'low' && low.cls !== 'low') return false;
+    // "No analyzed centre" covers both pressure-less classes; "tipjet" is the
+    // Greenland subset of it.
+    if (state.cls === 'nopres' && low.cls === 'low') return false;
+    if (state.cls === 'tipjet' && low.cls !== 'tipjet') return false;
+
     if (state.season0 != null && low.season < state.season0) return false;
     if (state.season1 != null && low.season > state.season1) return false;
 
@@ -69,13 +77,18 @@
     });
     var withBerg = lows.filter(function (l) { return l.berg != null; });
     var bombs = withBerg.filter(function (l) { return l.bomb; });
+    var noCentre = lows.filter(function (l) { return l.cls !== 'low'; });
+    var tipjets = lows.filter(function (l) { return l.cls === 'tipjet'; });
 
     var tiles = [
       { label: 'Events', value: lows.length.toLocaleString(),
         note: lows.length ? (lows.length / seasons).toFixed(1) + ' per season over ' + seasons + ' seasons' : 'nothing matches the filters' },
       { label: 'Median min pressure',
         value: pressures.some(function (p) { return p != null; }) ? HF.median(pressures) + ' hPa' : '--',
-        note: 'lowest analyzed pressure per event' },
+        note: lows.length - noCentre.length
+          ? 'over the ' + (lows.length - noCentre.length).toLocaleString() +
+            ' events with an analyzed centre'
+          : 'none of these events has an analyzed centre' },
       { label: 'Deepest event',
         value: deepest ? deepest.minP + ' hPa' : '--',
         note: deepest ? deepest.id + ' · ' + HF.fmtDate(deepest.minPAt) : '' },
@@ -85,9 +98,11 @@
       { label: 'Explosive share',
         value: withBerg.length ? Math.round(100 * bombs.length / withBerg.length) + '%' :  '--',
         note: withBerg.length ? bombs.length + ' of ' + withBerg.length + ' events with 24 h of pressures' : 'no qualifying events' },
-      { label: 'Track length',
-        value: lows.length ? HF.median(lows.map(function (l) { return l.distNm; })).toLocaleString() + ' nm' : '--',
-        note: 'median distance covered while tracked' }
+      { label: 'No analyzed centre',
+        value: noCentre.length.toLocaleString(),
+        note: tipjets.length
+          ? tipjets.length + ' are Greenland tip jet candidates'
+          : 'events with no central pressure at any fix' }
     ];
 
     tiles.forEach(function (t) {
@@ -109,6 +124,10 @@
       }
     });
     return series;
+  }
+
+  function noCentreCount(lows) {
+    return lows.filter(function (l) { return l.cls !== 'low'; }).length;
   }
 
   function renderCharts(lows) {
@@ -191,6 +210,32 @@
       threshold: { x: 1, label: 'bomb' },
       fmtBin: function (b) { return b.x0.toFixed(2) + '–' + b.x1.toFixed(2) + ' B'; },
       fmtTick: function (v) { return v.toFixed(1); }
+    });
+
+    // Events with no analyzed centre ---------------------------------------
+    var ncSeries = [
+      { key: 'tipjet', label: 'Tip jet candidate', color: HF.classColor('tipjet') },
+      { key: 'nocentre', label: 'Elsewhere', color: HF.classColor('nocentre') }
+    ];
+    var ncBySeason = {};
+    lows.forEach(function (l) {
+      if (l.cls === 'low') return;
+      ncBySeason[l.season] = ncBySeason[l.season] || {};
+      ncBySeason[l.season][l.cls] = (ncBySeason[l.season][l.cls] || 0) + 1;
+    });
+    var ncData = seasons.map(function (s) {
+      var parts = ncBySeason[s.start] || {};
+      var total = (parts.tipjet || 0) + (parts.nocentre || 0);
+      return {
+        label: s.label, tick: String(s.start).slice(2), tickRotate: seasons.length > 14,
+        parts: parts, total: total, season: s.start,
+        tip: '<b>' + s.label + '</b>' +
+             '<div class="t-row">Tip jet candidates: ' + (parts.tipjet || 0) + '</div>' +
+             '<div class="t-row">Elsewhere: ' + (parts.nocentre || 0) + '</div>'
+      };
+    });
+    HF.charts.columns(document.getElementById('chartNoCentre'), {
+      data: ncData, series: ncSeries, yTitle: 'Events', xTitle: 'Season'
     });
 
     // Peak intensity by latitude ------------------------------------------
@@ -448,6 +493,7 @@
   }
 
   function renderLegend(lows) {
+    lows = lows || [];
     var box = HF.clear(document.getElementById('mapLegend'));
 
     if (state.layer === 'density') {
@@ -494,6 +540,18 @@
     ends.appendChild(HF.el('span', {}, '\u2265 1000'));
     ends.appendChild(HF.el('span', {}, '< 940 hPa'));
     box.appendChild(ends);
+    var terrain = lows.filter(function (l) { return l.cls !== 'low'; }).length;
+    if (terrain) {
+      var row = HF.el('div', { class: 'legend-row' });
+      var sw = HF.el('span', { class: 'legend-swatch' });
+      // Match the dashed stroke used on the map, so the legend reads the same.
+      sw.style.background = 'repeating-linear-gradient(90deg, ' +
+        HF.classColor('tipjet') + ' 0 5px, transparent 5px 8px)';
+      row.appendChild(sw);
+      row.appendChild(document.createTextNode('No analyzed centre'));
+      row.style.marginTop = '6px';
+      box.appendChild(row);
+    }
     if (state.selectedKey) {
       box.appendChild(HF.el('p', { class: 'legend-note' },
         'Markers on the selected track are coloured by category at that fix.'));
@@ -552,6 +610,20 @@
       dl.appendChild(HF.el('dd', {}, cat.desc));
     });
 
+    var classDl = HF.clear(document.getElementById('classDefs'));
+    Object.keys(DATA.eventClasses || {}).forEach(function (key) {
+      var cls = DATA.eventClasses[key];
+      var dt = HF.el('dt');
+      var pill = HF.el('span', { class: 'pill' });
+      var dot = HF.el('span', { class: 'legend-dot' });
+      dot.style.background = HF.classColor(key);
+      pill.appendChild(dot);
+      pill.appendChild(document.createTextNode(cls.label));
+      dt.appendChild(pill);
+      classDl.appendChild(dt);
+      classDl.appendChild(HF.el('dd', {}, cls.desc));
+    });
+
     var sources = DATA.basins.map(function (b) {
       return b.label + ': ' + b.rows.toLocaleString() + ' rows from ' + b.source;
     }).join(' · ');
@@ -571,8 +643,15 @@
 
   /* -------------------------------------------------------------- controls */
 
+  function defaultSeasonStart() {
+    var first = DATA.seasons[0].start;
+    var start = DATA.recordStart == null ? first : DATA.recordStart;
+    return Math.max(first, Math.min(start, DATA.seasons[DATA.seasons.length - 1].start));
+  }
+
   function syncControls() {
     document.getElementById('fBasin').value = state.basin;
+    document.getElementById('fClass').value = state.cls;
     document.getElementById('fSeason0').value = String(state.season0);
     document.getElementById('fSeason1').value = String(state.season1);
     document.getElementById('fPressure').value = String(state.maxPressure);
@@ -590,11 +669,14 @@
   function buildControls() {
     var s0 = document.getElementById('fSeason0');
     var s1 = document.getElementById('fSeason1');
+    // Seasons before the period of record are partial; keep them selectable
+    // but say so, and start the default view at the first complete season.
     DATA.seasons.forEach(function (s) {
-      s0.appendChild(HF.el('option', { value: s.start }, s.label));
-      s1.appendChild(HF.el('option', { value: s.start }, s.label));
+      var label = s.start < DATA.recordStart ? s.label + ' (partial)' : s.label;
+      s0.appendChild(HF.el('option', { value: s.start }, label));
+      s1.appendChild(HF.el('option', { value: s.start }, label));
     });
-    state.season0 = DATA.seasons[0].start;
+    state.season0 = defaultSeasonStart();
     state.season1 = DATA.seasons[DATA.seasons.length - 1].start;
 
     var chips = document.getElementById('fMonths');
@@ -619,6 +701,11 @@
     s1.addEventListener('change', function () {
       state.season1 = Number(s1.value);
       if (state.season0 > state.season1) { state.season0 = state.season1; syncControls(); }
+      render();
+    });
+
+    document.getElementById('fClass').addEventListener('change', function (e) {
+      state.cls = e.target.value;
       render();
     });
 
@@ -651,7 +738,8 @@
 
     document.getElementById('fReset').addEventListener('click', function () {
       state.basin = 'both';
-      state.season0 = DATA.seasons[0].start;
+      state.cls = 'all';
+      state.season0 = defaultSeasonStart();
       state.season1 = DATA.seasons[DATA.seasons.length - 1].start;
       state.months = {};
       state.maxPressure = 1010;
@@ -691,6 +779,9 @@
       });
     });
 
+    document.getElementById('fitBounds').addEventListener('click', function () {
+      HF.maps.fitTo(filtered());
+    });
     document.getElementById('exportCsv').addEventListener('click', exportCsv);
     document.getElementById('detailClose').addEventListener('click', function () { select(null); });
     document.addEventListener('keydown', function (e) {

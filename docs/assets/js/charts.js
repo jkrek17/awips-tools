@@ -237,6 +237,9 @@ window.HF = window.HF || {};
 
     axisTitle(g, spec.yTitle || 'Events', 12, PAD.top + f.plotH / 2, 'middle', true);
     if (spec.xTitle) axisTitle(g, spec.xTitle, PAD.left + f.plotW / 2, f.h - 4);
+    if (spec.footnote) {
+      container.appendChild(HF.el('p', { class: 'chart-footnote' }, spec.footnote));
+    }
   };
 
   /* -------------------------------------------------------------- scatter */

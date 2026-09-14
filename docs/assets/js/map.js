@@ -109,6 +109,16 @@ window.HF = window.HF || {};
     else map.setView([50, 225], 2);
   };
 
+  /** Zoom to whatever the filters currently select. */
+  maps.fitTo = function (lows) {
+    if (!map || !lows || !lows.length) return;
+    var pts = [];
+    lows.forEach(function (low) {
+      trackLatLngs(low.fixes, state.frame).forEach(function (p) { pts.push(p); });
+    });
+    if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.08));
+  };
+
   maps.focus = function (low) {
     if (!map || !low) return;
     var pts = trackLatLngs(low.fixes, state.frame);
@@ -152,10 +162,15 @@ window.HF = window.HF || {};
 
   function trackLine(low, isSelected, style) {
     var base = style || { weight: 2, opacity: 0.78 };
+    // No pressure means no place on the pressure ramp: terrain-forced events
+    // get their own hue plus a dash pattern, so they stay distinguishable
+    // without relying on colour alone.
+    var terrain = low.cls && low.cls !== 'low';
     var line = L.polyline(trackLatLngs(low.fixes, state.frame), {
-      color: HF.pressureColor(low.minP),
-      weight: isSelected ? 4 : base.weight,
-      opacity: isSelected ? 1 : base.opacity,
+      color: terrain ? HF.classColor(low.cls) : HF.pressureColor(low.minP),
+      dashArray: terrain ? '5 4' : null,
+      weight: isSelected ? 4 : (terrain ? base.weight + 0.5 : base.weight),
+      opacity: isSelected ? 1 : Math.min(1, base.opacity + (terrain ? 0.2 : 0)),
       lineJoin: 'round',
       interactive: true
     });
@@ -175,6 +190,10 @@ window.HF = window.HF || {};
   function trackTip(low) {
     return '<b>' + low.id + '</b> &middot; ' + HF.seasonLabel(low.season) +
       '<div class="t-row">' + HF.fmtDate(low.start) + '</div>' +
+      (low.cls === 'tipjet'
+        ? '<div class="t-row">Tip jet candidate &mdash; no analyzed centre</div>'
+        : low.cls === 'nocentre'
+          ? '<div class="t-row">No analyzed centre</div>' : '') +
       '<div class="t-row">Min ' + (low.minP != null ? low.minP + ' hPa' : 'not analyzed') +
       ' &middot; ' + low.hfH + ' h at HF</div>' +
       (low.bomb ? '<div class="t-row">Explosive: ' + low.berg.toFixed(2) + ' B</div>' : '');
@@ -282,7 +301,9 @@ window.HF = window.HF || {};
       var lon = kind === 'peak' ? low.minPLon : low.lon0;
       if (lat == null || lon == null) return;
 
-      var color = kind === 'peak' ? HF.pressureColor(low.minP) : HF.basinColor(low.basin);
+      var color = kind === 'peak'
+        ? (low.cls !== 'low' ? HF.classColor(low.cls) : HF.pressureColor(low.minP))
+        : HF.basinColor(low.basin);
       var marker = L.circleMarker([lat, toFrame(lon, state.frame)], {
         radius: kind === 'peak' ? radiusForPressure(low.minP) : 4,
         color: HF.cssVar('--surface'),

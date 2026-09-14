@@ -40,6 +40,8 @@ window.HF = window.HF || {};
       generated: raw.generated,
       basins: raw.basins,
       categories: raw.categories,
+      eventClasses: raw.eventClasses || {},
+      recordStart: raw.recordStart,
       seasons: raw.seasons,
       lows: lows,
       qc: raw.qc
@@ -172,6 +174,14 @@ window.HF = window.HF || {};
       case 'TC':  return '#7a5bd0';
       default:    return HF.cssVar('--ink-muted');
     }
+  };
+
+  /** Event class colour. Terrain-forced events have no pressure, so they sit
+      outside the pressure ramp entirely and need their own hue. */
+  HF.classColor = function (cls) {
+    if (cls === 'tipjet') return '#e87ba4';        // categorical slot 5
+    if (cls === 'nocentre') return HF.cssVar('--ink-muted');
+    return HF.cssVar('--accent');
   };
 
   HF.basinColor = function (key) {

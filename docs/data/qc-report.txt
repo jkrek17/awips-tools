@@ -1,8 +1,11 @@
 HF extratropical low archive - data quality report
-generated 2026-09-14T16:24:54Z
+generated 2026-09-14T16:36:33Z
 
   categoriesMapped         7
   categoriesUnknown        1
+  class_low                1890
+  class_nocentre           13
+  class_tipjet             29
   datesRepaired            1
   duplicateTimes           18
   exactDuplicates          50
