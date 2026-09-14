@@ -50,10 +50,26 @@ without them the tracks, charts and tables still render.
 
 ## Publishing
 
-`.github/workflows/pages.yml` rebuilds the data and deploys this directory to
-GitHub Pages on every push to `main`. It needs Pages set to
-**Settings > Pages > Source: GitHub Actions** once. To publish a preview from a
-feature branch, run the workflow manually against that branch.
+This directory is published to **two separate places** - see the root
+`README.md` for the full picture. In short:
 
-Alternatively, with no workflow at all: **Settings > Pages > Deploy from a
-branch**, branch `main`, folder `/docs`.
+- **GitHub Pages (development preview).** `.github/workflows/pages.yml`
+  rebuilds the data from the CSVs committed under `data/hf_lows/` and deploys
+  this directory to Pages on every push to `main` (needs
+  **Settings > Pages > Source: GitHub Actions** set once; run the workflow
+  manually against a branch to preview it before merging). The repo is
+  public and the archive CSVs are committed to it intentionally.
+- **The NOAA web server (production).** A forecaster copies this code out of
+  GitHub by hand and runs `tools/publish.py`, which fetches the sheet
+  through the companion Apps Script app in `web/HFArchiveExport/`, rebuilds
+  the data, prints a delta report to review, and only then copies this
+  directory into the web root. GitHub plays no part in that path - nothing
+  on the production server calls back to it.
+
+Because these two builds run independently, they can show different data at
+different times. Two things on the page itself say which one you're looking
+at: a **"Preview build"** / **"Local build"** marker next to the
+"Experimental" badge (shown only on a `*.github.io` or `localhost` host -
+silent on production), and the Method tab's build-provenance footnote (build
+time, git commit if known, and whether the data was fetched or built from
+CSVs on disk).

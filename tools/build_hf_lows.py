@@ -24,6 +24,8 @@ import csv
 import json
 import math
 import os
+import platform
+import subprocess
 import sys
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
@@ -606,7 +608,46 @@ def season_label(start_year: int) -> str:
     return f"{start_year}-{str(start_year + 1)[-2:]}"
 
 
-def build():
+# GIT_TIMEOUT_S bounds how long a hung/misbehaving `git` can stall a build -
+# provenance is a nice-to-have, never worth blocking the site over.
+GIT_TIMEOUT_S = 5
+
+
+def _git_build_info(root: str) -> dict | None:
+    """Best-effort git provenance: {"commit": short sha, "dirty": bool}.
+
+    Returns None on anything but a clean success - git not installed, ROOT
+    not inside a git repo (the normal case on the production server, which
+    has no .git directory at all because the code is copied out of GitHub by
+    hand), a timeout, or any other surprise. Never raises."""
+    try:
+        sha = subprocess.run(
+            ["git", "-C", root, "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=GIT_TIMEOUT_S,
+        )
+        if sha.returncode != 0 or not sha.stdout.strip():
+            return None
+        status = subprocess.run(
+            ["git", "-C", root, "status", "--porcelain"],
+            capture_output=True, text=True, timeout=GIT_TIMEOUT_S,
+        )
+        dirty = bool(status.stdout.strip()) if status.returncode == 0 else None
+        return {"commit": sha.stdout.strip(), "dirty": dirty}
+    except Exception:
+        return None
+
+
+def _build_host() -> str | None:
+    """Best-effort, non-sensitive hostname of the machine that ran the build
+    (e.g. a GitHub Actions runner, a forecaster's workstation, the NOAA
+    server). Never raises."""
+    try:
+        return platform.node() or None
+    except Exception:
+        return None
+
+
+def build(data_source: str | None = None):
     qc = QC()
     lows: dict[str, dict] = {}
     basin_info = []
@@ -643,8 +684,19 @@ def build():
     # page rebuilds objects from these on load.
     lows_encoded = [[low.get(f) for f in LOW_FIELDS] for low in out]
 
+    git_info = _git_build_info(ROOT)
     payload = {
         "generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        # Provenance for telling the GitHub Pages preview, a local dev build
+        # and the production copy on the NOAA server apart. commit/dirty are
+        # None on a checkout with no .git (production); dataSource is None
+        # unless the caller (tools/publish.py) says how the CSVs arrived.
+        "build": {
+            "commit": git_info["commit"] if git_info else None,
+            "dirty": git_info["dirty"] if git_info else None,
+            "dataSource": data_source,
+            "host": _build_host(),
+        },
         "basins": basin_info,
         "categories": CATEGORIES,
         "eventClasses": EVENT_CLASSES,
@@ -680,9 +732,13 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--check", action="store_true", help="build but write nothing")
+    ap.add_argument("--data-source", default=None, metavar="SOURCE",
+                     help="how the CSVs in data/hf_lows/ got there, recorded in the "
+                          "payload's build.dataSource (e.g. 'fetched', 'local'); "
+                          "tools/publish.py sets this itself. Defaults to unknown.")
     args = ap.parse_args()
 
-    payload = build()
+    payload = build(data_source=args.data_source)
     counts = payload["qc"]["counts"]
     print(f"lows {counts.get('lows', 0)}  fixes {counts.get('fixes', 0)}  "
           f"seasons {len(payload['seasons'])}  "

@@ -23,6 +23,9 @@
   };
 
   var TABLE_LIMIT = 300;
+  var globeReady = false;    // the globe is heavier to spin up than the flat map, so it waits until first needed
+  var detailTrigger = null;  // element to return focus to when the detail drawer closes
+  var announceTimer = null;  // debounces the aria-live result-count text
 
   /* ------------------------------------------------------------ filtering */
 
@@ -67,9 +70,56 @@
 
   /* ----------------------------------------------------------------- KPIs */
 
+  /** Tiny inline trend line for a KPI tile - a dozen lines of SVG rather
+      than pulling in HF.charts for something this small. Colours come from
+      CSS custom properties so it reads correctly in both themes. */
+  function sparklineSvg(values) {
+    var w = 52, h = 18;
+    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+    svg.setAttribute('class', 'k-spark');
+    svg.setAttribute('preserveAspectRatio', 'none');
+    svg.setAttribute('aria-hidden', 'true');
+
+    var max = Math.max.apply(null, values);
+    var min = Math.min.apply(null, values);
+    var range = (max - min) || 1;
+    var stepX = values.length > 1 ? w / (values.length - 1) : 0;
+    var pad = 2;
+
+    var pts = values.map(function (v, i) {
+      var x = i * stepX;
+      var y = pad + (1 - (v - min) / range) * (h - pad * 2);
+      return x.toFixed(1) + ',' + y.toFixed(1);
+    });
+
+    var poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+    poly.setAttribute('points', pts.join(' '));
+    poly.setAttribute('fill', 'none');
+    poly.setAttribute('stroke', HF.cssVar('--accent'));
+    poly.setAttribute('stroke-width', '1.5');
+    poly.setAttribute('stroke-linejoin', 'round');
+    poly.setAttribute('stroke-linecap', 'round');
+    svg.appendChild(poly);
+
+    var lastPt = pts[pts.length - 1].split(',');
+    var dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    dot.setAttribute('cx', lastPt[0]);
+    dot.setAttribute('cy', lastPt[1]);
+    dot.setAttribute('r', '1.7');
+    dot.setAttribute('fill', HF.cssVar('--accent'));
+    svg.appendChild(dot);
+
+    return svg;
+  }
+
   function renderKpis(lows) {
     var box = HF.clear(document.getElementById('kpis'));
-    var seasons = activeSeasons().length || 1;
+    var seasonList = activeSeasons();
+    var seasons = seasonList.length || 1;
+    var bySeasonCount = {};
+    lows.forEach(function (l) { bySeasonCount[l.season] = (bySeasonCount[l.season] || 0) + 1; });
+    var sparkValues = seasonList.map(function (s) { return bySeasonCount[s.start] || 0; });
     var pressures = lows.map(function (l) { return l.minP; });
     var deepest = null;
     lows.forEach(function (l) {
@@ -81,7 +131,7 @@
     var tipjets = lows.filter(function (l) { return l.cls === 'tipjet'; });
 
     var tiles = [
-      { label: 'Events', value: lows.length.toLocaleString(),
+      { label: 'Events', value: lows.length.toLocaleString(), spark: sparkValues,
         note: lows.length ? (lows.length / seasons).toFixed(1) + ' per season over ' + seasons + ' seasons' : 'nothing matches the filters' },
       { label: 'Median min pressure',
         value: pressures.some(function (p) { return p != null; }) ? HF.median(pressures) + ' hPa' : '--',
@@ -109,6 +159,7 @@
       var card = HF.el('div', { class: 'kpi' });
       card.appendChild(HF.el('div', { class: 'k-label' }, t.label));
       card.appendChild(HF.el('div', { class: 'k-value' }, t.value));
+      if (t.spark && t.spark.length > 1) card.appendChild(sparklineSvg(t.spark));
       if (t.note) card.appendChild(HF.el('div', { class: 'k-note' }, t.note));
       box.appendChild(card);
     });
@@ -369,18 +420,41 @@
   /* --------------------------------------------------------------- detail */
 
   function select(low) {
-    state.selectedKey = low ? low.key : null;
     if (low) {
+      // Remember what had focus only when the drawer is opening, not on
+      // every subsequent selection change while it stays open.
+      if (state.selectedKey == null) detailTrigger = document.activeElement;
+      state.selectedKey = low.key;
       renderDetail(low);
       document.body.classList.add('has-detail');
-      HF.maps.invalidate();
-      HF.maps.focus(low);
+      resizeActiveView();
+      if (usingGlobe()) { ensureGlobe(); HF.globe.focus(low); }
+      else HF.maps.focus(low);
     } else {
+      // Escape is also wired globally and fires even with nothing selected;
+      // only steal focus back when a drawer was actually open to close.
+      var wasOpen = state.selectedKey != null;
+      state.selectedKey = null;
       document.getElementById('detail').hidden = true;
       document.body.classList.remove('has-detail');
-      HF.maps.invalidate();
+      resizeActiveView();
+      if (wasOpen) returnFocusAfterClose();
     }
     render();
+  }
+
+  /** Escape and the close button both hide the drawer; land focus back on
+      whatever opened it (a table row, a track, a chart point) when that
+      element still exists, or on the active tab otherwise. */
+  function returnFocusAfterClose() {
+    var el = detailTrigger;
+    detailTrigger = null;
+    if (el && el !== document.body && document.contains(el) && typeof el.focus === 'function') {
+      el.focus();
+      return;
+    }
+    var activeTab = document.querySelector('.tab[aria-selected="true"]');
+    if (activeTab) activeTab.focus();
   }
 
   function renderDetail(low) {
@@ -469,19 +543,83 @@
     }
   }
 
+  /* ------------------------------------------------------------- view mode
+     Both basins meet at the Arctic, and no flat projection shows that
+     honestly, so "both" swaps the flat Leaflet map for a rotatable
+     orthographic globe; a single basin keeps the flat tiled map. The two
+     views share the same filtered lows, selection and theme - this section
+     is the only place that decides which one is on screen. */
+
+  function usingGlobe() { return state.basin === 'both'; }
+
+  // The map's layer switcher (density/genesis/peak) and "Fit to events" only
+  // make sense against the flat projection; the globe only ever draws
+  // tracks, so map-note/legend text keys off this rather than state.layer
+  // directly whenever the globe might be showing.
+  function activeLayer() { return usingGlobe() ? 'tracks' : state.layer; }
+
+  function ensureGlobe() {
+    if (globeReady) return;
+    HF.globe.init('globe', select);
+    HF.globe.applyTheme();
+    globeReady = true;
+  }
+
+  /** Leaflet/the globe both no-op a resize on a hidden container, so this is
+      safe to call whenever the view might have just become visible; the
+      timeout lets the "hidden" attribute's layout change land first. */
+  function resizeActiveView() {
+    setTimeout(function () {
+      if (usingGlobe()) { if (globeReady) HF.globe.resize(); }
+      else HF.maps.invalidate();
+    }, 0);
+  }
+
+  /** Toggle the flat-map/globe containers and the controls that only apply
+      to the flat map, and make sure whichever view is now current has the
+      right size and is the only one animating. Call after anything that can
+      change the basin or the active tab. */
+  function syncMapMode() {
+    var globeOn = usingGlobe();
+    if (globeOn) ensureGlobe();
+
+    document.getElementById('map').hidden = globeOn;
+    document.getElementById('globeWrap').hidden = !globeOn;
+
+    var segmented = document.querySelector('#panel-map .segmented');
+    var fitBtn = document.getElementById('fitBounds');
+    if (segmented) segmented.hidden = globeOn;
+    if (fitBtn) fitBtn.hidden = globeOn;
+
+    if (globeReady) HF.globe.setVisible(globeOn && state.tab === 'map');
+    if (state.tab === 'map') resizeActiveView();
+  }
+
+  function applyBasinSideEffects() {
+    HF.maps.setFrame(state.basin);
+    HF.maps.resetView(state.basin);
+    syncMapMode();
+  }
+
   /* ------------------------------------------------------------ map chrome */
 
   function renderMap(lows) {
-    HF.maps.render(lows, state.layer, state.selectedKey);
+    if (usingGlobe()) {
+      ensureGlobe();
+      HF.globe.render(lows, state.selectedKey);
+    } else {
+      HF.maps.render(lows, state.layer, state.selectedKey);
+    }
     renderLegend(lows);
 
+    var layer = activeLayer();
     var note = document.getElementById('mapNote');
-    if (state.layer === 'density') {
+    if (layer === 'density') {
       note.textContent = 'Hurricane force fixes per ' + HF.maps.CELL_LAT + '° × ' +
         HF.maps.CELL_LON + '° cell, over the filtered seasons.';
-    } else if (state.layer === 'genesis') {
+    } else if (layer === 'genesis') {
       note.textContent = 'First tracked fix of each event — where the archive picked the low up, not true cyclogenesis.';
-    } else if (state.layer === 'peak') {
+    } else if (layer === 'peak') {
       note.textContent = 'Position of each event’s lowest analyzed pressure; marker size grows as pressure falls.';
     } else {
       note.textContent = lows.length > 300
@@ -489,14 +627,18 @@
           'Filter, or switch to Fix density, for a cleaner picture.'
         : lows.length.toLocaleString() + ' track' + (lows.length === 1 ? '' : 's') +
           ' shown. Click one for its fixes.';
+      if (usingGlobe()) {
+        note.textContent += ' Both basins meet at the pole, so this is a rotatable globe — drag to rotate, scroll to zoom, double-click to reset. Layer and fit controls apply to the flat map only.';
+      }
     }
   }
 
   function renderLegend(lows) {
     lows = lows || [];
     var box = HF.clear(document.getElementById('mapLegend'));
+    var layer = activeLayer();
 
-    if (state.layer === 'density') {
+    if (layer === 'density') {
       box.appendChild(HF.el('h3', {}, 'HF fixes per cell'));
       var scale = HF.el('div', { class: 'legend-scale' });
       ['--seq-1', '--seq-2', '--seq-3', '--seq-4', '--seq-5', '--seq-6', '--seq-7'].forEach(function (v) {
@@ -514,7 +656,7 @@
       return;
     }
 
-    if (state.layer === 'genesis') {
+    if (layer === 'genesis') {
       box.appendChild(HF.el('h3', {}, 'Basin'));
       basinSeries().forEach(function (s) {
         var row = HF.el('div', { class: 'legend-row' });
@@ -528,8 +670,12 @@
     }
 
     box.appendChild(HF.el('h3', {}, 'Minimum pressure'));
+    // Ascending (weakest -> deepest) so the bar and its end labels always
+    // match HF.PRESSURE_BANDS's own breakpoints and text, whatever they
+    // currently are - never hardcode a specific hPa value here.
+    var bandsAsc = HF.PRESSURE_BANDS.slice().reverse();
     var bar = HF.el('div', { class: 'legend-scale' });
-    HF.PRESSURE_BANDS.slice().reverse().forEach(function (band) {
+    bandsAsc.forEach(function (band) {
       var seg = HF.el('span');
       seg.style.background = HF.pressureColor(band.v);
       seg.title = band.label + ' hPa';
@@ -537,8 +683,8 @@
     });
     box.appendChild(bar);
     var ends = HF.el('div', { class: 'legend-ends' });
-    ends.appendChild(HF.el('span', {}, '\u2265 1000'));
-    ends.appendChild(HF.el('span', {}, '< 940 hPa'));
+    ends.appendChild(HF.el('span', {}, bandsAsc[0].label + ' hPa'));
+    ends.appendChild(HF.el('span', {}, bandsAsc[bandsAsc.length - 1].label + ' hPa'));
     box.appendChild(ends);
     var terrain = lows.filter(function (l) { return l.cls !== 'low'; }).length;
     if (terrain) {
@@ -629,16 +775,179 @@
     }).join(' · ');
     document.getElementById('sourceLine').textContent =
       'Built ' + DATA.generated + ' — ' + sources + '.';
+
+    renderBuildProvenance();
+  }
+
+  // HF.decode() (util.js) whitelists which top-level fields of the raw
+  // payload survive into DATA, and "build" (added after that list was
+  // written) isn't one of them - so this reads window.HF_DATA.build
+  // directly rather than DATA.build, which would always be undefined.
+  function renderBuildProvenance() {
+    var el = document.getElementById('buildProvenance');
+    if (!el) return;
+    var build = (window.HF_DATA && window.HF_DATA.build) || null;
+
+    var commitText;
+    if (!build || !build.commit) {
+      // Null on the production server: it's a plain copy of the code with
+      // no .git directory, not a checkout - see docs/README.md.
+      commitText = 'commit unknown (no .git at build time)';
+    } else {
+      commitText = 'commit ' + build.commit + (build.dirty ? ' (dirty working tree)' : '');
+    }
+
+    var sourceLabel = { fetched: 'fetched from the archive sheet via Apps Script',
+                         local: 'CSVs on disk (manual export or already committed)' };
+    var sourceText = build && build.dataSource
+      ? 'data ' + (sourceLabel[build.dataSource] || build.dataSource)
+      : 'data source unrecorded';
+
+    el.textContent = 'Provenance: ' + commitText + ' · ' + sourceText + '.';
+  }
+
+  // The page can't know for certain which of the two published copies it
+  // is - see README.md - but the hostname is a good enough proxy: a
+  // *.github.io host is always the GitHub Pages preview (built from the
+  // CSVs committed to the repo), localhost/127.0.0.1 is a local dev server,
+  // and anything else is treated as the NOAA production server and gets no
+  // marker at all.
+  function renderEnvBadge() {
+    var el = document.getElementById('envBadge');
+    if (!el) return;
+    var host = window.location.hostname || '';
+    var label = null, title = '';
+    if (/(^|\.)github\.io$/i.test(host)) {
+      label = 'Preview build';
+      title = 'GitHub Pages preview, built from the CSVs committed to this repo. ' +
+              'Production is served separately from the NOAA web server and may show different data.';
+    } else if (host === 'localhost' || host === '127.0.0.1') {
+      label = 'Local build';
+      title = 'Local development server, not the production site. ' +
+              'Production is served from the NOAA web server via tools/publish.py.';
+    }
+    if (label) {
+      el.textContent = label;
+      el.title = title;
+      el.hidden = false;
+    } else {
+      el.hidden = true;
+    }
+  }
+
+  /* ------------------------------------------------------- active filters */
+
+  function seasonLabelFor(start) {
+    var match = DATA.seasons.filter(function (s) { return s.start === start; })[0];
+    return match ? match.label : String(start);
+  }
+
+  function addFilterChip(box, label, onRemove) {
+    var chip = HF.el('span', { class: 'filter-chip' });
+    chip.appendChild(document.createTextNode(label));
+    var btn = HF.el('button', {
+      type: 'button', class: 'filter-chip-remove', 'aria-label': 'Remove filter: ' + label
+    }, '×');
+    btn.addEventListener('click', onRemove);
+    chip.appendChild(btn);
+    box.appendChild(chip);
+  }
+
+  var CLASS_CHIP_LABELS = {
+    low: 'Synoptic lows only', nopres: 'No analyzed centre', tipjet: 'Tip jet candidates'
+  };
+
+  /** One removable chip per non-default filter, kept in sync with the
+      controls in both directions: the controls write state and call
+      render(), which calls this; each chip's own remove button writes state
+      the same way and calls render() again. */
+  function renderActiveFilters() {
+    var box = HF.clear(document.getElementById('activeFilters'));
+
+    if (state.basin !== 'both') {
+      addFilterChip(box, state.basin === 'atl' ? 'Atlantic' : 'Pacific', function () {
+        state.basin = 'both';
+        applyBasinSideEffects();
+        syncControls();
+        render();
+      });
+    }
+
+    if (state.cls !== 'all') {
+      addFilterChip(box, CLASS_CHIP_LABELS[state.cls] || state.cls, function () {
+        state.cls = 'all';
+        syncControls();
+        render();
+      });
+    }
+
+    var defS0 = defaultSeasonStart();
+    var defS1 = DATA.seasons[DATA.seasons.length - 1].start;
+    if (state.season0 !== defS0 || state.season1 !== defS1) {
+      var seasonLabel = state.season0 === state.season1
+        ? 'Season ' + seasonLabelFor(state.season0)
+        : 'Seasons ' + seasonLabelFor(state.season0) + '–' + seasonLabelFor(state.season1);
+      addFilterChip(box, seasonLabel, function () {
+        state.season0 = defS0;
+        state.season1 = defS1;
+        syncControls();
+        render();
+      });
+    }
+
+    Object.keys(state.months).sort(function (a, b) { return a - b; }).forEach(function (m) {
+      addFilterChip(box, HF.monthName(Number(m)), function () {
+        delete state.months[m];
+        syncControls();
+        render();
+      });
+    });
+
+    if (state.maxPressure < 1010) {
+      addFilterChip(box, '≤ ' + state.maxPressure + ' hPa', function () {
+        state.maxPressure = 1010;
+        syncControls();
+        render();
+      });
+    }
+
+    if (state.bombOnly) {
+      addFilterChip(box, 'Explosive only', function () {
+        state.bombOnly = false;
+        syncControls();
+        render();
+      });
+    }
+
+    if (state.search) {
+      addFilterChip(box, 'Search "' + state.search + '"', function () {
+        state.search = '';
+        syncControls();
+        render();
+      });
+    }
+  }
+
+  /** Debounced so dragging the pressure slider (which re-renders on every
+      'input' tick) doesn't spam the screen-reader live region. */
+  function announceResults(n) {
+    clearTimeout(announceTimer);
+    announceTimer = setTimeout(function () {
+      document.getElementById('resultCount').textContent =
+        n.toLocaleString() + ' event' + (n === 1 ? '' : 's') + ' match the current filters.';
+    }, 400);
   }
 
   /* --------------------------------------------------------------- render */
 
   function render() {
     var lows = filtered();
+    renderActiveFilters();
     renderKpis(lows);
     if (state.tab === 'map') renderMap(lows);
     if (state.tab === 'clim') renderCharts(lows);
     if (state.tab === 'events') renderTable(lows);
+    announceResults(lows.length);
   }
 
   /* -------------------------------------------------------------- controls */
@@ -711,8 +1020,7 @@
 
     document.getElementById('fBasin').addEventListener('change', function (e) {
       state.basin = e.target.value;
-      HF.maps.setFrame(state.basin);
-      HF.maps.resetView(state.basin);
+      applyBasinSideEffects();
       render();
     });
 
@@ -746,28 +1054,51 @@
       state.bombOnly = false;
       state.search = '';
       state.selectedKey = null;
+      detailTrigger = null;
       document.getElementById('detail').hidden = true;
-      HF.maps.setFrame(state.basin);
-      HF.maps.resetView(state.basin);
+      document.body.classList.remove('has-detail');
+      applyBasinSideEffects();
       syncControls();
       render();
     });
 
-    Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (tab) {
-      tab.addEventListener('click', function () {
-        state.tab = tab.dataset.panel;
-        Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (t) {
-          var on = t === tab;
-          t.classList.toggle('is-active', on);
-          t.setAttribute('aria-selected', on ? 'true' : 'false');
-        });
-        Array.prototype.forEach.call(document.querySelectorAll('.panel'), function (p) {
-          p.classList.toggle('is-active', p.id === 'panel-' + state.tab);
-        });
-        if (state.tab === 'map') setTimeout(function () { HF.maps.invalidate(); }, 0);
-        render();
+    // Roving tabindex (WAI-ARIA "Tabs" pattern, automatic activation): only
+    // the selected tab sits in the page tab order, and Left/Right/Home/End
+    // both move focus and switch panels.
+    var tabs = Array.prototype.slice.call(document.querySelectorAll('.tab'));
+    tabs.forEach(function (tab) {
+      if (!tab.id) tab.id = 'tab-' + tab.dataset.panel;
+      var panel = document.getElementById('panel-' + tab.dataset.panel);
+      if (panel) {
+        tab.setAttribute('aria-controls', panel.id);
+        panel.setAttribute('aria-labelledby', tab.id);
+      }
+      tab.tabIndex = tab.classList.contains('is-active') ? 0 : -1;
+      tab.addEventListener('click', function () { activateTab(tab); });
+      tab.addEventListener('keydown', function (e) {
+        var i = tabs.indexOf(tab), next = null;
+        if (e.key === 'ArrowRight') next = tabs[(i + 1) % tabs.length];
+        else if (e.key === 'ArrowLeft') next = tabs[(i - 1 + tabs.length) % tabs.length];
+        else if (e.key === 'Home') next = tabs[0];
+        else if (e.key === 'End') next = tabs[tabs.length - 1];
+        if (next) { e.preventDefault(); activateTab(next); next.focus(); }
       });
     });
+
+    function activateTab(tab) {
+      state.tab = tab.dataset.panel;
+      tabs.forEach(function (t) {
+        var on = t === tab;
+        t.classList.toggle('is-active', on);
+        t.setAttribute('aria-selected', on ? 'true' : 'false');
+        t.tabIndex = on ? 0 : -1;
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('.panel'), function (p) {
+        p.classList.toggle('is-active', p.id === 'panel-' + state.tab);
+      });
+      syncMapMode();
+      render();
+    }
 
     Array.prototype.forEach.call(document.querySelectorAll('.seg'), function (seg) {
       seg.addEventListener('click', function () {
@@ -796,7 +1127,8 @@
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(function () {
         if (state.tab === 'clim') renderCharts(filtered());
-        HF.maps.invalidate();
+        if (usingGlobe()) { if (globeReady) HF.globe.resize(); }
+        else HF.maps.invalidate();
       }, 180);
     });
   }
@@ -814,6 +1146,7 @@
     document.documentElement.setAttribute('data-theme', next);
     try { localStorage.setItem('hf-theme', next); } catch (err) { /* private mode */ }
     HF.maps.applyTheme();
+    if (globeReady) HF.globe.applyTheme();
     render();
   }
 
@@ -827,28 +1160,71 @@
   /* ------------------------------------------------------------------ boot */
 
   function boot() {
+    var loadingEl = document.getElementById('loading');
+    var mainEl = document.querySelector('main');
+    var kpisEl = document.getElementById('kpis');
+
+    // Not data-dependent - runs even if the payload below fails to load.
+    renderEnvBadge();
+
     if (!window.HF_DATA) {
+      loadingEl.hidden = true;
       document.getElementById('vintage').textContent = 'data failed to load';
+      showLoadFailure(mainEl);
       return;
     }
-    restoreTheme();
-    DATA = HF.decode(window.HF_DATA);
-    LOWS = DATA.lows;
-    HF.CATEGORIES = DATA.categories;
 
-    document.getElementById('vintage').textContent =
-      DATA.lows.length.toLocaleString() + ' events, ' +
-      DATA.seasons[0].label + ' to ' + DATA.seasons[DATA.seasons.length - 1].label;
+    // The payload is ~600 KB and decoding it plus the first render (charts,
+    // ~1900 map tracks, the events table) takes real, visible time - show
+    // the skeleton and defer the heavy work one tick so the browser actually
+    // paints it before the main thread blocks, rather than a token flash.
+    loadingEl.hidden = false;
+    if (mainEl) mainEl.hidden = true;
+    if (kpisEl) kpisEl.hidden = true;
 
-    HF.maps.init('map', select);
-    HF.maps.setFrame(state.basin);
-    HF.maps.resetView(state.basin);
+    setTimeout(function () {
+      restoreTheme();
+      DATA = HF.decode(window.HF_DATA);
+      LOWS = DATA.lows;
+      HF.CATEGORIES = DATA.categories;
 
-    buildControls();
-    syncControls();
-    renderQc();
-    renderMethod();
-    render();
+      document.getElementById('vintage').textContent =
+        DATA.lows.length.toLocaleString() + ' events, ' +
+        DATA.seasons[0].label + ' to ' + DATA.seasons[DATA.seasons.length - 1].label;
+
+      buildControls();
+      syncControls();
+      renderQc();
+      renderMethod();
+
+      // Unhide before initializing the map/globe and doing the first render,
+      // so Leaflet and the canvas both measure a real, laid-out container
+      // instead of a hidden (zero-size) one.
+      loadingEl.hidden = true;
+      if (mainEl) mainEl.hidden = false;
+      if (kpisEl) kpisEl.hidden = false;
+
+      HF.maps.init('map', select);
+      HF.maps.setFrame(state.basin);
+      HF.maps.resetView(state.basin);
+      syncMapMode();
+      render();
+    }, 0);
+  }
+
+  /** window.HF_DATA is baked into data/hf-lows.js at build time; its total
+      absence (script blocked, wrong path, opened some other way) means
+      there is nothing to show, so say that plainly instead of leaving a
+      page that looks broken. */
+  function showLoadFailure(mainEl) {
+    var box = HF.el('div', { class: 'card prose' });
+    box.style.margin = 'var(--sp-5)';
+    box.appendChild(HF.el('h2', {}, 'Data failed to load'));
+    box.appendChild(HF.el('p', {},
+      'window.HF_DATA is missing, so the archive has nothing to show. Reload the page, ' +
+      'or confirm docs/data/hf-lows.js is being served alongside this page.'));
+    if (mainEl && mainEl.parentNode) mainEl.parentNode.insertBefore(box, mainEl);
+    else document.body.appendChild(box);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

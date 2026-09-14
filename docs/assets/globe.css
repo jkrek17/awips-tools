@@ -1,0 +1,42 @@
+/* Orthographic globe view - shown instead of the flat Leaflet map when both
+   basins are selected at once. Sized to match #map (see assets/app.css) so
+   swapping between the two never jumps the layout. */
+
+.globe-wrap {
+  position: relative;
+  height: min(66vh, 720px);
+  min-height: 380px;
+  background: var(--surface-sunk);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.globe-wrap canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;      /* dragging/pinching drives the view, not the page */
+  cursor: grab;
+}
+
+.globe-wrap canvas.is-dragging {
+  cursor: grabbing;
+}
+
+.globe-attrib {
+  position: absolute;
+  left: 10px;
+  bottom: 8px;
+  z-index: 500;
+  margin: 0;
+  padding: 2px 7px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--ink-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  opacity: 0.85;
+  pointer-events: none;
+}
