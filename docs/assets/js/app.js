@@ -674,39 +674,12 @@
 
   /* --------------------------------------------------------- static panels */
 
-  function renderQc() {
-    var LABELS = {
-      rowsRead: 'rows read', fixes: 'fixes kept', lows: 'events built',
-      rowsDropped: 'rows dropped', exactDuplicates: 'duplicate rows removed',
-      duplicateTimes: 'shared timestamps', datesRepaired: 'dates repaired',
-      dateNotes: 'off-synoptic hours', positionNotes: 'positions questioned',
-      categoriesMapped: 'categories mapped', categoriesUnknown: 'categories unknown',
-      pressuresRepaired: 'pressures repaired', pressuresDropped: 'pressures dropped',
-      idsSuspect: 'IDs malformed', idsReused: 'IDs reused by two events',
-      lowsDropped: 'events dropped'
-    };
-    var box = HF.clear(document.getElementById('qcCounts'));
-    Object.keys(DATA.qc.counts).forEach(function (k) {
-      var cell = HF.el('div', { class: 'qc-count' });
-      cell.appendChild(HF.el('b', {}, DATA.qc.counts[k].toLocaleString()));
-      cell.appendChild(HF.el('span', {}, LABELS[k] || k));
-      box.appendChild(cell);
-    });
-
-    var tbody = HF.clear(document.getElementById('qcTable').tBodies[0]);
-    DATA.qc.notes.forEach(function (n) {
-      var tr = HF.el('tr');
-      tr.appendChild(HF.el('td', {}, n.basin === 'pac' ? 'Pacific' : 'Atlantic'));
-      tr.appendChild(HF.el('td', { class: 'num' }, n.row == null ? '--' : String(n.row)));
-      tr.appendChild(HF.el('td', {}, n.id || '--'));
-      tr.appendChild(HF.el('td', {}, n.date ? HF.fmtDate(n.date) : '--'));
-      tr.appendChild(HF.el('td', {}, n.kind));
-      var td = HF.el('td', {}, n.detail);
-      td.style.whiteSpace = 'normal';
-      tr.appendChild(td);
-      tbody.appendChild(tr);
-    });
-  }
+  // The Data quality tab was removed from the public UI (it duplicated the
+  // per-event notes already surfaced in the detail drawer, and the raw QC
+  // report was never meant to be a public page). DATA.qc.counts/notes still
+  // arrive in the payload - renderDetail()'s per-event note block below and
+  // docs/data/qc-report.txt both depend on that data staying put - only the
+  // #qcCounts/#qcTable rendering here was deleted along with the panel.
 
   function renderMethod() {
     var dl = HF.clear(document.getElementById('catDefs'));
@@ -1064,6 +1037,12 @@
       Array.prototype.forEach.call(document.querySelectorAll('.panel'), function (p) {
         p.classList.toggle('is-active', p.id === 'panel-' + state.tab);
       });
+      // The footer is dead weight on the Map tab (the globe wants the room,
+      // and nothing in the footer is map-specific) - hide it there via a
+      // body class instead of a per-panel rule, see assets/app.css. The
+      // body starts with this class already set in the HTML, matching the
+      // Map tab being the default active one.
+      document.body.classList.toggle('map-active', state.tab === 'map');
       syncMapMode();
       render();
     }
@@ -1160,7 +1139,6 @@
 
       buildControls();
       syncControls();
-      renderQc();
       renderMethod();
 
       // Unhide before initializing the globe and doing the first render, so

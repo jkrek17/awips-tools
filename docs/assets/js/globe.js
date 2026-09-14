@@ -23,19 +23,27 @@ window.HF = window.HF || {};
 
   var DEG = Math.PI / 180;
 
-  // Default view: both basins splayed symmetrically around the pole rather
-  // than one sitting near the horizon. Picked empirically from the archive
-  // itself, not guessed: the circular mean fix longitude is -39.7 for the
-  // Atlantic and -179.5 (essentially the dateline) for the Pacific - about
-  // 140 apart the short way round, over Canada and the Arctic (the other
-  // way round, over Eurasia, is the wide ~220 gap and would foreshorten
-  // both basins badly). Centring on the midpoint of the short gap puts
-  // each basin about 70 of longitude off-axis, comfortably on the near
-  // side rather than crowding the horizon. Phi is pulled up near the pole
-  // (rather than the ~50N the tracks are centred on) so both belts curve
-  // away from the centre symmetrically instead of one filling the middle.
+  // Default view: both basins splayed symmetrically left/right rather than
+  // one sitting near the horizon. Lambda is picked empirically from the
+  // archive itself, not guessed: the circular mean fix longitude is -39.7
+  // for the Atlantic and -179.5 (essentially the dateline) for the Pacific -
+  // about 140 apart the short way round, over Canada and the Arctic (the
+  // other way round, over Eurasia, is the wide ~220 gap and would
+  // foreshorten both basins badly). Centring on the midpoint of the short
+  // gap puts each basin about 70 of longitude off-axis, comfortably on the
+  // near side rather than crowding the horizon.
+  //
+  // Phi used to be pulled up near the pole (68) so both belts curved away
+  // from the centre symmetrically - technically tidy, but forecasters found
+  // it "too polar": a straight-down view of the Arctic rather than a globe.
+  // The circular mean fix *latitude* is ~54N (Atlantic) and ~48N (Pacific),
+  // so 50 centres the view on the storm track belts themselves - both
+  // basins still land at a comfortable ~45 of angular separation from the
+  // view centre (well inside the visible hemisphere), but the vantage now
+  // reads as "looking at the North Atlantic/Pacific" rather than "looking
+  // down at the pole".
   var DEFAULT_LAMBDA_DEG = -110;
-  var DEFAULT_PHI_DEG = 68;
+  var DEFAULT_PHI_DEG = 50;
 
   var MIN_ZOOM = 0.6, MAX_ZOOM = 6;
   var MAX_PHI = 89 * DEG;               // clamp shy of the exact pole

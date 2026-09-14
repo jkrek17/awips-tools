@@ -580,15 +580,6 @@ main { padding: 0 var(--sp-5) var(--sp-6); }
 .pill { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); font-weight: 600; }
 .pill .legend-dot { width: 8px; height: 8px; }
 
-/* ----------------------------------------------------------- data quality */
-
-.qc-counts { display: grid; gap: var(--sp-2); grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); margin-top: var(--sp-3); }
-.qc-count { background: var(--surface-sunk); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--sp-2) var(--sp-3); }
-.qc-count b { display: block; font-size: var(--fs-xl); font-weight: 650; font-variant-numeric: tabular-nums; }
-.qc-count span { font-size: var(--fs-xs); color: var(--ink-2); }
-#panel-qc .card + .card { margin-top: var(--sp-4); }
-#panel-qc .prose { max-width: none; }
-
 /* ----------------------------------------------------------------- prose */
 
 .prose { padding: var(--sp-5) var(--sp-6); max-width: 74ch; }
@@ -655,6 +646,13 @@ main { padding: 0 var(--sp-5) var(--sp-6); }
 
 .footer { padding: var(--sp-4) var(--sp-5) 28px; color: var(--ink-muted); font-size: var(--fs-xs); }
 .footer p { margin: 0; }
+
+/* Map tab: the globe should get the full panel height and the footer has
+   nothing map-specific to say, so it is hidden rather than shown empty.
+   app.js keeps body.map-active in sync with the active tab (see
+   activateTab); display:none rather than visibility so it takes no layout
+   space and there is no gap left behind. */
+.map-active .footer { display: none; }
 
 /* ------------------------------------------------------------- responsive */
 
