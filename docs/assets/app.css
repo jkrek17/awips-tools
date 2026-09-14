@@ -508,8 +508,14 @@ main { padding: 0 var(--sp-5) var(--sp-6); }
 }
 .leaflet-container { font-family: var(--font); background: var(--surface-sunk); }
 
-.globe-wrap { position: relative; overflow: hidden; display: grid; place-items: center; }
-#globe { width: 100%; height: 100%; display: block; border-radius: inherit; }
+/* NOTE: was `display: grid; place-items: center` - a centred grid item is
+   never stretched, so #globe's `height: 100%` (assets/globe.css) had no
+   definite containing block and fell back to the canvas's intrinsic
+   width/height attributes, growing past this wrapper and getting clipped
+   by overflow:hidden. #globe now fills via position:absolute; inset:0
+   instead, so this wrapper only needs position:relative. #globe's box
+   rules live solely in assets/globe.css - do not re-add them here. */
+.globe-wrap { position: relative; overflow: hidden; }
 .globe-attrib {
   position: absolute; right: 10px; bottom: 8px; margin: 0; z-index: 1;
   font-size: 10px; color: var(--ink-muted); background: var(--surface);

@@ -1285,10 +1285,26 @@ window.HF = window.HF || {};
 
   globe.resize = function () {
     if (!canvas) return;
-    cssW = canvas.clientWidth;
-    cssH = canvas.clientHeight;
+    // Measure the wrapper, not the canvas itself: #globe is sized in CSS to
+    // fill #globeWrap (position:absolute; inset:0 - see assets/globe.css),
+    // but reading the canvas's own clientWidth/clientHeight here would read
+    // back the backing-store size this function just wrote to canvas.width/
+    // height a moment ago (canvas.width/height are content attributes that
+    // also set the element's intrinsic, and in some layouts effective,
+    // client size) - a feedback loop that can drift away from the real
+    // container size instead of converging on it. The parent element's box
+    // has no such circularity.
+    var wrap = canvas.parentElement;
+    var rect = wrap ? wrap.getBoundingClientRect() : canvas.getBoundingClientRect();
+    cssW = rect.width;
+    cssH = rect.height;
     if (!cssW || !cssH) return;             // hidden panel; next resize() will catch up
     dpr = window.devicePixelRatio || 1;
+    // Pin the canvas's CSS box explicitly (belt-and-suspenders alongside the
+    // inset:0 rule in assets/globe.css) so canvas box == wrapper box holds
+    // even if something upstream changes how #globeWrap lays out its child.
+    canvas.style.width = cssW + 'px';
+    canvas.style.height = cssH + 'px';
     canvas.width = Math.round(cssW * dpr);
     canvas.height = Math.round(cssH * dpr);
     cx = cssW / 2;
