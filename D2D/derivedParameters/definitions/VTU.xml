@@ -5,11 +5,16 @@
   over ~100 km. Positive = warm core, negative = cold core. Read it only at a
   closed MSLP low; see D2D/README.md.
 
+  Values are scaled by 1e5 for readable sampling: CAVE's sampling readout
+  rounds to two decimals, and this field's real magnitude is order 1e-4
+  1/s, so an unscaled value always samples as "0.00" - a sampled value of
+  12.3 here means 1.23e-4 /s in SI. See CycloneCore.py's UNIT_SCALE.
+
   VERIFY: same checks as the comment in VTL.xml (fixed-level Field spelling,
   dx/dy pseudo-fields and ConstantField support, levels= value for this
-  AWIPS version).
+  AWIPS version, unit="" accepted for a scaled field).
 -->
-<DerivedParameter abbreviation="VTU" name="CPS Upper Core (vort 600-300)" unit="/s">
+<DerivedParameter abbreviation="VTU" name="CPS Upper Core (vort 600-300) (x1e-5 /s)" unit="">
     <Method name="CycloneCore" levels="Surface">
         <Field abbreviation="uW" level="600MB"/>
         <Field abbreviation="vW" level="600MB"/>

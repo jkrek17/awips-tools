@@ -9,9 +9,10 @@
   pseudo-fields and ConstantField support, levels= value). The field is
   dimensionless, so unit="" is declared explicitly: a definition with no
   unit attribute at all was observed to raise a DataCubeException on
-  request while VTL/VTU (which carry unit="/s") loaded fine. If your
-  version rejects unit="" as well, unit="1" is the next thing to try, and
-  unit="/s" is a last resort that works but mislabels sampled values.
+  request while VTL/VTU loaded fine. If your version rejects unit="" as
+  well, unit="1" is the next thing to try, and unit="/s" is a last
+  resort that works but mislabels sampled values (this field is
+  dimensionless, not physically 1/s).
 -->
 <DerivedParameter abbreviation="CPSidx" name="CPS Core Index (-3 cold to +3 deep warm)" unit="">
     <Method name="CycloneCore.executeIndex" levels="Surface">
@@ -23,11 +24,12 @@
         <Field abbreviation="vW" level="300MB"/>
         <Field abbreviation="dx"/>
         <Field abbreviation="dy"/>
-        <!-- smoothKm -->
+        <!-- smoothKm (km) -->
         <ConstantField value="100.0"/>
-        <!-- index scale (1/s) -->
-        <ConstantField value="1.0e-4"/>
-        <!-- vortex min (1/s) -->
-        <ConstantField value="5.0e-5"/>
+        <!-- index scale, units 1e-5 /s (matches VTL/VTU's scaled output;
+             see CycloneCore.py's UNIT_SCALE) -->
+        <ConstantField value="10.0"/>
+        <!-- vortex min, units 1e-5 /s -->
+        <ConstantField value="5.0"/>
     </Method>
 </DerivedParameter>

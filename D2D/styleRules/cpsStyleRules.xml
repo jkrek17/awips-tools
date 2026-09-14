@@ -9,12 +9,19 @@
   shapes below follow the common gridImageryStyleRules /
   gridContourStyleRules schema but versions do drift.
 
-  VTL/VTU range chosen to be +/-2e-4 /s, a few times a typical strong
-  tropical cyclone's core vorticity difference between 850 and 600 hPa,
-  centered on zero with a diverging colormap so warm core (positive) and
-  cold core (negative) read as different colors at a glance. CPScat and
-  CPSidx (see below, further down this file) combine VTL and VTU into one
-  field each and need their own imagery styleRules.
+  VTL/VTU range chosen to be +/-20 (units 1e-5 /s - VTL.xml/VTU.xml's
+  outputs are scaled by CycloneCore.py's UNIT_SCALE so CAVE's two-decimal
+  sampling readout is legible; a value of 20 here is 2.0e-4 /s in SI), a
+  few times a typical strong tropical cyclone's core vorticity difference
+  between 850 and 600 hPa, centered on zero with a diverging colormap so
+  warm core (positive) and cold core (negative) read as different colors
+  at a glance. No displayUnit is set on VTL/VTU's imagery or contour
+  styleRules below: the parameter itself is declared with an empty unit
+  (see VTL.xml/VTU.xml), so a displayUnit of /s would be applying an
+  incompatible physical-unit conversion to an already-scaled,
+  dimensionless-declared value. CPScat and CPSidx (see below, further
+  down this file) combine VTL and VTU into one field each and need their
+  own imagery styleRules.
 
   Colormaps: this package ships two custom .cmap files instead of
   referencing a base colormap like Grid/Difference, because a base
@@ -43,10 +50,9 @@
         </paramLevelMatch>
         <imageStyle>
             <defaultColormap>CPS/CoreDiverging</defaultColormap>
-            <displayUnit>/s</displayUnit>
             <range>
-                <minValue>-2.0e-4</minValue>
-                <maxValue>2.0e-4</maxValue>
+                <minValue>-20</minValue>
+                <maxValue>20</maxValue>
             </range>
         </imageStyle>
     </styleRule>
@@ -55,7 +61,8 @@
       CPSidx is a continuous dimensionless index, -3 (cold core) to +3
       (deep warm core), 0 = neutral - a diverging colormap centered on
       zero, same CPS/CoreDiverging colormap as VTL/VTU above but over the
-      index's own -3..3 range instead of VTL/VTU's physical 1/s range.
+      index's own -3..3 range instead of VTL/VTU's -20..20 (1e-5 /s)
+      range.
     -->
     <styleRule>
         <paramLevelMatch>
@@ -107,16 +114,15 @@
     <!-- Contour part: merge into gridContourStyleRules.xml -->
     <!--
       Values below are a reduced set (8 contours instead of the previous
-      20) at +/-0.5e-4 spacing so VTL/VTU contour plots are not too
-      cluttered. Labels will print in raw 1/s (e.g. "0.0002") because
-      displayUnit here is /s, the same unit the values are already in.
-      If your site's base absolute-vorticity contour rule instead uses a
-      scaled display unit for labeling (e.g. "1e-5/s" so a value of
-      2.0e-4 /s prints as "20" instead of "0.0002"), copy that same
-      displayUnit value into this contourStyle so VTL/VTU labels are
-      legible at a glance instead of printing in scientific-notation-ish
-      decimals - VERIFY what unit your base rule actually uses and what
-      it is named there (displayUnit may not be the exact element name).
+      20) at 5-unit spacing (units 1e-5 /s - see VTL.xml/VTU.xml and
+      CycloneCore.py's UNIT_SCALE) so VTL/VTU contour plots are not too
+      cluttered. Labels now print as plain whole numbers (e.g. "20"
+      instead of "0.0002") with no displayUnit needed: VTL/VTU's values
+      are already scaled into this readable range at the source, so no
+      display-time unit conversion applies here, and none should be
+      added - a displayUnit of /s would try to convert an
+      already-scaled, dimensionless-declared value as if it still meant
+      physical 1/s.
     -->
     <styleRule>
         <paramLevelMatch>
@@ -126,9 +132,8 @@
             <parameter>VTU</parameter>
         </paramLevelMatch>
         <contourStyle>
-            <displayUnit>/s</displayUnit>
             <contourValues>
-                <values>-2.0e-4,-1.5e-4,-1.0e-4,-0.5e-4,0.5e-4,1.0e-4,1.5e-4,2.0e-4</values>
+                <values>-20,-15,-10,-5,5,10,15,20</values>
             </contourValues>
             <lineStyle>SOLID</lineStyle>
             <!-- Zero itself is intentionally excluded from contourValues above

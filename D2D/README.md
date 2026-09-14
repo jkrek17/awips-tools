@@ -10,16 +10,33 @@ over the whole grid.
 
 ## What the fields are
 
+**Unit convention: VTL, VTU, and cpsZ850 sample in units of 1e-5 /s,
+not raw 1/s.** These fields' real physical magnitude is order 1e-4 1/s,
+and CAVE's sampling readout rounds to two decimal places -- an unscaled
+value always samples as "0.00 sec^-1", everywhere, useless to a
+forecaster. So `CycloneCore.py` multiplies its SI (1/s) result by
+`UNIT_SCALE` (1e5) before returning it from `execute()` /
+`executeVorticity()`, and the definitions declare `unit=""` (not
+`unit="/s"`) since the value is no longer literally in per-second units.
+**A sampled value of 12 means 1.2e-4 /s in SI** -- divide by 1e5 (or
+multiply by 1e-5) to get back to physical units. CPScat and CPSidx are
+unaffected: they are already dimensionless (a category code / a -3..3
+index), so nothing about them is rescaled, though the `band`/
+`vortexMin`/`scale` `<ConstantField>` values that feed into them are
+in the same 1e-5 /s units as VTL/VTU (see "Combined fields" below and
+CPScat.xml/CPSidx.xml).
+
 - **VTL** ("CPS Lower Core"): relative vorticity at 850 hPa minus
-  relative vorticity at 600 hPa, smoothed over a ~100 km box.
+  relative vorticity at 600 hPa, smoothed over a ~100 km box, scaled to
+  1e-5 /s.
 - **VTU** ("CPS Upper Core"): relative vorticity at 600 hPa minus
-  relative vorticity at 300 hPa, same smoothing.
+  relative vorticity at 300 hPa, same smoothing, same 1e-5 /s scaling.
 - **CPScat** and **CPSidx** ("CPS Core Class" / "CPS Core Index"):
   VTL and VTU combined into a single field, blanked (NaN) outside a
   cyclonic vortex. See "Combined fields" below.
 - **cpsZ850**: relative vorticity at 850 hPa alone, no vertical
-  difference, no smoothing. Debug-only field for the orientation check
-  below.
+  difference, no smoothing, scaled to 1e-5 /s like VTL/VTU. Debug-only
+  field for the orientation check below.
 
 850/600 and 600/300 were picked to bracket Hart's 900-600 and 600-300
 bands using pressure levels every model carries at every AWIPS site
@@ -96,7 +113,11 @@ vorticity as a mask -- see "Vortex mask" below.
 neutral but VTU is cold" and "VTL is cold" -- see
 `CycloneCore.classify`'s docstring for the full decision table and how
 the boundary values are assigned.) `band` is `DEFAULT_NEUTRAL_BAND`
-unless overridden by CPScat.xml's `<ConstantField>`.
+unless overridden by CPScat.xml's `<ConstantField>`, which sets it in
+the same 1e-5 /s units as VTL/VTU's readout (see "What the fields
+are"); `executeClass()` divides that `<ConstantField>` value by
+`UNIT_SCALE` before comparing it against `vtl`/`vtu`, which stay in SI
+1/s internally throughout `classify()`.
 
 ### CPSidx: continuous core index
 
@@ -104,7 +125,8 @@ unless overridden by CPScat.xml's `<ConstantField>`.
 from -3 to +3: about +3 is a deep warm core (both terms saturated
 positive), +1 to +2 a shallow warm core, near 0 neutral, negative cold
 core. `scale` is `DEFAULT_INDEX_SCALE` unless overridden by
-CPSidx.xml's `<ConstantField>`. Use CPSidx where a continuous
+CPSidx.xml's `<ConstantField>`, in the same 1e-5 /s units as
+`band` above. Use CPSidx where a continuous
 trend matters (e.g. animating tropical transition); use CPScat where
 a discrete label is easier to read at a glance or contour.
 
@@ -118,18 +140,30 @@ is to keep "warm core"/"cold core" language from being printed over a
 jet streak or open trough that just happens to have some vorticity
 shear but is not a cyclonic vortex at all -- the same caveat VTL/VTU
 carry in prose ("read it only near a closed low"), enforced here in
-the data instead of left to the forecaster's judgment.
+the data instead of left to the forecaster's judgment. `vortex_min` is
+also given via a `<ConstantField>` in 1e-5 /s units, same as `band`.
 
 ```
-DEFAULT_NEUTRAL_BAND = 3.0e-5   # 1/s; |VTL| or |VTU| below this is "neutral"
-DEFAULT_VORTEX_MIN   = 5.0e-5   # 1/s; classify only where smoothed 850 hPa
-                                 # relative vorticity exceeds this
-DEFAULT_INDEX_SCALE  = 1.0e-4   # 1/s; scale for CPSidx's tanh squashing
+DEFAULT_NEUTRAL_BAND = 3.0e-5   # SI 1/s internally; 3.0 (x1e-5 /s) at the
+                                 # CPScat.xml <ConstantField> -- |VTL| or
+                                 # |VTU| below this is "neutral"
+DEFAULT_VORTEX_MIN   = 5.0e-5   # SI 1/s internally; 5.0 (x1e-5 /s) at the
+                                 # <ConstantField> -- classify only where
+                                 # smoothed 850 hPa relative vorticity
+                                 # exceeds this
+DEFAULT_INDEX_SCALE  = 1.0e-4   # SI 1/s internally; 10.0 (x1e-5 /s) at the
+                                 # CPSidx.xml <ConstantField> -- scale for
+                                 # CPSidx's tanh squashing
 ```
 
-All three are just starting points (see the comments beside each
-constant in `CycloneCore.py`) -- they have not been calibrated against
-real cases.
+The SI values are what `classify()`/`continuous_index()` actually
+compare against internally; the `<ConstantField>` values in
+CPScat.xml/CPSidx.xml (and the `band`/`vortexMin`/`scale` keyword
+defaults on `executeClass()`/`executeIndex()`) are those same numbers
+times `UNIT_SCALE` (1e5), i.e. in the same 1e-5 /s units VTL/VTU
+sample in. All three are just starting points (see the comments
+beside each constant in `CycloneCore.py`) -- they have not been
+calibrated against real cases.
 
 ### Calibration procedure
 
@@ -139,20 +173,24 @@ real cases.
 2. Install CPScat/CPSidx (below) alongside VTL/VTU and load VTL/VTU
    as point values (Volume Browser sampling, or a script against the
    same grids) at each system's surface low center, across a few
-   forecast hours per case.
+   forecast hours per case. Remember VTL/VTU sample in 1e-5 /s (a
+   sampled value of 6 means 6e-5 /s in SI).
 3. Set `band` (`DEFAULT_NEUTRAL_BAND`) to roughly **half the smallest
    clear signal** you see -- e.g. if the weakest genuinely-warm-core
-   case still shows `vtl` around 6e-5, set `band` near 3e-5 so it
-   clears the neutral zone without also swallowing genuine noise.
+   case still shows `vtl` sampling around 6, set the CPScat.xml/
+   CPSidx.xml `band` `<ConstantField>` near 3 (i.e. 3e-5 /s in SI) so
+   it clears the neutral zone without also swallowing genuine noise.
 4. Set `vortex_min` (`DEFAULT_VORTEX_MIN`) **just below the smoothed
    850 hPa vorticity of the weakest low you still want classified** --
    low enough that your subtropical/weak case is not masked out, high
-   enough that random open-wave vorticity does not get labeled.
+   enough that random open-wave vorticity does not get labeled. Set
+   this as a `<ConstantField>` in the same 1e-5 /s units as `band`
+   (the shipped default is 5, i.e. 5e-5 /s in SI).
 5. Re-run all three cases against the new constants (pass them as
-   the `band`/`vortexMin`/`scale` `<ConstantField>` values, or call
-   `classify`/`continuous_index` directly) and check the codes/index
-   match forecaster judgment before trusting either field
-   operationally at your site.
+   the `band`/`vortexMin`/`scale` `<ConstantField>` values, in 1e-5 /s
+   units, or call `classify`/`continuous_index` directly in SI 1/s)
+   and check the codes/index match forecaster judgment before
+   trusting either field operationally at your site.
 
 ### Known limitation: Southern Hemisphere masking
 
@@ -318,8 +356,13 @@ computed vorticity/execute() values side by side.
 causes, distinguishable from the cause line in the CAVE log:
 
 1. Unit parsing or a null pointer in the derived parameter description:
-   the definition had no `unit` attribute. Both files now declare
-   `unit=""`. If that is also rejected, try `unit="1"`.
+   the definition had no `unit` attribute. CPScat.xml and CPSidx.xml
+   now declare `unit=""`. If that is also rejected, try `unit="1"`.
+   (VTL.xml, VTU.xml, and cpsZ850.xml also declare `unit=""` now, but
+   for a different reason: their values are scaled by `UNIT_SCALE` for
+   readable sampling -- see "What the fields are" -- so `unit="/s"`
+   would mislabel them; `unit=""` was confirmed to load on a real site
+   for these too.)
 2. A Python traceback ending in `has no attribute 'executeClass'` (or
    `executeIndex`): CAVE is still running the first CycloneCore.py.
    Replace the file on EDEX and restart CAVE; the embedded interpreter

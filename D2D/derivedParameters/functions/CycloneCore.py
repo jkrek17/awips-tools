@@ -54,6 +54,22 @@ cyclones entirely -- the same known limitation as VTL/VTU's sign
 (see D2D/README.md), TODO: a latitude pseudo-field to flip the mask's
 sign south of the equator.
 
+Unit convention across the AWIPS boundary: internally, every physics
+function in this file (`relative_vorticity`, `box_smooth`,
+`core_fields`, `classify`, `continuous_index`) works in SI, 1/s, like
+any sane vorticity code should. But CAVE's sampling readout rounds to
+two decimal places, and VTL/VTU's real magnitudes are of order 1e-4
+1/s -- so a forecaster sampling the field sees "0.00 sec^-1"
+everywhere, always. To make sampling actually readable, everything
+that crosses the AWIPS boundary -- the values `execute()` and
+`executeVorticity()` return, and the `band`/`vortexMin`/`scale`
+`<ConstantField>` thresholds `executeClass()`/`executeIndex()` take
+-- is scaled by `UNIT_SCALE` (see below) into units of 1e-5 /s, so a
+sampled value of "12.3" means 1.23e-4 /s. Only the entry points
+(`execute`, `executeVorticity`, `executeClass`, `executeIndex`) and
+the XML `<ConstantField>` values they're fed know about this scaling;
+everything internal stays in SI and is oblivious to it.
+
 This file must import nothing from outside itself plus the standard
 library and numpy: in AWIPS it runs inside CAVE's embedded Python
 interpreter, which only has numpy and whatever else lives in the same
@@ -75,6 +91,7 @@ __all__ = [
     "DEFAULT_NEUTRAL_BAND",
     "DEFAULT_VORTEX_MIN",
     "DEFAULT_INDEX_SCALE",
+    "UNIT_SCALE",
     "relative_vorticity",
     "box_smooth",
     "cells_for_km",
@@ -111,7 +128,10 @@ __all__ = [
 #: around a hurricane on a real AWIPS site -- instead of a single positive
 #: blob -- which is what running mode-0's vorticity formula over a
 #: transposed-axis grid (mode 2) or a south-up grid (mode 1) looks like.
-#: That is why the default here is 1, not 0. Use the cpsZ850 debug field
+#: Mode 1 was then confirmed correct on that same real AWIPS site (a
+#: single positive blob matching D2D's own 850 hPa relative vorticity over
+#: a real hurricane, per the "Orientation verification" procedure) -- it
+#: is not merely the untested default. Use the cpsZ850 debug field
 #: (D2D/derivedParameters/definitions/cpsZ850.xml), whose `mode`
 #: ConstantField can be edited without touching this file, to find which
 #: mode makes cpsZ850 match D2D's own relative vorticity at 850 mb on a
@@ -143,6 +163,22 @@ DEFAULT_VORTEX_MIN = 5.0e-5
 #: |VTL|/|VTU| magnitude that reads as "fully" warm/cold (tanh saturates by
 #: about 3x this). Tune after calibration.
 DEFAULT_INDEX_SCALE = 1.0e-4
+
+#: Unit conversion factor applied at the AWIPS boundary only. VTL/VTU's
+#: physical magnitude is order 1e-4 /s, and CAVE's sampling readout rounds
+#: to two decimal places, so a raw SI value samples as "0.00 sec^-1"
+#: everywhere -- not useful to a forecaster. `execute()` and
+#: `executeVorticity()` multiply their SI result by `UNIT_SCALE` before
+#: returning it, so the AWIPS-visible unit is 1e-5 /s instead of 1/s (a
+#: sampled "12.3" means 1.23e-4 /s); `executeClass()`/`executeIndex()`
+#: divide their `band`/`vortexMin`/`scale` `<ConstantField>` arguments by
+#: `UNIT_SCALE` before passing them on to `classify()`/`continuous_index()`,
+#: so those `<ConstantField>` values (see CPScat.xml/CPSidx.xml) are also
+#: in 1e-5 /s. Every internal function (`relative_vorticity`,
+#: `box_smooth`, `core_fields`, `classify`, `continuous_index`) stays in
+#: SI 1/s throughout and never multiplies or divides by this constant --
+#: only the four AWIPS entry points below do.
+UNIT_SCALE = 1.0e5
 
 
 # ---------------------------------------------------------------------------
@@ -362,10 +398,11 @@ def execute(uLo, vLo, uHi, vHi, dx, dy, smoothKm=DEFAULT_SMOOTH_KM):
     numpy array, or a 1-element numpy array -- an AWIPS <ConstantField>
     value).
 
-    Returns `box_smooth(zeta_lo - zeta_hi, cells)` as float32, units 1/s,
-    with no additional scaling. NaN wherever the inputs were missing.
-    Positive = warm core (see the module docstring for the sign
-    derivation); negative = cold core.
+    Returns `box_smooth(zeta_lo - zeta_hi, cells) * UNIT_SCALE` as
+    float32, units 1e-5 /s (a returned value of 12.3 means 1.23e-4 /s
+    in SI) -- see `UNIT_SCALE`'s comment for why the scaling exists.
+    NaN wherever the inputs were missing. Positive = warm core (see the
+    module docstring for the sign derivation); negative = cold core.
     """
     smooth_km = _coerce_scalar(smoothKm)
     zeta_lo = relative_vorticity(uLo, vLo, dx, dy)
@@ -373,11 +410,13 @@ def execute(uLo, vLo, uHi, vHi, dx, dy, smoothKm=DEFAULT_SMOOTH_KM):
     diff = zeta_lo - zeta_hi
     cells = cells_for_km(smooth_km, dx, dy)
     smoothed = box_smooth(diff, cells)
-    return smoothed.astype(np.float32)
+    return (smoothed * UNIT_SCALE).astype(np.float32)
 
 
 def executeVorticity(u, v, dx, dy, mode=None):
-    """AWIPS debug entry point: relative vorticity alone, float32, 1/s.
+    """AWIPS debug entry point: relative vorticity alone, float32, units
+    1e-5 /s (a returned value of 12.3 means 1.23e-4 /s in SI -- see
+    `UNIT_SCALE`'s comment).
 
     Used by the cpsZ850 definition (D2D/derivedParameters/definitions/
     cpsZ850.xml) so a site can compare its sign and pattern against
@@ -393,7 +432,8 @@ def executeVorticity(u, v, dx, dy, mode=None):
     """
     if mode is not None:
         mode = int(_coerce_scalar(mode))
-    return relative_vorticity(u, v, dx, dy, mode=mode).astype(np.float32)
+    zeta = relative_vorticity(u, v, dx, dy, mode=mode)
+    return (zeta * UNIT_SCALE).astype(np.float32)
 
 
 # ---------------------------------------------------------------------------
@@ -538,8 +578,8 @@ def executeClass(
     dx,
     dy,
     smoothKm=DEFAULT_SMOOTH_KM,
-    band=DEFAULT_NEUTRAL_BAND,
-    vortexMin=DEFAULT_VORTEX_MIN,
+    band=DEFAULT_NEUTRAL_BAND * UNIT_SCALE,
+    vortexMin=DEFAULT_VORTEX_MIN * UNIT_SCALE,
 ):
     """AWIPS derived-parameter entry point for CPScat (CPScat.xml).
 
@@ -548,15 +588,19 @@ def executeClass(
     the grid spacing pseudo-fields (meters). `smoothKm`, `band`,
     `vortexMin` may each arrive as a float, a 0-d numpy array, or a
     1-element numpy array (AWIPS `<ConstantField>` values) and are coerced
-    with `_coerce_scalar`.
+    with `_coerce_scalar`. `band` and `vortexMin` are in units of 1e-5 /s
+    (matching `execute()`/`executeVorticity()`'s output units -- see
+    `UNIT_SCALE`), not SI 1/s; they are divided by `UNIT_SCALE` here
+    before being passed on to `classify()`, which works in SI throughout.
 
     Computes `core_fields()` then `classify()`; see `classify`'s docstring
     for the decision table. Returns a float32 array, NaN outside cyclonic
-    vortices (per the vortex mask), otherwise 0-4.
+    vortices (per the vortex mask), otherwise 0-4 (dimensionless, no unit
+    scaling applies to the category codes themselves).
     """
     smooth_km = _coerce_scalar(smoothKm)
-    band_v = _coerce_scalar(band)
-    vortex_min_v = _coerce_scalar(vortexMin)
+    band_v = _coerce_scalar(band) / UNIT_SCALE
+    vortex_min_v = _coerce_scalar(vortexMin) / UNIT_SCALE
     vtl, vtu, zeta_lo = core_fields(uLo, vLo, uMid, vMid, uHi, vHi, dx, dy, smooth_km)
     return classify(vtl, vtu, zeta_lo, band=band_v, vortex_min=vortex_min_v)
 
@@ -571,18 +615,23 @@ def executeIndex(
     dx,
     dy,
     smoothKm=DEFAULT_SMOOTH_KM,
-    scale=DEFAULT_INDEX_SCALE,
-    vortexMin=DEFAULT_VORTEX_MIN,
+    scale=DEFAULT_INDEX_SCALE * UNIT_SCALE,
+    vortexMin=DEFAULT_VORTEX_MIN * UNIT_SCALE,
 ):
     """AWIPS derived-parameter entry point for CPSidx (CPSidx.xml).
 
     Same inputs as `executeClass`, `scale` in place of `band` (see
-    `continuous_index`'s docstring). Returns a float32 array, NaN outside
-    cyclonic vortices, otherwise in [-3, 3].
+    `continuous_index`'s docstring). `scale` and `vortexMin` are in units
+    of 1e-5 /s, like `executeClass`'s `band`/`vortexMin` (see
+    `UNIT_SCALE`); both are divided by `UNIT_SCALE` here before being
+    passed on to `continuous_index()`, which works in SI throughout.
+    Returns a float32 array, NaN outside cyclonic vortices, otherwise in
+    [-3, 3] (dimensionless -- no unit scaling applies to the index
+    itself).
     """
     smooth_km = _coerce_scalar(smoothKm)
-    scale_v = _coerce_scalar(scale)
-    vortex_min_v = _coerce_scalar(vortexMin)
+    scale_v = _coerce_scalar(scale) / UNIT_SCALE
+    vortex_min_v = _coerce_scalar(vortexMin) / UNIT_SCALE
     vtl, vtu, zeta_lo = core_fields(uLo, vLo, uMid, vMid, uHi, vHi, dx, dy, smooth_km)
     return continuous_index(vtl, vtu, zeta_lo, scale=scale_v, vortex_min=vortex_min_v)
 
@@ -619,12 +668,22 @@ if __name__ == "__main__":
 
     zeta_lo = relative_vorticity(u_lo, v_lo, spacing_m, spacing_m)
     interior = slice(2, -2)
-    print("interior zeta_lo (expect 2*W_lo = %.6e):" % (2.0 * W_lo))
+    print("interior zeta_lo, SI 1/s (expect 2*W_lo = %.6e):" % (2.0 * W_lo))
     print(zeta_lo[interior, interior].mean())
 
+    # execute() returns 1e-5 /s (see UNIT_SCALE); divide by UNIT_SCALE to
+    # get back to SI 1/s for the side-by-side comparison below.
     result = execute(u_lo, v_lo, u_hi, v_hi, spacing_m, spacing_m, smoothKm=0.0)
-    print("execute() interior (expect 2*(W_lo-W_hi) = %.6e):" % (2.0 * (W_lo - W_hi)))
+    print(
+        "execute() interior, 1e-5/s units (expect 2*(W_lo-W_hi)*UNIT_SCALE = %.6e):"
+        % (2.0 * (W_lo - W_hi) * UNIT_SCALE)
+    )
     print(result[interior, interior].mean())
+    print(
+        "execute() interior, converted back to SI 1/s (expect 2*(W_lo-W_hi) = %.6e):"
+        % (2.0 * (W_lo - W_hi))
+    )
+    print(result[interior, interior].mean() / UNIT_SCALE)
 
     # Three-level solid-body vortex, W_lo > W_mid > W_hi: a textbook deep
     # warm core (cyclonic circulation weakens steadily with height).

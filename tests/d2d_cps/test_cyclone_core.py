@@ -196,7 +196,8 @@ def test_execute_vorticity_mode_as_array():
     result = cc.executeVorticity(u.T, v.T, _SPACING_M, _SPACING_M, mode=np.array([2.0]))
 
     assert result.dtype == np.float32
-    np.testing.assert_allclose(_interior(result).astype(np.float64), 2.0 * W, rtol=1e-5)
+    # executeVorticity() returns 1e-5 /s, not SI 1/s -- see UNIT_SCALE.
+    np.testing.assert_allclose(_interior(result).astype(np.float64), 2.0 * W * cc.UNIT_SCALE, rtol=1e-5)
 
 
 def test_relative_vorticity_invalid_mode_raises():
@@ -225,7 +226,11 @@ def test_execute_vertical_difference_and_level_swap(standard_orientation):
     result = cc.execute(u_lo, v_lo, u_hi, v_hi, _SPACING_M, _SPACING_M, smoothKm=0.0)
 
     assert result.dtype == np.float32
-    expected = 2.0 * (w_lo - w_hi)
+    # execute() returns 1e-5 /s, not SI 1/s -- see CycloneCore.py's
+    # UNIT_SCALE. expected_si is the SI (1/s) analytic value;
+    # expected is that same value scaled to execute()'s output units.
+    expected_si = 2.0 * (w_lo - w_hi)
+    expected = expected_si * cc.UNIT_SCALE
     # float32 output, so tolerance is float32 precision (~1e-7 relative),
     # not the float64 1e-9 used for the pure-numpy relative_vorticity checks.
     np.testing.assert_allclose(_interior(result).astype(np.float64), expected, rtol=1e-6)
@@ -360,8 +365,11 @@ def test_southern_hemisphere_warm_core_reads_negative(standard_orientation):
     result = cc.execute(u_lo, v_lo, u_hi, v_hi, _SPACING_M, _SPACING_M, smoothKm=0.0)
 
     assert np.all(_interior(result) < 0)
-    expected = 2.0 * (w_lo - w_hi)
-    assert expected < 0
+    # execute() returns 1e-5 /s, not SI 1/s -- see CycloneCore.py's
+    # UNIT_SCALE.
+    expected_si = 2.0 * (w_lo - w_hi)
+    assert expected_si < 0
+    expected = expected_si * cc.UNIT_SCALE
     np.testing.assert_allclose(_interior(result).astype(np.float64), expected, rtol=1e-6)
 
 
@@ -509,9 +517,12 @@ def test_execute_class_deep_warm_core(standard_orientation):
     u_mid, v_mid = -W_mid * y, W_mid * x
     u_hi, v_hi = -W_hi * y, W_hi * x
 
+    # band/vortexMin here are in executeClass()'s AWIPS-boundary units,
+    # 1e-5 /s (see CycloneCore.py's UNIT_SCALE) -- 3.0/5.0, not the SI
+    # 3.0e-5/5.0e-5 that classify() itself takes.
     code = cc.executeClass(
         u_lo, v_lo, u_mid, v_mid, u_hi, v_hi, _SPACING_M, _SPACING_M,
-        smoothKm=0.0, band=3.0e-5, vortexMin=5.0e-5,
+        smoothKm=0.0, band=3.0, vortexMin=5.0,
     )
     assert code.dtype == np.float32
     np.testing.assert_allclose(_interior(code), 4.0)
@@ -529,13 +540,13 @@ def test_execute_class_cold_core_needs_lower_vortex_min(standard_orientation):
 
     masked_with_default = cc.executeClass(
         u_lo, v_lo, u_mid, v_mid, u_hi, v_hi, _SPACING_M, _SPACING_M,
-        smoothKm=0.0, band=3.0e-5,
+        smoothKm=0.0, band=3.0,
     )
     assert np.all(np.isnan(_interior(masked_with_default)))
 
     code = cc.executeClass(
         u_lo, v_lo, u_mid, v_mid, u_hi, v_hi, _SPACING_M, _SPACING_M,
-        smoothKm=0.0, band=3.0e-5, vortexMin=1.0e-5,
+        smoothKm=0.0, band=3.0, vortexMin=1.0,
     )
     np.testing.assert_allclose(_interior(code), 1.0)
 
@@ -551,7 +562,7 @@ def test_execute_class_mid_level_vortex(standard_orientation):
 
     code = cc.executeClass(
         u_lo, v_lo, u_mid, v_mid, u_hi, v_hi, _SPACING_M, _SPACING_M,
-        smoothKm=0.0, band=3.0e-5, vortexMin=1.0e-5,
+        smoothKm=0.0, band=3.0, vortexMin=1.0,
     )
     np.testing.assert_allclose(_interior(code), 0.0)
 
@@ -583,9 +594,12 @@ def test_execute_index_deep_warm_and_cold(standard_orientation):
     u_lo, v_lo = -W_lo * y, W_lo * x
     u_mid, v_mid = -W_mid * y, W_mid * x
     u_hi, v_hi = -W_hi * y, W_hi * x
+    # vortexMin here is in executeIndex()'s AWIPS-boundary units, 1e-5 /s
+    # (see CycloneCore.py's UNIT_SCALE), not the SI 5.0e-5/1.0e-5 that
+    # continuous_index() itself takes.
     idx_warm = cc.executeIndex(
         u_lo, v_lo, u_mid, v_mid, u_hi, v_hi, _SPACING_M, _SPACING_M,
-        smoothKm=0.0, vortexMin=5.0e-5,
+        smoothKm=0.0, vortexMin=5.0,
     )
     assert idx_warm.dtype == np.float32
     assert np.all(_interior(idx_warm) > 2.0)
@@ -596,7 +610,7 @@ def test_execute_index_deep_warm_and_cold(standard_orientation):
     u_hi2, v_hi2 = -W_hi2 * y, W_hi2 * x
     idx_cold = cc.executeIndex(
         u_lo2, v_lo2, u_mid2, v_mid2, u_hi2, v_hi2, _SPACING_M, _SPACING_M,
-        smoothKm=0.0, vortexMin=1.0e-5,
+        smoothKm=0.0, vortexMin=1.0,
     )
     assert np.all(_interior(idx_cold) < -1.0)
 
@@ -613,23 +627,25 @@ def test_execute_class_and_index_constant_coercion(standard_orientation):
     u_mid, v_mid = -W_mid * y, W_mid * x
     u_hi, v_hi = -W_hi * y, W_hi * x
 
+    # band/vortexMin/scale here are in executeClass()/executeIndex()'s
+    # AWIPS-boundary units, 1e-5 /s (see CycloneCore.py's UNIT_SCALE).
     baseline_code = cc.executeClass(
         u_lo, v_lo, u_mid, v_mid, u_hi, v_hi, _SPACING_M, _SPACING_M,
-        smoothKm=0.0, band=3.0e-5, vortexMin=5.0e-5,
+        smoothKm=0.0, band=3.0, vortexMin=5.0,
     )
     array_code = cc.executeClass(
         u_lo, v_lo, u_mid, v_mid, u_hi, v_hi, _SPACING_M, _SPACING_M,
-        smoothKm=np.array([0.0]), band=np.array([3.0e-5]), vortexMin=np.array([5.0e-5]),
+        smoothKm=np.array([0.0]), band=np.array([3.0]), vortexMin=np.array([5.0]),
     )
     np.testing.assert_allclose(array_code, baseline_code)
 
     baseline_idx = cc.executeIndex(
         u_lo, v_lo, u_mid, v_mid, u_hi, v_hi, _SPACING_M, _SPACING_M,
-        smoothKm=0.0, scale=1.0e-4, vortexMin=5.0e-5,
+        smoothKm=0.0, scale=10.0, vortexMin=5.0,
     )
     array_idx = cc.executeIndex(
         u_lo, v_lo, u_mid, v_mid, u_hi, v_hi, _SPACING_M, _SPACING_M,
-        smoothKm=np.array([0.0]), scale=np.array([1.0e-4]), vortexMin=np.array([5.0e-5]),
+        smoothKm=np.array([0.0]), scale=np.array([10.0]), vortexMin=np.array([5.0]),
     )
     np.testing.assert_allclose(array_idx, baseline_idx)
 
@@ -653,6 +669,65 @@ def test_southern_hemisphere_class_entirely_masked():
 
     code = cc.executeClass(u_lo, v_lo, u_mid, v_mid, u_hi, v_hi, _SPACING_M, _SPACING_M, smoothKm=0.0)
     assert np.all(np.isnan(code))
+
+
+# ---------------------------------------------------------------------------
+# (q): executeClass()/executeIndex() unit scaling matches the underlying
+# SI classify()/continuous_index() once their 1e-5 /s inputs are converted
+# back to SI -- i.e. UNIT_SCALE round-trips correctly at the AWIPS
+# boundary, computed independently via core_fields() rather than by
+# calling executeClass()/executeIndex() twice.
+# ---------------------------------------------------------------------------
+
+
+def test_execute_class_matches_classify_via_core_fields(standard_orientation):
+    x, y = _grid()
+    W_lo, W_mid, W_hi = 1.0e-4, 0.6e-4, 0.2e-4  # deep-warm three-level vortex
+    u_lo, v_lo = -W_lo * y, W_lo * x
+    u_mid, v_mid = -W_mid * y, W_mid * x
+    u_hi, v_hi = -W_hi * y, W_hi * x
+
+    # band=3.0, vortexMin=5.0 are executeClass()'s 1e-5 /s units.
+    code_entry = cc.executeClass(
+        u_lo, v_lo, u_mid, v_mid, u_hi, v_hi, _SPACING_M, _SPACING_M,
+        smoothKm=0.0, band=3.0, vortexMin=5.0,
+    )
+
+    # 3e-5, 5e-5 are the equivalent SI (1/s) values classify() itself
+    # takes; core_fields() computes vtl/vtu/zeta_lo in SI throughout.
+    vtl, vtu, zeta_lo = cc.core_fields(
+        u_lo, v_lo, u_mid, v_mid, u_hi, v_hi, _SPACING_M, _SPACING_M, smooth_km=0.0
+    )
+    code_internal = cc.classify(vtl, vtu, zeta_lo, band=3.0e-5, vortex_min=5.0e-5)
+
+    np.testing.assert_allclose(
+        code_entry.astype(np.float64), code_internal.astype(np.float64), rtol=1e-6
+    )
+
+
+def test_execute_index_matches_continuous_index_via_core_fields(standard_orientation):
+    x, y = _grid()
+    W_lo, W_mid, W_hi = 2.0e-4, 1.0e-4, 0.0
+    u_lo, v_lo = -W_lo * y, W_lo * x
+    u_mid, v_mid = -W_mid * y, W_mid * x
+    u_hi, v_hi = -W_hi * y, W_hi * x
+
+    # scale=10.0, vortexMin=5.0 are executeIndex()'s 1e-5 /s units.
+    idx_entry = cc.executeIndex(
+        u_lo, v_lo, u_mid, v_mid, u_hi, v_hi, _SPACING_M, _SPACING_M,
+        smoothKm=0.0, scale=10.0, vortexMin=5.0,
+    )
+
+    # 1e-4, 5e-5 are the equivalent SI (1/s) values continuous_index()
+    # itself takes.
+    vtl, vtu, zeta_lo = cc.core_fields(
+        u_lo, v_lo, u_mid, v_mid, u_hi, v_hi, _SPACING_M, _SPACING_M, smooth_km=0.0
+    )
+    idx_internal = cc.continuous_index(vtl, vtu, zeta_lo, scale=1.0e-4, vortex_min=5.0e-5)
+
+    np.testing.assert_allclose(
+        idx_entry.astype(np.float64), idx_internal.astype(np.float64), rtol=1e-6
+    )
 
 
 if __name__ == "__main__":
