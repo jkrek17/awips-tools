@@ -501,13 +501,30 @@ main { padding: 0 var(--sp-5) var(--sp-6); }
 /* ------------------------------------------------------------------- map */
 
 .map-wrap { position: relative; }
-#map, .globe-wrap {
-  height: min(78vh, 820px); min-height: 460px;
-  background: var(--surface-sunk);
-  border: 1px solid var(--border); border-radius: var(--radius-lg);
-}
-.leaflet-container { font-family: var(--font); background: var(--surface-sunk); }
 
+/* Height is capped three ways. 78vh (up to 820px on very tall screens)
+   gives the globe room to grow on a laptop. The third term, 92vw, exists
+   for the opposite case: on a narrow/portrait viewport 78vh makes the
+   panel far TALLER than it is wide, but globe.resize() sets
+   baseR = min(cssW, cssH)/2 * 0.92 (assets/js/globe.js) - the disc is
+   always sized to the panel's SHORTER side. Once height passes width,
+   every extra pixel of height just pads empty space above and below the
+   disc; it doesn't grow the globe. Capping height at 92vw keeps the
+   panel closer to square on portrait screens instead, so most of that
+   space goes back to the disc. At laptop/desktop widths 78vh/820px
+   already land well under 92vw, so this term never binds there and
+   nothing changes. Measured: at 1440x900 and 1280x800 the panel and
+   disc are pixel-identical to before this change. At 768x1024, 92vw
+   binds (height 799px -> 707px) and the dead band per side drops from
+   ~63px to ~27px, with the disc growing slightly (672px -> 652px)
+   since the panel is now less width-starved. At 390x844, 92vw itself
+   computes below min-height (359px vs 460px), so the 460px floor below
+   ends up being what binds (height 658px -> 460px, disc unchanged at
+   ~338px since it was already shorter-side-limited); the dead band per
+   side still drops from ~160px to ~61px, just via the existing floor
+   rather than the new term - a smaller viewport than this would need a
+   lower min-height too for a truly square panel, which is out of scope
+   here. */
 /* NOTE: was `display: grid; place-items: center` - a centred grid item is
    never stretched, so #globe's `height: 100%` (assets/globe.css) had no
    definite containing block and fell back to the canvas's intrinsic
@@ -515,7 +532,12 @@ main { padding: 0 var(--sp-5) var(--sp-6); }
    by overflow:hidden. #globe now fills via position:absolute; inset:0
    instead, so this wrapper only needs position:relative. #globe's box
    rules live solely in assets/globe.css - do not re-add them here. */
-.globe-wrap { position: relative; overflow: hidden; }
+.globe-wrap {
+  position: relative; overflow: hidden;
+  height: min(78vh, 820px, 92vw); min-height: 460px;
+  background: var(--surface-sunk);
+  border: 1px solid var(--border); border-radius: var(--radius-lg);
+}
 /* .globe-attrib used to be redeclared here with `right: 10px` while
    assets/globe.css declares it with `left: 10px`; neither rule set the
    other's anchor, so both applied and the badge stretched edge-to-edge

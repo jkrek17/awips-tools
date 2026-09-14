@@ -500,11 +500,31 @@ def validate_deploy_target(target: str) -> str:
     return abspath
 
 
+# docs/data/qc-report.txt is the plain-text data-quality report - every
+# repair, flag and drop the build made (see build_hf_lows.qc_report()). It is
+# still generated on every build and stays under docs/data/ in the repo,
+# because it is genuinely useful there: for local development, and for CI's
+# staleness check that confirms docs/data/ matches what the CSVs on disk
+# would produce. But it never belongs on the public web server - the "Data
+# quality" tab that used to show this in the UI was removed (see the comment
+# above renderMethod() in docs/assets/js/app.js), nothing the page loads at
+# runtime fetches this file, and the forecaster who owns this site does not
+# want the raw QC report - which can name specific stations/observations
+# treated as bad data - sitting at a guessable URL on a NOAA server with no
+# UI pointing at it and no auth in front of it. So it is excluded here, at
+# the one place both --deploy and --flat build their file list from, rather
+# than trusted to stay out of some downstream list forever.
+NOT_DEPLOYED = {"data/qc-report.txt"}
+
+
 def iter_site_files():
     for dirpath, _dirnames, filenames in os.walk(DOCS_DIR):
         for name in filenames:
             full = os.path.join(dirpath, name)
-            yield os.path.relpath(full, DOCS_DIR)
+            rel = os.path.relpath(full, DOCS_DIR)
+            if rel in NOT_DEPLOYED:
+                continue
+            yield rel
 
 
 # ---------------------------------------------------------------------------
