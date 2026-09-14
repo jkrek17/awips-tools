@@ -23,6 +23,9 @@
   };
 
   var TABLE_LIMIT = 300;
+  var globeReady = false;    // the globe is heavier to spin up than the flat map, so it waits until first needed
+  var detailTrigger = null;  // element to return focus to when the detail drawer closes
+  var announceTimer = null;  // debounces the aria-live result-count text
 
   /* ------------------------------------------------------------ filtering */
 

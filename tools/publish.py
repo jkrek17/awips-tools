@@ -252,7 +252,8 @@ def validate_csv(text: str, basin_key: str, dest_path: str) -> int:
     existing_path = os.path.join(ROOT, dest_path)
     if os.path.exists(existing_path):
         with open(existing_path, newline="", encoding="utf-8-sig") as fh:
-            existing_rows = sum(1 for r in _csv.reader(fh) if any(str(c).strip() for c in r))
+            existing_all_rows = list(_csv.reader(fh))
+        existing_rows = sum(1 for r in existing_all_rows[1:] if any(str(c).strip() for c in r))
         if existing_rows > 0 and data_rows < existing_rows * MIN_ROW_FRACTION:
             raise FetchError(
                 f"Response for basin '{basin_key}' has {data_rows} data rows, versus "
