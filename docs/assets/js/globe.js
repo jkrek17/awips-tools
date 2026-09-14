@@ -249,22 +249,53 @@ window.HF = window.HF || {};
     var coast = window.HF_COAST;
     if (!coast || !coast.polygons) return;
     var polys = coast.polygons;
+    var R = baseR * view.zoom;
+    var i;
+    var allSegments = new Array(polys.length);
+    for (i = 0; i < polys.length; i++) allSegments[i] = visibleSegments(polys[i]);
+
+    // Fill each ring as a single closed path per visible arc, bridging the
+    // hidden gaps along the horizon circle itself (the short way round)
+    // rather than a straight line - a landmass whose ring dips off the
+    // visible hemisphere and back must not fill a chord across the ocean
+    // between its two horizon crossings.
     ctx.fillStyle = pal.land;
-    ctx.strokeStyle = pal.coast;
+    for (i = 0; i < allSegments.length; i++) fillClippedRing(allSegments[i], R);
+
+    // The coastline itself is stroked separately, per visible arc with no
+    // closing edge - the horizon bridge above is not a real coastline, and
+    // the sphere outline drawn later already marks the disc's rim.
     ctx.lineWidth = 0.75;
-    for (var i = 0; i < polys.length; i++) {
-      var segs = visibleSegments(polys[i]);
-      for (var s = 0; s < segs.length; s++) {
-        var seg = segs[s];
-        if (seg.length < 3) continue;
-        ctx.beginPath();
-        ctx.moveTo(seg[0].x, seg[0].y);
-        for (var j = 1; j < seg.length; j++) ctx.lineTo(seg[j].x, seg[j].y);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-      }
+    for (i = 0; i < allSegments.length; i++) strokePath(allSegments[i], 0.75, pal.coast);
+  }
+
+  /** Fill one ring's visible arcs as a single closed path, connecting the
+      end of each arc to the start of the next along the horizon circle
+      (the shorter way round) instead of a straight chord. With one fully
+      visible arc the bridge collapses to a zero-length no-op, so this
+      also handles an unclipped ring with no special-casing. */
+  function fillClippedRing(segments, R) {
+    if (!segments.length) return;
+    ctx.beginPath();
+    ctx.moveTo(segments[0][0].x, segments[0][0].y);
+    for (var i = 0; i < segments.length; i++) {
+      var seg = segments[i];
+      for (var j = (i === 0 ? 1 : 0); j < seg.length; j++) ctx.lineTo(seg[j].x, seg[j].y);
+      var next = segments[(i + 1) % segments.length][0];
+      bridgeHorizon(seg[seg.length - 1], next, R);
     }
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function bridgeHorizon(from, to, R) {
+    var a1 = Math.atan2(from.y - cy, from.x - cx);
+    var a2 = Math.atan2(to.y - cy, to.x - cx);
+    var delta = a2 - a1;
+    while (delta > Math.PI) delta -= Math.PI * 2;
+    while (delta < -Math.PI) delta += Math.PI * 2;
+    if (Math.abs(delta) < 1e-9) return;
+    ctx.arc(cx, cy, R, a1, a1 + delta, delta < 0);
   }
 
   function trackColor(low) {
