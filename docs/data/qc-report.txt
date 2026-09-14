@@ -1,5 +1,5 @@
 HF extratropical low archive - data quality report
-generated 2026-09-14T17:20:36Z
+generated 2026-09-14T17:56:22Z
 
   categoriesMapped         7
   categoriesUnknown        1

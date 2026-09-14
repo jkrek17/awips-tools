@@ -775,6 +775,64 @@
     }).join(' · ');
     document.getElementById('sourceLine').textContent =
       'Built ' + DATA.generated + ' — ' + sources + '.';
+
+    renderBuildProvenance();
+  }
+
+  // HF.decode() (util.js) whitelists which top-level fields of the raw
+  // payload survive into DATA, and "build" (added after that list was
+  // written) isn't one of them - so this reads window.HF_DATA.build
+  // directly rather than DATA.build, which would always be undefined.
+  function renderBuildProvenance() {
+    var el = document.getElementById('buildProvenance');
+    if (!el) return;
+    var build = (window.HF_DATA && window.HF_DATA.build) || null;
+
+    var commitText;
+    if (!build || !build.commit) {
+      // Null on the production server: it's a plain copy of the code with
+      // no .git directory, not a checkout - see docs/README.md.
+      commitText = 'commit unknown (no .git at build time)';
+    } else {
+      commitText = 'commit ' + build.commit + (build.dirty ? ' (dirty working tree)' : '');
+    }
+
+    var sourceLabel = { fetched: 'fetched from the archive sheet via Apps Script',
+                         local: 'CSVs on disk (manual export or already committed)' };
+    var sourceText = build && build.dataSource
+      ? 'data ' + (sourceLabel[build.dataSource] || build.dataSource)
+      : 'data source unrecorded';
+
+    el.textContent = 'Provenance: ' + commitText + ' · ' + sourceText + '.';
+  }
+
+  // The page can't know for certain which of the two published copies it
+  // is - see README.md - but the hostname is a good enough proxy: a
+  // *.github.io host is always the GitHub Pages preview (built from the
+  // CSVs committed to the repo), localhost/127.0.0.1 is a local dev server,
+  // and anything else is treated as the NOAA production server and gets no
+  // marker at all.
+  function renderEnvBadge() {
+    var el = document.getElementById('envBadge');
+    if (!el) return;
+    var host = window.location.hostname || '';
+    var label = null, title = '';
+    if (/(^|\.)github\.io$/i.test(host)) {
+      label = 'Preview build';
+      title = 'GitHub Pages preview, built from the CSVs committed to this repo. ' +
+              'Production is served separately from the NOAA web server and may show different data.';
+    } else if (host === 'localhost' || host === '127.0.0.1') {
+      label = 'Local build';
+      title = 'Local development server, not the production site. ' +
+              'Production is served from the NOAA web server via tools/publish.py.';
+    }
+    if (label) {
+      el.textContent = label;
+      el.title = title;
+      el.hidden = false;
+    } else {
+      el.hidden = true;
+    }
   }
 
   /* ------------------------------------------------------- active filters */
@@ -1105,6 +1163,9 @@
     var loadingEl = document.getElementById('loading');
     var mainEl = document.querySelector('main');
     var kpisEl = document.getElementById('kpis');
+
+    // Not data-dependent - runs even if the payload below fails to load.
+    renderEnvBadge();
 
     if (!window.HF_DATA) {
       loadingEl.hidden = true;

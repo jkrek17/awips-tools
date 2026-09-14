@@ -10,10 +10,11 @@ AWIPS tools and procedures.
 | `legacy_tools/` | Earlier versions kept for reference; see `legacy_tools/VERSION_CONTROL.md`. |
 | `tests/` | Verification scripts and fixtures. |
 | `web/TCWind_JTWC/` | Google Apps Script preview of the JTWC tropical cyclone wind tool. |
-| `data/hf_lows/` | CSV exports of the hurricane force extratropical low archive workbook. |
+| `web/HFArchiveExport/` | Google Apps Script web app that exports the restricted HF low sheet as CSV for `tools/publish.py`. |
+| `data/hf_lows/` | CSV exports of the hurricane force extratropical low archive workbook, committed here on purpose (see below). |
 | `tools/build_hf_lows.py` | Normalizes those CSVs into the site data under `docs/data/`. |
-| `tools/publish.py` | Fetches, builds, reports the delta, and (on request) deploys to a self-hosted web root. |
-| `docs/` | The HF extratropical low archive site, published with GitHub Pages. |
+| `tools/publish.py` | Production path: fetches, builds, reports the delta, and (on request) deploys to the NOAA web root. |
+| `docs/` | The HF extratropical low archive site. GitHub Pages serves it as a development preview; production is a separate copy on a NOAA web server. |
 
 ## HF extratropical low archive site
 
@@ -21,25 +22,70 @@ A static page for browsing and summarizing hurricane force extratropical lows in
 the North Atlantic and North Pacific - tracks, climatology charts, a searchable
 event table, and a data quality report. See `docs/README.md`.
 
-Update it in three steps:
+There are **two environments**, deliberately kept apart. Both build the same
+`docs/` from the same code; they differ only in where the data comes from and
+where the result is served. See "Which environment am I looking at?" below
+for how to tell them apart on the page itself.
+
+### Development: this repo + GitHub Pages
+
+This repo is public, and the two decades of hand-entered archive CSVs under
+`data/hf_lows/` are committed to it - that's intentional, confirmed by the
+archive's owner, not an oversight. Edit, commit and push here; a GitHub
+Actions workflow (`.github/workflows/pages.yml`) rebuilds `docs/` from those
+committed CSVs and publishes it to GitHub Pages on every push to `main`.
 
 ```bash
 # 1. export each basin tab of the workbook over the CSVs in data/hf_lows/
 # 2. rebuild the site data
 python3 tools/build_hf_lows.py
-# 3. commit both the CSVs and docs/data, then push
+# 3. commit both the CSVs and docs/data, then push - Actions does the rest
 ```
 
 Preview locally with `python3 -m http.server 8000 --directory docs`.
 
-## Publishing
+This published Pages site is a **preview of the code and of whatever data
+happens to be committed** - it is not the operational page, and it can lag or
+lead the real archive depending on when someone last exported and committed.
 
-`tools/publish.py` is an alternative to GitHub Pages, for a site served from a
-Linux box you control (shell and cron). It wraps the whole workflow - fetch,
-build, review, deploy - into one deliberate command. It never runs `git`, and
-never needs a Google account, OAuth token or service account: the sheet stays
-restricted to "anyone in NOAA", and every publish is a decision a human makes
-after reading a plain-English delta report.
+### Production: `tools/publish.py` + the NOAA web server
+
+The operational page lives on a NOAA web server the forecaster controls, and
+the code reaches it by hand - copied out of this GitHub repo, not deployed
+from it. **GitHub is not in the production path at all**: nothing there
+pulls from GitHub, calls its API, or depends on Pages, Actions, or the
+service being reachable. A GitHub outage, a policy change, or the repo going
+private or disappearing cannot take the operational page down.
+
+Data reaches production through `tools/publish.py`, which wraps the whole
+workflow - fetch, build, review, deploy - into one deliberate command. It
+never runs `git` and never needs a Google account, OAuth token or service
+account: the sheet stays restricted to "anyone in NOAA", and it fetches
+through a companion Apps Script web app (`web/HFArchiveExport/`, run by
+someone who already has the sheet open) rather than reading the sheet
+directly. Every publish is a decision a human makes after reading a
+plain-English delta report - see "Publishing" below.
+
+### Which environment am I looking at?
+
+The page cannot know for certain which copy it is, but it makes a good-faith
+guess and says so:
+
+- A small **"Preview build"** or **"Local build"** marker appears next to the
+  "Experimental" badge in the masthead when the page is served from a
+  `*.github.io` host or from `localhost`/`127.0.0.1`. No marker at all means
+  the page believes it's production (any other hostname) - it is never shown
+  on the real NOAA server.
+- The **Method** tab's footnote (below "Rebuilding") always states when the
+  page was built, from which git commit (or "commit unknown" - expected on
+  the production server, which is a plain code copy with no `.git`
+  directory), and whether the data was fetched via Apps Script or built from
+  CSVs already on disk.
+
+If two people are looking at different numbers, check these two things
+before anything else.
+
+## Publishing
 
 ### One-time setup - pick one of two input modes
 

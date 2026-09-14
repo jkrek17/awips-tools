@@ -45,9 +45,12 @@ jobs:
       - name: Rebuild site data from the CSV archive
         run: python3 tools/build_hf_lows.py
 
-      # Every build stamps a fresh "generated" time, so a plain git diff always
-      # reports a change. Compare the payload with that one field removed, which
-      # is the only comparison that says anything about the data.
+      # Every build stamps a fresh "generated" time and a "build" provenance
+      # object (git commit/dirty flag, host) that is specific to *this* build,
+      # not to the data - so a plain git diff always reports a change even
+      # when nothing about the archive itself moved. Compare the payload with
+      # those two fields removed, which is the only comparison that says
+      # anything about the data.
       - name: Warn if the committed data is stale
         run: |
           python3 - <<'PY'
@@ -55,8 +58,9 @@ jobs:
           fresh = json.load(open('docs/data/hf-lows.json'))
           committed = json.loads(
               subprocess.check_output(['git', 'show', 'HEAD:docs/data/hf-lows.json']))
-          fresh.pop('generated', None)
-          committed.pop('generated', None)
+          for payload in (fresh, committed):
+              payload.pop('generated', None)
+              payload.pop('build', None)
           if fresh != committed:
               print('::warning::docs/data is out of date with data/hf_lows/. The '
                     'published site uses the freshly built version; re-run '

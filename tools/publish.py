@@ -325,11 +325,16 @@ def load_published_payload():
     return None
 
 
-def run_build():
+def run_build(data_source: str | None = None):
     """Build the payload and write docs/data/*, exactly as tools/build_hf_lows.py
     does when run directly - reusing its own functions rather than
-    re-implementing the write step differently in two places."""
-    payload = build_hf_lows.build()
+    re-implementing the write step differently in two places.
+
+    `data_source` records how the CSVs in data/hf_lows/ got there for this
+    particular run ("fetched" via the Apps Script endpoint, "local" when
+    --no-fetch was passed) - build_hf_lows.py itself has no way to know that,
+    so main() tells it."""
+    payload = build_hf_lows.build(data_source=data_source)
 
     data_dir = os.path.join(DOCS_DIR, "data")
     os.makedirs(data_dir, exist_ok=True)
@@ -576,11 +581,13 @@ def main() -> int:
 
     if not args.no_fetch:
         do_fetch()
+        data_source = "fetched"
     else:
         print("Skipping fetch (--no-fetch); building from the CSVs already on disk.")
+        data_source = "local"
 
     old_payload = load_published_payload()
-    new_payload = run_build()
+    new_payload = run_build(data_source=data_source)
     counts = new_payload["qc"]["counts"]
     print(f"\nBuilt: lows {counts.get('lows', 0)}  fixes {counts.get('fixes', 0)}  "
           f"seasons {len(new_payload['seasons'])}\n")

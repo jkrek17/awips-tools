@@ -11,6 +11,19 @@
 <link rel="stylesheet" href="assets/charts.css">
 <link rel="stylesheet" href="assets/map.css">
 <link rel="stylesheet" href="assets/globe.css">
+<style>
+  /* Non-production environment marker (see #envBadge below). Kept here,
+     scoped to this one element, rather than in assets/app.css so it doesn't
+     collide with in-flight styling work on that file. Quiet by design: same
+     size as the Experimental badge, neutral colour (no alarm implied), and
+     gone entirely on print. */
+  .badge-env {
+    font-size: var(--fs-xs); font-weight: 650; letter-spacing: .04em;
+    text-transform: uppercase; padding: 3px 8px; border-radius: var(--radius-pill);
+    color: var(--ink-2); background: var(--surface-sunk); border: 1px solid var(--border-strong);
+  }
+  @media print { .badge-env { display: none !important; } }
+</style>
 </head>
 <body>
 
@@ -22,6 +35,7 @@
   </div>
   <div class="topbar-actions">
     <span class="badge badge-warn" title="Not an official product. Derived from a hand-maintained archive.">Experimental</span>
+    <span class="badge badge-env" id="envBadge" hidden></span>
     <button type="button" id="themeToggle" class="icon-btn" aria-label="Switch colour theme" title="Switch colour theme">
       <span aria-hidden="true">◐</span>
     </button>
@@ -346,9 +360,13 @@
         <code>data/hf_lows/</code> and run
         <code>python3 tools/build_hf_lows.py</code>. The script regenerates
         everything under <code>docs/data/</code>; committing the result
-        publishes it.
+        publishes the GitHub Pages preview. The production copy on the NOAA
+        web server is separate: it is updated with <code>tools/publish.py</code>,
+        which does not go through GitHub at all. See the root
+        <code>README.md</code> for both.
       </p>
       <p class="muted" id="sourceLine"></p>
+      <p class="muted" id="buildProvenance"></p>
 
       <h2>Credits</h2>
       <dl class="defs">

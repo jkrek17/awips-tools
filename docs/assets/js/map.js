@@ -230,46 +230,112 @@ window.HF = window.HF || {};
               : n > 300 ? { weight: 1.5, opacity: 0.5 }
               : { weight: 2, opacity: 0.78 };
 
+    // --mslp-* resolves through getComputedStyle, so resolve each of the 8
+    // possible tokens (7 bands + none) once per render instead of once per
+    // segment - with ~1870 tracks and ~8000 fixes that's the difference
+    // between ~8 style reads and several thousand.
+    var colorCache = {};
+    function resolveToken(token) {
+      if (!(token in colorCache)) colorCache[token] = HF.cssVar(token);
+      return colorCache[token];
+    }
+
     // Draw unselected tracks first so the selected one is never buried.
     var selected = null;
     lows.forEach(function (low) {
       if (low.key === selectedKey) { selected = low; return; }
-      layerGroup.addLayer(trackLine(low, false, style));
+      addTrack(low, false, style, resolveToken);
     });
     if (selected) {
-      layerGroup.addLayer(trackLine(selected, true, style));
+      addTrack(selected, true, style, resolveToken);
       selected.fixes.forEach(function (fix) {
         layerGroup.addLayer(fixMarker(fix, selected));
       });
     }
   }
 
-  function trackLine(low, isSelected, style) {
+  /** Split a 'low' track into runs of consecutive fixes whose segment colour
+      (mean MSLP of the two endpoints, per-segment) falls on the same
+      --mslp-* step. Adjacent fixes usually deepen/fill gradually, so most
+      tracks collapse to 1-3 runs rather than one per fix - drawing one
+      polyline per run keeps the fixes.length-1 segments Leaflet actually has
+      to render down near the fixes.length-1 -> low-single-digits ratio that
+      makes per-fix colour affordable at this scale. A segment where either
+      endpoint has no analyzed pressure gets --mslp-none rather than being
+      skipped, so a gap in the analysis doesn't break the line in two. */
+  function pressureRuns(low, frame) {
+    var pts = trackLatLngs(low.fixes, frame);
+    var fixes = low.fixes;
+    if (pts.length < 2) return pts.length ? [{ token: tokenFor(fixes[0].pres), points: [pts[0], pts[0]] }] : [];
+
+    var runs = [];
+    var curToken = null, curPts = null;
+    for (var i = 0; i < fixes.length - 1; i++) {
+      var p0 = fixes[i].pres, p1 = fixes[i + 1].pres;
+      var token = (p0 == null || p1 == null) ? '--mslp-none' : HF.pressureToken((p0 + p1) / 2);
+      if (token !== curToken) {
+        if (curPts) runs.push({ token: curToken, points: curPts });
+        curToken = token;
+        curPts = [pts[i]];
+      }
+      curPts.push(pts[i + 1]);
+    }
+    if (curPts) runs.push({ token: curToken, points: curPts });
+    return runs;
+  }
+
+  function tokenFor(pres) { return pres == null ? '--mslp-none' : HF.pressureToken(pres); }
+
+  function addTrack(low, isSelected, style, resolveToken) {
     var base = style || { weight: 2, opacity: 0.78 };
     // No pressure means no place on the pressure ramp: terrain-forced events
     // get their own hue plus a dash pattern, so they stay distinguishable
-    // without relying on colour alone.
+    // without relying on colour alone. They're a single flat colour for the
+    // whole track (there's nothing to ramp), so one polyline is enough.
     var terrain = low.cls && low.cls !== 'low';
-    var line = L.polyline(trackLatLngs(low.fixes, state.frame), {
-      color: terrain ? HF.classColor(low.cls) : HF.pressureColor(low.minP),
-      dashArray: terrain ? '5 4' : null,
-      weight: isSelected ? 4 : (terrain ? base.weight + 0.5 : base.weight),
-      opacity: isSelected ? 1 : Math.min(1, base.opacity + (terrain ? 0.2 : 0)),
-      lineJoin: 'round',
-      interactive: true
+    var lines = terrain
+      ? [L.polyline(trackLatLngs(low.fixes, state.frame), {
+          color: HF.classColor(low.cls),
+          dashArray: '5 4',
+          weight: isSelected ? 4 : base.weight + 0.5,
+          opacity: isSelected ? 1 : Math.min(1, base.opacity + 0.2),
+          lineJoin: 'round',
+          interactive: true
+        })]
+      : pressureRuns(low, state.frame).map(function (run) {
+          return L.polyline(run.points, {
+            color: resolveToken(run.token),
+            weight: isSelected ? 4 : base.weight,
+            opacity: isSelected ? 1 : base.opacity,
+            lineJoin: 'round',
+            interactive: true
+          });
+        });
+
+    // Hovering/selecting acts on the whole track, so every run belonging to
+    // one low is wired to thicken and front-raise together, and the tooltip
+    // is the same regardless of which segment triggered it.
+    lines.forEach(function (line) {
+      line.on('mouseover', function (e) {
+        lines.forEach(function (l) {
+          l.setStyle({ weight: isSelected ? 5.5 : Math.max(3.5, base.weight + 2.5), opacity: 1 });
+          l.bringToFront();
+        });
+        HF.showTip(trackTip(low), e.originalEvent);
+      });
+      line.on('mousemove', function (e) { HF.moveTip(e.originalEvent); });
+      line.on('mouseout', function () {
+        lines.forEach(function (l) {
+          l.setStyle({
+            weight: isSelected ? 4 : (terrain ? base.weight + 0.5 : base.weight),
+            opacity: isSelected ? 1 : Math.min(1, base.opacity + (terrain ? 0.2 : 0))
+          });
+        });
+        HF.hideTip();
+      });
+      line.on('click', function () { if (state.onSelect) state.onSelect(low); });
+      layerGroup.addLayer(line);
     });
-    line.on('mouseover', function (e) {
-      line.setStyle({ weight: isSelected ? 5.5 : Math.max(3.5, base.weight + 2.5), opacity: 1 });
-      line.bringToFront();
-      HF.showTip(trackTip(low), e.originalEvent);
-    });
-    line.on('mousemove', function (e) { HF.moveTip(e.originalEvent); });
-    line.on('mouseout', function () {
-      line.setStyle({ weight: isSelected ? 4 : base.weight, opacity: isSelected ? 1 : base.opacity });
-      HF.hideTip();
-    });
-    line.on('click', function () { if (state.onSelect) state.onSelect(low); });
-    return line;
   }
 
   function trackTip(low) {

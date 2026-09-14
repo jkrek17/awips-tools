@@ -146,27 +146,47 @@ window.HF = window.HF || {};
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   };
 
-  /** Sequential ramp for central pressure: deeper low = darker step. */
-  HF.pressureColor = function (hpa) {
-    if (hpa == null) return HF.cssVar('--ink-muted');
-    var stops = [940, 952, 964, 976, 988, 1000];     // upper edge of each step
+  // Upper edge of each pressure step, shallowest-last. Shared with
+  // HF.PRESSURE_BANDS below (keep the two in sync) and read by map.js to
+  // batch-resolve the token->hex lookup once per render instead of once per
+  // fix/segment.
+  HF.PRESSURE_STOPS = [945, 957, 969, 981, 993, 1005];
+
+  /** Which --mslp-* custom property a pressure falls on, as a name (not yet
+      resolved to a colour) - lets a caller that's about to look up hundreds
+      or thousands of these (map.js's per-segment tracks) resolve each
+      distinct token once via HF.cssVar instead of once per call. */
+  HF.pressureToken = function (hpa) {
+    if (hpa == null) return '--mslp-none';
+    var stops = HF.PRESSURE_STOPS;
     var step = stops.length + 1;
     for (var i = 0; i < stops.length; i++) {
       if (hpa < stops[i]) { step = i + 1; break; }
     }
-    // step 1 = deepest. Darkest sequential step for the deepest low.
-    var names = ['--seq-7', '--seq-6', '--seq-5', '--seq-4', '--seq-3', '--seq-2', '--seq-1'];
-    return HF.cssVar(names[Math.min(step, names.length) - 1]);
+    // step 1 = deepest -> --mslp-7 (hottest). step 7 = shallowest -> --mslp-1.
+    var names = ['--mslp-7', '--mslp-6', '--mslp-5', '--mslp-4', '--mslp-3', '--mslp-2', '--mslp-1'];
+    return names[Math.min(step, names.length) - 1];
+  };
+
+  /** Warm "intensity" ramp for central pressure, applied per fix: pale amber
+      (shallow) through orange and red to deep magenta (deepest). Deeper low =
+      hotter step, on --mslp-1..7 (1 = shallowest, 7 = deepest - see app.css
+      for the validated hex values in each theme). Used both per-fix/segment
+      (map tracks, the drawer's pressure trace) and for band midpoints (the
+      pressure histogram, the map legend), so it has to work on arbitrary hPa
+      values, not just the seven band centres. */
+  HF.pressureColor = function (hpa) {
+    return HF.cssVar(HF.pressureToken(hpa));
   };
 
   HF.PRESSURE_BANDS = [
-    { label: '< 940', v: 935 },
-    { label: '940–951', v: 945 },
-    { label: '952–963', v: 957 },
-    { label: '964–975', v: 969 },
-    { label: '976–987', v: 981 },
-    { label: '988–999', v: 993 },
-    { label: '≥ 1000', v: 1005 }
+    { label: '< 945', v: 940 },
+    { label: '945–956', v: 950 },
+    { label: '957–968', v: 962 },
+    { label: '969–980', v: 974 },
+    { label: '981–992', v: 986 },
+    { label: '993–1004', v: 998 },
+    { label: '≥ 1005', v: 1010 }
   ];
 
   /** Per-fix category colour. Ordinal severity, so it reads as a ramp. */
@@ -185,7 +205,10 @@ window.HF = window.HF || {};
   /** Event class colour. Terrain-forced events have no pressure, so they sit
       outside the pressure ramp entirely and need their own hue. */
   HF.classColor = function (cls) {
-    if (cls === 'tipjet') return '#e87ba4';        // categorical slot 5
+    // Moved off magenta (#e87ba4), which now collides with the deep end of
+    // the --mslp-* pressure ramp - violet reads as "not on the pressure
+    // scale" instead, which is correct: these events have no analyzed centre.
+    if (cls === 'tipjet') return HF.cssVar('--terrain');
     if (cls === 'nocentre') return HF.cssVar('--ink-muted');
     return HF.cssVar('--accent');
   };
