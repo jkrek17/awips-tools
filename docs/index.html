@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hurricane Force Extratropical Low Archive</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%8C%80%3C/text%3E%3C/svg%3E">
+<meta name="description" content="Archive and climatology of hurricane force extratropical lows in the North Atlantic and North Pacific.">
+<link rel="stylesheet" href="assets/vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <h1>Hurricane Force Extratropical Low Archive</h1>
+    <p class="sub">North Atlantic &amp; North Pacific &middot; <span id="vintage">loading&hellip;</span></p>
+  </div>
+  <div class="topbar-actions">
+    <span class="badge badge-warn" title="Not an official product. Derived from a hand-maintained archive.">Experimental</span>
+    <button type="button" id="themeToggle" class="icon-btn" aria-label="Switch colour theme" title="Switch colour theme">
+      <span aria-hidden="true">◐</span>
+    </button>
+  </div>
+</header>
+
+<nav class="tabs" role="tablist" aria-label="Views">
+  <button role="tab" class="tab is-active" data-panel="map" aria-selected="true">Map</button>
+  <button role="tab" class="tab" data-panel="clim" aria-selected="false">Climatology</button>
+  <button role="tab" class="tab" data-panel="events" aria-selected="false">Events</button>
+  <button role="tab" class="tab" data-panel="qc" aria-selected="false">Data quality</button>
+  <button role="tab" class="tab" data-panel="method" aria-selected="false">Method</button>
+</nav>
+
+<section class="filters" aria-label="Filters">
+  <div class="filter">
+    <label for="fBasin">Basin</label>
+    <select id="fBasin">
+      <option value="both">Both basins</option>
+      <option value="atl">Atlantic</option>
+      <option value="pac">Pacific</option>
+    </select>
+  </div>
+
+  <div class="filter">
+    <label for="fClass">Event type</label>
+    <select id="fClass">
+      <option value="all">All events</option>
+      <option value="low">Synoptic lows only</option>
+      <option value="nopres">No analyzed centre</option>
+      <option value="tipjet">Tip jet candidates</option>
+    </select>
+  </div>
+
+  <div class="filter">
+    <label for="fSeason0">Seasons</label>
+    <div class="range-pair">
+      <select id="fSeason0"></select>
+      <span class="range-dash" aria-hidden="true">to</span>
+      <select id="fSeason1"></select>
+    </div>
+  </div>
+
+  <div class="filter filter-grow">
+    <label id="monthsLabel">Months</label>
+    <div class="chips" id="fMonths" role="group" aria-labelledby="monthsLabel"></div>
+  </div>
+
+  <div class="filter">
+    <label for="fPressure">Min central pressure &le; <output id="fPressureOut">1060</output> hPa</label>
+    <input type="range" id="fPressure" min="900" max="1010" step="5" value="1010">
+  </div>
+
+  <div class="filter">
+    <label for="fSearch">Find</label>
+    <input type="search" id="fSearch" placeholder="Event ID or season" autocomplete="off">
+  </div>
+
+  <div class="filter filter-checks">
+    <label class="check"><input type="checkbox" id="fBomb"> Explosive only <abbr title="Maximum 24-hour deepening of at least 1 Bergeron, latitude-normalized">(&ge;1 B)</abbr></label>
+    <button type="button" id="fReset" class="btn">Reset</button>
+  </div>
+</section>
+
+<section class="kpis" id="kpis" aria-label="Summary statistics"></section>
+
+<main>
+  <!-- Map ------------------------------------------------------------- -->
+  <section class="panel is-active" id="panel-map" role="tabpanel">
+    <div class="panel-tools">
+      <div class="segmented" role="group" aria-label="Map layer">
+        <button type="button" class="seg is-active" data-layer="tracks">Tracks</button>
+        <button type="button" class="seg" data-layer="density">Fix density</button>
+        <button type="button" class="seg" data-layer="genesis">First fix</button>
+        <button type="button" class="seg" data-layer="peak">Peak intensity</button>
+      </div>
+      <button type="button" class="btn" id="fitBounds">Fit to events</button>
+      <p class="tool-note" id="mapNote"></p>
+    </div>
+    <div class="map-wrap">
+      <div id="map"></div>
+      <div class="map-legend" id="mapLegend" aria-hidden="false"></div>
+    </div>
+  </section>
+
+  <!-- Climatology ------------------------------------------------------ -->
+  <section class="panel" id="panel-clim" role="tabpanel">
+    <div class="chart-grid">
+      <figure class="card chart-card chart-wide">
+        <figcaption>
+          <h2>Events per season</h2>
+          <p>
+            Each bar is one cool season (July&ndash;June); the dashed line is the
+            period mean. Coverage begins part-way through the record &mdash;
+            Pacific entries start in February&nbsp;2002 and Atlantic in
+            September&nbsp;2003 &mdash; so the first seasons are short-counted,
+            not quiet.
+          </p>
+        </figcaption>
+        <div class="chart" id="chartSeason"></div>
+      </figure>
+
+      <figure class="card chart-card">
+        <figcaption>
+          <h2>Seasonal cycle</h2>
+          <p>Events by calendar month of first fix, ordered July&ndash;June.</p>
+        </figcaption>
+        <div class="chart" id="chartMonth"></div>
+      </figure>
+
+      <figure class="card chart-card">
+        <figcaption>
+          <h2>Minimum central pressure</h2>
+          <p>Lowest analyzed pressure per event, 5&nbsp;hPa bins.</p>
+        </figcaption>
+        <div class="chart" id="chartPressure"></div>
+      </figure>
+
+      <figure class="card chart-card">
+        <figcaption>
+          <h2>Time at hurricane force</h2>
+          <p>Hurricane force fixes &times; 6&nbsp;h. An interval estimate, not a measured duration.</p>
+        </figcaption>
+        <div class="chart" id="chartDuration"></div>
+      </figure>
+
+      <figure class="card chart-card chart-wide">
+        <figcaption>
+          <h2>Maximum 24-hour deepening</h2>
+          <p>
+            Largest pressure fall over any 18&ndash;24&nbsp;h window, scaled to
+            24&nbsp;h and latitude-normalized. Only events carrying that much
+            pressure data qualify; a negative value means the low filled
+            throughout the window it was tracked.
+          </p>
+        </figcaption>
+        <div class="chart" id="chartBergeron"></div>
+      </figure>
+
+      <figure class="card chart-card">
+        <figcaption>
+          <h2>Events with no analyzed centre</h2>
+          <p>
+            Hurricane force with no central pressure anywhere in the track.
+            Most sit within 550&nbsp;km of Cape Farewell &mdash; Greenland tip
+            jets, not cyclone centres.
+          </p>
+        </figcaption>
+        <div class="chart" id="chartNoCentre"></div>
+      </figure>
+
+      <figure class="card chart-card chart-wide">
+        <figcaption>
+          <h2>Peak intensity by latitude</h2>
+          <p>Minimum central pressure against the latitude at which it occurred.</p>
+        </figcaption>
+        <div class="chart" id="chartScatter"></div>
+      </figure>
+    </div>
+  </section>
+
+  <!-- Events ----------------------------------------------------------- -->
+  <section class="panel" id="panel-events" role="tabpanel">
+    <div class="panel-tools">
+      <p class="tool-note" id="tableNote"></p>
+      <button type="button" class="btn" id="exportCsv">Download filtered CSV</button>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table" id="eventsTable">
+        <thead></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="table-more" id="tableMore"></p>
+  </section>
+
+  <!-- Data quality ------------------------------------------------------ -->
+  <section class="panel" id="panel-qc" role="tabpanel">
+    <div class="card prose">
+      <h2>What the build changed</h2>
+      <p>
+        The archive is hand-maintained and spans two decades, so the build
+        script repairs what is unambiguous, drops what is not, and lists every
+        decision here. Fix these in the source workbook and rebuild to make
+        them disappear.
+      </p>
+      <div id="qcCounts" class="qc-counts"></div>
+    </div>
+    <div class="card">
+      <div class="table-wrap">
+        <table class="data-table" id="qcTable">
+          <thead>
+            <tr><th>Basin</th><th>Sheet row</th><th>Event</th><th>Date</th><th>Kind</th><th>What happened</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Method ----------------------------------------------------------- -->
+  <section class="panel" id="panel-method" role="tabpanel">
+    <div class="card prose">
+      <h2>What is in the archive</h2>
+      <p>
+        Each event is an extratropical low tracked at 6-hourly synoptic times
+        while it was at, or developing toward, hurricane force. Tracking
+        generally starts at or shortly before the low reaches that intensity
+        and ends when it weakens below storm force, is absorbed, or moves out
+        of the forecast area &mdash; so these are <em>not</em> full cyclone
+        life cycles, and the archive says nothing about lows that never
+        reached hurricane force.
+      </p>
+
+      <h2>Category codes</h2>
+      <dl class="defs" id="catDefs"></dl>
+
+      <h2>Events with no analyzed central pressure</h2>
+      <p>
+        A little over 2&nbsp;% of Atlantic fixes carry
+        <code>NOPRES</code> instead of a pressure, and their median position is
+        60.0&deg;N, 42.1&deg;W &mdash; Cape Farewell, the southern tip of
+        Greenland. These are overwhelmingly <strong>tip jet</strong> and
+        barrier jet events: the flow accelerates around and along the Greenland
+        terrain and produces hurricane force winds with no closed low centre to
+        analyze. They peak in December&ndash;February, run short (a median of
+        two fixes), and are frequent enough &mdash; a few per season, more in
+        recent ones &mdash; that ignoring them would misstate the climatology.
+      </p>
+      <p>
+        Because a missing pressure here means &ldquo;there is no centre&rdquo;
+        rather than &ldquo;the centre was not measured&rdquo;, these events are
+        given their own class instead of being mixed into pressure statistics:
+      </p>
+      <dl class="defs" id="classDefs"></dl>
+      <p>
+        The classification needs <em>both</em> conditions. Location alone is not
+        diagnostic: 185 ordinary pressure-bearing lows also track through the
+        same region. Treat the tip jet label as a well-supported candidate flag,
+        not a verified classification &mdash; confirming one takes the surface
+        analysis and a wind field, which this archive does not carry.
+      </p>
+      <p>
+        Every pressure-based figure on this page &mdash; the median, the
+        distribution, the deepening rates &mdash; is computed over events with
+        an analyzed centre. The event counts, seasonal cycle and maps include
+        every class, so counts and pressure statistics deliberately describe
+        slightly different populations. Use the <strong>Event type</strong>
+        filter to isolate either one.
+      </p>
+
+      <h2>Derived quantities</h2>
+      <dl class="defs">
+        <dt>Minimum central pressure</dt>
+        <dd>
+          The lowest analyzed pressure over the tracked fixes. It is the
+          minimum <em>within the tracked window</em>, which may not be the
+          cyclone's true lifetime minimum.
+        </dd>
+        <dt>Time at hurricane force</dt>
+        <dd>
+          Count of hurricane force fixes &times; 6&nbsp;h. With 6-hourly
+          analyses the true duration is only resolved to &plusmn;6&nbsp;h, and
+          a low that peaked between synoptic times can be missed entirely.
+        </dd>
+        <dt>Maximum 24-hour deepening (Bergerons)</dt>
+        <dd>
+          The largest pressure fall over any 18&ndash;24&nbsp;h window in the
+          track, scaled to 24&nbsp;h and normalized by latitude:
+          <code>B = (&Delta;p / 24 hPa) &times; sin 60&deg; / sin &phi;</code>,
+          following Sanders and Gyakum (1980). <code>B &ge; 1</code> is the
+          classic &ldquo;bomb&rdquo; threshold. Because most tracks begin near
+          hurricane force onset and run less than a day, this is available for
+          roughly half the archive &mdash; and those are biased toward the
+          longer-tracked, more intense events. Treat the explosive fraction as
+          a property of <em>tracked windows</em>, not of all HF lows.
+        </dd>
+        <dt>Translation speed</dt>
+        <dd>
+          Great-circle distance between consecutive fixes divided by elapsed
+          time, in knots; the table reports the track mean.
+        </dd>
+        <dt>Season</dt>
+        <dd>
+          July&ndash;June, labelled by the starting year: an event on
+          2&nbsp;January&nbsp;2015 belongs to season 2014&ndash;15. This keeps
+          a single cool season in one bucket.
+        </dd>
+      </dl>
+
+      <h2>Known limitations</h2>
+      <ul>
+        <li>
+          The default view starts at the 2004&ndash;05 season. Pacific entries
+          begin in February&nbsp;2002 and Atlantic in September&nbsp;2003, so
+          earlier seasons are partial; they are still in the data and can be
+          selected, but they are marked provisional and are excluded from the
+          default period of record.
+        </li>
+        <li>Positions and pressures are analyst estimates recorded to the nearest tenth of a degree and whole hPa; no reanalysis has been applied.</li>
+        <li>Counts per season reflect both real variability and changes in analysis practice over 20+ years. A trend here is not necessarily a climate signal.</li>
+        <li>Where one archive ID covered two unrelated lows, the build split it into lettered events (<code>&hellip;a</code>, <code>&hellip;b</code>). See Data quality.</li>
+        <li>Pressures outside 880&ndash;1060&nbsp;hPa and non-numeric sentinels (<code>NOPRES</code>, <code>XXX</code>, <code>NA</code>) are treated as &ldquo;not analyzed&rdquo;, not as zero.</li>
+      </ul>
+
+      <h2>Rebuilding</h2>
+      <p>
+        Export each basin tab of the source workbook to
+        <code>data/hf_lows/</code> and run
+        <code>python3 tools/build_hf_lows.py</code>. The script regenerates
+        everything under <code>docs/data/</code>; committing the result
+        publishes it.
+      </p>
+      <p class="muted" id="sourceLine"></p>
+    </div>
+  </section>
+</main>
+
+<aside class="drawer" id="detail" hidden aria-label="Event detail">
+  <div class="drawer-head">
+    <h2 id="detailTitle">Event</h2>
+    <button type="button" class="icon-btn" id="detailClose" aria-label="Close detail">&times;</button>
+  </div>
+  <div class="drawer-body" id="detailBody"></div>
+</aside>
+
+<div class="tooltip" id="tooltip" hidden></div>
+
+<footer class="footer">
+  <p>
+    Built from the hurricane force low archive workbook. Not an official
+    forecast product and not operationally vetted.
+    <a href="data/hf-lows.json">JSON payload</a> &middot;
+    <a href="data/qc-report.txt">QC report</a>
+  </p>
+</footer>
+
+<!-- Leaflet is vendored, not pulled from a CDN: the page has to work on
+     restricted office networks and straight off disk. -->
+<script src="assets/vendor/leaflet/leaflet.js"></script>
+<script src="data/hf-lows.js"></script>
+<script src="assets/js/util.js"></script>
+<script src="assets/js/charts.js"></script>
+<script src="assets/js/map.js"></script>
+<script src="assets/js/app.js"></script>
+</body>
+</html>

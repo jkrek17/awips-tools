@@ -1,0 +1,68 @@
+# Publishes the HF extratropical low archive to GitHub Pages.
+#
+# One-time setup: Settings > Pages > Build and deployment > Source =
+# "GitHub Actions". Without that this workflow builds but cannot deploy.
+#
+# The site data is regenerated from the CSVs in data/hf_lows/ on every run, so
+# the published page can never drift from the committed source data - even if
+# someone forgets to re-run the build script before committing.
+
+name: Deploy archive site to Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'data/hf_lows/**'
+      - 'tools/build_hf_lows.py'
+      - '.github/workflows/pages.yml'
+  # Lets you publish a preview from a feature branch: Actions > this workflow >
+  # Run workflow > pick the branch.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Rebuild site data from the CSV archive
+        run: python3 tools/build_hf_lows.py
+
+      - name: Fail if the committed data is stale
+        run: |
+          if ! git diff --quiet -- docs/data; then
+            echo "::warning::docs/data was out of date with data/hf_lows; the"
+            echo "::warning::published site uses the freshly built version."
+            git --no-pager diff --stat -- docs/data
+          fi
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
