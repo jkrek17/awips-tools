@@ -37,7 +37,10 @@
   }
 </style>
 </head>
-<body>
+<body class="map-active">
+<!-- map-active starts set because the Map tab is the default view above
+     (see .tab.is-active / #panel-map); app.js keeps this class in sync with
+     the active tab so the footer CSS rule can hide the footer only there. -->
 
 <div class="shell-sticky">
 <header class="topbar">
@@ -58,7 +61,6 @@
   <button role="tab" class="tab is-active" data-panel="map" aria-selected="true">Map</button>
   <button role="tab" class="tab" data-panel="clim" aria-selected="false">Climatology</button>
   <button role="tab" class="tab" data-panel="events" aria-selected="false">Events</button>
-  <button role="tab" class="tab" data-panel="qc" aria-selected="false">Data quality</button>
   <button role="tab" class="tab" data-panel="method" aria-selected="false">Method</button>
 </nav>
 </div>
@@ -237,30 +239,6 @@
     <p class="table-more" id="tableMore"></p>
   </section>
 
-  <!-- Data quality ------------------------------------------------------ -->
-  <section class="panel" id="panel-qc" role="tabpanel">
-    <div class="card prose">
-      <h2>What the build changed</h2>
-      <p>
-        The archive is hand-maintained and spans two decades, so the build
-        script repairs what is unambiguous, drops what is not, and lists every
-        decision here. Fix these in the source workbook and rebuild to make
-        them disappear.
-      </p>
-      <div id="qcCounts" class="qc-counts"></div>
-    </div>
-    <div class="card">
-      <div class="table-wrap">
-        <table class="data-table" id="qcTable">
-          <thead>
-            <tr><th>Basin</th><th>Sheet row</th><th>Event</th><th>Date</th><th>Kind</th><th>What happened</th></tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </div>
-  </section>
-
   <!-- Method ----------------------------------------------------------- -->
   <section class="panel" id="panel-method" role="tabpanel">
     <div class="card prose">
@@ -362,7 +340,7 @@
         </li>
         <li>Positions and pressures are analyst estimates recorded to the nearest tenth of a degree and whole hPa; no reanalysis has been applied.</li>
         <li>Counts per season reflect both real variability and changes in analysis practice over 20+ years. A trend here is not necessarily a climate signal.</li>
-        <li>Where one archive ID covered two unrelated lows, the build split it into lettered events (<code>&hellip;a</code>, <code>&hellip;b</code>). See Data quality.</li>
+        <li>Where one archive ID covered two unrelated lows, the build split it into lettered events (<code>&hellip;a</code>, <code>&hellip;b</code>) &mdash; noted in that event's detail drawer.</li>
         <li>Pressures outside 880&ndash;1060&nbsp;hPa and non-numeric sentinels (<code>NOPRES</code>, <code>XXX</code>, <code>NA</code>) are treated as &ldquo;not analyzed&rdquo;, not as zero.</li>
       </ul>
 
@@ -401,12 +379,13 @@
 
 <div class="tooltip" id="tooltip" hidden></div>
 
+<!-- Hidden on the Map tab (app.js toggles body.map-active; see assets/app.css)
+     so the globe gets the full panel height there; shown on the rest. -->
 <footer class="footer">
   <p>
-    Built from the hurricane force low archive workbook. Not an official
-    forecast product and not operationally vetted.
-    <a href="data/hf-lows.json">JSON payload</a> &middot;
-    <a href="data/qc-report.txt">QC report</a>
+    Experimental &mdash; not an official forecast product. Coastlines:
+    Natural Earth (public domain) &middot;
+    <a href="data/hf-lows.json">JSON payload</a>
   </p>
 </footer>
 
