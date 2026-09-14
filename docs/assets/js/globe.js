@@ -68,7 +68,7 @@ window.HF = window.HF || {};
 
   /* ------------------------------------------------------------- state */
 
-  var canvas = null, ctx = null, onSelect = null;
+  var canvas = null, ctx = null, onSelect = null, readoutEl = null;
   var cssW = 0, cssH = 0, dpr = 1, cx = 0, cy = 0, baseR = 0;
 
   var view = {
@@ -154,6 +154,40 @@ window.HF = window.HF || {};
     var c = Math.sin(view.phi) * sinPhi + Math.cos(view.phi) * cosPhi * cosDl;
     var R = baseR * view.zoom;
     return { x: cx + x * R, y: cy - y * R, visible: c >= 0 };
+  }
+
+  /** Inverse of project(): screen point (canvas-relative px) -> [lonDeg,
+      latDeg], or null when the point falls outside the sphere's disc. Solved
+      directly from project()'s own formulas (a pure rotation of the point's
+      unit vector by view.phi about the "east" axis) rather than the generic
+      Snyder inverse-orthographic equations, so it is guaranteed consistent
+      with the forward projection above, sign conventions included. */
+  function unproject(px, py) {
+    var R = baseR * view.zoom;
+    if (!R) return null;
+    var X = (px - cx) / R;
+    var Y = (cy - py) / R;
+    var rho2 = X * X + Y * Y;
+    if (rho2 > 1) return null;
+    var c = Math.sqrt(Math.max(0, 1 - rho2));
+    var cosPhiV = Math.cos(view.phi), sinPhiV = Math.sin(view.phi);
+    var x0 = cosPhiV * c - sinPhiV * Y;
+    var z0 = sinPhiV * c + cosPhiV * Y;
+    var lat = Math.asin(Math.max(-1, Math.min(1, z0)));
+    var dl = Math.atan2(X, x0);
+    var lon = view.lambda + dl;
+    return [normLonDeg(lon / DEG), lat / DEG];
+  }
+
+  /** view.lambda drifts arbitrarily far from [-180, 180) over a long drag
+      session (nothing ever wraps it, since project()'s trig is 360-periodic
+      and doesn't care) - so any lon *displayed* to a person, rather than fed
+      back into project(), needs normalizing first. */
+  function normLonDeg(deg) {
+    var d = deg % 360;
+    if (d < -180) d += 360;
+    else if (d >= 180) d -= 360;
+    return d;
   }
 
   /** Point where the great-circle arc a->b crosses the horizon (cos = 0),
@@ -252,9 +286,9 @@ window.HF = window.HF || {};
   /* --------------------------------------------------------------- draw */
 
   function styleForCount(n) {
-    // Mirrors map.js: thousands of overlapping tracks saturate into a solid
-    // blob, so strokes thin out as the count grows and overplotting itself
-    // carries the sense of density.
+    // Thousands of overlapping tracks saturate into a solid blob, so strokes
+    // thin out as the count grows and overplotting itself carries the sense
+    // of density.
     if (n > 800) return { weight: 0.7, opacity: 0.22 };
     if (n > 300) return { weight: 0.9, opacity: 0.4 };
     return { weight: 1.3, opacity: 0.7 };
@@ -275,15 +309,28 @@ window.HF = window.HF || {};
     ctx.setLineDash([]);
   }
 
+  /** 10 degrees is the standard-view default the user asked for, but 36
+      meridians x 17 parallels at that spacing reads as a cage once zoomed
+      well out - so this coarsens at low zoom and, since 10 degrees leaves
+      room to spare once zoomed well in, tightens back up there too. Lines
+      stay the same recessive weight/alpha at every step: the graticule is
+      context, never competing with the tracks. */
+  function graticuleStep() {
+    if (view.zoom < 0.85) return { lon: 30, lat: 30 };
+    if (view.zoom >= 2.5) return { lon: 5, lat: 5 };
+    return { lon: 10, lat: 10 };
+  }
+
   function drawGraticule() {
+    var step = graticuleStep();
     var lines = [];
     var lon;
-    for (lon = -180; lon < 180; lon += GRATICULE_LON_STEP) {
+    for (lon = -180; lon < 180; lon += step.lon) {
       var meridian = [];
       for (var lat = -90; lat <= 90; lat += GRATICULE_SAMPLE_DEG) meridian.push([lon, lat]);
       lines.push(meridian);
     }
-    for (var lat0 = -90 + GRATICULE_LAT_STEP; lat0 < 90; lat0 += GRATICULE_LAT_STEP) {
+    for (var lat0 = -90 + step.lat; lat0 < 90; lat0 += step.lat) {
       var parallel = [];
       for (lon = -180; lon <= 180; lon += GRATICULE_SAMPLE_DEG) parallel.push([lon, lat0]);
       lines.push(parallel);
@@ -449,6 +496,176 @@ window.HF = window.HF || {};
     }
   }
 
+  /* ---------------------------------------------------------- point layers
+     "First fix" and "peak intensity" both plot one point per low, culled at
+     the horizon like everything else, sized/coloured exactly as the flat
+     map drew them and sharing the same hover/click machinery as tracks (via
+     hitPoints + hoveredKey) rather than a second interaction path. */
+
+  function radiusForPressure(hpa) {
+    if (hpa == null) return 3;
+    var t = Math.max(0, Math.min(1, (1000 - hpa) / 70));
+    return 3 + t * 6;
+  }
+
+  function drawPoints(kind) {
+    hitPoints = [];
+    var selected = null, hovered = null;
+    for (var i = 0; i < lows.length; i++) {
+      var low = lows[i];
+      var isSel = low.key === selectedKey;
+      var isHov = hoveredKey != null && low.key === hoveredKey;
+      if (isSel) selected = low;
+      if (isHov) hovered = low;
+      if (isSel || isHov) continue;
+      drawOnePoint(low, kind, false, false);
+    }
+    if (selected && selected !== hovered) drawOnePoint(selected, kind, true, false);
+    if (hovered) drawOnePoint(hovered, kind, hovered === selected, true);
+  }
+
+  function drawOnePoint(low, kind, isSelected, isHovered) {
+    var lat = kind === 'peak' ? low.minPLat : low.lat0;
+    var lon = kind === 'peak' ? low.minPLon : low.lon0;
+    if (lat == null || lon == null) return;
+    var p = project(lon, lat);
+    if (!p.visible) return;
+
+    var color = kind === 'peak'
+      ? (low.cls !== 'low' ? HF.classColor(low.cls) : HF.pressureColor(low.minP))
+      : HF.basinColor(low.basin);
+    var baseRad = kind === 'peak' ? radiusForPressure(low.minP) : 4;
+    var emphasized = isSelected || isHovered;
+    var r = emphasized ? baseRad + 2.5 : baseRad;
+
+    ctx.globalAlpha = emphasized ? 1 : 0.82;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    if (emphasized) {
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = pal.oceanWash;
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    hitPoints.push({ x: p.x, y: p.y, low: low });
+  }
+
+  /* -------------------------------------------------------------- density
+     Gridded hurricane-force fix counts. Binning is ported unchanged from
+     the flat map's HF.maps.densityGrid (see DENSITY_LON_ORIGIN above for why
+     the per-view longitude frame argument it took is gone); each populated
+     cell is drawn as a lat/lon quad, projected and horizon-clipped exactly
+     like a coastline ring. */
+
+  function densityLon(lon) { return lon < DENSITY_LON_ORIGIN ? lon + 360 : lon; }
+
+  /** Count fixes per grid cell. Returns {cells:[...], byKey:{...}, max, seasons} */
+  function computeDensityGrid(lowsArg) {
+    var cells = {};
+    var seasons = {};
+    lowsArg.forEach(function (low) {
+      seasons[low.season] = true;
+      low.fixes.forEach(function (fix) {
+        var latIdx = Math.floor(fix.lat / CELL_LAT);
+        var lonIdx = Math.floor(densityLon(fix.lon) / CELL_LON);
+        var key = latIdx + ':' + lonIdx;
+        if (!cells[key]) {
+          cells[key] = { key: key, latIdx: latIdx, lonIdx: lonIdx, count: 0, hf: 0, events: {} };
+        }
+        cells[key].count++;
+        if (fix.cat === 'HF') cells[key].hf++;
+        cells[key].events[low.key] = true;
+      });
+    });
+    var list = Object.keys(cells).map(function (k) { return cells[k]; });
+    var max = 0;
+    list.forEach(function (c) {
+      c.events = Object.keys(c.events).length;
+      if (c.hf > max) max = c.hf;
+    });
+    return { cells: list, byKey: cells, max: max, seasons: Object.keys(seasons).length };
+  }
+
+  function densityRampColors() {
+    if (!densityRamp) {
+      densityRamp = ['--seq-1', '--seq-2', '--seq-3', '--seq-4', '--seq-5', '--seq-6', '--seq-7']
+        .map(function (v) { return HF.cssVar(v); });
+    }
+    return densityRamp;
+  }
+
+  function fmtLonBand(lon0) {
+    function one(v) {
+      var x = v > 180 ? v - 360 : v;
+      return Math.abs(x) + '°' + (x < 0 ? 'W' : 'E');
+    }
+    return one(lon0) + '–' + one(lon0 + CELL_LON);
+  }
+
+  function densityTip(cell) {
+    var lat0 = cell.latIdx * CELL_LAT, lon0 = cell.lonIdx * CELL_LON;
+    var perSeason = curGrid.seasons ? cell.hf / curGrid.seasons : cell.hf;
+    return '<b>' + Math.abs(lat0) + '–' + Math.abs(lat0 + CELL_LAT) + '°N, ' +
+      fmtLonBand(lon0) + '</b>' +
+      '<div class="t-row">' + cell.hf + ' hurricane force fixes</div>' +
+      '<div class="t-row">' + perSeason.toFixed(1) + ' per season &middot; ' +
+      cell.events + ' event' + (cell.events === 1 ? '' : 's') + '</div>';
+  }
+
+  /** One cell's quad in the grid's shifted-frame degrees, projected exactly
+      like a coastline ring - trig is 360-periodic, so passing e.g. 190
+      instead of -170 projects identically and needs no unwinding. */
+  function cellRing(cell) {
+    var lon0 = cell.lonIdx * CELL_LON, lat0 = cell.latIdx * CELL_LAT;
+    return [[lon0, lat0], [lon0 + CELL_LON, lat0], [lon0 + CELL_LON, lat0 + CELL_LAT],
+      [lon0, lat0 + CELL_LAT], [lon0, lat0]];
+  }
+
+  function drawOneCell(cell, ramp, hovered) {
+    var segs = visibleSegments(cellRing(cell));
+    if (!segs.length) return;
+    var frac = cell.hf / curGrid.max;
+    // Perceptual step: counts are heavily skewed, so rank on a square root.
+    var step = Math.min(ramp.length - 1, Math.floor(Math.sqrt(frac) * ramp.length));
+    var R = baseR * view.zoom;
+
+    ctx.globalAlpha = hovered ? Math.min(1, 0.16 + 0.62 * Math.sqrt(frac) + 0.2) : 0.16 + 0.62 * Math.sqrt(frac);
+    ctx.fillStyle = ramp[step];
+    fillClippedRing(segs, R);
+    if (hovered) {
+      ctx.globalAlpha = 1;
+      strokePath(segs, 1.25, pal.oceanWash);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawDensity() {
+    hitPoints = [];
+    if (!curGrid || !curGrid.max) return;
+    var ramp = densityRampColors();
+    var cells = curGrid.cells.filter(function (c) { return c.hf > 0; });
+    var hoveredCell = null;
+    for (var i = 0; i < cells.length; i++) {
+      var c = cells[i];
+      if (hoveredCellKey && c.key === hoveredCellKey) { hoveredCell = c; continue; }
+      drawOneCell(c, ramp, false);
+    }
+    if (hoveredCell) drawOneCell(hoveredCell, ramp, true);
+  }
+
+  /* ------------------------------------------------------------ dispatch */
+
+  function drawFeatures() {
+    if (curLayer === 'density') return drawDensity();
+    if (curLayer === 'genesis') return drawPoints('genesis');
+    if (curLayer === 'peak') return drawPoints('peak');
+    return drawTracks();
+  }
+
   function draw() {
     if (!ctx || !cssW || !cssH || !pal) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -473,8 +690,8 @@ window.HF = window.HF || {};
     // 3. land
     drawLand();
 
-    // 4. tracks (selected highlighted last within this pass)
-    drawTracks();
+    // 4. the active layer's features (selected/hovered drawn last within it)
+    drawFeatures();
 
     // 5. sphere outline, always on top and always a full circle
     ctx.beginPath();
@@ -497,9 +714,10 @@ window.HF = window.HF || {};
     rafId = null;
     if (!visible) return;
 
-    var animating = dragging || !!inertia;
+    var animating = dragging || !!inertia || !!transition;
     if (dirty || animating) {
       if (inertia) stepInertia();
+      if (transition) stepTransition();
       // window.HF_DEBUG_TIMING flips this on for perf investigation (e.g. the
       // hover-emphasis redraw path below) without adding a console.log that
       // fires on every normal frame/drag.
@@ -525,6 +743,53 @@ window.HF = window.HF || {};
 
   function clampPhi(p) { return Math.max(-MAX_PHI, Math.min(MAX_PHI, p)); }
 
+  function easeInOutCubic(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+
+  /** Animate the view to (lambda, phi, zoom) over `dur` ms - basin switches,
+      "fit to events" and the double-click reset all go through this so
+      there is exactly one rotate/zoom transition in the file. Respects
+      prefers-reduced-motion by jumping straight there instead. lambda's
+      delta is taken the short way round so a basin near +-180 doesn't spin
+      the long way to get there. */
+  function startTransition(toLambda, toPhi, toZoom, dur) {
+    inertia = null;
+    if (reducedMotion()) {
+      view.lambda = toLambda;
+      view.phi = clampPhi(toPhi);
+      view.zoom = toZoom;
+      transition = null;
+      dirty = true;
+      scheduleFrame();
+      return;
+    }
+    var dl = toLambda - view.lambda;
+    while (dl > Math.PI) dl -= Math.PI * 2;
+    while (dl < -Math.PI) dl += Math.PI * 2;
+    transition = {
+      fromLambda: view.lambda, dl: dl,
+      fromPhi: view.phi, toPhi: clampPhi(toPhi),
+      fromZoom: view.zoom, toZoom: toZoom,
+      t0: performance.now(), dur: dur || 650
+    };
+    dirty = true;
+    scheduleFrame();
+  }
+
+  function stepTransition() {
+    var t = (performance.now() - transition.t0) / transition.dur;
+    if (t >= 1) {
+      view.lambda = transition.fromLambda + transition.dl;
+      view.phi = transition.toPhi;
+      view.zoom = transition.toZoom;
+      transition = null;
+      return;
+    }
+    var e = easeInOutCubic(t);
+    view.lambda = transition.fromLambda + transition.dl * e;
+    view.phi = transition.fromPhi + (transition.toPhi - transition.fromPhi) * e;
+    view.zoom = transition.fromZoom + (transition.toZoom - transition.fromZoom) * e;
+  }
+
   /* ------------------------------------------------------------ hit test */
 
   function nearestHit(px, py) {
@@ -546,8 +811,22 @@ window.HF = window.HF || {};
         : low.cls === 'nocentre'
           ? '<div class="t-row">No analyzed centre</div>' : '') +
       '<div class="t-row">Min ' + (low.minP != null ? low.minP + ' hPa' : 'not analyzed') +
-      ' &middot; ' + low.hfH + ' h at HF</div>';
+      ' &middot; ' + low.hfH + ' h at HF</div>' +
+      (low.bomb ? '<div class="t-row">Explosive: ' + low.berg.toFixed(2) + ' B</div>' : '');
   }
+
+  /** Lat/lon readout under the cursor, in the site's own HF.fmtLatLon format
+      so it matches the tables and every other tooltip. Hidden whenever the
+      cursor isn't actually over the sphere. */
+  function updateReadout(px, py) {
+    if (!readoutEl) return;
+    var geo = unproject(px, py);
+    if (!geo) { readoutEl.hidden = true; return; }
+    readoutEl.hidden = false;
+    readoutEl.textContent = HF.fmtLatLon(geo[1], geo[0]);
+  }
+
+  function hideReadout() { if (readoutEl) readoutEl.hidden = true; }
 
   function handleHover(evt, rect) {
     var now = performance.now();
@@ -555,6 +834,9 @@ window.HF = window.HF || {};
     lastHoverT = now;
 
     var px = evt.clientX - rect.left, py = evt.clientY - rect.top;
+
+    if (curLayer === 'density') { handleDensityHover(px, py, evt); return; }
+
     var hit = nearestHit(px, py);
     var key = hit ? hit.low.key : null;
 
@@ -569,6 +851,31 @@ window.HF = window.HF || {};
       canvas.style.cursor = key ? 'pointer' : '';
       if (hit) HF.showTip(fixTip(hit.low), evt); else HF.hideTip();
     } else if (hit) {
+      HF.moveTip(evt);
+    }
+  }
+
+  /** Density cells have no `low` to key hover off, so this hit-tests via the
+      inverse projection instead of the hitPoints/nearestHit machinery the
+      other layers share - unprojecting the cursor and re-running the same
+      bin math computeDensityGrid used keeps the two in lockstep. */
+  function handleDensityHover(px, py, evt) {
+    var geo = curGrid ? unproject(px, py) : null;
+    var cell = null, key = null;
+    if (geo) {
+      var latIdx = Math.floor(geo[1] / CELL_LAT);
+      var lonIdx = Math.floor(densityLon(geo[0]) / CELL_LON);
+      key = latIdx + ':' + lonIdx;
+      cell = curGrid.byKey[key];
+      if (!cell || !cell.hf) { cell = null; key = null; }
+    }
+    if (key !== hoveredCellKey) {
+      hoveredCellKey = key;
+      dirty = true;
+      scheduleFrame();
+      canvas.style.cursor = key ? 'pointer' : '';
+      if (cell) HF.showTip(densityTip(cell), evt); else HF.hideTip();
+    } else if (cell) {
       HF.moveTip(evt);
     }
   }
@@ -596,6 +903,8 @@ window.HF = window.HF || {};
 
   function onPointerMove(evt) {
     var rect = canvas.getBoundingClientRect();
+    var px = evt.clientX - rect.left, py = evt.clientY - rect.top;
+    updateReadout(px, py);
 
     if (dragging && dragLast) {
       var dx = evt.clientX - dragLast.x, dy = evt.clientY - dragLast.y;
@@ -617,6 +926,7 @@ window.HF = window.HF || {};
       scheduleFrame();
       HF.hideTip();
       hoveredKey = undefined;
+      hoveredCellKey = null;
     } else {
       handleHover(evt, rect);
     }
@@ -653,20 +963,21 @@ window.HF = window.HF || {};
   }
 
   function onDblClick() {
-    view.lambda = DEFAULT_LAMBDA_DEG * DEG;
-    view.phi = DEFAULT_PHI_DEG * DEG;
-    view.zoom = 1;
-    inertia = null;
-    dirty = true;
-    scheduleFrame();
+    globe.resetView();
   }
 
   function onLeave() {
     if (!dragging) {
-      if (hoveredKey != null) { hoveredKey = undefined; dirty = true; scheduleFrame(); }
+      if (hoveredKey != null || hoveredCellKey != null) {
+        hoveredKey = undefined;
+        hoveredCellKey = null;
+        dirty = true;
+        scheduleFrame();
+      }
       canvas.style.cursor = '';
       HF.hideTip();
     }
+    hideReadout();
   }
 
   /* ------------------------------------------------------------- public */
@@ -676,6 +987,7 @@ window.HF = window.HF || {};
     if (!canvas || !canvas.getContext) return null;
     ctx = canvas.getContext('2d');
     onSelect = onSelectCb;
+    readoutEl = document.getElementById('globeReadout');
     computePalette();
 
     canvas.addEventListener('pointerdown', onPointerDown);
@@ -690,33 +1002,82 @@ window.HF = window.HF || {};
     return canvas;
   };
 
-  globe.render = function (lowsArg, selKey) {
+  /** lows/selectedKey/layer for the next draw(). Switching layers clears any
+      hover state left over from the previous one (a hovered-cell key means
+      nothing once density stops being the layer, etc.) and recomputes the
+      density grid only when that layer is actually active. */
+  globe.render = function (lowsArg, selKey, layer) {
     lows = lowsArg || [];
     selectedKey = selKey || null;
+    var newLayer = layer || 'tracks';
+    if (newLayer !== curLayer) {
+      hoveredKey = undefined;
+      hoveredCellKey = null;
+      if (canvas) canvas.style.cursor = '';
+      HF.hideTip();
+    }
+    curLayer = newLayer;
+    curGrid = curLayer === 'density' ? computeDensityGrid(lows) : null;
     dirty = true;
     scheduleFrame();
   };
 
-  /** Rotate so this event's track faces the viewer. The centre is the
-      circular mean of its fixes' unit vectors, not a plain lon/lat average,
-      so a track that crosses the antimeridian centres correctly instead of
-      averaging to the wrong side of the world. */
-  globe.focus = function (low) {
-    if (!low || !low.fixes || !low.fixes.length) return;
+  /** Circular mean of a set of fixes' unit vectors - shared by focus() (one
+      event) and fitTo() (a whole filtered set) - not a plain lon/lat
+      average, so a cluster that crosses the antimeridian centres correctly
+      instead of averaging to the wrong side of the world. */
+  function circularMean(fixes) {
     var sum = [0, 0, 0];
-    for (var i = 0; i < low.fixes.length; i++) {
-      var v = toXYZ(low.fixes[i].lon, low.fixes[i].lat);
+    for (var i = 0; i < fixes.length; i++) {
+      var v = toXYZ(fixes[i].lon, fixes[i].lat);
       sum[0] += v[0]; sum[1] += v[1]; sum[2] += v[2];
     }
     var len = Math.sqrt(dot3(sum, sum)) || 1;
-    var center = fromXYZ([sum[0] / len, sum[1] / len, sum[2] / len]);
+    return [sum[0] / len, sum[1] / len, sum[2] / len];
+  }
 
-    view.lambda = center[0] * DEG;
-    view.phi = clampPhi(center[1] * DEG);
-    view.zoom = Math.max(view.zoom, 1.4);
-    inertia = null;
-    dirty = true;
-    scheduleFrame();
+  /** Rotate so this event's track faces the viewer. */
+  globe.focus = function (low) {
+    if (!low || !low.fixes || !low.fixes.length) return;
+    var center = fromXYZ(circularMean(low.fixes));
+    startTransition(center[0] * DEG, center[1] * DEG, Math.max(view.zoom, 1.4), 500);
+  };
+
+  /** Rotate/zoom to frame a whole filtered set of events - "Fit to events",
+      and also how selecting a single basin points the globe at it (its
+      centre is derived from that basin's own fixes here, not a hardcoded
+      lon/lat). Does nothing when the set is empty, leaving the current view
+      in place rather than throwing or snapping to some default. */
+  globe.fitTo = function (lowsArg) {
+    var list = lowsArg || [];
+    var allFixes = [];
+    for (var i = 0; i < list.length; i++) allFixes = allFixes.concat(list[i].fixes);
+    if (!allFixes.length) return;
+
+    var centerVec = circularMean(allFixes);
+    var center = fromXYZ(centerVec);
+    var maxAngle = 0;
+    for (i = 0; i < allFixes.length; i++) {
+      var v = toXYZ(allFixes[i].lon, allFixes[i].lat);
+      var ang = Math.acos(Math.max(-1, Math.min(1, dot3(v, centerVec))));
+      if (ang > maxAngle) maxAngle = ang;
+    }
+    // Orthographic projection puts a point at angular separation theta from
+    // the view centre at planar distance R*sin(theta) from the disc centre
+    // (see project()) - so this solves for the zoom that lands the single
+    // farthest fix at ~82% of the disc radius, with a little padding, and
+    // clamps to the normal zoom range so one nearby event doesn't zoom to
+    // street level.
+    var capped = Math.min(maxAngle, Math.PI / 2 - 0.05);
+    var z = capped > 0.01 ? 0.82 / Math.sin(capped) : MAX_ZOOM;
+    z = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z));
+    startTransition(center[0] * DEG, center[1] * DEG, z, 700);
+  };
+
+  /** Back to the default pole-centred view that shows both basins - used by
+      "Both basins" in the filter and the double-click reset. */
+  globe.resetView = function () {
+    startTransition(DEFAULT_LAMBDA_DEG * DEG, DEFAULT_PHI_DEG * DEG, 1, 650);
   };
 
   globe.resize = function () {
@@ -745,5 +1106,10 @@ window.HF = window.HF || {};
       rafId = null;
     }
   };
+
+  // Read by app.js for the "Fix density" map-note text, same as the flat
+  // map exposed them (HF.maps.CELL_LAT/CELL_LON) before it was removed.
+  globe.CELL_LAT = CELL_LAT;
+  globe.CELL_LON = CELL_LON;
 
 })(window.HF.globe = window.HF.globe || {}, window.HF);

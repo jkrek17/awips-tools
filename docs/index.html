@@ -6,10 +6,8 @@
 <title>Hurricane Force Extratropical Low Archive</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%8C%80%3C/text%3E%3C/svg%3E">
 <meta name="description" content="Archive and climatology of hurricane force extratropical lows in the North Atlantic and North Pacific.">
-<link rel="stylesheet" href="assets/vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="assets/app.css">
 <link rel="stylesheet" href="assets/charts.css">
-<link rel="stylesheet" href="assets/map.css">
 <link rel="stylesheet" href="assets/globe.css">
 <style>
   /* Non-production environment marker (see #envBadge below). Kept here,
@@ -23,6 +21,20 @@
     color: var(--ink-2); background: var(--surface-sunk); border: 1px solid var(--border-strong);
   }
   @media print { .badge-env { display: none !important; } }
+
+  /* Lat/lon readout under the cursor (globe.js). Scoped here rather than in
+     assets/app.css so it doesn't collide with in-flight styling work there;
+     tokens match the rest of the site so it reads correctly in both themes.
+     Top-left, so it never competes with the legend or the coastline credit,
+     which both live bottom-right (see assets/app.css). */
+  .globe-readout {
+    position: absolute; left: 10px; top: 8px; z-index: 1;
+    margin: 0; padding: 2px 7px; font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-2); background: var(--surface);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    opacity: .9; pointer-events: none;
+  }
 </style>
 </head>
 <body>
@@ -125,9 +137,9 @@
       <p class="tool-note" id="mapNote"></p>
     </div>
     <div class="map-wrap">
-      <div id="map"></div>
-      <div id="globeWrap" class="globe-wrap" hidden>
+      <div id="globeWrap" class="globe-wrap">
         <canvas id="globe"></canvas>
+        <p class="globe-readout" id="globeReadout" hidden aria-hidden="true"></p>
         <p class="globe-attrib">Coastlines: Natural Earth (public domain)</p>
       </div>
       <div class="map-legend" id="mapLegend" aria-hidden="false"></div>
@@ -370,12 +382,8 @@
 
       <h2>Credits</h2>
       <dl class="defs">
-        <dt>Leaflet 1.9.4</dt>
-        <dd>Mapping library. BSD-2-Clause licence; vendored locally under <code>assets/vendor/leaflet/</code> rather than loaded from a CDN.</dd>
-        <dt>Basemap tiles</dt>
-        <dd>Esri &mdash; &ldquo;Esri, GEBCO, NOAA, National Geographic, Garmin, HERE, Geonames.org, and other contributors.&rdquo;</dd>
         <dt>Coastlines</dt>
-        <dd>Natural Earth, public domain.</dd>
+        <dd>Natural Earth, public domain. Drawn on a hand-rolled orthographic globe (Canvas 2D, no mapping library or basemap tiles) &mdash; the page makes no network requests once loaded.</dd>
         <dt>Event data</dt>
         <dd>The hurricane force low archive workbook &mdash; see Rebuilding, above.</dd>
       </dl>
@@ -402,13 +410,9 @@
   </p>
 </footer>
 
-<!-- Leaflet is vendored, not pulled from a CDN: the page has to work on
-     restricted office networks and straight off disk. -->
-<script src="assets/vendor/leaflet/leaflet.js"></script>
 <script src="data/hf-lows.js"></script>
 <script src="assets/js/util.js"></script>
 <script src="assets/js/charts.js"></script>
-<script src="assets/js/map.js"></script>
 <script src="data/coastlines.js"></script>
 <script src="assets/js/globe.js"></script>
 <script src="assets/js/app.js"></script>
