@@ -502,7 +502,7 @@ main { padding: 0 var(--sp-5) var(--sp-6); }
 
 .map-wrap { position: relative; }
 #map, .globe-wrap {
-  height: min(66vh, 720px); min-height: 380px;
+  height: min(78vh, 820px); min-height: 460px;
   background: var(--surface-sunk);
   border: 1px solid var(--border); border-radius: var(--radius-lg);
 }
