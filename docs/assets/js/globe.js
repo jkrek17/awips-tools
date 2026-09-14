@@ -108,6 +108,13 @@ window.HF = window.HF || {};
   var hoveredKey = undefined;            // undefined = "not computed yet"
 
   var curLayer = 'tracks';               // 'tracks' | 'density' | 'genesis' | 'peak'
+
+  // Ocean currents: a background context layer, independent of curLayer -
+  // see the "ocean currents" block below for the rest of it. Off by default
+  // (globe.setCurrentsVisible is only ever called with true by an explicit
+  // user toggle in app.js).
+  var showCurrents = false;
+  var currentBins = null;                // built lazily from window.HF_CURRENTS, see buildCurrentSegments()
   var curGrid = null;                    // cached computeDensityGrid() result, layer 'density' only
   var hoveredCellKey = null;             // "latIdx:lonIdx", density layer only
   var densityRamp = null;                // --seq-1..7, resolved lazily and reset on theme change
@@ -258,6 +265,28 @@ window.HF = window.HF || {};
     return v || fallback;
   }
 
+  /** No app.css token exists for the currents layer's colour (out of scope
+      here - see the file ownership note this was built against), so its
+      fallback is picked directly rather than through a variable that would
+      never resolve. It still needs to flip with the theme the way every
+      other token on the page does, so this reads the one thing that
+      reliably flips (--page, near-white in light mode / near-black in dark)
+      and picks a light-vs-dark teal fallback accordingly - same effect as a
+      real custom property, without inventing one in a file this task does
+      not own. */
+  function parseHex(s) {
+    var m = /^#?([0-9a-f]{6})$/i.exec((s || '').trim());
+    if (!m) return null;
+    var n = parseInt(m[1], 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+
+  function isDarkTheme() {
+    var rgb = parseHex(HF.cssVar('--page')) || [249, 249, 247];
+    var lum = (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255;
+    return lum < 0.5;
+  }
+
   function computePalette() {
     // Track/fix colours (pressure ramp, event class, category) are read on
     // demand via HF.pressureColor/classColor/categoryColor, which already
@@ -289,7 +318,14 @@ window.HF = window.HF || {};
       coast: readColor('--ink-2', '#52514e'),
       grid: readColor('--ink-muted', '#898781'),
       gridMajor: readColor('--ink-2', '#52514e'),
-      outline: readColor('--border-strong', '#c3c2b7')
+      outline: readColor('--border-strong', '#c3c2b7'),
+      // Ocean currents: a muted teal/blue-grey, deliberately off the
+      // amber-through-magenta pressure ramp (--mslp-*) that owns the warm
+      // end of the palette, and away from the brighter blue --seq-*/--atl
+      // already mean "data" elsewhere on this map (fix density, Atlantic
+      // basin colour) - this should read as quiet context, never as a
+      // series of its own.
+      current: readColor('--current', isDarkTheme() ? '#5fb6bf' : '#2c6c73')
     };
   }
 
@@ -695,6 +731,129 @@ window.HF = window.HF || {};
     if (hoveredCell) drawOneCell(hoveredCell, ramp, true);
   }
 
+  /* ------------------------------------------------------------- currents
+     Background context layer (see globe.setCurrentsVisible), independent of
+     curLayer - it can sit under Tracks, Fix density or either point layer.
+     window.HF_CURRENTS (tools/build_currents.py) is a multi-year *mean*
+     OSCAR surface velocity field: u/v averaged separately over time, not an
+     average of instantaneous speeds, so a persistently-directed flow (Gulf
+     Stream, Kuroshio) keeps a strong mean while a patch of open ocean
+     dominated by short-lived eddies averages down toward zero - which is
+     exactly the "boundary currents stand out, open ocean recedes" effect
+     this layer is asked to show.
+
+     Rendering one arrow per ~2 deg cell over the whole globe would be pure
+     noise, so each cell instead becomes a short flow-oriented streamlet
+     (length and opacity scale with speed, direction follows atan2(v, u))
+     and every streamlet is bucketed by speed into a handful of bins so the
+     whole layer draws as a few beginPath()/stroke() pairs rather than one
+     per cell - the same batching strokePath() already does for graticule
+     lines, applied here because currents run into the thousands of
+     segments where the graticule runs into dozens. */
+
+  var CURRENT_BIN_COUNT = 6;
+  var CURRENT_MIN_SPEED = 0.02;    // m/s - skip near-still cells; land is already null, not 0
+  var CURRENT_HALF_MIN_DEG = 0.35; // streamlet half-length at the weak end of the ramp
+  var CURRENT_HALF_MAX_DEG = 1.05; // ...and at/above the reference "strong" speed
+
+  /** Perceptual (square-root) ramp from a faint, thin stroke for the common
+      weak case up to a firm, opaque one for the strong tail - the same idea
+      as densityRampColors()/drawOneCell's sqrt(frac) step, so a few strong
+      cells (the boundary currents) don't get lost among many weak ones. */
+  function currentBinStyle(i) {
+    var t = i / (CURRENT_BIN_COUNT - 1);
+    return { alpha: 0.08 + t * 0.80, width: 0.6 + t * 1.2 };
+  }
+
+  /** Turn window.HF_CURRENTS's u/v grid into per-bin arrays of short lon/lat
+      segments, built once (geometry doesn't depend on view or theme) and
+      cached in currentBins until the page reloads. Speed is normalized
+      against the data's own p99 rather than a hardcoded constant, so the
+      ramp adapts to whatever the archive's mean field actually contains
+      instead of a guessed reference that could clip nothing, or everything,
+      depending on the run. */
+  function buildCurrentSegments() {
+    currentBins = [];
+    for (var b = 0; b < CURRENT_BIN_COUNT; b++) currentBins.push([]);
+
+    var data = window.HF_CURRENTS;
+    if (!data || !data.grid || !data.u || !data.v) return;
+    var g = data.grid;
+    var ref = (data.stats && data.stats.p99Speed) || 0.4;
+    if (!(ref > 0)) ref = 0.4;
+
+    for (var i = 0; i < g.nlat; i++) {
+      var lat = g.lat0 + i * g.latStep;
+      // Meridians converge toward the poles, so the same angular u-offset
+      // covers more longitude there; dividing by cos(lat) keeps a
+      // streamlet's on-screen orientation matching its true flow direction
+      // instead of skewing toward "due east/west" at high latitude. OSCAR's
+      // own coverage stops at +-80, so this never approaches the pole.
+      var cosLat = Math.max(0.12, Math.cos(lat * DEG));
+      var uRow = data.u[i], vRow = data.v[i];
+      for (var j = 0; j < g.nlon; j++) {
+        var u = uRow[j], v = vRow[j];
+        if (u == null || v == null) continue;         // land, or no data - never treated as 0
+        var speed = Math.sqrt(u * u + v * v);
+        if (speed < CURRENT_MIN_SPEED) continue;
+
+        var t = Math.min(1, speed / ref);
+        var perceptual = Math.sqrt(t);
+        var bin = Math.min(CURRENT_BIN_COUNT - 1, Math.floor(perceptual * CURRENT_BIN_COUNT));
+        var half = CURRENT_HALF_MIN_DEG + perceptual * (CURRENT_HALF_MAX_DEG - CURRENT_HALF_MIN_DEG);
+
+        var lon = g.lon0 + j * g.lonStep;
+        var theta = Math.atan2(v, u);
+        var dLat = half * Math.sin(theta);
+        var dLon = (half * Math.cos(theta)) / cosLat;
+
+        currentBins[bin].push({
+          lon0: lon - dLon, lat0: lat - dLat,
+          lon1: lon + dLon, lat1: lat + dLat
+        });
+      }
+    }
+  }
+
+  /** project() + horizon-crossing clip of one lon/lat segment - the same
+      logic strokeEdge() uses per track edge, factored out here because
+      currents batch many segments into one path/stroke() call instead of
+      stroking each edge individually. */
+  function clipSegment(lon0, lat0, lon1, lat1) {
+    var p0 = project(lon0, lat0), p1 = project(lon1, lat1);
+    if (!p0.visible && !p1.visible) return null;
+    if (p0.visible !== p1.visible) {
+      var cross = horizonCrossing([lon0, lat0], [lon1, lat1]);
+      var pc = project(cross[0], cross[1]);
+      if (p0.visible) p1 = pc; else p0 = pc;
+    }
+    return [p0, p1];
+  }
+
+  function drawCurrents() {
+    if (!currentBins) buildCurrentSegments();
+    ctx.lineCap = 'round';
+    for (var b = 0; b < currentBins.length; b++) {
+      var list = currentBins[b];
+      if (!list.length) continue;
+      var style = currentBinStyle(b);
+      ctx.globalAlpha = style.alpha;
+      ctx.lineWidth = style.width;
+      ctx.strokeStyle = pal.current;
+      ctx.beginPath();
+      for (var i = 0; i < list.length; i++) {
+        var seg = list[i];
+        var clipped = clipSegment(seg.lon0, seg.lat0, seg.lon1, seg.lat1);
+        if (!clipped) continue;
+        ctx.moveTo(clipped[0].x, clipped[0].y);
+        ctx.lineTo(clipped[1].x, clipped[1].y);
+      }
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    ctx.lineCap = 'butt';
+  }
+
   /* ------------------------------------------------------------ dispatch */
 
   function drawFeatures() {
@@ -722,16 +881,22 @@ window.HF = window.HF || {};
     ctx.fill();
     ctx.globalAlpha = 1;
 
-    // 2. graticule
+    // 2. ocean currents - background context, independent of curLayer (see
+    // globe.setCurrentsVisible), drawn on the ocean before the graticule/
+    // land/features so it reads as quiet backdrop rather than competing
+    // with the reference grid or whatever the active layer draws on top.
+    if (showCurrents) drawCurrents();
+
+    // 3. graticule
     drawGraticule();
 
-    // 3. land
+    // 4. land
     drawLand();
 
-    // 4. the active layer's features (selected/hovered drawn last within it)
+    // 5. the active layer's features (selected/hovered drawn last within it)
     drawFeatures();
 
-    // 5. sphere outline, always on top and always a full circle
+    // 6. sphere outline, always on top and always a full circle
     ctx.beginPath();
     ctx.arc(cx, cy, R, 0, Math.PI * 2);
     ctx.lineWidth = 1.25;
@@ -1144,6 +1309,21 @@ window.HF = window.HF || {};
       rafId = null;
     }
   };
+
+  /** Toggle the ocean currents background layer - independent of
+      globe.render's layer argument, so it can be shown under Tracks, Fix
+      density or either point layer. Off by default; app.js calls this only
+      from an explicit checkbox change. */
+  globe.setCurrentsVisible = function (isVisible) {
+    showCurrents = !!isVisible;
+    dirty = true;
+    scheduleFrame();
+  };
+
+  // Read by app.js to colour the currents legend swatch with the exact
+  // shade drawCurrents() strokes with, rather than duplicating the
+  // isDarkTheme()/fallback logic in two files.
+  globe.currentsColor = function () { return pal ? pal.current : null; };
 
   // Read by app.js for the "Fix density" map-note text, same as the flat
   // map exposed them (HF.maps.CELL_LAT/CELL_LON) before it was removed.

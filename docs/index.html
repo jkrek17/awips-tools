@@ -135,6 +135,13 @@
         <button type="button" class="seg" data-layer="genesis">First fix</button>
         <button type="button" class="seg" data-layer="peak">Peak intensity</button>
       </div>
+      <!-- Independent of the layer switch above: a background context layer
+           that can sit under Tracks, Fix density, or either point layer, so
+           a forecaster can put it under Fix density and compare directly
+           (see Method tab for why). Off by default. -->
+      <label class="check" title="Mean OSCAR surface current speed/direction, drawn under the active layer as background context">
+        <input type="checkbox" id="fCurrents"> Ocean currents
+      </label>
       <button type="button" class="btn" id="fitBounds">Fit to events</button>
       <p class="tool-note" id="mapNote"></p>
     </div>
@@ -142,7 +149,7 @@
       <div id="globeWrap" class="globe-wrap">
         <canvas id="globe"></canvas>
         <p class="globe-readout" id="globeReadout" hidden aria-hidden="true"></p>
-        <p class="globe-attrib">Coastlines: Natural Earth (public domain)</p>
+        <p class="globe-attrib" id="globeAttrib">Coastlines: Natural Earth (public domain)</p>
       </div>
       <div class="map-legend" id="mapLegend" aria-hidden="false"></div>
     </div>
@@ -344,6 +351,23 @@
         <li>Pressures outside 880&ndash;1060&nbsp;hPa and non-numeric sentinels (<code>NOPRES</code>, <code>XXX</code>, <code>NA</code>) are treated as &ldquo;not analyzed&rdquo;, not as zero.</li>
       </ul>
 
+      <h2>Ocean currents layer</h2>
+      <p>
+        This archive&rsquo;s fix-density and pressure-ramp maxima sit almost
+        exactly over the Gulf Stream and the Kuroshio. That is not
+        decoration: the sharp sea-surface-temperature gradient across those
+        western boundary currents supplies the low-level baroclinicity and
+        surface heat flux that feeds explosive cyclogenesis. The optional
+        <strong>Ocean currents</strong> layer on the Map tab (off by default)
+        draws a multi-year mean surface current field underneath the tracks,
+        fix density, or point layers so that relationship can be checked by
+        eye &mdash; put it under Fix density and see whether the storm track
+        belt actually lines up with the current, rather than assuming it
+        does. Co-location shown this way is not proof of causation, and the
+        field is a historical mean (see Credits), not the conditions during
+        any specific event.
+      </p>
+
       <h2>Rebuilding</h2>
       <p>
         Export each basin tab of the source workbook to
@@ -364,6 +388,16 @@
         <dd>Natural Earth, public domain. Drawn on a hand-rolled orthographic globe (Canvas 2D, no mapping library or basemap tiles) &mdash; the page makes no network requests once loaded.</dd>
         <dt>Event data</dt>
         <dd>The hurricane force low archive workbook &mdash; see Rebuilding, above.</dd>
+        <dt>Ocean surface currents</dt>
+        <dd>
+          OSCAR sea surface velocity, NASA/JPL, obtained via NOAA CoastWatch
+          ERDDAP (dataset <code>jplOscar</code>); U.S. Government work, public
+          domain. The map layer shows the vector mean (u/v averaged
+          separately, not an average of instantaneous speeds) of every field
+          this ERDDAP mirror holds, <span id="currentsPeriod">period
+          unavailable</span> &mdash; a historical mean current field, not
+          current conditions.
+        </dd>
       </dl>
     </div>
   </section>
@@ -393,6 +427,7 @@
 <script src="assets/js/util.js"></script>
 <script src="assets/js/charts.js"></script>
 <script src="data/coastlines.js"></script>
+<script src="data/currents.js"></script>
 <script src="assets/js/globe.js"></script>
 <script src="assets/js/app.js"></script>
 </body>

@@ -18,6 +18,7 @@
     bombOnly: false,
     search: '',
     layer: 'tracks',
+    currents: false,   // ocean currents background layer - independent of `layer`, off by default
     sort: { key: 'start', dir: -1 },
     selectedKey: null
   };
@@ -573,8 +574,20 @@
 
   /* ------------------------------------------------------------ map chrome */
 
+  /** "2011-12-06 to 2014-09-26" style label for the actual period the
+      currents mean covers - read from the generated payload rather than
+      hardcoded, so it can never drift out of sync with tools/build_currents.py.
+      Returns null when currents.js failed to load, so callers can fall back
+      to omitting the layer entirely instead of printing "undefined". */
+  function currentsPeriodLabel() {
+    var c = window.HF_CURRENTS;
+    if (!c || !c.period) return null;
+    return c.period.start + ' to ' + c.period.end;
+  }
+
   function renderMap(lows) {
     HF.globe.render(lows, state.selectedKey, state.layer);
+    HF.globe.setCurrentsVisible(state.currents);
     renderLegend(lows);
 
     var layer = state.layer;
@@ -594,6 +607,44 @@
           ' shown. Click one for its fixes.';
       note.textContent += ' Drag to rotate, scroll to zoom, double-click to reset.';
     }
+    if (state.currents) {
+      var period = currentsPeriodLabel();
+      note.textContent += ' Ocean currents: OSCAR mean surface flow' +
+        (period ? ', ' + period : '') + ', shown as background.';
+    }
+
+    var attrib = document.getElementById('globeAttrib');
+    if (attrib) {
+      attrib.textContent = 'Coastlines: Natural Earth (public domain)' +
+        (state.currents ? ' · Currents: OSCAR/NASA JPL via NOAA CoastWatch (public domain)' : '');
+    }
+  }
+
+  /** Small swatch explaining the currents background layer, appended after
+      whichever per-layer legend content renderLegend built - it applies
+      regardless of state.layer, since currents can sit under any of them. */
+  function appendCurrentsLegend(box) {
+    if (!state.currents) return;
+    var color = HF.globe.currentsColor && HF.globe.currentsColor();
+    if (!color) return;
+    var h = HF.el('h3', {}, 'Ocean currents');
+    h.style.marginTop = '10px';
+    box.appendChild(h);
+    var scale = HF.el('div', { class: 'legend-scale' });
+    [0.15, 0.35, 0.55, 0.75, 1].forEach(function (a) {
+      var seg = HF.el('span');
+      seg.style.background = color;
+      seg.style.opacity = String(a);
+      scale.appendChild(seg);
+    });
+    box.appendChild(scale);
+    var ends = HF.el('div', { class: 'legend-ends' });
+    ends.appendChild(HF.el('span', {}, 'weak'));
+    ends.appendChild(HF.el('span', {}, 'strong'));
+    box.appendChild(ends);
+    box.appendChild(HF.el('p', { class: 'legend-note' },
+      'Streamlet length and shade scale with mean current speed; orientation follows the flow. ' +
+      'Multi-year OSCAR mean, not current conditions — see Method.'));
   }
 
   function renderLegend(lows) {
@@ -616,6 +667,7 @@
       box.appendChild(ends);
       box.appendChild(HF.el('p', { class: 'legend-note' },
         'Shaded on a square-root scale; counts are strongly skewed toward the storm track.'));
+      appendCurrentsLegend(box);
       return;
     }
 
@@ -629,6 +681,7 @@
         row.appendChild(document.createTextNode(s.label));
         box.appendChild(row);
       });
+      appendCurrentsLegend(box);
       return;
     }
 
@@ -670,6 +723,7 @@
       box.appendChild(HF.el('p', { class: 'legend-note' },
         'Markers on the selected track are coloured by category at that fix.'));
     }
+    appendCurrentsLegend(box);
   }
 
   /* --------------------------------------------------------- static panels */
@@ -718,6 +772,25 @@
       'Built ' + DATA.generated + ' — ' + sources + '.';
 
     renderBuildProvenance();
+    renderCurrentsCredit();
+  }
+
+  /** Fills in the actual OSCAR period the currents mean covers, read from
+      the generated payload rather than typed by hand in index.html - if
+      tools/build_currents.py is ever rerun against a longer archive, this
+      updates itself instead of quietly going stale. Degrades to a plain
+      statement if currents.js failed to load, rather than leaving
+      "undefined" in the credits. */
+  function renderCurrentsCredit() {
+    var el = document.getElementById('currentsPeriod');
+    if (!el) return;
+    var period = currentsPeriodLabel();
+    var c = window.HF_CURRENTS;
+    if (!period) {
+      el.textContent = '(currents data unavailable)';
+      return;
+    }
+    el.textContent = period + ' (' + c.period.nTimeSteps + ' five-day fields)';
   }
 
   // HF.decode() (util.js) whitelists which top-level fields of the raw
@@ -908,6 +981,7 @@
     document.getElementById('fPressureOut').textContent =
       state.maxPressure >= 1010 ? 'any' : state.maxPressure;
     document.getElementById('fBomb').checked = state.bombOnly;
+    document.getElementById('fCurrents').checked = state.currents;
     document.getElementById('fSearch').value = state.search;
     Array.prototype.forEach.call(document.querySelectorAll('#fMonths .chip'), function (chip) {
       var on = !!state.months[chip.dataset.month];
@@ -1059,6 +1133,14 @@
 
     document.getElementById('fitBounds').addEventListener('click', function () {
       HF.globe.fitTo(filtered());
+    });
+
+    // Independent of the .seg layer switch above - can be shown under any
+    // of Tracks/Fix density/First fix/Peak intensity, so it just flips its
+    // own bit of state and re-renders rather than touching state.layer.
+    document.getElementById('fCurrents').addEventListener('change', function (e) {
+      state.currents = e.target.checked;
+      render();
     });
     document.getElementById('exportCsv').addEventListener('click', exportCsv);
     document.getElementById('detailClose').addEventListener('click', function () { select(null); });
