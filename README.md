@@ -15,6 +15,7 @@ AWIPS tools and procedures.
 | `tools/build_hf_lows.py` | Normalizes those CSVs into the site data under `docs/data/`. |
 | `tools/publish.py` | Production path: fetches, builds, reports the delta, and (on request) deploys to the NOAA web root. |
 | `docs/` | The HF extratropical low archive site. GitHub Pages serves it as a development preview; production is a separate copy on a NOAA web server. |
+| `flat/` | Generated. The same site collapsed into one directory for upload UIs that cannot take folders. Never edit by hand - see below. |
 
 ## HF extratropical low archive site
 
@@ -158,6 +159,23 @@ Before writing anything, `--flat` re-checks the assumption that makes
 flattening safe - no two files share a basename, and no CSS/JS outside
 `index.html` hardcodes an `assets/...` or `data/...` path - and refuses to
 deploy, naming exactly what it found, if either check fails.
+
+A copy of that flattened build is committed to this repo as `flat/`, so the
+files can be browsed and downloaded one at a time from GitHub without running
+the tool. It is generated output: edit `docs/`, never `flat/`. Regenerate it
+with
+
+```bash
+python3 tools/publish.py --no-fetch --deploy flat --flat --yes
+rm -f flat/.awips-publish-manifest.json
+cp docs/data/hf-lows.js docs/data/hf-lows.json docs/data/qc-report.txt flat/
+```
+
+The last line matters: a rebuild stamps a fresh `generated` timestamp into the
+three generated data files, so copying `docs/`'s versions across keeps the two
+trees byte-identical and the CI drift check quiet. That check compares `flat/`
+against `docs/` on every push and fails if they diverge, since a stale `flat/`
+would quietly hand someone the wrong files to upload.
 
 Don't point a flat deploy and a normal deploy at the same directory. Each
 mode leaves the other layout's files in place unless this tool's own manifest
