@@ -669,7 +669,10 @@
       return;
     }
 
-    box.appendChild(HF.el('h3', {}, 'Minimum pressure'));
+    // Each track segment is coloured by the MSLP at that point, not by the
+    // event's lifetime minimum - the heading and note below must say so, or
+    // this reads as the (now wrong) old one-colour-per-event legend.
+    box.appendChild(HF.el('h3', {}, 'Pressure along track'));
     // Ascending (weakest -> deepest) so the bar and its end labels always
     // match HF.PRESSURE_BANDS's own breakpoints and text, whatever they
     // currently are - never hardcode a specific hPa value here.
@@ -698,6 +701,8 @@
       row.style.marginTop = '6px';
       box.appendChild(row);
     }
+    box.appendChild(HF.el('p', { class: 'legend-note' },
+      'Colour is the analyzed MSLP at each point along the track, not the event’s overall minimum.'));
     if (state.selectedKey) {
       box.appendChild(HF.el('p', { class: 'legend-note' },
         'Markers on the selected track are coloured by category at that fix.'));

@@ -354,23 +354,34 @@ window.HF = window.HF || {};
   function drawTracks() {
     hitPoints = [];
     var style = styleForCount(lows.length);
-    var selected = null;
+    var selected = null, hovered = null;
 
     ctx.lineCap = 'round';    // smooths the join between adjacent-colour segments
     for (var i = 0; i < lows.length; i++) {
       var low = lows[i];
-      if (low.key === selectedKey) { selected = low; continue; }
-      drawOneTrack(low, style, false);
+      var isSel = low.key === selectedKey;
+      var isHov = hoveredKey != null && low.key === hoveredKey;
+      if (isSel) selected = low;
+      if (isHov) hovered = low;
+      if (isSel || isHov) continue;
+      drawOneTrack(low, style, false, false);
     }
-    if (selected) drawOneTrack(selected, style, true);
+    // Selected is drawn before hovered so hover - a transient, pointer-driven
+    // emphasis - always ends up the topmost stroke; when the two coincide,
+    // one combined-emphasis pass is enough.
+    if (selected && selected !== hovered) drawOneTrack(selected, style, true, false);
+    if (hovered) drawOneTrack(hovered, style, hovered === selected, true);
     ctx.lineCap = 'butt';
   }
 
-  function drawOneTrack(low, style, isSelected) {
+  function drawOneTrack(low, style, isSelected, isHovered) {
     var fixes = low.fixes;
     var terrain = low.cls && low.cls !== 'low';
-    var weight = isSelected ? Math.max(2.4, style.weight + 1.6) : (terrain ? style.weight + 0.3 : style.weight);
-    var opacity = isSelected ? 1 : Math.min(1, style.opacity + (terrain ? 0.15 : 0));
+    var emphasized = isSelected || isHovered;
+    var weight = isSelected ? Math.max(2.4, style.weight + 1.6)
+      : isHovered ? Math.max(2.2, style.weight + 1.4)
+      : (terrain ? style.weight + 0.3 : style.weight);
+    var opacity = emphasized ? 1 : Math.min(1, style.opacity + (terrain ? 0.15 : 0));
     var terrainColor = terrain ? HF.classColor(low.cls) : null;
 
     ctx.globalAlpha = opacity;
@@ -461,7 +472,16 @@ window.HF = window.HF || {};
     var animating = dragging || !!inertia;
     if (dirty || animating) {
       if (inertia) stepInertia();
-      draw();
+      // window.HF_DEBUG_TIMING flips this on for perf investigation (e.g. the
+      // hover-emphasis redraw path below) without adding a console.log that
+      // fires on every normal frame/drag.
+      if (window.HF_DEBUG_TIMING) {
+        var t0 = performance.now();
+        draw();
+        console.log('[globe] draw() took ' + (performance.now() - t0).toFixed(2) + ' ms, ' + lows.length + ' tracks');
+      } else {
+        draw();
+      }
       dirty = false;
     }
     if (animating) scheduleFrame();
@@ -512,6 +532,13 @@ window.HF = window.HF || {};
 
     if (key !== hoveredKey) {
       hoveredKey = key;
+      // Only the ~1,870-track redraw needs to happen on a hover *change*,
+      // not on every mousemove tick - dirty/scheduleFrame is the same
+      // mechanism drags and renders already use, so this doesn't add a
+      // second animation path.
+      dirty = true;
+      scheduleFrame();
+      canvas.style.cursor = key ? 'pointer' : '';
       if (hit) HF.showTip(fixTip(hit.low), evt); else HF.hideTip();
     } else if (hit) {
       HF.moveTip(evt);
@@ -529,6 +556,10 @@ window.HF = window.HF || {};
     inertia = null;
     pointerId = evt.pointerId;
     canvas.classList.add('is-dragging');
+    // An inline style has higher specificity than the .is-dragging class's
+    // cursor:grabbing rule, so a lingering hover pointer would otherwise
+    // survive into the drag; clear it and let the CSS class take over.
+    canvas.style.cursor = '';
     if (canvas.setPointerCapture) {
       try { canvas.setPointerCapture(evt.pointerId); } catch (err) { /* ignore */ }
     }
@@ -603,7 +634,11 @@ window.HF = window.HF || {};
   }
 
   function onLeave() {
-    if (!dragging) { hoveredKey = undefined; HF.hideTip(); }
+    if (!dragging) {
+      if (hoveredKey != null) { hoveredKey = undefined; dirty = true; scheduleFrame(); }
+      canvas.style.cursor = '';
+      HF.hideTip();
+    }
   }
 
   /* ------------------------------------------------------------- public */
