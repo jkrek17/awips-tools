@@ -1,0 +1,42 @@
+/* Orthographic globe view - shown instead of the flat Leaflet map when both
+   basins are selected at once. Box sizing (height/min-height/background/
+   border) is shared with #map via the `#map, .globe-wrap` rule in
+   assets/app.css so swapping between the two never jumps the layout;
+   .globe-wrap itself only adds `position: relative; overflow: hidden` there.
+   This file owns all #globe (canvas) styling - do not re-add width/height/
+   position rules for it elsewhere. */
+
+#globe {
+  position: absolute;
+  inset: 0;              /* fills .globe-wrap regardless of its display
+                             mode (grid/flex/block) - see the note in
+                             app.css about place-items:center not
+                             stretching a grid item */
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  touch-action: none;      /* dragging/pinching drives the view, not the page */
+  cursor: grab;
+}
+
+#globe.is-dragging {
+  cursor: grabbing;
+}
+
+.globe-attrib {
+  position: absolute;
+  left: 10px;
+  bottom: 8px;
+  z-index: 500;
+  margin: 0;
+  padding: 2px 7px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--ink-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  opacity: 0.85;
+  pointer-events: none;
+}
