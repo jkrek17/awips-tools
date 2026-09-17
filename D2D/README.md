@@ -257,9 +257,9 @@ Only if the rules do not take effect on your build, fall back to copying
 the base files to the site level and pasting the rules in (and remove
 the separate file so nothing is defined twice).
 
-Colormaps: copy `D2D/colormaps/CPS/CoreDiverging.cmap` and
+Colormaps: copy `D2D/colormaps/Grid/CPS_CoreDiverging.cmap` and
 `CoreClass.cmap` to
-`/awips2/edex/data/utility/common_static/site/<SITE>/colormaps/CPS/`.
+`/awips2/edex/data/utility/common_static/site/<SITE>/colormaps/Grid/`.
 Restart CAVE. Even without the style rules, both then appear in the
 right-click legend menu under Change Colormap, in a CPS submenu.
 
@@ -268,8 +268,8 @@ base colormap like `Grid/Difference`, which is not guaranteed to exist
 at every site):
 
 ```
-/awips2/edex/data/utility/common_static/site/<SITE>/colormaps/CPS/CoreDiverging.cmap
-/awips2/edex/data/utility/common_static/site/<SITE>/colormaps/CPS/CoreClass.cmap
+/awips2/edex/data/utility/common_static/site/<SITE>/colormaps/Grid/CPS_CoreDiverging.cmap
+/awips2/edex/data/utility/common_static/site/<SITE>/colormaps/Grid/CPS_CoreClass.cmap
 ```
 
 (VERIFY the exact colormaps path for your AWIPS version.) `CoreDiverging`

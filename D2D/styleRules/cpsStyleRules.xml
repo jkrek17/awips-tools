@@ -19,9 +19,9 @@
   file from the site level so the rules are not defined twice.
 
   Colormaps referenced here ship with this package under
-  D2D/colormaps/CPS/ and install to
-    /awips2/edex/data/utility/common_static/site/<SITE>/colormaps/CPS/
-  The "CPS/" prefix in defaultColormap is that subdirectory name.
+  D2D/colormaps/Grid/ and install to
+    /awips2/edex/data/utility/common_static/site/<SITE>/colormaps/Grid/
+  The "Grid/" prefix in defaultColormap is the base Grid colormap subdirectory, used so no new folder is needed at site level; the CPS_ file prefix keeps them together in the menu.
 
   Format follows the base gridImageryStyleRules.xml and
   gridContourStyleRules.xml: one paramLevelMatch per rule with one or more
@@ -40,7 +40,7 @@
             <parameter>VTU</parameter>
         </paramLevelMatch>
         <imageStyle>
-            <defaultColormap>CPS/CoreDiverging</defaultColormap>
+            <defaultColormap>Grid/CPS_CoreDiverging</defaultColormap>
             <range scale="LINEAR">
                 <minValue>-20</minValue>
                 <maxValue>20</maxValue>
@@ -65,7 +65,7 @@
             <parameter>CPSidx</parameter>
         </paramLevelMatch>
         <imageStyle>
-            <defaultColormap>CPS/CoreDiverging</defaultColormap>
+            <defaultColormap>Grid/CPS_CoreDiverging</defaultColormap>
             <range scale="LINEAR">
                 <minValue>-3</minValue>
                 <maxValue>3</maxValue>
@@ -83,7 +83,7 @@
         </paramLevelMatch>
         <imageStyle>
             <interpolate>false</interpolate>
-            <defaultColormap>CPS/CoreClass</defaultColormap>
+            <defaultColormap>Grid/CPS_CoreClass</defaultColormap>
             <range scale="LINEAR">
                 <minValue>-0.5</minValue>
                 <maxValue>4.5</maxValue>
@@ -98,7 +98,7 @@
             <parameter>HVTU</parameter>
         </paramLevelMatch>
         <imageStyle>
-            <defaultColormap>CPS/CoreDiverging</defaultColormap>
+            <defaultColormap>Grid/CPS_CoreDiverging</defaultColormap>
             <range scale="LINEAR">
                 <minValue>-300</minValue>
                 <maxValue>300</maxValue>
@@ -123,7 +123,7 @@
             <parameter>HCPSidx</parameter>
         </paramLevelMatch>
         <imageStyle>
-            <defaultColormap>CPS/CoreDiverging</defaultColormap>
+            <defaultColormap>Grid/CPS_CoreDiverging</defaultColormap>
             <range scale="LINEAR">
                 <minValue>-3</minValue>
                 <maxValue>3</maxValue>
@@ -137,7 +137,7 @@
         </paramLevelMatch>
         <imageStyle>
             <interpolate>false</interpolate>
-            <defaultColormap>CPS/CoreClass</defaultColormap>
+            <defaultColormap>Grid/CPS_CoreClass</defaultColormap>
             <range scale="LINEAR">
                 <minValue>-0.5</minValue>
                 <maxValue>4.5</maxValue>
