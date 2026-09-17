@@ -768,9 +768,27 @@ accumulate; it is the calibration record for the thresholds.
 | 2026-09-14 | GFS 12Z, 72 h | Typhoon, 24N 147E, 984 mb | 6.45 | 12.24 | 4 | 1.98 | | | | |
 | 2026-09-14 | GFS 12Z, 72 h | Post-tropical low, 62N 20W, 978 mb, tilted | -1.07 | 5.05 | 2 (cold ring) | 0.31 | | | | |
 | 2026-09-17 | GFS 12Z, 72 h | Same typhoon, 31N 139E, 984 mb | | | | | 120 | 180 | 4 | 2.5 |
+| 2026-09-17 | GFS 12Z, series | Typhoon Dujuan, ET timing | | | | | | | drops from 4 at Mon 21 Sep 18Z | | 
+| 2026-09-17 | GFS 12Z | Deep extratropical low, North Atlantic | | | | | negative | negative | 1 | negative |
 
 Notes: the vorticity family read the tilted post-tropical low as
 neutral at the center with a cold ring where the upper trough sat,
 which is the tilt bias the Hart family was built to remove. The Hart
 values for the typhoon are in Hart's published hurricane range. The
-Hart family has not yet been sampled on a cold-core case.
+Hart family validated on a cold-core case (class 1, both terms
+negative). External check: the first forecast hour at which HCPScat
+drops below 4 for Typhoon Dujuan (Mon 21 Sep 2026 18Z) matches the hour
+the FSU cyclone phase page shows the same GFS run moving from deep to
+shallow warm core. After the surface-pressure mask, Greenland and the
+high terrain of western North America are blank rather than
+contaminated, which is the intended behavior. A few very weak closed
+lows (under about 5 hPa deep) get no class blob at the shipped depth of
+40 m; set depthM to 25 in HCPScat.xml and HCPSidx.xml to include them.
+
+**Status: the D2D version is release-ready as of 2026-09-17**, still
+labeled experimental pending a season of use. Known limitations: the
+raw HVTL/HVTU fields paint a square footprint around each low (the
+window shape, cosmetic); the vorticity family reads Southern Hemisphere
+warm cores with the wrong sign (the Hart family does not); style rules
+did not auto-apply on the OPC build, so colors come from a saved
+procedure.
