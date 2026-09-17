@@ -248,11 +248,20 @@ AWIPS versions differ in how a fields-menu contribution is wired in
 contribution under `cave_static/base/menus/volumebrowser/` on your
 build and match its shape.
 
-Style rules: `D2D/styleRules/cpsStyleRules.xml` is not a drop-in file.
-Merge its imagery `<styleRule>` block into the site's
-`gridImageryStyleRules.xml` and its contour `<styleRule>` block into
-`gridContourStyleRules.xml`, matching whatever element/attribute names
-your site's base files actually use.
+Style rules: copy `D2D/styleRules/cpsStyleRules.xml` unchanged to
+`/awips2/edex/data/utility/common_static/site/<SITE>/styleRules/cpsStyleRules.xml`.
+CAVE loads every XML file in the styleRules directory at every
+localization level, so a separate file is additive and the base
+gridImageryStyleRules.xml and gridContourStyleRules.xml are not edited.
+Only if the rules do not take effect on your build, fall back to copying
+the base files to the site level and pasting the rules in (and remove
+the separate file so nothing is defined twice).
+
+Colormaps: copy `D2D/colormaps/CPS/CoreDiverging.cmap` and
+`CoreClass.cmap` to
+`/awips2/edex/data/utility/common_static/site/<SITE>/colormaps/CPS/`.
+Restart CAVE. Even without the style rules, both then appear in the
+right-click legend menu under Change Colormap, in a CPS submenu.
 
 Colormaps (referenced by the imagery style rules above instead of a
 base colormap like `Grid/Difference`, which is not guaranteed to exist

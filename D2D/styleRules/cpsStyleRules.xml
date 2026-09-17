@@ -1,240 +1,148 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <!--
-  EXPERIMENTAL. Starting-point style rules for VTL/VTU/CPScat/CPSidx
-  (cyclone core structure). This is NOT a drop-in file: merge the
-  <styleRule> elements below into the site's own gridImageryStyleRules.xml
-  (imagery/colormap part) and gridContourStyleRules.xml (contour part).
-  Element and attribute names must match whatever your AWIPS version's
-  base files use - VERIFY against those base files before merging; the
-  shapes below follow the common gridImageryStyleRules /
-  gridContourStyleRules schema but versions do drift.
+  EXPERIMENTAL. Style rules for the CPS derived parameters:
+    vorticity family  VTL, VTU, CPScat, CPSidx
+    Hart family       HVTL, HVTU, HCPScat, HCPSidx
 
-  VTL/VTU range chosen to be +/-20 (units 1e-5 /s - VTL.xml/VTU.xml's
-  outputs are scaled by CycloneCore.py's UNIT_SCALE so CAVE's two-decimal
-  sampling readout is legible; a value of 20 here is 2.0e-4 /s in SI), a
-  few times a typical strong tropical cyclone's core vorticity difference
-  between 850 and 600 hPa, centered on zero with a diverging colormap so
-  warm core (positive) and cold core (negative) read as different colors
-  at a glance. No displayUnit is set on VTL/VTU's imagery or contour
-  styleRules below: the parameter itself is declared with an empty unit
-  (see VTL.xml/VTU.xml), so a displayUnit of /s would be applying an
-  incompatible physical-unit conversion to an already-scaled,
-  dimensionless-declared value. CPScat and CPSidx (see below, further
-  down this file) combine VTL and VTU into one field each and need their
-  own imagery styleRules.
+  INSTALL (preferred): copy this file unchanged to the site style rules
+  directory under its own name,
+    /awips2/edex/data/utility/common_static/site/<SITE>/styleRules/cpsStyleRules.xml
+  CAVE loads every XML file in the styleRules directory at every
+  localization level and sorts each rule by the style element it holds
+  (imageStyle = imagery, contourStyle = contour), so a separate file is
+  additive and nothing in the base files has to be edited. Restart CAVE.
 
-  Colormaps: this package ships two custom .cmap files instead of
-  referencing a base colormap like Grid/Difference, because a base
-  colormap of that name is not guaranteed to exist at every site. They
-  install under the site colormaps directory, typically
-  /awips2/edex/data/utility/common_static/site/<SITE>/colormaps/CPS/
-  (VERIFY the exact path for your AWIPS version). The "CPS/" prefix used
-  in <defaultColormap> below is that subdirectory name - CAVE resolves
-  "CPS/CoreDiverging" to the CoreDiverging.cmap file inside a "CPS"
-  colormaps subdirectory, the same way base colormaps like "Grid/Difference"
-  resolve to a "Grid" subdirectory.
+  INSTALL (fallback, only if the rules above do not take effect on your
+  build): copy the base gridImageryStyleRules.xml to the site level, paste
+  the imageStyle rules below into it, do the same for the contourStyle
+  rules into a site copy of gridContourStyleRules.xml, and delete this
+  file from the site level so the rules are not defined twice.
 
-    CPS/CoreDiverging.cmap - 64 entry diverging blue/red ramp, transparent
-      near the center. Used for VTL, VTU, and CPSidx.
-    CPS/CoreClass.cmap - 5 entry categorical colormap (gray/blue/pale
-      gray/orange/red). Used for CPScat only.
+  Colormaps referenced here ship with this package under
+  D2D/colormaps/CPS/ and install to
+    /awips2/edex/data/utility/common_static/site/<SITE>/colormaps/CPS/
+  The "CPS/" prefix in defaultColormap is that subdirectory name.
+
+  Format follows the base gridImageryStyleRules.xml and
+  gridContourStyleRules.xml: one paramLevelMatch per rule with one or more
+  parameter children; imagery uses defaultColormap and range; contours use
+  contourLabeling with space separated values. VERIFY against a base rule
+  on your build if anything fails to apply; the interpolate element on
+  imageStyle is the least certain item and can be deleted if the file
+  fails to load.
 -->
 <styleRuleset>
-    <!-- Imagery / colormap part: merge into gridImageryStyleRules.xml -->
+
+    <!-- Vorticity family, x1e-5 /s -->
     <styleRule>
         <paramLevelMatch>
             <parameter>VTL</parameter>
-        </paramLevelMatch>
-        <paramLevelMatch>
             <parameter>VTU</parameter>
         </paramLevelMatch>
         <imageStyle>
             <defaultColormap>CPS/CoreDiverging</defaultColormap>
-            <range>
+            <range scale="LINEAR">
                 <minValue>-20</minValue>
                 <maxValue>20</maxValue>
             </range>
         </imageStyle>
     </styleRule>
 
-    <!--
-      CPSidx is a continuous dimensionless index, -3 (cold core) to +3
-      (deep warm core), 0 = neutral - a diverging colormap centered on
-      zero, same CPS/CoreDiverging colormap as VTL/VTU above but over the
-      index's own -3..3 range instead of VTL/VTU's -20..20 (1e-5 /s)
-      range.
-    -->
+    <styleRule>
+        <paramLevelMatch>
+            <parameter>VTL</parameter>
+            <parameter>VTU</parameter>
+        </paramLevelMatch>
+        <contourStyle>
+            <contourLabeling labelSpacing="4">
+                <values>-20 -15 -10 -5 5 10 15 20</values>
+            </contourLabeling>
+        </contourStyle>
+    </styleRule>
+
     <styleRule>
         <paramLevelMatch>
             <parameter>CPSidx</parameter>
         </paramLevelMatch>
         <imageStyle>
             <defaultColormap>CPS/CoreDiverging</defaultColormap>
-            <range>
-                <minValue>-3.0</minValue>
-                <maxValue>3.0</maxValue>
+            <range scale="LINEAR">
+                <minValue>-3</minValue>
+                <maxValue>3</maxValue>
             </range>
         </imageStyle>
     </styleRule>
 
-    <!--
-      CPScat is categorical (0 mid-vortex, 1 cold, 2 neutral, 3 shallow
-      warm, 4 deep warm), NOT a continuous physical quantity, so the range
-      below is offset by half a category (-0.5 to 4.5) purely so each
-      integer code lands in the middle of one color bin rather than on a
-      boundary between two. CPS/CoreClass.cmap is a purpose-built 5-color
-      categorical colormap with no implied ordering by shade:
-        0 (mid-level vortex)  -> gray
-        1 (cold core)         -> blue
-        2 (neutral)           -> pale gray, half transparent
-        3 (shallow warm core) -> orange
-        4 (deep warm core)    -> red
-      Interpolation between colors must be OFF for a categorical map -
-      CAVE should hold each color flat across its bin instead of blending
-      toward the next code's color. If this schema has a smoothing or
-      interpolate flag on <imageStyle> (e.g. <isDirectional>, an
-      "interpolate" attribute, or similar), set/clear it accordingly -
-      VERIFY the exact element/attribute name against your AWIPS version's
-      base imagery style rules, since a continuous-field example is not
-      guaranteed to show the categorical-map flag.
-    -->
+    <!-- Categorical: 0 mid-vortex, 1 cold, 2 neutral, 3 shallow warm,
+         4 deep warm. Range is offset by half a category so each code
+         sits in the middle of one color bin; interpolate off so colors
+         hold flat across a bin. -->
     <styleRule>
         <paramLevelMatch>
             <parameter>CPScat</parameter>
         </paramLevelMatch>
         <imageStyle>
+            <interpolate>false</interpolate>
             <defaultColormap>CPS/CoreClass</defaultColormap>
-            <range>
+            <range scale="LINEAR">
                 <minValue>-0.5</minValue>
                 <maxValue>4.5</maxValue>
             </range>
         </imageStyle>
     </styleRule>
 
-    <!-- Contour part: merge into gridContourStyleRules.xml -->
-    <!--
-      Values below are a reduced set (8 contours instead of the previous
-      20) at 5-unit spacing (units 1e-5 /s - see VTL.xml/VTU.xml and
-      CycloneCore.py's UNIT_SCALE) so VTL/VTU contour plots are not too
-      cluttered. Labels now print as plain whole numbers (e.g. "20"
-      instead of "0.0002") with no displayUnit needed: VTL/VTU's values
-      are already scaled into this readable range at the source, so no
-      display-time unit conversion applies here, and none should be
-      added - a displayUnit of /s would try to convert an
-      already-scaled, dimensionless-declared value as if it still meant
-      physical 1/s.
-    -->
-    <styleRule>
-        <paramLevelMatch>
-            <parameter>VTL</parameter>
-        </paramLevelMatch>
-        <paramLevelMatch>
-            <parameter>VTU</parameter>
-        </paramLevelMatch>
-        <contourStyle>
-            <contourValues>
-                <values>-20,-15,-10,-5,5,10,15,20</values>
-            </contourValues>
-            <lineStyle>SOLID</lineStyle>
-            <!-- Zero itself is intentionally excluded from contourValues above
-                 (it is the warm/cold-core boundary, not a magnitude worth
-                 drawing); emphasize it separately if your schema supports a
-                 zeroLine / emphasized-value element. -->
-        </contourStyle>
-    </styleRule>
-
-    <!--
-      ===========================================================
-      Hart CPS family (height-based, actual method - HartCPS.py):
-      HVTL, HVTU, HCPScat, HCPSidx. A second, independent set of
-      styleRules from CycloneCore.py's VTL/VTU/CPScat/CPSidx above -
-      do not merge the two families' ranges, their units differ
-      (meters here, scaled 1e-5 /s above).
-      ===========================================================
-    -->
-
-    <!--
-      Imagery / colormap part: merge into gridImageryStyleRules.xml.
-      HVTL/HVTU range +/-300 m: a mature hurricane samples roughly
-      +100 to +300 m, a cold-core low roughly -100 to -300 m (see
-      HartCPS.py's module docstring), so +/-300 covers the typical
-      range with headroom, centered on zero with the same diverging
-      colormap CycloneCore.py's VTL/VTU/CPSidx use.
-    -->
+    <!-- Hart family, meters per unit ln p -->
     <styleRule>
         <paramLevelMatch>
             <parameter>HVTL</parameter>
-        </paramLevelMatch>
-        <paramLevelMatch>
             <parameter>HVTU</parameter>
         </paramLevelMatch>
         <imageStyle>
             <defaultColormap>CPS/CoreDiverging</defaultColormap>
-            <range>
+            <range scale="LINEAR">
                 <minValue>-300</minValue>
                 <maxValue>300</maxValue>
             </range>
         </imageStyle>
     </styleRule>
 
-    <!--
-      HCPSidx is a continuous dimensionless index, -3 (cold core) to +3
-      (deep warm core), 0 = neutral - same diverging colormap as HVTL/
-      HVTU above but over the index's own -3..3 range.
-    -->
+    <styleRule>
+        <paramLevelMatch>
+            <parameter>HVTL</parameter>
+            <parameter>HVTU</parameter>
+        </paramLevelMatch>
+        <contourStyle>
+            <contourLabeling labelSpacing="4">
+                <values>-300 -200 -100 -50 50 100 200 300</values>
+            </contourLabeling>
+        </contourStyle>
+    </styleRule>
+
     <styleRule>
         <paramLevelMatch>
             <parameter>HCPSidx</parameter>
         </paramLevelMatch>
         <imageStyle>
             <defaultColormap>CPS/CoreDiverging</defaultColormap>
-            <range>
-                <minValue>-3.0</minValue>
-                <maxValue>3.0</maxValue>
+            <range scale="LINEAR">
+                <minValue>-3</minValue>
+                <maxValue>3</maxValue>
             </range>
         </imageStyle>
     </styleRule>
 
-    <!--
-      HCPScat is categorical (0 mid-vortex, 1 cold, 2 neutral, 3 shallow
-      warm, 4 deep warm), same 5-category table and same CPS/CoreClass
-      categorical colormap as CycloneCore.py's CPScat - see that
-      styleRule's comment above for the color table and the
-      "interpolation must be off" note, which applies here identically.
-    -->
     <styleRule>
         <paramLevelMatch>
             <parameter>HCPScat</parameter>
         </paramLevelMatch>
         <imageStyle>
+            <interpolate>false</interpolate>
             <defaultColormap>CPS/CoreClass</defaultColormap>
-            <range>
+            <range scale="LINEAR">
                 <minValue>-0.5</minValue>
                 <maxValue>4.5</maxValue>
             </range>
         </imageStyle>
     </styleRule>
 
-    <!--
-      Contour part: merge into gridContourStyleRules.xml. Values in
-      meters (HVTL/HVTU's own unit - no UNIT_SCALE round trip, unlike
-      CycloneCore.py's VTL/VTU above), spaced to bracket the typical
-      +/-100 to +/-300 m hurricane/cold-core range from HartCPS.py's
-      module docstring, with a gap around zero (the warm/cold-core
-      boundary) for the same reason as VTL/VTU's contourStyle above.
-    -->
-    <styleRule>
-        <paramLevelMatch>
-            <parameter>HVTL</parameter>
-        </paramLevelMatch>
-        <paramLevelMatch>
-            <parameter>HVTU</parameter>
-        </paramLevelMatch>
-        <contourStyle>
-            <contourValues>
-                <values>-300,-200,-100,-50,50,100,200,300</values>
-            </contourValues>
-            <lineStyle>SOLID</lineStyle>
-        </contourStyle>
-    </styleRule>
 </styleRuleset>
