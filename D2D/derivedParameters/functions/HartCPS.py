@@ -105,6 +105,82 @@ only slightly. See `tests/d2d_cps/test_hart_cps.py` for a direct
 numerical comparison against `cps.hart.thermal_wind` on a synthetic
 warm-core vortex (agreement within 2%).
 
+Closed-low mask level
+----------------------
+
+`closed_low_mask` (used by `executeClassStd`/`executeIndexStd` to blank
+every point outside a real closed low) is computed from **1000 hPa
+height** (`z1000`), a separate argument from the six `LOWER_BAND`/
+`UPPER_BAND` heights the thermal wind itself is built from. 1000 hPa
+height is nearly a linear function of MSLP (about 8 m per hPa), so the
+closed low the mask finds is, to a good approximation, the same closed
+low a forecaster already sees drawn on the MSLP contours -- which is
+the point of masking at all. `DEFAULT_DEPTH_M` (40 m) is therefore
+about 5 hPa of MSLP. 1000 hPa is below ground over major terrain and
+below sea level inside a sufficiently deep low, so the model is
+extrapolating there rather than reporting an analyzed height; see
+"Below-ground masking" below for how that is handled.
+
+Below-ground masking
+----------------------
+
+Every height level this module uses -- `z1000` and the six
+`LOWER_BAND`/`UPPER_BAND` levels -- can be below the ground surface
+over major terrain, or below sea level itself inside a sufficiently
+deep low, where the model is extrapolating rather than reporting an
+analyzed height. Over the open ocean that extrapolation is harmless (a
+deep low's surface pressure legitimately drops well under 1000 or
+925 hPa at its own center, and the height there is still meaningful).
+Over ice sheets and high mountains it is not: a level whose pressure
+is below the local surface pressure is fictitious, and letting it into
+a window's max/min or the closed-low mask's ring mean can quietly bias
+the result.
+
+`mask_below_ground(z, psfc_hpa, level_hpa, cap_hpa)` blanks (NaN) `z`
+wherever a point is below ground for pressure level `level_hpa`:
+
+    psfc_hpa < min(level_hpa, cap_hpa)
+
+`cap_hpa` (`BELOW_GROUND_CAP_HPA`, default 900 hPa) keeps the ocean
+case above from being caught by this rule: without it, a deep low's
+own surface pressure (which can legitimately fall well under 1000 or
+925 hPa at its center) would mask the very feature this family exists
+to find. With the cap, a point only counts as below ground for the
+1000 and 925 hPa levels when the surface pressure drops under 900 hPa
+-- true over the Greenland ice sheet (surface pressure roughly
+700-800 hPa) and the Iceland highlands (roughly 850-900 hPa), not
+true over an open-ocean low (surface pressure rarely below 900 hPa
+even in a deep cyclone). 850 hPa is masked by the same 900 hPa
+threshold; 700 hPa and above are masked only where the surface itself
+is at or below that level's own pressure -- effectively never, except
+over the Himalaya and Antarctica. See `BELOW_GROUND_CAP_HPA`'s own
+docstring for more.
+
+`surface_pressure_hpa(psfc)` coerces AWIPS's surface pressure field to
+hPa, auto-detecting units: AWIPS normally hands pressure in Pa (sea
+level is roughly 101325 Pa), but this checks the field's own finite
+median rather than trusting a caller's label -- a median above 2000
+can only be Pa (no real surface pressure is above 2000 hPa), so the
+whole field is divided by 100; at or below 2000 it is assumed to
+already be hPa.
+
+`thermal_wind_grid` applies `mask_below_ground` to each of its
+`z_levels` (matched to its own `pressures`) before `delta_z`, when
+given an optional `psfc_hpa` (paired with `cap_hpa`); `psfc_hpa=None`
+(the default) skips this entirely, so callers with no terrain to
+mask -- including this module's own reference tests -- are
+unaffected. `executeClassStd`/`executeIndexStd`/`executeBand3`/
+`executeBand4`/`executeBand7` all take a `psfc` argument and a
+`capHpa` constant (default `BELOW_GROUND_CAP_HPA`) and apply the mask
+to every height argument, including `z1000` before it reaches
+`closed_low_mask` (`closed_low_mask` itself is unchanged -- it is
+simply handed an already-masked `z_low`). Because the sliding window
+extrema (`window_extreme_2d`) and box sums (`window_sum_2d`) this
+module uses throughout are already NaN-aware, a below-ground point's
+neighbors just see one fewer valid sample in their own window -- no
+extra plumbing was needed beyond masking the input before it reaches
+them.
+
 This file must import nothing from outside itself plus the standard
 library and numpy: in AWIPS it runs inside CAVE's embedded Python
 interpreter, which only has numpy and whatever else lives in the same
@@ -129,6 +205,9 @@ __all__ = [
     "DEFAULT_CENTER_TOL_M",
     "LOWER_BAND",
     "UPPER_BAND",
+    "BELOW_GROUND_CAP_HPA",
+    "surface_pressure_hpa",
+    "mask_below_ground",
     "running_extreme_1d",
     "window_extreme_2d",
     "window_sum_2d",
@@ -181,7 +260,9 @@ MIN_RADIUS_KM = 300.0
 #: own height by at least this much before the point counts as being inside
 #: a real closed low, not merely a local dip on a monotonic slope (see
 #: closed_low_mask's docstring for why a plain "shallower than the far
-#: field" window max-minus-min test is not enough by itself).
+#: field" window max-minus-min test is not enough by itself). closed_low_mask
+#: is evaluated on 1000 hPa height, which is nearly a linear function of
+#: MSLP (about 8 m per hPa), so this 40 m is about 5 hPa of MSLP.
 DEFAULT_DEPTH_M = 40.0
 
 #: Half-width (km) closed_low_mask() dilates its raw (candidate-and-deep)
@@ -209,6 +290,20 @@ LOWER_BAND = (925.0, 850.0, 700.0)
 
 #: Pressure levels (hPa) for the upper-tropospheric standard-level band.
 UPPER_BAND = (500.0, 400.0, 300.0)
+
+#: hPa; cap on the below-ground threshold `mask_below_ground` applies (a
+#: point at level `level_hpa` is below ground when its own surface
+#: pressure is under `min(level_hpa, BELOW_GROUND_CAP_HPA)`). Without the
+#: cap, a deep low's own legitimately low surface pressure (e.g. 960 hPa
+#: over open water) would be treated as terrain and blank out the very
+#: feature this family looks for; with it, only genuinely high terrain --
+#: the Greenland ice sheet (surface pressure roughly 700-800 hPa) and the
+#: Iceland highlands (roughly 850-900 hPa) -- masks the 1000/925/850 hPa
+#: levels, while an open-ocean low (rarely below ~900 hPa even at its
+#: deepest) is left alone. 700 hPa and above are masked only where the
+#: surface itself is at or below that level's own (uncapped) pressure --
+#: effectively never, except over the Himalaya and Antarctica.
+BELOW_GROUND_CAP_HPA = 900.0
 
 
 # ---------------------------------------------------------------------------
@@ -240,6 +335,65 @@ def _coerce_scalar(x) -> float:
     name.
     """
     return float(np.asarray(x).ravel()[0])
+
+
+# ---------------------------------------------------------------------------
+# Below-ground masking
+# ---------------------------------------------------------------------------
+
+
+def surface_pressure_hpa(psfc: np.ndarray) -> np.ndarray:
+    """Coerce AWIPS's surface pressure field `psfc` to hPa, as a float
+    array the same shape as `psfc`, auto-detecting Pa vs hPa and
+    treating missing input (see `_missing_mask`) as NaN.
+
+    AWIPS hands pressure fields in Pa (sea level is roughly 101325 Pa),
+    but this does not trust a caller's unit label -- it looks at the
+    field's own finite median: a median above 2000 can only be Pa (no
+    real surface pressure is above 2000 hPa), so the whole field is
+    divided by 100; a median at or below 2000 is assumed to already be
+    hPa. The decision is made once for the whole array, not per
+    element, since a real pressure field does not mix units within
+    itself. A field with no finite values at all (an undefined median)
+    is returned unconverted -- it is all-NaN either way.
+    """
+    p = np.asarray(psfc, dtype=float)
+    bad = _missing_mask(p)
+    p = np.where(bad, np.nan, p)
+    finite = p[np.isfinite(p)]
+    if finite.size == 0:
+        return p
+    median = float(np.median(finite))
+    if median > 2000.0:
+        p = p / 100.0
+    return p
+
+
+def mask_below_ground(
+    z: np.ndarray,
+    psfc_hpa: np.ndarray,
+    level_hpa: float,
+    cap_hpa: float = BELOW_GROUND_CAP_HPA,
+) -> np.ndarray:
+    """Return `z` with NaN wherever the grid point is below ground for
+    pressure level `level_hpa`: `psfc_hpa < min(level_hpa, cap_hpa)`, or
+    `psfc_hpa` itself is not finite there. See `BELOW_GROUND_CAP_HPA`
+    and the module docstring's "Below-ground masking" section for why
+    the threshold is capped rather than a plain `psfc_hpa < level_hpa`,
+    and `surface_pressure_hpa` for getting `psfc_hpa` from a raw AWIPS
+    surface pressure field (which may be in Pa).
+
+    `z` and `psfc_hpa` must be broadcastable to the same shape (in
+    practice, the same grid). `level_hpa`/`cap_hpa` are plain scalars,
+    not AWIPS `<ConstantField>` values -- callers that receive
+    `<ConstantField>` values coerce them first (see `_coerce_scalar`).
+    """
+    z_arr = np.asarray(z, dtype=float)
+    p_arr = np.asarray(psfc_hpa, dtype=float)
+    threshold = min(float(level_hpa), float(cap_hpa))
+    with np.errstate(invalid="ignore"):
+        below = ~np.isfinite(p_arr) | (p_arr < threshold)
+    return np.where(below, np.nan, z_arr)
 
 
 # ---------------------------------------------------------------------------
@@ -613,13 +767,31 @@ def band_slope(dz_list, pressures) -> np.ndarray:
     return np.where(any_nan, np.nan, slope)
 
 
-def thermal_wind_grid(z_levels, pressures, dx, dy, radius_km: float = RADIUS_KM) -> np.ndarray:
+def thermal_wind_grid(
+    z_levels,
+    pressures,
+    dx,
+    dy,
+    radius_km: float = RADIUS_KM,
+    psfc_hpa: np.ndarray = None,
+    cap_hpa: float = BELOW_GROUND_CAP_HPA,
+) -> np.ndarray:
     """`band_slope` of `delta_z` at every level in `z_levels` -- the full
     pointwise Hart thermal-wind computation for one band. `z_levels` is a
     sequence of 2D height arrays (meters), `pressures` the matching
     sequence of pressures (hPa). Returns a float64 grid, same shape as
     each entry of `z_levels`.
+
+    If `psfc_hpa` (surface pressure, hPa -- see `surface_pressure_hpa`)
+    is given, each level in `z_levels` is first run through
+    `mask_below_ground` against its own matching entry in `pressures`
+    and `cap_hpa`, before `delta_z` -- see the module docstring's
+    "Below-ground masking" section. `psfc_hpa=None` (the default) skips
+    this entirely -- the pre-below-ground-masking behavior, for callers
+    with no terrain to mask.
     """
+    if psfc_hpa is not None:
+        z_levels = [mask_below_ground(z, psfc_hpa, p, cap_hpa) for z, p in zip(z_levels, pressures)]
     dz_list = [delta_z(z, dx, dy, radius_km) for z in z_levels]
     return band_slope(dz_list, pressures).astype(np.float64)
 
@@ -640,7 +812,24 @@ def closed_low_mask(
     center_tol_m: float = DEFAULT_CENTER_TOL_M,
 ) -> np.ndarray:
     """Boolean mask: True within `blob_radius_km` of a real closed low's
-    center in `z_low` (typically 925 hPa height).
+    center in `z_low` (typically 1000 hPa height, passed by
+    `executeClassStd`/`executeIndexStd` as `z1000`). 1000 hPa height is
+    used rather than a level from `LOWER_BAND`/`UPPER_BAND` because it is
+    nearly a linear function of MSLP (about 8 m per hPa), so the closed
+    low this mask finds is the same closed low a forecaster already sees
+    drawn on the MSLP contours -- `depth_m`'s default of 40 m is
+    therefore about 5 hPa of MSLP.
+
+    1000 hPa is below the ground surface over major terrain, and below
+    sea level itself inside a sufficiently deep low, so in both cases
+    the model is extrapolating rather than reporting a directly
+    analyzed height there. Over the open ocean -- most of this family's
+    intended use -- that extrapolation is harmless. Over ice sheets and
+    high mountains it is not: callers should pre-mask `z_low` with
+    `mask_below_ground` (as `executeClassStd`/`executeIndexStd` do)
+    before calling this function, rather than relying on
+    `closed_low_mask` itself to know about terrain -- it takes `z_low`
+    exactly as given and has no notion of surface pressure of its own.
 
     A plain "is this point close to the local minimum of a box that also
     has a big max-minus-min" test (an earlier version of this function)
@@ -722,34 +911,44 @@ def closed_low_mask(
 # ---------------------------------------------------------------------------
 
 
-def executeBand3(z1, z2, z3, dx, dy, radiusKm, p1, p2, p3):
+def executeBand3(z1, z2, z3, psfc, dx, dy, radiusKm, p1, p2, p3, capHpa=BELOW_GROUND_CAP_HPA):
     """AWIPS derived-parameter entry point: thermal wind over 3 levels.
 
     `z1`/`z2`/`z3` are geopotential height (meters) at three pressure
     levels (any order); `p1`/`p2`/`p3` are the matching pressures (hPa),
-    matched to `z1`/`z2`/`z3` by position. `dx`, `dy` are the grid
-    spacing pseudo-fields (meters). `radiusKm` may arrive as a float, a
+    matched to `z1`/`z2`/`z3` by position. `psfc` is AWIPS surface
+    pressure (Pa or hPa -- `surface_pressure_hpa` auto-detects which);
+    each height level is blanked (NaN) wherever it is below ground for
+    its own pressure and `capHpa` (see `mask_below_ground` and the
+    module docstring's "Below-ground masking" section) before the
+    thermal wind is computed. `dx`, `dy` are the grid spacing
+    pseudo-fields (meters). `radiusKm`/`capHpa` may arrive as a float, a
     0-d numpy array, or a 1-element numpy array (an AWIPS `<ConstantField>`
     value). Returns a float32 array, units meters (see the module
     docstring); positive = warm core.
     """
     radius_km = _coerce_scalar(radiusKm)
+    cap_hpa = _coerce_scalar(capHpa)
     pressures = [_coerce_scalar(p1), _coerce_scalar(p2), _coerce_scalar(p3)]
-    slope = thermal_wind_grid([z1, z2, z3], pressures, dx, dy, radius_km)
+    psfc_hpa = surface_pressure_hpa(psfc)
+    slope = thermal_wind_grid([z1, z2, z3], pressures, dx, dy, radius_km, psfc_hpa=psfc_hpa, cap_hpa=cap_hpa)
     return slope.astype(np.float32)
 
 
-def executeBand4(z1, z2, z3, z4, dx, dy, radiusKm, p1, p2, p3, p4):
+def executeBand4(z1, z2, z3, z4, psfc, dx, dy, radiusKm, p1, p2, p3, p4, capHpa=BELOW_GROUND_CAP_HPA):
     """AWIPS derived-parameter entry point: thermal wind over 4 levels.
-    Same conventions as `executeBand3`.
+    Same conventions as `executeBand3`, including `psfc`/`capHpa`
+    below-ground masking.
     """
     radius_km = _coerce_scalar(radiusKm)
+    cap_hpa = _coerce_scalar(capHpa)
     pressures = [_coerce_scalar(p1), _coerce_scalar(p2), _coerce_scalar(p3), _coerce_scalar(p4)]
-    slope = thermal_wind_grid([z1, z2, z3, z4], pressures, dx, dy, radius_km)
+    psfc_hpa = surface_pressure_hpa(psfc)
+    slope = thermal_wind_grid([z1, z2, z3, z4], pressures, dx, dy, radius_km, psfc_hpa=psfc_hpa, cap_hpa=cap_hpa)
     return slope.astype(np.float32)
 
 
-def executeBand7(z1, z2, z3, z4, z5, z6, z7, dx, dy, radiusKm, p1, p2, p3, p4, p5, p6, p7):
+def executeBand7(z1, z2, z3, z4, z5, z6, z7, psfc, dx, dy, radiusKm, p1, p2, p3, p4, p5, p6, p7, capHpa=BELOW_GROUND_CAP_HPA):
     """AWIPS derived-parameter entry point: thermal wind over 7 levels.
 
     For a future GFS-only definition using Hart's exact 50 hPa-spaced
@@ -757,23 +956,29 @@ def executeBand7(z1, z2, z3, z4, z5, z6, z7, dx, dy, radiusKm, p1, p2, p3, p4, p
     400, 350, 300 hPa) rather than the 3-level `LOWER_BAND`/`UPPER_BAND`
     standard-level approximation `executeBand3` is meant for -- see the
     module docstring's "Standard level bands" section. Same conventions
-    as `executeBand3`, just with 7 height/pressure pairs instead of 3.
+    as `executeBand3` (including `psfc`/`capHpa` below-ground masking),
+    just with 7 height/pressure pairs instead of 3.
     """
     radius_km = _coerce_scalar(radiusKm)
+    cap_hpa = _coerce_scalar(capHpa)
     pressures = [
         _coerce_scalar(p1), _coerce_scalar(p2), _coerce_scalar(p3), _coerce_scalar(p4),
         _coerce_scalar(p5), _coerce_scalar(p6), _coerce_scalar(p7),
     ]
-    slope = thermal_wind_grid([z1, z2, z3, z4, z5, z6, z7], pressures, dx, dy, radius_km)
+    psfc_hpa = surface_pressure_hpa(psfc)
+    slope = thermal_wind_grid(
+        [z1, z2, z3, z4, z5, z6, z7], pressures, dx, dy, radius_km, psfc_hpa=psfc_hpa, cap_hpa=cap_hpa,
+    )
     return slope.astype(np.float32)
 
 
 def executeClassStd(
-    z925, z850, z700, z500, z400, z300, dx, dy,
+    z1000, z925, z850, z700, z500, z400, z300, psfc, dx, dy,
     radiusKm=RADIUS_KM,
     neutralM=DEFAULT_NEUTRAL_M,
     depthM=DEFAULT_DEPTH_M,
     blobKm=DEFAULT_BLOB_RADIUS_KM,
+    capHpa=BELOW_GROUND_CAP_HPA,
 ):
     """AWIPS derived-parameter entry point for HCPScat (HCPScat.xml).
 
@@ -784,30 +989,61 @@ def executeClassStd(
     neutral, 3 shallow warm core, 4 deep warm core) with `band = neutralM`
     (already in meters -- no unit rescaling needed here, unlike
     `CycloneCore.py`'s vorticity units), and blanks (NaN) every point
-    outside `closed_low_mask` computed from `z925`, using `radiusKm` as
-    both the thermal-wind window and the mask's own `ring_radius_km`.
+    outside `closed_low_mask` computed from `z1000`, using `radiusKm` as
+    both the thermal-wind window and the mask's own `ring_radius_km`. The
+    thermal-wind bands themselves are unchanged by this: the mask level
+    (`z1000`) and the band levels (`z925`...`z300`) are independent
+    arguments.
 
-    `radiusKm`, `neutralM`, `depthM`, `blobKm` may each arrive as a float,
-    a 0-d numpy array, or a 1-element numpy array (AWIPS `<ConstantField>`
-    values) and are coerced with `_coerce_scalar`. `closed_low_mask`'s
+    `z1000` (1000 hPa height) is used for the mask rather than a level
+    from `LOWER_BAND`/`UPPER_BAND` because it is nearly a linear function
+    of MSLP (about 8 m per hPa), so the closed low the mask finds is the
+    same closed low a forecaster already sees drawn on the MSLP
+    contours; `depthM`'s default of 40 m is therefore about 5 hPa of
+    MSLP.
+
+    `psfc` is AWIPS surface pressure (Pa or hPa -- `surface_pressure_hpa`
+    auto-detects which). Before anything else, every one of the seven
+    height arguments (`z1000` and the six band levels) is run through
+    `mask_below_ground` against its own pressure and `capHpa`: a point
+    below ground there is blanked (NaN) rather than left at whatever
+    fictitious extrapolated height the model assigned it, since 1000 hPa
+    (and, less often, 925/850 hPa) is below the ground surface over
+    major terrain -- see the module docstring's "Below-ground masking"
+    section and `BELOW_GROUND_CAP_HPA`'s own docstring for why the
+    threshold is capped (so a deep low's own legitimately low surface
+    pressure over open water is never mistaken for terrain). Masking
+    happens before `delta_z`'s window max/min and before
+    `closed_low_mask`'s own candidate/depth tests, so a below-ground
+    point (and, through the NaN-aware sliding windows this module uses
+    throughout, its neighbors) never contaminates either computation.
+
+    `radiusKm`, `neutralM`, `depthM`, `blobKm`, `capHpa` may each arrive
+    as a float, a 0-d numpy array, or a 1-element numpy array (AWIPS
+    `<ConstantField>` values) and are coerced with `_coerce_scalar`.
+    `capHpa` defaults to `BELOW_GROUND_CAP_HPA` (900 hPa). `closed_low_mask`'s
     `min_radius_km` and `center_tol_m` are left at their module defaults
     (`MIN_RADIUS_KM`, `DEFAULT_CENTER_TOL_M`) and not exposed as
     `<ConstantField>` values -- they are fixed properties of "how big a
     box finds a low's own local minimum" and "how tight a tolerance
     counts as being at it", not something a site is expected to tune per
-    case the way `neutralM`/`depthM`/`blobKm` are.
+    case the way `neutralM`/`depthM`/`blobKm`/`capHpa` are.
 
-    Returns a float32 array, NaN outside the mask, otherwise one of
-    0.0/1.0/2.0/3.0/4.0 (dimensionless).
+    Returns a float32 array, NaN outside the mask or below ground,
+    otherwise one of 0.0/1.0/2.0/3.0/4.0 (dimensionless).
     """
     radius_km = _coerce_scalar(radiusKm)
     neutral_m = _coerce_scalar(neutralM)
     depth_m = _coerce_scalar(depthM)
     blob_radius_km = _coerce_scalar(blobKm)
+    cap_hpa = _coerce_scalar(capHpa)
 
-    vtl = thermal_wind_grid([z925, z850, z700], LOWER_BAND, dx, dy, radius_km)
-    vtu = thermal_wind_grid([z500, z400, z300], UPPER_BAND, dx, dy, radius_km)
-    mask = closed_low_mask(z925, dx, dy, MIN_RADIUS_KM, radius_km, depth_m, blob_radius_km)
+    psfc_hpa = surface_pressure_hpa(psfc)
+
+    vtl = thermal_wind_grid([z925, z850, z700], LOWER_BAND, dx, dy, radius_km, psfc_hpa=psfc_hpa, cap_hpa=cap_hpa)
+    vtu = thermal_wind_grid([z500, z400, z300], UPPER_BAND, dx, dy, radius_km, psfc_hpa=psfc_hpa, cap_hpa=cap_hpa)
+    z1000_masked = mask_below_ground(z1000, psfc_hpa, 1000.0, cap_hpa)
+    mask = closed_low_mask(z1000_masked, dx, dy, MIN_RADIUS_KM, radius_km, depth_m, blob_radius_km)
 
     band = neutral_m
     conditions = [
@@ -827,32 +1063,43 @@ def executeClassStd(
 
 
 def executeIndexStd(
-    z925, z850, z700, z500, z400, z300, dx, dy,
+    z1000, z925, z850, z700, z500, z400, z300, psfc, dx, dy,
     radiusKm=RADIUS_KM,
     scaleM=100.0,
     depthM=DEFAULT_DEPTH_M,
     blobKm=DEFAULT_BLOB_RADIUS_KM,
+    capHpa=BELOW_GROUND_CAP_HPA,
 ):
     """AWIPS derived-parameter entry point for HCPSidx (HCPSidx.xml).
 
     Same lower/upper thermal wind and mask as `executeClassStd`, combined
     into `2*tanh(VTL/scaleM) + tanh(VTU/scaleM)` (range -3 to +3, `scaleM`
-    already in meters), blanked (NaN) outside the same `closed_low_mask`.
-    `radiusKm`, `scaleM`, `depthM`, `blobKm` are coerced the same way as
-    `executeClassStd`'s constants; see that function's docstring for why
-    `closed_low_mask`'s `min_radius_km`/`center_tol_m` are not exposed
-    here either.
+    already in meters), blanked (NaN) outside the same `closed_low_mask`
+    computed from `z1000`, and the same below-ground masking of `z1000`
+    and the six band levels via `psfc`/`capHpa` -- see `executeClassStd`'s
+    docstring for the full explanation (why `z1000` rather than a band
+    level is used for the mask, and why the below-ground threshold is
+    capped at `capHpa` rather than applied at each level's own literal
+    pressure). `radiusKm`, `scaleM`, `depthM`, `blobKm`, `capHpa` are
+    coerced the same way as `executeClassStd`'s constants; see that
+    function's docstring for why `closed_low_mask`'s
+    `min_radius_km`/`center_tol_m` are not exposed here either.
 
-    Returns a float32 array, NaN outside the mask, otherwise in [-3, 3].
+    Returns a float32 array, NaN outside the mask or below ground,
+    otherwise in [-3, 3].
     """
     radius_km = _coerce_scalar(radiusKm)
     scale_m = _coerce_scalar(scaleM)
     depth_m = _coerce_scalar(depthM)
     blob_radius_km = _coerce_scalar(blobKm)
+    cap_hpa = _coerce_scalar(capHpa)
 
-    vtl = thermal_wind_grid([z925, z850, z700], LOWER_BAND, dx, dy, radius_km)
-    vtu = thermal_wind_grid([z500, z400, z300], UPPER_BAND, dx, dy, radius_km)
-    mask = closed_low_mask(z925, dx, dy, MIN_RADIUS_KM, radius_km, depth_m, blob_radius_km)
+    psfc_hpa = surface_pressure_hpa(psfc)
+
+    vtl = thermal_wind_grid([z925, z850, z700], LOWER_BAND, dx, dy, radius_km, psfc_hpa=psfc_hpa, cap_hpa=cap_hpa)
+    vtu = thermal_wind_grid([z500, z400, z300], UPPER_BAND, dx, dy, radius_km, psfc_hpa=psfc_hpa, cap_hpa=cap_hpa)
+    z1000_masked = mask_below_ground(z1000, psfc_hpa, 1000.0, cap_hpa)
+    mask = closed_low_mask(z1000_masked, dx, dy, MIN_RADIUS_KM, radius_km, depth_m, blob_radius_km)
 
     index = 2.0 * np.tanh(vtl / scale_m) + np.tanh(vtu / scale_m)
     masked = ~mask | ~np.isfinite(vtl) | ~np.isfinite(vtu)
@@ -895,8 +1142,12 @@ if __name__ == "__main__":
     decay = np.exp(-(r_km / scale_km) ** 2)
 
     # Amplitude decreasing with height (larger at 925 than at 300 hPa) --
-    # a warm core, per the module docstring's sign derivation.
-    amp_by_level = {925.0: 180.0, 850.0: 150.0, 700.0: 110.0, 500.0: 50.0, 400.0: 25.0, 300.0: 5.0}
+    # a warm core, per the module docstring's sign derivation. 1000 hPa
+    # (the mask level -- see the module docstring's "Closed-low mask
+    # level" section) gets the largest amplitude of all, so the low is
+    # deepest there, the same way it deepens toward the surface in a
+    # real warm-core vortex.
+    amp_by_level = {1000.0: 200.0, 925.0: 180.0, 850.0: 150.0, 700.0: 110.0, 500.0: 50.0, 400.0: 25.0, 300.0: 5.0}
     z_by_level = {}
     for p, amp in amp_by_level.items():
         background = 100.0 + 7000.0 * np.log(1000.0 / p)
@@ -910,10 +1161,38 @@ if __name__ == "__main__":
     print("VTL (lower, 925-700) at center, m (expect roughly +100 to +300):", vtl[ci, cj])
     print("VTU (upper, 500-300) at center, m (expect roughly +100 to +300):", vtu[ci, cj])
 
+    # No terrain: ordinary open-ocean surface pressure everywhere.
+    psfc_ocean = np.full(lat2d.shape, 1013.0)
+
     cls = executeClassStd(
+        z_by_level[1000.0],
         z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
         z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
-        dx2d, dy_m,
+        psfc_ocean, dx2d, dy_m,
     )
     print("class at center (expect 4.0, deep warm core):", cls[ci, cj])
     print("class far from the vortex (expect nan, outside the closed-low mask):", cls[0, 0])
+
+    # Below-ground masking demo: a fake terrain block (surface pressure
+    # 750 hPa, well under BELOW_GROUND_CAP_HPA's 900) 800 km due west of
+    # the vortex center -- outside the vortex's own 500 km analysis
+    # window, so it should not change the class at the vortex center.
+    psfc_terrain = psfc_ocean.copy()
+    block_dlon_deg = np.degrees(800.0 / (EARTH_RADIUS_KM * np.cos(np.radians(CENTER_LAT))))
+    block_lon_center = CENTER_LON - block_dlon_deg
+    block_half_deg = 1.0
+    block_mask = (
+        (np.abs(lon2d - block_lon_center) <= block_half_deg)
+        & (np.abs(lat2d - CENTER_LAT) <= block_half_deg)
+    )
+    psfc_terrain[block_mask] = 750.0
+
+    cls_terrain = executeClassStd(
+        z_by_level[1000.0],
+        z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
+        z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
+        psfc_terrain, dx2d, dy_m,
+    )
+    print("class at center with a terrain block 800 km west (expect unchanged, 4.0):", cls_terrain[ci, cj])
+    block_i, block_j = np.argwhere(block_mask)[0]
+    print("class over the terrain block (expect nan, below ground):", cls_terrain[block_i, block_j])

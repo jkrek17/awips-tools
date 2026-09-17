@@ -4,20 +4,43 @@
   HVTU and closed-low mask as HCPScat.xml, squashed into a single
   continuous number from -3 (cold core) to +3 (deep warm core) via
   2*tanh(HVTL/scaleM) + tanh(HVTU/scaleM) - see HartCPS.executeIndexStd
-  and D2D/README.md's "Hart CPS family" section.
+  and D2D/README.md's "Hart CPS family" section. The closed-low mask
+  (HartCPS.closed_low_mask) is evaluated on 1000 hPa height rather than
+  one of the thermal-wind band levels below, because 1000 hPa height is
+  nearly a linear function of MSLP (about 8 m per hPa), so the closed
+  low the mask finds is the same closed low a forecaster already sees
+  drawn on the MSLP contours; depthM's 40 m is therefore about 5 hPa of
+  MSLP. 1000 hPa is below ground over major terrain and below sea level
+  inside a deep low, so the model extrapolates there; this is now
+  handled by below-ground masking (see next paragraph), not left as a
+  caveat.
+
+  Below-ground masking: same as HCPScat.xml - every one of the seven
+  height Fields above (z1000 and the six HVTL/HVTU band levels) is
+  blanked (NaN) before its own computation wherever it is below ground
+  for its own pressure, using the surface pressure field (P, Surface)
+  and capHpa below - see HartCPS.mask_below_ground. capHpa (default
+  900 hPa) is a cap, not the literal level pressure: it keeps a deep
+  low's own legitimately low surface pressure over open water from
+  being mistaken for terrain, while still masking the Greenland ice
+  sheet and Iceland highlands at 1000/925/850 hPa - see HCPScat.xml's
+  comment for the full explanation.
 
   VERIFY: same checks as HCPScat.xml (GH abbreviation, fixed-level Field
-  spelling, dx/dy pseudo-fields and ConstantField support, levels= value,
-  unit="" acceptance).
+  spelling, P abbreviation and its Surface level spelling, dx/dy
+  pseudo-fields and ConstantField support, levels= value, unit=""
+  acceptance).
 -->
 <DerivedParameter abbreviation="HCPSidx" name="Hart CPS Core Index (-3 cold to +3 deep warm)" unit="">
     <Method name="HartCPS.executeIndexStd" levels="Surface">
+        <Field abbreviation="GH" level="1000MB"/>
         <Field abbreviation="GH" level="925MB"/>
         <Field abbreviation="GH" level="850MB"/>
         <Field abbreviation="GH" level="700MB"/>
         <Field abbreviation="GH" level="500MB"/>
         <Field abbreviation="GH" level="400MB"/>
         <Field abbreviation="GH" level="300MB"/>
+        <Field abbreviation="P" level="Surface"/>
         <Field abbreviation="dx"/>
         <Field abbreviation="dy"/>
         <!-- radiusKm (km): Hart's own 500 km analysis-window half-width,
@@ -35,5 +58,7 @@
              detected low's center (a display radius, not the low's own
              true physical size) -->
         <ConstantField value="200.0"/>
+        <!-- capHpa: below-ground cap, see HartCPS.py -->
+        <ConstantField value="900.0"/>
     </Method>
 </DerivedParameter>

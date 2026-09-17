@@ -399,6 +399,22 @@ causes:
    verification" procedure above to find the right `ORIENTATION_MODE`
    for your site.
 
+**The four Hart fields (HVTL, HVTU, HCPScat, HCPSidx) disappear from
+the Product Browser after adding the below-ground mask.** The first
+suspect is the new `P` (surface pressure) `<Field level="Surface"/>`
+in HVTL.xml/HVTU.xml/HCPScat.xml/HCPSidx.xml -- specifically its level
+spelling. This site's other Field level spellings in these files
+("925MB", "Surface" on the `<Method>` itself, etc.) are already
+confirmed to load; `P`'s own level was not independently re-verified
+against a base surface-pressure definition when this mask was added.
+Some AWIPS builds spell the surface plane `level="0.0SFC"` instead of
+`level="Surface"` for a Field reference (as opposed to the `<Method
+levels="...">` attribute, which is a different thing and unaffected).
+Check a base definition that already uses surface pressure (or GRIB
+metadata for the `P` parameter) and adjust the `level` attribute on
+that one `<Field>` line in all four files if needed -- everything
+else in the definitions is unchanged.
+
 ## Hart CPS family (HVTL, HVTU, HCPScat, HCPSidx)
 
 *** EXPERIMENTAL. NOT OPERATIONALLY VETTED. *** This is a second,
@@ -449,7 +465,7 @@ height-based method does not share:
   relative vorticity itself -- the same quantity VTL/VTU are built
   from -- so the vortex test and the warm/cold-core signal are not
   independent. HCPScat/HCPSidx mask on `closed_low_mask`, a genuinely
-  different measurement (925 hPa height's own local shape), so a point
+  different measurement (1000 hPa height's own local shape), so a point
   being "inside a real low" is decided independently of what its
   thermal wind sign turns out to be.
 
@@ -498,9 +514,26 @@ executeBand7` and needs only a new XML definition, no Python change
 ### Closed-low mask
 
 HCPScat and HCPSidx are blanked (NaN) outside of `HartCPS.
-closed_low_mask`, computed from 925 hPa height alone. An earlier
-version of this mask used a plain "close to the local minimum, and the
-window max-minus-min is big enough" test, and turned out to pass
+closed_low_mask`, computed from **1000 hPa height alone** (`executeClassStd`/
+`executeIndexStd`'s leading `z1000` argument), not from any of the six
+HVTL/HVTU band levels. 1000 hPa height is used because it is nearly a
+linear function of MSLP (about **8 m per hPa**), so the closed low the
+mask finds is, to a good approximation, the same closed low a
+forecaster already sees drawn on the MSLP contours -- the mask's
+`depthM` (default 40 m) is therefore about **5 hPa of MSLP**.
+
+1000 hPa is below the ground surface over major terrain, and below
+sea level itself inside a sufficiently deep low, so in both cases the
+model is extrapolating rather than reporting a directly analyzed
+height there. Over the open ocean -- most of this family's intended
+use -- that extrapolation is harmless. Over ice sheets and high
+mountains it is not, so `z1000` (like every other height level this
+family uses) is run through the below-ground mask described next
+before it ever reaches this function.
+
+An earlier version of this mask used a plain "close to the local
+minimum, and the window max-minus-min is big enough" test, and turned
+out to pass
 **everywhere** on a uniform height gradient (e.g. a steady 40-60 m per
 1000 km slope across a front, no low at all): every point on a slope
 is, to a few meters, already the minimum of its own neighborhood in
@@ -538,7 +571,63 @@ All of `centerTolM`, `depthM`, `blobKm` are already in meters/km -- no
 field was never rescaled to begin with. `centerTolM` itself is not
 exposed as a public `<ConstantField>` on HCPScat.xml/HCPSidx.xml (see
 `HartCPS.executeClassStd`'s docstring) -- only `radiusKm`, `depthM`,
-and `blobKm` are.
+`blobKm`, and (below) `capHpa` are.
+
+### Below-ground masking
+
+Every height level this family uses -- `z1000` and the six HVTL/HVTU
+band levels -- can be below the ground surface over major terrain, or
+below sea level itself inside a sufficiently deep low, where the
+model is extrapolating rather than reporting an analyzed height. Over
+the open ocean that extrapolation is harmless (a deep low's own
+surface pressure legitimately drops well under 1000 or 925 hPa at its
+center, and the height there is still meaningful); over ice sheets and
+high mountains it is not, and letting a fictitious below-ground level
+into a window's max/min or the closed-low mask's ring mean can quietly
+bias the result.
+
+`HartCPS.mask_below_ground(z, psfc_hpa, level_hpa, cap_hpa)` blanks
+(NaN) `z` wherever a point is below ground for pressure level
+`level_hpa`:
+
+```
+psfc_hpa < min(level_hpa, capHpa)
+```
+
+`capHpa` (`<ConstantField>`, default **900 hPa**, `HartCPS.
+BELOW_GROUND_CAP_HPA`) is a cap on the threshold, not the literal level
+pressure. Without it, a deep low's own surface pressure (which can
+legitimately fall well under 1000 or 925 hPa at its center) would be
+mistaken for terrain and mask out the very feature this family exists
+to find. With the cap, a point only counts as below ground for the
+1000 and 925 hPa levels when the surface pressure drops under 900 hPa
+-- true over the **Greenland ice sheet** (surface pressure roughly
+700-800 hPa) and the **Iceland highlands** (roughly 850-900 hPa), not
+true over an open-ocean low (surface pressure rarely below 900 hPa
+even in a deep cyclone). 850 hPa is masked by the same 900 hPa
+threshold; 700 hPa and above are masked only where the surface itself
+is at or below that level's own pressure -- effectively never, except
+over the Himalaya and Antarctica.
+
+`HartCPS.surface_pressure_hpa(psfc)` coerces the surface pressure
+input field (`P`, `level="Surface"` in the XML) to hPa, auto-detecting
+units: AWIPS normally hands pressure in Pa (sea level is roughly
+101325 Pa), but this checks the field's own finite median rather than
+trusting a caller's label -- a median above 2000 can only be Pa (no
+real surface pressure is above 2000 hPa), so the whole field is
+divided by 100; at or below 2000 it is assumed to already be hPa.
+
+Every Hart entry point -- `HVTL`/`HVTU` (`executeBand3`), `HCPScat`
+(`executeClassStd`), `HCPSidx` (`executeIndexStd`) -- takes the `P`
+field and a `capHpa` `<ConstantField>` and masks every one of its
+height arguments before doing anything else with them: before
+`delta_z`'s window max/min for the band levels, and before
+`closed_low_mask`'s candidate/depth tests for `z1000`. Because the
+sliding window extrema and box sums this family uses throughout are
+already NaN-aware, a below-ground point's neighbors simply see one
+fewer valid sample in their own window -- no extra plumbing was needed
+beyond masking the input before it reaches them. See `HartCPS.py`'s
+module docstring ("Below-ground masking") for the full explanation.
 
 ### Category table (HCPScat) and index (HCPSidx)
 
@@ -604,15 +693,16 @@ confirms its grid actually carries every 50 hPa level from 900 to 300:
 1. Write a new definition XML (e.g. `HVTLexact.xml`) shaped exactly
    like `HVTL.xml`, but with `Method name="HartCPS.executeBand7"` and
    seven `<Field abbreviation="GH" level="...MB"/>` entries (900, 850,
-   800, 750, 700, 650, 600 hPa) followed by `dx`, `dy`, the `radiusKm`
-   `<ConstantField>`, then seven pressure `<ConstantField>` values (900,
-   850, 800, 750, 700, 650, 600) matching the seven height fields by
-   position.
+   800, 750, 700, 650, 600 hPa) followed by the `P` (`level="Surface"`)
+   field, then `dx`, `dy`, the `radiusKm` `<ConstantField>`, then seven
+   pressure `<ConstantField>` values (900, 850, 800, 750, 700, 650, 600)
+   matching the seven height fields by position, then the `capHpa`
+   `<ConstantField>` (900.0) last.
 2. Do the same for the upper band (600, 550, 500, 450, 400, 350, 300
    hPa) in a second file (e.g. `HVTUexact.xml`).
 3. No change to `HartCPS.py` is needed -- `executeBand7` already takes
-   7 heights, `dx`/`dy`, `radiusKm`, and 7 pressures, in exactly that
-   shape.
+   7 heights, `psfc`, `dx`/`dy`, `radiusKm`, 7 pressures, and `capHpa`,
+   in exactly that shape.
 
 ### Install
 

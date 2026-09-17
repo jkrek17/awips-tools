@@ -19,6 +19,14 @@
   the two compare and why this one is the more physically faithful
   successor.
 
+  Below-ground masking: each of the three height levels above is
+  blanked (NaN) before dZ wherever it is below the local ground surface
+  for its own pressure, using the surface pressure field (P, Surface)
+  and capHpa below - see HartCPS.mask_below_ground and the module
+  docstring's "Below-ground masking" section. This keeps a level that
+  is fictitious over high terrain (extrapolated below ground) out of
+  the window max/min without needing a separate terrain field.
+
   VERIFY against an existing definition in
   /awips2/edex/data/utility/common_static/base/derivedParameters/definitions/
   (for example LI.xml or Thickness.xml) that on your AWIPS version:
@@ -27,6 +35,12 @@
       height-based definition and change the abbreviation here if needed),
     - fixed-level Field references use the "925MB"/"850MB"/"700MB"
       spelling,
+    - the surface pressure field's abbreviation is "P" at level="Surface"
+      as used below (confirmed on this site; some builds spell the
+      surface plane "0.0SFC" instead of "Surface" - if the four Hart
+      fields disappear from the Product Browser after adding this Field,
+      its level spelling is the first thing to check, since the other
+      Field level spellings here are already confirmed on this site),
     - the "dx"/"dy" pseudo-fields and <ConstantField> are accepted,
     - "Surface" is the right levels= value to make this show under a
       surface plane in the Volume Browser (alternatively use levels="MSL"),
@@ -38,6 +52,7 @@
         <Field abbreviation="GH" level="925MB"/>
         <Field abbreviation="GH" level="850MB"/>
         <Field abbreviation="GH" level="700MB"/>
+        <Field abbreviation="P" level="Surface"/>
         <Field abbreviation="dx"/>
         <Field abbreviation="dy"/>
         <!-- radiusKm: half-width (km) of the max-minus-min analysis
@@ -49,5 +64,7 @@
         <ConstantField value="850"/>
         <!-- p3: pressure (hPa) matching z3 (700MB) above -->
         <ConstantField value="700"/>
+        <!-- capHpa: below-ground cap, see HartCPS.py -->
+        <ConstantField value="900.0"/>
     </Method>
 </DerivedParameter>

@@ -512,14 +512,27 @@ def _warm_core_fields(amp_by_level, clat=20.0, clon=0.0, half_width_deg=20.0, dl
     return lat2d, lon2d, z_by_level, dx2d, dy_m
 
 
+def _ocean_psfc(shape, hpa=1013.0):
+    """A uniform, terrain-free surface pressure field (hPa) -- passed to
+    executeClassStd/executeIndexStd wherever a test is not itself about
+    below-ground masking, so `mask_below_ground` never blanks anything.
+    """
+    return np.full(shape, hpa)
+
+
 def test_execute_class_std_deep_warm_core_and_far_field_nan():
-    amp_by_level = {925.0: 180.0, 850.0: 150.0, 700.0: 110.0, 500.0: 50.0, 400.0: 25.0, 300.0: 5.0}
+    # z1000 is built the same way as z925 (same synthetic-vortex machinery),
+    # with a slightly larger amplitude so the low is deepest at 1000 hPa --
+    # closed_low_mask now reads z1000, not z925 (see HartCPS.py's module
+    # docstring, "Closed-low mask level").
+    amp_by_level = {1000.0: 200.0, 925.0: 180.0, 850.0: 150.0, 700.0: 110.0, 500.0: 50.0, 400.0: 25.0, 300.0: 5.0}
     lat2d, lon2d, z_by_level, dx2d, dy_m = _warm_core_fields(amp_by_level)
 
     cls = hc.executeClassStd(
+        z_by_level[1000.0],
         z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
         z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
-        dx2d, dy_m,
+        _ocean_psfc(lat2d.shape), dx2d, dy_m,
     )
     ci, cj = lat2d.shape[0] // 2, lat2d.shape[1] // 2
 
@@ -531,15 +544,19 @@ def test_execute_class_std_deep_warm_core_and_far_field_nan():
 def test_execute_class_std_cold_core():
     # Amplitude increasing with height (larger dip aloft than at 925 hPa)
     # -- a cold core, per the module docstring's sign derivation -- while
-    # keeping the 925 hPa dip itself (80 m) deep enough to pass
-    # closed_low_mask's default 40 m depth_m.
-    amp_by_level = {925.0: 80.0, 850.0: 100.0, 700.0: 120.0, 500.0: 150.0, 400.0: 180.0, 300.0: 200.0}
+    # keeping the 1000 hPa dip (100 m, slightly larger than z925's 80 m)
+    # deep enough to pass closed_low_mask's default 40 m depth_m; the
+    # mask reads z1000, so it is z1000's own depth that must clear it.
+    amp_by_level = {
+        1000.0: 100.0, 925.0: 80.0, 850.0: 100.0, 700.0: 120.0, 500.0: 150.0, 400.0: 180.0, 300.0: 200.0,
+    }
     lat2d, lon2d, z_by_level, dx2d, dy_m = _warm_core_fields(amp_by_level)
 
     cls = hc.executeClassStd(
+        z_by_level[1000.0],
         z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
         z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
-        dx2d, dy_m,
+        _ocean_psfc(lat2d.shape), dx2d, dy_m,
     )
     ci, cj = lat2d.shape[0] // 2, lat2d.shape[1] // 2
 
@@ -547,12 +564,13 @@ def test_execute_class_std_cold_core():
 
 
 def test_execute_class_std_constants_as_one_element_arrays():
-    amp_by_level = {925.0: 180.0, 850.0: 150.0, 700.0: 110.0, 500.0: 50.0, 400.0: 25.0, 300.0: 5.0}
+    amp_by_level = {1000.0: 200.0, 925.0: 180.0, 850.0: 150.0, 700.0: 110.0, 500.0: 50.0, 400.0: 25.0, 300.0: 5.0}
     lat2d, lon2d, z_by_level, dx2d, dy_m = _warm_core_fields(amp_by_level)
     args = (
+        z_by_level[1000.0],
         z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
         z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
-        dx2d, dy_m,
+        _ocean_psfc(lat2d.shape), dx2d, dy_m,
     )
 
     baseline = hc.executeClassStd(*args)
@@ -562,17 +580,19 @@ def test_execute_class_std_constants_as_one_element_arrays():
         neutralM=np.array([25.0]),
         depthM=np.array([40.0]),
         blobKm=np.array([200.0]),
+        capHpa=np.array([900.0]),
     )
     np.testing.assert_allclose(from_arrays, baseline, equal_nan=True)
 
 
 def test_execute_index_std_matches_sign_of_class():
-    amp_by_level = {925.0: 180.0, 850.0: 150.0, 700.0: 110.0, 500.0: 50.0, 400.0: 25.0, 300.0: 5.0}
+    amp_by_level = {1000.0: 200.0, 925.0: 180.0, 850.0: 150.0, 700.0: 110.0, 500.0: 50.0, 400.0: 25.0, 300.0: 5.0}
     lat2d, lon2d, z_by_level, dx2d, dy_m = _warm_core_fields(amp_by_level)
     args = (
+        z_by_level[1000.0],
         z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
         z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
-        dx2d, dy_m,
+        _ocean_psfc(lat2d.shape), dx2d, dy_m,
     )
 
     idx = hc.executeIndexStd(*args)
@@ -585,8 +605,179 @@ def test_execute_index_std_matches_sign_of_class():
     assert np.isnan(idx[0, 0])  # outside the mask, same as cls
 
 
+def test_execute_class_std_mask_reads_z1000_not_z925():
+    # Proves closed_low_mask, as wired up inside executeClassStd, reads
+    # the new leading z1000 argument -- not z925. Case A: deep (60 m,
+    # comfortably above the default 40 m depthM) at 1000 hPa but shallow
+    # (20 m, below depthM) at 925 hPa -- detected, because the mask looks
+    # at z1000. Case B is the exact reverse (shallow at 1000, deep at
+    # 925) -- not detected. If the mask still read z925 (the pre-change
+    # behavior), both outcomes would flip.
+    clat, clon = 20.0, 0.0
+    lat2d, lon2d, dx2d, dy_m = _grid_and_dx_dy(clat, clon, half_width_deg=20.0, dlat=0.5)
+    r_km = synthetic._haversine_km(lat2d, lon2d, clat, clon)
+    ci, cj = lat2d.shape[0] // 2, lat2d.shape[1] // 2
+
+    def _low(depth_m, background_m, scale_km=150.0):
+        return background_m - depth_m * np.exp(-(r_km / scale_km) ** 2)
+
+    # Shared band levels (850/700/500/400/300 hPa) for both cases -- an
+    # ordinary, mask-irrelevant height field so VTL/VTU come out finite;
+    # this test is only about which level closed_low_mask reads.
+    z850 = _low(30.0, background_m=1450.0)
+    z700 = _low(20.0, background_m=1400.0)
+    z500 = _low(10.0, background_m=1300.0)
+    z400 = _low(8.0, background_m=1250.0)
+    z300 = _low(5.0, background_m=1200.0)
+
+    psfc = _ocean_psfc(lat2d.shape)
+
+    # Case A: 1000 hPa depth 60 m (passes depthM=40), 925 hPa depth 20 m
+    # (would fail depthM=40 on its own).
+    z1000_deep = _low(60.0, background_m=1550.0)
+    z925_shallow = _low(20.0, background_m=1500.0)
+    cls_a = hc.executeClassStd(z1000_deep, z925_shallow, z850, z700, z500, z400, z300, psfc, dx2d, dy_m)
+    assert not np.isnan(cls_a[ci, cj])
+
+    # Case B: the reverse -- 1000 hPa depth 20 m (fails), 925 hPa depth
+    # 60 m (would pass if the mask were still reading z925).
+    z1000_shallow = _low(20.0, background_m=1550.0)
+    z925_deep = _low(60.0, background_m=1500.0)
+    cls_b = hc.executeClassStd(z1000_shallow, z925_deep, z850, z700, z500, z400, z300, psfc, dx2d, dy_m)
+    assert np.isnan(cls_b[ci, cj])
+
+
 # ---------------------------------------------------------------------------
-# (g) Performance: 721x1440 grid, three levels, lat-dependent dx
+# (g) Below-ground masking (surface_pressure_hpa, mask_below_ground,
+#     BELOW_GROUND_CAP_HPA, and the psfc/capHpa entry-point wiring)
+# ---------------------------------------------------------------------------
+
+
+def test_surface_pressure_hpa_auto_detects_pa_vs_hpa():
+    hpa = np.array([1013.0, 1000.0, 960.0, np.nan])
+    pa = hpa * 100.0
+
+    np.testing.assert_allclose(hc.surface_pressure_hpa(hpa), hpa, equal_nan=True)
+    np.testing.assert_allclose(hc.surface_pressure_hpa(pa), hpa, equal_nan=True)
+
+
+def test_mask_below_ground_cap_applies_at_level_1000():
+    # level_hpa=1000, cap_hpa=900 (the module default) -> threshold is
+    # min(1000, 900) == 900. psfc 880 is below that -- masked. psfc 920
+    # is not -- left alone, even though it is itself below 1000 hPa
+    # (the whole point of the cap).
+    z = np.array([[500.0, 500.0]])
+    psfc_hpa = np.array([[880.0, 920.0]])
+
+    masked = hc.mask_below_ground(z, psfc_hpa, level_hpa=1000.0)
+
+    assert np.isnan(masked[0, 0])
+    assert masked[0, 1] == 500.0
+
+
+def test_mask_below_ground_deep_ocean_low_not_masked_by_cap():
+    # A deep low's own surface pressure (960 hPa at its center) is well
+    # under both the 1000 and 925 hPa standard levels, but well above
+    # BELOW_GROUND_CAP_HPA's default 900 -- nothing should be masked at
+    # either level; the cap, not the level's own literal pressure, is
+    # what decides.
+    z = np.full((3, 3), 1500.0)
+    psfc_hpa = np.full((3, 3), 960.0)
+
+    for level_hpa in (1000.0, 925.0):
+        masked = hc.mask_below_ground(z, psfc_hpa, level_hpa, cap_hpa=hc.BELOW_GROUND_CAP_HPA)
+        np.testing.assert_allclose(masked, z)
+
+
+def test_execute_class_std_psfc_accepts_pa_or_hpa():
+    amp_by_level = {1000.0: 200.0, 925.0: 180.0, 850.0: 150.0, 700.0: 110.0, 500.0: 50.0, 400.0: 25.0, 300.0: 5.0}
+    lat2d, lon2d, z_by_level, dx2d, dy_m = _warm_core_fields(amp_by_level)
+    args = (
+        z_by_level[1000.0],
+        z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
+        z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
+    )
+
+    cls_hpa = hc.executeClassStd(*args, _ocean_psfc(lat2d.shape, hpa=1013.0), dx2d, dy_m)
+    cls_pa = hc.executeClassStd(*args, _ocean_psfc(lat2d.shape, hpa=101300.0), dx2d, dy_m)
+
+    np.testing.assert_allclose(cls_pa, cls_hpa, equal_nan=True)
+
+
+def test_execute_class_std_terrain_block_west_of_vortex():
+    """A fake terrain block (surface pressure 750 hPa, well under
+    BELOW_GROUND_CAP_HPA's 900) 800 km due west of a warm-core vortex.
+
+    The block sits outside the vortex's own 500 km analysis window, so
+    the class at the vortex center is unchanged by its presence, and
+    HVTL at a point 300 km east of the block's near (eastern) edge --
+    close enough that its own 500 km window reaches into the block, far
+    enough that it is not the block itself -- is still finite and close
+    to its no-terrain value, because the NaN-aware sliding window
+    simply ignores the block's masked-out cells. The block's own
+    footprint reads NaN (below ground).
+    """
+    clat, clon = 20.0, 0.0
+    half_width_deg, dlat = 20.0, 0.5
+    lat2d, lon2d, dx2d, dy_m = _grid_and_dx_dy(clat, clon, half_width_deg, dlat)
+
+    amp_by_level = {1000.0: 200.0, 925.0: 180.0, 850.0: 150.0, 700.0: 110.0, 500.0: 50.0, 400.0: 25.0, 300.0: 5.0}
+    levels = tuple(amp_by_level.keys())
+    z_stack = synthetic.warm_core_heights(
+        lat2d, lon2d, clat, clon, levels, lambda p: amp_by_level[p], scale_km=150.0
+    )
+    z_by_level = {p: z_stack[i] for i, p in enumerate(levels)}
+
+    km_per_deg_lon = EARTH_RADIUS_KM * math.cos(math.radians(clat)) * math.radians(1.0)
+    block_half_deg = 1.0
+    block_dlon_deg = 800.0 / km_per_deg_lon
+    block_lon_center = clon - block_dlon_deg
+    block_mask = (
+        (np.abs(lon2d - block_lon_center) <= block_half_deg)
+        & (np.abs(lat2d - clat) <= block_half_deg)
+    )
+
+    psfc_ocean = _ocean_psfc(lat2d.shape)
+    psfc_terrain = psfc_ocean.copy()
+    psfc_terrain[block_mask] = 750.0
+
+    ci, cj = lat2d.shape[0] // 2, lat2d.shape[1] // 2
+    band_args = (
+        z_by_level[1000.0],
+        z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
+        z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
+    )
+
+    cls_no_terrain = hc.executeClassStd(*band_args, psfc_ocean, dx2d, dy_m)
+    cls_terrain = hc.executeClassStd(*band_args, psfc_terrain, dx2d, dy_m)
+
+    assert cls_no_terrain[ci, cj] == 4.0
+    assert cls_terrain[ci, cj] == 4.0  # unchanged: the block is outside the 500 km window
+
+    block_i, block_j = np.argwhere(block_mask)[0]
+    assert np.isnan(cls_terrain[block_i, block_j])
+
+    # East edge of the block (nearest the vortex), then 300 km further
+    # east (closer to the vortex center).
+    block_east_edge_km_west = 800.0 - block_half_deg * km_per_deg_lon
+    test_point_km_west = block_east_edge_km_west - 300.0
+    test_lon = clon - test_point_km_west / km_per_deg_lon
+    tj = int(np.argmin(np.abs(lon2d[ci, :] - test_lon)))
+
+    vtl_terrain = hc.thermal_wind_grid(
+        [z_by_level[p] for p in hc.LOWER_BAND], hc.LOWER_BAND, dx2d, dy_m, hc.RADIUS_KM,
+        psfc_hpa=psfc_terrain, cap_hpa=hc.BELOW_GROUND_CAP_HPA,
+    )
+    vtl_reference = hc.thermal_wind_grid(
+        [z_by_level[p] for p in hc.LOWER_BAND], hc.LOWER_BAND, dx2d, dy_m, hc.RADIUS_KM,
+    )
+
+    assert np.isfinite(vtl_terrain[ci, tj])
+    assert vtl_terrain[ci, tj] == pytest.approx(vtl_reference[ci, tj], rel=0.05)
+
+
+# ---------------------------------------------------------------------------
+# (h) Performance: 721x1440 grid, three levels, lat-dependent dx
 # ---------------------------------------------------------------------------
 
 
@@ -658,11 +849,14 @@ def test_execute_class_std_performance(capsys):
             ) / 5.0
         return out
 
-    levels = [925.0, 850.0, 700.0, 500.0, 400.0, 300.0]
-    zs = [_smooth(base + i) * 50.0 + (3500.0 - i * 400.0) for i in range(len(levels))]
+    # z1000 (the mask level) leads, followed by the six thermal-wind
+    # band levels, matching executeClassStd's new argument order.
+    levels = [1000.0, 925.0, 850.0, 700.0, 500.0, 400.0, 300.0]
+    zs = [_smooth(base + i) * 50.0 + (3900.0 - i * 400.0) for i in range(len(levels))]
+    psfc = _ocean_psfc((ny, nx))
 
     start = time.perf_counter()
-    cls = hc.executeClassStd(*zs, dx2d, dy_m)
+    cls = hc.executeClassStd(*zs, psfc, dx2d, dy_m)
     elapsed = time.perf_counter() - start
 
     with capsys.disabled():
