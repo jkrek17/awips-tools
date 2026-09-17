@@ -1370,6 +1370,16 @@ if _IN_GFE:
                  ["Preview grid", "Fcst Wind"]),
                 ("Run over selected time range only?", "No", "radio",
                  ["Yes", "No"]),
+                # JTWC keeps issuing position and intensity forecasts through
+                # subtropical status and extratropical transition, so there is
+                # still a forecast point to build from.  What is no longer
+                # certain is that a symmetric tropical vortex is the right
+                # shape for it, which is a judgement for the forecaster rather
+                # than a fixed policy - hence a per-run choice rather than the
+                # module-level default it used to be.
+                ("Subtropical / extratropical systems:",
+                 "Include" if INSERT_AFTER_SUBTROPICAL else "Skip", "radio",
+                 ["Include", "Skip"]),
             ]
 
             if EXPERIMENTAL and REQUIRE_ACKNOWLEDGEMENT:
@@ -1594,6 +1604,11 @@ if _IN_GFE:
 
             # --- collect every bulletin with a live storm in it -------
             storms = []
+            # Per-run override of INSERT_AFTER_SUBTROPICAL.
+            insertST = varDict.get(
+                "Subtropical / extratropical systems:",
+                "Include" if INSERT_AFTER_SUBTROPICAL else "Skip") == "Include"
+
             stale = []
             problems = []
             for pil in pils:
@@ -1687,7 +1702,7 @@ if _IN_GFE:
                     if when < taus[0].epoch or when > taus[-1].epoch:
                         continue
                     snap = interpolateTrack(taus, when)
-                    if not INSERT_AFTER_SUBTROPICAL and snap.conf < 1.0:
+                    if not insertST and snap.conf < 1.0:
                         return None, True, 0
                     if snap.vmax < 34.0:
                         # Tropical Depression strength: no organized 34kt-
@@ -1777,8 +1792,21 @@ if _IN_GFE:
                     x.epoch for s in storms for x in s["taus"]
                     if x.epoch not in blockStarts))
                 for when in wanted:
-                    built, stFlag = buildFor(when, None)
-                    if stFlag or not built:
+                    # Three values, not two.  buildFor() grew a
+                    # tdSkipped count and this call site was not
+                    # updated, so every run that reached here raised
+                    # ValueError: too many values to unpack.  That is
+                    # exactly the case this block exists for - a JTWC
+                    # forecast time with no Fcst block beginning at it -
+                    # and the call sits outside the try below, so it
+                    # took the whole procedure down rather than losing
+                    # one grid.
+                    built, stFlag, tdCount = buildFor(when, None)
+                    skippedTD += tdCount
+                    if stFlag:
+                        skippedST += 1
+                        continue
+                    if not built:
                         continue
                     try:
                         tr = TimeRange.TimeRange(
