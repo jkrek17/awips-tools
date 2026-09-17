@@ -10,7 +10,7 @@ AWIPS tools and procedures.
 | `legacy_tools/` | Earlier versions kept for reference; see `legacy_tools/VERSION_CONTROL.md`. |
 | `tests/tcwind_jtwc/` | Parser goldens, Python/JavaScript parity, and the GTCM verification. |
 | `GFE/procedures/TCWind_JTWC.py` | Builds GFE Wind grids from JTWC tropical cyclone warnings. See below. |
-| `web/TCWind_JTWC/` | Google Apps Script web app for that tool: live bulletins, a best-track archive, and the verification findings. |
+| `web/TCWind_JTWC/` | Google Apps Script web app for that tool: live bulletins, a best-track archive, the verification findings, and a research page for testing candidate extratropical-transition terms. |
 | `web/HFArchiveExport/` | Google Apps Script web app that exports the restricted HF low sheet as CSV for `tools/publish.py`. |
 | `data/hf_lows/` | CSV exports of the hurricane force extratropical low archive workbook, committed here on purpose (see below). |
 | `tools/build_hf_lows.py` | Normalizes those CSVs into the site data under `docs/data/`. |
@@ -251,17 +251,65 @@ everywhere and will be too strong over land.
 
 ### The web app
 
-Three pages from one Apps Script deployment - a live view of the five current
-bulletins, an archive of 220 real storms replayed through the same code, and
-the verification findings. `web/TCWind_JTWC/README.md` has the detail,
-including why `Vortex.html` and `Theme.html` are single-source and must stay
-that way. Deploying is covered by `.claude/skills/clasp/SKILL.md`.
+Four pages from one Apps Script deployment - a live view of the five current
+bulletins, an archive of 220 real storms replayed through the same code, the
+verification findings, and `?page=lab`, a research page described below.
+`web/TCWind_JTWC/README.md` has the detail, including why `Vortex.html` and
+`Theme.html` are single-source and must stay that way. Deploying is covered by
+`.claude/skills/clasp/SKILL.md`.
 
 The archive draws on IBTrACS post-season best track: 100 WestPac storms
 (`jtwc_wp`, 2005-2024), 63 North Atlantic and 57 East Pacific (`hurdat_atl` /
 `hurdat_epa`, 2004-2024). Those cutoffs are not arbitrary - R64 reporting is
 essentially absent before them, so an earlier storm would show the tool
 "failing" when there is simply nothing to compare against.
+
+### The extratropical-transition lab (`?page=lab`)
+
+Transition expands and flattens a cyclone's wind field, and the GTCM already
+has the parameters to express that - `rm` and the size exponents. So the first
+question is not how to add it but whether the unmodified fit is already getting
+it from the bulletin's own radii. Scored against best track on the 54 archived
+storms that reach a transition stage while still reporting radii, it is not:
+the median 34/50/64 kt radius error sits within about 1 nm of zero for five
+days beforehand, then falls to roughly **-16 nm** in the first 24 h after the
+transition flag - a footprint too small, which is the failure mode transition
+is expected to cause.
+
+The page scores two candidate additions against that baseline:
+
+1. an **ET prior** on eqs. (5)/(6) - `rm -> rm(1 + (kappa-1)eps)`,
+   `x -> x - beta*eps`. It shifts the *climatology*, not the fitted parameters,
+   so the reported radii still win where they are informative, and it has
+   leverage exactly where a transitioning bulletin runs thin: R64 drops out,
+   then R50, `freeParams` falls from 3 to 1, and at 1 the size exponent *is*
+   the climatological value.
+2. a **wavenumber-2 elongation**, `s(az) = 1 + e cos(2(az - phi))`. eq. (3) is
+   radially symmetric and eqs. (8)/(9) add one wavenumber-1 displacement, so
+   the shipped model cannot draw an elongated field at any setting; this is the
+   smallest term that can.
+
+Both are **default-off in `Vortex.html` and absent from the Python entirely**.
+With no options passed, the JavaScript reproduces the shipped field bit for
+bit, which `tests/tcwind_jtwc/verify_experiments.js` checks by comparing bit
+patterns rather than values within a tolerance. If either term earns it, the
+port to `TCWind_JTWC.py` and the flipped default land in one change.
+
+The lab also measured two things about the *shipped* baseline that are worth
+recording separately from the transition question:
+
+- **44% of transition-stage records are ill-posed.** 131 of 296 have
+  `Vmax - a` below the lowest threshold they report, where `a = 1.6 c^0.63`
+  from eq. (2) grows with translation speed. No choice of `rm` or `x` can put
+  the symmetric vortex at the reported radius, so the fit chases it with the
+  asymmetry alone by flattening `x` onto its `GTCM_X_MIN` floor. A nearly flat
+  profile then crosses 34 kt hundreds of nautical miles out: single records
+  carry **+700 nm** radius errors. Weakening and accelerating at once is the
+  definition of transition, so this is the regime, not a corner of it.
+- **39 of 296 produce no 34 kt ring at all** - the field does not reach gale on
+  any bearing, whatever the bulletin reported.
+
+Neither is caused by the experimental terms, and neither is fixed by them.
 
 ### What is verified, and what is not
 
@@ -289,11 +337,14 @@ python3 tests/tcwind_jtwc/test_parser_golden.py       # parser vs committed fixt
 python3 tests/tcwind_jtwc/compare_py_js.py            # Python vs both JavaScript ports
 python3 tests/tcwind_jtwc/validate_pages.py web/TCWind_JTWC/*.html
 python3 tests/tcwind_jtwc/compare_vortex_methods.py   # gtcm vs the retired perquad
+node   tests/tcwind_jtwc/verify_experiments.js        # the default-off ET terms
 python3 tests/tcwind_jtwc/verify_gtcm.py              # regenerates the findings data
 ```
 
-The first three are hermetic - real bulletins are committed, so they need only
-numpy and node, with no network - and are worth running before every push.
+The first three plus `verify_experiments.js` are hermetic - real bulletins are
+committed, so they need only numpy and node, with no network - and are worth
+running before every push. `verify_experiments.js` is the one that guarantees
+the experimental terms have not leaked into the default path.
 `verify_gtcm.py` regenerates `tests/tcwind_jtwc/data/gtcm_findings.json`, which
 is what the findings page displays; that page hardcodes no statistics.
 
@@ -302,5 +353,14 @@ is what the findings page displays; that page hardcodes no statistics.
 - No land-roughness reduction (guide step 4); the field is too strong over land.
 - The forecast hours are unverified.
 - The outer taper is a local heuristic, not part of GTCM.
+- The fit is ill-posed wherever `Vmax - a` falls below a reported threshold,
+  which is 44% of transition-stage best-track records; see the lab section.
+  Raising `GTCM_X_MIN` or bounding the gale radius would both change the
+  shipped field, so neither has been done.
+- The lab's transition sample is small and lopsided: 54 storms, 29 of them
+  North Atlantic and only 2 East Pacific.
+- Nothing reads upper-level fields. A jet-relative or Hart-phase-space
+  formulation of the transition coordinate would need gridded thickness and
+  wind that no JTWC bulletin carries.
 - `tests/tcwind_jtwc/README.md` still describes a superseded Rmax-vs-RMW
   framing and coefficients that no longer exist.

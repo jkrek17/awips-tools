@@ -1,0 +1,1666 @@
+<!DOCTYPE html>
+<!--
+  Lab.html - extratropical-transition test lab.  Served at ?page=lab.
+
+  *** RESEARCH PAGE. NOTHING HERE IS THE TOOL'S BEHAVIOUR. ***
+
+  The two terms this page exercises are default-off in Vortex.html and have
+  no counterpart in GFE/procedures/TCWind_JTWC.py at all.  A forecaster
+  running the GFE procedure or opening ?page=live gets neither of them, at
+  any setting.  That is deliberate: the Python is the reference
+  implementation, nothing default-on may exist here first, and the whole
+  point of this page is to find out whether either term earns the port.
+
+  WHY THE PAGE EXISTS.  Extratropical transition expands and flattens a
+  cyclone's wind field.  The GTCM has exactly the knobs to say that - rm and
+  the size exponents x1/x2 - so the question is not whether it CAN be
+  expressed but whether it NEEDS to be, and by how much.  Two candidates:
+
+    1. an ET prior on eqs. (5)/(6):  rm -> rm(1 + (kappa-1)eps),
+       x -> x - beta*eps.  A shift to the CLIMATOLOGY, not to the fit, so
+       the reported radii still win where they are informative.  It has
+       leverage precisely where a transitioning bulletin runs thin - R64
+       drops out, then R50, freeParams falls to 2 then 1, and at 1 the
+       exponent IS the climatological value.
+    2. a wavenumber-2 elongation, s(az) = 1 + e cos(2(az - phi)).  eq. (3)
+       is radially symmetric and eqs. (8)/(9) add a single wavenumber-1
+       displacement, so the shipped model cannot draw an elongated field at
+       any parameter setting.  This is the smallest term that can.
+
+  Both are scored against IBTrACS best track on the 54 archived storms that
+  reach a transition stage while still reporting radii, using getEtRecords()
+  in Code.gs.  The pre-transition window is included on purpose: the first
+  thing worth knowing is whether the UNMODIFIED fit already tracks the
+  expansion, in which case neither term is needed.
+
+  DESIGN NOTES, since two of these were bugs before:
+   * Threshold (34/50/64 kt) is ordinal magnitude, so it gets a ONE-HUE
+     light-to-dark ramp, validated against both surfaces.  The palette this
+     page inherited from Archive.html failed that check - #ffd24d measures
+     1.44:1 against the light surface, which is why the rings were hard to
+     read - so this page does not use it.
+   * Variant identity is categorical and gets orange/aqua/violet, which
+     validate all-pairs in both modes.  Blue is reserved for thresholds so a
+     blue mark means the same thing everywhere on the page.
+   * The baseline is drawn as a NEUTRAL dashed reference, not a fourth hue.
+     It is what the others are measured against, not one of them.
+   * Nothing is distinguished by hue alone: every series is direct-labelled,
+     every chart has a table underneath it, and the ring panels put baseline
+     and variant SIDE BY SIDE rather than superposed - the last version of
+     that comparison was superposed and unreadable.
+-->
+<html>
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<?!= HtmlService.createHtmlOutputFromFile('Theme').getContent(); ?>
+<?!= HtmlService.createHtmlOutputFromFile('Vortex').getContent(); ?>
+<style>
+/* ---------------------------------------------------------------------------
+   Page-local tokens.  Everything else comes from Theme.html.
+
+   The two palettes below are the output of the data-viz validator, not a
+   choice of taste; the numbers in the comments are what it measured.  If you
+   change a hex, re-run it:
+     node scripts/validate_palette.js "<hexes>" --ordinal --mode light --surface "#ffffff"
+--------------------------------------------------------------------------- */
+:root {
+  /* Threshold ramp: ONE hue, light -> dark as the threshold rises.
+     light surface #ffffff: monotone L, adjacent dL >= 0.06, light end 2.36:1,
+     hue spread 7 deg. */
+  --thr-34:#78aede; --thr-50:#2a6aae; --thr-64:#0f3a68;
+
+  /* Variant hues: reference palette slots 2 / 3 / 7.  All-pairs on the light
+     surface: worst CVD dE 9.2 (deutan), worst normal-vision dE 27.6.
+     #1baf7a measures 2.82:1 vs the light surface - under 3:1 - so it ships
+     with direct labels AND a table, which is the documented relief. */
+  --var-a:#eb6834;   /* ET prior          */
+  --var-b:#1baf7a;   /* elongation        */
+  --var-c:#4a3aa7;   /* both together     */
+  --var-base:var(--muted);   /* baseline: a reference, not a series */
+
+  --lab-banner-bg:#4a1d6e; --lab-banner-fg:#ffffff;
+  --ring-plot:#ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    /* dark surface #151b24: monotone L, light end 3.21:1, hue spread 2 deg */
+    --thr-34:#2f6dab; --thr-50:#5d9ada; --thr-64:#a8cdf2;
+    /* all-pairs on the dark surface: worst CVD dE 9.4, normal-vision 24.6,
+       and all three clear 3:1 */
+    --var-a:#d95926; --var-b:#199e70; --var-c:#9085e9;
+    --lab-banner-bg:#3a1656; --lab-banner-fg:#f3e8ff;
+    --ring-plot:#151b24;
+  }
+}
+:root[data-theme="dark"] {
+  --thr-34:#2f6dab; --thr-50:#5d9ada; --thr-64:#a8cdf2;
+  --var-a:#d95926; --var-b:#199e70; --var-c:#9085e9;
+  --lab-banner-bg:#3a1656; --lab-banner-fg:#f3e8ff;
+  --ring-plot:#151b24;
+}
+
+/* --- shell ------------------------------------------------------------- */
+.wrap { max-width:1340px; margin:0 auto; padding:0 16px 64px; }
+.banner {
+  background:var(--lab-banner-bg); color:var(--lab-banner-fg);
+  padding:9px 16px; font-size:var(--t-sm); font-weight:600;
+  letter-spacing:.02em; text-align:center;
+}
+.banner span { font-weight:400; opacity:.92; }
+header.top {
+  display:flex; flex-wrap:wrap; gap:12px 20px; align-items:baseline;
+  padding:22px 0 14px; border-bottom:1px solid var(--border);
+}
+header.top h1 { margin:0; font-size:var(--t-2xl); }
+header.top .sub { color:var(--muted); font-size:var(--t-sm); }
+nav.pages { margin-left:auto; display:flex; gap:14px; align-items:center;
+            font-size:var(--t-sm); flex-wrap:wrap; }
+nav.pages a { text-decoration:none; }
+nav.pages a:hover { text-decoration:underline; }
+button.ghost {
+  font:inherit; font-size:var(--t-sm); background:var(--surface);
+  color:var(--text); border:1px solid var(--border);
+  border-radius:var(--r-sm); padding:5px 11px; cursor:pointer;
+}
+button.ghost:hover { border-color:var(--border-strong); }
+
+section { margin:30px 0 0; }
+h2 { font-size:var(--t-xl); margin:0 0 6px; }
+h3 { font-size:var(--t-lg); margin:20px 0 6px; }
+.lede { color:var(--muted); max-width:78ch; margin:0 0 14px; }
+.card {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--r-md); padding:18px 20px; box-shadow:var(--shadow);
+}
+.note {
+  background:var(--panel); border-left:3px solid var(--border-strong);
+  padding:12px 16px; border-radius:0 var(--r-sm) var(--r-sm) 0;
+  font-size:var(--t-sm); color:var(--muted); margin:14px 0;
+}
+.note strong { color:var(--text); }
+.mono { font-family:var(--mono); }
+
+/* --- controls ---------------------------------------------------------- */
+.controls { display:grid; gap:18px; grid-template-columns:repeat(auto-fit,minmax(275px,1fr)); }
+fieldset {
+  border:1px solid var(--border); border-radius:var(--r-sm);
+  padding:12px 14px 14px; margin:0; min-width:0;
+}
+legend { font-size:var(--t-sm); font-weight:600; padding:0 6px; }
+fieldset p.why { margin:0 0 10px; font-size:var(--t-xs); color:var(--muted); }
+.row { display:flex; align-items:center; gap:10px; margin:9px 0; font-size:var(--t-sm); }
+.row label.k { flex:0 0 auto; min-width:86px; }
+.row input[type=range] { flex:1 1 auto; min-width:90px; accent-color:var(--accent); }
+.row output { flex:0 0 auto; min-width:62px; text-align:right;
+              font-family:var(--mono); font-size:var(--t-sm); }
+.row select, .row input[type=number] {
+  font:inherit; font-size:var(--t-sm); background:var(--surface); color:var(--text);
+  border:1px solid var(--border); border-radius:var(--r-sm); padding:4px 7px;
+}
+.checks { display:flex; flex-direction:column; gap:7px; font-size:var(--t-sm); }
+.checks label { display:flex; gap:8px; align-items:flex-start; }
+.checks input { margin-top:3px; accent-color:var(--accent); }
+.checks span.hint { color:var(--muted); font-size:var(--t-xs); display:block; }
+.priorout {
+  margin:10px 0 0; font-family:var(--mono); font-size:var(--t-xs);
+  color:var(--muted); line-height:1.7;
+}
+
+.runbar {
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  margin-top:18px; padding-top:16px; border-top:1px solid var(--border);
+}
+button.primary {
+  font:inherit; font-weight:600; background:var(--accent); color:#fff;
+  border:1px solid transparent; border-radius:var(--r-sm);
+  padding:9px 18px; cursor:pointer;
+}
+button.primary:disabled { opacity:.5; cursor:default; }
+:root[data-theme="dark"] button.primary,
+:root:not([data-theme="light"]) button.primary { color:#0c1016; }
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) button.primary { color:#fff; }
+}
+.prog { flex:1 1 220px; min-width:160px; }
+.prog .track { height:6px; background:var(--sunken); border-radius:3px; overflow:hidden; }
+.prog .fill { height:100%; width:0%; background:var(--accent); transition:width .12s linear; }
+.prog .lbl { font-size:var(--t-xs); color:var(--muted); margin-top:5px; }
+
+/* --- tables ------------------------------------------------------------ */
+.tablewrap { overflow-x:auto; margin-top:12px; }
+table { border-collapse:collapse; width:100%; font-size:var(--t-sm); }
+caption { text-align:left; font-size:var(--t-sm); color:var(--muted);
+          padding:0 0 8px; }
+th, td { padding:7px 11px; text-align:right; border-bottom:1px solid var(--border);
+         white-space:nowrap; }
+th:first-child, td:first-child { text-align:left; }
+thead th { font-weight:600; color:var(--muted); font-size:var(--t-xs);
+           text-transform:uppercase; letter-spacing:.04em;
+           border-bottom:1px solid var(--border-strong); }
+tbody tr:hover { background:var(--panel); }
+td.num, th.num { font-family:var(--mono); }
+tfoot td { font-weight:600; border-top:1px solid var(--border-strong); border-bottom:none; }
+.swatch { display:inline-block; width:22px; height:3px; vertical-align:middle;
+          margin-right:8px; border-radius:2px; }
+.swatch.dash { height:0; border-top:3px dashed currentColor; }
+.better { color:var(--ok); }
+.worse  { color:var(--bad); }
+.same   { color:var(--muted); }
+table.sortable thead th { cursor:pointer; user-select:none; }
+table.sortable thead th[aria-sort="ascending"]::after  { content:" \25B2"; }
+table.sortable thead th[aria-sort="descending"]::after { content:" \25BC"; }
+tbody tr.sel { background:var(--accent-soft); }
+tbody tr.clickable { cursor:pointer; }
+
+/* --- charts ------------------------------------------------------------ */
+.chartcard { margin-top:14px; }
+svg.chart { display:block; width:100%; height:auto; overflow:visible; }
+svg text { fill:var(--muted); font-family:var(--font); font-size:11px; }
+svg text.axtitle { fill:var(--muted); font-size:11px; }
+svg text.dlabel { font-size:11px; font-weight:600; }
+svg .grid { stroke:var(--chart-grid); stroke-width:1; }
+svg .axis { stroke:var(--chart-axis); stroke-width:1; }
+svg .zero { stroke:var(--border-strong); stroke-width:1; stroke-dasharray:3 3; }
+svg .halo { stroke:var(--surface); stroke-width:3.5; fill:none; }
+.legend { display:flex; flex-wrap:wrap; gap:8px 20px; margin-top:12px;
+          font-size:var(--t-sm); }
+.legend .item { display:flex; align-items:center; gap:8px; }
+
+/* --- ring panels ------------------------------------------------------- */
+.panels { display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(330px,1fr)); }
+.panel h4 { margin:0 0 3px; font-size:var(--t-md); }
+.panel .plab { font-size:var(--t-xs); color:var(--muted); margin:0 0 8px;
+               min-height:2.6em; }
+.panel svg { background:var(--ring-plot); border:1px solid var(--border);
+             border-radius:var(--r-sm); }
+.fitline { font-family:var(--mono); font-size:var(--t-xs); color:var(--muted);
+           margin-top:8px; line-height:1.8; }
+.empty { color:var(--muted); padding:26px 0; text-align:center; font-size:var(--t-sm); }
+.err {
+  background:var(--bad-soft); border-left:3px solid var(--bad);
+  padding:12px 16px; border-radius:0 var(--r-sm) var(--r-sm) 0; margin:14px 0;
+}
+.err .mono { color:var(--text); }
+dl.defs { margin:0; font-size:var(--t-sm); }
+dl.defs dt { font-weight:600; margin-top:12px; }
+dl.defs dd { margin:3px 0 0; color:var(--muted); max-width:82ch; }
+@media (max-width:560px) {
+  header.top h1 { font-size:var(--t-xl); }
+  .card { padding:14px 13px; }
+}
+</style>
+</head>
+<body>
+
+<div class="banner">
+  RESEARCH PAGE &mdash; NOT THE TOOL'S BEHAVIOUR
+  <span>&nbsp;·&nbsp; both terms below are default-off in the web code and absent from the AWIPS procedure entirely</span>
+</div>
+
+<div class="wrap">
+
+<header class="top">
+  <div>
+    <h1>Extratropical transition test lab</h1>
+    <div class="sub">Does the GTCM fit need help during transition &mdash; and if so, which kind?</div>
+  </div>
+  <nav class="pages" aria-label="Pages">
+    <a href="<?= baseUrl ?>?page=live">Live tool</a>
+    <a href="<?= baseUrl ?>?page=archive">Archive</a>
+    <a href="<?= baseUrl ?>?page=findings">Findings</a>
+    <button class="ghost" id="themeBtn" type="button">Theme</button>
+  </nav>
+</header>
+
+<section>
+  <p class="lede">
+    Transition expands and flattens a cyclone's wind field. The GTCM already has
+    the parameters to say that &mdash; the core radius <span class="mono">rm</span>
+    and the size exponents <span class="mono">x1</span>/<span class="mono">x2</span>
+    &mdash; so the question is not whether the expansion <em>can</em> be expressed
+    but whether the unmodified fit is already getting it from the bulletin's own
+    radii. This page scores that first, then scores two candidate additions
+    against it.
+  </p>
+
+  <div class="note">
+    <strong>What is being measured.</strong> Every archived best-track record that
+    reports at least one wind radius, for the storms that reach a transition stage,
+    is fitted and compared with what was reported. Two numbers per variant: the
+    weighted wind error the GTCM's own least squares minimises
+    (Users&nbsp;Guide eq.&nbsp;7), and the threshold-radius error it does
+    <em>not</em> &mdash; how far the modelled 34/50/64&nbsp;kt radius sits from the
+    reported one on each quadrant bisector. The second is the one that answers
+    &ldquo;is the field too tight during transition&rdquo;.
+  </div>
+</section>
+
+<section>
+  <h2>Controls</h2>
+  <div class="card">
+    <div class="controls">
+
+      <fieldset>
+        <legend>Record set</legend>
+        <p class="why">
+          The pre-transition window is the control: if the unmodified fit already
+          expands, neither term is needed.
+        </p>
+        <div class="checks">
+          <label><input type="radio" name="rset" value="trans" checked>
+            <span>Transition stages only
+              <span class="hint">IBTrACS NATURE of ET, SS or MX</span></span></label>
+          <label><input type="radio" name="rset" value="all">
+            <span>Transition plus the 120&nbsp;h before it
+              <span class="hint">adds the tropical control group</span></span></label>
+        </div>
+        <div class="checks" style="margin-top:12px; border-top:1px solid var(--border); padding-top:11px">
+          <label><input type="checkbox" id="dropIll">
+            <span>Drop ill-posed fits
+              <span class="hint">records where Vmax&nbsp;&minus;&nbsp;a falls below the
+                lowest threshold reported, so the symmetric vortex cannot reach it
+                and only the asymmetry does. See the scoreboard note.</span></span></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>1 &mdash; ET prior on eqs. (5)/(6)</legend>
+        <p class="why">
+          Shifts the <em>climatology</em>, not the fitted parameters. The reported
+          radii are data; transition is a prior.
+        </p>
+        <div class="row">
+          <label class="k" for="kappa">&kappa; (rm growth)</label>
+          <input type="range" id="kappa" min="1" max="4" step="0.05" value="2">
+          <output id="kappaOut">2.00</output>
+        </div>
+        <div class="row">
+          <label class="k" for="beta">&beta; (x reduction)</label>
+          <input type="range" id="beta" min="0" max="0.5" step="0.01" value="0.25">
+          <output id="betaOut">0.25</output>
+        </div>
+        <p class="priorout" id="priorOut"></p>
+      </fieldset>
+
+      <fieldset>
+        <legend>2 &mdash; wavenumber-2 elongation</legend>
+        <p class="why">
+          <span class="mono">s(az) = 1 + e&thinsp;cos(2(az &minus; &phi;))</span>.
+          Negative <span class="mono">e</span> turns the long axis 90&deg;.
+        </p>
+        <div class="row">
+          <label class="k" for="ecc">e</label>
+          <input type="range" id="ecc" min="-0.45" max="0.45" step="0.01" value="0.25">
+          <output id="eccOut">+0.25</output>
+        </div>
+        <div class="row">
+          <label class="k" for="phiMode">&phi; axis</label>
+          <select id="phiMode">
+            <option value="motion" selected>motion vector</option>
+            <option value="offset">motion + offset</option>
+            <option value="abs">fixed bearing</option>
+          </select>
+        </div>
+        <div class="row" id="phiValRow" hidden>
+          <label class="k" for="phiVal">&phi; value</label>
+          <input type="range" id="phiVal" min="-90" max="180" step="5" value="0">
+          <output id="phiValOut">0&deg;</output>
+        </div>
+        <div class="checks" style="margin-top:10px">
+          <label><input type="checkbox" id="eScale" checked>
+            <span>Scale <span class="mono">e</span> by the transition fraction
+              <span class="hint">a tropical vortex is near-circular, so
+                e&nbsp;&times;&nbsp;eps leaves the control group untouched</span></span></label>
+          <label><input type="checkbox" id="fitE">
+            <span>Fit <span class="mono">e</span> instead of prescribing it
+              <span class="hint">only where 5+ radii are reported; &phi; stays
+                pinned, so this measures what a free input buys</span></span></label>
+        </div>
+      </fieldset>
+
+    </div>
+
+    <div class="runbar">
+      <button class="primary" id="runBtn" type="button" disabled>Score</button>
+      <div class="prog">
+        <div class="track"><div class="fill" id="progFill"></div></div>
+        <div class="lbl" id="progLbl">Loading best-track records&hellip;</div>
+      </div>
+    </div>
+  </div>
+  <div id="loadErr"></div>
+</section>
+
+<section>
+  <h2>Scoreboard</h2>
+  <p class="lede">
+    Lower is better in the error columns; the bias column is signed, so there
+    <em>closer to zero</em> is better. A negative bias means the modelled
+    footprint is <em>smaller</em> than what was reported, which is the failure
+    mode transition is expected to cause.
+  </p>
+  <div class="card">
+    <div class="tablewrap">
+      <table id="scoreTbl">
+        <caption id="scoreCap">Not scored yet.</caption>
+        <thead>
+          <tr>
+            <th>Variant</th>
+            <th class="num">n records</th>
+            <th class="num">Wind RMS<br>kt</th>
+            <th class="num">Median bias<br>nm</th>
+            <th class="num">Median |error|<br>nm</th>
+            <th class="num">Mean |error|<br>nm</th>
+            <th class="num">90th pct<br>nm</th>
+            <th class="num">Radii<br>scored</th>
+            <th class="num">Un-<br>reachable</th>
+          </tr>
+        </thead>
+        <tbody id="scoreBody"></tbody>
+      </table>
+    </div>
+    <div class="legend" id="scoreLegend"></div>
+  </div>
+</section>
+
+<section>
+  <h2>Radius error through the transition</h2>
+  <p class="lede">
+    Median signed radius error against hours from the first transition-stage record.
+    If the unmodified fit already tracks the expansion, the neutral baseline stays
+    flat across zero and there is nothing for either term to fix.
+  </p>
+  <div class="card chartcard">
+    <svg class="chart" id="onsetChart" viewBox="0 0 900 380"
+         role="img" aria-labelledby="onsetTitle"></svg>
+    <h3 id="onsetTitle" class="sr-only" style="position:absolute;left:-9999px">
+      Median radius error versus hours from transition onset
+    </h3>
+    <div class="legend" id="onsetLegend"></div>
+    <div class="tablewrap">
+      <table id="onsetTbl">
+        <caption>The same values as a table, since one series sits below 3:1
+                 against the light surface.</caption>
+        <thead><tr><th>Hours from onset</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>By storm</h2>
+  <p class="lede">
+    Transition-stage records only. Click a row to draw it.
+  </p>
+  <div class="card">
+    <div class="tablewrap">
+      <table class="sortable" id="stormTbl">
+        <caption id="stormCap">Not scored yet.</caption>
+        <thead>
+          <tr>
+            <th data-k="name">Storm</th>
+            <th data-k="basin">Basin</th>
+            <th class="num" data-k="season">Season</th>
+            <th class="num" data-k="nTrans">Records</th>
+            <th class="num" data-k="peak">Peak kt</th>
+            <th class="num" data-k="base">Baseline bias nm</th>
+            <th class="num" data-k="best">Best variant</th>
+            <th class="num" data-k="delta">Change nm</th>
+          </tr>
+        </thead>
+        <tbody id="stormBody"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>One storm-time, drawn</h2>
+  <p class="lede">
+    Baseline and variant side by side at the same scale, rather than superposed.
+    Dashed arcs are what the best track reported; solid rings are what the model
+    produced.
+  </p>
+  <div class="card">
+    <div class="row" style="margin:0 0 14px">
+      <label class="k" for="timeSel" style="min-width:auto">Storm-time</label>
+      <select id="timeSel" style="flex:1 1 auto; max-width:460px"></select>
+      <label class="k" for="variantSel" style="min-width:auto; margin-left:10px">Variant</label>
+      <select id="variantSel">
+        <option value="et">ET prior</option>
+        <option value="wn2">Elongation</option>
+        <option value="both" selected>Both</option>
+      </select>
+    </div>
+    <div class="panels" id="panels">
+      <div class="empty">Score first, then pick a storm-time.</div>
+    </div>
+    <div class="legend" id="ringLegend"></div>
+  </div>
+</section>
+
+<section>
+  <h2>How to read this, and what it cannot tell you</h2>
+  <div class="card">
+    <dl class="defs" id="defs"></dl>
+  </div>
+</section>
+
+</div>
+
+<script>
+/* ===========================================================================
+   Lab.html page code.
+
+   No vortex math and no parser live here.  Everything comes from Vortex.html
+   via window.TCVortex - fitGTCM, vortexFieldGTCM, rThresholdAt, gtcmEtPrior,
+   etFractionFromNature and the constants.  A second copy of any of it is the
+   bug this project has already shipped four times.
+   =========================================================================== */
+'use strict';
+
+var TCV = window.TCVortex;
+var QUAD_AZ = TCV.QUAD_AZ;
+var QUADS = TCV.QUADS;
+var QAVG = TCV.GTCM_QUAD_AVG_FACTOR;
+var THRS = [34, 50, 64];
+var THR_VAR = { 34: 'var(--thr-34)', 50: 'var(--thr-50)', 64: 'var(--thr-64)' };
+
+/* Variant identity.  `base` is deliberately not one of the coloured slots -
+   it is the reference the others are measured against, so it wears the muted
+   text token and a dashed stroke. */
+var VARIANTS = [
+  { key: 'base', label: 'Baseline (as shipped)', color: 'var(--var-base)', dash: '7 4' },
+  { key: 'et',   label: 'ET prior',              color: 'var(--var-a)',    dash: '' },
+  { key: 'wn2',  label: 'Elongation',            color: 'var(--var-b)',    dash: '' },
+  { key: 'both', label: 'Both',                  color: 'var(--var-c)',    dash: '' }
+];
+var VBYKEY = {};
+VARIANTS.forEach(function (v) { VBYKEY[v.key] = v; });
+
+var DATA = null;        // getEtRecords() payload, decoded
+var SCORES = null;      // { variantKey: { perRecord: [], agg: {} } }
+var RUN = null;         // in-flight scoring run, so a new one can cancel it
+var SORT = { k: 'delta', dir: 1 };
+
+// ---------------------------------------------------------------------------
+// Theme.  Theme.html defines both palettes; this only stamps which one wins.
+// Wrapped in try/catch because localStorage throws in a private window and the
+// page has to render correctly without it.
+// ---------------------------------------------------------------------------
+(function theme() {
+  var modes = ['system', 'light', 'dark'];
+  var cur = 'system';
+  try { cur = window.localStorage.getItem('tcwindLabTheme') || 'system'; } catch (e) {}
+  if (modes.indexOf(cur) < 0) cur = 'system';
+  function apply() {
+    if (cur === 'system') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', cur);
+    var b = document.getElementById('themeBtn');
+    if (b) b.textContent = 'Theme: ' + cur;
+  }
+  document.addEventListener('DOMContentLoaded', function () {
+    apply();
+    document.getElementById('themeBtn').addEventListener('click', function () {
+      cur = modes[(modes.indexOf(cur) + 1) % modes.length];
+      try { window.localStorage.setItem('tcwindLabTheme', cur); } catch (e) {}
+      apply();
+      // Charts are SVG with CSS-variable strokes, so they retheme themselves.
+      // The ring panels re-measure nothing, so nothing needs redrawing.
+    });
+  });
+  apply();
+})();
+
+// ---------------------------------------------------------------------------
+// Controls
+// ---------------------------------------------------------------------------
+function el(id) { return document.getElementById(id); }
+function fmt(x, d) {
+  if (x === null || x === undefined || (typeof x === 'number' && isNaN(x))) return '—';
+  return Number(x).toFixed(d === undefined ? 1 : d);
+}
+function signed(x, d) {
+  if (x === null || x === undefined || isNaN(x)) return '—';
+  var dp = (d === undefined) ? 1 : d;
+  // Without this, anything a hair below zero prints as "-0.0", and a table
+  // full of +0.0 and -0.0 invites a reader to see a difference that is not
+  // there. A value that rounds to zero is shown as zero, unsigned.
+  if (Math.abs(x) < 0.5 * Math.pow(10, -dp)) return (0).toFixed(dp);
+  return (x >= 0 ? '+' : '−') + Math.abs(x).toFixed(dp);
+}
+
+function settings() {
+  var phiMode = el('phiMode').value;
+  return {
+    recordSet: document.querySelector('input[name=rset]:checked').value,
+    kappa: parseFloat(el('kappa').value),
+    beta: parseFloat(el('beta').value),
+    e: parseFloat(el('ecc').value),
+    phiMode: phiMode,
+    phiVal: parseFloat(el('phiVal').value),
+    eScale: el('eScale').checked,
+    fitE: el('fitE').checked,
+    dropIll: el('dropIll').checked
+  };
+}
+
+/** Options for one variant on one record.  `base` returns undefined rather
+ *  than an empty object: the no-opts path in Vortex.html is the one proven
+ *  bit-identical to the shipped field, and passing {} would only be
+ *  *equivalent*, which is a weaker claim than the one being relied on. */
+function optsFor(key, eps, s) {
+  if (key === 'base') return undefined;
+  var o = {};
+  if (key === 'et' || key === 'both') {
+    var p = TCV.gtcmEtPrior(eps, s.kappa, s.beta);
+    o.rmScale = p.rmScale;
+    o.xShift = p.xShift;
+  }
+  if (key === 'wn2' || key === 'both') {
+    var eEff = s.eScale ? s.e * eps : s.e;
+    var w = { e: eEff };
+    if (s.phiMode === 'offset') w.phiOffset = s.phiVal;
+    else if (s.phiMode === 'abs') w.phi = s.phiVal;
+    o.wn2 = w;
+    o.fitE = s.fitE;
+  }
+  return o;
+}
+
+/** Would this variant produce anything other than the baseline on this
+ *  record?  At eps 0 the prior is the identity and e*eps is zero, so the
+ *  whole tropical control group can reuse the baseline score instead of
+ *  being refitted three more times - which is most of why a re-score is
+ *  seconds rather than a minute. */
+function variantDiffers(key, eps, s) {
+  if (key === 'base') return false;
+  if (eps > 0) return true;
+  // eps == 0: only an unscaled elongation still bites.
+  return (key === 'wn2' || key === 'both') && !s.eScale && s.e !== 0;
+}
+
+function syncControls() {
+  var s = settings();
+  el('kappaOut').textContent = s.kappa.toFixed(2);
+  el('betaOut').textContent = s.beta.toFixed(2);
+  el('eccOut').textContent = (s.e >= 0 ? '+' : '−') + Math.abs(s.e).toFixed(2);
+  el('phiValOut').textContent = (s.phiVal > 0 ? '+' : '') + s.phiVal + '°';
+  el('phiValRow').hidden = (s.phiMode === 'motion');
+
+  // Spell out what the prior actually does at each transition level, because
+  // kappa and beta are not quantities anyone has intuition for.
+  var rows = [
+    ['tropical (TS / DS)', 0.0],
+    ['mixed (MX)', TCV.etFractionFromNature('MX')],
+    ['extratropical / subtropical (ET / SS)', TCV.etFractionFromNature('ET')]
+  ];
+  var html = '';
+  rows.forEach(function (r) {
+    var p = TCV.gtcmEtPrior(r[1], s.kappa, s.beta);
+    html += 'eps ' + r[1].toFixed(2) + '  →  rm ×' + p.rmScale.toFixed(2) +
+            ',  x ' + (p.xShift === 0 ? '±0.000' : signed(p.xShift, 3)) +
+            '   <span style="opacity:.75">' + r[0] + '</span><br>';
+  });
+  el('priorOut').innerHTML = html;
+}
+
+// ---------------------------------------------------------------------------
+// Scoring
+// ---------------------------------------------------------------------------
+
+/** Fit one storm-time and measure it against what was reported.
+ *
+ *  Two errors, and they are not the same thing:
+ *    windRms   what the GTCM's weighted least squares minimises, eq. (7).
+ *              Low by construction - the fit is choosing it.
+ *    radii     how far the modelled threshold radius sits from the reported
+ *              one on that quadrant's bisector.  The fit never optimises
+ *              this, so it is the number that can actually be wrong.
+ *
+ *  The reported radius is the quadrant MAXIMUM; the vortex is fit to the
+ *  quadrant AVERAGE (GTCM_QUAD_AVG_FACTOR), so the reported value is scaled
+ *  the same way gtcmTargets() scales it before being compared.  Skipping that
+ *  would show a uniform -15% bias that is a unit mismatch, not a model error.
+ */
+function scoreRecord(rec, opts) {
+  var fld = TCV.vortexFieldGTCM(rec.snap, opts);
+  var out = { rms: fld.fit.rms, nTargets: fld.fit.n, fit: fld.fit,
+              sum: 0, absSum: 0, count: 0, unreachable: 0, resid: [] };
+  for (var i = 0; i < rec.rd.length; i++) {
+    var thr = rec.rd[i][0];
+    // gtcmTargets() drops a threshold above Vmax, so it was never a
+    // constraint on the fit and must not be scored as though it were.
+    if (rec.snap.vmax < thr) continue;
+    for (var q = 0; q < 4; q++) {
+      var reported = rec.rd[i][q + 1];
+      if (!(reported > 0)) continue;
+      var target = QAVG * reported;
+      var model = fld.rThresholdAt(QUAD_AZ[QUADS[q]], thr, true);
+      if (isNaN(model)) { out.unreachable++; continue; }
+      var d = model - target;
+      out.sum += d; out.absSum += Math.abs(d); out.count++;
+      out.resid.push(d);
+    }
+  }
+  return out;
+}
+
+function emptyAgg() {
+  return { nRecords: 0, rmsSum: 0, sum: 0, absSum: 0, count: 0,
+           unreachable: 0, resid: [] };
+}
+function addAgg(a, r) {
+  a.nRecords++; a.rmsSum += (isNaN(r.rms) ? 0 : r.rms);
+  a.sum += r.sum; a.absSum += r.absSum; a.count += r.count;
+  a.unreachable += r.unreachable;
+  for (var i = 0; i < r.resid.length; i++) a.resid.push(r.resid[i]);
+}
+
+function median(arr) {
+  if (!arr.length) return NaN;
+  var a = arr.slice().sort(function (x, y) { return x - y; });
+  var m = a.length >> 1;
+  return (a.length % 2) ? a[m] : (a[m - 1] + a[m]) / 2;
+}
+
+/** The headline is the MEDIAN, not the mean, and that is not a stylistic
+ *  choice.  The residual distribution has a long tail that the mean cannot
+ *  survive: a marginal fast-moving system whose symmetric peak sits below the
+ *  threshold being fitted drives the size exponent to its GTCM_X_MIN floor,
+ *  and a nearly-flat profile crosses 34 kt hundreds of nautical miles out -
+ *  single records in this sample carry +700 nm errors.  Averaging those in
+ *  reports the pathology, not the transition question.  The mean is kept
+ *  beside the median precisely so the gap between them stays visible. */
+function finishAgg(a) {
+  var abs = a.resid.map(Math.abs);
+  return {
+    nRecords: a.nRecords,
+    windRms: a.nRecords ? a.rmsSum / a.nRecords : NaN,
+    medBias: median(a.resid),
+    medAbs: median(abs),
+    bias: a.count ? a.sum / a.count : NaN,
+    mae: a.count ? a.absSum / a.count : NaN,
+    p90: a.resid.length ? abs.slice().sort(function (x, y) { return x - y; })[
+           Math.min(abs.length - 1, Math.floor(0.9 * abs.length))] : NaN,
+    count: a.count,
+    unreachable: a.unreachable
+  };
+}
+
+/** Is the fit well posed at all on this record?  The symmetric profile peaks
+ *  at Vmax - a, with a = 1.6 c^0.63 from eq. (2).  When that peak is below the
+ *  lowest threshold the bulletin reported, no choice of rm or x can put the
+ *  symmetric vortex at the reported radius and the optimiser is reduced to
+ *  chasing it with the asymmetry alone - which it does by flattening x onto
+ *  its floor.  Weakening and accelerating at once is the definition of
+ *  transition, so this is not a rare corner here; it is the regime. */
+function illPosed(rec) {
+  var a = TCV.gtcmAsymmetry(rec.snap.motionSpd);
+  var lowest = null;
+  for (var i = 0; i < rec.rd.length; i++) {
+    var thr = rec.rd[i][0];
+    if (rec.snap.vmax < thr) continue;
+    if (lowest === null || thr < lowest) lowest = thr;
+  }
+  if (lowest === null) return false;
+  return (rec.snap.vmax - a) < lowest;
+}
+
+/** Score every selected record against every variant, in time-sliced chunks
+ *  so the page stays responsive and a new run can cancel this one.
+ *
+ *  Cost is real and worth stating: one fit-and-score is about 6 ms, so the
+ *  296 transition records take roughly 2 s per variant that actually differs
+ *  from the baseline.  This is not a live slider; it is a button. */
+function runScoring() {
+  if (RUN) RUN.cancelled = true;
+  var s = settings();
+  var pool = (s.recordSet === 'all') ? DATA.records : DATA.transRecords;
+  // Ill-posedness depends only on Vmax and the motion speed - never on the
+  // options - so every variant gets the same verdict and it belongs to the
+  // record set rather than to a row of the scoreboard.
+  var nIll = 0;
+  var recs = pool.filter(function (r) {
+    if (!r.illPosed) return true;
+    nIll++;
+    return !s.dropIll;
+  });
+  if (!recs.length) {
+    el('progLbl').textContent = 'Every record in that selection is ill-posed (' +
+      nIll + ' of ' + pool.length + '), so there is nothing left to score.';
+    el('progFill').style.width = '0%';
+    return;
+  }
+  var run = { cancelled: false, i: 0, recs: recs, s: s };
+  RUN = run;
+
+  var res = {};
+  VARIANTS.forEach(function (v) {
+    res[v.key] = { perRecord: new Array(recs.length),
+                   aggAll: emptyAgg(), aggTrans: emptyAgg() };
+  });
+
+  el('runBtn').disabled = true;
+  var t0 = Date.now();
+
+  function chunk() {
+    if (run.cancelled) return;
+    var deadline = Date.now() + 28;       // keep frames under ~30 ms
+    while (run.i < recs.length && Date.now() < deadline) {
+      var rec = recs[run.i];
+      var baseScore = scoreRecord(rec, undefined);
+      for (var vi = 0; vi < VARIANTS.length; vi++) {
+        var key = VARIANTS[vi].key;
+        var sc = variantDiffers(key, rec.eps, s)
+          ? scoreRecord(rec, optsFor(key, rec.eps, s))
+          : baseScore;
+        res[key].perRecord[run.i] = sc;
+        addAgg(res[key].aggAll, sc);
+        if (rec.isTrans) addAgg(res[key].aggTrans, sc);
+      }
+      run.i++;
+    }
+    var pct = Math.round(100 * run.i / recs.length);
+    el('progFill').style.width = pct + '%';
+    el('progLbl').textContent = 'Scoring ' + run.i.toLocaleString() + ' of ' +
+      recs.length.toLocaleString() + ' records… ' + pct + '%';
+    if (run.i < recs.length) {
+      window.setTimeout(chunk, 0);
+    } else {
+      RUN = null;
+      el('runBtn').disabled = false;
+      var secs = ((Date.now() - t0) / 1000).toFixed(1);
+      el('progLbl').textContent = 'Scored ' + recs.length.toLocaleString() +
+        ' records in ' + secs + ' s.';
+      SCORES = { res: res, recs: recs, s: s, nIll: nIll, nPool: pool.length };
+      renderAll();
+    }
+  }
+  window.setTimeout(chunk, 0);
+}
+
+// ---------------------------------------------------------------------------
+// Render: scoreboard
+// ---------------------------------------------------------------------------
+function renderScoreboard() {
+  var res = SCORES.res, s = SCORES.s;
+  var useTrans = (s.recordSet === 'all');
+  var body = el('scoreBody');
+  var base = finishAgg(useTrans ? res.base.aggTrans : res.base.aggAll);
+  var html = '';
+
+  VARIANTS.forEach(function (v) {
+    var a = finishAgg(useTrans ? res[v.key].aggTrans : res[v.key].aggAll);
+    var isBase = v.key === 'base';
+    // Judged on the MEDIAN absolute error, because that is the statistic the
+    // long tail does not decide.  The mean and the 90th percentile sit beside
+    // it so the size of that tail stays on screen rather than being hidden by
+    // the choice of a robust headline.
+    var d = isBase ? null : a.medAbs - base.medAbs;
+    var cls = isBase ? '' : (Math.abs(d) < 0.05 ? 'same' : (d < 0 ? 'better' : 'worse'));
+    html += '<tr>' +
+      '<td><span class="swatch' + (v.dash ? ' dash' : '') + '" style="' +
+        (v.dash ? 'color:' + v.color : 'background:' + v.color) + '"></span>' +
+        v.label + '</td>' +
+      '<td class="num">' + a.nRecords.toLocaleString() + '</td>' +
+      '<td class="num">' + fmt(a.windRms, 2) + '</td>' +
+      '<td class="num">' + signed(a.medBias, 1) + '</td>' +
+      '<td class="num">' + fmt(a.medAbs, 1) +
+        (isBase ? '' : ' <span class="' + cls + '">(' + signed(d, 1) + ')</span>') + '</td>' +
+      '<td class="num">' + fmt(a.mae, 1) + '</td>' +
+      '<td class="num">' + fmt(a.p90, 0) + '</td>' +
+      '<td class="num">' + a.count.toLocaleString() + '</td>' +
+      '<td class="num">' + a.unreachable.toLocaleString() + '</td>' +
+      '</tr>';
+  });
+  body.innerHTML = html;
+
+  var nRec = (useTrans ? res.base.aggTrans.nRecords : res.base.aggAll.nRecords);
+  el('scoreCap').textContent = useTrans
+    ? 'Transition-stage records only (' + nRec.toLocaleString() +
+      ' of the ' + SCORES.recs.length.toLocaleString() + ' scored), so the ' +
+      'tropical control group is excluded from these totals.'
+    : 'All ' + nRec.toLocaleString() + ' scored records, every one at a ' +
+      'transition stage.';
+  if (typeof SCORES.nIll === 'number') {
+    el('scoreCap').textContent += '  ' + SCORES.nIll.toLocaleString() + ' of ' +
+      SCORES.nPool.toLocaleString() + ' records in this selection are ill-posed ' +
+      'and are currently ' + (SCORES.s.dropIll
+        ? 'DROPPED, so these numbers describe only the records where the fit ' +
+          'is well posed.'
+        : 'INCLUDED, which is why the mean and the 90th percentile sit so far ' +
+          'above the median.');
+  }
+
+  el('scoreLegend').innerHTML =
+    '<div class="item"><strong>Wind RMS</strong> is what the fit minimises ' +
+    '(eq. 7), so it is low by construction and says little.</div>' +
+    '<div class="item"><strong>Median</strong> leads because the mean does not ' +
+    'survive this distribution - compare the median and mean columns, and the ' +
+    '90th percentile beside them.</div>' +
+    '<div class="item"><strong>Unreachable</strong> counts reported radii the ' +
+    'field cannot produce at any distance, because Vmax − a fell below the ' +
+    'threshold. Those are counted, never scored.</div>';
+}
+
+// ---------------------------------------------------------------------------
+// Render: radius error through the transition
+// ---------------------------------------------------------------------------
+var BIN_H = 12;
+/* A bin needs this many scored radii to be drawn.  Sample size collapses fast
+   after onset - the pre-transition bins hold 700-800 radii each, the first
+   post-onset bin 273, and by +96 h there are 13 - so without a floor the axis
+   is set by bins of a dozen radii from one or two storms and the shape that
+   matters disappears into the noise.  Every bin is still listed in the table
+   below the chart, sample size included, so nothing is hidden; it is just not
+   allowed to set the scale. */
+var MIN_BIN_N = 25;
+function binIndex(hours) { return Math.floor(hours / BIN_H); }
+
+function renderOnsetChart() {
+  var res = SCORES.res, recs = SCORES.recs;
+  var bins = {};        // binIdx -> { key -> {sum, n} }
+  var lo = 0, hi = 0, any = false;
+
+  recs.forEach(function (rec, i) {
+    var b = binIndex(rec.hoursFromOnset);
+    if (!bins[b]) {
+      bins[b] = {};
+      VARIANTS.forEach(function (v) { bins[b][v.key] = { resid: [] }; });
+    }
+    VARIANTS.forEach(function (v) {
+      var sc = res[v.key].perRecord[i];
+      if (!sc) return;
+      for (var j = 0; j < sc.resid.length; j++) bins[b][v.key].resid.push(sc.resid[j]);
+    });
+    if (!any) { lo = hi = b; any = true; }
+    lo = Math.min(lo, b); hi = Math.max(hi, b);
+  });
+
+  var svg = el('onsetChart');
+  if (!any) { svg.innerHTML = ''; return; }
+
+  var W = 900, H = 392, M = { t: 30, r: 116, b: 46, l: 62 };
+  var series = {};
+  var vals = [];
+  VARIANTS.forEach(function (v) {
+    var pts = [];
+    for (var b = lo; b <= hi; b++) {
+      if (!bins[b] || bins[b][v.key].resid.length < MIN_BIN_N) continue;
+      var y = median(bins[b][v.key].resid);
+      pts.push([b * BIN_H + BIN_H / 2, y, bins[b][v.key].resid.length]);
+      vals.push(y);
+    }
+    series[v.key] = pts;
+  });
+  if (!vals.length) { svg.innerHTML = ''; return; }
+
+  var yMin = Math.min.apply(null, vals), yMax = Math.max.apply(null, vals);
+  var pad = Math.max(4, (yMax - yMin) * 0.16);
+  yMin = Math.min(yMin - pad, -5); yMax = Math.max(yMax + pad, 5);
+
+  // The x range follows the PLOTTED bins, not every bin that exists: a
+  // 13-radius bin at +250 h would otherwise stretch the axis and flatten the
+  // part of the curve that has data behind it.
+  var xs = [];
+  VARIANTS.forEach(function (v) {
+    series[v.key].forEach(function (p) { xs.push(p[0]); });
+  });
+  if (!xs.length) { svg.innerHTML = ''; return; }
+  var xMin = Math.min.apply(null, xs) - BIN_H / 2;
+  var xMax = Math.max.apply(null, xs) + BIN_H / 2;
+
+  function X(h) { return M.l + (h - xMin) / (xMax - xMin) * (W - M.l - M.r); }
+  function Y(v) { return M.t + (yMax - v) / (yMax - yMin) * (H - M.t - M.b); }
+
+  var g = [];
+  // Horizontal grid on ROUND values.  Slicing the range into six equal parts
+  // produced an axis reading 5 / 1 / -4 / -8 / -12 / -16 / -21, which is
+  // arithmetically fine and unreadable.
+  var rawStep = (yMax - yMin) / 6;
+  var mag = Math.pow(10, Math.floor(Math.log(rawStep) / Math.LN10));
+  var norm = rawStep / mag;
+  var yStep = mag * (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10);
+  for (var gv = Math.ceil(yMin / yStep) * yStep; gv <= yMax + 1e-9; gv += yStep) {
+    var y = Y(gv);
+    g.push('<line class="grid" x1="' + M.l + '" y1="' + y.toFixed(1) +
+           '" x2="' + (W - M.r) + '" y2="' + y.toFixed(1) + '"/>');
+    g.push('<text x="' + (M.l - 9) + '" y="' + (y + 3.5).toFixed(1) +
+           '" text-anchor="end">' + (Math.abs(gv) < 1e-9 ? 0 : gv.toFixed(0)) + '</text>');
+  }
+  // Zero-error line, and onset at hour 0 - the two references that matter.
+  g.push('<line class="zero" x1="' + M.l + '" y1="' + Y(0).toFixed(1) +
+         '" x2="' + (W - M.r) + '" y2="' + Y(0).toFixed(1) + '"/>');
+  if (xMin < 0 && xMax > 0) {
+    g.push('<line class="axis" x1="' + X(0).toFixed(1) + '" y1="' + M.t +
+           '" x2="' + X(0).toFixed(1) + '" y2="' + (H - M.b) + '"/>');
+    g.push('<text x="' + (X(0) + 6).toFixed(1) + '" y="' + (M.t + 12) +
+           '">transition onset</text>');
+  }
+  // X axis
+  g.push('<line class="axis" x1="' + M.l + '" y1="' + (H - M.b) +
+         '" x2="' + (W - M.r) + '" y2="' + (H - M.b) + '"/>');
+  var tick = (xMax - xMin) > 180 ? 48 : 24;
+  for (var h = Math.ceil(xMin / tick) * tick; h <= xMax; h += tick) {
+    g.push('<line class="axis" x1="' + X(h).toFixed(1) + '" y1="' + (H - M.b) +
+           '" x2="' + X(h).toFixed(1) + '" y2="' + (H - M.b + 5) + '"/>');
+    g.push('<text x="' + X(h).toFixed(1) + '" y="' + (H - M.b + 19) +
+           '" text-anchor="middle">' + (h > 0 ? '+' : '') + h + '</text>');
+  }
+  g.push('<text x="' + ((M.l + W - M.r) / 2) + '" y="' + (H - 8) +
+         '" text-anchor="middle" class="axtitle">hours from the first ' +
+         'transition-stage record</text>');
+  // Above the plot area, not beside it: on the left it collided with the
+  // topmost tick label.
+  g.push('<text x="' + M.l + '" y="11" class="axtitle">median radius error, ' +
+         'nm \u2014 negative means the modelled footprint is too small</text>');
+
+  // Series.  2 px lines, >=8 px end markers, a surface halo where they cross,
+  // and every one direct-labelled at its right end so identity never rests on
+  // hue.  Drawn baseline-first so the coloured variants sit on top of it.
+  VARIANTS.forEach(function (v) {
+    var pts = series[v.key];
+    if (!pts.length) return;
+    var d = pts.map(function (p, i) {
+      return (i ? 'L' : 'M') + X(p[0]).toFixed(1) + ' ' + Y(p[1]).toFixed(1);
+    }).join(' ');
+    if (!v.dash) g.push('<path class="halo" d="' + d + '"/>');
+    g.push('<path d="' + d + '" fill="none" stroke="' + v.color +
+           '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"' +
+           (v.dash ? ' stroke-dasharray="' + v.dash + '"' : '') + '/>');
+    var last = pts[pts.length - 1];
+    g.push('<circle cx="' + X(last[0]).toFixed(1) + '" cy="' + Y(last[1]).toFixed(1) +
+           '" r="4" fill="' + v.color + '" stroke="var(--surface)" stroke-width="2"/>');
+  });
+
+  // Direct labels, de-collided.  The four series converge by construction -
+  // they are variants of one fit - so on this data all four right-hand labels
+  // landed within a few pixels of each other and printed as one illegible
+  // blob. Sort by y, then push each down until it clears the one above by
+  // LABEL_GAP, and leader-line it back to its own end point.
+  var LABEL_GAP = 15;
+  var labels = [];
+  VARIANTS.forEach(function (v) {
+    var pts = series[v.key];
+    if (!pts.length) return;
+    var last = pts[pts.length - 1];
+    labels.push({ v: v, x: X(last[0]), yTrue: Y(last[1]), y: Y(last[1]) });
+  });
+  labels.sort(function (a, b) { return a.yTrue - b.yTrue; });
+  for (var li = 1; li < labels.length; li++) {
+    if (labels[li].y - labels[li - 1].y < LABEL_GAP) {
+      labels[li].y = labels[li - 1].y + LABEL_GAP;
+    }
+  }
+  // Keep the stack inside the plot if pushing down ran it off the bottom.
+  var overflow = labels.length
+    ? labels[labels.length - 1].y - (H - M.b) : 0;
+  if (overflow > 0) labels.forEach(function (L) { L.y -= overflow; });
+  labels.forEach(function (L) {
+    if (Math.abs(L.y - L.yTrue) > 1.5) {
+      g.push('<path d="M' + L.x.toFixed(1) + ' ' + L.yTrue.toFixed(1) +
+             ' L' + (W - M.r + 4) + ' ' + L.y.toFixed(1) +
+             '" fill="none" stroke="' + L.v.color +
+             '" stroke-width="1" opacity=".45"/>');
+    }
+    g.push('<text class="dlabel" x="' + (W - M.r + 9) + '" y="' +
+           (L.y + 3.5).toFixed(1) + '" fill="' + L.v.color + '">' +
+           L.v.label.replace(' (as shipped)', '') + '</text>');
+  });
+
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+  svg.innerHTML = g.join('');
+
+  el('onsetLegend').innerHTML = VARIANTS.map(function (v) {
+    return '<div class="item"><span class="swatch' + (v.dash ? ' dash' : '') +
+      '" style="' + (v.dash ? 'color:' + v.color : 'background:' + v.color) +
+      '"></span>' + v.label + '</div>';
+  }).join('') + '<div class="item" style="color:var(--muted)">' + BIN_H +
+    ' h bins, plotted where a bin holds at least ' + MIN_BIN_N + ' scored ' +
+    'radii. Thinner bins are in the table below, not on the chart.</div>';
+
+  // The table view, which the sub-3:1 series obliges rather than merely suggests.
+  var head = '<tr><th>Hours from onset</th>' + VARIANTS.map(function (v) {
+    return '<th class="num">' + v.label.replace(' (as shipped)', '') + '</th>';
+  }).join('') + '<th class="num">radii</th><th>on chart</th></tr>';
+  var rows = '';
+  for (var b = lo; b <= hi; b++) {
+    if (!bins[b]) continue;
+    var n = bins[b].base.resid.length;
+    if (!n) continue;
+    rows += '<tr><td class="num">' + (b * BIN_H) + ' to ' + ((b + 1) * BIN_H) + '</td>' +
+      VARIANTS.map(function (v) {
+        var s2 = bins[b][v.key].resid;
+        return '<td class="num">' + (s2.length ? signed(median(s2), 1) : '—') + '</td>';
+      }).join('') + '<td class="num">' + n + '</td><td>' +
+      (n >= MIN_BIN_N ? 'yes' : 'no') + '</td></tr>';
+  }
+  var t = el('onsetTbl');
+  t.querySelector('thead').innerHTML = head;
+  t.querySelector('tbody').innerHTML = rows;
+}
+
+// ---------------------------------------------------------------------------
+// Render: per-storm table
+// ---------------------------------------------------------------------------
+function stormRows() {
+  var res = SCORES.res, recs = SCORES.recs;
+  var by = {};
+  recs.forEach(function (rec, i) {
+    if (!rec.isTrans) return;             // transition stages only, always
+    if (!by[rec.s]) {
+      by[rec.s] = { sid: rec.s, nTrans: 0, peak: 0, acc: {} };
+      VARIANTS.forEach(function (v) { by[rec.s].acc[v.key] = { resid: [] }; });
+    }
+    var row = by[rec.s];
+    row.nTrans++;
+    row.peak = Math.max(row.peak, rec.snap.vmax);
+    VARIANTS.forEach(function (v) {
+      var sc = res[v.key].perRecord[i];
+      if (!sc) return;
+      for (var j = 0; j < sc.resid.length; j++) row.acc[v.key].resid.push(sc.resid[j]);
+    });
+  });
+  return Object.keys(by).map(function (sid) {
+    var row = by[sid], meta = DATA.stormBySid[sid] || {};
+    // Median again, for the same reason as the scoreboard: one +700 nm
+    // record would otherwise decide a storm's whole row.
+    function bias(k) { return median(row.acc[k].resid); }
+    var base = bias('base');
+    var best = null, bestKey = null;
+    ['et', 'wn2', 'both'].forEach(function (k) {
+      var b = bias(k);
+      if (isNaN(b)) return;
+      if (best === null || Math.abs(b) < Math.abs(best)) { best = b; bestKey = k; }
+    });
+    return {
+      sid: sid, name: meta.name || '—', basin: meta.basin || '',
+      season: meta.season, nTrans: row.nTrans, peak: row.peak,
+      base: base, best: best, bestKey: bestKey,
+      delta: (best === null || isNaN(base)) ? NaN : Math.abs(best) - Math.abs(base)
+    };
+  });
+}
+
+function renderStormTable() {
+  var rows = stormRows();
+  rows.sort(function (a, b) {
+    var x = a[SORT.k], y = b[SORT.k];
+    if (typeof x === 'string') return SORT.dir * String(x).localeCompare(String(y));
+    var xn = (x === null || isNaN(x)) ? Infinity : x;
+    var yn = (y === null || isNaN(y)) ? Infinity : y;
+    return SORT.dir * (xn - yn);
+  });
+  el('stormBody').innerHTML = rows.map(function (r) {
+    var cls = isNaN(r.delta) ? 'same'
+            : (Math.abs(r.delta) < 0.5 ? 'same' : (r.delta < 0 ? 'better' : 'worse'));
+    return '<tr class="clickable" data-sid="' + r.sid + '">' +
+      '<td>' + r.name + '</td><td>' + r.basin + '</td>' +
+      '<td class="num">' + (r.season || '—') + '</td>' +
+      '<td class="num">' + r.nTrans + '</td>' +
+      '<td class="num">' + fmt(r.peak, 0) + '</td>' +
+      '<td class="num">' + signed(r.base, 1) + '</td>' +
+      '<td class="num">' + signed(r.best, 1) +
+        (r.bestKey ? ' <span style="color:' + VBYKEY[r.bestKey].color +
+                     '">●</span>' : '') + '</td>' +
+      '<td class="num ' + cls + '">' + signed(r.delta, 1) + '</td></tr>';
+  }).join('');
+  var blank = rows.filter(function (r) { return isNaN(r.base); }).length;
+  el('stormCap').textContent = rows.length + ' storms. ' +
+    '"Best variant" is the one whose MEDIAN bias is closest to zero, marked ' +
+    'with its colour; "change" is how much closer to zero it got, so negative ' +
+    'is an improvement.' +
+    (blank ? '  ' + blank + ' storms show a dash throughout: every radius they ' +
+             'reported was unreachable, so none of them could be scored.' : '');
+
+  Array.prototype.forEach.call(el('stormBody').querySelectorAll('tr'), function (tr) {
+    tr.addEventListener('click', function () { selectStorm(tr.getAttribute('data-sid')); });
+  });
+  var ths = el('stormTbl').querySelectorAll('thead th');
+  Array.prototype.forEach.call(ths, function (th) {
+    var k = th.getAttribute('data-k');
+    th.setAttribute('aria-sort', k === SORT.k
+      ? (SORT.dir === 1 ? 'ascending' : 'descending') : 'none');
+    th.onclick = function () {
+      if (SORT.k === k) SORT.dir = -SORT.dir; else { SORT.k = k; SORT.dir = 1; }
+      renderStormTable();
+    };
+  });
+}
+</script>
+
+<script>
+/* ===========================================================================
+   Lab.html page code, part 2: the drawn comparison, the glossary, and the
+   data load.
+   =========================================================================== */
+'use strict';
+
+// ---------------------------------------------------------------------------
+// Render: one storm-time, drawn
+// ---------------------------------------------------------------------------
+var SELECTED = { sid: null, idx: -1 };
+
+function niceCeil(x) {
+  var steps = [50, 75, 100, 150, 200, 250, 300, 400, 500, 600, 800, 1000, 1200];
+  for (var i = 0; i < steps.length; i++) if (x <= steps[i]) return steps[i];
+  return Math.ceil(x / 200) * 200;
+}
+
+/** The modelled threshold ring on one bearing sweep, as an SVG path.
+ *  Broken - not closed - wherever the field never reaches the threshold, so a
+ *  ring with a gap reads as "no 50 kt wind on this side" instead of being
+ *  quietly closed across a sector that has none. */
+function ringPath(fld, thr, toPx, cx, cy) {
+  var segs = [], cur = [];
+  for (var az = 0; az <= 360; az += 3) {
+    var r = fld.rThresholdAt(az % 360, thr, true);
+    if (isNaN(r)) {
+      if (cur.length > 1) segs.push(cur);
+      cur = [];
+      continue;
+    }
+    var rad = (az - 90) * Math.PI / 180;
+    cur.push([cx + toPx(r) * Math.cos(rad), cy + toPx(r) * Math.sin(rad)]);
+  }
+  if (cur.length > 1) segs.push(cur);
+  // A partial ring is a crescent, not a closed curve, and with round caps a
+  // crescent whose ends sit near the same radius reads as a spiral drawn into
+  // the centre - which is what it looked like the first time this was drawn.
+  // The open ends get a dot so the shape reads as "cut off here".
+  var closed = segs.length === 1 && segs[0].length > 118;
+  return {
+    d: segs.map(function (seg) {
+      return seg.map(function (q, i) {
+        return (i ? 'L' : 'M') + q[0].toFixed(1) + ' ' + q[1].toFixed(1);
+      }).join(' ');
+    }).join(' '),
+    ends: closed ? [] : segs.reduce(function (acc, seg) {
+      acc.push(seg[0], seg[seg.length - 1]);
+      return acc;
+    }, []),
+    covered: segs.reduce(function (n, seg) { return n + seg.length; }, 0)
+  };
+}
+
+/** The reported radius as a dashed 90-degree arc across its own quadrant.
+ *  Drawn at GTCM_QUAD_AVG_FACTOR times the reported value, because that is
+ *  the quantity the vortex is fitted to - putting the raw quadrant maximum
+ *  next to the model ring would show a flat 15% gap that is a unit mismatch
+ *  rather than an error. */
+function quadArc(radiusNm, quad, toPx, cx, cy) {
+  var b = TCV.QUAD_BOUNDS[quad];
+  var rp = toPx(radiusNm);
+  var a0 = (b[0] - 90) * Math.PI / 180, a1 = (b[1] - 90) * Math.PI / 180;
+  var x0 = cx + rp * Math.cos(a0), y0 = cy + rp * Math.sin(a0);
+  var x1 = cx + rp * Math.cos(a1), y1 = cy + rp * Math.sin(a1);
+  return 'M' + x0.toFixed(1) + ' ' + y0.toFixed(1) +
+         ' A' + rp.toFixed(1) + ' ' + rp.toFixed(1) + ' 0 0 1 ' +
+         x1.toFixed(1) + ' ' + y1.toFixed(1);
+}
+
+function panelSvg(rec, opts, maxNm) {
+  var S = 340, cx = S / 2, cy = S / 2, pad = 26;
+  var toPx = function (nm) { return (nm / maxNm) * (S / 2 - pad); };
+  var fld = TCV.vortexFieldGTCM(rec.snap, opts);
+  var g = [];
+
+  // Range rings, recessive, labelled once along the north radial only.
+  var ringStep = maxNm / 4;
+  for (var i = 1; i <= 4; i++) {
+    g.push('<circle class="grid" cx="' + cx + '" cy="' + cy + '" r="' +
+           toPx(ringStep * i).toFixed(1) + '" fill="none"/>');
+    g.push('<text x="' + (cx + 4) + '" y="' + (cy - toPx(ringStep * i) + 12).toFixed(1) +
+           '">' + Math.round(ringStep * i) + '</text>');
+  }
+  g.push('<line class="grid" x1="' + cx + '" y1="' + pad + '" x2="' + cx +
+         '" y2="' + (S - pad) + '"/>');
+  g.push('<line class="grid" x1="' + pad + '" y1="' + cy + '" x2="' + (S - pad) +
+         '" y2="' + cy + '"/>');
+  g.push('<text x="' + cx + '" y="' + (pad - 8) + '" text-anchor="middle">N</text>');
+
+  // Reported arcs first, so the model rings read on top of them.
+  for (var t = 0; t < rec.rd.length; t++) {
+    var thr = rec.rd[t][0];
+    if (rec.snap.vmax < thr) continue;
+    for (var q = 0; q < 4; q++) {
+      var rep = rec.rd[t][q + 1];
+      if (!(rep > 0)) continue;
+      g.push('<path d="' + quadArc(QAVG * rep, QUADS[q], toPx, cx, cy) +
+             '" fill="none" stroke="' + THR_VAR[thr] +
+             '" stroke-width="2.5" stroke-dasharray="6 4" stroke-linecap="round"/>');
+    }
+  }
+  // Model rings, thickest threshold drawn last so the core stays visible.
+  var missing = [], partial = [];
+  THRS.forEach(function (thr) {
+    if (rec.snap.vmax < thr) return;
+    var reported = false;
+    for (var t2 = 0; t2 < rec.rd.length; t2++) if (rec.rd[t2][0] === thr) reported = true;
+    var ring = ringPath(fld, thr, toPx, cx, cy);
+    if (!ring.d) {
+      if (reported) missing.push(thr);
+      return;
+    }
+    if (ring.ends.length && reported) partial.push(thr);
+    g.push('<path d="' + ring.d + '" fill="none" stroke="var(--ring-plot)" stroke-width="4.5"/>');
+    g.push('<path d="' + ring.d + '" fill="none" stroke="' + THR_VAR[thr] +
+           '" stroke-width="2.2" stroke-linecap="round"/>');
+    ring.ends.forEach(function (q) {
+      g.push('<circle cx="' + q[0].toFixed(1) + '" cy="' + q[1].toFixed(1) +
+             '" r="3" fill="' + THR_VAR[thr] +
+             '" stroke="var(--ring-plot)" stroke-width="1.5"/>');
+    });
+  });
+
+  // Motion vector: the axis phi defaults to, so it has to be visible.
+  if (rec.snap.motionSpd > 0 && rec.snap.motionDir !== null) {
+    var mr = (rec.snap.motionDir - 90) * Math.PI / 180;
+    var L = S / 2 - pad - 4;
+    g.push('<line x1="' + cx + '" y1="' + cy + '" x2="' + (cx + L * Math.cos(mr)).toFixed(1) +
+           '" y2="' + (cy + L * Math.sin(mr)).toFixed(1) +
+           '" stroke="var(--ink-obs)" stroke-width="1.5" stroke-dasharray="2 4"/>');
+    g.push('<text x="' + (cx + (L - 6) * Math.cos(mr)).toFixed(1) + '" y="' +
+           (cy + (L - 6) * Math.sin(mr) - 6).toFixed(1) +
+           '" text-anchor="middle">motion</text>');
+  }
+  g.push('<circle cx="' + cx + '" cy="' + cy + '" r="3" fill="var(--ink-obs)"/>');
+
+  return { svg: '<svg viewBox="0 0 ' + S + ' ' + S + '" width="100%" ' +
+                'style="max-width:360px" role="img">' + g.join('') + '</svg>',
+           fld: fld, missing: missing, partial: partial };
+}
+
+function fitLine(fld, rec) {
+  var f = fld.fit;
+  var s = 'rm ' + fmt(f.rm, 1) + ' nm · ri ' + fmt(f.ri, 1) + ' nm · x1 ' +
+          fmt(f.x1, 3) + ' · x2 ' + fmt(f.x2, 3) +
+          ' · freeParams ' + f.freeParams + ' of ' + f.n + ' targets<br>' +
+          'a ' + fmt(f.a, 1) + ' kt · Vm−a ' + fmt(rec.snap.vmax - f.a, 1) +
+          ' kt · weighted RMS ' + fmt(f.rms, 2) + ' kt';
+  if (f.e) {
+    s += '<br>e ' + signed(f.e, 3) + ' · φ ' + fmt(TCV.mod360(f.phi), 0) + '°' +
+         (f.eFitted ? ' (e fitted)' : ' (e prescribed)');
+  }
+  return s;
+}
+
+function renderPanels() {
+  var host = el('panels');
+  if (!SCORES || SELECTED.idx < 0) {
+    host.innerHTML = '<div class="empty">Score first, then pick a storm-time.</div>';
+    el('ringLegend').innerHTML = '';
+    return;
+  }
+  var rec = SCORES.recs[SELECTED.idx];
+  var vkey = el('variantSel').value;
+  var vopts = optsFor(vkey, rec.eps, SCORES.s);
+
+  // One scale for both panels.  Comparing two plots drawn at different scales
+  // is the mistake this whole side-by-side layout exists to avoid.
+  var maxNm = 0;
+  [undefined, vopts].forEach(function (o) {
+    var f = TCV.vortexFieldGTCM(rec.snap, o);
+    THRS.forEach(function (thr) {
+      if (rec.snap.vmax < thr) return;
+      for (var az = 0; az < 360; az += 15) {
+        var r = f.rThresholdAt(az, thr, true);
+        if (!isNaN(r)) maxNm = Math.max(maxNm, r);
+      }
+    });
+  });
+  rec.rd.forEach(function (row) {
+    for (var q = 1; q <= 4; q++) maxNm = Math.max(maxNm, QAVG * row[q]);
+  });
+  maxNm = niceCeil(maxNm * 1.1);
+
+  var natLabel = { ET: 'extratropical', SS: 'subtropical', MX: 'mixed type',
+                   TS: 'tropical storm', DS: 'disturbance' }[rec.nt] || rec.nt;
+  var panels = [
+    { title: 'Baseline', opts: undefined,
+      note: 'What the shipped code produces. eps is not read at all.' },
+    { title: VBYKEY[vkey].label, opts: vopts,
+      note: labelOpts(vkey, rec) }
+  ];
+
+  host.innerHTML = panels.map(function (p) {
+    var r = panelSvg(rec, p.opts, maxNm);
+    // 39 of the 296 transition-stage records produce no 34 kt ring on ANY
+    // bearing, because Vmax - a falls below 34. Before this said so, the
+    // panel just came up with the reported arcs and no model in it, and
+    // nothing on screen explained why.
+    var warn = '';
+    if (r.missing.length) {
+      warn = '<div class="note" style="margin:8px 0 0"><strong>No ' +
+        r.missing.join(' / ') + ' kt ring.</strong> The field does not reach ' +
+        (r.missing.length > 1 ? 'those speeds' : 'that speed') +
+        ' on any bearing: the symmetric profile peaks at Vmax \u2212 a = ' +
+        fmt(rec.snap.vmax - r.fld.fit.a, 1) + ' kt. The reported radii below ' +
+        'are counted as unreachable, not scored.</div>';
+    } else if (r.partial.length) {
+      warn = '<div class="note" style="margin:8px 0 0">The ' +
+        r.partial.join(' / ') + ' kt ring is a crescent, not a closed ring \u2014 ' +
+        'the field reaches ' + (r.partial.length > 1 ? 'those speeds' : 'that speed') +
+        ' only on part of the sweep. Dots mark where it is cut off.</div>';
+    }
+    return '<div class="panel"><h4>' + p.title + '</h4>' +
+           '<p class="plab">' + p.note + '</p>' + r.svg +
+           '<div class="fitline">' + fitLine(r.fld, rec) + '</div>' + warn + '</div>';
+  }).join('');
+
+  el('ringLegend').innerHTML =
+    THRS.filter(function (t) { return rec.snap.vmax >= t; }).map(function (t) {
+      return '<div class="item"><span class="swatch" style="background:' +
+        THR_VAR[t] + '"></span>' + t + ' kt</div>';
+    }).join('') +
+    '<div class="item"><span class="swatch dash" style="color:var(--muted)"></span>' +
+      'reported, ×' + QAVG + ' for quadrant average</div>' +
+    '<div class="item"><span class="swatch" style="background:var(--muted)"></span>' +
+      'modelled</div>' +
+    '<div class="item" style="color:var(--muted)">' + natLabel + ', Vmax ' +
+      fmt(rec.snap.vmax, 0) + ' kt, moving ' + fmt(rec.snap.motionSpd, 0) +
+      ' kt · rings every ' + Math.round(maxNm / 4) + ' nm to ' + maxNm + ' nm</div>' +
+    '<div class="item" style="color:var(--muted)">A broken ring means the field ' +
+      'never reaches that threshold on those bearings.</div>';
+}
+
+function labelOpts(vkey, rec) {
+  var s = SCORES.s, bits = [];
+  if (vkey === 'et' || vkey === 'both') {
+    var p = TCV.gtcmEtPrior(rec.eps, s.kappa, s.beta);
+    bits.push('prior at eps ' + rec.eps.toFixed(2) + ': rm ×' +
+              p.rmScale.toFixed(2) + ', x ' + signed(p.xShift, 3));
+  }
+  if (vkey === 'wn2' || vkey === 'both') {
+    var eEff = s.eScale ? s.e * rec.eps : s.e;
+    bits.push('e ' + signed(eEff, 3) + (s.eScale ? ' (scaled by eps)' : '') +
+              ', φ ' + (s.phiMode === 'motion' ? 'along the motion vector'
+                : s.phiMode === 'offset' ? 'motion ' + signed(s.phiVal, 0) + '°'
+                : s.phiVal + '° true') + (s.fitE ? ', e fitted where possible' : ''));
+  }
+  return bits.join(' · ') || '—';
+}
+
+function selectStorm(sid) {
+  SELECTED.sid = sid;
+  var sel = el('timeSel');
+  var opts = '';
+  var firstTrans = -1;
+  SCORES.recs.forEach(function (rec, i) {
+    if (rec.s !== sid) return;
+    if (firstTrans < 0 && rec.isTrans) firstTrans = i;
+    opts += '<option value="' + i + '">' + rec.iso + '  ·  ' + rec.nt +
+            '  ·  ' + fmt(rec.snap.vmax, 0) + ' kt  ·  ' +
+            (rec.hoursFromOnset >= 0 ? '+' : '') +
+            rec.hoursFromOnset.toFixed(0) + ' h</option>';
+  });
+  sel.innerHTML = opts;
+  if (firstTrans >= 0) sel.value = String(firstTrans);
+  SELECTED.idx = parseInt(sel.value, 10);
+  Array.prototype.forEach.call(el('stormBody').querySelectorAll('tr'), function (tr) {
+    tr.classList.toggle('sel', tr.getAttribute('data-sid') === sid);
+  });
+  renderPanels();
+  el('panels').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+// ---------------------------------------------------------------------------
+// Glossary and caveats
+// ---------------------------------------------------------------------------
+var DEFS = [
+  ['eps, the transition fraction',
+   'IBTrACS’ own NATURE flag turned into a number: 0 for a tropical ' +
+   'record, ' + TCV.etFractionFromNature('MX').toFixed(2) + ' for MX (the ' +
+   'reporting agencies disagree about the type), ' +
+   TCV.etFractionFromNature('ET').toFixed(2) + ' for ET and SS. Those are ' +
+   '1 − the CONF_* levels the JTWC parser already assigns from bulletin ' +
+   'wording, deliberately, so that anything which wins here can run off the ' +
+   'bulletin instead of off best track. MX is the weakest link in the chain: ' +
+   'it is a disagreement flag, not a mid-transition flag.'],
+
+  ['Why the prior moves the climatology and not the fit',
+   'Scaling the fitted parameters would override what JTWC reported, which is ' +
+   'the one thing this tool promises not to do. Shifting eqs. (5)/(6) moves ' +
+   'the first guess and the bounds, and weighted least squares still answers ' +
+   'to the radii. It also lands where the leverage is: a transitioning ' +
+   'bulletin loses R64, then R50, so freeParams falls from 3 to 2 to 1, and ' +
+   'at 1 the size exponent IS the climatological value. Watch the scoreboard ' +
+   'barely move on a fully reported bulletin and move a lot on a thin one — ' +
+   'that is the design, not a bug.'],
+
+  ['Radius error, and why wind error is not the interesting one',
+   'The GTCM minimises wind error at the reported radii (eq. 7), so a low ' +
+   'wind RMS is the fit succeeding at its own objective and says little. ' +
+   'Nothing constrains where the modelled 34/50/64 kt radius actually lands, ' +
+   'so that is the number that can be wrong, and a negative bias is the ' +
+   'specific failure transition is expected to cause.'],
+
+  ['Unreachable thresholds',
+   'The symmetric vortex peaks at Vmax − a, where a = 1.6 c^0.63 grows ' +
+   'with translation speed. A 65 kt system moving 26 kt peaks at 52.5 kt, so ' +
+   'it has no 64 kt radius at any azimuth no matter what the bulletin said. ' +
+   'Those reported radii are counted, not scored — scoring the taper’s ' +
+   'rm×3 fallback against them would invent agreement. Fast, weakening ' +
+   'and transitioning is the same regime these terms target, so the count is ' +
+   'worth watching on its own.'],
+
+  ['What this page cannot tell you',
+   'Best-track radii are themselves analyses, not observations, and they are ' +
+   'sparse and agency-dependent exactly at the transition stages that matter ' +
+   'here — 54 storms, and only 2 of them East Pacific. A variant that wins ' +
+   'on this sample has beaten a small, uneven, largely Atlantic sample. ' +
+   'Nothing here touches upper-level forcing either: a jet-relative or ' +
+   'Hart-phase-space formulation would need gridded thickness and wind that ' +
+   'no JTWC bulletin carries and this page never loads.'],
+
+  ['Why nothing here is in the AWIPS procedure',
+   'GFE/procedures/TCWind_JTWC.py is the reference implementation, and the ' +
+   'two ports are held to 0.5 kt by tests/tcwind_jtwc/compare_py_js.py. ' +
+   'Adding a term to the JavaScript only would break that, so these are ' +
+   'default-off: with no options passed, Vortex.html reproduces the shipped ' +
+   'field bit for bit, which ' +
+   'tests/tcwind_jtwc/verify_experiments.js checks by comparing bit patterns ' +
+   'rather than values within a tolerance. If a variant earns it, the port ' +
+   'and the flipped default land in one change.']
+];
+
+function renderDefs() {
+  el('defs').innerHTML = DEFS.map(function (d) {
+    return '<dt>' + d[0] + '</dt><dd>' + d[1] + '</dd>';
+  }).join('');
+}
+
+// ---------------------------------------------------------------------------
+// Render everything that depends on a completed run
+// ---------------------------------------------------------------------------
+function renderAll() {
+  // Each section is isolated.  While this page was being built, one bad field
+  // reference in the scoreboard caption threw, and because the four renders
+  // were a single statement sequence the chart and both tables below it simply
+  // never appeared - with no error anywhere the reader could see. A render
+  // that fails should say so in its own place and leave the rest standing.
+  var steps = [['scoreboard', renderScoreboard], ['chart', renderOnsetChart],
+               ['storm table', renderStormTable],
+               ['panels', function () {
+                 if (SELECTED.sid) selectStorm(SELECTED.sid); else renderPanels();
+               }]];
+  var broke = [];
+  steps.forEach(function (st) {
+    try { st[1](); } catch (e) {
+      broke.push(st[0] + ': ' + (e && e.message ? e.message : e));
+      if (window.console && console.error) console.error('render ' + st[0], e);
+    }
+  });
+  el('loadErr').innerHTML = broke.length
+    ? '<div class="err"><strong>Part of this page failed to render.</strong><br>' +
+      '<span class="mono">' + broke.join('<br>').replace(/</g, '&lt;') + '</span></div>'
+    : '';
+}
+
+// ---------------------------------------------------------------------------
+// Data load
+// ---------------------------------------------------------------------------
+function isoFromEpoch(sec) {
+  var d = new Date(sec * 1000);
+  function p(n) { return (n < 10 ? '0' : '') + n; }
+  return d.getUTCFullYear() + '-' + p(d.getUTCMonth() + 1) + '-' +
+         p(d.getUTCDate()) + ' ' + p(d.getUTCHours()) + 'Z';
+}
+
+function decode(payload) {
+  var stormBySid = {};
+  payload.storms.forEach(function (s) { stormBySid[s.sid] = s; });
+  var records = payload.records.map(function (r) {
+    var radii = {};
+    r.rd.forEach(function (row) {
+      radii[row[0]] = { NE: row[1], SE: row[2], SW: row[3], NW: row[4] };
+    });
+    var onset = stormBySid[r.s] ? stormBySid[r.s].onset : r.t;
+    var nt = String(r.nt || '').toUpperCase();
+    return {
+      s: r.s, nt: nt, rd: r.rd, iso: isoFromEpoch(r.t),
+      eps: TCV.etFractionFromNature(nt),
+      isTrans: payload.transitionNatures.indexOf(nt) >= 0,
+      hoursFromOnset: (r.t - onset) / 3600,
+      snap: { lat: r.la, lon: r.lo, vmax: r.v, motionDir: r.md,
+              motionSpd: r.ms, radii: radii, rmw: r.rw, roci: r.rc }
+    };
+  });
+  records.forEach(function (r) { r.illPosed = illPosed(r); });
+  return {
+    storms: payload.storms, stormBySid: stormBySid, records: records,
+    transRecords: records.filter(function (r) { return r.isTrans; }),
+    meta: payload
+  };
+}
+
+function onData(payload) {
+  DATA = decode(payload);
+  el('progFill').style.width = '0%';
+  el('progLbl').textContent = DATA.storms.length + ' storms, ' +
+    DATA.transRecords.length.toLocaleString() + ' transition-stage records (' +
+    DATA.records.length.toLocaleString() + ' with the ' +
+    payload.preWindowHours + ' h control window). ' +
+    'Scoring takes a few seconds — press Score.';
+  el('runBtn').disabled = false;
+}
+
+function onErr(err) {
+  el('runBtn').disabled = true;
+  el('progLbl').textContent = 'Could not load the best-track records.';
+  el('loadErr').innerHTML = '<div class="err"><strong>' +
+    'The archive did not load.</strong><br><span class="mono">' +
+    String(err && err.message ? err.message : err).replace(/</g, '&lt;') +
+    '</span></div>';
+}
+
+// ---------------------------------------------------------------------------
+// Wiring
+// ---------------------------------------------------------------------------
+document.addEventListener('DOMContentLoaded', function () {
+  syncControls();
+  renderDefs();
+
+  ['kappa', 'beta', 'ecc', 'phiVal'].forEach(function (id) {
+    el(id).addEventListener('input', syncControls);
+  });
+  el('phiMode').addEventListener('change', syncControls);
+  el('fitE').addEventListener('change', syncControls);
+
+  // Changing a setting invalidates a completed run rather than silently
+  // leaving stale numbers on screen under new control positions.
+  ['kappa', 'beta', 'ecc', 'phiVal', 'phiMode', 'eScale', 'fitE', 'dropIll']
+    .forEach(function (id) { el(id).addEventListener('change', markStale); });
+  Array.prototype.forEach.call(
+    document.querySelectorAll('input[name=rset]'),
+    function (r) { r.addEventListener('change', markStale); });
+
+  el('runBtn').addEventListener('click', runScoring);
+  el('timeSel').addEventListener('change', function () {
+    SELECTED.idx = parseInt(el('timeSel').value, 10);
+    renderPanels();
+  });
+  el('variantSel').addEventListener('change', renderPanels);
+
+  if (typeof google !== 'undefined' && google.script && google.script.run) {
+    google.script.run.withSuccessHandler(onData).withFailureHandler(onErr)
+      .getEtRecords();
+  } else {
+    onErr(new Error('google.script.run is unavailable - this page only runs ' +
+                    'inside the Apps Script web app.'));
+  }
+});
+
+function markStale() {
+  if (!SCORES) return;
+  el('progLbl').textContent = 'Settings changed — the numbers below are ' +
+    'from the previous run. Press Score.';
+  el('progFill').style.width = '0%';
+}
+</script>
+
+</body>
+</html>

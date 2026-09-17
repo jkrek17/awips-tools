@@ -51,6 +51,23 @@ var GTCM_ASYM_STEPS        = 9;
 // which is exactly the integers 1..900 nm.
 var GTCM_R34_PROBE_MAX_NM  = 900;
 
+// --- EXPERIMENTAL, default-off.  Not in the Users Guide, not in the Python --
+//
+// Two candidate extratropical-transition terms, reachable ONLY by passing an
+// `opts` object to fitGTCM()/vortexFieldGTCM().  With `opts` omitted every
+// code path below is bypassed and the field is bit-for-bit what it was
+// before these were added - which is what keeps compare_py_js.py green while
+// GFE/procedures/TCWind_JTWC.py has no counterpart for them.
+//
+// Deliberate asymmetry of state: the Python is the reference implementation,
+// so anything DEFAULT-ON must exist there first.  These are default-off
+// precisely so they can be measured on ?page=lab before that cost is paid.
+// If one of them wins, it gets ported and the default flips - in the same
+// change, or parity breaks.
+var GTCM_WN2_E_MAX         = 0.45;   // ellipticity ceiling; 0.5 folds the axis
+var GTCM_ET_KAPPA_MAX      = 4.0;    // rm growth ceiling for the ET prior
+var GTCM_ET_BETA_MAX       = 0.50;   // x reduction ceiling for the ET prior
+
 // --- shared with the retired per-quadrant construction --------------------
 var MOTION_ASYMMETRY_FRACTION = 0.5;
 var INFLOW_ANGLE_DEG          = 22.0;
@@ -286,27 +303,118 @@ function gtcmAsymmetry(motionSpd) {
   return GTCM_ASYM_A * Math.pow(Number(motionSpd), GTCM_ASYM_B);
 }
 
+/** Wavenumber-2 radius scale for the elongation experiment.
+ *
+ *      s(az) = 1 + e cos(2 (az - phi))
+ *
+ *  A pure multiplier on radius, so - per the note on gtcmProfile() - it is
+ *  exactly equivalent to letting rm and ri vary with azimuth.  phi is the
+ *  bearing of the LONG axis: s peaks at az = phi and at phi + 180, which is
+ *  what makes it wavenumber 2 rather than the wavenumber 1 that eqs. (8)/(9)
+ *  already supply.
+ *
+ *  Why this term at all: the most recognisable thing about a transitioning
+ *  cyclone is that its wind field elongates along the baroclinic zone.
+ *  eq. (3) is radially symmetric and eqs. (8)/(9) add a single wavenumber-1
+ *  displacement, so the shipped model cannot make an elongated field at any
+ *  parameter setting.  This is the smallest term that can.
+ *
+ *  e is SIGNED.  Negative e is the same shape with the long axis rotated 90
+ *  degrees, and it is admitted deliberately: phi defaults to the motion
+ *  vector, so bounding e at zero would let a fit elongate only ALONG the
+ *  track and never across it, and "does an ET field stretch along its motion
+ *  or across it" is one of the questions worth asking rather than assuming.
+ *
+ *  |e| is clamped: at |e| = 1 the short axis collapses to zero radius and
+ *  beyond that the scale goes negative and the axis folds through the
+ *  centre. */
+function gtcmWn2Scale(azDeg, e, phiDeg) {
+  if (!e) return 1.0;
+  var ee = clamp(Number(e), -GTCM_WN2_E_MAX, GTCM_WN2_E_MAX);
+  return 1.0 + ee * Math.cos(2.0 * (Number(azDeg) - Number(phiDeg)) * DEG2RAD);
+}
+
+/** Transition fraction eps in [0, 1] from IBTrACS' NATURE flag.
+ *
+ *  eps = 1 - conf, so it lines up with the confidence the JTWC parser already
+ *  assigns from the bulletin text: CONF_TROPICAL -> 0, CONF_BECOMING -> 0.40,
+ *  CONF_SUBTROPICAL -> 0.75.  That is the whole point of expressing it this
+ *  way - the lab scores against best track using NATURE, but anything that
+ *  wins has to run off the bulletin's own wording, and this keeps the two
+ *  scales identical.
+ *
+ *  The mapping is a PROXY and should be read as one:
+ *    TS, DS  tropical / disturbance   -> tropical
+ *    MX      "mixture", i.e. the reporting agencies disagree about the type,
+ *            which is not the same thing as "becoming extratropical" but is
+ *            the closest flag IBTrACS has to mid-transition
+ *    SS      subtropical              -> same level the parser gives it
+ *    ET      extratropical            -> same level the parser gives it
+ *  Anything unrecognised is treated as tropical, so an unknown flag cannot
+ *  silently apply a transition adjustment. */
+function etFractionFromNature(nature) {
+  switch (String(nature || '').toUpperCase()) {
+    case 'ET': return 1.0 - CONF_SUBTROPICAL;
+    case 'SS': return 1.0 - CONF_SUBTROPICAL;
+    case 'MX': return 1.0 - CONF_BECOMING;
+    default:   return 0.0;
+  }
+}
+
+/** The extratropical prior: what eps does to eqs. (5) and (6).
+ *
+ *      rm -> rm (1 + (kappa - 1) eps)          eq. (5) scaled
+ *      x  -> x  - beta eps                     eq. (6) shifted
+ *
+ *  Returned as multipliers on the CLIMATOLOGY rather than on the fitted
+ *  parameters, and that distinction is the entire design.  The reported radii
+ *  are data; transition is a prior.  Scaling the fit output would override
+ *  what the bulletin said, which is the one thing this tool promises not to
+ *  do.  Shifting the climatology moves the first guess and the bounds and
+ *  lets weighted least squares still answer to the radii.
+ *
+ *  It also lands where the leverage actually is.  As a system transitions its
+ *  R64 goes to zero, then its R50, so gtcmTargets() returns fewer points and
+ *  fitGTCM()'s freeParams ladder drops to 2 and then 1 - at which point x IS
+ *  the climatological value and rm is bounded to 0.5-2.0 times it.  During
+ *  transition the prior is not a starting point, it is most of the answer.
+ *
+ *  Sign note on eq. (6): its own latitude term is +0.00142/deg, i.e. x rises
+ *  poleward, i.e. a TIGHTER field at high latitude.  That is a regression on
+ *  tropical systems and it points the wrong way for transition, which is why
+ *  beta subtracts rather than relying on latitude to do the work. */
+function gtcmEtPrior(eps, kappa, beta) {
+  var e0 = clamp(Number(eps) || 0.0, 0.0, 1.0);
+  var k = clamp(kappa === undefined ? 1.0 : Number(kappa), 1.0, GTCM_ET_KAPPA_MAX);
+  var b = clamp(beta === undefined ? 0.0 : Number(beta), 0.0, GTCM_ET_BETA_MAX);
+  return { eps: e0, rmScale: 1.0 + (k - 1.0) * e0, xShift: -b * e0 };
+}
+
 /** Symmetric modified Rankine tangential wind.  Users Guide eq. (3).
  *
  *      V = (Vm-a)(r/rm)            r  < rm
  *          (Vm-a)(rm/r)**x1        rm <= r < ri
- *          A(Vm-a)(rm/r)**x2       ri <= r    A = (ri/rm)**x1 (rm/ri)**x2
+ *          A(Vm-a)(rm/r)**x2       ri <= r    A = (rm/ri)**(x1-x2)
  *
  *  The comparisons are strictly `<` on both sides, matching the nested
- *  np.where() in _gtcmProfile().  At r == rm the two branches agree, so the
- *  choice there is cosmetic; at r == ri they do NOT (see below), so it is
- *  load-bearing and the parity suite probes exactly on both radii.
+ *  np.where() in _gtcmProfile().  At both rm and ri the bracketing branches
+ *  agree, so the choice is cosmetic - but the parity suite probes exactly on
+ *  both radii anyway, because that is where a sign slip in A would show.
  *
- *  KNOWN DEFECT, REPRODUCED DELIBERATELY.  A is supposed to make V
- *  continuous across ri, and it does not.  Continuity requires
- *  A = (rm/ri)**(x1-x2); TCWind_JTWC.py has A = (ri/rm)**x1 * (rm/ri)**x2,
- *  which is (rm/ri)**(x2-x1) - the reciprocal.  The profile therefore steps
- *  at ri whenever x1 != x2, by up to ~12 kt on the fits in the parity
- *  suite.  This port copies the reference expression verbatim, bug and all,
- *  because the Python is the reference implementation and the two must
- *  agree.  Do NOT "fix" it here: fix it in TCWind_JTWC.py and this file in
- *  the same change, or parity breaks and the GFE grid and the web preview
- *  stop showing the same field. */
+ *  A exists solely to make V continuous across ri.  The Users Guide PRINTS
+ *  A = (ri/rm)**x1 (rm/ri)**x2, which is (rm/ri)**(x2-x1) - the reciprocal of
+ *  what continuity requires, and only correct in the degenerate x1 == x2
+ *  case.  Transcribed literally it left a mean +4.4 kt step at ri (max +44)
+ *  and made the GTCM field measurably ROUGHER than the per-quadrant
+ *  construction it replaced.  Both ports now carry the corrected form; see
+ *  the matching comment in _gtcmProfile() and the radial-value-jump column in
+ *  tests/tcwind_jtwc/verify_gtcm.py.
+ *
+ *  Note for the wavenumber-2 experiment: this function is scale-covariant in
+ *  radius.  gtcmProfile(r/s, vmax, a, rm, ri, x1, x2) is IDENTICALLY
+ *  gtcmProfile(r, vmax, a, rm*s, ri*s, x1, x2) - A is scale-free and every
+ *  branch depends on r only through r/rm or r/ri.  That is why elongating the
+ *  vortex needs no new profile code, only a per-azimuth radius scale. */
 function gtcmProfile(r, vmax, a, rm, ri, x1, x2) {
   var vs = Math.max(Number(vmax) - Number(a), 0.0);
   rm = Math.max(Number(rm), 1e-3);
@@ -449,7 +557,7 @@ function nelderMead(fn, guess, step, maxIter) {
  *  The fit deliberately does NOT pass through the reported radii.  The
  *  guide minimises wind error, not radius error, because forcing the radii
  *  produces unrealistic structure. */
-function fitGTCM(snap) {
+function fitGTCM(snap, opts) {
   var vmax = Number(snap.vmax);
   var lat = Number(snap.lat);
   var a = gtcmAsymmetry(snap.motionSpd);
@@ -459,14 +567,36 @@ function fitGTCM(snap) {
   var ax0 = a * Math.sin(mr);      // eq. (1)
   var ay0 = a * Math.cos(mr);
 
+  // --- EXPERIMENTAL opts.  Absent => every branch below is skipped. --------
+  // Guarded with `if (x)` rather than multiplied by an identity so the
+  // no-opts path executes the SAME arithmetic it did before these existed,
+  // not merely arithmetic that happens to agree.  compare_py_js.py is the
+  // check that this is true, and it has no knowledge of opts at all.
+  var o = opts || {};
+  var wn2 = o.wn2 || {};
+  var wn2e = Number(wn2.e) || 0.0;
+  // phi is the bearing of the long axis.  Given explicitly it is used as
+  // given; omitted, it falls back to the motion vector, because a
+  // transitioning cyclone accelerates broadly ALONG the baroclinic zone it
+  // is elongating into.  That proxy is free - it needs no field the bulletin
+  // does not already carry - which is exactly what makes it worth measuring
+  // against a hand-set axis.
+  var wn2phi = (wn2.phi === null || wn2.phi === undefined)
+    ? motionDir : Number(wn2.phi);
+  if (wn2.phiOffset) wn2phi = wn2phi + Number(wn2.phiOffset);
+  var fitE = !!o.fitE && wn2e > 0.0;
+
   var rmc = gtcmClimoRmax(vmax, lat);
   var xc = gtcmClimoX(vmax, lat);
+  if (o.rmScale) rmc = rmc * Number(o.rmScale);
+  if (o.xShift) xc = clamp(xc + Number(o.xShift), GTCM_X_MIN, GTCM_X_MAX);
 
   var targets = gtcmTargets(snap);
   if (!targets.length) {
     // No radii anywhere: climatology is all there is.  Guide step 2c.
     return { rm: rmc, ri: rmc * 3.0, x1: xc, x2: xc,
-             ax: ax0, ay: ay0, a: a, n: 0, freeParams: 0, rms: NaN };
+             ax: ax0, ay: ay0, a: a, n: 0, freeParams: 0, rms: NaN,
+             e: wn2e, phi: wn2phi, rmc: rmc, xc: xc };
   }
 
   var nT = targets.length;
@@ -478,9 +608,14 @@ function fitGTCM(snap) {
   var ri = npMedian(rr);
   var terms = new Array(nT);
 
-  function err(rm, x1, x2, ax, ay) {
+  // e == 0 takes the original expression untouched; only the elongated case
+  // pays for the per-target radius rescale.  Evaluating the profile at r/s is
+  // identically evaluating it at r with rm and ri stretched by s - see the
+  // scale-covariance note on gtcmProfile() - so there is no second profile.
+  function err(rm, x1, x2, ax, ay, e, phi) {
     for (var k = 0; k < nT; k++) {
-      var V = gtcmProfile(rr[k], vmax, a, rm, ri, x1, x2);
+      var rEff = e ? (rr[k] / gtcmWn2Scale(az[k], e, phi)) : rr[k];
+      var V = gtcmProfile(rEff, vmax, a, rm, ri, x1, x2);
       var uv = gtcmUV(V, az[k], ax, ay, lat);
       var d = Math.sqrt(uv[0] * uv[0] + uv[1] * uv[1]) - vt[k];
       terms[k] = wt[k] * (d * d);
@@ -508,13 +643,33 @@ function fitGTCM(snap) {
   else { rmLo = 0.5 * rmc; rmHi = 2.0 * rmc; }
 
   var rm, x1, x2, sizeRes;
-  if (freeParams === 3) {
+  var eFit = wn2e;
+  if (fitE && freeParams === 3) {
+    // Only with five or more targets, and only alongside the full three size
+    // parameters.  Ellipticity is a fourth unknown and the wedge failure that
+    // forced the freeParams ladder in the first place came from fitting three
+    // to two constraints - releasing a fourth on a thin bulletin would be the
+    // same mistake with more arithmetic.  phi is NOT released: it is pinned to
+    // the proxy, so this measures how much a free input buys, which is the
+    // question worth asking.
+    sizeRes = nelderMead(function (p) {
+      var a_ = p[0], b_ = p[1], c_ = p[2], d_ = p[3];
+      if (a_ < rmLo || a_ > rmHi ||
+          !(b_ >= GTCM_X_MIN && b_ <= GTCM_X_MAX) ||
+          !(c_ >= GTCM_X_MIN && c_ <= GTCM_X_MAX) ||
+          d_ < -GTCM_WN2_E_MAX || d_ > GTCM_WN2_E_MAX) return 1e12;
+      return err(a_, b_, c_, ax0, ay0, d_, wn2phi);
+    }, [rmc, xc, xc, wn2e],
+       [Math.max(rmc * 0.35, 4.0), 0.12, 0.12, 0.08], GTCM_MAX_ITER);
+    rm = sizeRes[0][0]; x1 = sizeRes[0][1]; x2 = sizeRes[0][2];
+    eFit = clamp(sizeRes[0][3], -GTCM_WN2_E_MAX, GTCM_WN2_E_MAX);
+  } else if (freeParams === 3) {
     sizeRes = nelderMead(function (p) {
       var a_ = p[0], b_ = p[1], c_ = p[2];
       if (a_ < rmLo || a_ > rmHi ||
           !(b_ >= GTCM_X_MIN && b_ <= GTCM_X_MAX) ||
           !(c_ >= GTCM_X_MIN && c_ <= GTCM_X_MAX)) return 1e12;
-      return err(a_, b_, c_, ax0, ay0);
+      return err(a_, b_, c_, ax0, ay0, wn2e, wn2phi);
     }, [rmc, xc, xc], [Math.max(rmc * 0.35, 4.0), 0.12, 0.12], GTCM_MAX_ITER);
     rm = sizeRes[0][0]; x1 = sizeRes[0][1]; x2 = sizeRes[0][2];
   } else if (freeParams === 2) {
@@ -522,34 +677,34 @@ function fitGTCM(snap) {
       var a_ = p[0], b_ = p[1];
       if (a_ < rmLo || a_ > rmHi ||
           !(b_ >= GTCM_X_MIN && b_ <= GTCM_X_MAX)) return 1e12;
-      return err(a_, b_, b_, ax0, ay0);
+      return err(a_, b_, b_, ax0, ay0, wn2e, wn2phi);
     }, [rmc, xc], [Math.max(rmc * 0.35, 4.0), 0.12], GTCM_MAX_ITER);
     rm = sizeRes[0][0]; x1 = x2 = sizeRes[0][1];
   } else {
     sizeRes = nelderMead(function (p) {
       var a_ = p[0];
       if (a_ < rmLo || a_ > rmHi) return 1e12;
-      return err(a_, xc, xc, ax0, ay0);
+      return err(a_, xc, xc, ax0, ay0, wn2e, wn2phi);
     }, [rmc], [Math.max(rmc * 0.35, 4.0)], GTCM_MAX_ITER);
     rm = sizeRes[0][0]; x1 = x2 = xc;
   }
 
   // Step 3: release the asymmetry, size parameters fixed.
-  var bestE = err(rm, x1, x2, ax0, ay0);
+  var bestE = err(rm, x1, x2, ax0, ay0, eFit, wn2phi);
   var bestAx = ax0, bestAy = ay0;
   if (a > 0.0) {
     var grid = npLinspace(-GTCM_ASYM_MAX_DEV_KT, GTCM_ASYM_MAX_DEV_KT,
                           GTCM_ASYM_STEPS);
     for (var gi = 0; gi < grid.length; gi++) {
       for (var gj = 0; gj < grid.length; gj++) {
-        var e = err(rm, x1, x2, ax0 + grid[gi], ay0 + grid[gj]);
+        var e = err(rm, x1, x2, ax0 + grid[gi], ay0 + grid[gj], eFit, wn2phi);
         if (e < bestE) { bestE = e; bestAx = ax0 + grid[gi]; bestAy = ay0 + grid[gj]; }
       }
     }
     var asymObj = function (p) {
       var dx = p[0] - ax0, dy = p[1] - ay0;
       if (dx * dx + dy * dy > GTCM_ASYM_MAX_DEV_KT * GTCM_ASYM_MAX_DEV_KT) return 1e12;
-      return err(rm, x1, x2, p[0], p[1]);
+      return err(rm, x1, x2, p[0], p[1], eFit, wn2phi);
     };
     var asymRes = nelderMead(asymObj, [bestAx, bestAy], [2.0, 2.0], 80);
     if (asymRes[1] < bestE) {
@@ -559,6 +714,8 @@ function fitGTCM(snap) {
 
   return { rm: rm, ri: ri, x1: x1, x2: x2, ax: bestAx, ay: bestAy,
            a: a, n: nT, freeParams: freeParams,
+           e: eFit, phi: wn2phi, eFitted: !!(fitE && freeParams === 3),
+           rmc: rmc, xc: xc,
            rms: Math.sqrt(bestE / npSum(wt)) };
 }
 
@@ -569,7 +726,21 @@ function fitGTCM(snap) {
  *      dirAt(lat, lon)  -> meteorological direction the wind is FROM, deg
  *      at(lat, lon)     -> {mag, dir, r, r34, az}
  *      r34At(azDeg)     -> modelled 34 kt radius on that bearing, nm
+ *      rThresholdAt(azDeg, thrKt, strict)
+ *                       -> modelled radius of ANY threshold on that bearing.
+ *                          r34At is this with thrKt = 34.  Scoring the fit
+ *                          against reported R50 and R64 needs the general
+ *                          form, and a second copy of the search is exactly
+ *                          the duplication this file exists to prevent.
+ *                          `strict` returns NaN where the field never
+ *                          reaches the threshold instead of the taper's
+ *                          rm*3 fallback - see the note on that fallback.
+ *      wn2ScaleAt(azDeg)-> the elongation radius scale on that bearing, 1.0
+ *                          unless the wavenumber-2 experiment is enabled
  *      fit              -> the fitGTCM() result
+ *
+ *  `opts` is forwarded verbatim to fitGTCM(); omitted, the field is exactly
+ *  what it was before the experimental terms existed.
  *
  *  Two deliberate departures from the guide, documented rather than
  *  silent, and both must be disclosed in the UI:
@@ -588,13 +759,21 @@ function fitGTCM(snap) {
  *  the strongest *sampled* cell - so it belongs to whatever draws the
  *  field, not to the point-wise model.  This is the raw field, which is the
  *  part that has to agree between the two ports. */
-function vortexFieldGTCM(snap) {
-  var fit = fitGTCM(snap);
+function vortexFieldGTCM(snap, opts) {
+  var fit = fitGTCM(snap, opts);
   var vmax = Number(snap.vmax);
   var lat = Number(snap.lat);
   var clat = Number(snap.lat), clon = Number(snap.lon);
 
   // probe = np.linspace(1.0, 900.0, 900)  ->  exactly 1, 2, ... 900 nm.
+  //
+  // With the elongation experiment on, these are radii in the UNSTRETCHED
+  // coordinate rho = r / s(az), not ground radii.  One shared profile still
+  // serves every azimuth - that is the point of the scale-covariance note on
+  // gtcmProfile() - and the threshold search below converts back by
+  // multiplying its answer by s(az).  Ground reach on the long axis is
+  // therefore 900 * (1 + e) nm, beyond the probe's nominal span, which is
+  // fine: the probe spans rho, which is the space the profile lives in.
   var nProbe = GTCM_R34_PROBE_MAX_NM;
   var prof = new Array(nProbe);
   for (var i = 0; i < nProbe; i++) {
@@ -602,13 +781,32 @@ function vortexFieldGTCM(snap) {
   }
   var sign = (lat >= 0) ? 1.0 : -1.0;
   var amag2 = fit.ax * fit.ax + fit.ay * fit.ay;
+  var wn2e = Number(fit.e) || 0.0;
+  var wn2phi = Number(fit.phi) || 0.0;
+
+  /** Radius scale on a bearing.  Exactly 1.0 with the experiment off, and
+   *  compared with === below so the unstretched path does no arithmetic at
+   *  all rather than arithmetic that merely rounds to the same answer. */
+  function scaleAt(azDeg) {
+    return wn2e ? gtcmWn2Scale(azDeg, wn2e, wn2phi) : 1.0;
+  }
+
+  /** rho -> ground radius, at AWIPS grid precision.  Python casts the r34
+   *  grid to float32, so fround here rather than leave a systematic sub-nm
+   *  offset between the two ports. */
+  function scaled(sc, rho) {
+    return Math.fround(sc === 1.0 ? rho : sc * rho);
+  }
 
   // Suffix maximum of the profile: sufMax[i] = max(prof[i..end]).  It is
-  // non-increasing by construction, which prof itself is NOT - eq. (3)
-  // steps at ri (see the KNOWN DEFECT note on gtcmProfile), so a binary
-  // search straight on prof would be wrong.  The largest i with
-  // prof[i] >= T is the same as the largest i with sufMax[i] >= T, and
-  // that one is binary-searchable.
+  // non-increasing by construction, which prof itself is NOT: eq. (3) rises
+  // linearly from zero at the centre to its peak at rm before it decays, so
+  // prof is single-humped over the probe range and a binary search straight
+  // on it would be wrong.  (It used to be non-monotonic for a second reason
+  // as well - a step at ri from the mis-transcribed continuity factor - but
+  // that was a defect and is fixed; the inner rise is real and permanent.)
+  // The largest i with prof[i] >= T is the same as the largest i with
+  // sufMax[i] >= T, and that one is binary-searchable.
   var sufMax = new Array(nProbe);
   var run = -Infinity;
   for (i = nProbe - 1; i >= 0; i--) {
@@ -616,7 +814,7 @@ function vortexFieldGTCM(snap) {
     sufMax[i] = run;
   }
 
-  /** The OUTERMOST probe radius still at 34 kt, not the first crossing:
+  /** The OUTERMOST probe radius still at `thrKt`, not the first crossing:
    *  the profile is also below 34 kt inside the eye, and taking that would
    *  collapse the footprint onto the centre and taper the whole field away.
    *
@@ -627,20 +825,24 @@ function vortexFieldGTCM(snap) {
    *
    *      |wind|^2 = |a|^2 + V^2 + 2 s k V,   k = ay sin(az) - ax cos(az)
    *
-   *  is a quadratic in V, so |wind| >= 34 is exactly V >= V*, with
-   *  V* = -s k + sqrt(k^2 + 1156 - |a|^2).  Binary-searching sufMax for V*
+   *  is a quadratic in V, so |wind| >= thr is exactly V >= V*, with
+   *  V* = -s k + sqrt(k^2 + thr^2 - |a|^2).  Binary-searching sufMax for V*
    *  lands on the answer or within a bit or two of it; the surrounding
    *  handful of indices are then checked with the literal sqrt(u^2+v^2)
    *  expression, so a last-bit disagreement between the two formulations
    *  cannot move the result.  A full downward scan remains as a fallback
    *  that should never run. */
-  function r34At(azDeg) {
+  function rThresholdAt(azDeg, thrKt, strict) {
+    var thr = Number(thrKt);
+    var sc = scaleAt(azDeg);
     var azr = azDeg * DEG2RAD;
     var k = fit.ay * Math.sin(azr) - fit.ax * Math.cos(azr);
-    var disc = k * k + 1156.0 - amag2;
+    // thr * thr, not a literal: at thr = 34 this is exactly 1156.0, so the
+    // generalisation cannot move the 34 kt answer by a single bit.
+    var disc = k * k + thr * thr - amag2;
     var guess;
     if (disc <= 0) {
-      // No real root: |wind| exceeds 34 kt at every radius, asymmetry alone.
+      // No real root: |wind| exceeds thr at every radius, asymmetry alone.
       guess = nProbe - 1;
     } else {
       var vStar = -sign * k + Math.sqrt(disc);
@@ -662,33 +864,48 @@ function vortexFieldGTCM(snap) {
     var from = Math.min(guess + 3, nProbe - 1);
     var to = Math.max(guess - 3, 0);
     for (var j = from; j >= to; j--) {
-      if (aboveThreshold(j, azDeg)) { found = j; break; }
+      if (aboveThreshold(j, azDeg, thr)) { found = j; break; }
     }
     if (found < 0 && guess >= 0) {
       for (var j2 = nProbe - 1; j2 >= 0; j2--) {
-        if (aboveThreshold(j2, azDeg)) { found = j2; break; }
+        if (aboveThreshold(j2, azDeg, thr)) { found = j2; break; }
       }
     }
 
     // Interpolate the crossing instead of snapping to the whole-nm probe.
-    // probe[found] is the last sample still AT or ABOVE 34 kt, so the field
-    // there is >= 34 while the taper restarts at exactly 34 - the difference
-    // shows up as a step at the footprint boundary (3.36 kt on average before
-    // this, the largest single source of roughness in the GTCM field).
-    // Solving for the radius where the field equals 34 makes it continuous.
-    // Mirrors the same interpolation in _buildVortexGTCM().
-    if (found < 0) return Math.fround(fit.rm * 3.0);
+    // probe[found] is the last sample still AT or ABOVE thr, so the field
+    // there is >= thr while the taper restarts at exactly thr - the
+    // difference shows up as a step at the footprint boundary (3.36 kt on
+    // average before this, the largest single source of roughness in the
+    // GTCM field).  Solving for the radius where the field equals thr makes
+    // it continuous.  Mirrors the same interpolation in _buildVortexGTCM().
+    // No crossing anywhere on this bearing.  The field's peak is Vm - a
+    // plus the asymmetry projection, so for a fast-moving weakening system
+    // this is routine rather than exotic: at Vmax 65 kt with 26 kt of motion
+    // the symmetric peak is 52.5 kt and no 64 kt radius exists at any
+    // azimuth, whatever the bulletin reported.
+    //
+    // r34At() must still return SOMETHING - the taper has to start
+    // somewhere, and rm*3 is what both ports use - but a caller measuring
+    // residuals against reported radii needs to know the difference between
+    // "the radius is 175 nm" and "there is no such radius", because scoring
+    // the fallback as a radius manufactures agreement or disagreement out of
+    // nothing.  `strict` is how it asks.
+    if (found < 0) return strict ? NaN : scaled(sc, fit.rm * 3.0);
     var rHi = found + 1;
-    if (found >= nProbe - 1) return Math.fround(rHi);
+    if (found >= nProbe - 1) return scaled(sc, rHi);
     var vHi = magAtProbe(found, azDeg);
     var vLo = magAtProbe(found + 1, azDeg);
     var span = vHi - vLo;
-    var frac = span > 1e-9 ? (vHi - 34.0) / span : 0.0;
+    var frac = span > 1e-9 ? (vHi - thr) / span : 0.0;
     if (frac < 0) frac = 0; else if (frac > 1) frac = 1;
-    // Python casts the r34 grid to float32 (real AWIPS grid precision), so
-    // fround here too rather than leave a systematic sub-nm offset between
-    // the two ports.
-    return Math.fround(rHi + frac);
+    return scaled(sc, rHi + frac);
+  }
+
+  /** The 34 kt radius: the case the rest of the tool is built around, and
+   *  the one compare_py_js.py checks against _buildVortexGTCM(). */
+  function r34At(azDeg) {
+    return rThresholdAt(azDeg, 34.0);
   }
 
   /** Total field magnitude at a probe index, on one bearing. */
@@ -698,19 +915,28 @@ function vortexFieldGTCM(snap) {
   }
 
   /** The literal test Python applies, bit for bit. */
-  function aboveThreshold(idx, azDeg) {
-    return magAtProbe(idx, azDeg) >= 34.0;
+  function aboveThreshold(idx, azDeg, thrKt) {
+    return magAtProbe(idx, azDeg) >= thrKt;
   }
 
   function at(plat, plon) {
     var db = distBearing(plat, plon, clat, clon);
     var r = db[0], az = db[1];
 
-    var V = gtcmProfile(r, vmax, fit.a, fit.rm, fit.ri, fit.x1, fit.x2);
+    // Evaluate the symmetric profile in the unstretched coordinate.  With
+    // the experiment off sc is exactly 1.0 and rho is r itself.
+    var sc = scaleAt(az);
+    var rho = (sc === 1.0) ? r : (r / sc);
+
+    var V = gtcmProfile(rho, vmax, fit.a, fit.rm, fit.ri, fit.x1, fit.x2);
     var uv = gtcmUV(V, az, fit.ax, fit.ay, lat);
     var u = uv[0], v = uv[1];
     var mag = Math.sqrt(u * u + v * v);
 
+    // A GROUND radius: rThresholdAt() has already multiplied by sc.  The
+    // taper length therefore stretches with the long axis too, which is the
+    // behaviour wanted - an elongated footprint should not terminate on a
+    // circular decay scale.
     var r34 = r34At(az);
     var decayL = Math.max(r34 * OUTER_DECAY_FACTOR, MIN_OUTER_DECAY_NM);
     // `r > r34`, matching Python.  r34 is now the interpolated radius where
@@ -722,7 +948,8 @@ function vortexFieldGTCM(snap) {
       // the same wherever the field actually reaches 34 kt, since that is how
       // r34 is solved; where it never does, r34 falls back to 3*rm and a
       // constant 34 made the field step UP there.  Mirrors _buildVortexGTCM().
-      var Va = gtcmProfile(r34, vmax, fit.a, fit.rm, fit.ri, fit.x1, fit.x2);
+      var Va = gtcmProfile((sc === 1.0) ? r34 : (r34 / sc),
+                           vmax, fit.a, fit.rm, fit.ri, fit.x1, fit.x2);
       var uva = gtcmUV(Va, az, fit.ax, fit.ay, lat);
       var anchorV = Math.sqrt(uva[0] * uva[0] + uva[1] * uva[1]);
       mag = anchorV * Math.exp(-(r - r34) / decayL);
@@ -747,6 +974,8 @@ function vortexFieldGTCM(snap) {
   return {
     fit: fit,
     r34At: r34At,
+    rThresholdAt: rThresholdAt,
+    wn2ScaleAt: scaleAt,
     at: at,
     magAt: function (plat, plon) { return at(plat, plon).mag; },
     dirAt: function (plat, plon) { return at(plat, plon).dir; }
@@ -1101,6 +1330,16 @@ function describeStorm(header) {
     vortexFieldGTCM: vortexFieldGTCM,
     resolveRmax: resolveRmax,
     parseJTWC: parseJTWC,
+    // --- EXPERIMENTAL, default-off.  See the tunables block. ---
+    gtcmWn2Scale: gtcmWn2Scale,
+    gtcmEtPrior: gtcmEtPrior,
+    etFractionFromNature: etFractionFromNature,
+    GTCM_QUAD_AVG_FACTOR: GTCM_QUAD_AVG_FACTOR,
+    GTCM_X_MIN: GTCM_X_MIN,
+    GTCM_X_MAX: GTCM_X_MAX,
+    GTCM_WN2_E_MAX: GTCM_WN2_E_MAX,
+    GTCM_ET_KAPPA_MAX: GTCM_ET_KAPPA_MAX,
+    GTCM_ET_BETA_MAX: GTCM_ET_BETA_MAX,
     // --- shared helpers ---
     gtcmAsymmetry: gtcmAsymmetry,
     gtcmTargets: gtcmTargets,

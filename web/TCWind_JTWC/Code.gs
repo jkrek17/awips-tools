@@ -142,7 +142,12 @@ var MAX_BULLETIN_AGE_HOURS = 12;
 var PAGES = {
   live:     { file: 'Index',    title: 'JTWC TC Wind preview (EXPERIMENTAL)' },
   archive:  { file: 'Archive',  title: 'JTWC TC Wind - Best-track archive (EXPERIMENTAL)' },
-  findings: { file: 'Findings', title: 'JTWC TC Wind - Findings (EXPERIMENTAL)' }
+  findings: { file: 'Findings', title: 'JTWC TC Wind - Findings (EXPERIMENTAL)' },
+  // The lab is a research page, not a forecaster page.  It is deliberately
+  // NOT linked from live/archive/findings: the terms it exercises are
+  // default-off in Vortex.html and have no counterpart in the Python at all,
+  // so anything seen here is a candidate, not the tool's behaviour.
+  lab:      { file: 'Lab',      title: 'JTWC TC Wind - ET test lab (RESEARCH)' }
 };
 var DEFAULT_PAGE = 'live';
 
@@ -208,7 +213,7 @@ function doGet(e) {
     page = DEFAULT_PAGE;
   } else if (!Object.prototype.hasOwnProperty.call(PAGES, page)) {
     note = 'Unknown page "' + safeLabel_(raw) + '" - showing the live tool. ' +
-           'Valid values are page=live, page=archive, page=findings.';
+           'Valid values are page=live, page=archive, page=findings, page=lab.';
     page = DEFAULT_PAGE;
   }
 
@@ -501,6 +506,167 @@ function getArchiveStorm(sid) {
   // otherwise "resolve" to something that is not a storm.
   if (!Object.prototype.hasOwnProperty.call(ARCHIVE_STORMS, sid)) return null;
   return ARCHIVE_STORMS[sid];
+}
+
+
+// ===========================================================================
+// EXTRATROPICAL-TRANSITION TEST LAB  (?page=lab)
+// ===========================================================================
+
+/** How much pre-transition track the lab gets, in hours before the first
+ *  transition-stage record. Five days is enough to see whether the fit was
+ *  already tracking the expansion before the flag flipped - which is the
+ *  question that decides whether either experimental term is needed at all -
+ *  without shipping whole 88-record tracks the lab never scores. */
+var LAB_PRE_WINDOW_HOURS = 120;
+
+/** IBTrACS NATURE values the lab treats as transition stages. Mirrors
+ *  etFractionFromNature() in Vortex.html, which turns them into eps. */
+var LAB_TRANSITION_NATURES = { ET: 1, SS: 1, MX: 1 };
+
+
+/**
+ * Best-track records for every archived storm that reaches a transition
+ * stage while still reporting wind radii. 54 storms as of this writing
+ * (NA 29, WP 23, EP 2), 296 transition-stage records, ~1240 records total
+ * once the pre-transition window is included.
+ *
+ * Only records that report at least one nonzero radius are returned: a
+ * record with no radii gives the fit nothing to answer to and nothing to
+ * score against, so it would be dead weight in a payload that is already
+ * the largest single thing this page transfers.
+ *
+ * Records are returned in a SHORT-KEY form, not the archive's own shape.
+ * That is not premature optimisation - the archive shape for this selection
+ * is 639 KB against 250 KB here, on a single google.script.run round trip -
+ * but it does mean the page and this function have to agree on the keys, so
+ * they are spelled out in the returned `schema` rather than left implicit:
+ *
+ *    s   sid                     nt  NATURE flag
+ *    t   epoch, seconds UTC      rw  RMW, nm, or null
+ *    la  latitude                rc  ROCI, nm, or null
+ *    lo  longitude               rd  radii, [[thr, ne, se, sw, nw], ...],
+ *    v   Vmax, kt                    thresholds present only
+ *    md  motion bearing, deg
+ *    ms  motion speed, kt
+ *
+ * The record order is by storm then by time, so the page can walk a storm's
+ * sequence without sorting.
+ */
+function getEtRecords() {
+  if (typeof ARCHIVE_STORMS === 'undefined' || !ARCHIVE_STORMS) {
+    throw missingDataError_('The best-track archive', 'ARCHIVE_STORMS');
+  }
+  if (typeof ARCHIVE_INDEX === 'undefined' || !ARCHIVE_INDEX) {
+    throw missingDataError_('The best-track archive index', 'ARCHIVE_INDEX');
+  }
+
+  var metaBySid = {};
+  for (var mi = 0; mi < ARCHIVE_INDEX.length; mi++) {
+    metaBySid[ARCHIVE_INDEX[mi].sid] = ARCHIVE_INDEX[mi];
+  }
+
+  var sids = Object.keys(ARCHIVE_STORMS).sort();
+  var storms = [], records = [];
+  var totalTrans = 0;
+
+  for (var i = 0; i < sids.length; i++) {
+    var sid = sids[i];
+    var recs = ARCHIVE_STORMS[sid];
+    if (!recs || !recs.length) continue;
+
+    // First transition-stage record that also reports radii. A storm whose
+    // only ET records are radius-free cannot be scored, so it is not offered.
+    var onset = null, nTrans = 0;
+    for (var j = 0; j < recs.length; j++) {
+      if (!labIsTransition_(recs[j]) || !labHasRadii_(recs[j])) continue;
+      nTrans++;
+      if (onset === null) onset = recs[j].epoch;
+    }
+    if (onset === null) continue;
+    totalTrans += nTrans;
+
+    var cutoff = onset - LAB_PRE_WINDOW_HOURS * 3600;
+    var kept = [];
+    for (var k = 0; k < recs.length; k++) {
+      var r = recs[k];
+      if (!labHasRadii_(r) || r.epoch < cutoff) continue;
+      kept.push(labCompact_(r, sid));
+      records.push(kept[kept.length - 1]);
+    }
+
+    var m = metaBySid[sid] || {};
+    storms.push({
+      sid: sid,
+      basin: m.basin || '',
+      agency: m.agency || '',
+      name: m.name || '',
+      season: m.season || null,
+      n: kept.length,
+      nTrans: nTrans,
+      onset: onset
+    });
+  }
+
+  return {
+    storms: storms,
+    records: records,
+    schema: ['s', 't', 'la', 'lo', 'v', 'md', 'ms', 'nt', 'rw', 'rc', 'rd'],
+    preWindowHours: LAB_PRE_WINDOW_HOURS,
+    transitionNatures: Object.keys(LAB_TRANSITION_NATURES),
+    nStorms: storms.length,
+    nRecords: records.length,
+    nTransition: totalTrans
+  };
+}
+
+
+/** Does this record report at least one nonzero radius anywhere? A quadrant
+ *  of 000 NM means "the profile never reaches that speed there", so it is
+ *  not a constraint and not evidence the record is usable. */
+function labHasRadii_(rec) {
+  var radii = rec && rec.radii;
+  if (!radii) return false;
+  var thrs = Object.keys(radii);
+  for (var i = 0; i < thrs.length; i++) {
+    var quad = radii[thrs[i]];
+    if (!quad) continue;
+    var qs = Object.keys(quad);
+    for (var j = 0; j < qs.length; j++) {
+      if (quad[qs[j]] > 0) return true;
+    }
+  }
+  return false;
+}
+
+
+/** Is this record at a transition stage, by IBTrACS' own NATURE flag? */
+function labIsTransition_(rec) {
+  var nt = rec && rec.nature ? String(rec.nature).toUpperCase() : '';
+  return Object.prototype.hasOwnProperty.call(LAB_TRANSITION_NATURES, nt);
+}
+
+
+/** Archive record -> the short-key form documented on getEtRecords(). */
+function labCompact_(rec, sid) {
+  var radii = rec.radii || {};
+  var thrs = [34, 50, 64];
+  var rd = [];
+  for (var i = 0; i < thrs.length; i++) {
+    // The generated payload keys radii by number, but JSON round trips turn
+    // those into strings; accept either rather than depend on which.
+    var quad = radii[thrs[i]] || radii[String(thrs[i])] || null;
+    if (!quad) continue;
+    var ne = quad.NE || 0, se = quad.SE || 0, sw = quad.SW || 0, nw = quad.NW || 0;
+    if (ne > 0 || se > 0 || sw > 0 || nw > 0) {
+      rd.push([thrs[i], ne, se, sw, nw]);
+    }
+  }
+  return {
+    s: sid, t: rec.epoch, la: rec.lat, lo: rec.lon, v: rec.vmax,
+    md: rec.motionDir, ms: rec.motionSpd,
+    nt: rec.nature || '', rw: rec.rmw, rc: rec.roci, rd: rd
+  };
 }
 
 
