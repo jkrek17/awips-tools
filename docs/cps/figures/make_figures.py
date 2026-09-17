@@ -7,9 +7,9 @@ of the real CAVE display that is cropped/resized only (fig6).
 
 Run from the repository root:
 
-    python3 docs/figures/make_figures.py
+    python3 docs/cps/figures/make_figures.py
 
-Outputs land next to this script, in docs/figures/:
+Outputs land next to this script, in docs/cps/figures/:
     fig1_phase_space.png   fig2_method.png       fig3_gridded.png
     fig4_tilt.png           fig5_performance.png   fig6_cave_typhoon.jpg
 
