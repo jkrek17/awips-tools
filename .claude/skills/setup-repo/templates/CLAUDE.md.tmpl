@@ -1,0 +1,46 @@
+# {{REPO_NAME}}
+
+{{ONE_LINE_DESCRIPTION}}. See `README.md` for what it is and why it is built this way.
+
+## Generated files - never hand-edit
+
+| Path | Regenerate with |
+|---|---|
+| `{{GENERATED_PATH}}` | `{{REGEN_COMMAND}}` |
+
+A PreToolUse hook (`.claude/hooks/guard-generated.sh`) refuses edits to these.
+If you need one to change, change its source and regenerate.
+
+## Single-source modules
+
+- `{{MODULE}}` is the only definition of `{{FUNCTIONS}}`. No other file may
+  define its own copy. {{WHY_ONE_SENTENCE}}
+
+## Before every push
+
+```bash
+{{CHECK_COMMAND_1}}
+{{CHECK_COMMAND_2}}
+```
+
+{{WHICH_CHECKS_ARE_HERMETIC_AND_WHICH_NEED_WHAT}}
+
+Not runnable in this environment: {{UNRUNNABLE_AND_WHY}}. Review those by
+reading; say so in the summary.
+
+## Secrets
+
+`{{SECRET_FILE}}` holds {{WHAT}}. Never read it into context, echo it, or
+commit it. Settings deny reads on it.
+
+## Dangerous commands
+
+- `{{COMMAND}}` must always carry `{{SAFE_FLAG}}`; without it {{CONSEQUENCE}}.
+
+## Commits
+
+{{COMMIT_STYLE}}. Work on a branch and merge; never commit to `{{DEFAULT_BRANCH}}` directly.
+
+## Conventions the agent keeps getting wrong
+
+- {{RULE_FROM_USER}}

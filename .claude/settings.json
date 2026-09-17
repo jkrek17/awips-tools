@@ -1,0 +1,47 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git branch*)",
+      "Bash(python3 tests/tcwind_jtwc/*)",
+      "Bash(python3 tools/build_hf_lows.py*)",
+      "Bash(python3 tools/build_coastlines.py*)",
+      "Bash(python3 tools/build_currents.py*)",
+      "Bash(python3 tools/publish.py --no-fetch*)",
+      "Bash(python3 -m http.server*)",
+      "Bash(html-validate *)",
+      "Bash(node --check *)"
+    ],
+    "deny": [
+      "Read(tools/publish.local.json)",
+      "Read(~/.clasprc.json)",
+      "Bash(cat tools/publish.local.json*)",
+      "Bash(cat ~/.clasprc.json*)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/guard-generated.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
