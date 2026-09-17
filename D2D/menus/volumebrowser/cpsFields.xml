@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <!--
   EXPERIMENTAL. Volume Browser fields-menu contribution for the CPS core
-  structure derived parameters (VTL, VTU, CPScat, CPSidx, cpsZ850). See
+  structure derived parameters: the vorticity-proxy family (VTL, VTU,
+  CPScat, CPSidx, cpsZ850 - CycloneCore.py) and the height-based, actual
+  Hart-method family (HVTL, HVTU, HCPScat, HCPSidx - HartCPS.py). See
   D2D/README.md.
 
   VERIFY against cave_static/base/menus/volumebrowser/ on your AWIPS
@@ -18,4 +20,10 @@
     <contribute xsi:type="menuItem" menuText="CPS Core Class" key="CPScat" indentText="false" id="cpsCPScat"/>
     <contribute xsi:type="menuItem" menuText="CPS Core Index" key="CPSidx" indentText="false" id="cpsCPSidx"/>
     <contribute xsi:type="menuItem" menuText="CPS debug 850 vort" key="cpsZ850" indentText="false" id="cpsZ850"/>
+
+    <contribute xsi:type="titleItem" titleText="------ Hart CPS (height based, experimental) ------" id="hartCpsTitle"/>
+    <contribute xsi:type="menuItem" menuText="Hart CPS Lower -VT (HVTL)" key="HVTL" indentText="false" id="hartCpsHVTL"/>
+    <contribute xsi:type="menuItem" menuText="Hart CPS Upper -VT (HVTU)" key="HVTU" indentText="false" id="hartCpsHVTU"/>
+    <contribute xsi:type="menuItem" menuText="Hart CPS Core Class" key="HCPScat" indentText="false" id="hartCpsHCPScat"/>
+    <contribute xsi:type="menuItem" menuText="Hart CPS Core Index" key="HCPSidx" indentText="false" id="hartCpsHCPSidx"/>
 </menuTemplate>

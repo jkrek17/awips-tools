@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  EXPERIMENTAL. Hart CPS lower thermal wind, actual method: at every grid
+  point, dZ = window max minus window min of geopotential height over a
+  square window of half-width 500 km (Hart's own analysis radius, but a
+  square instead of his circle - see HartCPS.py's module docstring), then
+  -V_T^L is the least-squares slope of dZ against ln(pressure) across
+  925/850/700 hPa (HartCPS.LOWER_BAND - the nearest universal
+  standard-level stand-in for Hart's 900-600 hPa band; see HartCPS.py for
+  why). Units are meters (of dZ) per unit of ln(p), i.e. plain meters.
+  Positive = warm core, negative = cold core - same sign convention as
+  CycloneCore.py's VTL and as cps.hart.thermal_wind. Unlike VTL.xml/VTU.xml
+  (CycloneCore.py), this field needs NO unit rescaling: its physical
+  magnitude (order 1e2 m) already samples readably at CAVE's two-decimal
+  rounding.
+
+  This is a second, independent family from CycloneCore.py's VTL/VTU/
+  CPScat/CPSidx - see D2D/README.md's "Hart CPS family" section for how
+  the two compare and why this one is the more physically faithful
+  successor.
+
+  VERIFY against an existing definition in
+  /awips2/edex/data/utility/common_static/base/derivedParameters/definitions/
+  (for example LI.xml or Thickness.xml) that on your AWIPS version:
+    - the geopotential height field's abbreviation is "GH" as used below
+      (some builds spell it "GeoH" or something else - check a base
+      height-based definition and change the abbreviation here if needed),
+    - fixed-level Field references use the "925MB"/"850MB"/"700MB"
+      spelling,
+    - the "dx"/"dy" pseudo-fields and <ConstantField> are accepted,
+    - "Surface" is the right levels= value to make this show under a
+      surface plane in the Volume Browser (alternatively use levels="MSL"),
+    - unit="" (empty) is accepted - confirmed to load on a real AWIPS
+      site for CycloneCore.py's own fields, which use the same convention.
+-->
+<DerivedParameter abbreviation="HVTL" name="Hart CPS -VT lower (925-700) (m)" unit="">
+    <Method name="HartCPS.executeBand3" levels="Surface">
+        <Field abbreviation="GH" level="925MB"/>
+        <Field abbreviation="GH" level="850MB"/>
+        <Field abbreviation="GH" level="700MB"/>
+        <Field abbreviation="dx"/>
+        <Field abbreviation="dy"/>
+        <!-- radiusKm: half-width (km) of the max-minus-min analysis
+             window - Hart's own 500 km analysis-circle radius -->
+        <ConstantField value="500.0"/>
+        <!-- p1: pressure (hPa) matching z1 (925MB) above -->
+        <ConstantField value="925"/>
+        <!-- p2: pressure (hPa) matching z2 (850MB) above -->
+        <ConstantField value="850"/>
+        <!-- p3: pressure (hPa) matching z3 (700MB) above -->
+        <ConstantField value="700"/>
+    </Method>
+</DerivedParameter>

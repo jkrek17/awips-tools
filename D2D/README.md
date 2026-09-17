@@ -49,6 +49,19 @@ levels change the expected magnitude range).
 
 ## How to read it
 
+**A second, more physically faithful family (HVTL, HVTU, HCPScat,
+HCPSidx) is now available -- see "Hart CPS family" below.** It computes
+Hart's actual max-minus-min-of-height/least-squares-slope quantity
+pointwise, using only geopotential height, instead of the vorticity
+proxy this section describes. Once it is installed at your site, prefer
+it over VTL/VTU/CPScat/CPSidx for cold-core detection: it does not carry
+the vorticity proxy's tilt bias, its sensitivity to whatever upper-level
+feature happens to be overhead, or its vorticity-based mask-selection
+bias (see "Hart CPS family" for all three). The vorticity-proxy family
+documented in the rest of this file remains available and unchanged --
+the two are meant to be compared side by side, not to replace one
+another outright, until a site has calibrated both against real cases.
+
 Read VTL/VTU only in the neighborhood of a **closed low in the MSLP
 field**. Away from a low center this is just the vertical shear of
 whatever vorticity happens to be sitting there -- a jet streak, an
@@ -385,3 +398,259 @@ causes:
    own relative vorticity at a hurricane. Run the "Orientation
    verification" procedure above to find the right `ORIENTATION_MODE`
    for your site.
+
+## Hart CPS family (HVTL, HVTU, HCPScat, HCPSidx)
+
+*** EXPERIMENTAL. NOT OPERATIONALLY VETTED. *** This is a second,
+independent derived-parameter family (`HartCPS.py`, `HVTL.xml`,
+`HVTU.xml`, `HCPScat.xml`, `HCPSidx.xml`) alongside everything above
+(`CycloneCore.py` and VTL/VTU/CPScat/CPSidx/cpsZ850). `CycloneCore.py`
+is completely untouched by this family -- the two exist so a site can
+compare them side by side, not so one replaces the other in the code.
+
+### What it is, and why it replaces the vorticity proxy
+
+Everything above this section is a *vorticity-based proxy* for Hart's
+(2003) thermal wind parameters: a vertical difference of relative
+vorticity, chosen because it is cheap to compute pointwise and because
+forecasters already read vorticity fields. It only *rhymes* with
+Hart's VTL/VTU -- same sign convention, same rough level bands -- it is
+not the same quantity.
+
+`HartCPS.py` instead computes **Hart's actual quantity**: at every grid
+point, `dZ(level) = max(Z) - min(Z)` of geopotential height over a
+window of half-width 500 km centered on that point (Hart's own analysis
+radius, evaluated at every point instead of only at one storm's moving
+center -- see `HartCPS.py`'s module docstring for why a square window is
+used instead of Hart's circle, and why the difference is small in
+practice), then `-V_T` is the least-squares slope of `dZ` against
+`ln(pressure)` over a band of levels. This uses **geopotential height
+only** -- no wind field, no vorticity, no smoothing choice.
+
+This is meant to replace the vorticity proxy for **cold-core
+detection** specifically, because the proxy has three known biases the
+height-based method does not share:
+
+- **Tilt bias.** A pointwise vertical vorticity *difference* at one
+  grid point compares the lower and upper vortex centers only if they
+  happen to sit at the same (x, y) -- on a sheared or baroclinic system
+  they usually do not, producing a spurious dipole (see
+  "Troubleshooting" above) that the vorticity proxy can only paper over
+  by widening its smoothing box toward Hart's own radius. The
+  height-based `dZ` is already an integral over a 500 km window by
+  construction, so it does not need that workaround.
+- **Broad-upper-feature bias.** Relative vorticity aloft responds to
+  whatever upper-level feature happens to be overhead -- a jet streak,
+  an unrelated shortwave -- not only to the storm's own upper warm
+  core. `dZ` responds to the height field's own local max-minus-min,
+  which is far less sensitive to a passing unrelated feature at the
+  edge of the window.
+- **Mask-selection bias.** CPScat/CPSidx mask on the smoothed 850 hPa
+  relative vorticity itself -- the same quantity VTL/VTU are built
+  from -- so the vortex test and the warm/cold-core signal are not
+  independent. HCPScat/HCPSidx mask on `closed_low_mask`, a genuinely
+  different measurement (925 hPa height's own local shape), so a point
+  being "inside a real low" is decided independently of what its
+  thermal wind sign turns out to be.
+
+The magnitudes here are meters (of `dZ`) per unit of `ln(pressure in
+hPa)` -- plain meters -- **not** the same unit as `CycloneCore.py`'s
+scaled relative-vorticity VTL/VTU, and the two families should never be
+plotted on the same axis. A mature hurricane typically samples HVTL/
+HVTU in the +100 to +300 m range; a cold-core low typically samples
+-100 to -300 m. These are **near but not equal to** the published Hart
+(2003)/FSU CPS values for the same real storms -- both because of the
+square-vs-circle window difference (typically well under the ~2%
+agreement measured against `cps.hart.thermal_wind` on a synthetic
+vortex in `tests/d2d_cps/test_hart_cps.py`) and because the standard
+levels used here are not exactly Hart's own bands (next section). Do
+not report HVTL/HVTU numbers as if they were the published FSU CPS
+diagnostic for a storm -- read the sign and the trend, the same caution
+as VTL/VTU above, just for a different reason (the proxy's biases
+described above do not apply here, but the window-shape and
+level-band approximations still mean the exact number will differ
+slightly from FSU's own website for the same case).
+
+### Standard-level bands
+
+Hart's own bands are 900-600 hPa (lower) and 600-300 hPa (upper), each
+sampled every 50 hPa. Most AWIPS D2D grids do not carry that 50 hPa
+resolution -- GFS's own native grid does, but many downstream/thinned
+grids only carry the standard-level set. HVTL/HVTU/HCPScat/HCPSidx use:
+
+```
+LOWER_BAND = 925, 850, 700 hPa   (HVTL)
+UPPER_BAND = 500, 400, 300 hPa   (HVTU)
+```
+
+both on the universal standard-level list. **The 700-500 hPa layer is
+deliberately left unassigned** -- neither band claims it. Forcing it
+into either band would average a layer that straddles Hart's actual
+600 hPa boundary into a band it does not belong to, biasing that
+band's slope toward whichever side got glued on; a small gap between
+the two bands is a smaller, more honest error than that.
+
+A future GFS-only, Hart-exact definition using the true 900-600/
+600-300 hPa bands at 50 hPa spacing is supported by `HartCPS.
+executeBand7` and needs only a new XML definition, no Python change
+-- see "Adding a GFS-only 13-level definition" below.
+
+### Closed-low mask
+
+HCPScat and HCPSidx are blanked (NaN) outside of `HartCPS.
+closed_low_mask`, computed from 925 hPa height alone. An earlier
+version of this mask used a plain "close to the local minimum, and the
+window max-minus-min is big enough" test, and turned out to pass
+**everywhere** on a uniform height gradient (e.g. a steady 40-60 m per
+1000 km slope across a front, no low at all): every point on a slope
+is, to a few meters, already the minimum of its own neighborhood in
+the one direction the slope descends, and the window max-minus-min
+over a 500 km box is large simply because the slope has covered a lot
+of height by the time it reaches the box's far edge. The current mask
+uses two tests a monotonic slope cannot satisfy together:
+
+1. **Candidate test**: the point is within `centerTolM` (default
+   **5 m** -- deliberately tight) of the local minimum height found
+   within a `minRadiusKm` search box (module default `MIN_RADIUS_KM`,
+   300 km, fixed, not a `<ConstantField>` -- "how big a box finds a
+   low's own local minimum", not something meant to be tuned per case).
+2. **Depth test**: the mean height of the **annulus** between
+   `minRadiusKm` and `radiusKm` (the same 500 km `<ConstantField>` used
+   for HVTL/HVTU) exceeds the point's own height by at least `depthM`
+   (default 40 m). The annulus mean is a difference of two NaN-aware
+   box sums (`HartCPS.window_sum_2d`, called once for the outer
+   `radiusKm` box and once for the inner `minRadiusKm` box, then
+   `(sum_outer - sum_inner) / (count_outer - count_inner)`). On a real
+   closed low the surrounding annulus sits on higher ground and this
+   comes back close to the low's true depth; on a uniform slope the
+   annulus is symmetric around the point and its mean height equals
+   the point's own height to first order, so the depth comes back ~0
+   and the test correctly rejects it.
+
+Points passing both tests are dilated by `blobKm` (default 200 km, via
+`window_extreme_2d(..., kind="max")` on the boolean detections cast to
+float) so each detected low paints a blob of about that radius on the
+map instead of a single pixel -- `blobKm` is a *display* radius, not a
+claim about the low's own physical size.
+
+All of `centerTolM`, `depthM`, `blobKm` are already in meters/km -- no
+`UNIT_SCALE` round trip like CycloneCore.py's `vortexMin`, since this
+field was never rescaled to begin with. `centerTolM` itself is not
+exposed as a public `<ConstantField>` on HCPScat.xml/HCPSidx.xml (see
+`HartCPS.executeClassStd`'s docstring) -- only `radiusKm`, `depthM`,
+and `blobKm` are.
+
+### Category table (HCPScat) and index (HCPSidx)
+
+HCPScat buckets HVTL/HVTU into the same 5 categories CycloneCore.py's
+CPScat uses, with `band = neutralM` (default 25 m, already in meters):
+
+| code | meaning            | condition                             |
+|-----:|--------------------|----------------------------------------|
+|    4 | deep warm core     | `HVTL > band` and `HVTU > band`        |
+|    3 | shallow warm core  | `HVTL > band` and `HVTU <= band`       |
+|    1 | cold core          | `\|HVTL\| <= band` and `HVTU < -band`  |
+|    2 | neutral            | `\|HVTL\| <= band` and `HVTU >= -band` |
+|    0 | mid-level vortex   | `HVTL < -band` and `HVTU > band`       |
+|    1 | cold core          | `HVTL < -band` and `HVTU <= band`      |
+
+HCPSidx is `2*tanh(HVTL/scaleM) + tanh(HVTU/scaleM)` (default `scaleM`
+= 100 m), range -3 to +3, same reading as CycloneCore.py's CPSidx.
+
+### No orientation mode, no hemisphere sign issue
+
+Unlike `CycloneCore.py`, this family has **no `ORIENTATION_MODE` to
+verify** and **no Southern Hemisphere sign caveat**. Both of
+`CycloneCore.py`'s known limitations come from using relative
+vorticity, which depends on the grid's axis layout (hence
+`ORIENTATION_MODE`) and flips sign with hemisphere (cyclonic rotation
+is negative vorticity south of the equator). `HartCPS.py` never
+computes a derivative or a circulation -- `max(Z) - min(Z)` and a
+least-squares slope are both orientation-independent and
+hemisphere-independent by construction. HVTL/HVTU/HCPScat/HCPSidx read
+the same way (positive = warm core) at every latitude, with no
+verification procedure needed before trusting the sign.
+
+### Performance
+
+Expect a few sliding-window passes per level (one `max` and one `min`
+each, via the doubling/sparse-table trick in `HartCPS.
+running_extreme_1d` -- see that function's docstring), so a few seconds
+per analysis time on a global 0.25 degree grid. Measured in this repo's
+environment, on a 721x1440 grid (`tests/d2d_cps/test_hart_cps.py`'s
+performance tests -- see their `-s` output for the exact numbers on
+your own machine):
+
+- `thermal_wind_grid`, 3 levels (one HVTL or HVTU band alone): well
+  under a second.
+- `executeClassStd`, all 6 standard levels (both bands plus
+  `closed_low_mask`'s candidate test, its two `window_sum_2d` ring box
+  sums, and its blob dilation): a little over a second -- the mask adds
+  a modest, not a dominant, amount of work on top of the two
+  `thermal_wind_grid` calls it also makes.
+
+Both are comfortably inside an 8 second budget. A regional subset
+(e.g. an Atlantic-basin CONUS-scale grid instead of a global one) is
+proportionally faster, since the cost scales with the number of grid
+points times `log(window width in cells)`, not with the window's
+physical size.
+
+### Adding a GFS-only 13-level definition
+
+To use Hart's exact 900-600/600-300 hPa bands (50 hPa spacing) instead
+of the 3-level standard-level approximation above, on a site that
+confirms its grid actually carries every 50 hPa level from 900 to 300:
+
+1. Write a new definition XML (e.g. `HVTLexact.xml`) shaped exactly
+   like `HVTL.xml`, but with `Method name="HartCPS.executeBand7"` and
+   seven `<Field abbreviation="GH" level="...MB"/>` entries (900, 850,
+   800, 750, 700, 650, 600 hPa) followed by `dx`, `dy`, the `radiusKm`
+   `<ConstantField>`, then seven pressure `<ConstantField>` values (900,
+   850, 800, 750, 700, 650, 600) matching the seven height fields by
+   position.
+2. Do the same for the upper band (600, 550, 500, 450, 400, 350, 300
+   hPa) in a second file (e.g. `HVTUexact.xml`).
+3. No change to `HartCPS.py` is needed -- `executeBand7` already takes
+   7 heights, `dx`/`dy`, `radiusKm`, and 7 pressures, in exactly that
+   shape.
+
+### Install
+
+EDEX, site-level `common_static` (in addition to the CycloneCore.py
+files under "Install" above -- this family does not replace them):
+
+```
+/awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/definitions/HVTL.xml
+/awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/definitions/HVTU.xml
+/awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/definitions/HCPScat.xml
+/awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/definitions/HCPSidx.xml
+/awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/functions/HartCPS.py
+```
+
+Restart CAVE (and EDEX, if new definitions do not show up in the
+Volume Browser on their own -- see the CycloneCore.py "Install" note
+above) after copying these in.
+
+The updated `cpsFields.xml` (with the new "Hart CPS (height based,
+experimental)" title and its four menu items) and the additions to
+`cpsStyleRules.xml` (HVTL/HVTU/HCPSidx/HCPScat imagery and HVTL/HVTU
+contour `<styleRule>` blocks) install the same way as the rest of
+those two files -- see "Install" above; they are not drop-in files
+either.
+
+### Tests
+
+```
+python3 -m pytest tests/d2d_cps -q
+```
+
+`tests/d2d_cps/test_hart_cps.py` covers the sliding-window doubling
+trick against a brute-force reference, the closed-form band-slope
+formula, `closed_low_mask`, the category/index entry points, and a
+direct numerical comparison against `cps.hart.thermal_wind` on a
+synthetic warm/cold-core vortex (within 2%, per the square-vs-circle
+window difference discussed above). Run
+`python3 D2D/derivedParameters/functions/HartCPS.py` directly for a
+quick standalone sanity check (a synthetic warm-core vortex, printing
+the lower/upper slope and the class at its center) with no pytest or
+AWIPS runtime involved.

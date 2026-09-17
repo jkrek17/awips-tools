@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  EXPERIMENTAL. Hart CPS upper thermal wind, actual method: same window
+  max-minus-min / least-squares-slope-against-ln(p) computation as
+  HVTL.xml, but over 500/400/300 hPa (HartCPS.UPPER_BAND - the nearest
+  universal standard-level stand-in for Hart's 600-300 hPa band). Units
+  are meters (of dZ) per unit of ln(p). Positive = warm core, negative =
+  cold core. See HVTL.xml's comment and HartCPS.py's module docstring for
+  the full method description, and D2D/README.md's "Hart CPS family"
+  section for how this compares to CycloneCore.py's vorticity-proxy VTU.
+
+  VERIFY: same checks as HVTL.xml (GH abbreviation, fixed-level Field
+  spelling, dx/dy pseudo-fields and ConstantField support, levels= value,
+  unit="" acceptance).
+-->
+<DerivedParameter abbreviation="HVTU" name="Hart CPS -VT upper (500-300) (m)" unit="">
+    <Method name="HartCPS.executeBand3" levels="Surface">
+        <Field abbreviation="GH" level="500MB"/>
+        <Field abbreviation="GH" level="400MB"/>
+        <Field abbreviation="GH" level="300MB"/>
+        <Field abbreviation="dx"/>
+        <Field abbreviation="dy"/>
+        <!-- radiusKm: half-width (km) of the max-minus-min analysis
+             window - Hart's own 500 km analysis-circle radius -->
+        <ConstantField value="500.0"/>
+        <!-- p1: pressure (hPa) matching z1 (500MB) above -->
+        <ConstantField value="500"/>
+        <!-- p2: pressure (hPa) matching z2 (400MB) above -->
+        <ConstantField value="400"/>
+        <!-- p3: pressure (hPa) matching z3 (300MB) above -->
+        <ConstantField value="300"/>
+    </Method>
+</DerivedParameter>

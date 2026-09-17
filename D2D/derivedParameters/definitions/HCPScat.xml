@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  EXPERIMENTAL. Hart CPS combined core class, actual method: computes
+  HVTL (925/850/700 hPa) and HVTU (500/400/300 hPa) at every grid point
+  (see HVTL.xml/HVTU.xml and HartCPS.py's module docstring), buckets them
+  into the same 5-category table CycloneCore.classify() uses (0 mid-level
+  vortex, 1 cold core, 2 neutral, 3 shallow warm core, 4 deep warm core)
+  with the neutral band already in meters (no unit rescaling needed,
+  unlike CycloneCore.py's CPScat), and blanks (NaN) every point outside a
+  closed low in 925 hPa height (HartCPS.closed_low_mask) - not a vorticity
+  vortex mask like CycloneCore.py's CPScat, a height-based one that
+  requires a point to be near its own neighborhood's minimum AND
+  surrounded by a ring of higher terrain at least depthM deep, not merely
+  "shallower than the far field" (which a uniform height gradient/front
+  can also satisfy - see HartCPS.closed_low_mask's docstring). See
+  D2D/README.md's "Hart CPS family" section for the full category table
+  and the masking constants below.
+
+  VERIFY: same checks as HVTL.xml (GH abbreviation, fixed-level Field
+  spelling, dx/dy pseudo-fields and ConstantField support, levels= value).
+  The field is dimensionless, so unit="" is declared explicitly - a
+  definition with no unit attribute at all was observed to raise a
+  DataCubeException on CycloneCore.py's own CPScat/CPSidx while their VTL/
+  VTU loaded fine; if your version rejects unit="" as well, unit="1" is
+  the next thing to try.
+-->
+<DerivedParameter abbreviation="HCPScat" name="Hart CPS Core Class (0 mid-vortex,1 cold,2 neutral,3 shallow warm,4 deep warm)" unit="">
+    <Method name="HartCPS.executeClassStd" levels="Surface">
+        <Field abbreviation="GH" level="925MB"/>
+        <Field abbreviation="GH" level="850MB"/>
+        <Field abbreviation="GH" level="700MB"/>
+        <Field abbreviation="GH" level="500MB"/>
+        <Field abbreviation="GH" level="400MB"/>
+        <Field abbreviation="GH" level="300MB"/>
+        <Field abbreviation="dx"/>
+        <Field abbreviation="dy"/>
+        <!-- radiusKm (km): Hart's own 500 km analysis-window half-width,
+             used for both HVTL/HVTU and as the mask's ring_radius_km
+             (the outer edge of the annulus the depth test averages over) -->
+        <ConstantField value="500.0"/>
+        <!-- neutralM (m): |HVTL| or |HVTU| below this is "neutral" -->
+        <ConstantField value="25.0"/>
+        <!-- depthM (m): the annulus around a candidate point must average
+             at least this much higher than the point itself before it
+             counts as a real closed low, not a uniform slope -->
+        <ConstantField value="40.0"/>
+        <!-- blobKm (km): half-width of the blob painted around each
+             detected low's center (a display radius, not the low's own
+             true physical size) -->
+        <ConstantField value="200.0"/>
+    </Method>
+</DerivedParameter>

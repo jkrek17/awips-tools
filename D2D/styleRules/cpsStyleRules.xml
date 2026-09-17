@@ -142,4 +142,99 @@
                  zeroLine / emphasized-value element. -->
         </contourStyle>
     </styleRule>
+
+    <!--
+      ===========================================================
+      Hart CPS family (height-based, actual method - HartCPS.py):
+      HVTL, HVTU, HCPScat, HCPSidx. A second, independent set of
+      styleRules from CycloneCore.py's VTL/VTU/CPScat/CPSidx above -
+      do not merge the two families' ranges, their units differ
+      (meters here, scaled 1e-5 /s above).
+      ===========================================================
+    -->
+
+    <!--
+      Imagery / colormap part: merge into gridImageryStyleRules.xml.
+      HVTL/HVTU range +/-300 m: a mature hurricane samples roughly
+      +100 to +300 m, a cold-core low roughly -100 to -300 m (see
+      HartCPS.py's module docstring), so +/-300 covers the typical
+      range with headroom, centered on zero with the same diverging
+      colormap CycloneCore.py's VTL/VTU/CPSidx use.
+    -->
+    <styleRule>
+        <paramLevelMatch>
+            <parameter>HVTL</parameter>
+        </paramLevelMatch>
+        <paramLevelMatch>
+            <parameter>HVTU</parameter>
+        </paramLevelMatch>
+        <imageStyle>
+            <defaultColormap>CPS/CoreDiverging</defaultColormap>
+            <range>
+                <minValue>-300</minValue>
+                <maxValue>300</maxValue>
+            </range>
+        </imageStyle>
+    </styleRule>
+
+    <!--
+      HCPSidx is a continuous dimensionless index, -3 (cold core) to +3
+      (deep warm core), 0 = neutral - same diverging colormap as HVTL/
+      HVTU above but over the index's own -3..3 range.
+    -->
+    <styleRule>
+        <paramLevelMatch>
+            <parameter>HCPSidx</parameter>
+        </paramLevelMatch>
+        <imageStyle>
+            <defaultColormap>CPS/CoreDiverging</defaultColormap>
+            <range>
+                <minValue>-3.0</minValue>
+                <maxValue>3.0</maxValue>
+            </range>
+        </imageStyle>
+    </styleRule>
+
+    <!--
+      HCPScat is categorical (0 mid-vortex, 1 cold, 2 neutral, 3 shallow
+      warm, 4 deep warm), same 5-category table and same CPS/CoreClass
+      categorical colormap as CycloneCore.py's CPScat - see that
+      styleRule's comment above for the color table and the
+      "interpolation must be off" note, which applies here identically.
+    -->
+    <styleRule>
+        <paramLevelMatch>
+            <parameter>HCPScat</parameter>
+        </paramLevelMatch>
+        <imageStyle>
+            <defaultColormap>CPS/CoreClass</defaultColormap>
+            <range>
+                <minValue>-0.5</minValue>
+                <maxValue>4.5</maxValue>
+            </range>
+        </imageStyle>
+    </styleRule>
+
+    <!--
+      Contour part: merge into gridContourStyleRules.xml. Values in
+      meters (HVTL/HVTU's own unit - no UNIT_SCALE round trip, unlike
+      CycloneCore.py's VTL/VTU above), spaced to bracket the typical
+      +/-100 to +/-300 m hurricane/cold-core range from HartCPS.py's
+      module docstring, with a gap around zero (the warm/cold-core
+      boundary) for the same reason as VTL/VTU's contourStyle above.
+    -->
+    <styleRule>
+        <paramLevelMatch>
+            <parameter>HVTL</parameter>
+        </paramLevelMatch>
+        <paramLevelMatch>
+            <parameter>HVTU</parameter>
+        </paramLevelMatch>
+        <contourStyle>
+            <contourValues>
+                <values>-300,-200,-100,-50,50,100,200,300</values>
+            </contourValues>
+            <lineStyle>SOLID</lineStyle>
+        </contourStyle>
+    </styleRule>
 </styleRuleset>
