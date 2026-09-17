@@ -654,3 +654,20 @@ window difference discussed above). Run
 quick standalone sanity check (a synthetic warm-core vortex, printing
 the lower/upper slope and the class at its center) with no pytest or
 AWIPS runtime involved.
+
+## Validation log
+
+Real cases sampled at the MSLP center in D2D. Add to this as cases
+accumulate; it is the calibration record for the thresholds.
+
+| Date sampled | Model, cycle, fhr | System | VTL | VTU | CPScat | CPSidx | HVTL (m) | HVTU (m) | HCPScat | HCPSidx |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 2026-09-14 | GFS 12Z, 72 h | Typhoon, 24N 147E, 984 mb | 6.45 | 12.24 | 4 | 1.98 | | | | |
+| 2026-09-14 | GFS 12Z, 72 h | Post-tropical low, 62N 20W, 978 mb, tilted | -1.07 | 5.05 | 2 (cold ring) | 0.31 | | | | |
+| 2026-09-17 | GFS 12Z, 72 h | Same typhoon, 31N 139E, 984 mb | | | | | 120 | 180 | 4 | 2.5 |
+
+Notes: the vorticity family read the tilted post-tropical low as
+neutral at the center with a cold ring where the upper trough sat,
+which is the tilt bias the Hart family was built to remove. The Hart
+values for the typhoon are in Hart's published hurricane range. The
+Hart family has not yet been sampled on a cold-core case.
