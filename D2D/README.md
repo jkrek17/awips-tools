@@ -248,14 +248,18 @@ AWIPS versions differ in how a fields-menu contribution is wired in
 contribution under `cave_static/base/menus/volumebrowser/` on your
 build and match its shape.
 
-Style rules: copy `D2D/styleRules/cpsStyleRules.xml` unchanged to
-`/awips2/edex/data/utility/common_static/site/<SITE>/styleRules/cpsStyleRules.xml`.
-CAVE loads every XML file in the styleRules directory at every
-localization level, so a separate file is additive and the base
-gridImageryStyleRules.xml and gridContourStyleRules.xml are not edited.
-Only if the rules do not take effect on your build, fall back to copying
-the base files to the site level and pasting the rules in (and remove
-the separate file so nothing is defined twice).
+Style rules: on the OPC build a separate `cpsStyleRules.xml` at the
+site level did NOT apply automatically; the colormap had to be chosen
+from the legend right-click menu. Two working routes:
+
+1. Set up the display (colormaps and ranges) once and save it as a CAVE
+   procedure. The bundle stores colormap and range per resource, so the
+   procedure loads with the right colors and no style rule is needed.
+   This is the recommended route.
+2. Untested fallback for ad hoc Volume Browser loads: copy the base
+   gridImageryStyleRules.xml and gridContourStyleRules.xml to the site
+   level and paste the matching rules from `D2D/styleRules/cpsStyleRules.xml`
+   into them. The file is kept in the base schema for that purpose.
 
 Colormaps: copy `D2D/colormaps/Grid/CPS_CoreDiverging.cmap` and
 `CoreClass.cmap` to
