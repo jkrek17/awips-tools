@@ -8,6 +8,13 @@ bands, computed a completely different way because a D2D derived
 parameter has no concept of "the storm's center" -- it runs pointwise
 over the whole grid.
 
+## Guides
+
+- `docs/USER_GUIDE.md`: for forecasters, how to load and read the
+  products and where they mislead.
+- `docs/TECHNICAL_GUIDE.md`: method, wiring, every tunable, install,
+  troubleshooting, tests, limitations.
+
 ## What the fields are
 
 **Unit convention: VTL, VTU, and cpsZ850 sample in units of 1e-5 /s,
