@@ -19,7 +19,7 @@ The package implements the Hart family:
 
 | Family | Function file | Products | Inputs | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| Hart | `derivedParameters/functions/cps_HartCPS.py` | HVTL, HVTU, HCPSclass, HCPSidx, HB | geopotential height at 1000, 925, 850, 700, 500, 400, 300 hPa; u/v wind at 850, 700, 500, 300 hPa; surface pressure; coriolis (HB and HCPSclass only) | validated (HB and HCPSclass's B term new, awaiting validation) |
+| Hart | `derivedParameters/functions/cps_HartCPS.py` | HVTL, HVTU, HCPSclass, HCPSidx, HB | geopotential height at 1000, 925, 850, 700, 500, 400, 300 hPa (seven levels); u/v wind at 850, 700, 500, 300 hPa; surface pressure; coriolis (HB and HCPSclass only) | experimental |
 
 The function file is self-contained numpy with no imports from the
 rest of the repository, because the CAVE interpreter only sees the
@@ -66,8 +66,9 @@ of hemisphere because dZ is positive definite.
 ### 2.2 Gridded form
 
 The point definition is evaluated at every grid point by replacing "the
-500 km circle around the storm" with "a window of half-width 500 km
-around this point". The window is a square, not a circle, because a
+500 km circle around the storm" with "the 500 km window around this
+point" (a square of 500 km half-width, 1000 km across). The window is a
+square, not a circle, because a
 square sliding max and min is separable and runs in a handful of passes
 per level (section 3). Corners reach 707 km. For an isolated compact vortex the
 max and min are the far field and the center either way, so the
@@ -78,8 +79,18 @@ square sees up to 41 percent more of the gradient's contribution to
 dZ than the circle does, and because that contribution grows with
 height in a baroclinic environment, the square window carries a small
 cold bias relative to Hart's circle. This is the main methodological
-difference from Hart. It is a documented, permanent design decision,
-not an open question awaiting a fix; see section 7 for the reasoning.
+difference from Hart, kept because the square supports the fast
+separable sliding-extrema filter in section 3.1; a circular filter
+would cost several times more per frame for a bias this small on an
+isolated vortex. See section 7 for the full trade-off.
+
+On a global lat/lon grid, `window_extreme_2d` and `window_sum_2d` wrap
+the 500 km window across the longitude seam instead of clipping it
+there, so a point near 180 degrees longitude sees the same window size
+on both sides; a regional grid has no seam and is unchanged. Global
+grid detection and the pole rows (where a fixed km half-width would
+otherwise span an implausible number of columns) are handled in the
+same pass.
 
 A consequence worth knowing: around a compact low, every point whose
 window contains the low center sees roughly the same dZ, so the raw
@@ -98,10 +109,13 @@ products exist for every model:
 | lower | 925, 850, 700 | `LOWER_BAND` |
 | upper | 500, 400, 300 | `UPPER_BAND` |
 
-The 700 to 500 layer is deliberately in neither band. Magnitudes are
-therefore near but not equal to the FSU page's values for the same
-storm; signs, the zero threshold, and transition timing carry over, and
-the Dujuan case confirmed the timing matches. A GFS-only definition on
+The 700 to 500 layer is deliberately in neither band. The lower band
+lies entirely below Hart's 900 to 600 hPa layer, so magnitudes can
+differ from the FSU page's values for the same storm by tens of
+percent depending on the vertical profile of the core anomaly; the
+size of the difference on real storms has not been measured. Signs,
+the zero threshold and transition timing carry over, and the Dujuan
+case confirmed the timing matches within one 6 h frame. A GFS-only definition on
 Hart's exact levels can be added with `executeBand7` (section 4.4).
 
 ### 2.4 Below-ground masking
@@ -117,7 +131,25 @@ is why Greenland and the Rockies are blank. The cap keeps a deep low
 over open water, where the surface pressure is below 1000 or 925 but
 the extrapolated height is fine, from being treated as terrain.
 Surface pressure arrives in Pa from AWIPS; the code detects Pa versus
-hPa from the finite median and converts.
+hPa from the finite median and converts. For a low deep enough that
+its center pressure is below about 960 hPa, the 1000 and 925 hPa
+heights at the center are themselves the model's post-processor
+extrapolating below its own analyzed surface, and different models'
+extrapolation schemes disagree even for what is otherwise the same
+storm; keep that in mind before comparing `HVTL` between models for a
+very deep low.
+
+**Window valid-fraction masking.** The below-ground mask alone still
+lets a level's 500 km window be evaluated when most of the window is
+masked, near a coastline or an ice sheet's edge -- within a few
+hundred kilometers of Greenland or Iceland, most often for `HVTL`'s
+lower band. Fitting the band's least-squares slope through a window
+that is mostly missing data would carry a silent bias toward whichever
+few valid points remain, so the band-slope step also requires at least
+half of a level's 500 km window to hold valid data; a level short of
+that fraction is set to NaN outright rather than fit. `HVTL`, `HVTU`,
+and (through them) `HCPSclass` therefore go blank within a few hundred
+km of Greenland and Iceland instead of carrying that hidden bias.
 
 ### 2.5 Closed-low mask
 
@@ -133,54 +165,83 @@ is a low center when both hold:
 
 A uniform gradient fails the depth test because the annulus mean equals
 the point's own value on a slope. Detected centers are dilated by
-`blobKm` (200 km) for display. The annulus mean is computed from two
-NaN-aware box sums.
+`blobKm` (200 km) for display. The annulus (a square ring, the
+difference of two square box sums, not a circular one) mean is
+computed from two NaN-aware box sums.
+
+**In forecaster terms**, the depth test is 40 m (about 5 hPa) of
+height rise between the center and the square 300 to 500 km ring
+around it, not literally "a closed low at least 5 hPa deep". For a
+compact 300 km low the effective floor works out closer to 6 hPa once
+the ring mean and the height-to-MSLP conversion are combined; a
+broader, flatter low needs more than 5 hPa of true depth to clear the
+same 40 m test and can go unclassified even though a forecaster would
+call it closed. An elongated trough with a strong gradient across it
+(rather than along it) can pass both tests at a point that is not
+really a closed low's center, producing a spurious blob; check MSLP
+before trusting an isolated one. Lowering `depthM` to 25 (the
+`<ConstantField>` in `cps_HCPSclass.xml` and `cps_HCPSidx.xml`; see
+4.3) admits weaker lows at the cost of more of these false detections.
+
+**Neighboring lows.** Two lows within about 1000 km of each other have
+overlapping 500 km windows and can share detections, and the `blobKm`
+dilation (200 km) can then merge their two blobs into one on the
+display. There is no per-low separation logic; check MSLP for a second
+low inside a blob's footprint before treating it as a single system.
 
 ### 2.6 Joint classification
 
 `HCPSclass` is computed from all three Hart
-parameters (B, VTL, and VTU) at once, using Hart's own strict
+parameters (B, -VTL, and -VTU) at once, using Hart's own strict
 lines: B against 10 m, and both thermal wind terms against 0, with no
 neutral band on any of the three (compare the index below, which
 keeps one).
 
-| Code | Name | B | VTL | VTU | Typical system |
+| Code | Name | B | -VTL | -VTU | Typical system |
 | ---: | :--- | :--- | :--- | :--- | :--- |
 | 0 | symmetric deep warm core | <= 10 | warm | warm | hurricane, typhoon |
 | 1 | symmetric shallow warm core | <= 10 | warm | cold | subtropical storm, or warm seclusion after transition |
 | 2 | frontal deep warm core | > 10 | warm | warm | hurricane meeting a trough, transition beginning |
 | 3 | frontal shallow warm core | > 10 | warm | cold | transition under way |
-| 4 | frontal cold core | > 10 | cold | any | extratropical low, transition complete |
-| 5 | symmetric cold core | <= 10 | cold | any | occluded or cutoff cold low |
-| 6 | mid-level vortex (lower cold, upper warm) | any | cold | warm | perturbation peaking at mid-levels; rarely occupied |
-| blank | | | | | no closed low, or B undefined (steering below 1 m/s) |
+| 4 | frontal cold core | > 10 | cold | cold (code 6 takes lower cold, upper warm first) | extratropical low, transition complete |
+| 5 | symmetric cold core | <= 10 | cold | cold (code 6 takes lower cold, upper warm first) | occluded or cutoff cold low |
+| 6 | shallow cold core (lower cold, upper warm) | any | cold | warm | perturbation peaking at mid-levels; rarely occupied |
+| blank | | | | | no closed low, or B undefined (steering below 2 m/s) |
 
-Boundary convention: warm is VTL or VTU >= 0, cold is < 0; frontal is
+Boundary convention: warm is -VTL or -VTU >= 0, cold is < 0; frontal is
 B > 10 m, symmetric is B <= 10 m. Ties go to the warm side and to the
-symmetric side. The codes are ordered along a typical extratropical
-transition (0, 2, 3, 4), and a warm seclusion runs 4 then back to 1
-with the upper term still cold. `HCPSclass` is NaN outside
+symmetric side (B exactly at 10 m counts as symmetric, either thermal
+wind term exactly at 0 counts as warm). The codes are ordered along a
+typical extratropical transition (0, 2, 3, 4); a warm seclusion
+typically runs 4 to 3, or 4 to 1 if B also falls at or below 10 m, and
+the signature to watch there is -VTL (HVTL) crossing back above 0, not the
+code itself. `HCPSclass` is NaN outside
 `closed_low_mask` and wherever B itself is undefined (below
 `MIN_STEERING_MS`, section 2.7).
 
 Why one joint field rather than two: Hart's own two diagrams are two
-projections of one three-dimensional space (B, VTL, VTU) that share
-the VTL axis. Each diagram alone carries one piece of information the
-other lacks: the B-VTL diagram says frontal or not, the VTL-VTU
-diagram says deep or shallow warm core; so a classification on all
-three numbers carries both and loses neither. Operationally this turns
+projections of one three-dimensional space (B, -VTL, -VTU) that share
+the -VTL axis. Each diagram alone carries one piece of information the
+other lacks: the B/-VTL diagram says frontal or not, the -VTL/-VTU
+diagram says deep or shallow warm core. That joint space has eight
+cells (B symmetric or frontal, times -VTL warm or cold, times -VTU warm
+or cold); `HCPSclass` gives seven codes because code 6 merges the two
+cells where -VTL is cold and -VTU is warm, symmetric and frontal alike,
+into one code. Operationally this turns
 "sample two panels and combine them by eye" into "sample one number at
 the low center," and the resulting codes fall in the order the storm
 actually moves through them during a transition. Onset and completion
 are event names, and an event needs a history of frames to
 detect; a value computed independently at each frame, with no memory
 of the frame before it, can only ever report a state, not an event.
-`HCPSclass` reports the states Hart defined; onset and completion are
-still there to find, but they are read from how the state changes
-across an animation, never from one frame (see the User Guide's "Using
-it on shift").
+`HCPSclass` is a summary of where `HB` and `HVTL` stand, not the event
+detector: onset is read as the first frame `HB` crosses above 10 m,
+and completion as the first frame `HVTL` crosses below 0 (see 2.7 and
+the User Guide's "Using it on shift"). `HCPSclass`'s own crossings
+(0 to 2 or 3, then to 4 or 5) are the usual signature of the same two
+events but can lag or lead them by a frame near a strict line.
 
-Index = 2 tanh(VTL / scaleM) + tanh(VTU / scaleM), scaleM = 100 m,
+Index = 2 tanh(HVTL / scaleM) + tanh(HVTU / scaleM), scaleM = 100 m,
 NaN outside the closed-low mask, and the only place in this family a
 neutral band (via `scaleM`) remains.
 
@@ -188,22 +249,42 @@ neutral band (via `scaleM`) remains.
 
 Hart's third number, B, is the right-minus-left half-window mean of
 925-700 hPa thickness across the storm's motion, over the same 500 km
-window. A single grid point has no half-disk of its own, so the
+window. B is motion-relative, not compass-relative: "right" and "left"
+are defined by the direction of travel, so warm air to the right of
+the track reads positive in the Northern Hemisphere (to the left in
+the Southern), and a large negative B means warm air sits to the left
+of the motion vector, not that the storm is symmetric -- symmetric
+means small `|B|` in either sign. A single grid point has no half-disk
+of its own, so the
 gridded version uses a linear-gradient approximation: for a smoothly
 varying thickness field, that right-minus-left difference equals
 `(8*radiusKm/(3*pi))` times the window-mean thickness gradient,
 projected onto the right-hand normal of the storm's motion. This is
 exact for a linear field and only first-order for a genuinely
 nonlinear one (a warm-seclusion tongue folding into one side of the
-circle is the case that loses the most).
+circle is the case that loses the most). Because a symmetric vortex's
+thickness gradient integrates to zero over the window under this
+first-order method, `HB` at a symmetric low is entirely the
+environment and the motion, not the storm.
 
 Motion has no tracked storm to read either, so it comes from the
-steering flow, the mean wind at 850, 700, 500, and 300 hPa. A point
-whose steering speed is below `MIN_STEERING_MS` (1 m/s) has no well
+**deep-layer steering wind**, the mean wind at 850, 700, 500, and
+300 hPa, **horizontally area-averaged over the same 500 km window**
+before its direction is taken. Averaging over the window first, not
+just reading the point value, is what turns this into an environmental
+steering proxy rather than a readout of the storm's own circulation: a
+symmetric vortex's wind reverses sign across the window and cancels in
+the average, leaving the ambient flow. A point
+whose steering speed is below `MIN_STEERING_MS` (2 m/s) has no well
 defined right/left of motion and is blanked, and so is `HCPSclass`
-at that point, since it needs B. The thickness layer is 925-700 hPa
+at that point, since it needs B. `HB` is a full field, not masked to
+`closed_low_mask`: away from a low it is the ambient thickness
+gradient across the flow at that point and carries no storm
+information, so a large `|HB|` of either sign anywhere is a cue to
+check the thickness field, not a result on its own. The thickness
+layer is 925-700 hPa
 (matching `LOWER_BAND`), not Hart's 900-600 hPa, so B is multiplied by
-`layerScale = ln(900/600)/ln(925/700)` (about 1.4553) to read as a
+`layerScale = ln(900/600)/ln(925/700)` (about 1.4548) to read as a
 900-600 hPa equivalent against Hart's 10 m threshold; `layerScale=1.0`
 gives the raw 925-700 hPa value instead. The hemisphere factor is the
 sign of the coriolis pseudo-field (positive north, negative south, zero
@@ -233,7 +314,8 @@ worth keeping straight when comparing the two:
    package's product is a map per forecast hour. The trajectory is
    recovered by animating and reading the class at the center, or by
    sampling HVTL, HVTU, and HB there frame by frame.
-3. Hart uses a 500 km circle; this package uses a 1000 km square, kept
+3. Hart uses a 500 km circle; this package uses the 500 km window, a
+   square 1000 km across, kept
    deliberately for speed (section 7). On a strong background gradient
    the square overstates the height range by up to 41 percent of the
    gradient's own contribution, which carries a small cold bias
@@ -243,12 +325,14 @@ worth keeping straight when comparing the two:
    Magnitudes come out near Hart's but not equal; sign, the zero
    threshold, and transition timing carry over.
 5. Hart's B uses the tracker's actual storm motion and true half-circle
-   means; this package uses the 850-300 hPa mean wind as a motion proxy
-   and a first-order gradient approximation scaled from the 925-700 hPa
-   layer (section 2.7), and is unreliable for a stationary or
-   steering-opposed storm.
+   means; this package uses the deep-layer (850-300 hPa) mean wind,
+   area-averaged over the 500 km window before its direction is taken,
+   as a motion proxy, and a first-order gradient approximation scaled
+   from the 925-700 hPa layer (section 2.7). It is unreliable for a
+   stationary (steering under 2 m/s) or steering-opposed storm.
 6. Hart's diagrams are drawn for the cyclones a tracker identifies;
-   this package classifies any closed low at least about 5 hPa deep on
+   this package classifies any closed low that clears its depth test
+   (about 5 hPa for a compact low, more for a broad flat one; 2.5) on
    any model in the local inventory, with no tracker.
 7. Hart (2003) applies a 24 h running mean to the parameters before
    plotting; this package's fields are instantaneous per forecast hour,
@@ -279,6 +363,11 @@ shrink rather than wrap.
 y pass with one half-width. Rows are grouped by half-width and each
 group processed at once. On projected grids dx varies in two
 dimensions; the per-row nanmean is used, which is an approximation.
+On a detected global lat/lon grid, the x pass wraps the 500 km window
+across the longitude seam instead of clipping it, and the per-row
+half-width is clamped near the poles so it does not expand to an
+implausible number of columns; a regional grid has no seam and takes
+neither path.
 
 `window_sum_2d` does the same for NaN-aware sums and counts using
 cumulative sums, for the annulus mean.
@@ -290,9 +379,9 @@ Measured on a 721 by 1440 grid (0.25 degree global) in the test suite:
 | Call | Time |
 | :--- | :--- |
 | `thermal_wind_grid`, three levels | about 0.8 s |
-| `executeHartClass`, seven levels, B, and mask | about 2 s |
+| `executeHartClass`, seven levels, B, and mask | about 1.7 s per forecast hour on a 0.25 degree global grid |
 
-CAVE computes per frame on load, so a 41-frame loop costs under a
+CAVE computes per frame on load, so a 41-frame loop costs about a
 minute on first display and is cached after. A regional grid is faster.
 
 ### 3.3 Missing data
@@ -338,16 +427,18 @@ CAVE; no Python change is needed.
 | :--- | :--- | :--- |
 | HVTL | radiusKm, p1, p2, p3, capHpa | 500, 925, 850, 700, 900 |
 | HVTU | radiusKm, p1, p2, p3, capHpa | 500, 500, 400, 300, 900 |
-| HCPSclass | radiusKm, bThresholdM, layerScale, depthM, blobKm, capHpa | 500, 10, 1.4553, 40, 200, 900 |
+| HCPSclass | radiusKm, bThresholdM, layerScale, depthM, blobKm, capHpa | 500, 10, 1.4548, 40, 200, 900 |
 | HCPSidx | radiusKm, scaleM, depthM, blobKm, capHpa | 500, 100, 40, 200, 900 |
-| HB | radiusKm, layerScale, capHpa | 500, 1.4553, 900 |
+| HB | radiusKm, layerScale, capHpa | 500, 1.4548, 900 |
 
 What each does:
 
 - `radiusKm`: window half-width. Hart's 500. Larger integrates more of
   a tilted system; smaller sharpens compact storms.
 - `depthM`: minimum low depth at 1000 hPa for classification. 40 m is
-  about 5 hPa. Use 25 to include weak lows.
+  about 5 hPa for a compact 300 km low, more for a broad flat one. Use
+  25 to include weak lows, at the cost of more false detections on
+  broad lows and elongated troughs (section 2.5).
 - `blobKm`: display radius around a detected center.
 - `capHpa`: below-ground cap. Lower it only if deep ocean lows are
   being blanked, which has not been seen.
@@ -357,12 +448,17 @@ What each does:
   applies. 1.0 gives the raw, unscaled value.
 - `bThresholdM`: Hart's frontal threshold for B, used by `HCPSclass`.
   Hart's own is 10 m.
+- `MIN_STEERING_MS` (module constant in `cps_HartCPS.py`, not a
+  `<ConstantField>`): the minimum area-averaged steering speed for `B`
+  to have a well defined right/left of motion. 2 m/s by default;
+  below it, `HB` and (through it) `HCPSclass` are blanked.
 
 ### 4.4 Adding definitions
 
 To change the levels of a band, edit the GH Field levels and the
-matching pressure ConstantFields together. To add a GFS-only definition
-on Hart's exact 900 to 600 band, copy cps_HVTL.xml, list GH at 900, 850,
+matching pressure ConstantFields together. To add a GFS-only,
+seven-level definition on Hart's exact 900 to 600 band, copy
+cps_HVTL.xml, list GH at 900, 850,
 800, 750, 700, 650, 600, then P, dx, dy, then ConstantFields radiusKm,
 the seven pressures, capHpa, and name the method
 `cps_HartCPS.executeBand7`. A classification product on those levels would
@@ -412,6 +508,19 @@ They appear under Grid in the legend's Change Colormap menu.
    2.7) is the first thing to check; it affects only these two
    products' thickness-gradient step.
 
+**Installation risk: `ORIENTATION_MODE`.** This is the one setting in
+the whole package that can be silently wrong on a new site or a new
+grid's storage order: a wrong mode flips `HB`'s sign everywhere,
+without an error, a crash, or a blank field to flag it, and the site
+would be looking at a mirrored asymmetry until someone compares it
+against a known storm. `HVTL`, `HVTU`, and `HCPSidx` never call
+`gradient_2d` and are unaffected by this setting at all; only `HB` and
+`HCPSclass`'s frontal/symmetric call are exposed. Confirm `HB`'s sign
+against a known asymmetric storm (thickness gradient overlay, warm air
+on the correct side of the track) at first install on every new grid,
+not only on the grid this default was confirmed on (see 5.2 step 4 and
+2.7).
+
 ### 5.3 Style rules
 
 `styleRules/cpsStyleRules.xml` is written in the base schema (one
@@ -447,8 +556,9 @@ bundle file extracted from the saved procedure:
 | whole field green on load | style rule not applied | pick the colormap from the legend or load the procedure |
 | Hart products vanish after adding P | P field level spelling | check how base definitions reference Surface |
 | blank over land | below-ground mask | expected |
+| HVTL/HVTU/HCPSclass blank over open water near Greenland or Iceland | window valid-fraction mask (2.4): a level's 500 km window is mostly over masked terrain | expected; the value belongs to the mask, not the model |
 | HB/HCPSclass missing while other Hart products load | coriolis pseudo-field abbreviation not recognized | replace the `coriolis` Field with `<ConstantField value="1.0"/>` (assumes Northern Hemisphere) |
-| HB near zero everywhere on an obviously asymmetric storm | steering speed below `MIN_STEERING_MS` (1 m/s) at that point | check the four steering wind levels are not all missing/near-calm there |
+| HB blank on an obviously asymmetric storm | area-averaged steering speed below `MIN_STEERING_MS` (2 m/s) at that point | check the four steering wind levels are not all missing/near-calm there |
 
 ---
 
@@ -474,31 +584,35 @@ so the files import exactly as CAVE imports them.
 
 ## 7. Known limitations and future work
 
-**Design decision, final (2026-09-18).** The square analysis window is
-kept permanently. A circular window was considered and rejected: the
-square supports the fast separable sliding-extrema filter (section
-4.1), and a circular filter would cost several times more per frame.
-The trade-off is a small cold bias on a strong background gradient
-(section 2.2), which is documented and understood, not a defect to be
-fixed. This is not future work; do not reopen it without a new reason
-to revisit the cost/accuracy trade-off.
+**The square analysis window (2026-09-18).** HVTL, HVTU, and HB use
+the square 500 km window rather than Hart's circle because a square
+sliding max/min is separable and runs in a handful of passes per level
+(section 3.1); a circular filter would cost several times more per
+frame at the grid sizes and frame counts this package targets. The
+trade-off is a small cold bias on a strong background gradient
+(section 2.2). Revisiting the choice would mean re-measuring that cost
+and that bias together on real cases, not treating either number alone
+as a reason to change it.
 
-- Standard-level bands differ from Hart's. A GFS-only 13-level
+- Standard-level bands differ from Hart's. A GFS-only seven-level
   definition is a small addition (4.4).
 - Parameter B (`HB`, and `HCPSclass`, which depends on it for its
-  frontal/symmetric split) uses the steering flow (mean wind at
-  850/700/500/300 hPa) as its motion proxy and a linear-gradient
-  approximation for the right-minus-left half-window mean. Both are
-  awaiting validation: the steering proxy is unreliable for a storm
-  moving against its own steering flow or for a nearly stationary
-  system, and `HCPSclass` inherits that unreliability wherever B is
-  unreliable or blank; the linear approximation also loses genuinely
+  frontal/symmetric split) uses the deep-layer steering wind
+  (850/700/500/300 hPa mean, area-averaged over the 500 km window
+  before its direction is taken) as its motion proxy, and a
+  linear-gradient approximation for the right-minus-left half-window
+  mean. Both are awaiting validation: the steering proxy is unreliable
+  for a storm moving against its own steering flow or for a nearly
+  stationary system (below `MIN_STEERING_MS`, 2 m/s), and `HCPSclass`
+  inherits that unreliability wherever B is unreliable or blank; the
+  linear approximation also loses genuinely
   nonlinear thickness structure inside the window (e.g. a
   warm-seclusion tongue) to first order.
 - `HCPSclass` flickers between adjacent codes when a storm sits on one
   of Hart's strict lines (B at 10 m, or a thermal wind term at 0) from
-  one frame to the next. This is expected, not a bug: the field has no
-  neutral band by design (section 2.6). The continuous fields (`HVTL`,
+  one frame to the next, because the field has no neutral band by
+  design (section 2.6): any point sitting exactly on a strict line
+  will do this. The continuous fields (`HVTL`,
   `HVTU`, `HB`) show the underlying trend through a flickering stretch
   and are the right place to look when it happens.
 - Below-ground rule uses one cap for all levels. A per-level margin

@@ -20,26 +20,29 @@ against; see "Tests" below.
 ## What it is
 
 `cps_HartCPS.py` computes Hart's actual quantity: at every grid point,
-`dZ(level) = max(Z) - min(Z)` of geopotential height over a window of
-half-width 500 km centered on that point (Hart's own analysis radius,
-evaluated at every point instead of only at one storm's moving center
--- see `cps_HartCPS.py`'s module docstring for why a square window is
-used instead of Hart's circle, and why the difference is small in
-practice), then `-V_T` is the least-squares slope of `dZ` against
-`ln(pressure)` over a band of levels. This uses **geopotential height
-only** -- no wind field, no vorticity, no smoothing choice.
+`dZ(level) = max(Z) - min(Z)` of geopotential height over the 500 km
+window (a square of 500 km half-width, 1000 km across) centered on
+that point (Hart's own analysis radius, evaluated at every point
+instead of only at one storm's moving center -- see `cps_HartCPS.py`'s
+module docstring for why a square window is used instead of Hart's
+circle, and why the difference is small in practice), then `-V_T` is
+the least-squares slope of `dZ` against `ln(pressure)` over a band of
+levels. This uses **geopotential height only** -- no wind field, no
+vorticity, no smoothing choice. On a global lat/lon grid the 500 km
+window wraps across the longitude seam instead of clipping there; a
+regional grid, which has no seam, is unchanged.
 
 The magnitudes here are meters (of `dZ`) per unit of `ln(pressure in
-hPa)` -- plain meters. A mature hurricane typically samples HVTL/HVTU
-in the +100 to +300 m range; a cold-core low typically samples -100 to
--300 m. These are **near but not equal to** the published Hart
-(2003)/FSU CPS values for the same real storms, both because of
-the square-vs-circle window difference and because the standard levels
-used here are not exactly Hart's own bands (next section). Do not
-report HVTL/HVTU numbers as if they were the published FSU CPS
-diagnostic for a storm -- read the sign and the trend; the window-shape
-and level-band approximations mean the exact number will differ
-slightly from FSU's own website for the same case.
+hPa)` -- plain meters. Warm cores read positive (order +100 m and
+above for a mature tropical cyclone) and cold cores negative. These
+are **not** the published Hart (2003) or FSU values for the same
+storm: the lower band (925-700 hPa) lies entirely below Hart's 900-600
+hPa layer, the upper band omits 600-500 hPa, and the square window
+inflates dZ for broad anomalies. On plausible core profiles the lower
+term can differ from Hart's by tens of percent, and the size of the
+difference on real storms has not been measured. Do not report
+HVTL/HVTU numbers as if they were the FSU diagnostic for a storm; read
+the sign, the zero crossings and the trend, which carry over.
 
 ## Standard-level bands
 
@@ -63,7 +66,7 @@ the two bands is a smaller, more honest error than that.
 A future GFS-only, Hart-exact definition using the true 900-600/
 600-300 hPa bands at 50 hPa spacing is supported by `cps_HartCPS.
 executeBand7` and needs only a new XML definition, no Python change
--- see "Adding a GFS-only 13-level definition" below.
+-- see "Adding a GFS-only seven-level definition" below.
 
 ## Closed-low mask
 
@@ -100,7 +103,8 @@ therefore uses two tests a monotonic slope cannot satisfy together:
    within a `minRadiusKm` search box (module default `MIN_RADIUS_KM`,
    300 km, fixed, not a `<ConstantField>` -- "how big a box finds a
    low's own local minimum", not something meant to be tuned per case).
-2. **Depth test**: the mean height of the **annulus** between
+2. **Depth test**: the mean height of the **annulus** (a square ring,
+   the difference of two square box sums, not a circular one) between
    `minRadiusKm` and `radiusKm` (the same 500 km `<ConstantField>` used
    for HVTL/HVTU) exceeds the point's own height by at least `depthM`
    (default 40 m). The annulus mean is a difference of two NaN-aware
@@ -112,6 +116,26 @@ therefore uses two tests a monotonic slope cannot satisfy together:
    annulus is symmetric around the point and its mean height equals
    the point's own height to first order, so the depth comes back ~0
    and the test correctly rejects it.
+
+**In forecaster terms**, the depth test is about 40 m (roughly 5 hPa)
+of height rise between the center and the square 300 to 500 km ring
+around it, not a literal "closed low at least 5 hPa deep" statement.
+For a compact 300 km low the effective floor works out closer to 6 hPa
+once the ring mean and the height-to-MSLP conversion are folded in; a
+broader, flatter low needs more than 5 hPa of true depth to clear the
+same 40 m test and can go unclassified even though a forecaster would
+call it closed. An elongated trough with a strong gradient across it
+(rather than along it) can pass both tests at a point that is not
+really a closed low's center, producing a spurious blob; check the
+MSLP field before trusting an isolated one. Lowering `depthM` to 25 (a
+`<ConstantField>` in `cps_HCPSclass.xml` and `cps_HCPSidx.xml`) admits
+weaker lows at the cost of more of these false detections.
+
+**Neighboring lows.** Two lows within about 1000 km of each other have
+overlapping 500 km windows and can share detections, and the `blobKm`
+dilation (200 km) can then merge their two blobs into one on the
+display. Check the MSLP field for a second low inside a blob's
+footprint before reading it as a single system.
 
 Points passing both tests are dilated by `blobKm` (default 200 km, via
 `window_extreme_2d(..., kind="max")` on the boolean detections cast to
@@ -180,6 +204,27 @@ fewer valid sample in their own window -- no extra plumbing was needed
 beyond masking the input before it reaches them. See `cps_HartCPS.py`'s
 module docstring ("Below-ground masking") for the full explanation.
 
+For a low deep enough that its center pressure is below about 960 hPa,
+the 1000 and 925 hPa heights *at the center* are themselves the
+model's post-processor extrapolating below its own analyzed surface,
+not a directly analyzed value, and different models extrapolate
+differently even for what is otherwise the same storm. Keep that in
+mind before comparing `HVTL` (which uses both levels) between models
+for a very deep low; the difference can be the extrapolation scheme,
+not the storm.
+
+**Window valid-fraction masking.** Even after the below-ground mask, a
+level's 500 km window can still be mostly over masked terrain near a
+coastline or an ice sheet's edge -- within a few hundred kilometers of
+Greenland or Iceland, most often for `HVTL`'s lower band. Fitting the
+band's least-squares slope through a window that is mostly missing
+data would carry a silent bias toward whichever few valid points
+remain. `cps_HartCPS.py` instead requires at least half of a level's
+500 km window to hold valid data; a level that falls short is set to
+NaN outright rather than fit, so `HVTL`, `HVTU`, and (through them)
+`HCPSclass` go blank within a few hundred km of Greenland and Iceland
+instead of carrying a hidden bias there.
+
 ## Joint classification (HCPSclass) and index (HCPSidx)
 
 `HCPSclass` is computed from all three Hart parameters at once:
@@ -189,9 +234,14 @@ cold if less than 0). Hart's own two diagrams are two projections of
 this same three-dimensional space that happen to share the lower
 thermal wind axis; each diagram alone carries one piece of information
 the other lacks (frontal or not, from `B`; deep or shallow warm core,
-from `HVTU`). Classifying on all three numbers at once carries both and
-loses neither, and it turns "sample two panels and combine them by
-eye" into "sample one number at the low center":
+from `HVTU`). The full joint space of `B` (symmetric or frontal),
+`HVTL` (warm or cold), and `HVTU` (warm or cold) has eight cells;
+`HCPSclass` gives seven codes because code 6 merges the two cells
+where `HVTL` is cold and `HVTU` is warm (symmetric and frontal) into
+one code, since a cold lower core under a warm upper core is treated
+as its own quadrant regardless of `B`. Classifying on all three
+numbers at once turns "sample two panels and combine them by eye" into
+"sample one number at the low center":
 
 | Code | Name | B | HVTL | HVTU | Typical system |
 | ---: | :--- | :--- | :--- | :--- | :--- |
@@ -199,13 +249,19 @@ eye" into "sample one number at the low center":
 | 1 | symmetric shallow warm core | <= 10 | warm | cold | subtropical storm, or warm seclusion after transition |
 | 2 | frontal deep warm core | > 10 | warm | warm | hurricane meeting a trough, transition beginning |
 | 3 | frontal shallow warm core | > 10 | warm | cold | transition under way |
-| 4 | frontal cold core | > 10 | cold | any | extratropical low, transition complete |
-| 5 | symmetric cold core | <= 10 | cold | any | occluded or cutoff cold low |
-| 6 | mid-level vortex (lower cold, upper warm) | any | cold | warm | perturbation peaking at mid-levels; rarely occupied |
-| blank | | | | | no closed low, or B undefined (steering below 1 m/s) |
+| 4 | frontal cold core | > 10 | cold | cold (code 6 takes lower cold, upper warm first) | extratropical low, transition complete |
+| 5 | symmetric cold core | <= 10 | cold | cold (code 6 takes lower cold, upper warm first) | occluded or cutoff cold low |
+| 6 | shallow cold core (lower cold, upper warm) | any | cold | warm | perturbation peaking at mid-levels; rarely occupied |
+| blank | | | | | no closed low, or B undefined (steering below 2 m/s) |
 
-The codes rise along a typical extratropical transition (0, 2, 3, 4)
-and a warm seclusion is 4 then back to 1. `HCPSclass` is NaN outside
+Ties go to the warm side and the symmetric side: `B` exactly at 10 m
+counts as symmetric, and either thermal wind term exactly at 0 counts
+as warm.
+
+The codes rise along a typical extratropical transition (0, 2, 3, 4).
+A warm seclusion typically runs 4 to 3, or 4 to 1 if `B` also falls at
+or below 10 m; the signature to watch is `HVTL` crossing back above 0,
+not which code color is on screen. `HCPSclass` is NaN outside
 `closed_low_mask`. There is no neutral
 band on `B` or on either thermal wind term here: Hart's own strict
 lines (10 m, 0, 0) are used exactly, unlike `HCPSidx` below, which
@@ -216,10 +272,13 @@ expected, and the continuous fields (`HVTL`, `HVTU`, `HB`) are where to
 look for the underlying trend when it happens.
 
 `HCPSclass` names states, one per frame; onset and completion are
-events, which need history across frames, so they are read from how
-the class changes in the animation (the first frame in class 2 or 3 is
-onset, the first frame in class 4 or 5 is completion), never from a
-single frame.
+events, which need history across frames. Read them from `HB` and
+`HVTL` directly, not from `HCPSclass`: onset is the first frame `HB`
+crosses above 10 m, and completion is the first frame `HVTL` crosses
+below 0. `HCPSclass` is a convenient summary of where those two fields
+stand at a given frame, not the event detector itself, and a storm can
+jump straight from class 0 to class 4 in one frame if both crossings
+land in the same forecast hour.
 
 `HCPSidx` is `2*tanh(HVTL/scaleM) + tanh(HVTU/scaleM)` (default
 `scaleM` = 100 m), range -3 to +3, and still the only place in
@@ -229,14 +288,17 @@ this family a neutral band (via `scaleM`) survives.
 
 Hart's (2003) third CPS number, **B** (thermal asymmetry), is the
 right-minus-left half-window mean of 900-600 hPa thickness across the
-storm's own direction of motion, over the same 500 km analysis circle
-HVTL/HVTU use: `B = h * (mean_right - mean_left)`, `h = +1` in the
-Northern Hemisphere, `-1` in the Southern, so the frontal configuration
-(warm/thick air on the equatorward flank of the track) always reads
-positive. Hart's own line for calling a storm frontal rather than
-symmetric is `B` above 10 m; `HCPSclass` uses that line exactly, with
-no neutral band, to pick between its symmetric (0, 1, 5) and frontal
-(2, 3, 4) codes.
+storm's own direction of motion, over the same 500 km window HVTL/HVTU
+use: `B = h * (mean_right - mean_left)`. `B` is motion-relative, not
+compass-relative: "right" and "left" are defined by the direction of
+travel, so warm air to the right of the track reads positive in the
+Northern Hemisphere (to the left in the Southern), and a large negative
+`B` means warm air sits to the *left* of the motion vector, not that
+the storm is symmetric -- symmetric means small `|B|` in either sign,
+not a particular side of the track. Hart's own line for calling a
+storm frontal rather than symmetric is `B` above 10 m; `HCPSclass` uses
+that line exactly, with no neutral band, to pick between its symmetric
+(0, 1, 5) and frontal (2, 3, 4) codes.
 
 **The gridded approximation.** A single grid point has no "left half"
 or "right half" of an analysis circle the way a storm-centered
@@ -254,17 +316,34 @@ marginal gridded `HB` alongside the thickness overlay itself, not on
 its own.
 
 **Motion**: with no storm to track, the motion at each grid point is
-the **steering flow**, the mean of the wind at 850, 700, 500, and
-300 hPa. This is a reasonable proxy on most systems, but a storm
-moving against its own steering flow, or a nearly stationary system
-(`MIN_STEERING_MS`, 1 m/s, below which `HB` is blanked to NaN), gets an
-unreliable or missing `HB` from this method even where Hart's own
-track-based B would be well defined.
+the **deep-layer steering wind** (850, 700, 500, and 300 hPa),
+horizontally area-averaged over the same 500 km window before its
+direction is taken. Averaging over the window first, rather than
+reading the wind at the point itself, is what makes this a steering
+proxy instead of a reading of the storm's own circulation: a symmetric
+vortex's wind reverses sign across the window and cancels out of the
+average, leaving the environmental flow the storm sits in. This is a
+reasonable proxy on most systems, but a storm moving against its own
+steering flow, or a nearly stationary system (`MIN_STEERING_MS`,
+2 m/s, below which `HB` is blanked to NaN), gets an unreliable or
+missing `HB` from this method even where Hart's own track-based B
+would be well defined.
+
+**`HB` is a full field, not masked to closed lows.** Away from a
+detected low, `HB` still reports whatever the window-mean thickness
+gradient and steering wind give it there: the ambient baroclinicity
+across the flow at that point, which says nothing about a storm
+because there usually isn't one. A large `|HB|` of either sign, on or
+off a detected low, is worth checking against the thickness field
+before it is read as anything -- under the first-order method above, a
+genuinely symmetric vortex contributes nothing to `B` at all, so a
+large reading at a low center is entirely the environment and the
+motion, not the storm's own asymmetry.
 
 **Layer scaling**: this family's thickness layer is 925-700 hPa (for
 consistency with `HVTL`'s own band), not Hart's 900-600 hPa. Because
 thickness scales with the log-pressure depth of the layer, `HB` is
-multiplied by `layerScale = ln(900/600)/ln(925/700)` (about 1.4553) by
+multiplied by `layerScale = ln(900/600)/ln(925/700)` (about 1.4548) by
 default so the result reads as a "900-600 hPa equivalent" against
 Hart's 10 m threshold; pass `layerScale=1.0` for the raw, unscaled
 925-700 hPa value.
@@ -273,8 +352,9 @@ Hart's 10 m threshold; pass `layerScale=1.0` for the raw, unscaled
 Northern Hemisphere right-hand normal of steering `(u_s, v_s)` is
 `(v_s, -u_s)/|V_s|`, and the AWIPS coriolis pseudo-field's sign
 (positive north, negative south) is the hemisphere factor `h` that
-multiplies the projected gradient so warm air on the right in the NH
-(or on the left in the SH) always reads positive. **VERIFY**: the
+multiplies the projected gradient so warm air to the right of the
+motion vector in the NH (or to the left in the SH) reads positive.
+**VERIFY**: the
 coriolis pseudo-field is referenced by base vorticity definitions on
 most AWIPS sites; if `cps_HB.xml`/`cps_HCPSclass.xml` fail to load, replace the
 `coriolis` `<Field>` with `<ConstantField value="1.0"/>` at the same
@@ -285,7 +365,7 @@ Constants (all `<ConstantField>` values in `cps_HB.xml`/`cps_HCPSclass.xml`):
 | Constant | Meaning | Default |
 | :--- | :--- | :--- |
 | `radiusKm` | analysis-window half-width (also the `8*radiusKm/(3*pi)` geometry constant) | 500.0 |
-| `layerScale` | rescales 925-700 hPa `HB` to a 900-600 hPa equivalent | 1.4553 |
+| `layerScale` | rescales 925-700 hPa `HB` to a 900-600 hPa equivalent | 1.4548 |
 | `bThresholdM` | Hart's frontal threshold for `B` (`HCPSclass` only) | 10.0 |
 
 ## Orientation verification
@@ -318,8 +398,9 @@ is no Southern Hemisphere sign caveat to verify for this family.
 
 Expect a few sliding-window passes per level (one `max` and one `min`
 each, via the doubling/sparse-table trick in `cps_HartCPS.
-running_extreme_1d` -- see that function's docstring), so a few seconds
-per analysis time on a global 0.25 degree grid. Measured in this repo's
+running_extreme_1d` -- see that function's docstring). The full
+`executeHartClass` computation runs at about 1.7 s per forecast hour on
+a 0.25 degree global grid. Measured in this repo's
 environment, on a 721x1440 grid (`tests/d2d_cps/test_hart_cps.py`'s
 performance tests -- see their `-s` output for the exact numbers on
 your own machine):
@@ -327,11 +408,11 @@ your own machine):
 - `thermal_wind_grid`, 3 levels (one HVTL or HVTU band alone): well
   under a second.
 - `executeHartClass`, all 7 standard levels plus `B` (both thermal wind
-  bands, the gradient/steering pass `B` needs, `closed_low_mask`'s
+  bands, the area-averaged steering pass `B` needs, `closed_low_mask`'s
   candidate test, its two `window_sum_2d` ring box sums, and its blob
-  dilation): about 2 seconds; the mask and `B` pass add a
-  modest, not a dominant, amount of work on top of the two
-  `thermal_wind_grid` calls it also makes.
+  dilation): about 1.7 s per forecast hour on a 0.25 degree global
+  grid; the mask and `B` pass add a modest, not a dominant, amount of
+  work on top of the two `thermal_wind_grid` calls it also makes.
 
 Both are comfortably inside an 8 second budget. A regional subset
 (e.g. an Atlantic-basin CONUS-scale grid instead of a global one) is
@@ -339,7 +420,7 @@ proportionally faster, since the cost scales with the number of grid
 points times `log(window width in cells)`, not with the window's
 physical size.
 
-## Adding a GFS-only 13-level definition
+## Adding a GFS-only seven-level definition
 
 To use Hart's exact 900-600/600-300 hPa bands (50 hPa spacing) instead
 of the 3-level standard-level approximation above, on a site that
@@ -496,33 +577,53 @@ expectation) with no pytest or AWIPS runtime involved.
 
 ## Validation log
 
-Real cases sampled at the MSLP center in D2D. Add to this as cases
-accumulate; it is the calibration record for the thresholds.
+Real cases sampled at the MSLP center in D2D. This is **experimental:
+three GFS cases from one model cycle, a smoke test**, not a calibrated
+or representative sample. Add to this table as cases accumulate.
 
 | Date sampled | Model, cycle, fhr | System | HVTL (m) | HVTU (m) | HCPSclass | HCPSidx |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| 2026-09-17 | GFS 12Z, 72 h | Typhoon, 31N 139E, 984 mb | 120 | 180 | deep warm core (0 or 2; B not sampled) | 2.5 |
-| 2026-09-17 | GFS 12Z, series | Typhoon Dujuan, loss of deep warm core | | | leaves the deep warm core classes (0 or 2) at Mon 21 Sep 2026 18Z | |
-| 2026-09-17 | GFS 12Z | Deep extratropical low, North Atlantic | negative (value not recorded) | negative (value not recorded) | a cold-core class | negative |
+| 2026-09-17 | GFS 2026-09-17 12Z, 72 h | Typhoon, 31N 139E, 984 mb | 120 | 180 | deep warm core (0 or 2; B not sampled) | 2.5 (sampled near, not at, the point where HVTL/HVTU were read; see notes) |
+| 2026-09-17 | GFS 2026-09-17 12Z, valid 2026-09-21 18Z | Typhoon Dujuan, loss of deep warm core | not recorded | not recorded | leaves the deep warm core classes (0 or 2) at this valid time | not recorded |
+| 2026-09-17 | GFS 12Z | Deep extratropical low, North Atlantic | not recorded, to be re-sampled | not recorded, to be re-sampled | a cold-core class (underlying values not recorded) | not recorded, to be re-sampled |
 
-Notes: the Hart values for the typhoon are in Hart's published
-hurricane range. The Hart family validated on a cold-core case, both
-thermal wind terms negative, HCPSclass reading a cold-core class.
-External check: the first forecast hour at which HCPSclass leaves the
-deep warm core classes for Typhoon Dujuan (Mon 21 Sep 2026 18Z) matches
-the hour the FSU cyclone phase page shows the same GFS run moving from
-deep to shallow warm core. This is the loss of the upper warm core,
-not the Evans and Hart (2003) onset, which is read from the animation
-as the first frame `HCPSclass` reaches 2 or 3 (`B` above 10 m) and
-awaits validation on a real case. After the surface-pressure mask,
-Greenland and the high terrain of western North America are blank
-rather than contaminated, which is the intended behavior. A few very
-weak closed lows (under about 5 hPa deep) get no class blob at the
-shipped depth of 40 m; set depthM to 25 in cps_HCPSclass.xml and
-cps_HCPSidx.xml to include them.
+Notes: the typhoon values have the expected sign and order of
+magnitude for a deep warm core; they are not compared with Hart's
+published magnitudes because the bands differ (see "What it is").
+`B` was not sampled for any of the three cases above
+and should be added when this table is next updated. The index column
+for the typhoon (2.5) was sampled near, not exactly at, the grid point
+where HVTL=120 and HVTU=180 were read; the index definition,
+`2*tanh(HVTL/100) + tanh(HVTU/100)`, gives 2.6 evaluated at that exact
+point, and a future pass should resample HVTL, HVTU, and HCPSidx
+together at one point. The North Atlantic case's HVTL, HVTU, and
+HCPSidx values were only recorded as negative at the time, not to the
+number; that row is marked for re-sampling above rather than backfilled
+with a guess. External check: the first forecast hour at which
+HCPSclass leaves the deep warm core classes for Typhoon Dujuan, valid
+2026-09-21 18Z, matches the hour the FSU cyclone phase page shows the
+same GFS run moving from deep to shallow warm core. This is the loss of
+the upper warm core, not the Evans and Hart (2003) onset (now read as
+the first frame `HB` crosses above 10 m) or completion (the first frame
+`HVTL` crosses below 0), neither of which has been checked against a
+real case yet. After the surface-pressure mask, Greenland and the high
+terrain of western North America are blank rather than contaminated,
+which is the intended behavior. A few very weak closed lows (under
+about 5 hPa deep) get no class blob at the shipped depth of 40 m; set
+depthM to 25 in cps_HCPSclass.xml and cps_HCPSidx.xml to include them,
+at the cost of more false detections on broad flat lows and elongated
+troughs (see "Closed-low mask" above).
 
-**Status: the D2D version is release-ready as of 2026-09-17**, still
-labeled experimental pending a season of use. Known limitations: the
-raw HVTL/HVTU fields paint a square footprint around each low (the
-window shape, cosmetic); style rules did not auto-apply on the OPC
-build, so colors come from a saved procedure.
+**Status: experimental.** Three GFS cases from one model cycle is a
+smoke test, not a season of use, and the package stays labeled
+experimental until each of the following has been checked and
+recorded: extratropical transition cases run against the FSU cyclone
+phase page on at least two models; a null case, a recurving storm that
+does not transition, correctly staying warm-core throughout; a warm
+seclusion case; a subtropical storm case; a false-positive count on
+weak frontal waves that are not tropical or subtropical systems at
+all; and a comparison of gridded `B` against storm-centered `B`
+computed from finite-differenced storm centers on a tracked case.
+Known limitations: the raw HVTL/HVTU fields paint a square footprint
+around each low (the window shape, cosmetic); style rules did not
+auto-apply on the OPC build, so colors come from a saved procedure.
