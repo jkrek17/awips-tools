@@ -58,13 +58,14 @@
       a forecast hour for the loss of Typhoon Dujuan's deep warm core (the
       transition from deep to shallow warm core) that matched the
       storm-centered diagnosis on the Florida State University cyclone phase
-      page for the same model run. Because the asymmetry parameter is not
-      computed, the Evans and Hart onset time itself is not available from
-      the gridded fields. A simpler formulation based on vertical differences of
+      page for the same model run. The asymmetry parameter B is implemented as a
+      first-order approximation, the window-mean thickness gradient projected
+      across a steering-flow motion proxy, giving an Evans and Hart onset
+      field that has not yet been validated. A simpler formulation based on vertical differences of
       relative vorticity was found to misclassify vertically tilted and broad
       baroclinic systems as warm core and was retained only for comparison.
       Limitations include the use of standard levels in place of Hart's
-      50&nbsp;hPa spacing, the absence of the asymmetry parameter, and validation
+      50&nbsp;hPa spacing, the steering-flow approximation of the asymmetry parameter, and validation
       on a small number of cases; a full season of operational use at the
       Ocean Prediction Center is planned.
     </p>
@@ -298,7 +299,8 @@
     matched the hour the Florida State University cyclone phase page
     showed the same run moving from deep to shallow warm core. That hour is
     the loss of the upper warm core, a sign that transition is under way,
-    and not the Evans and Hart onset, which depends on <em>B</em>. A deep
+    and not the Evans and Hart onset, which depends on <em>B</em> and is
+    computed separately (Section 2) but not yet validated. A deep
     extratropical low over the North Atlantic classified HCPScat = 1
     (cold core), with both HVTL and HVTU negative, in the same GFS cycle.
     After the below-ground mask is applied, Greenland and the high
@@ -326,9 +328,7 @@
       Hart's 50&nbsp;hPa-spaced 900&ndash;600/600&ndash;300&nbsp;hPa bands; a GFS-only
       exact-band definition (<code>executeBand7</code>) exists but is not
       yet wired into an XML definition.</li>
-    <li>Parameter B, the thermal asymmetry, is not computed; it needs a
-      motion direction at every grid point, and a deep-layer mean wind is
-      a plausible proxy.</li>
+    <li>Parameter B is computed only to first order: the window-mean thickness gradient across a steering-flow motion proxy (the mean 850 to 300&nbsp;hPa wind), scaled from the 925 to 700&nbsp;hPa layer to Hart's 900 to 600&nbsp;hPa equivalent. It misses nonlinear thickness structure inside the window and is unreliable for stationary or steering-opposed systems. The resulting Evans and Hart onset field awaits validation.</li>
     <li>Validation is a handful of real cases, not a season.</li>
   <li>No sensitivity analysis yet: the response to window size, band definition, grid resolution, and the 25&nbsp;m neutral band has not been quantified.</li>
   <li>The below-ground rule treats the 1000 and 925&nbsp;hPa surfaces as valid wherever the surface pressure exceeds 900&nbsp;hPa, so extrapolated heights over low terrain (surface pressure between 900 and 1000&nbsp;hPa) still enter the window.</li>
