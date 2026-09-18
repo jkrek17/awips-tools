@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  EXPERIMENTAL. Hart CPS parameter B (thermal asymmetry), gridded
+  approximation: at every grid point, the 925-700 hPa thickness gradient
+  (HartCPS.gradient_2d, box averaged over the same 500 km analysis window
+  HVTL/HVTU use) is projected onto the right-hand normal of the steering
+  flow (the mean of the 850/700/500/300 hPa wind), then scaled by the
+  geometric constant 8*radiusKm/(3*pi) that approximates Hart's own
+  right-minus-left half-window mean difference for a smoothly varying
+  thickness field, then rescaled from this module's 925-700 hPa layer to
+  a 900-600 hPa equivalent by layerScale so Hart's 10 m onset threshold
+  applies - see HartCPS.py's module docstring, "Parameter B and ET
+  stage" section, for the full derivation, what the linear-gradient
+  approximation loses (a genuinely nonlinear thickness structure inside
+  the window, e.g. a warm-seclusion tongue, only to first order), and the
+  steering-flow motion proxy's own limits (unreliable or missing for a
+  stationary or steering-opposed storm). See HartCPS.executeB and
+  D2D/README.md's "Hart CPS family" section.
+
+  Hemisphere: the coriolis pseudo-field's sign is the hemisphere factor h
+  (positive Northern Hemisphere, negative Southern) - see HartCPS.
+  parameter_b_grid. A 2D coriolis field gets the correct sign on both
+  sides of a grid that straddles the equator; a scalar assumes one
+  hemisphere everywhere.
+
+  Below-ground masking: z925 and z700 are each blanked (NaN) before the
+  thickness difference wherever they are below ground for their own
+  pressure, using the surface pressure field (P, Surface) and capHpa
+  below - see HartCPS.mask_below_ground and HVTL.xml's comment for the
+  same convention.
+
+  VERIFY against an existing definition in
+  /awips2/edex/data/utility/common_static/base/derivedParameters/definitions/
+  (for example VTL.xml or one of this package's own HVTL.xml/HCPScat.xml):
+    - the geopotential height field's abbreviation is "GH" as used below,
+    - fixed-level Field references use the "925MB"/"700MB"/"850MB"/
+      "700MB"/"500MB"/"300MB" spelling,
+    - the surface pressure field's abbreviation is "P" at level="Surface"
+      as used below (confirmed on this site; some builds spell the
+      surface plane "0.0SFC" instead),
+    - the coriolis pseudo-field is referenced by base vorticity
+      definitions on this site under the abbreviation "coriolis" below;
+      if this definition fails to load, replace the coriolis Field with
+      <ConstantField value="1.0"/> at the same position to assume the
+      Northern Hemisphere,
+    - the "dx"/"dy" pseudo-fields and <ConstantField> are accepted,
+    - unit="" (empty) is accepted - confirmed to load on a real AWIPS
+      site for this package's other CPS fields, which use the same
+      convention.
+-->
+<DerivedParameter abbreviation="HB" name="Hart CPS B asymmetry (m, 900-600 equiv)" unit="">
+    <Method name="HartCPS.executeB" levels="Surface">
+        <Field abbreviation="GH" level="925MB"/>
+        <Field abbreviation="GH" level="700MB"/>
+        <Field abbreviation="uW" level="850MB"/>
+        <Field abbreviation="vW" level="850MB"/>
+        <Field abbreviation="uW" level="700MB"/>
+        <Field abbreviation="vW" level="700MB"/>
+        <Field abbreviation="uW" level="500MB"/>
+        <Field abbreviation="vW" level="500MB"/>
+        <Field abbreviation="uW" level="300MB"/>
+        <Field abbreviation="vW" level="300MB"/>
+        <Field abbreviation="P" level="Surface"/>
+        <Field abbreviation="coriolis"/>
+        <Field abbreviation="dx"/>
+        <Field abbreviation="dy"/>
+        <!-- radiusKm (km): Hart's own 500 km analysis-window half-width,
+             used both for the box-averaged thickness gradient and the
+             8*radiusKm/(3*pi) geometry constant -->
+        <ConstantField value="500.0"/>
+        <!-- layerScale: rescales B from this module's 925-700 hPa layer
+             to a 900-600 hPa equivalent, ln(900/600)/ln(925/700), so
+             Hart's 10 m onset threshold applies; pass 1.0 for the raw,
+             unscaled 925-700 hPa value -->
+        <ConstantField value="1.4553"/>
+        <!-- capHpa: below-ground cap, see HartCPS.py -->
+        <ConstantField value="900.0"/>
+    </Method>
+</DerivedParameter>

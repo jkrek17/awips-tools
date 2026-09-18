@@ -12,6 +12,13 @@
   this needs to be wired into a parent menu file via an <include> rather
   than dropped into the directory alone. AWIPS versions differ here; treat
   this file as a starting point, not a drop-in.
+
+  HB and HETstage (added under the Hart heading below) are parameter B
+  (thermal asymmetry) and the Evans and Hart (2003) extratropical
+  transition stage, both gridded approximations built on the same
+  height and wind fields as HVTL/HVTU/HCPScat/HCPSidx - see HartCPS.py's
+  module docstring, "Parameter B and ET stage" section, and
+  D2D/README.md's "Hart CPS family" section.
 -->
 <menuTemplate xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
     <contribute xsi:type="titleItem" titleText="------ CPS Core (experimental) ------" id="cpsCoreTitle"/>
@@ -26,4 +33,6 @@
     <contribute xsi:type="menuItem" menuText="Hart CPS Upper -VT (HVTU)" key="HVTU" indentText="false" id="hartCpsHVTU"/>
     <contribute xsi:type="menuItem" menuText="Hart CPS Core Class" key="HCPScat" indentText="false" id="hartCpsHCPScat"/>
     <contribute xsi:type="menuItem" menuText="Hart CPS Core Index" key="HCPSidx" indentText="false" id="hartCpsHCPSidx"/>
+    <contribute xsi:type="menuItem" menuText="Hart CPS B Asymmetry (HB)" key="HB" indentText="false" id="hartCpsHB"/>
+    <contribute xsi:type="menuItem" menuText="Hart CPS ET Stage" key="HETstage" indentText="false" id="hartCpsHETstage"/>
 </menuTemplate>

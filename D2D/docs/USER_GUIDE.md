@@ -30,10 +30,13 @@ The two numbers are:
 - **Upper thermal wind, -VT upper.** The same for the upper troposphere
   (500 to 300 hPa). Positive is warm.
 
-Hart's third number, B, the frontal asymmetry, is not computed. Overlay
-1000 to 500 hPa thickness and read it by eye: closed thickness contours
-around the low mean symmetric, a low sitting in a tight thickness
-gradient means frontal.
+Hart's third number, B, the frontal asymmetry, is now computed as HB,
+and combined with the lower thermal wind into HETstage, the
+extratropical transition stage (see sections 2 and 5). It relies on
+the model's own steering flow standing in for the storm's motion, so
+it is worth cross-checking by eye too: overlay 1000 to 500 hPa
+thickness and look for closed contours around the low (symmetric) or a
+tight gradient across it (frontal).
 
 ---
 
@@ -49,6 +52,8 @@ kept for comparison only.
 | HVTU | Hart CPS -VT upper (500-300) (m) | upper thermal wind, meters | positive warm core, negative cold core |
 | HCPScat | Hart CPS Core Class | category 0 to 4 at each detected low, blank elsewhere | see table in section 4 |
 | HCPSidx | Hart CPS Core Index | one number from -3 to +3 at each detected low | -3 deep cold, 0 neutral, +3 deep warm |
+| HB | Hart CPS B Asymmetry (HB) | thermal asymmetry, meters (900-600 hPa equivalent) | near zero symmetric/tropical, above 10 asymmetric/frontal |
+| HETstage | Hart CPS ET Stage | extratropical transition stage 0/1/2 at each detected low, blank elsewhere | 0 pre-onset, 1 onset, 2 complete |
 
 Vorticity family, secondary: VTL, VTU, CPScat, CPSidx, same layout,
 different method and units. cpsZ850 is an installation check, not a
@@ -150,12 +155,26 @@ tropical cyclone. Two markers are available here:
   of the low-level warm core. This is the Evans and Hart (2003)
   completion time.
 
-The formal Evans and Hart onset, when the thermal asymmetry B exceeds
-10 m, is not computed here because B needs a storm motion. Read it from
-the thickness overlay instead: the low moving from closed thickness
-contours into a tight gradient is onset. Around these hours the wind
-field expands well beyond its tropical radius and becomes strongly
-asymmetric, and the gale and storm-force radii grow fastest.
+HETstage gives the Evans and Hart onset directly (stage 1, HB above
+10 m) and completion (stage 2, HVTL negative) as one field to step
+through, replacing the old need to eyeball the transition from the
+thickness overlay. Keep the thickness overlay advice as a cross-check:
+the low moving from closed thickness contours into a tight gradient
+should line up with the frame HETstage crosses into stage 1, and a
+mismatch is worth a second look before trusting either one alone.
+Around these hours the wind field expands well beyond its tropical
+radius and becomes strongly asymmetric, and the gale and storm-force
+radii grow fastest.
+
+**Caution on HB/HETstage.** B is computed from the steering flow (the
+mean wind at 850, 700, 500, and 300 hPa) standing in for the storm's
+own motion, not a tracked heading. For a storm moving with its
+steering flow this reads the same as Hart's own B; for a storm moving
+against its own steering flow, or one that is nearly stationary, HB is
+unreliable or blank, and HETstage's onset call inherits that
+weakness. Cross-check a suspicious HB/HETstage frame against the
+thickness overlay and the storm's own recent track before trusting the
+onset call.
 
 **Model comparison.** Load HCPScat for two models on the same storm and
 step frames side by side. Where they disagree on the hour the category
@@ -197,6 +216,13 @@ noise. Two or three consecutive frames in the same direction is signal.
   replaced it. If you use it, do not call cold core from it.
 - **Southern Hemisphere.** The Hart family is fine there. The vorticity
   family blanks Southern Hemisphere cyclones entirely.
+- **HB depends on the steering flow, not the storm's real motion.** HB
+  and HETstage stand in the model's mean 850-300 hPa wind for the
+  storm's own heading. A storm moving against its own steering flow,
+  or a nearly stationary one, gets an unreliable or blank HB and an
+  onset call in HETstage that should not be trusted on its own.
+  Cross-check against the thickness overlay before calling onset from
+  HB/HETstage alone.
 
 ---
 
@@ -210,5 +236,6 @@ noise. Two or three consecutive frames in the same direction is signal.
   2 neutral, 1 cold, 0 unclassified.
 - Numbers: positive warm, negative cold, zero is the line, meters.
 - Deep warm core lost: first frame the category leaves 4. Transition
-  complete: HVTL negative, category 1. Onset: read from thickness.
+  complete: HVTL negative, category 1, HETstage 2. Onset: HETstage 1
+  (HB above 10), cross-check against the thickness overlay.
 - Always overlay MSLP and thickness.

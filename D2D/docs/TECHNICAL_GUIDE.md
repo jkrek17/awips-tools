@@ -19,7 +19,7 @@ Two independent families share the same delivery mechanism:
 
 | Family | Function file | Products | Inputs | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| Hart | `derivedParameters/functions/HartCPS.py` | HVTL, HVTU, HCPScat, HCPSidx | geopotential height at 1000, 925, 850, 700, 500, 400, 300 hPa; surface pressure | primary, validated |
+| Hart | `derivedParameters/functions/HartCPS.py` | HVTL, HVTU, HCPScat, HCPSidx, HB, HETstage | geopotential height at 1000, 925, 850, 700, 500, 400, 300 hPa; u/v wind at 850, 700, 500, 300 hPa; surface pressure; coriolis (HB/HETstage only) | primary, validated (HB/HETstage new, awaiting validation) |
 | Vorticity | `derivedParameters/functions/CycloneCore.py` | VTL, VTU, CPScat, CPSidx, cpsZ850 | u and v wind at 850, 600, 300 hPa | secondary, warm bias |
 
 Both function files are self-contained numpy with no imports from the
@@ -37,7 +37,7 @@ Package layout:
 D2D/
   derivedParameters/functions/    HartCPS.py, CycloneCore.py
   derivedParameters/definitions/  one XML per product
-  colormaps/Grid/                 CPS_CoreDiverging.cmap, CPS_CoreClass.cmap
+  colormaps/Grid/                 CPS_CoreDiverging.cmap, CPS_CoreClass.cmap, CPS_ETStage.cmap
   styleRules/cpsStyleRules.xml    base-schema style rules (see 6.3)
   menus/volumebrowser/cpsFields.xml  Volume Browser entries (see 6.4)
   docs/                           this guide, the user guide
@@ -154,6 +154,46 @@ With band = `neutralM` (25 m):
 Index = 2 tanh(VTL / scaleM) + tanh(VTU / scaleM), scaleM = 100 m.
 Both are NaN outside the closed-low mask.
 
+### 2.7 Parameter B and ET stage
+
+Hart's third number, B, is the right-minus-left half-window mean of
+925-700 hPa thickness across the storm's motion, over the same 500 km
+window. A single grid point has no half-disk of its own, so the
+gridded version uses a linear-gradient approximation: for a smoothly
+varying thickness field, that right-minus-left difference equals
+`(8*radiusKm/(3*pi))` times the window-mean thickness gradient,
+projected onto the right-hand normal of the storm's motion. This is
+exact for a linear field and only first-order for a genuinely
+nonlinear one (a warm-seclusion tongue folding into one side of the
+circle is the case that loses the most).
+
+Motion has no tracked storm to read either, so it comes from the
+steering flow, the mean wind at 850, 700, 500, and 300 hPa. A point
+whose steering speed is below `MIN_STEERING_MS` (1 m/s) has no well
+defined right/left of motion and is blanked. The thickness layer is
+925-700 hPa (matching `LOWER_BAND`), not Hart's 900-600 hPa, so B is
+multiplied by `layerScale = ln(900/600)/ln(925/700)` (about 1.4553) to
+read as a 900-600 hPa equivalent against Hart's 10 m threshold;
+`layerScale=1.0` gives the raw 925-700 hPa value instead. The
+hemisphere factor is the sign of the coriolis pseudo-field (positive
+north, negative south, zero treated as positive), matching
+`cps.hart.parameter_b`'s own `hemisphere_sign`.
+
+Unlike every other function in this file, computing B's thickness
+gradient (`gradient_2d`) takes a spatial derivative, so it is subject
+to the same grid-orientation ambiguity `CycloneCore.relative_vorticity`
+has. `HartCPS.py` therefore carries its own `ORIENTATION_MODE` (0 to 3,
+same semantics as `CycloneCore.py`'s, default 1, confirmed on the OPC
+build) -- used only by `gradient_2d`; `HVTL`/`HVTU`/`HCPScat`/`HCPSidx`
+never call it and are unaffected.
+
+ET stage (`HETstage`) combines B and VTL: 0 pre-onset, 1 onset (B above
+`bThresholdM`, default 10 m), 2 complete (VTL strictly negative, no
+neutral band), NaN outside the closed-low mask. It has no memory of an
+earlier frame, so a warm seclusion (a re-formed low-level warm core
+after transition) reads back down to 0 or 1 rather than staying at 2 --
+read that alongside `HCPScat` at the same point and time.
+
 ---
 
 ## 3. Vorticity family method
@@ -183,7 +223,11 @@ Grid orientation matters because derivatives are taken. `ORIENTATION_MODE`
 (0 to 3) covers row direction and transposed axes. Mode 1 is confirmed
 on the OPC build. The cpsZ850 debug definition takes the mode from its
 last ConstantField so a new site can find its mode without editing
-Python.
+Python. `HartCPS.py` now carries its own `ORIENTATION_MODE` as well
+(section 2.7) -- same 0-to-3 semantics, used only by `HB`/`HETstage`'s
+thickness-gradient step; the two `ORIENTATION_MODE` constants are
+independent module-level values, so setting one does not affect the
+other.
 
 Southern Hemisphere: cyclonic vorticity is negative there, so warm cores
 read negative and the vortex mask blanks them. Not fixed; the Hart
@@ -219,6 +263,7 @@ Measured on a 721 by 1440 grid (0.25 degree global) in the test suite:
 | :--- | :--- |
 | `thermal_wind_grid`, three levels | about 0.8 s |
 | `executeClassStd`, six levels plus mask | about 1.3 s |
+| `executeETStage`, four levels, B, and mask | about 1.4 s |
 
 CAVE computes per frame on load, so a 41-frame loop costs under a
 minute on first display and is cached after. A regional grid is faster.
@@ -255,6 +300,8 @@ Hart family (`HartCPS.py`):
 | `executeBand7` | z1..z7, psfc, dx, dy, radiusKm, p1..p7, capHpa |
 | `executeClassStd` | z1000, z925, z850, z700, z500, z400, z300, psfc, dx, dy, radiusKm, neutralM, depthM, blobKm, capHpa |
 | `executeIndexStd` | z1000, z925, z850, z700, z500, z400, z300, psfc, dx, dy, radiusKm, scaleM, depthM, blobKm, capHpa |
+| `executeB` | z925, z700, u850, v850, u700, v700, u500, v500, u300, v300, psfc, coriolis, dx, dy, radiusKm, layerScale, capHpa |
+| `executeETStage` | z1000, z925, z850, z700, u850, v850, u700, v700, u500, v500, u300, v300, psfc, coriolis, dx, dy, radiusKm, bThresholdM, layerScale, depthM, blobKm, capHpa |
 
 Vorticity family (`CycloneCore.py`):
 
@@ -276,6 +323,8 @@ CAVE; no Python change is needed.
 | HVTU | radiusKm, p1, p2, p3, capHpa | 500, 500, 400, 300, 900 |
 | HCPScat | radiusKm, neutralM, depthM, blobKm, capHpa | 500, 25, 40, 200, 900 |
 | HCPSidx | radiusKm, scaleM, depthM, blobKm, capHpa | 500, 100, 40, 200, 900 |
+| HB | radiusKm, layerScale, capHpa | 500, 1.4553, 900 |
+| HETstage | radiusKm, bThresholdM, layerScale, depthM, blobKm, capHpa | 500, 10, 1.4553, 40, 200, 900 |
 | VTL, VTU | smoothKm | 100 |
 | CPScat | smoothKm, band, vortexMin | 100, 3, 5 |
 | CPSidx | smoothKm, scale, vortexMin | 100, 10, 5 |
@@ -293,6 +342,11 @@ What each does:
 - `capHpa`: below-ground cap. Lower it only if deep ocean lows are
   being blanked, which has not been seen.
 - `scaleM`: tanh scale for the index.
+- `layerScale`: rescales B from the 925-700 hPa layer this package
+  computes it on to a 900-600 hPa equivalent, so Hart's 10 m threshold
+  applies. 1.0 gives the raw, unscaled value.
+- `bThresholdM`: the Evans and Hart onset threshold for B. Hart's own
+  is 10 m.
 
 ### 5.4 Adding definitions
 
@@ -315,10 +369,11 @@ Site level under `/awips2/edex/data/utility/common_static/site/<SITE>/`:
 ```
 derivedParameters/functions/HartCPS.py
 derivedParameters/functions/CycloneCore.py
-derivedParameters/definitions/HVTL.xml HVTU.xml HCPScat.xml HCPSidx.xml
+derivedParameters/definitions/HVTL.xml HVTU.xml HCPScat.xml HCPSidx.xml HB.xml HETstage.xml
 derivedParameters/definitions/VTL.xml VTU.xml CPScat.xml CPSidx.xml cpsZ850.xml
 colormaps/Grid/CPS_CoreDiverging.cmap
 colormaps/Grid/CPS_CoreClass.cmap
+colormaps/Grid/CPS_ETStage.cmap
 ```
 
 Restart CAVE after any change. The embedded interpreter caches Python
@@ -332,14 +387,22 @@ They appear under Grid in the legend's Change Colormap menu.
 
 ### 6.2 First-install verification
 
-1. Product Browser, Grid, GFS: the four Hart products and the five
-   vorticity products appear at Surface. Missing products mean a
-   definition failed to parse; the CAVE log names the file.
+1. Product Browser, Grid, GFS: the six Hart products (HVTL, HVTU,
+   HCPScat, HCPSidx, HB, HETstage) and the five vorticity products
+   appear at Surface. Missing products mean a definition failed to
+   parse; the CAVE log names the file.
 2. Vorticity family only: load cpsZ850 beside D2D's own relative
    vorticity at 850 mb on a known hurricane. Matching sign and a single
    blob means the orientation mode is right. Lobes mean try mode 2 then
    3 in cpsZ850.xml, then set `ORIENTATION_MODE` in CycloneCore.py.
 3. Load HCPScat on a hurricane: 4 at the center, blank ocean.
+4. Load HETstage on the same hurricane, stepping toward its
+   extratropical transition: 0 (or 1, once B crosses 10 m) while the
+   storm is still tropical, 2 once HVTL turns negative. If HB/HETstage
+   fail to load specifically (while HVTL/HVTU/HCPScat/HCPSidx load
+   fine), the first suspect is the coriolis pseudo-field's abbreviation
+   -- see HB.xml's/HETstage.xml's own VERIFY comment for the
+   `<ConstantField value="1.0"/>` fallback.
 
 ### 6.3 Style rules
 
@@ -378,6 +441,8 @@ bundle file extracted from the saved procedure:
 | whole field green on load | style rule not applied | pick the colormap from the legend or load the procedure |
 | Hart products vanish after adding P | P field level spelling | check how base definitions reference Surface |
 | blank over land | below-ground mask | expected |
+| HB/HETstage missing while other Hart products load | coriolis pseudo-field abbreviation not recognized | replace the `coriolis` Field with `<ConstantField value="1.0"/>` (assumes Northern Hemisphere) |
+| HB near zero everywhere on an obviously asymmetric storm | steering speed below `MIN_STEERING_MS` (1 m/s) at that point | check the four steering wind levels are not all missing/near-calm there |
 
 ---
 
@@ -406,8 +471,14 @@ directory on the path so the files import exactly as CAVE imports them.
   possible at several times the cost.
 - Standard-level bands differ from Hart's. A GFS-only 13-level
   definition is a small addition (5.4).
-- Parameter B is not computed. It needs a motion direction per grid
-  point; deep-layer mean wind is a plausible proxy.
+- Parameter B (`HB`/`HETstage`) now uses the steering flow (mean wind
+  at 850/700/500/300 hPa) as its motion proxy and a linear-gradient
+  approximation for the right-minus-left half-window mean. Both are
+  new and awaiting validation: the steering proxy is unreliable for a
+  storm moving against its own steering flow or for a nearly
+  stationary system, and the linear approximation loses genuinely
+  nonlinear thickness structure inside the window (e.g. a
+  warm-seclusion tongue) to first order.
 - Vorticity family Southern Hemisphere sign. Needs a latitude input.
 - Below-ground rule uses one cap for all levels. A per-level margin
   would be more precise.

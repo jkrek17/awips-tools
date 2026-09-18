@@ -145,4 +145,50 @@
         </imageStyle>
     </styleRule>
 
+    <!-- Parameter B, meters (900-600 hPa equivalent). A diverging map is
+         used, not the categorical one, so a rare negative B (warm air on
+         the wrong side of the track - not the usual frontal
+         configuration) is still visible rather than clipped. -->
+    <styleRule>
+        <paramLevelMatch>
+            <parameter>HB</parameter>
+        </paramLevelMatch>
+        <imageStyle>
+            <defaultColormap>Grid/CPS_CoreDiverging</defaultColormap>
+            <range scale="LINEAR">
+                <minValue>-40</minValue>
+                <maxValue>40</maxValue>
+            </range>
+        </imageStyle>
+    </styleRule>
+
+    <!-- The 10 m contour is the Evans and Hart (2003) onset threshold. -->
+    <styleRule>
+        <paramLevelMatch>
+            <parameter>HB</parameter>
+        </paramLevelMatch>
+        <contourStyle>
+            <contourLabeling labelSpacing="4">
+                <values>10 20 30 40</values>
+            </contourLabeling>
+        </contourStyle>
+    </styleRule>
+
+    <!-- Categorical: 0 pre-onset, 1 onset, 2 complete. Range is offset by
+         half a category so each code sits in the middle of one color
+         bin; interpolate off so colors hold flat across a bin. -->
+    <styleRule>
+        <paramLevelMatch>
+            <parameter>HETstage</parameter>
+        </paramLevelMatch>
+        <imageStyle>
+            <interpolate>false</interpolate>
+            <defaultColormap>Grid/CPS_ETStage</defaultColormap>
+            <range scale="LINEAR">
+                <minValue>-0.5</minValue>
+                <maxValue>2.5</maxValue>
+            </range>
+        </imageStyle>
+    </styleRule>
+
 </styleRuleset>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  ETStage: 3 entry categorical colormap for HETstage (Evans and Hart
+  (2003) extratropical transition stage, see D2D/README.md). Pair this
+  with a styleRule range of -0.5 to 2.5 so each integer code below lands
+  in the middle of one color bin instead of on a boundary between two:
+
+    code 0  pre-onset            pale gray, half
+                                  transparent     (0.85, 0.85, 0.85, 0.5)
+    code 1  onset (B above 10 m) orange          (0.95, 0.60, 0.15, 1.0)
+    code 2  complete (VTL < 0)   blue            (0.15, 0.35, 0.85, 1.0)
+
+  Code 0 (pre-onset) is half transparent for the same reason
+  CPS_CoreClass.cmap's neutral code is: a system that has not begun
+  transition is not worth painting as an opaque fill over MSLP contours
+  plotted underneath. The onset/complete colors reuse CPS_CoreClass's
+  own shallow-warm-core orange and cold-core blue, since onset and
+  completion are the same physical transition CPScat/HCPScat's
+  shallow-warm-to-cold-core categories already track.
+
+  File format: a root <colorMap> element containing an ordered list of
+  <color r="" g="" b="" a=""/> entries, each component a float from 0.0
+  to 1.0, in code order (this file's first <color> is code 0, and so
+  on), same format and comment style as CPS_CoreClass.cmap; see that
+  file's own comment for the VERIFY note on the element/attribute names
+  against your site's actual .cmap schema.
+-->
+<colorMap>
+        <color r="0.85" g="0.85" b="0.85" a="0.5"/>
+        <color r="0.95" g="0.60" b="0.15" a="1.0"/>
+        <color r="0.15" g="0.35" b="0.85" a="1.0"/>
+</colorMap>

@@ -34,15 +34,16 @@ correct cold-core classification of a deep North Atlantic cyclone, and
 a forecast hour for the loss of Typhoon Dujuan's deep warm core (the
 transition from deep to shallow warm core) that matched the
 storm-centered diagnosis on the Florida State University cyclone phase
-page for the same model run. Because the asymmetry parameter is not
-computed, the Evans and Hart onset time itself is not available from
-the gridded fields. A simpler formulation based on vertical differences of
+page for the same model run. The asymmetry parameter B is implemented as a
+first-order approximation, the window-mean thickness gradient projected
+across a steering-flow motion proxy, giving an Evans and Hart onset
+field that has not yet been validated. A simpler formulation based on vertical differences of
 relative vorticity was found to misclassify vertically tilted and broad
 baroclinic systems as warm core and was retained only for comparison.
 Limitations include the use of standard levels in place of Hart's
 50 hPa spacing, a square analysis window whose corners overstate the
-height range on a background gradient, the absence of the asymmetry
-parameter, and validation on a small number of cases; a full season of operational use at the
+height range on a background gradient, the steering-flow approximation
+of the asymmetry parameter, and validation on a small number of cases; a full season of operational use at the
 Ocean Prediction Center is planned.
 
 ## References

@@ -866,5 +866,344 @@ def test_execute_class_std_performance(capsys):
     assert elapsed < 8.0
 
 
+# ---------------------------------------------------------------------------
+# Parameter B and ET stage
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def hart_standard_orientation(monkeypatch):
+    """Monkeypatch `HartCPS.ORIENTATION_MODE` to 0 (the plain numpy-default
+    grid layout: axis 0 = y increasing northward, axis 1 = x) for the
+    duration of a test -- the same pattern `conftest.py`'s
+    `standard_orientation` fixture uses for `CycloneCore.ORIENTATION_MODE`.
+    `HartCPS.ORIENTATION_MODE`'s own real default is 1 (tuned for AWIPS
+    sites, per `gradient_2d`'s module-level comment), not "the standard
+    layout" a test wants to reason about directly.
+    """
+    monkeypatch.setattr(hc, "ORIENTATION_MODE", 0)
+
+
+# --- (a) gradient_2d: plane field, orientation modes ------------------------
+
+
+def test_gradient_2d_plane_field_and_orientation_modes():
+    ny, nx = 15, 17
+    dx_m = 2000.0
+    dy_m = 1500.0
+    y_idx, x_idx = np.mgrid[0:ny, 0:nx]
+    x_m = x_idx * dx_m
+    y_m = y_idx * dy_m
+    gx_true, gy_true = 3.5, -2.0
+    field = gx_true * x_m + gy_true * y_m
+
+    interior = (slice(2, -2), slice(2, -2))
+
+    # Mode 0: plain numpy layout, no flip.
+    gx0, gy0 = hc.gradient_2d(field, dx_m, dy_m, mode=0)
+    np.testing.assert_allclose(gx0[interior], gx_true, rtol=1e-10)
+    np.testing.assert_allclose(gy0[interior], gy_true, rtol=1e-10)
+
+    # Mode 1: same x-derivative, y-derivative negated.
+    gx1, gy1 = hc.gradient_2d(field, dx_m, dy_m, mode=1)
+    np.testing.assert_allclose(gx1[interior], gx_true, rtol=1e-10)
+    np.testing.assert_allclose(gy1[interior], -gy_true, rtol=1e-10)
+
+    # Mode 2: transposed input -- output shape matches the transposed
+    # input, and (since the field is exactly linear, so its gradient is
+    # a constant everywhere) the recovered components equal the
+    # untransposed gx_true/gy_true.
+    field_t = field.T
+    gx2, gy2 = hc.gradient_2d(field_t, dx_m, dy_m, mode=2)
+    assert gx2.shape == field_t.shape
+    assert gy2.shape == field_t.shape
+    interior_t = (slice(2, -2), slice(2, -2))
+    np.testing.assert_allclose(gx2[interior_t], gx_true, rtol=1e-10)
+    np.testing.assert_allclose(gy2[interior_t], gy_true, rtol=1e-10)
+
+    # Mode 3: transposed input, y-derivative also negated.
+    gx3, gy3 = hc.gradient_2d(field_t, dx_m, dy_m, mode=3)
+    np.testing.assert_allclose(gx3[interior_t], gx_true, rtol=1e-10)
+    np.testing.assert_allclose(gy3[interior_t], -gy_true, rtol=1e-10)
+
+
+def test_gradient_2d_invalid_mode_raises():
+    field = np.zeros((5, 5))
+    with pytest.raises(ValueError):
+        hc.gradient_2d(field, 1000.0, 1000.0, mode=4)
+
+
+# --- (b) parameter_b_grid: sign reasoning on a linear thickness gradient ---
+
+
+def test_parameter_b_grid_sign_and_magnitude(hart_standard_orientation):
+    # thickness = -g*y: warm/thick to the south (y < 0), cold/thin to the
+    # north (y > 0) -- dThickness/dy = -g everywhere.
+    ny, nx = 41, 43
+    dx_m = 20000.0
+    dy_m = 20000.0
+    y_idx, x_idx = np.mgrid[0:ny, 0:nx]
+    y_m = (y_idx - ny // 2) * dy_m
+    g = 0.02  # m/m, a gentle thickness slope
+    thickness = -g * y_m
+
+    radius_km = 500.0
+    layer_scale = 1.0
+    ci, cj = ny // 2, nx // 2
+
+    # Sign reasoning: moving due WEST, the right-hand side (NH) is NORTH
+    # (facing west, north is to your right) -- the cold side of this
+    # thickness field -- so the right-minus-left difference is negative,
+    # and B = h*(mean_right - mean_left) with h=+1 in the NH is negative.
+    full_magnitude = hc.b_geometry_km(radius_km) * 1000.0 * g * layer_scale
+
+    u_west = np.full((ny, nx), -10.0)
+    v_west = np.zeros((ny, nx))
+    b_west = hc.parameter_b_grid(thickness, u_west, v_west, dx_m, dy_m, 1.0, radius_km, layer_scale)
+    np.testing.assert_allclose(b_west[ci, cj], -full_magnitude, rtol=1e-6)
+
+    # Moving due EAST instead, the right-hand side flips to SOUTH (the
+    # warm side): B flips sign to positive.
+    u_east = np.full((ny, nx), 10.0)
+    v_east = np.zeros((ny, nx))
+    b_east = hc.parameter_b_grid(thickness, u_east, v_east, dx_m, dy_m, 1.0, radius_km, layer_scale)
+    np.testing.assert_allclose(b_east[ci, cj], full_magnitude, rtol=1e-6)
+
+    # Southern Hemisphere (h=-1) flips the sign again, back to negative,
+    # for the same due-east motion.
+    b_east_sh = hc.parameter_b_grid(thickness, u_east, v_east, dx_m, dy_m, -1.0, radius_km, layer_scale)
+    np.testing.assert_allclose(b_east_sh[ci, cj], -full_magnitude, rtol=1e-6)
+
+    # Moving due NORTH -- parallel to the gradient, perpendicular to the
+    # (east-west) thickness contours -- puts the "right" and "left" of
+    # track equally on the warm and cold side on average: B collapses to
+    # (near) zero, well within 2% of the west/east full magnitude.
+    u_north = np.zeros((ny, nx))
+    v_north = np.full((ny, nx), 10.0)
+    b_north = hc.parameter_b_grid(thickness, u_north, v_north, dx_m, dy_m, 1.0, radius_km, layer_scale)
+    assert abs(b_north[ci, cj]) < 0.02 * full_magnitude
+
+    # Zero steering: no well defined direction of motion -> NaN.
+    u_zero = np.zeros((ny, nx))
+    v_zero = np.zeros((ny, nx))
+    b_zero = hc.parameter_b_grid(thickness, u_zero, v_zero, dx_m, dy_m, 1.0, radius_km, layer_scale)
+    assert np.isnan(b_zero[ci, cj])
+
+
+# --- (c) cross-check against cps.hart.parameter_b's true half-disk means ---
+
+
+def test_parameter_b_grid_matches_cps_hart_parameter_b(hart_standard_orientation):
+    clat, clon = 20.0, 0.0
+    lat2d, lon2d, dx2d, dy_m = _grid_and_dx_dy(clat, clon, half_width_deg=8.0, dlat=0.25)
+    ci, cj = lat2d.shape[0] // 2, lat2d.shape[1] // 2
+
+    dx_km, dy_km = cps.local_offsets_km(lat2d, lon2d, clat, clon)
+    a_m_per_km, b_m_per_km = 0.3, -0.15
+    thickness_field = a_m_per_km * dx_km + b_m_per_km * dy_km
+    z900 = np.zeros_like(thickness_field)
+    z600 = thickness_field
+
+    heading_deg = 60.0
+    radius_km = hc.RADIUS_KM
+    speed_ms = 12.0
+    heading_rad = math.radians(heading_deg)
+    u_s = np.full(lat2d.shape, speed_ms * math.sin(heading_rad))
+    v_s = np.full(lat2d.shape, speed_ms * math.cos(heading_rad))
+
+    b_ref = cps.parameter_b(z900, z600, lat2d, lon2d, clat, clon, heading_deg, radius_km)
+    b_grid = hc.parameter_b_grid(thickness_field, u_s, v_s, dx2d, dy_m, 1.0, radius_km, 1.0)
+
+    assert np.isfinite(b_ref)
+    assert b_grid[ci, cj] == pytest.approx(b_ref, rel=0.05)
+
+
+# --- (d) et_stage truth table -----------------------------------------------
+
+
+def test_et_stage_truth_table():
+    B = np.array([[5.0, 10.0, 15.0], [5.0, 10.0, 15.0]])
+    vtl = np.array([[5.0, 5.0, 5.0], [0.0, 0.0, -1.0]])
+    mask_all = np.ones_like(B, dtype=bool)
+
+    stage = hc.et_stage(B, vtl, 10.0, mask_all)
+    assert stage.dtype == np.float32
+    # Row 0 (vtl >= 0, not stage 2): B=5 -> 0; B exactly at threshold
+    # (10) -> stays 0 (strictly ">", not ">="); B=15 -> 1.
+    np.testing.assert_allclose(stage[0], [0.0, 0.0, 1.0])
+    # Row 1: vtl=0.0 exactly is NOT stage 2 (strictly "<0"), so it falls
+    # through to the same B check as row 0; vtl=-1.0 IS stage 2,
+    # regardless of B.
+    np.testing.assert_allclose(stage[1], [0.0, 0.0, 2.0])
+
+    # mask False -> NaN regardless of B/vtl.
+    mask_partial = np.array([[False, True, True], [True, True, True]])
+    stage_masked = hc.et_stage(B, vtl, 10.0, mask_partial)
+    assert np.isnan(stage_masked[0, 0])
+    assert stage_masked[0, 1] == 0.0
+
+    # NaN B or vtl -> NaN even inside the mask.
+    B_nan = B.copy()
+    B_nan[0, 0] = np.nan
+    stage_nan_b = hc.et_stage(B_nan, vtl, 10.0, mask_all)
+    assert np.isnan(stage_nan_b[0, 0])
+
+    vtl_nan = vtl.copy()
+    vtl_nan[1, 2] = np.nan
+    stage_nan_vtl = hc.et_stage(B, vtl_nan, 10.0, mask_all)
+    assert np.isnan(stage_nan_vtl[1, 2])
+
+
+# --- (e) executeB with a 2D coriolis pseudo-field straddling the equator ---
+
+
+def test_execute_b_hemisphere_as_2d_field_straddles_equator(hart_standard_orientation):
+    ny, nx = 41, 21
+    lat_vals = np.linspace(-10.0, 10.0, ny)
+    lon_vals = np.linspace(-5.0, 5.0, nx)
+    lon2d, lat2d = np.meshgrid(lon_vals, lat_vals)
+
+    dx_row = EARTH_RADIUS_KM * np.cos(np.radians(lat_vals)) * math.radians(lon_vals[1] - lon_vals[0]) * 1000.0
+    dx2d = np.repeat(dx_row[:, np.newaxis], nx, axis=1)
+    dy_m = EARTH_RADIUS_KM * math.radians(lat_vals[1] - lat_vals[0]) * 1000.0
+
+    y_km = EARTH_RADIUS_KM * np.radians(lat2d)
+    z925 = np.full((ny, nx), 700.0)
+    z700 = np.full((ny, nx), 3000.0) - 0.02 * y_km  # same thickness gradient everywhere
+
+    u_level = np.full((ny, nx), 15.0)
+    v_level = np.full((ny, nx), 0.0)
+    psfc = np.full((ny, nx), 1013.0)
+
+    # Positive north of the equator, negative south -- a coriolis-like
+    # pseudo-field.
+    coriolis = np.sign(lat2d)
+    coriolis[lat2d == 0.0] = 1.0
+
+    b = hc.executeB(
+        z925, z700,
+        u_level, v_level, u_level, v_level, u_level, v_level, u_level, v_level,
+        psfc, coriolis, dx2d, dy_m,
+    )
+
+    north_row = int(np.argmin(np.abs(lat_vals - 8.0)))
+    south_row = int(np.argmin(np.abs(lat_vals - (-8.0))))
+    cj = nx // 2
+
+    assert np.isfinite(b[north_row, cj])
+    assert np.isfinite(b[south_row, cj])
+    assert b[north_row, cj] > 0
+    assert b[south_row, cj] < 0
+    np.testing.assert_allclose(b[north_row, cj], -b[south_row, cj], rtol=1e-5)
+
+
+# --- (f) executeETStage: warm-core onset progression and cold-core complete ---
+
+
+def test_execute_et_stage_progression_and_completion(hart_standard_orientation):
+    clat, clon = 20.0, 0.0
+    half_width_deg, dlat = 20.0, 0.5
+    lat2d, lon2d, dx2d, dy_m = _grid_and_dx_dy(clat, clon, half_width_deg, dlat)
+    ci, cj = lat2d.shape[0] // 2, lat2d.shape[1] // 2
+
+    amp_warm = {1000.0: 200.0, 925.0: 180.0, 850.0: 150.0, 700.0: 110.0, 500.0: 50.0, 400.0: 25.0, 300.0: 5.0}
+    levels = tuple(amp_warm.keys())
+    z_stack = synthetic.warm_core_heights(
+        lat2d, lon2d, clat, clon, levels, lambda p: amp_warm[p], scale_km=150.0
+    )
+    z_by_level = {p: z_stack[i] for i, p in enumerate(levels)}
+
+    y_km = EARTH_RADIUS_KM * np.radians(lat2d - clat)
+    psfc = _ocean_psfc(lat2d.shape)
+    coriolis = np.full(lat2d.shape, 1.0)
+    u_level = np.full(lat2d.shape, 15.0)  # due east: along the (east-west) thickness contours
+    v_level = np.full(lat2d.shape, 0.0)
+
+    def _stage_for_slope(slope):
+        z700_mod = z_by_level[700.0] - slope * y_km
+        return hc.executeETStage(
+            z_by_level[1000.0], z_by_level[925.0], z_by_level[850.0], z700_mod,
+            u_level, v_level, u_level, v_level, u_level, v_level, u_level, v_level,
+            psfc, coriolis, dx2d, dy_m,
+        )
+
+    # Weak thickness gradient: B stays below bThresholdM (10 m) -> stage 0.
+    stage_weak = _stage_for_slope(0.01)
+    assert stage_weak[ci, cj] == 0.0
+    assert np.isnan(stage_weak[0, 0])  # outside the closed-low mask
+
+    # Stronger gradient: B > 10 m, VTL (the lower thermal wind) still
+    # clearly positive -> onset, stage 1.
+    stage_onset = _stage_for_slope(0.06)
+    assert stage_onset[ci, cj] == 1.0
+
+    # Cold-core vortex (VTL < 0 at the center): stage 2 regardless of B
+    # (a nonzero steering flow is still supplied so B itself is finite,
+    # not blanked by MIN_STEERING_MS).
+    amp_cold = {
+        1000.0: 100.0, 925.0: 80.0, 850.0: 100.0, 700.0: 120.0, 500.0: 150.0, 400.0: 180.0, 300.0: 200.0,
+    }
+    levels_c = tuple(amp_cold.keys())
+    z_stack_c = synthetic.warm_core_heights(
+        lat2d, lon2d, clat, clon, levels_c, lambda p: amp_cold[p], scale_km=150.0
+    )
+    z_by_level_c = {p: z_stack_c[i] for i, p in enumerate(levels_c)}
+
+    stage_cold = hc.executeETStage(
+        z_by_level_c[1000.0], z_by_level_c[925.0], z_by_level_c[850.0], z_by_level_c[700.0],
+        u_level, v_level, u_level, v_level, u_level, v_level, u_level, v_level,
+        psfc, coriolis, dx2d, dy_m,
+    )
+    assert stage_cold[ci, cj] == 2.0
+    assert np.isnan(stage_cold[0, 0])
+
+
+# --- (g) performance: 721x1440 grid ------------------------------------------
+
+
+def test_execute_et_stage_performance(capsys):
+    ny, nx = 721, 1440
+    lat_vals = np.linspace(-90.0, 90.0, ny)
+    dlon_rad = math.radians(360.0 / nx)
+    dx_row = EARTH_RADIUS_KM * np.cos(np.radians(lat_vals)) * dlon_rad * 1000.0
+    dx2d = np.repeat(dx_row[:, np.newaxis], nx, axis=1)
+    dlat_rad = math.radians(180.0 / (ny - 1))
+    dy_m = EARTH_RADIUS_KM * dlat_rad * 1000.0
+
+    rng = np.random.default_rng(91011)
+    base = rng.standard_normal((ny, nx)).astype(np.float32)
+
+    def _smooth(a, passes=5):
+        out = a.astype(np.float64)
+        for _ in range(passes):
+            out = (
+                out
+                + np.roll(out, 1, axis=0) + np.roll(out, -1, axis=0)
+                + np.roll(out, 1, axis=1) + np.roll(out, -1, axis=1)
+            ) / 5.0
+        return out
+
+    levels = [1000.0, 925.0, 850.0, 700.0]
+    zs = [_smooth(base + i) * 50.0 + (3900.0 - i * 400.0) for i in range(len(levels))]
+    winds = [(_smooth(base + 10.0 + i) * 2.0 + 10.0, _smooth(base - 10.0 - i) * 2.0) for i in range(4)]
+    psfc = _ocean_psfc((ny, nx))
+    coriolis = np.repeat(np.sign(lat_vals)[:, np.newaxis], nx, axis=1)
+    coriolis[coriolis == 0.0] = 1.0
+
+    wind_args = []
+    for u, v in winds:
+        wind_args.extend([u, v])
+
+    start = time.perf_counter()
+    stage = hc.executeETStage(*zs, *wind_args, psfc, coriolis, dx2d, dy_m)
+    elapsed = time.perf_counter() - start
+
+    with capsys.disabled():
+        print(f"\nHartCPS.executeETStage on a {ny}x{nx} grid: {elapsed:.3f} s")
+
+    assert stage.shape == (ny, nx)
+    assert elapsed < 8.0
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))

@@ -181,6 +181,102 @@ neighbors just see one fewer valid sample in their own window -- no
 extra plumbing was needed beyond masking the input before it reaches
 them.
 
+Parameter B and ET stage
+--------------------------
+
+Hart's (2003) third CPS number, B (thermal asymmetry), is the
+right-minus-left half-window mean of 900-600 hPa thickness across the
+storm's own direction of motion, over the same 500 km circle VTL/VTU
+use: `B = h * (mean_right - mean_left)`, `h = +1` in the Northern
+Hemisphere, `-1` in the Southern, so that the frontal configuration
+(warm/thick air on the equatorward flank of the track) always reads
+positive. `B_THRESHOLD_M` (10 m) separates a symmetric, tropical-like
+thickness field (below) from an asymmetric, frontal one (above), and
+Evans and Hart (2003) define the extratropical transition **onset**
+as the first time `B` exceeds this threshold, with **completion** at
+the point VTL (the lower thermal wind) turns negative.
+
+`parameter_b`'s storm-centered half-disk means (`cps/hart.py`) have no
+pointwise analogue -- there is no "left half" or "right half" of a
+single grid point. This module instead uses a **linear-gradient
+approximation**: for a thickness field that varies smoothly across the
+analysis window, the right-minus-left half-window mean difference
+equals `(8*R/(3*pi))` times the window-mean gradient of thickness,
+projected onto the right-hand normal of the storm's motion (`R` the
+500 km analysis radius; see `b_geometry_km`, ~424.4 km for R=500).
+This is exact for a perfectly linear thickness field (the square
+window's mean gradient recovers the field's own gradient exactly, and
+the half-plane-mean-vs-gradient constant is a fixed geometric fact of
+a disk); it degrades for a genuinely nonlinear thickness structure
+inside the window -- most notably a warm-seclusion tongue folding back
+into one side of the circle -- which this approximation only captures
+to first order (the gradient at/near the point), not the true
+half-disk integral a real occlusion would produce. Read a gridded B
+that looks marginal alongside the thickness overlay itself, not on
+its own.
+
+**Motion**: Hart's own B needs the storm's own track heading; a
+gridded pointwise field has no storm to track, so the motion at each
+grid point is taken from the **steering flow**, the mean of the wind
+at 850, 700, 500, and 300 hPa (`steering`). This is a reasonable proxy
+for translation speed and direction on most systems, but it is only a
+proxy: a storm moving against its own steering flow (unusual, but not
+unheard of at landfall or during a sharp recurvature), or a nearly
+stationary system (`MIN_STEERING_MS`, 1 m/s, below which B is blanked
+to NaN rather than divide by a near-zero speed and amplify noise),
+gets an unreliable or missing B from this method even where Hart's own
+track-based B would be well defined.
+
+**Right-hand normal**: for steering `(u_s, v_s)`, the right-hand
+normal used in the Northern Hemisphere is `(v_s, -u_s)/|V_s|` (e.g.
+moving due north, `(u_s, v_s) = (0, +V)`, gives normal `(1, 0)`, i.e.
+east -- the intuitive "right" when facing north). This is the same
+left/right convention `cps.hart.parameter_b` uses via its cross
+product (moving north, a point due east has `cross < 0`, defined
+there as "right of track"). The hemisphere factor `h = sign(coriolis)`
+(exact zero treated as `+1`, matching the Northern Hemisphere
+convention) then multiplies the projected gradient so the "warm air on
+the right in the NH, on the left in the SH" reading is positive in
+both hemispheres, exactly mirroring `cps.hart.parameter_b`'s own
+`hemisphere_sign`. `coriolis` may be handed in as a 2D pseudo-field (so
+a grid straddling the equator gets the correct sign on each side) or a
+scalar (assume one hemisphere everywhere).
+
+**Layer scaling**: this module's thickness layer is 925-700 hPa (for
+consistency with `LOWER_BAND`, the same standard-level lower
+thermal-wind band), not Hart's 900-600 hPa. Because thickness scales
+with the log-pressure depth of the layer, `B` is multiplied by
+`HART_B_LAYER_SCALE = ln(900/600)/ln(925/700)` (~1.4553) by default,
+so the result reads as a "900-600 equivalent" against Hart's own 10 m
+threshold; a caller wanting the raw, unscaled 925-700 hPa value passes
+`layerScale=1.0`.
+
+This entire scheme -- the linear-gradient approximation, the
+steering-flow motion proxy, and the layer scaling -- is orientation-
+and sign-free by construction except for one place: computing the
+thickness gradient itself (`gradient_2d`) takes a spatial derivative,
+and like `CycloneCore.relative_vorticity`, that derivative's sign
+depends on which way the grid's axes actually run. `ORIENTATION_MODE`
+(module level, same 0..3 semantics as `CycloneCore.ORIENTATION_MODE`)
+controls this; every other function in this module (`window_mean`,
+`steering`, `parameter_b_grid`'s cross-product-style normal, `et_stage`)
+takes no derivative and is orientation-free. Mode 1 is confirmed on
+the OPC build, matching `CycloneCore.py`'s own default.
+
+`et_stage` reports 0 (pre-onset), 1 (onset, `B > B_THRESHOLD_M`), or 2
+(complete, VTL < 0) at every point inside a closed low (`closed_low_mask`
+on 1000 hPa height, same as `executeClassStd`/`executeIndexStd`), NaN
+elsewhere. Stage 2 requires VTL to be **strictly negative** -- Evans
+and Hart's completion criterion has no neutral band the way
+`executeClassStd`'s category table does. `et_stage` does not use
+history: it looks only at the current frame's B and VTL, so a storm
+that re-forms a warm core after transitioning (a warm seclusion) drops
+back to stage 0 or 1 rather than staying "stuck" at 2 -- this is the
+warm-seclusion signature and should be read together with `HCPScat`
+(a stage-1-or-0 read alongside an `HCPScat` category of 3, shallow
+warm core, at the same point and time is exactly that signature, not
+a sign the transition never completed).
+
 This file must import nothing from outside itself plus the standard
 library and numpy: in AWIPS it runs inside CAVE's embedded Python
 interpreter, which only has numpy and whatever else lives in the same
@@ -192,6 +288,9 @@ present at all:
 """
 
 from __future__ import annotations
+
+import math
+import warnings
 
 import numpy as np
 
@@ -206,6 +305,10 @@ __all__ = [
     "LOWER_BAND",
     "UPPER_BAND",
     "BELOW_GROUND_CAP_HPA",
+    "ORIENTATION_MODE",
+    "B_THRESHOLD_M",
+    "HART_B_LAYER_SCALE",
+    "MIN_STEERING_MS",
     "surface_pressure_hpa",
     "mask_below_ground",
     "running_extreme_1d",
@@ -217,11 +320,19 @@ __all__ = [
     "band_slope",
     "thermal_wind_grid",
     "closed_low_mask",
+    "b_geometry_km",
+    "gradient_2d",
+    "window_mean",
+    "steering",
+    "parameter_b_grid",
+    "et_stage",
     "executeBand3",
     "executeBand4",
     "executeBand7",
     "executeClassStd",
     "executeIndexStd",
+    "executeB",
+    "executeETStage",
 ]
 
 # ---------------------------------------------------------------------------
@@ -304,6 +415,43 @@ UPPER_BAND = (500.0, 400.0, 300.0)
 #: surface itself is at or below that level's own (uncapped) pressure --
 #: effectively never, except over the Himalaya and Antarctica.
 BELOW_GROUND_CAP_HPA = 900.0
+
+#: Grid orientation mode used by `gradient_2d` (and, through it,
+#: `parameter_b_grid`/`executeB`/`executeETStage`) when no explicit `mode`
+#: argument is given. Same 0..3 semantics as `CycloneCore.ORIENTATION_MODE`
+#: -- see that constant's own comment for the full description of the four
+#: conventions. Only `gradient_2d`'s thickness-gradient computation in this
+#: module takes a spatial derivative; every other function here (`window_mean`,
+#: `steering`, the rest of `parameter_b_grid`, `et_stage`) is orientation-free,
+#: unlike `CycloneCore.py` where every VTL/VTU/CPScat/CPSidx call goes through
+#: `relative_vorticity`. Mode 1 is confirmed correct on the OPC build (see
+#: `CycloneCore.ORIENTATION_MODE`'s own comment and D2D/README.md's
+#: "Orientation verification" procedure) -- it is not merely the untested
+#: default here either.
+ORIENTATION_MODE = 1
+
+#: Meters; Evans and Hart (2003) extratropical transition **onset**
+#: threshold for parameter B -- below this, the thickness field is read as
+#: symmetric/tropical-like; at or above it, asymmetric/frontal. Hart's own
+#: threshold, unchanged from `cps.hart.B_SYMMETRIC_THRESHOLD_M`.
+B_THRESHOLD_M = 10.0
+
+#: Dimensionless; multiplies parameter B to rescale it from this module's
+#: 925-700 hPa thickness layer (`LOWER_BAND`'s own band, used for
+#: consistency with VTL) to a "900-600 hPa equivalent" magnitude, so Hart's
+#: 10 m `B_THRESHOLD_M` applies correctly -- see the module docstring's
+#: "Parameter B and ET stage" section for the derivation
+#: (`ln(900/600)/ln(925/700)`, about 1.4553). Pass `layerScale=1.0` to
+#: `executeB`/`executeETStage` for the raw, unscaled 925-700 hPa value.
+HART_B_LAYER_SCALE = math.log(900.0 / 600.0) / math.log(925.0 / 700.0)
+
+#: m/s; `parameter_b_grid` blanks (NaN) any point where the steering-flow
+#: speed is below this -- a near-stationary or dead-calm-steering point has
+#: no well defined "right of motion", and dividing by a near-zero speed to
+#: normalize the motion vector would otherwise amplify noise into a huge,
+#: meaningless B. See the module docstring's "Parameter B and ET stage"
+#: section, "Motion", for the steering-flow proxy this guards.
+MIN_STEERING_MS = 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -907,6 +1055,248 @@ def closed_low_mask(
 
 
 # ---------------------------------------------------------------------------
+# Parameter B (thermal asymmetry) and ET stage
+# ---------------------------------------------------------------------------
+
+
+def b_geometry_km(radius_km: float) -> float:
+    """`8*radius_km/(3*pi)` -- the geometric constant that converts a
+    window-mean thickness gradient into an approximation of Hart's
+    right-minus-left half-window mean difference (see the module
+    docstring's "Parameter B and ET stage" section). Computed from
+    `radius_km` at call time rather than baked into a module constant, so
+    a caller using a non-default `radiusKm` gets the matching constant.
+    For Hart's own 500 km radius this is about 424.4 km.
+    """
+    return 8.0 * float(radius_km) / (3.0 * math.pi)
+
+
+def gradient_2d(
+    field: np.ndarray, dx: np.ndarray, dy: np.ndarray, mode: int | None = None
+) -> tuple[np.ndarray, np.ndarray]:
+    """`(d(field)/dx, d(field)/dy)` via centered differences (`np.gradient`),
+    the x-derivative along axis 1 divided by `dx`, the y-derivative along
+    axis 0 divided by `dy`. `dx`/`dy` (meters) may each be a scalar or a 2D
+    array the same shape as `field`.
+
+    `mode` selects the grid-orientation convention `field`/`dx`/`dy` are
+    actually laid out in, exactly the same four conventions
+    `CycloneCore.relative_vorticity` uses (see `ORIENTATION_MODE`, module
+    level, for the full description); `None` (the default) means "use
+    `ORIENTATION_MODE`", read fresh from the module on every call so a
+    monkeypatch takes effect without touching this function. Modes 2 and 3
+    (transposed axes) transpose `field`/`dx`/`dy` on the way in and both
+    result arrays back on the way out, exactly as `relative_vorticity`
+    does for `zeta` -- `d(field)/dx` and `d(field)/dy` are themselves
+    scalar fields (not vector components tied to an axis), so transposing
+    them back needs no swap between the two, only a reshape. Modes 1 and 3
+    negate the y-derivative (axis 0 increasing southward instead of
+    northward), also exactly as `relative_vorticity` does.
+
+    Missing values (see `_missing_mask`) in `field`, `dx`, or `dy` are set
+    to NaN before differencing and any resulting NaN (including the
+    immediate-neighbor contamination `np.gradient`'s centered-difference
+    stencil causes -- unavoidable, same caveat as `relative_vorticity`) is
+    left as NaN in the output.
+
+    Raises `ValueError` if `mode` (after defaulting) is not one of 0, 1,
+    2, 3.
+    """
+    field = np.asarray(field, dtype=float)
+    dx = np.asarray(dx, dtype=float)
+    dy = np.asarray(dy, dtype=float)
+
+    if mode is None:
+        mode = ORIENTATION_MODE
+    mode = int(mode)
+    if mode not in (0, 1, 2, 3):
+        raise ValueError(f"mode must be 0, 1, 2, or 3; got {mode!r}")
+
+    transposed = mode in (2, 3)
+    if transposed:
+        field = field.T
+        if dx.ndim == 2:
+            dx = dx.T
+        if dy.ndim == 2:
+            dy = dy.T
+
+    bad = _missing_mask(field, dx, dy)
+    bad = np.broadcast_to(bad, field.shape)
+    field_clean = np.where(bad, np.nan, field)
+
+    d_dx = np.gradient(field_clean, axis=1) / dx
+    d_dy = np.gradient(field_clean, axis=0) / dy
+
+    if mode in (1, 3):
+        d_dy = -d_dy
+
+    d_dx = np.where(bad, np.nan, d_dx)
+    d_dy = np.where(bad, np.nan, d_dy)
+
+    if transposed:
+        d_dx = d_dx.T
+        d_dy = d_dy.T
+
+    return d_dx, d_dy
+
+
+def window_mean(field: np.ndarray, dx: np.ndarray, dy: np.ndarray, radius_km: float) -> np.ndarray:
+    """NaN-aware box mean of `field`, half-width `radius_km`, at every
+    grid point -- `window_sum_2d`'s sum divided by its count, using the
+    same per-row `dx`/scalar `dy` half-width conversion (`cells_per_row`,
+    `cells_y`) `delta_z`/`closed_low_mask` use. NaN where the window's
+    valid-point count is 0 (every point in it was missing).
+    """
+    field = np.asarray(field, dtype=float)
+    ny, nx = field.shape
+    half_x = cells_per_row(radius_km, dx, ny, nx)
+    half_y = cells_y(radius_km, dy)
+    total, count = window_sum_2d(field, half_x, half_y)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        mean = np.where(count > 0, total / count, np.nan)
+    return mean
+
+
+def steering(u_levels, v_levels) -> tuple[np.ndarray, np.ndarray]:
+    """`(u_s, v_s)`: the elementwise (NaN-aware) mean of a list of u
+    arrays and a list of v arrays, the steering-flow proxy for a storm's
+    motion at every grid point (see the module docstring's "Parameter B
+    and ET stage" section, "Motion") -- typically the 850/700/500/300 hPa
+    wind components, one entry per level, all the same shape.
+
+    Missing values (see `_missing_mask`) in any individual level are set
+    to NaN before averaging, so a bad level does not masquerade as a real
+    wind value; the average itself is `np.nanmean` over the stacked
+    levels (axis 0), so a point with at least one valid level still gets
+    an averaged value, and only a point missing at *every* level comes
+    back NaN.
+    """
+    u_arrays = [np.asarray(u, dtype=float) for u in u_levels]
+    v_arrays = [np.asarray(v, dtype=float) for v in v_levels]
+
+    u_clean = [np.where(_missing_mask(u), np.nan, u) for u in u_arrays]
+    v_clean = [np.where(_missing_mask(v), np.nan, v) for v in v_arrays]
+
+    u_stack = np.stack(u_clean, axis=0)
+    v_stack = np.stack(v_clean, axis=0)
+
+    # np.nanmean warns ("Mean of empty slice") at a point missing in
+    # every level -- that point is supposed to come back NaN quietly,
+    # not print a warning every call.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        u_s = np.nanmean(u_stack, axis=0)
+        v_s = np.nanmean(v_stack, axis=0)
+    return u_s, v_s
+
+
+def parameter_b_grid(
+    thickness: np.ndarray,
+    u_s: np.ndarray,
+    v_s: np.ndarray,
+    dx: np.ndarray,
+    dy: np.ndarray,
+    hemisphere,
+    radius_km: float,
+    layer_scale: float,
+    min_speed: float = MIN_STEERING_MS,
+) -> np.ndarray:
+    """Gridded approximation of Hart's parameter B at every grid point --
+    see the module docstring's "Parameter B and ET stage" section for the
+    full derivation.
+
+    `thickness` is a layer thickness field (meters, e.g. 700 hPa height
+    minus 925 hPa height). Its gradient (`gradient_2d`) is computed once,
+    then each component is box-averaged (`window_mean`) over a
+    `radius_km` window -- computing the gradient first and then
+    window-meaning each component, rather than differencing a
+    window-meaned thickness, so a locally noisy `thickness` is smoothed
+    the same way `dZ`'s own window extrema effectively are elsewhere in
+    this module.
+
+    `u_s`/`v_s` (m/s) are the storm's motion at each point -- typically
+    `steering`'s output. `speed = hypot(u_s, v_s)`; the right-hand normal
+    of motion (Northern Hemisphere convention) is `(v_s, -u_s)/speed`.
+    `hemisphere` may be a scalar or a 2D array (e.g. a coriolis
+    pseudo-field): `np.sign(hemisphere)` gives the hemisphere factor `h`
+    (exact zero is treated as `+1`, the Northern Hemisphere default).
+
+        B = h * b_geometry_km(radius_km)*1000 * (n_right . grad(thickness)) * layer_scale
+
+    NaN wherever `speed < min_speed` (see `MIN_STEERING_MS`) or either
+    window-meaned gradient component is not finite.
+    """
+    thickness = np.asarray(thickness, dtype=float)
+    thickness_clean = np.where(_missing_mask(thickness), np.nan, thickness)
+
+    gx_point, gy_point = gradient_2d(thickness_clean, dx, dy)
+    gx = window_mean(gx_point, dx, dy, radius_km)
+    gy = window_mean(gy_point, dx, dy, radius_km)
+
+    u_s_arr = np.asarray(u_s, dtype=float)
+    v_s_arr = np.asarray(v_s, dtype=float)
+    bad_uv = _missing_mask(u_s_arr, v_s_arr)
+    u_s_clean = np.where(bad_uv, np.nan, u_s_arr)
+    v_s_clean = np.where(bad_uv, np.nan, v_s_arr)
+
+    speed = np.hypot(u_s_clean, v_s_clean)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        n_right_x = v_s_clean / speed
+        n_right_y = -u_s_clean / speed
+
+    hemi = np.asarray(hemisphere, dtype=float)
+    h_sign = np.sign(hemi)
+    h_sign = np.where(h_sign == 0, 1.0, h_sign)
+
+    geom_m = b_geometry_km(radius_km) * 1000.0
+    projected = n_right_x * gx + n_right_y * gy
+    b = h_sign * geom_m * projected * float(layer_scale)
+
+    invalid = (
+        ~np.isfinite(speed)
+        | (speed < float(min_speed))
+        | ~np.isfinite(gx)
+        | ~np.isfinite(gy)
+    )
+    return np.where(invalid, np.nan, b)
+
+
+def et_stage(B: np.ndarray, vtl: np.ndarray, b_threshold: float, mask: np.ndarray) -> np.ndarray:
+    """Evans and Hart (2003) extratropical transition stage at every grid
+    point: 2.0 (complete) where `vtl < 0`; else 1.0 (onset) where
+    `B > b_threshold`; else 0.0 (pre-onset). NaN outside `mask` (typically
+    `closed_low_mask` on 1000 hPa height) or wherever `B`/`vtl` is not
+    finite.
+
+    Stage 2 requires `vtl` **strictly negative** -- Evans and Hart's
+    completion criterion (the lower thermal wind turning negative) has no
+    neutral band, unlike `executeClassStd`'s category table; `vtl == 0.0`
+    exactly is not stage 2. `B` exactly at `b_threshold` is not stage 1
+    either (`B > b_threshold`, not `>=`).
+
+    This function has no memory of any earlier frame: it looks only at
+    the current `B`/`vtl`, so a storm that re-forms a low-level warm core
+    after transitioning (a warm seclusion) drops back to stage 0 or 1
+    rather than staying at 2 -- see the module docstring's "Parameter B
+    and ET stage" section for why this is the intended, warm-seclusion
+    signature, best read together with `HCPScat`'s category at the same
+    point and time, not a bug to work around here.
+
+    Returns a float32 array.
+    """
+    B = np.asarray(B, dtype=float)
+    vtl = np.asarray(vtl, dtype=float)
+    mask = np.asarray(mask, dtype=bool)
+
+    with np.errstate(invalid="ignore"):
+        stage = np.where(vtl < 0.0, 2.0, np.where(B > float(b_threshold), 1.0, 0.0))
+
+    valid = mask & np.isfinite(B) & np.isfinite(vtl)
+    stage = np.where(valid, stage, np.nan)
+    return stage.astype(np.float32)
+
+
+# ---------------------------------------------------------------------------
 # AWIPS entry points
 # ---------------------------------------------------------------------------
 
@@ -1107,6 +1497,121 @@ def executeIndexStd(
     return index.astype(np.float32)
 
 
+def executeB(
+    z925, z700,
+    u850, v850, u700, v700, u500, v500, u300, v300,
+    psfc, coriolis, dx, dy,
+    radiusKm=RADIUS_KM,
+    layerScale=HART_B_LAYER_SCALE,
+    capHpa=BELOW_GROUND_CAP_HPA,
+):
+    """AWIPS derived-parameter entry point for HB (HB.xml): Hart's
+    parameter B (thermal asymmetry), gridded -- see the module
+    docstring's "Parameter B and ET stage" section for the full method.
+
+    `z925`/`z700` are geopotential height (meters); their difference
+    (`z700 - z925`) is this module's thickness layer (see the module
+    docstring for why 925-700 hPa rather than Hart's own 900-600 hPa, and
+    `layerScale`'s role in rescaling for it). Each is blanked (NaN) below
+    ground for its own pressure and `capHpa` before the difference is
+    taken (`mask_below_ground`), so `B` comes back NaN wherever either
+    height input was masked -- via the resulting NaN thickness
+    propagating through `parameter_b_grid`'s gradient and window mean.
+
+    `u850`/`v850`, `u700`/`v700`, `u500`/`v500`, `u300`/`v300` are the
+    wind components at those four levels, averaged by `steering` into
+    the motion proxy `parameter_b_grid` uses. `psfc` is AWIPS surface
+    pressure (Pa or hPa -- `surface_pressure_hpa` auto-detects which).
+    `coriolis` is the AWIPS coriolis pseudo-field (positive Northern
+    Hemisphere, negative Southern) -- `parameter_b_grid` uses its sign as
+    the hemisphere factor `h`; a 2D field lets a grid straddling the
+    equator get the correct sign on each side. `dx`, `dy` are the grid
+    spacing pseudo-fields (meters).
+
+    `radiusKm`, `layerScale`, `capHpa` may each arrive as a float, a 0-d
+    numpy array, or a 1-element numpy array (AWIPS `<ConstantField>`
+    values) and are coerced with `_coerce_scalar`. Returns a float32
+    array, units meters ("900-600 hPa equivalent" -- see the module
+    docstring); positive = warm/thick air on the right of motion in the
+    Northern Hemisphere (or on the left in the Southern), i.e. the
+    frontal/asymmetric configuration; NaN below `MIN_STEERING_MS` or
+    below ground.
+    """
+    radius_km = _coerce_scalar(radiusKm)
+    layer_scale = _coerce_scalar(layerScale)
+    cap_hpa = _coerce_scalar(capHpa)
+
+    psfc_hpa = surface_pressure_hpa(psfc)
+    z925_masked = mask_below_ground(z925, psfc_hpa, 925.0, cap_hpa)
+    z700_masked = mask_below_ground(z700, psfc_hpa, 700.0, cap_hpa)
+    thickness = np.asarray(z700_masked, dtype=float) - np.asarray(z925_masked, dtype=float)
+
+    u_s, v_s = steering([u850, u700, u500, u300], [v850, v700, v500, v300])
+
+    b = parameter_b_grid(thickness, u_s, v_s, dx, dy, coriolis, radius_km, layer_scale)
+    return b.astype(np.float32)
+
+
+def executeETStage(
+    z1000, z925, z850, z700,
+    u850, v850, u700, v700, u500, v500, u300, v300,
+    psfc, coriolis, dx, dy,
+    radiusKm=RADIUS_KM,
+    bThresholdM=B_THRESHOLD_M,
+    layerScale=HART_B_LAYER_SCALE,
+    depthM=DEFAULT_DEPTH_M,
+    blobKm=DEFAULT_BLOB_RADIUS_KM,
+    capHpa=BELOW_GROUND_CAP_HPA,
+):
+    """AWIPS derived-parameter entry point for HETstage (HETstage.xml):
+    the Evans and Hart (2003) extratropical transition stage, gridded --
+    see the module docstring's "Parameter B and ET stage" section.
+
+    Computes the lower thermal wind (`LOWER_BAND`, 925/850/700 hPa, via
+    `thermal_wind_grid`, same as `executeClassStd`) for the completion
+    test, parameter B (same method as `executeB`) for the onset test,
+    and `closed_low_mask` on below-ground-masked `z1000` for the same
+    mask `executeClassStd`/`executeIndexStd` use, then combines all
+    three with `et_stage`.
+
+    `z1000`/`z925`/`z850`/`z700` are geopotential height (meters);
+    `u850`/`v850`...`u300`/`v300` are the four steering-flow wind level
+    pairs (as in `executeB`); `psfc`, `coriolis`, `dx`, `dy` are as in
+    `executeB`. `radiusKm`, `bThresholdM`, `layerScale`, `depthM`,
+    `blobKm`, `capHpa` may each arrive as a float, a 0-d numpy array, or
+    a 1-element numpy array (AWIPS `<ConstantField>` values) and are
+    coerced with `_coerce_scalar`; see `executeClassStd`'s docstring for
+    why `closed_low_mask`'s `min_radius_km`/`center_tol_m` are not
+    exposed here either.
+
+    Returns a float32 array: NaN outside the closed-low mask or below
+    ground; otherwise 0.0 (pre-onset), 1.0 (onset, B above `bThresholdM`),
+    or 2.0 (complete, VTL negative) -- see `et_stage`'s docstring for the
+    exact decision order and the warm-seclusion caveat.
+    """
+    radius_km = _coerce_scalar(radiusKm)
+    b_threshold_m = _coerce_scalar(bThresholdM)
+    layer_scale = _coerce_scalar(layerScale)
+    depth_m = _coerce_scalar(depthM)
+    blob_radius_km = _coerce_scalar(blobKm)
+    cap_hpa = _coerce_scalar(capHpa)
+
+    psfc_hpa = surface_pressure_hpa(psfc)
+
+    vtl = thermal_wind_grid([z925, z850, z700], LOWER_BAND, dx, dy, radius_km, psfc_hpa=psfc_hpa, cap_hpa=cap_hpa)
+
+    z925_masked = mask_below_ground(z925, psfc_hpa, 925.0, cap_hpa)
+    z700_masked = mask_below_ground(z700, psfc_hpa, 700.0, cap_hpa)
+    thickness = np.asarray(z700_masked, dtype=float) - np.asarray(z925_masked, dtype=float)
+    u_s, v_s = steering([u850, u700, u500, u300], [v850, v700, v500, v300])
+    b = parameter_b_grid(thickness, u_s, v_s, dx, dy, coriolis, radius_km, layer_scale)
+
+    z1000_masked = mask_below_ground(z1000, psfc_hpa, 1000.0, cap_hpa)
+    mask = closed_low_mask(z1000_masked, dx, dy, MIN_RADIUS_KM, radius_km, depth_m, blob_radius_km)
+
+    return et_stage(b, vtl, b_threshold_m, mask)
+
+
 # ---------------------------------------------------------------------------
 # Standalone sanity check
 # ---------------------------------------------------------------------------
@@ -1196,3 +1701,39 @@ if __name__ == "__main__":
     print("class at center with a terrain block 800 km west (expect unchanged, 4.0):", cls_terrain[ci, cj])
     block_i, block_j = np.argwhere(block_mask)[0]
     print("class over the terrain block (expect nan, below ground):", cls_terrain[block_i, block_j])
+
+    # ---------------------------------------------------------------------
+    # Parameter B demo: a linear thickness gradient and a steering flow
+    # along the thickness contours (i.e. perpendicular to the gradient --
+    # a system riding along a front, not crossing it), which is the case
+    # that produces a clean, full-magnitude B rather than the near-zero B
+    # a steering flow *along* the gradient would give (see
+    # tests/d2d_cps/test_hart_cps.py for that case).
+    #
+    # This grid (lat_vals increasing northward, axis 0 = y increasing
+    # northward) is the plain numpy-default layout, i.e. ORIENTATION_MODE
+    # mode 0 -- not this module's real default (mode 1, tuned for AWIPS
+    # sites). Setting it here, like CycloneCore.py's own __main__ demo,
+    # is a plain module-level assignment that gradient_2d (and so
+    # parameter_b_grid/executeB) picks up with no other change needed.
+    ORIENTATION_MODE = 0
+
+    y_km_from_center = EARTH_RADIUS_KM * np.radians(lat2d - CENTER_LAT)
+    GRADIENT_M_PER_KM = 0.05  # gentle 925-700 hPa thickness gradient, warmer/thicker to the south
+    thickness_linear = -GRADIENT_M_PER_KM * y_km_from_center  # m; dThickness/dy = -GRADIENT_M_PER_KM/1000 m/m
+
+    STEERING_MS = 15.0  # due east, i.e. along the (east-west) thickness contours
+    u_level = np.full(lat2d.shape, STEERING_MS)
+    v_level = np.full(lat2d.shape, 0.0)
+    coriolis_nh = np.full(lat2d.shape, 1.0)  # Northern Hemisphere everywhere
+
+    u_s_demo, v_s_demo = steering([u_level] * 4, [v_level] * 4)
+    b_linear = parameter_b_grid(thickness_linear, u_s_demo, v_s_demo, dx2d, dy_m, coriolis_nh, RADIUS_KM, HART_B_LAYER_SCALE)
+
+    # Analytic expectation: n_right for due-east motion is (0, -1) (south);
+    # dThickness/dy = -GRADIENT_M_PER_KM/1000 m/m, so
+    # n_right . grad = -1 * (-GRADIENT_M_PER_KM/1000) = GRADIENT_M_PER_KM/1000.
+    analytic_b = b_geometry_km(RADIUS_KM) * 1000.0 * (GRADIENT_M_PER_KM / 1000.0) * HART_B_LAYER_SCALE
+    print("Parameter B on a linear thickness gradient, steering due east along the contours:")
+    print("  gridded B at center, m (900-600 equivalent):", b_linear[ci, cj])
+    print("  analytic expectation, m:", analytic_b)
