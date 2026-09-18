@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  EXPERIMENTAL. Hart CPS joint class: at every grid point, computes
+  HVTL (925/850/700 hPa), HVTU (500/400/300 hPa), and parameter B (the
+  925-700 hPa thickness gradient projected onto the steering flow's
+  right-hand normal, see HB.xml) all at once, and buckets the triple
+  (B, HVTL, HVTU) into a single 7-code class (HartCPS.hart_class) using
+  Hart's own strict lines - B against 10 m, both thermal wind terms
+  against 0 m, no neutral band:
+
+    0  symmetric deep warm core     B <= 10, lower VT >= 0, upper VT >= 0
+    1  symmetric shallow warm core  B <= 10, lower VT >= 0, upper VT <  0
+    2  frontal deep warm core       B >  10, lower VT >= 0, upper VT >= 0
+    3  frontal shallow warm core    B >  10, lower VT >= 0, upper VT <  0
+    4  frontal cold core            B >  10, lower VT <  0
+    5  symmetric cold core          B <= 10, lower VT <  0
+    6  mid-level vortex             any B,   lower VT <  0, upper VT >= 0
+
+  (row 6 takes precedence over rows 4/5 whenever lower VT < 0 and upper
+  VT >= 0 at once - see HartCPS.hart_class's own docstring for the full
+  ordering rationale). This one field replaces the two, separately
+  categorical HCPScat (Phase 2 class) and HETstage (extratropical
+  transition stage) fields this package used to publish, both now
+  retired - see HartCPS.py's module docstring, "Parameter B and the
+  joint class" and "Relation to Hart's storm-centered diagrams"
+  sections, for why a single joint class is preferred over reading two
+  separate categorical fields side by side. NaN outside a closed low in
+  1000 hPa height (HartCPS.closed_low_mask, same height-based mask
+  HCPSidx uses - see HCPSidx.xml's comment for the full explanation of
+  why 1000 hPa height is used for the mask rather than a thermal-wind
+  band level) or wherever B is NaN (the steering-flow speed below
+  MIN_STEERING_MS - rare, but see HartCPS.parameter_b_grid's docstring).
+
+  Hemisphere: same as HB.xml - the coriolis pseudo-field's sign is the
+  hemisphere factor parameter B uses; a 2D field gets the correct sign
+  on both sides of a grid straddling the equator.
+
+  Below-ground masking: every one of the seven height Fields below
+  (z1000 and the six HVTL/HVTU band levels) is blanked (NaN) before its
+  own computation wherever it is below ground for its own pressure,
+  using the surface pressure field (P, Surface) and capHpa below - see
+  HartCPS.mask_below_ground and HCPSidx.xml's comment for the same
+  convention. capHpa (default 900 hPa) is a cap, not the literal level
+  pressure: it keeps a deep low's own legitimately low surface pressure
+  over open water from being mistaken for terrain, while still masking
+  the Greenland ice sheet and Iceland highlands at 1000/925/850 hPa.
+
+  VERIFY: same checks as HB.xml and HCPSidx.xml (GH abbreviation,
+  fixed-level Field spelling, P abbreviation and its Surface level
+  spelling, the coriolis pseudo-field's abbreviation, dx/dy
+  pseudo-fields and ConstantField support, levels= value, unit=""
+  acceptance). If this definition fails to load, replace the coriolis
+  Field with <ConstantField value="1.0"/> at the same position to
+  assume the Northern Hemisphere.
+-->
+<DerivedParameter abbreviation="HCPSclass" name="Hart CPS class (0 sym deep warm,1 sym shallow warm,2 frontal deep warm,3 frontal shallow warm,4 frontal cold,5 sym cold,6 mid-level)" unit="">
+    <Method name="HartCPS.executeHartClass" levels="Surface">
+        <Field abbreviation="GH" level="1000MB"/>
+        <Field abbreviation="GH" level="925MB"/>
+        <Field abbreviation="GH" level="850MB"/>
+        <Field abbreviation="GH" level="700MB"/>
+        <Field abbreviation="GH" level="500MB"/>
+        <Field abbreviation="GH" level="400MB"/>
+        <Field abbreviation="GH" level="300MB"/>
+        <Field abbreviation="uW" level="850MB"/>
+        <Field abbreviation="vW" level="850MB"/>
+        <Field abbreviation="uW" level="700MB"/>
+        <Field abbreviation="vW" level="700MB"/>
+        <Field abbreviation="uW" level="500MB"/>
+        <Field abbreviation="vW" level="500MB"/>
+        <Field abbreviation="uW" level="300MB"/>
+        <Field abbreviation="vW" level="300MB"/>
+        <Field abbreviation="P" level="Surface"/>
+        <Field abbreviation="coriolis"/>
+        <Field abbreviation="dx"/>
+        <Field abbreviation="dy"/>
+        <!-- radiusKm (km): Hart's own 500 km analysis-window half-width,
+             used for HVTL, HVTU, parameter B's box-averaged gradient,
+             and the mask's own ring_radius_km -->
+        <ConstantField value="500.0"/>
+        <!-- bThresholdM (m): the Evans and Hart (2003) frontal/symmetric
+             line for parameter B (900-600 hPa equivalent) -->
+        <ConstantField value="10.0"/>
+        <!-- layerScale: rescales B from this module's 925-700 hPa layer
+             to a 900-600 hPa equivalent - see HB.xml -->
+        <ConstantField value="1.4553"/>
+        <!-- depthM (m): the closed-low mask's annulus depth test, see
+             HCPSidx.xml -->
+        <ConstantField value="40.0"/>
+        <!-- blobKm (km): half-width of the blob painted around each
+             detected low's center, see HCPSidx.xml -->
+        <ConstantField value="200.0"/>
+        <!-- capHpa: below-ground cap, see HartCPS.py -->
+        <ConstantField value="900.0"/>
+    </Method>
+</DerivedParameter>

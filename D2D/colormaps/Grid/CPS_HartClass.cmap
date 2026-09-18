@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  HartClass: 7 entry categorical colormap for HCPSclass (the joint Hart
+  CPS class, see D2D/README.md and HartCPS.hart_class). Pair this with a
+  styleRule range of -0.5 to 6.5 so each integer code below lands in the
+  middle of one color bin instead of on a boundary between two:
+
+    code 0  symmetric deep warm core     red      (0.89, 0.29, 0.28, 1.0)
+    code 1  symmetric shallow warm core  orange   (0.92, 0.41, 0.20, 1.0)
+    code 2  frontal deep warm core       magenta  (0.91, 0.48, 0.64, 1.0)
+    code 3  frontal shallow warm core    yellow   (0.93, 0.63, 0.00, 1.0)
+    code 4  frontal cold core            blue     (0.16, 0.47, 0.84, 1.0)
+    code 5  symmetric cold core          violet   (0.29, 0.23, 0.65, 1.0)
+    code 6  mid-level vortex             gray     (0.76, 0.76, 0.72, 1.0)
+
+  The warm states (codes 0-3) are warm hues (red/orange/magenta/yellow)
+  and the cold states (codes 4-5) are cool hues (blue/violet), so a
+  glance at hue alone already tells warm-core from cold-core; code 6
+  (mid-level vortex, a different structure from either) is neutral
+  gray, matching CPS_CoreClass.cmap's own convention for its analogous
+  category.
+
+  File format: a root <colorMap> element containing an ordered list of
+  <color r="" g="" b="" a=""/> entries, each component a float from
+  0.0 to 1.0, in code order (this file's first <color> is code 0, and
+  so on), same format and comment style as CPS_CoreClass.cmap; see that
+  file's own comment for the VERIFY note on the element/attribute names
+  against your site's actual .cmap schema.
+-->
+<colorMap>
+        <color r="0.89" g="0.29" b="0.28" a="1.0"/>
+        <color r="0.92" g="0.41" b="0.20" a="1.0"/>
+        <color r="0.91" g="0.48" b="0.64" a="1.0"/>
+        <color r="0.93" g="0.63" b="0.00" a="1.0"/>
+        <color r="0.16" g="0.47" b="0.84" a="1.0"/>
+        <color r="0.29" g="0.23" b="0.65" a="1.0"/>
+        <color r="0.76" g="0.76" b="0.72" a="1.0"/>
+</colorMap>

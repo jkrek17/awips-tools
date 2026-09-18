@@ -1,6 +1,6 @@
 # Seven-minute talk: Cyclone Phase Space in AWIPS
 
-About 950 words, ten slides. Timings are cumulative. Slide cues are in
+About 1000 words, ten slides. Timings are cumulative. Slide cues are in
 brackets. The deck is `TALK.pptx` beside this file; the same text is in
 each slide's speaker notes. To give it in five minutes, skip slides 4
 and 5 and say only the first paragraph of slide 3.
@@ -67,7 +67,9 @@ it crosses the B line first, then loses the upper warm core, then the
 lower one, and ends in the cold corner. Some storms then hook back
 toward shallow warm core: that is a warm seclusion re-forming a warm
 core at the surface, and those are the ones that deepen unexpectedly
-over cold water. For a marine center, transition is when the wind field
+over cold water. The operational product we built turns all three
+numbers into one, so a forecaster reads a single class instead of two
+diagrams. For a marine center, transition is when the wind field
 expands, so these crossings are the forecast question.
 
 **[Slide 6, what we built] 3:50**
@@ -101,19 +103,23 @@ reads minus 285 meters.
 **[Slide 8, on shift] 5:10**
 
 This is the operational display. Four panels: the lower and upper
-terms, a category field, and an index. The category reads at the
-storm's center: 4 is deep warm core, 3 shallow, 1 cold, blank means no
-closed low. Step through the frames and the first hour the category
-leaves 4 is the loss of the deep warm core. Load a second model beside
-it and where they disagree on that hour is your transition uncertainty.
-That is a product nobody had before, because it needed a tracker for
-every model.
+terms, a joint class field, and an index. The class reads at the
+storm's center, one number for one of Hart's seven named states:
+symmetric or frontal, deep or shallow warm core, cold core, or a rare
+mid-level vortex. Step through the frames on a transitioning storm and
+the class climbs 0, then 2, then 3, then 4; a warm seclusion runs 4 and
+back to 1. Load a second model beside it and compare the hour each
+first reaches 2 or 3, and the hour each first reaches 4 or 5; where
+they disagree is your transition uncertainty. That is a product nobody
+had before, because it needed a tracker for every model.
 
 **[Slide 9, validation] 5:55**
 
 Three checks so far. A typhoon at 984 millibars read 120 and 180
-meters, class 4, comparable to what Hart published for hurricanes. For
-Typhoon Dujuan, the hour our class dropped below 4 matched the hour
+meters, a deep warm core (class 4 in our earlier two-field product,
+class 0 or 2 in the joint field depending on B), comparable to what
+Hart published for hurricanes. For Typhoon Dujuan, the hour the
+storm's classification left its deep warm core state matched the hour
 FSU's page showed the same GFS run moving from deep to shallow warm
 core. And a deep North Atlantic low classified cold core, which the
 vorticity shortcut could not do. Greenland and the Rockies come out

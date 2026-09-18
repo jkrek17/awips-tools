@@ -498,7 +498,7 @@ def test_closed_low_mask_two_lows_two_separate_blobs():
 
 
 # ---------------------------------------------------------------------------
-# (f) executeClassStd on synthetic warm/cold-core vortices
+# (f) executeIndexStd on a synthetic warm-core vortex
 # ---------------------------------------------------------------------------
 
 
@@ -514,137 +514,31 @@ def _warm_core_fields(amp_by_level, clat=20.0, clon=0.0, half_width_deg=20.0, dl
 
 def _ocean_psfc(shape, hpa=1013.0):
     """A uniform, terrain-free surface pressure field (hPa) -- passed to
-    executeClassStd/executeIndexStd wherever a test is not itself about
+    executeIndexStd/executeHartClass wherever a test is not itself about
     below-ground masking, so `mask_below_ground` never blanks anything.
     """
     return np.full(shape, hpa)
 
 
-def test_execute_class_std_deep_warm_core_and_far_field_nan():
+def test_execute_index_std_deep_warm_core_and_far_field_nan():
     # z1000 is built the same way as z925 (same synthetic-vortex machinery),
     # with a slightly larger amplitude so the low is deepest at 1000 hPa --
-    # closed_low_mask now reads z1000, not z925 (see HartCPS.py's module
+    # closed_low_mask reads z1000, not z925 (see HartCPS.py's module
     # docstring, "Closed-low mask level").
     amp_by_level = {1000.0: 200.0, 925.0: 180.0, 850.0: 150.0, 700.0: 110.0, 500.0: 50.0, 400.0: 25.0, 300.0: 5.0}
     lat2d, lon2d, z_by_level, dx2d, dy_m = _warm_core_fields(amp_by_level)
 
-    cls = hc.executeClassStd(
+    idx = hc.executeIndexStd(
         z_by_level[1000.0],
         z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
         z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
         _ocean_psfc(lat2d.shape), dx2d, dy_m,
     )
-    ci, cj = lat2d.shape[0] // 2, lat2d.shape[1] // 2
-
-    assert cls.dtype == np.float32
-    assert cls[ci, cj] == 4.0
-    assert np.isnan(cls[0, 0])
-
-
-def test_execute_class_std_cold_core():
-    # Amplitude increasing with height (larger dip aloft than at 925 hPa)
-    # -- a cold core, per the module docstring's sign derivation -- while
-    # keeping the 1000 hPa dip (100 m, slightly larger than z925's 80 m)
-    # deep enough to pass closed_low_mask's default 40 m depth_m; the
-    # mask reads z1000, so it is z1000's own depth that must clear it.
-    amp_by_level = {
-        1000.0: 100.0, 925.0: 80.0, 850.0: 100.0, 700.0: 120.0, 500.0: 150.0, 400.0: 180.0, 300.0: 200.0,
-    }
-    lat2d, lon2d, z_by_level, dx2d, dy_m = _warm_core_fields(amp_by_level)
-
-    cls = hc.executeClassStd(
-        z_by_level[1000.0],
-        z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
-        z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
-        _ocean_psfc(lat2d.shape), dx2d, dy_m,
-    )
-    ci, cj = lat2d.shape[0] // 2, lat2d.shape[1] // 2
-
-    assert cls[ci, cj] == 1.0
-
-
-def test_execute_class_std_constants_as_one_element_arrays():
-    amp_by_level = {1000.0: 200.0, 925.0: 180.0, 850.0: 150.0, 700.0: 110.0, 500.0: 50.0, 400.0: 25.0, 300.0: 5.0}
-    lat2d, lon2d, z_by_level, dx2d, dy_m = _warm_core_fields(amp_by_level)
-    args = (
-        z_by_level[1000.0],
-        z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
-        z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
-        _ocean_psfc(lat2d.shape), dx2d, dy_m,
-    )
-
-    baseline = hc.executeClassStd(*args)
-    from_arrays = hc.executeClassStd(
-        *args,
-        radiusKm=np.array([500.0]),
-        neutralM=np.array([25.0]),
-        depthM=np.array([40.0]),
-        blobKm=np.array([200.0]),
-        capHpa=np.array([900.0]),
-    )
-    np.testing.assert_allclose(from_arrays, baseline, equal_nan=True)
-
-
-def test_execute_index_std_matches_sign_of_class():
-    amp_by_level = {1000.0: 200.0, 925.0: 180.0, 850.0: 150.0, 700.0: 110.0, 500.0: 50.0, 400.0: 25.0, 300.0: 5.0}
-    lat2d, lon2d, z_by_level, dx2d, dy_m = _warm_core_fields(amp_by_level)
-    args = (
-        z_by_level[1000.0],
-        z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
-        z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
-        _ocean_psfc(lat2d.shape), dx2d, dy_m,
-    )
-
-    idx = hc.executeIndexStd(*args)
-    cls = hc.executeClassStd(*args)
     ci, cj = lat2d.shape[0] // 2, lat2d.shape[1] // 2
 
     assert idx.dtype == np.float32
     assert idx[ci, cj] > 2.0  # deep warm core, tanh saturating positive
-    assert cls[ci, cj] == 4.0
-    assert np.isnan(idx[0, 0])  # outside the mask, same as cls
-
-
-def test_execute_class_std_mask_reads_z1000_not_z925():
-    # Proves closed_low_mask, as wired up inside executeClassStd, reads
-    # the new leading z1000 argument -- not z925. Case A: deep (60 m,
-    # comfortably above the default 40 m depthM) at 1000 hPa but shallow
-    # (20 m, below depthM) at 925 hPa -- detected, because the mask looks
-    # at z1000. Case B is the exact reverse (shallow at 1000, deep at
-    # 925) -- not detected. If the mask still read z925 (the pre-change
-    # behavior), both outcomes would flip.
-    clat, clon = 20.0, 0.0
-    lat2d, lon2d, dx2d, dy_m = _grid_and_dx_dy(clat, clon, half_width_deg=20.0, dlat=0.5)
-    r_km = synthetic._haversine_km(lat2d, lon2d, clat, clon)
-    ci, cj = lat2d.shape[0] // 2, lat2d.shape[1] // 2
-
-    def _low(depth_m, background_m, scale_km=150.0):
-        return background_m - depth_m * np.exp(-(r_km / scale_km) ** 2)
-
-    # Shared band levels (850/700/500/400/300 hPa) for both cases -- an
-    # ordinary, mask-irrelevant height field so VTL/VTU come out finite;
-    # this test is only about which level closed_low_mask reads.
-    z850 = _low(30.0, background_m=1450.0)
-    z700 = _low(20.0, background_m=1400.0)
-    z500 = _low(10.0, background_m=1300.0)
-    z400 = _low(8.0, background_m=1250.0)
-    z300 = _low(5.0, background_m=1200.0)
-
-    psfc = _ocean_psfc(lat2d.shape)
-
-    # Case A: 1000 hPa depth 60 m (passes depthM=40), 925 hPa depth 20 m
-    # (would fail depthM=40 on its own).
-    z1000_deep = _low(60.0, background_m=1550.0)
-    z925_shallow = _low(20.0, background_m=1500.0)
-    cls_a = hc.executeClassStd(z1000_deep, z925_shallow, z850, z700, z500, z400, z300, psfc, dx2d, dy_m)
-    assert not np.isnan(cls_a[ci, cj])
-
-    # Case B: the reverse -- 1000 hPa depth 20 m (fails), 925 hPa depth
-    # 60 m (would pass if the mask were still reading z925).
-    z1000_shallow = _low(20.0, background_m=1550.0)
-    z925_deep = _low(60.0, background_m=1500.0)
-    cls_b = hc.executeClassStd(z1000_shallow, z925_deep, z850, z700, z500, z400, z300, psfc, dx2d, dy_m)
-    assert np.isnan(cls_b[ci, cj])
+    assert np.isnan(idx[0, 0])
 
 
 # ---------------------------------------------------------------------------
@@ -689,7 +583,7 @@ def test_mask_below_ground_deep_ocean_low_not_masked_by_cap():
         np.testing.assert_allclose(masked, z)
 
 
-def test_execute_class_std_psfc_accepts_pa_or_hpa():
+def test_execute_index_std_psfc_accepts_pa_or_hpa():
     amp_by_level = {1000.0: 200.0, 925.0: 180.0, 850.0: 150.0, 700.0: 110.0, 500.0: 50.0, 400.0: 25.0, 300.0: 5.0}
     lat2d, lon2d, z_by_level, dx2d, dy_m = _warm_core_fields(amp_by_level)
     args = (
@@ -698,18 +592,18 @@ def test_execute_class_std_psfc_accepts_pa_or_hpa():
         z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
     )
 
-    cls_hpa = hc.executeClassStd(*args, _ocean_psfc(lat2d.shape, hpa=1013.0), dx2d, dy_m)
-    cls_pa = hc.executeClassStd(*args, _ocean_psfc(lat2d.shape, hpa=101300.0), dx2d, dy_m)
+    idx_hpa = hc.executeIndexStd(*args, _ocean_psfc(lat2d.shape, hpa=1013.0), dx2d, dy_m)
+    idx_pa = hc.executeIndexStd(*args, _ocean_psfc(lat2d.shape, hpa=101300.0), dx2d, dy_m)
 
-    np.testing.assert_allclose(cls_pa, cls_hpa, equal_nan=True)
+    np.testing.assert_allclose(idx_pa, idx_hpa, equal_nan=True)
 
 
-def test_execute_class_std_terrain_block_west_of_vortex():
+def test_execute_index_std_terrain_block_west_of_vortex():
     """A fake terrain block (surface pressure 750 hPa, well under
     BELOW_GROUND_CAP_HPA's 900) 800 km due west of a warm-core vortex.
 
     The block sits outside the vortex's own 500 km analysis window, so
-    the class at the vortex center is unchanged by its presence, and
+    the index at the vortex center is unchanged by its presence, and
     HVTL at a point 300 km east of the block's near (eastern) edge --
     close enough that its own 500 km window reaches into the block, far
     enough that it is not the block itself -- is still finite and close
@@ -748,14 +642,14 @@ def test_execute_class_std_terrain_block_west_of_vortex():
         z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
     )
 
-    cls_no_terrain = hc.executeClassStd(*band_args, psfc_ocean, dx2d, dy_m)
-    cls_terrain = hc.executeClassStd(*band_args, psfc_terrain, dx2d, dy_m)
+    idx_no_terrain = hc.executeIndexStd(*band_args, psfc_ocean, dx2d, dy_m)
+    idx_terrain = hc.executeIndexStd(*band_args, psfc_terrain, dx2d, dy_m)
 
-    assert cls_no_terrain[ci, cj] == 4.0
-    assert cls_terrain[ci, cj] == 4.0  # unchanged: the block is outside the 500 km window
+    assert idx_no_terrain[ci, cj] > 2.0  # deep warm core, tanh saturating positive
+    assert idx_terrain[ci, cj] == pytest.approx(float(idx_no_terrain[ci, cj]), rel=0.05)  # unchanged: outside the 500 km window
 
     block_i, block_j = np.argwhere(block_mask)[0]
-    assert np.isnan(cls_terrain[block_i, block_j])
+    assert np.isnan(idx_terrain[block_i, block_j])
 
     # East edge of the block (nearest the vortex), then 300 km further
     # east (closer to the vortex center).
@@ -821,53 +715,8 @@ def test_thermal_wind_grid_performance(capsys):
     assert elapsed < 8.0
 
 
-def test_execute_class_std_performance(capsys):
-    # executeClassStd on all six standard levels: two thermal_wind_grid
-    # calls (3 levels each, same cost as test_thermal_wind_grid_performance
-    # above) plus closed_low_mask, which adds two window_sum_2d calls (the
-    # ring's outer and inner box sums) and one more window_extreme_2d call
-    # (the blob dilation) on top of the window_extreme_2d calls it already
-    # needed for the candidate test.
-    ny, nx = 721, 1440
-    lat_vals = np.linspace(-90.0, 90.0, ny)
-    dlon_rad = math.radians(360.0 / nx)
-    dx_row = EARTH_RADIUS_KM * np.cos(np.radians(lat_vals)) * dlon_rad * 1000.0
-    dx2d = np.repeat(dx_row[:, np.newaxis], nx, axis=1)
-    dlat_rad = math.radians(180.0 / (ny - 1))
-    dy_m = EARTH_RADIUS_KM * dlat_rad * 1000.0
-
-    rng = np.random.default_rng(5678)
-    base = rng.standard_normal((ny, nx)).astype(np.float32)
-
-    def _smooth(a, passes=5):
-        out = a.astype(np.float64)
-        for _ in range(passes):
-            out = (
-                out
-                + np.roll(out, 1, axis=0) + np.roll(out, -1, axis=0)
-                + np.roll(out, 1, axis=1) + np.roll(out, -1, axis=1)
-            ) / 5.0
-        return out
-
-    # z1000 (the mask level) leads, followed by the six thermal-wind
-    # band levels, matching executeClassStd's new argument order.
-    levels = [1000.0, 925.0, 850.0, 700.0, 500.0, 400.0, 300.0]
-    zs = [_smooth(base + i) * 50.0 + (3900.0 - i * 400.0) for i in range(len(levels))]
-    psfc = _ocean_psfc((ny, nx))
-
-    start = time.perf_counter()
-    cls = hc.executeClassStd(*zs, psfc, dx2d, dy_m)
-    elapsed = time.perf_counter() - start
-
-    with capsys.disabled():
-        print(f"\nHartCPS.executeClassStd on a {ny}x{nx} grid, 6 levels: {elapsed:.3f} s")
-
-    assert cls.shape == (ny, nx)
-    assert elapsed < 8.0
-
-
 # ---------------------------------------------------------------------------
-# Parameter B and ET stage
+# Parameter B and the joint class
 # ---------------------------------------------------------------------------
 
 
@@ -1018,40 +867,46 @@ def test_parameter_b_grid_matches_cps_hart_parameter_b(hart_standard_orientation
     assert b_grid[ci, cj] == pytest.approx(b_ref, rel=0.05)
 
 
-# --- (d) et_stage truth table -----------------------------------------------
+# --- (d) hart_class truth table ----------------------------------------------
 
 
-def test_et_stage_truth_table():
-    B = np.array([[5.0, 10.0, 15.0], [5.0, 10.0, 15.0]])
-    vtl = np.array([[5.0, 5.0, 5.0], [0.0, 0.0, -1.0]])
+def test_hart_class_truth_table():
+    # One point per code, 0-6, in order, using the boundary convention
+    # hart_class documents: B frontal at > 10 (thr), symmetric at <= 10;
+    # each thermal wind term warm at >= 0, cold only at strictly < 0.
+    B = np.array([5.0, 5.0, 20.0, 20.0, 20.0, 5.0, 20.0])
+    vtl = np.array([50.0, 50.0, 50.0, 50.0, -50.0, -50.0, -50.0])
+    vtu = np.array([50.0, -50.0, 50.0, -50.0, -50.0, -50.0, 50.0])
     mask_all = np.ones_like(B, dtype=bool)
 
-    stage = hc.et_stage(B, vtl, 10.0, mask_all)
-    assert stage.dtype == np.float32
-    # Row 0 (vtl >= 0, not stage 2): B=5 -> 0; B exactly at threshold
-    # (10) -> stays 0 (strictly ">", not ">="); B=15 -> 1.
-    np.testing.assert_allclose(stage[0], [0.0, 0.0, 1.0])
-    # Row 1: vtl=0.0 exactly is NOT stage 2 (strictly "<0"), so it falls
-    # through to the same B check as row 0; vtl=-1.0 IS stage 2,
-    # regardless of B.
-    np.testing.assert_allclose(stage[1], [0.0, 0.0, 2.0])
+    code = hc.hart_class(B, vtl, vtu, mask_all)
+    assert code.dtype == np.float32
+    np.testing.assert_allclose(code, [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
 
-    # mask False -> NaN regardless of B/vtl.
-    mask_partial = np.array([[False, True, True], [True, True, True]])
-    stage_masked = hc.et_stage(B, vtl, 10.0, mask_partial)
-    assert np.isnan(stage_masked[0, 0])
-    assert stage_masked[0, 1] == 0.0
+    # Boundary: B exactly at the 10 m threshold is symmetric (<=), not
+    # frontal (>) -- code 0, not 2.
+    code_b_thr = hc.hart_class(np.array([10.0]), np.array([50.0]), np.array([50.0]), np.array([True]))
+    assert code_b_thr[0] == 0.0
 
-    # NaN B or vtl -> NaN even inside the mask.
-    B_nan = B.copy()
-    B_nan[0, 0] = np.nan
-    stage_nan_b = hc.et_stage(B_nan, vtl, 10.0, mask_all)
-    assert np.isnan(stage_nan_b[0, 0])
+    # Boundary: VTL exactly 0.0 is warm (>= 0), not cold -- Evans and
+    # Hart's completion is VTL turning *negative*, so exactly 0.0 has
+    # not yet turned; code 0, not 5/6.
+    code_vtl0 = hc.hart_class(np.array([5.0]), np.array([0.0]), np.array([50.0]), np.array([True]))
+    assert code_vtl0[0] == 0.0
 
-    vtl_nan = vtl.copy()
-    vtl_nan[1, 2] = np.nan
-    stage_nan_vtl = hc.et_stage(B, vtl_nan, 10.0, mask_all)
-    assert np.isnan(stage_nan_vtl[1, 2])
+    # Boundary: VTU exactly 0.0 is also warm (>= 0), same convention --
+    # code 0, not 1.
+    code_vtu0 = hc.hart_class(np.array([5.0]), np.array([50.0]), np.array([0.0]), np.array([True]))
+    assert code_vtu0[0] == 0.0
+
+    # mask False -> NaN regardless of B/vtl/vtu.
+    code_masked = hc.hart_class(np.array([5.0]), np.array([50.0]), np.array([50.0]), np.array([False]))
+    assert np.isnan(code_masked[0])
+
+    # NaN B -> NaN even inside the mask (the steering-flow speed below
+    # MIN_STEERING_MS case).
+    code_nan_b = hc.hart_class(np.array([np.nan]), np.array([50.0]), np.array([50.0]), np.array([True]))
+    assert np.isnan(code_nan_b[0])
 
 
 # --- (e) executeB with a 2D coriolis pseudo-field straddling the equator ---
@@ -1097,10 +952,59 @@ def test_execute_b_hemisphere_as_2d_field_straddles_equator(hart_standard_orient
     np.testing.assert_allclose(b[north_row, cj], -b[south_row, cj], rtol=1e-5)
 
 
-# --- (f) executeETStage: warm-core onset progression and cold-core complete ---
+# --- (f) executeHartClass on synthetic vortices ------------------------------
 
 
-def test_execute_et_stage_progression_and_completion(hart_standard_orientation):
+def _four_level_steering(u, v):
+    """Repeat a single uniform (u, v) wind into the four (850/700/500/300
+    hPa) steering-level argument pairs `executeHartClass`/`executeB` take.
+    """
+    return [u, v, u, v, u, v, u, v]
+
+
+def test_execute_hart_class_deep_warm_core_weak_steering_no_gradient(hart_standard_orientation):
+    # A vortex with no ambient thickness gradient at all (the background
+    # is purely radial, see synthetic.warm_core_heights) gives parameter
+    # B near zero at the exact center regardless of steering direction,
+    # so a weak, merely-nonzero steering flow (comfortably above
+    # MIN_STEERING_MS, so B is finite rather than NaN) should read
+    # symmetric (B <= 10 m) with both thermal wind terms warm -> code 0.
+    clat, clon = 20.0, 0.0
+    half_width_deg, dlat = 20.0, 0.5
+    lat2d, lon2d, dx2d, dy_m = _grid_and_dx_dy(clat, clon, half_width_deg, dlat)
+    ci, cj = lat2d.shape[0] // 2, lat2d.shape[1] // 2
+
+    amp_warm = {1000.0: 200.0, 925.0: 180.0, 850.0: 150.0, 700.0: 110.0, 500.0: 50.0, 400.0: 25.0, 300.0: 5.0}
+    levels = tuple(amp_warm.keys())
+    z_stack = synthetic.warm_core_heights(
+        lat2d, lon2d, clat, clon, levels, lambda p: amp_warm[p], scale_km=150.0
+    )
+    z_by_level = {p: z_stack[i] for i, p in enumerate(levels)}
+
+    psfc = _ocean_psfc(lat2d.shape)
+    coriolis = np.full(lat2d.shape, 1.0)
+    u_weak = np.full(lat2d.shape, 5.0)
+    v_weak = np.full(lat2d.shape, 0.0)
+
+    cls = hc.executeHartClass(
+        z_by_level[1000.0], z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
+        z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
+        *_four_level_steering(u_weak, v_weak),
+        psfc, coriolis, dx2d, dy_m,
+    )
+    assert cls.dtype == np.float32
+    assert cls[ci, cj] == 0.0
+    assert np.isnan(cls[0, 0])  # outside the closed-low mask
+
+
+def test_execute_hart_class_thickness_gradient_and_steering_gives_frontal_deep_warm(hart_standard_orientation):
+    # Same deep warm-core vortex, but with a 925-700 hPa thickness
+    # gradient in the background and a steering flow along its contours
+    # (the case that produces a clean, full-magnitude B -- see the
+    # module docstring's "Parameter B and the joint class" section).
+    # VTU is untouched by the z700 modification (it comes from
+    # 500/400/300 hPa), so it stays clearly positive; only B crosses the
+    # 10 m frontal line -> code 2 (frontal deep warm core), not 0.
     clat, clon = 20.0, 0.0
     half_width_deg, dlat = 20.0, 0.5
     lat2d, lon2d, dx2d, dy_m = _grid_and_dx_dy(clat, clon, half_width_deg, dlat)
@@ -1119,49 +1023,174 @@ def test_execute_et_stage_progression_and_completion(hart_standard_orientation):
     u_level = np.full(lat2d.shape, 15.0)  # due east: along the (east-west) thickness contours
     v_level = np.full(lat2d.shape, 0.0)
 
-    def _stage_for_slope(slope):
+    def _cls_for_slope(slope):
         z700_mod = z_by_level[700.0] - slope * y_km
-        return hc.executeETStage(
+        return hc.executeHartClass(
             z_by_level[1000.0], z_by_level[925.0], z_by_level[850.0], z700_mod,
-            u_level, v_level, u_level, v_level, u_level, v_level, u_level, v_level,
+            z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
+            *_four_level_steering(u_level, v_level),
             psfc, coriolis, dx2d, dy_m,
         )
 
-    # Weak thickness gradient: B stays below bThresholdM (10 m) -> stage 0.
-    stage_weak = _stage_for_slope(0.01)
-    assert stage_weak[ci, cj] == 0.0
-    assert np.isnan(stage_weak[0, 0])  # outside the closed-low mask
+    # Weak gradient: B stays below the 10 m frontal line -> still code 0.
+    cls_weak = _cls_for_slope(0.01)
+    assert cls_weak[ci, cj] == 0.0
 
-    # Stronger gradient: B > 10 m, VTL (the lower thermal wind) still
-    # clearly positive -> onset, stage 1.
-    stage_onset = _stage_for_slope(0.06)
-    assert stage_onset[ci, cj] == 1.0
+    # Stronger gradient: B crosses 10 m, both thermal wind terms still
+    # warm -> code 2 (frontal deep warm core, Evans and Hart's onset).
+    cls_onset = _cls_for_slope(0.06)
+    assert cls_onset[ci, cj] == 2.0
 
-    # Cold-core vortex (VTL < 0 at the center): stage 2 regardless of B
-    # (a nonzero steering flow is still supplied so B itself is finite,
-    # not blanked by MIN_STEERING_MS).
+
+def test_execute_hart_class_tilted_cold_core_in_gradient_gives_cold(capsys, hart_standard_orientation):
+    # A cold-core vortex tilted westward with height (the low-level
+    # center and the upper-level center are not exactly stacked, as in a
+    # real, developing extratropical cyclone), embedded in the same kind
+    # of background thickness gradient and along-contour steering as the
+    # previous test. Both thermal wind terms are cold at the center
+    # (amplitude grows with height at every level -- see the module
+    # docstring's sign derivation), so the class must land on the cold
+    # side of the table (frontal cold core, 4, if B has crossed the 10 m
+    # line; symmetric cold core, 5, otherwise) -- whichever the setup
+    # actually produces is asserted and B is printed for visibility,
+    # since only the qualitative "cold, not warm or mid-level" claim is
+    # the point of this test, not a specific B value.
+    clat, clon = 20.0, 0.0
+    half_width_deg, dlat = 20.0, 0.5
+    lat2d, lon2d, dx2d, dy_m = _grid_and_dx_dy(clat, clon, half_width_deg, dlat)
+    ci, cj = lat2d.shape[0] // 2, lat2d.shape[1] // 2
+
     amp_cold = {
         1000.0: 100.0, 925.0: 80.0, 850.0: 100.0, 700.0: 120.0, 500.0: 150.0, 400.0: 180.0, 300.0: 200.0,
     }
-    levels_c = tuple(amp_cold.keys())
-    z_stack_c = synthetic.warm_core_heights(
-        lat2d, lon2d, clat, clon, levels_c, lambda p: amp_cold[p], scale_km=150.0
-    )
-    z_by_level_c = {p: z_stack_c[i] for i, p in enumerate(levels_c)}
+    levels = tuple(amp_cold.keys())
+    tilt_km = 200.0  # westward shift at 300 hPa, linear in ln(p) from 0 at 1000 hPa
 
-    stage_cold = hc.executeETStage(
-        z_by_level_c[1000.0], z_by_level_c[925.0], z_by_level_c[850.0], z_by_level_c[700.0],
-        u_level, v_level, u_level, v_level, u_level, v_level, u_level, v_level,
+    def _tilted_level(p):
+        frac = math.log(1000.0 / p) / math.log(1000.0 / 300.0)
+        lon_shift_deg = math.degrees(
+            (tilt_km * frac) / (EARTH_RADIUS_KM * math.cos(math.radians(clat)))
+        )
+        r_km = synthetic._haversine_km(lat2d, lon2d, clat, clon - lon_shift_deg)
+        background = 100.0 + 7000.0 * np.log(1000.0 / p)
+        return background - amp_cold[p] * np.exp(-(r_km / 150.0) ** 2)
+
+    z_by_level = {p: _tilted_level(p) for p in levels}
+
+    y_km = EARTH_RADIUS_KM * np.radians(lat2d - clat)
+    slope = 0.04
+    z700_mod = z_by_level[700.0] - slope * y_km
+
+    psfc = _ocean_psfc(lat2d.shape)
+    coriolis = np.full(lat2d.shape, 1.0)
+    u_level = np.full(lat2d.shape, 15.0)
+    v_level = np.full(lat2d.shape, 0.0)
+
+    cls = hc.executeHartClass(
+        z_by_level[1000.0], z_by_level[925.0], z_by_level[850.0], z700_mod,
+        z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
+        *_four_level_steering(u_level, v_level),
         psfc, coriolis, dx2d, dy_m,
     )
-    assert stage_cold[ci, cj] == 2.0
-    assert np.isnan(stage_cold[0, 0])
+    b = hc.executeB(
+        z_by_level[925.0], z700_mod,
+        *_four_level_steering(u_level, v_level),
+        psfc, coriolis, dx2d, dy_m,
+    )
+    with capsys.disabled():
+        print(f"\nTilted cold-core class at center: {cls[ci, cj]!r}, B = {b[ci, cj]:.1f} m")
+
+    assert cls[ci, cj] in (4.0, 5.0)
+    assert np.isnan(cls[0, 0])
+
+
+def test_execute_hart_class_shallow_warm_vortex_gives_1_or_3(capsys, hart_standard_orientation):
+    # Amplitude decays from a large low-level value to zero around
+    # 600 hPa (the gap layer neither band claims) and turns slightly
+    # negative above it, so the lower band (925/850/700 hPa) reads warm
+    # (amplitude shrinking toward 600 hPa) while the upper band
+    # (500/400/300 hPa) reads cold (|amplitude| growing again above
+    # 600 hPa) -- the classic shallow-warm-core signature. Which of the
+    # two shallow-warm codes (1 symmetric, 3 frontal) comes out depends
+    # only on B, which this setup does not force either way; whichever
+    # it lands on is asserted and B is printed.
+    clat, clon = 20.0, 0.0
+    half_width_deg, dlat = 20.0, 0.5
+    lat2d, lon2d, dx2d, dy_m = _grid_and_dx_dy(clat, clon, half_width_deg, dlat)
+    ci, cj = lat2d.shape[0] // 2, lat2d.shape[1] // 2
+
+    amp_shallow = {
+        1000.0: 200.0, 925.0: 150.0, 850.0: 90.0, 700.0: 20.0, 500.0: -15.0, 400.0: -25.0, 300.0: -35.0,
+    }
+    levels = tuple(amp_shallow.keys())
+    z_stack = synthetic.warm_core_heights(
+        lat2d, lon2d, clat, clon, levels, lambda p: amp_shallow[p], scale_km=150.0
+    )
+    z_by_level = {p: z_stack[i] for i, p in enumerate(levels)}
+
+    psfc = _ocean_psfc(lat2d.shape)
+    coriolis = np.full(lat2d.shape, 1.0)
+    u_weak = np.full(lat2d.shape, 5.0)
+    v_weak = np.full(lat2d.shape, 0.0)
+
+    cls = hc.executeHartClass(
+        z_by_level[1000.0], z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
+        z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
+        *_four_level_steering(u_weak, v_weak),
+        psfc, coriolis, dx2d, dy_m,
+    )
+    b = hc.executeB(
+        z_by_level[925.0], z_by_level[700.0],
+        *_four_level_steering(u_weak, v_weak),
+        psfc, coriolis, dx2d, dy_m,
+    )
+    with capsys.disabled():
+        print(f"\nShallow warm-core class at center: {cls[ci, cj]!r}, B = {b[ci, cj]:.1f} m")
+
+    assert cls[ci, cj] in (1.0, 3.0)
+
+
+def test_execute_hart_class_constants_as_one_element_arrays(hart_standard_orientation):
+    clat, clon = 20.0, 0.0
+    half_width_deg, dlat = 20.0, 0.5
+    lat2d, lon2d, dx2d, dy_m = _grid_and_dx_dy(clat, clon, half_width_deg, dlat)
+
+    amp_warm = {1000.0: 200.0, 925.0: 180.0, 850.0: 150.0, 700.0: 110.0, 500.0: 50.0, 400.0: 25.0, 300.0: 5.0}
+    levels = tuple(amp_warm.keys())
+    z_stack = synthetic.warm_core_heights(
+        lat2d, lon2d, clat, clon, levels, lambda p: amp_warm[p], scale_km=150.0
+    )
+    z_by_level = {p: z_stack[i] for i, p in enumerate(levels)}
+
+    psfc = _ocean_psfc(lat2d.shape)
+    coriolis = np.full(lat2d.shape, 1.0)
+    u_level = np.full(lat2d.shape, 15.0)
+    v_level = np.full(lat2d.shape, 0.0)
+
+    args = (
+        z_by_level[1000.0], z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
+        z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
+        *_four_level_steering(u_level, v_level),
+        psfc, coriolis, dx2d, dy_m,
+    )
+
+    baseline = hc.executeHartClass(*args)
+    from_arrays = hc.executeHartClass(
+        *args,
+        radiusKm=np.array([500.0]),
+        bThresholdM=np.array([10.0]),
+        layerScale=np.array([hc.HART_B_LAYER_SCALE]),
+        depthM=np.array([40.0]),
+        blobKm=np.array([200.0]),
+        capHpa=np.array([900.0]),
+    )
+    np.testing.assert_allclose(from_arrays, baseline, equal_nan=True)
 
 
 # --- (g) performance: 721x1440 grid ------------------------------------------
 
 
-def test_execute_et_stage_performance(capsys):
+def test_execute_hart_class_performance(capsys):
     ny, nx = 721, 1440
     lat_vals = np.linspace(-90.0, 90.0, ny)
     dlon_rad = math.radians(360.0 / nx)
@@ -1183,7 +1212,7 @@ def test_execute_et_stage_performance(capsys):
             ) / 5.0
         return out
 
-    levels = [1000.0, 925.0, 850.0, 700.0]
+    levels = [1000.0, 925.0, 850.0, 700.0, 500.0, 400.0, 300.0]
     zs = [_smooth(base + i) * 50.0 + (3900.0 - i * 400.0) for i in range(len(levels))]
     winds = [(_smooth(base + 10.0 + i) * 2.0 + 10.0, _smooth(base - 10.0 - i) * 2.0) for i in range(4)]
     psfc = _ocean_psfc((ny, nx))
@@ -1195,13 +1224,13 @@ def test_execute_et_stage_performance(capsys):
         wind_args.extend([u, v])
 
     start = time.perf_counter()
-    stage = hc.executeETStage(*zs, *wind_args, psfc, coriolis, dx2d, dy_m)
+    cls = hc.executeHartClass(*zs, *wind_args, psfc, coriolis, dx2d, dy_m)
     elapsed = time.perf_counter() - start
 
     with capsys.disabled():
-        print(f"\nHartCPS.executeETStage on a {ny}x{nx} grid: {elapsed:.3f} s")
+        print(f"\nHartCPS.executeHartClass on a {ny}x{nx} grid: {elapsed:.3f} s")
 
-    assert stage.shape == (ny, nx)
+    assert cls.shape == (ny, nx)
     assert elapsed < 8.0
 
 

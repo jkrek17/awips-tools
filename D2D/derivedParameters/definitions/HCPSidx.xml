@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <!--
   EXPERIMENTAL. Hart CPS combined core index, actual method: same HVTL/
-  HVTU and closed-low mask as HCPScat.xml, squashed into a single
+  HVTU and closed-low mask as HCPSclass.xml, squashed into a single
   continuous number from -3 (cold core) to +3 (deep warm core) via
   2*tanh(HVTL/scaleM) + tanh(HVTU/scaleM) - see HartCPS.executeIndexStd
   and D2D/README.md's "Hart CPS family" section. The closed-low mask
@@ -15,7 +15,7 @@
   handled by below-ground masking (see next paragraph), not left as a
   caveat.
 
-  Below-ground masking: same as HCPScat.xml - every one of the seven
+  Below-ground masking: same as HCPSclass.xml - every one of the seven
   height Fields above (z1000 and the six HVTL/HVTU band levels) is
   blanked (NaN) before its own computation wherever it is below ground
   for its own pressure, using the surface pressure field (P, Surface)
@@ -23,10 +23,10 @@
   900 hPa) is a cap, not the literal level pressure: it keeps a deep
   low's own legitimately low surface pressure over open water from
   being mistaken for terrain, while still masking the Greenland ice
-  sheet and Iceland highlands at 1000/925/850 hPa - see HCPScat.xml's
+  sheet and Iceland highlands at 1000/925/850 hPa - see HCPSclass.xml's
   comment for the full explanation.
 
-  VERIFY: same checks as HCPScat.xml (GH abbreviation, fixed-level Field
+  VERIFY: same checks as HCPSclass.xml (GH abbreviation, fixed-level Field
   spelling, P abbreviation and its Surface level spelling, dx/dy
   pseudo-fields and ConstantField support, levels= value, unit=""
   acceptance).

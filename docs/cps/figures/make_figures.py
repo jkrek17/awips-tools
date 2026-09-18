@@ -178,15 +178,34 @@ CMAP_DIVERGING = LinearSegmentedColormap.from_list("cps_diverging", DIVERGING_ST
 CMAP_SEQ_BLUE = LinearSegmentedColormap.from_list("cps_seq_blue", ["#cde2fb", "#0d366b"])
 
 CATEGORY_COLORS = ["#4a3aa7", "#2a78d6", "#c3c2b7", "#eb6834", "#e34948"]
-CATEGORY_NAMES = [
-    "0  mid-level vortex",
-    "1  cold core",
-    "2  neutral",
-    "3  shallow warm core",
-    "4  deep warm core",
+
+# HCPSclass (the joint Hart CPS class replacing the retired HCPScat/
+# HETstage fields): 7 entries in code order, matching
+# D2D/colormaps/Grid/CPS_HartClass.cmap's own colors exactly, so the
+# figure and the shipped D2D colormap read identically. Warm states
+# (codes 0-3) are warm hues, cold states (4-5) are cool hues, and the
+# mid-level vortex (6) is neutral gray -- see that .cmap file's header
+# comment for the same convention.
+HARTCLASS_COLORS = [
+    (0.89, 0.29, 0.28, 1.0),  # 0 symmetric deep warm core -- red
+    (0.92, 0.41, 0.20, 1.0),  # 1 symmetric shallow warm core -- orange
+    (0.91, 0.48, 0.64, 1.0),  # 2 frontal deep warm core -- magenta
+    (0.93, 0.63, 0.00, 1.0),  # 3 frontal shallow warm core -- yellow
+    (0.16, 0.47, 0.84, 1.0),  # 4 frontal cold core -- blue
+    (0.29, 0.23, 0.65, 1.0),  # 5 symmetric cold core -- violet
+    (0.76, 0.76, 0.72, 1.0),  # 6 mid-level vortex -- gray
 ]
-CMAP_CATEGORY = ListedColormap(CATEGORY_COLORS)
-NORM_CATEGORY = BoundaryNorm(np.arange(-0.5, 5.5, 1.0), CMAP_CATEGORY.N)
+HARTCLASS_NAMES = [
+    "0  sym. deep warm core",
+    "1  sym. shallow warm core",
+    "2  frontal deep warm core",
+    "3  frontal shallow warm core",
+    "4  frontal cold core",
+    "5  sym. cold core",
+    "6  mid-level vortex",
+]
+CMAP_HARTCLASS = ListedColormap(HARTCLASS_COLORS)
+NORM_HARTCLASS = BoundaryNorm(np.arange(-0.5, 7.5, 1.0), CMAP_HARTCLASS.N)
 
 VORTEX_A_COLOR = "#e34948"
 VORTEX_B_COLOR = "#2a78d6"
@@ -729,18 +748,37 @@ def make_fig3(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m, z_std_stack, psfc):
     cb_c.set_label(r"$-V_T^U$ (m)", fontsize=8)
     cb_c.ax.tick_params(labelsize=7.5)
 
-    # (d) HCPScat
-    cat = HartCPS.executeClassStd(
+    # (d) HCPSclass -- the joint Hart CPS class (replaces the retired
+    # HCPScat). Needs a steering flow and a coriolis pseudo-field that
+    # HVTL/HVTU do not: a uniform 8 m/s westerly everywhere (the figure's
+    # own spec -- uniform steering is enough to demonstrate the class,
+    # since the point here is B's sign/magnitude relative to the 10 m
+    # line, not a realistic storm motion) and coriolis from this grid's
+    # own latitude. HartCPS.gradient_2d (used inside parameter_b_grid)
+    # needs to know this synthetic grid's rows increase northward, same
+    # reason Figure 4/7 set this.
+    HartCPS.ORIENTATION_MODE = 0
+    u_steer_fig3 = np.full(lat2d.shape, 8.0)
+    v_steer_fig3 = np.zeros_like(u_steer_fig3)
+    coriolis_fig3 = 2.0 * OMEGA_EARTH * np.sin(np.radians(lat2d))
+    cat = HartCPS.executeHartClass(
         z_std_stack[1000.0], z_std_stack[925.0], z_std_stack[850.0], z_std_stack[700.0],
         z_std_stack[500.0], z_std_stack[400.0], z_std_stack[300.0],
-        psfc, dx2d, dy_m,
+        u_steer_fig3, v_steer_fig3, u_steer_fig3, v_steer_fig3,
+        u_steer_fig3, v_steer_fig3, u_steer_fig3, v_steer_fig3,
+        psfc, coriolis_fig3, dx2d, dy_m,
     )
+    i_a, j_a = nearest_index(lat_vals, lon_vals, VORTEX_A["lat"], VORTEX_A["lon"])
+    i_b, j_b = nearest_index(lat_vals, lon_vals, VORTEX_B["lat"], VORTEX_B["lon"])
+    print(f"Figure 3(d) HCPSclass at vortex A ({VORTEX_A['lat']:.0f}N {abs(VORTEX_A['lon']):.0f}W): {cat[i_a, j_a]!r}")
+    print(f"Figure 3(d) HCPSclass at vortex B ({VORTEX_B['lat']:.0f}N {abs(VORTEX_B['lon']):.0f}W): {cat[i_b, j_b]!r}")
+
     draw_terrain_box(ax_d)
-    pm_d = ax_d.pcolormesh(lon2d, lat2d, cat, cmap=CMAP_CATEGORY, norm=NORM_CATEGORY, shading="auto", zorder=2)
+    pm_d = ax_d.pcolormesh(lon2d, lat2d, cat, cmap=CMAP_HARTCLASS, norm=NORM_HARTCLASS, shading="auto", zorder=2)
     ax_d.contour(lon2d, lat2d, z1000, levels=np.arange(np.floor(z1000.min() / 20) * 20, z1000.max() + 20, 20), colors="#8a8a86", linewidths=0.35, zorder=3)
     panel_letter(ax_d, "d")
-    cb_d = fig.colorbar(pm_d, ax=ax_d, pad=0.02, fraction=0.05, ticks=range(5))
-    cb_d.ax.set_yticklabels(CATEGORY_NAMES, fontsize=6.8)
+    cb_d = fig.colorbar(pm_d, ax=ax_d, pad=0.02, fraction=0.05, ticks=range(7))
+    cb_d.ax.set_yticklabels(HARTCLASS_NAMES, fontsize=6.2)
 
     fig.savefig(OUT_DIR / "fig3_gridded.png")
     plt.close(fig)
@@ -903,7 +941,7 @@ def random_smooth_field(shape, rng, base=5000.0, amp=60.0):
     return base + field
 
 
-def _time_execute_class_std(ny, nx, rng):
+def _time_execute_hart_class(ny, nx, rng):
     lat_vals = np.linspace(-90.0, 90.0, ny)
     lon_vals = np.linspace(0.0, 360.0, nx, endpoint=False)
     lon2d, lat2d = np.meshgrid(lon_vals, lat_vals)
@@ -915,9 +953,16 @@ def _time_execute_class_std(ny, nx, rng):
     levels = STANDARD_LEVELS
     z = {p: random_smooth_field((ny, nx), rng, base=z_std(p)) for p in levels}
     psfc = np.full((ny, nx), PSFC_OCEAN_HPA)
+    u_steer = np.full((ny, nx), 8.0)
+    v_steer = np.zeros((ny, nx))
+    coriolis = 2.0 * OMEGA_EARTH * np.sin(np.radians(lat2d))
 
     t0 = time.perf_counter()
-    HartCPS.executeClassStd(z[1000.0], z[925.0], z[850.0], z[700.0], z[500.0], z[400.0], z[300.0], psfc, dx2d, dy_m)
+    HartCPS.executeHartClass(
+        z[1000.0], z[925.0], z[850.0], z[700.0], z[500.0], z[400.0], z[300.0],
+        u_steer, v_steer, u_steer, v_steer, u_steer, v_steer, u_steer, v_steer,
+        psfc, coriolis, dx2d, dy_m,
+    )
     return time.perf_counter() - t0
 
 
@@ -927,10 +972,10 @@ def make_fig5():
     labels = ["181×360\n(1°)", "361×720\n(0.5°)", "721×1440\n(0.25°)"]
     medians = []
     for ny, nx in sizes:
-        runs = [_time_execute_class_std(ny, nx, rng) for _ in range(3)]
+        runs = [_time_execute_hart_class(ny, nx, rng) for _ in range(3)]
         med = float(np.median(runs))
         medians.append(med)
-        print(f"executeClassStd timing, {ny}x{nx}: runs={[f'{r:.3f}' for r in runs]} s, median={med:.3f} s")
+        print(f"executeHartClass timing, {ny}x{nx}: runs={[f'{r:.3f}' for r in runs]} s, median={med:.3f} s")
 
     fig, ax = plt.subplots(figsize=(HALF_WIDTH_IN, 3.1))
     xs = np.arange(len(sizes))
@@ -1015,10 +1060,12 @@ FIG7_STEERING_BLEND_WIDTH_DEG = 3.0
 FIG7_STEERING_TURN_MS = 2.5
 FIG7_STEERING_TURN_WIDTH_DEG = 1.2
 
+#: Colors reused for Hart's own Phase 1 diagram quadrants (panel (d) of
+#: this figure, and Figure 10) -- a schematic of Hart's own B-vs-VTL
+#: plot, unrelated to the retired HETstage field's own (removed)
+#: colormap; kept as three colors borrowed from CATEGORY_COLORS purely
+#: for visual consistency with the rest of this script's palette.
 STAGE_COLORS = [CATEGORY_COLORS[2], CATEGORY_COLORS[3], CATEGORY_COLORS[1]]  # pale gray, orange, blue
-STAGE_NAMES = ["0  pre-onset", "1  onset", "2  complete"]
-CMAP_STAGE = ListedColormap(STAGE_COLORS)
-NORM_STAGE = BoundaryNorm(np.arange(-0.5, 3.5, 1.0), CMAP_STAGE.N)
 
 
 def fig7_rate_per_1000km(p):
@@ -1031,7 +1078,21 @@ def fig7_rate_per_1000km(p):
     just two levels. The *difference* rate(700) - rate(925) is what sets
     the 925-700 hPa thickness gradient; extending it smoothly to 1000/850
     hPa only matters for HVTL and the closed-low mask, not for B itself.
+
+    Above 700 hPa (500/400/300 hPa, needed for HVTU/HCPSclass since this
+    figure also now reports the joint class, not just B and VTL as it
+    did when it only fed the retired HETstage) the rate is held flat at
+    its own 700 hPa value rather than continuing the same line: the
+    raised background here represents a *low-level* baroclinic zone (a
+    frontal environment near the surface), and letting the line
+    extrapolate unclamped to 300 hPa would quadruple it by then (about
+    160 m/1000 km), swamping the vortex's own upper-level warm-core
+    signal and flipping HVTU negative for reasons that have nothing to
+    do with the transition being demonstrated.
     """
+    rate_700 = _linear_in_lnp(700.0, 925.0, 0.0, 700.0, FIG7_THICKNESS_GRADIENT_M_PER_1000KM)
+    if p <= 700.0:
+        return rate_700
     return _linear_in_lnp(p, 925.0, 0.0, 700.0, FIG7_THICKNESS_GRADIENT_M_PER_1000KM)
 
 
@@ -1118,6 +1179,9 @@ def make_fig7(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m):
     z925 = fig7_height_field(lat2d, lon2d, 925.0)
     z850 = fig7_height_field(lat2d, lon2d, 850.0)
     z700 = fig7_height_field(lat2d, lon2d, 700.0)
+    z500 = fig7_height_field(lat2d, lon2d, 500.0)
+    z400 = fig7_height_field(lat2d, lon2d, 400.0)
+    z300 = fig7_height_field(lat2d, lon2d, 300.0)
     thickness = z700 - z925
 
     psfc = np.full(lat2d.shape, 1013.0)
@@ -1135,8 +1199,8 @@ def make_fig7(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m):
         [z925, z850, z700], HartCPS.LOWER_BAND, dx2d, dy_m, HartCPS.RADIUS_KM,
         psfc_hpa=psfc, cap_hpa=900.0,
     )
-    het_stage = HartCPS.executeETStage(
-        z1000, z925, z850, z700,
+    hart_cls = HartCPS.executeHartClass(
+        z1000, z925, z850, z700, z500, z400, z300,
         u_steer, v_steer, u_steer, v_steer, u_steer, v_steer, u_steer, v_steer,
         psfc, coriolis, dx2d, dy_m,
         500.0, HartCPS.B_THRESHOLD_M, HartCPS.HART_B_LAYER_SCALE,
@@ -1147,11 +1211,12 @@ def make_fig7(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m):
     i2, j2 = nearest_index(lat_vals, lon_vals, center2[0], center2[1])
     b1, b2 = float(hb[i1, j1]), float(hb[i2, j2])
     vtl1, vtl2 = float(vtl[i1, j1]), float(vtl[i2, j2])
+    cls1, cls2 = float(hart_cls[i1, j1]), float(hart_cls[i2, j2])
 
-    print("Figure 7 (Parameter B and ET stage), synthetic transitioning-storm case:")
+    print("Figure 7 (Parameter B and the joint class), synthetic transitioning-storm case:")
     print(f"  925-700 hPa thickness gradient used: {FIG7_THICKNESS_GRADIENT_M_PER_1000KM:.0f} m per 1000 km, decreasing northward")
-    print(f"  vortex A,  28N 130W, easterly steering ({FIG7_STEERING_EASTERLY_MS:+.0f} m/s far south): B = {b1:+.1f} m, -V_T^L = {vtl1:+.1f} m")
-    print(f"  vortex A', 42N 140W, westerly steering ({FIG7_STEERING_WESTERLY_MS:+.0f} m/s far north): B = {b2:+.1f} m, -V_T^L = {vtl2:+.1f} m")
+    print(f"  vortex A,  28N 130W, easterly steering ({FIG7_STEERING_EASTERLY_MS:+.0f} m/s far south): B = {b1:+.1f} m, -V_T^L = {vtl1:+.1f} m, HCPSclass = {cls1:.0f}")
+    print(f"  vortex A', 42N 140W, westerly steering ({FIG7_STEERING_WESTERLY_MS:+.0f} m/s far north): B = {b2:+.1f} m, -V_T^L = {vtl2:+.1f} m, HCPSclass = {cls2:.0f}")
     print(
         "  sign reasoning: thickness is largest (warmest) toward the south domain edge "
         "everywhere. Vortex A' moves east (westerly steering): facing east, its right side "
@@ -1168,6 +1233,13 @@ def make_fig7(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m):
     )
     if not (onset_ok and cold_ok):
         print("  WARNING: gradient too weak to clear the 10 m threshold comfortably on both sides.")
+    class_ok = (cls1 == 0.0) and (cls2 == 2.0)
+    print(
+        f"  check: HCPSclass at A is {cls1:.0f} (expect 0, symmetric deep warm core) and at "
+        f"A' is {cls2:.0f} (expect 2, frontal deep warm core): {class_ok}"
+    )
+    if not class_ok:
+        print("  WARNING: HCPSclass at A/A' did not land on the expected 0/2 codes.")
 
     fig, axes = plt.subplots(2, 2, figsize=(FULL_WIDTH_IN, 7.6), constrained_layout=True)
     fig.get_layout_engine().set(h_pad=0.08, w_pad=0.06, hspace=0.04, wspace=0.04)
@@ -1230,13 +1302,13 @@ def make_fig7(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m):
     cb_b.ax.tick_params(labelsize=7.5)
     panel_letter(ax_b, "b")
 
-    # --- (c) HETstage ---------------------------------------------------------
-    pm_c = ax_c.pcolormesh(lon2d, lat2d, het_stage, cmap=CMAP_STAGE, norm=NORM_STAGE, shading="auto", zorder=2)
+    # --- (c) HCPSclass (replaces the retired HETstage) -----------------------
+    pm_c = ax_c.pcolormesh(lon2d, lat2d, hart_cls, cmap=CMAP_HARTCLASS, norm=NORM_HARTCLASS, shading="auto", zorder=2)
     z1000_levels = np.arange(np.floor(z1000.min() / 20) * 20, z1000.max() + 20, 20)
     ax_c.contour(lon2d, lat2d, z1000, levels=z1000_levels, colors="#8a8a86", linewidths=0.35, zorder=3)
     mark_vortex_centers(ax_c)
-    cb_c = fig.colorbar(pm_c, ax=ax_c, pad=0.02, fraction=0.05, ticks=range(3))
-    cb_c.ax.set_yticklabels(STAGE_NAMES, fontsize=7.2)
+    cb_c = fig.colorbar(pm_c, ax=ax_c, pad=0.02, fraction=0.05, ticks=range(7))
+    cb_c.ax.set_yticklabels(HARTCLASS_NAMES, fontsize=6.2)
     panel_letter(ax_c, "c")
 
     # --- (d) Hart's Phase 1 diagram: B vs -V_T^L -----------------------------
@@ -1257,15 +1329,16 @@ def make_fig7(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m):
         ax_d.add_patch(Rectangle((x0c, y0c), x1c - x0c, y1c - y0c, facecolor=color, alpha=0.30, edgecolor="none", zorder=0))
 
     label_pos = {
-        "symmetric\nwarm core": (xlim[0] + 3, 205, "left"),
+        # Lower part of the quadrant, well clear of the 0 h/24 h points
+        # (which sit up near y=200-240) and of the trajectory itself.
+        "symmetric\nwarm core": (-18, 25, "left"),
         "asymmetric warm core": (xlim[1] - 3, 260, "right"),
         "asymmetric cold core": (xlim[1] - 3, -190, "right"),
         "symmetric\ncold core": (0.5 * xlim[0], -230, "center"),
     }
     for _, _, _, _, _, label in quadrants:
         x, y, ha = label_pos[label]
-        va = "top" if label == "symmetric\nwarm core" else "center"
-        ax_d.text(x, y, label, color=TEXT_SECONDARY, fontsize=7.5, ha=ha, va=va, style="italic", zorder=1)
+        ax_d.text(x, y, label, color=TEXT_SECONDARY, fontsize=7.5, ha=ha, va="center", style="italic", zorder=1)
 
     ax_d.axhline(0, color=TEXT_DARK, linewidth=1.0, zorder=2)
     ax_d.axvline(HartCPS.B_THRESHOLD_M, color=TEXT_DARK, linewidth=1.0, zorder=2)
@@ -1286,14 +1359,18 @@ def make_fig7(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m):
         if k == traj.shape[0] - 1:
             dx_txt, dy_txt, va = 8, -14, "top"
         elif k == 0:
-            # Pulled up and to the left of its own point, clear of "24 h"
-            # (which keeps the default above-right placement) and of the
-            # "symmetric warm core" label lower in this same quadrant.
-            dx_txt, dy_txt, ha, va = -8, 16, "right", "bottom"
+            # Directly to the left of its own point (not above it, which
+            # pushed the label up against the top axis edge at y=240 on
+            # a ylim topping out at 300).
+            dx_txt, dy_txt, ha, va = -10, 0, "right", "center"
         elif hours[k] == 120:
             dx_txt, dy_txt = 16, 18  # clear of the "asymmetric cold core" label just above
         elif hours[k] == 72:
-            dx_txt, dy_txt = 22, 2  # clear of the "A' (westerly)" annotation just below
+            # dy=0 instead of the default 10 -- the "A' (westerly)"
+            # annotation now anchors at a fixed (32, 130) and reaches down
+            # to about y=109, which the default's extra upward push
+            # clipped into.
+            dx_txt, dy_txt = 8, 0
         ax_d.annotate(f"{hours[k]} h", (x, y), textcoords="offset points", xytext=(dx_txt, dy_txt), fontsize=7.2, color=TEXT_SECONDARY, ha=ha, va=va)
 
     onset_xy = _interp_crossing(traj, 0, HartCPS.B_THRESHOLD_M)
@@ -1313,14 +1390,21 @@ def make_fig7(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m):
             bbox=dict(facecolor="white", edgecolor="none", alpha=0.85, pad=1.0), zorder=7,
         )
 
-    for (bval, vval), label, off in (
-        ((b1, vtl1), "A (easterly)", (0, -18)),
-        ((b2, vtl2), "A′ (westerly)", (0, -18)),
+    # Fixed data-space anchors, not offsets from each diamond: after the
+    # background-gradient clamp (see fig7_rate_per_1000km) both diamonds
+    # sit close together around VTL=120 m, so an offset-from-point
+    # placement put the two annotations on top of each other and on the
+    # trajectory. A's label goes below-and-left of its own diamond;
+    # A''s goes to the right of its own diamond, clear of both A's label
+    # and the trajectory line between them.
+    for (bval, vval), label, anchor, ha, va in (
+        ((b1, vtl1), "A (easterly)", (-28, 90), "left", "top"),
+        ((b2, vtl2), "A′ (westerly)", (32, 130), "left", "center"),
     ):
         ax_d.plot(bval, vval, marker="D", markersize=8, markerfacecolor=VORTEX_A_COLOR, markeredgecolor="white", markeredgewidth=1.0, zorder=9)
         ax_d.annotate(
-            f"{label}\nB={bval:+.0f} m", (bval, vval), textcoords="offset points", xytext=off, ha="center",
-            fontsize=7.2, color=TEXT_DARK, fontweight="bold", va="top",
+            f"{label}\nB={bval:+.0f} m", (bval, vval), xytext=anchor, textcoords="data", ha=ha, va=va,
+            fontsize=7.2, color=TEXT_DARK, fontweight="bold",
             bbox=dict(facecolor="white", edgecolor="none", alpha=0.85, pad=1.0), zorder=9,
         )
 

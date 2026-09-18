@@ -45,13 +45,12 @@ CPScat.xml/CPSidx.xml).
   difference, no smoothing, scaled to 1e-5 /s like VTL/VTU. Debug-only
   field for the orientation check below.
 
-Two more fields, **HB** and **HETstage**, exist in the separate, more
-physically faithful Hart CPS family below (`HVTL`, `HVTU`, `HCPScat`,
-`HCPSidx`, `HB`, `HETstage`) and are **not** in the 1e-5 /s convention
-above: `HB` is Hart's frontal-asymmetry parameter in meters, and
-`HETstage` is the Evans and Hart (2003) extratropical transition stage
-(0/1/2) built from `HB` and `HVTL`. See "Hart CPS family" below for
-both.
+Two more fields, **HB** and **HCPSclass**, exist in the separate, more
+physically faithful Hart CPS family below (`HVTL`, `HVTU`, `HCPSclass`,
+`HCPSidx`, `HB`) and are **not** in the 1e-5 /s convention above: `HB`
+is Hart's frontal-asymmetry parameter in meters, and `HCPSclass` is the
+joint classification of all three Hart parameters into Hart's six
+named structures. See "Hart CPS family" below for both.
 
 850/600 and 600/300 were picked to bracket Hart's 900-600 and 600-300
 bands using pressure levels every model carries at every AWIPS site
@@ -64,7 +63,7 @@ levels change the expected magnitude range).
 
 ## How to read it
 
-**A second, more physically faithful family (HVTL, HVTU, HCPScat,
+**A second, more physically faithful family (HVTL, HVTU, HCPSclass,
 HCPSidx) is now available -- see "Hart CPS family" below.** It computes
 Hart's actual max-minus-min-of-height/least-squares-slope quantity
 pointwise, using only geopotential height, instead of the vorticity
@@ -430,11 +429,11 @@ causes:
    verification" procedure above to find the right `ORIENTATION_MODE`
    for your site.
 
-**The six Hart fields (HVTL, HVTU, HCPScat, HCPSidx, HB, HETstage)
+**The five Hart fields (HVTL, HVTU, HCPSclass, HCPSidx, HB)
 disappear from the Product Browser after adding the below-ground
 mask.** The first suspect is the `P` (surface pressure)
-`<Field level="Surface"/>` in HVTL.xml/HVTU.xml/HCPScat.xml/HCPSidx.xml/
-HB.xml/HETstage.xml -- specifically its level spelling. This site's
+`<Field level="Surface"/>` in HVTL.xml/HVTU.xml/HCPSclass.xml/HCPSidx.xml/
+HB.xml -- specifically its level spelling. This site's
 other Field level spellings in these files ("925MB", "Surface" on the
 `<Method>` itself, etc.) are already confirmed to load; `P`'s own
 level was not independently re-verified against a base surface-pressure
@@ -443,24 +442,32 @@ surface plane `level="0.0SFC"` instead of `level="Surface"` for a Field
 reference (as opposed to the `<Method levels="...">` attribute, which
 is a different thing and unaffected). Check a base definition that
 already uses surface pressure (or GRIB metadata for the `P` parameter)
-and adjust the `level` attribute on that one `<Field>` line in all six
+and adjust the `level` attribute on that one `<Field>` line in all five
 files if needed -- everything else in the definitions is unchanged. If
-only `HB`/`HETstage` fail to load while the other four still work, the
+only `HB`/`HCPSclass` fail to load while the other three still work, the
 more likely cause is the `coriolis` pseudo-field, not `P` -- see "Hart
 CPS family" below.
 
-## Hart CPS family (HVTL, HVTU, HCPScat, HCPSidx, HB, HETstage)
+## Hart CPS family (HVTL, HVTU, HCPSclass, HCPSidx, HB)
 
 *** EXPERIMENTAL. NOT OPERATIONALLY VETTED. *** This is a second,
 independent derived-parameter family (`HartCPS.py`, `HVTL.xml`,
-`HVTU.xml`, `HCPScat.xml`, `HCPSidx.xml`, `HB.xml`, `HETstage.xml`)
+`HVTU.xml`, `HCPSclass.xml`, `HCPSidx.xml`, `HB.xml`)
 alongside everything above (`CycloneCore.py` and
 VTL/VTU/CPScat/CPSidx/cpsZ850). `CycloneCore.py` is completely
 untouched by this family -- the two exist so a site can compare them
 side by side, not so one replaces the other in the code. `HB` (Hart's
-parameter B, thermal asymmetry) and `HETstage` (the Evans and Hart
-(2003) extratropical transition stage) are the newest two fields in
-this family -- see "Parameter B and ET stage" below.
+parameter B, thermal asymmetry) feeds `HCPSclass` (the joint
+classification below) as well as standing on its own; see "Parameter
+B (HB) and its role in HCPSclass" below.
+
+**Retired 2026-09-18: `HCPScat` (Phase 2 class) and `HETstage` (ET
+stage) are gone.** Both are replaced by the single joint classification
+`HCPSclass`, computed from all three Hart parameters (`HVTL`, `HVTU`,
+and `B`) at once instead of two separate two-term views. See "Joint
+classification (HCPSclass) and index (HCPSidx)" below for why one
+field replaces both, and the validation log's note for how to read an
+old `HCPScat` value against the new field.
 
 ### What it is, and why it replaces the vorticity proxy
 
@@ -502,7 +509,7 @@ height-based method does not share:
 - **Mask-selection bias.** CPScat/CPSidx mask on the smoothed 850 hPa
   relative vorticity itself -- the same quantity VTL/VTU are built
   from -- so the vortex test and the warm/cold-core signal are not
-  independent. HCPScat/HCPSidx mask on `closed_low_mask`, a genuinely
+  independent. HCPSclass/HCPSidx mask on `closed_low_mask`, a genuinely
   different measurement (1000 hPa height's own local shape), so a point
   being "inside a real low" is decided independently of what its
   thermal wind sign turns out to be.
@@ -530,7 +537,7 @@ slightly from FSU's own website for the same case).
 Hart's own bands are 900-600 hPa (lower) and 600-300 hPa (upper), each
 sampled every 50 hPa. Most AWIPS D2D grids do not carry that 50 hPa
 resolution -- GFS's own native grid does, but many downstream/thinned
-grids only carry the standard-level set. HVTL/HVTU/HCPScat/HCPSidx use:
+grids only carry the standard-level set. HVTL/HVTU/HCPSclass/HCPSidx use:
 
 ```
 LOWER_BAND = 925, 850, 700 hPa   (HVTL)
@@ -551,8 +558,8 @@ executeBand7` and needs only a new XML definition, no Python change
 
 ### Closed-low mask
 
-HCPScat and HCPSidx are blanked (NaN) outside of `HartCPS.
-closed_low_mask`, computed from **1000 hPa height alone** (`executeClassStd`/
+HCPSclass and HCPSidx are blanked (NaN) outside of `HartCPS.
+closed_low_mask`, computed from **1000 hPa height alone** (`executeHartClass`/
 `executeIndexStd`'s leading `z1000` argument), not from any of the six
 HVTL/HVTU band levels. 1000 hPa height is used because it is nearly a
 linear function of MSLP (about **8 m per hPa**), so the closed low the
@@ -607,8 +614,8 @@ claim about the low's own physical size.
 All of `centerTolM`, `depthM`, `blobKm` are already in meters/km -- no
 `UNIT_SCALE` round trip like CycloneCore.py's `vortexMin`, since this
 field was never rescaled to begin with. `centerTolM` itself is not
-exposed as a public `<ConstantField>` on HCPScat.xml/HCPSidx.xml (see
-`HartCPS.executeClassStd`'s docstring) -- only `radiusKm`, `depthM`,
+exposed as a public `<ConstantField>` on HCPSclass.xml/HCPSidx.xml (see
+`HartCPS.executeHartClass`'s docstring) -- only `radiusKm`, `depthM`,
 `blobKm`, and (below) `capHpa` are.
 
 ### Below-ground masking
@@ -655,8 +662,8 @@ trusting a caller's label -- a median above 2000 can only be Pa (no
 real surface pressure is above 2000 hPa), so the whole field is
 divided by 100; at or below 2000 it is assumed to already be hPa.
 
-Every Hart entry point -- `HVTL`/`HVTU` (`executeBand3`), `HCPScat`
-(`executeClassStd`), `HCPSidx` (`executeIndexStd`) -- takes the `P`
+Every Hart entry point -- `HVTL`/`HVTU` (`executeBand3`), `HCPSclass`
+(`executeHartClass`), `HCPSidx` (`executeIndexStd`) -- takes the `P`
 field and a `capHpa` `<ConstantField>` and masks every one of its
 height arguments before doing anything else with them: before
 `delta_z`'s window max/min for the band levels, and before
@@ -667,24 +674,54 @@ fewer valid sample in their own window -- no extra plumbing was needed
 beyond masking the input before it reaches them. See `HartCPS.py`'s
 module docstring ("Below-ground masking") for the full explanation.
 
-### Category table (HCPScat) and index (HCPSidx)
+### Joint classification (HCPSclass) and index (HCPSidx)
 
-HCPScat buckets HVTL/HVTU into the same 5 categories CycloneCore.py's
-CPScat uses, with `band = neutralM` (default 25 m, already in meters):
+`HCPSclass` replaces the retired `HCPScat`/`HETstage` pair with one
+field computed from all three Hart parameters at once: `B` (against
+Hart's frontal threshold of 10 m) and both thermal wind terms (each
+against 0, strictly; warm if greater than or equal to 0, cold if
+less than 0). Hart's own two diagrams are two projections of this same
+three-dimensional space that happen to share the lower thermal wind
+axis; each diagram alone carries one piece of information the other
+lacks (frontal or not, from `B`; deep or shallow warm core, from
+`HVTU`). Classifying on all three numbers at once carries both and
+loses neither, and it turns "sample two panels and combine them by
+eye" into "sample one number at the low center":
 
-| code | meaning            | condition                             |
-|-----:|--------------------|----------------------------------------|
-|    4 | deep warm core     | `HVTL > band` and `HVTU > band`        |
-|    3 | shallow warm core  | `HVTL > band` and `HVTU <= band`       |
-|    1 | cold core          | `\|HVTL\| <= band` and `HVTU < -band`  |
-|    2 | neutral            | `\|HVTL\| <= band` and `HVTU >= -band` |
-|    0 | mid-level vortex   | `HVTL < -band` and `HVTU > band`       |
-|    1 | cold core          | `HVTL < -band` and `HVTU <= band`      |
+| Code | Name | B | HVTL | HVTU | Typical system |
+| ---: | :--- | :--- | :--- | :--- | :--- |
+| 0 | symmetric deep warm core | <= 10 | warm | warm | hurricane, typhoon |
+| 1 | symmetric shallow warm core | <= 10 | warm | cold | subtropical storm, or warm seclusion after transition |
+| 2 | frontal deep warm core | > 10 | warm | warm | hurricane meeting a trough, transition beginning |
+| 3 | frontal shallow warm core | > 10 | warm | cold | transition under way |
+| 4 | frontal cold core | > 10 | cold | any | extratropical low, transition complete |
+| 5 | symmetric cold core | <= 10 | cold | any | occluded or cutoff cold low |
+| 6 | mid-level vortex | any | cold | warm | rare, treat as unclassified |
+| blank | | | | | no closed low, or B undefined (steering below 1 m/s) |
 
-HCPSidx is `2*tanh(HVTL/scaleM) + tanh(HVTU/scaleM)` (default `scaleM`
-= 100 m), range -3 to +3, same reading as CycloneCore.py's CPSidx.
+The codes rise along a typical extratropical transition (0, 2, 3, 4)
+and a warm seclusion is 4 then back to 1. `HCPSclass` is NaN outside
+`closed_low_mask`, same as the retired `HCPScat`. There is no neutral
+band on `B` or on either thermal wind term here: Hart's own strict
+lines (10 m, 0, 0) are used exactly, unlike `HCPSidx` below, which
+keeps its 25 m neutral band because a continuous index needs one to
+avoid painting noise as a trend. A storm sitting on a strict line
+therefore flickers between adjacent codes frame to frame; that is
+expected, and the continuous fields (`HVTL`, `HVTU`, `HB`) are where to
+look for the underlying trend when it happens.
 
-### Parameter B and ET stage (HB, HETstage)
+`HCPSclass` names states, one per frame; onset and completion are
+events, which need history across frames, so they are read from how
+the class changes in the animation (the first frame in class 2 or 3 is
+onset, the first frame in class 4 or 5 is completion), never from a
+single frame.
+
+`HCPSidx` is unchanged: `2*tanh(HVTL/scaleM) + tanh(HVTU/scaleM)`
+(default `scaleM` = 100 m), range -3 to +3, same reading as
+CycloneCore.py's CPSidx, and still the only place in this family a
+neutral band (via `scaleM`) survives.
+
+### Parameter B (HB) and its role in HCPSclass
 
 Hart's (2003) third CPS number, **B** (thermal asymmetry), is the
 right-minus-left half-window mean of 900-600 hPa thickness across the
@@ -692,13 +729,10 @@ storm's own direction of motion, over the same 500 km analysis circle
 VTL/VTU use: `B = h * (mean_right - mean_left)`, `h = +1` in the
 Northern Hemisphere, `-1` in the Southern, so the frontal configuration
 (warm/thick air on the equatorward flank of the track) always reads
-positive. **Evans and Hart (2003)** define extratropical transition
-**onset** as the first time `B` exceeds 10 m, and **completion** as
-the point the lower thermal wind (`HVTL`) turns negative. `HB.xml`/
-`HETstage.xml` are the first gridded computation of this in D2D; the
-validation log below previously noted that the onset marker "needs
-parameter B" -- it is now available via `HETstage` and awaits
-validation on a real case.
+positive. Hart's own line for calling a storm frontal rather than
+symmetric is `B` above 10 m; `HCPSclass` uses that line exactly, with
+no neutral band, to pick between its symmetric (0, 1, 5) and frontal
+(2, 3, 4) codes.
 
 **The gridded approximation.** A single grid point has no "left half"
 or "right half" of an analysis circle the way a storm-centered
@@ -738,53 +772,44 @@ Northern Hemisphere right-hand normal of steering `(u_s, v_s)` is
 multiplies the projected gradient so warm air on the right in the NH
 (or on the left in the SH) always reads positive. **VERIFY**: the
 coriolis pseudo-field is referenced by base vorticity definitions on
-most AWIPS sites; if `HB.xml`/`HETstage.xml` fail to load, replace the
+most AWIPS sites; if `HB.xml`/`HCPSclass.xml` fail to load, replace the
 `coriolis` `<Field>` with `<ConstantField value="1.0"/>` at the same
 position to assume the Northern Hemisphere everywhere.
 
-`HETstage` combines `HB` and `HVTL` into a single 0/1/2 field, NaN
-outside `closed_low_mask` on 1000 hPa height (same mask `HCPScat`/
-`HCPSidx` use): 0 pre-onset, 1 onset (`HB > bThresholdM`), 2 complete
-(`HVTL < 0`, strictly -- no neutral band). `HETstage` has no memory of
-an earlier frame, so a storm that re-forms a low-level warm core after
-transitioning (a warm seclusion) drops back to stage 0 or 1 rather than
-staying at 2 -- that is the warm-seclusion signature, and it should be
-read together with `HCPScat`'s category at the same point and time,
-not treated as the transition failing to complete.
-
-Constants (all `<ConstantField>` values in `HB.xml`/`HETstage.xml`):
+Constants (all `<ConstantField>` values in `HB.xml`/`HCPSclass.xml`):
 
 | Constant | Meaning | Default |
 | :--- | :--- | :--- |
 | `radiusKm` | analysis-window half-width (also the `8*radiusKm/(3*pi)` geometry constant) | 500.0 |
 | `layerScale` | rescales 925-700 hPa `HB` to a 900-600 hPa equivalent | 1.4553 |
-| `bThresholdM` | Evans and Hart onset threshold (`HETstage` only) | 10.0 |
+| `bThresholdM` | Hart's frontal threshold for `B` (`HCPSclass` only) | 10.0 |
 
 ### No orientation mode, no hemisphere sign issue
 
-Unlike `CycloneCore.py`, `HVTL`/`HVTU`/`HCPScat`/`HCPSidx` have **no
+Unlike `CycloneCore.py`, `HVTL`/`HVTU`/`HCPSidx` have **no
 `ORIENTATION_MODE` to verify** and **no Southern Hemisphere sign
 caveat**. Both of `CycloneCore.py`'s known limitations come from using
 relative vorticity, which depends on the grid's axis layout (hence
 `ORIENTATION_MODE`) and flips sign with hemisphere (cyclonic rotation
 is negative vorticity south of the equator). `max(Z) - min(Z)` and a
 least-squares slope are both orientation-independent and
-hemisphere-independent by construction, so those four fields read the
+hemisphere-independent by construction, so those three fields read the
 same way (positive = warm core) at every latitude, with no
 verification procedure needed before trusting the sign.
 
-`HB`/`HETstage` are the one exception in this family: computing `HB`
-needs the thickness field's own spatial *gradient* (`HartCPS.
+`HB` and `HCPSclass` are the exception in this family: both need `B`,
+which needs the thickness field's own spatial *gradient* (`HartCPS.
 gradient_2d`), which -- like `CycloneCore.relative_vorticity` -- does
 depend on the grid's axis layout. `HartCPS.py` therefore has its own
 `ORIENTATION_MODE` (same 0..3 semantics as `CycloneCore.py`'s, default
 1, confirmed on the OPC build), used only by `gradient_2d`; every other
-function in `HartCPS.py`, including `HVTL`/`HVTU`/`HCPScat`/`HCPSidx`'s
-own computation, is unaffected and needs no orientation check.
-Hemisphere is handled explicitly for `HB`/`HETstage` via the coriolis
-pseudo-field's sign (see "Parameter B and ET stage" above), not by an
-assumption baked into the math the way relative vorticity's sign is,
-so there is still no Southern Hemisphere caveat to carry over.
+function in `HartCPS.py`, including `HVTL`/`HVTU`/`HCPSidx`'s own
+computation, is unaffected and needs no orientation check. Hemisphere
+is handled explicitly for `HB`/`HCPSclass` via the coriolis
+pseudo-field's sign (see "Parameter B (HB) and its role in HCPSclass"
+above), not by an assumption baked into the math the way relative
+vorticity's sign is, so there is still no Southern Hemisphere caveat to
+carry over.
 
 ### Performance
 
@@ -798,10 +823,11 @@ your own machine):
 
 - `thermal_wind_grid`, 3 levels (one HVTL or HVTU band alone): well
   under a second.
-- `executeClassStd`, all 6 standard levels (both bands plus
-  `closed_low_mask`'s candidate test, its two `window_sum_2d` ring box
-  sums, and its blob dilation): a little over a second -- the mask adds
-  a modest, not a dominant, amount of work on top of the two
+- `executeHartClass`, all 7 standard levels plus `B` (both thermal wind
+  bands, the gradient/steering pass `B` needs, `closed_low_mask`'s
+  candidate test, its two `window_sum_2d` ring box sums, and its blob
+  dilation): about 2 seconds; the mask and `B` pass add a
+  modest, not a dominant, amount of work on top of the two
   `thermal_wind_grid` calls it also makes.
 
 Both are comfortably inside an 8 second budget. A regional subset
@@ -838,12 +864,11 @@ files under "Install" above -- this family does not replace them):
 ```
 /awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/definitions/HVTL.xml
 /awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/definitions/HVTU.xml
-/awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/definitions/HCPScat.xml
+/awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/definitions/HCPSclass.xml
 /awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/definitions/HCPSidx.xml
 /awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/definitions/HB.xml
-/awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/definitions/HETstage.xml
 /awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/functions/HartCPS.py
-/awips2/edex/data/utility/common_static/site/<SITE>/colormaps/Grid/CPS_ETStage.cmap
+/awips2/edex/data/utility/common_static/site/<SITE>/colormaps/Grid/CPS_HartClass.cmap
 ```
 
 Restart CAVE (and EDEX, if new definitions do not show up in the
@@ -851,13 +876,12 @@ Volume Browser on their own -- see the CycloneCore.py "Install" note
 above) after copying these in.
 
 The updated `cpsFields.xml` (with the new "Hart CPS (height based,
-experimental)" title and its six menu items, including `HB` and
-`HETstage`) and the additions to `cpsStyleRules.xml` (HVTL/HVTU/
-HCPSidx/HCPScat imagery and HVTL/HVTU contour `<styleRule>` blocks,
-plus `HB` imagery and contour and `HETstage` imagery blocks) install
-the same way as the rest of
-those two files -- see "Install" above; they are not drop-in files
-either.
+experimental)" title and its five menu items, including `HB` and
+`HCPSclass`) and the additions to `cpsStyleRules.xml` (HVTL/HVTU/
+HCPSidx imagery and contour `<styleRule>` blocks, plus `HB` imagery and
+contour and `HCPSclass` imagery blocks) install the same way as the
+rest of those two files -- see "Install" above; they are not drop-in
+files either.
 
 ### Tests
 
@@ -867,16 +891,17 @@ python3 -m pytest tests/d2d_cps -q
 
 `tests/d2d_cps/test_hart_cps.py` covers the sliding-window doubling
 trick against a brute-force reference, the closed-form band-slope
-formula, `closed_low_mask`, the category/index entry points, a direct
-numerical comparison against `cps.hart.thermal_wind` on a synthetic
-warm/cold-core vortex (within 2%, per the square-vs-circle window
-difference discussed above), `gradient_2d`'s orientation modes on a
-plane field, `parameter_b_grid`'s sign reasoning on a linear thickness
-gradient (steering west/east/north, both hemispheres), a cross-check
-against `cps.hart.parameter_b`'s true half-disk means (within 5%),
-`et_stage`'s decision table, `executeB` with a 2D coriolis field
-straddling the equator, and `executeETStage`'s onset/completion
-progression on synthetic vortices. Run
+formula, `closed_low_mask`, the classification/index entry points, a
+direct numerical comparison against `cps.hart.thermal_wind` on a
+synthetic warm/cold-core vortex (within 2%, per the square-vs-circle
+window difference discussed above), `gradient_2d`'s orientation modes
+on a plane field, `parameter_b_grid`'s sign reasoning on a linear
+thickness gradient (steering west/east/north, both hemispheres), a
+cross-check against `cps.hart.parameter_b`'s true half-disk means
+(within 5%), the joint classification decision table, `executeB` with
+a 2D coriolis field straddling the equator, and `executeHartClass`'s
+behavior across Hart's strict B/thermal-wind lines on synthetic
+vortices. Run
 `python3 D2D/derivedParameters/functions/HartCPS.py` directly for a
 quick standalone sanity check (a synthetic warm-core vortex, printing
 the lower/upper slope and the class at its center, plus a parameter B
@@ -896,22 +921,32 @@ accumulate; it is the calibration record for the thresholds.
 | 2026-09-17 | GFS 12Z, series | Typhoon Dujuan, loss of deep warm core | | | | | | | drops from 4 at Mon 21 Sep 18Z | |
 | 2026-09-17 | GFS 12Z | Deep extratropical low, North Atlantic | | | | | negative (value not recorded) | negative (value not recorded) | 1 | negative |
 
+**Note (2026-09-18):** `HCPScat` and `HETstage` were retired on this
+date in favor of the single joint classification `HCPSclass` (see
+"Joint classification (HCPSclass) and index (HCPSidx)" above). The
+rows above predate the change and are kept as recorded; reading them
+against the new field, `HCPScat` = 4 (deep warm core) corresponds to
+`HCPSclass` 0 (symmetric) or 2 (frontal) depending on `B`, which was
+not computed for those rows.
+
 Notes: the vorticity family read the tilted post-tropical low as
 neutral at the center with a cold ring where the upper trough sat,
 which is the tilt bias the Hart family was built to remove. The Hart
 values for the typhoon are in Hart's published hurricane range. The
 Hart family validated on a cold-core case (class 1, both terms
-negative). External check: the first forecast hour at which HCPScat
-drops below 4 for Typhoon Dujuan (Mon 21 Sep 2026 18Z) matches the hour
-the FSU cyclone phase page shows the same GFS run moving from deep to
-shallow warm core. This is the loss of the upper warm core, not the
-Evans and Hart (2003) onset, which is now available via `HETstage`
-(stage 1, `HB` above 10 m) and awaits validation on a real case. After
+negative). External check: the first forecast hour at which the
+storm's classification left its deep-warm-core state for Typhoon
+Dujuan (Mon 21 Sep 2026 18Z, `HCPScat` dropping below 4 in the
+now-retired product) matches the hour the FSU cyclone phase page shows
+the same GFS run moving from deep to shallow warm core. This is the
+loss of the upper warm core, not the Evans and Hart (2003) onset, which
+is read from the animation as the first frame `HCPSclass` reaches 2 or
+3 (`B` above 10 m) and awaits validation on a real case. After
 the surface-pressure mask, Greenland and the
 high terrain of western North America are blank rather than
 contaminated, which is the intended behavior. A few very weak closed
 lows (under about 5 hPa deep) get no class blob at the shipped depth of
-40 m; set depthM to 25 in HCPScat.xml and HCPSidx.xml to include them.
+40 m; set depthM to 25 in HCPSclass.xml and HCPSidx.xml to include them.
 
 **Status: the D2D version is release-ready as of 2026-09-17**, still
 labeled experimental pending a season of use. Known limitations: the

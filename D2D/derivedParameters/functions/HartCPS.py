@@ -65,7 +65,7 @@ resolution in the mid-troposphere -- GFS's own native grid does, but
 many downstream/thinned grids only carry the "standard" set (1000,
 925, 850, 700, 500, 400, 300, 250, 200, ...). Rather than depend on
 levels that are only reliably present on one model, this module's
-`executeClassStd`/`executeIndexStd`/`HVTL`/`HVTU` use exactly:
+`executeHartClass`/`executeIndexStd`/`HVTL`/`HVTU` use exactly:
 
     LOWER_BAND = (925, 850, 700)   hPa
     UPPER_BAND = (500, 400, 300)   hPa
@@ -108,7 +108,7 @@ warm-core vortex (agreement within 2%).
 Closed-low mask level
 ----------------------
 
-`closed_low_mask` (used by `executeClassStd`/`executeIndexStd` to blank
+`closed_low_mask` (used by `executeHartClass`/`executeIndexStd` to blank
 every point outside a real closed low) is computed from **1000 hPa
 height** (`z1000`), a separate argument from the six `LOWER_BAND`/
 `UPPER_BAND` heights the thermal wind itself is built from. 1000 hPa
@@ -169,7 +169,7 @@ already be hPa.
 given an optional `psfc_hpa` (paired with `cap_hpa`); `psfc_hpa=None`
 (the default) skips this entirely, so callers with no terrain to
 mask -- including this module's own reference tests -- are
-unaffected. `executeClassStd`/`executeIndexStd`/`executeBand3`/
+unaffected. `executeHartClass`/`executeIndexStd`/`executeBand3`/
 `executeBand4`/`executeBand7` all take a `psfc` argument and a
 `capHpa` constant (default `BELOW_GROUND_CAP_HPA`) and apply the mask
 to every height argument, including `z1000` before it reaches
@@ -181,8 +181,8 @@ neighbors just see one fewer valid sample in their own window -- no
 extra plumbing was needed beyond masking the input before it reaches
 them.
 
-Parameter B and ET stage
---------------------------
+Parameter B and the joint class
+---------------------------------
 
 Hart's (2003) third CPS number, B (thermal asymmetry), is the
 right-minus-left half-window mean of 900-600 hPa thickness across the
@@ -259,23 +259,44 @@ and like `CycloneCore.relative_vorticity`, that derivative's sign
 depends on which way the grid's axes actually run. `ORIENTATION_MODE`
 (module level, same 0..3 semantics as `CycloneCore.ORIENTATION_MODE`)
 controls this; every other function in this module (`window_mean`,
-`steering`, `parameter_b_grid`'s cross-product-style normal, `et_stage`)
+`steering`, `parameter_b_grid`'s cross-product-style normal, `hart_class`)
 takes no derivative and is orientation-free. Mode 1 is confirmed on
 the OPC build, matching `CycloneCore.py`'s own default.
 
-`et_stage` reports 0 (pre-onset), 1 (onset, `B > B_THRESHOLD_M`), or 2
-(complete, VTL < 0) at every point inside a closed low (`closed_low_mask`
-on 1000 hPa height, same as `executeClassStd`/`executeIndexStd`), NaN
-elsewhere. Stage 2 requires VTL to be **strictly negative** -- Evans
-and Hart's completion criterion has no neutral band the way
-`executeClassStd`'s category table does. `et_stage` does not use
-history: it looks only at the current frame's B and VTL, so a storm
-that re-forms a warm core after transitioning (a warm seclusion) drops
-back to stage 0 or 1 rather than staying "stuck" at 2 -- this is the
-warm-seclusion signature and should be read together with `HCPScat`
-(a stage-1-or-0 read alongside an `HCPScat` category of 3, shallow
-warm core, at the same point and time is exactly that signature, not
-a sign the transition never completed).
+`hart_class` reports a single joint category (0-6) at every point
+inside a closed low (`closed_low_mask` on 1000 hPa height, same as
+`executeIndexStd`), NaN elsewhere, from all three Hart parameters at
+once -- B, the lower thermal wind VTL, and the upper thermal wind VTU
+-- rather than reporting VTL/VTU's Phase 2 category and B/VTL's
+extratropical-transition stage as two separate categorical fields
+(`HCPScat`/`HETstage`, retired). See `hart_class`'s own docstring for
+the full table, the boundary convention it uses (warm/frontal on the
+line, not cold/symmetric), and why a joint class carries information
+neither field alone does. `hart_class` does not use history: it looks
+only at the current frame's B, VTL, and VTU, so a storm that re-forms
+a low-level warm core after transitioning (a warm seclusion) reads
+back as a warm class (0/1) rather than staying "stuck" at a cold one
+-- this is the warm-seclusion signature, read off the joint class
+turning warm again, not a sign the transition never completed.
+
+Relation to Hart's storm-centered diagrams
+---------------------------------------------
+
+Hart's own two diagrams -- the Phase 2 "cyclone phase" plot (VTL vs.
+VTU) and the Phase 1 "asymmetry vs. thermal wind" plot (B vs. VTL) --
+are each a *projection* of one underlying three-dimensional state, the
+point `(B, VTL, VTU)` at a given time. Phase 2 shows that point's VTL/
+VTU shadow and says nothing about B; Phase 1 shows its B/VTL shadow
+and says nothing about VTU. Reading both diagrams side by side (as a
+forecaster tracking a transitioning storm already does) is exactly an
+attempt to reassemble the one 3D point from its two 2D shadows in the
+forecaster's head. `hart_class` carries the information of both
+projections at once, in a single number: it is a partition of that
+same `(B, VTL, VTU)` space, so its code already reflects where the
+point sits on *both* diagrams simultaneously. A single number at the
+storm's low center is what a forecaster actually samples off a D2D
+display -- one glance, not two diagrams held in mind together -- and
+that is the point of collapsing the two families into one.
 
 This file must import nothing from outside itself plus the standard
 library and numpy: in AWIPS it runs inside CAVE's embedded Python
@@ -297,7 +318,6 @@ import numpy as np
 __all__ = [
     "RADIUS_KM",
     "MISSING_THRESHOLD",
-    "DEFAULT_NEUTRAL_M",
     "MIN_RADIUS_KM",
     "DEFAULT_DEPTH_M",
     "DEFAULT_BLOB_RADIUS_KM",
@@ -325,14 +345,13 @@ __all__ = [
     "window_mean",
     "steering",
     "parameter_b_grid",
-    "et_stage",
+    "hart_class",
     "executeBand3",
     "executeBand4",
     "executeBand7",
-    "executeClassStd",
     "executeIndexStd",
     "executeB",
-    "executeETStage",
+    "executeHartClass",
 ]
 
 # ---------------------------------------------------------------------------
@@ -350,12 +369,6 @@ RADIUS_KM = 500.0
 #: missing. Same value and meaning as CycloneCore.py's constant of the same
 #: name.
 MISSING_THRESHOLD = -99990.0
-
-#: Meters; |VTL| or |VTU| below this is "neutral" for executeClassStd -- not
-#: clearly warm-core or cold-core, just noise around zero. Unlike
-#: CycloneCore's vorticity-based DEFAULT_NEUTRAL_BAND, this is already in
-#: the field's own physical unit (meters), no UNIT_SCALE round trip needed.
-DEFAULT_NEUTRAL_M = 25.0
 
 #: Half-width (km) of the small window closed_low_mask() uses for its
 #: "is this point (about) the minimum of its own neighborhood" candidate
@@ -417,12 +430,12 @@ UPPER_BAND = (500.0, 400.0, 300.0)
 BELOW_GROUND_CAP_HPA = 900.0
 
 #: Grid orientation mode used by `gradient_2d` (and, through it,
-#: `parameter_b_grid`/`executeB`/`executeETStage`) when no explicit `mode`
+#: `parameter_b_grid`/`executeB`/`executeHartClass`) when no explicit `mode`
 #: argument is given. Same 0..3 semantics as `CycloneCore.ORIENTATION_MODE`
 #: -- see that constant's own comment for the full description of the four
 #: conventions. Only `gradient_2d`'s thickness-gradient computation in this
 #: module takes a spatial derivative; every other function here (`window_mean`,
-#: `steering`, the rest of `parameter_b_grid`, `et_stage`) is orientation-free,
+#: `steering`, the rest of `parameter_b_grid`, `hart_class`) is orientation-free,
 #: unlike `CycloneCore.py` where every VTL/VTU/CPScat/CPSidx call goes through
 #: `relative_vorticity`. Mode 1 is confirmed correct on the OPC build (see
 #: `CycloneCore.ORIENTATION_MODE`'s own comment and D2D/README.md's
@@ -440,9 +453,9 @@ B_THRESHOLD_M = 10.0
 #: 925-700 hPa thickness layer (`LOWER_BAND`'s own band, used for
 #: consistency with VTL) to a "900-600 hPa equivalent" magnitude, so Hart's
 #: 10 m `B_THRESHOLD_M` applies correctly -- see the module docstring's
-#: "Parameter B and ET stage" section for the derivation
+#: "Parameter B and the joint class" section for the derivation
 #: (`ln(900/600)/ln(925/700)`, about 1.4553). Pass `layerScale=1.0` to
-#: `executeB`/`executeETStage` for the raw, unscaled 925-700 hPa value.
+#: `executeB`/`executeHartClass` for the raw, unscaled 925-700 hPa value.
 HART_B_LAYER_SCALE = math.log(900.0 / 600.0) / math.log(925.0 / 700.0)
 
 #: m/s; `parameter_b_grid` blanks (NaN) any point where the steering-flow
@@ -961,7 +974,7 @@ def closed_low_mask(
 ) -> np.ndarray:
     """Boolean mask: True within `blob_radius_km` of a real closed low's
     center in `z_low` (typically 1000 hPa height, passed by
-    `executeClassStd`/`executeIndexStd` as `z1000`). 1000 hPa height is
+    `executeHartClass`/`executeIndexStd` as `z1000`). 1000 hPa height is
     used rather than a level from `LOWER_BAND`/`UPPER_BAND` because it is
     nearly a linear function of MSLP (about 8 m per hPa), so the closed
     low this mask finds is the same closed low a forecaster already sees
@@ -974,7 +987,7 @@ def closed_low_mask(
     analyzed height there. Over the open ocean -- most of this family's
     intended use -- that extrapolation is harmless. Over ice sheets and
     high mountains it is not: callers should pre-mask `z_low` with
-    `mask_below_ground` (as `executeClassStd`/`executeIndexStd` do)
+    `mask_below_ground` (as `executeHartClass`/`executeIndexStd` do)
     before calling this function, rather than relying on
     `closed_low_mask` itself to know about terrain -- it takes `z_low`
     exactly as given and has no notion of surface pressure of its own.
@@ -1261,39 +1274,124 @@ def parameter_b_grid(
     return np.where(invalid, np.nan, b)
 
 
-def et_stage(B: np.ndarray, vtl: np.ndarray, b_threshold: float, mask: np.ndarray) -> np.ndarray:
-    """Evans and Hart (2003) extratropical transition stage at every grid
-    point: 2.0 (complete) where `vtl < 0`; else 1.0 (onset) where
-    `B > b_threshold`; else 0.0 (pre-onset). NaN outside `mask` (typically
-    `closed_low_mask` on 1000 hPa height) or wherever `B`/`vtl` is not
-    finite.
+def hart_class(
+    B: np.ndarray,
+    vtl: np.ndarray,
+    vtu: np.ndarray,
+    mask: np.ndarray,
+    b_threshold: float = B_THRESHOLD_M,
+) -> np.ndarray:
+    """The joint Hart CPS class (0-6) at every grid point, from all three
+    Hart (2003) parameters at once -- B (thermal asymmetry), VTL (lower
+    thermal wind), and VTU (upper thermal wind) -- replacing the two,
+    separately-categorical `HCPScat` (Phase 2 class)/`HETstage`
+    (extratropical transition stage) fields this package used to publish
+    (both retired; see the module docstring's "Relation to Hart's
+    storm-centered diagrams" section for why one joint class is a strict
+    improvement over reading two separate categorical fields side by
+    side).
 
-    Stage 2 requires `vtl` **strictly negative** -- Evans and Hart's
-    completion criterion (the lower thermal wind turning negative) has no
-    neutral band, unlike `executeClassStd`'s category table; `vtl == 0.0`
-    exactly is not stage 2. `B` exactly at `b_threshold` is not stage 1
-    either (`B > b_threshold`, not `>=`).
+    NaN outside `mask` (typically `closed_low_mask` on 1000 hPa height)
+    or wherever any of `B`, `vtl`, `vtu` is not finite -- `B` is NaN
+    whenever the steering-flow speed is below `MIN_STEERING_MS` (a
+    near-stationary or dead-calm-steering point; see `parameter_b_grid`),
+    which is rare but not impossible for a slow-moving or recurving
+    system, and this is documented here rather than silently treated as
+    some default category.
 
-    This function has no memory of any earlier frame: it looks only at
-    the current `B`/`vtl`, so a storm that re-forms a low-level warm core
-    after transitioning (a warm seclusion) drops back to stage 0 or 1
-    rather than staying at 2 -- see the module docstring's "Parameter B
-    and ET stage" section for why this is the intended, warm-seclusion
-    signature, best read together with `HCPScat`'s category at the same
-    point and time, not a bug to work around here.
+    Otherwise, one of:
+
+        Code  Name                          B        lower VT   upper VT
+        0     symmetric deep warm core      <= thr   >= 0       >= 0
+        1     symmetric shallow warm core   <= thr   >= 0       <  0
+        2     frontal deep warm core        >  thr   >= 0       >= 0
+        3     frontal shallow warm core     >  thr   >= 0       <  0
+        4     frontal cold core             >  thr   <  0        (*)
+        5     symmetric cold core           <= thr   <  0        (*)
+        6     mid-level vortex              any      <  0       >= 0
+
+    (*) "any" for rows 4/5 means "whatever `vtu` is left once row 6 has
+    claimed the `lower VT < 0 and upper VT >= 0` corner" -- row 6 is
+    checked first and takes precedence over rows 4 and 5 there (see
+    "Ordering" below); in practice this means `vtu < 0` for rows 4/5.
+
+    Boundary convention: **B is frontal at `B > b_threshold` (10 m by
+    default), symmetric at `B <= b_threshold`** -- Hart's own strict
+    line, no neutral band. **Each thermal wind term is warm at
+    `>= 0`, cold only at strictly `< 0`** -- this is not the arbitrary
+    half of two equally defensible choices: Evans and Hart (2003) define
+    extratropical transition *completion* as the point VTL "turns
+    negative", i.e. the moment it goes strictly below zero, so a VTL of
+    exactly 0.0 has not yet turned negative and must still read as warm,
+    not cold, for the completion criterion embedded in this table (rows
+    4/5 vs. rows 0-3) to reproduce Evans and Hart's own definition
+    exactly. The same `>= 0` warm / `< 0` cold split is used for VTU for
+    consistency (Hart's own Phase 2 diagram treats the two thermal wind
+    axes identically). This module deliberately draws these as *strict
+    lines*, not a neutral band the way the retired `HCPScat`'s 5-category
+    table used one (a fixed-width band around zero, now removed along
+    with that function): Hart's own thresholds (10 m for
+    B, 0 m for VTL/VTU) are themselves strict lines with no neutral zone,
+    and the continuous `HB`/`HVTL`/`HVTU` fields already carry the
+    magnitude a forecaster needs to judge "how marginal" a call at the
+    line actually is -- a categorical field's job is to draw the line
+    Hart drew, not to soften it with a second, invented threshold.
+
+    Ordering / precedence: row 6 (mid-level vortex: cold at low levels,
+    warm aloft) is checked before rows 4 and 5, so it wins the corner of
+    `(B, vtl, vtu)` space that would otherwise also satisfy "lower VT
+    negative" -- a genuine mid-level vortex is a different structure
+    from a frontal or symmetric cold core (which are cold at *both*
+    levels), not a third way of being one of those two, regardless of
+    B. Every other row is a disjoint partition of the remaining
+    `(vtl >= 0 or < 0) x (vtu >= 0 or < 0)` quadrants by the B line, so
+    the six remaining codes plus row 6 exhaust the space with no gaps
+    and no overlaps for finite input.
+
+    Rationale for the code numbering: codes rise, in order, along a
+    typical extratropical transition -- 0 (symmetric deep warm core,
+    the tropical-cyclone-like starting state) to 2 (frontal, still deep
+    warm, B has crossed 10 m: Evans and Hart's onset) to 3 (frontal
+    shallow warm core, the upper thermal wind has gone negative first)
+    to 4 (frontal cold core, VTL has now gone negative too: Evans and
+    Hart's completion). A warm seclusion is a storm that reaches 4 and
+    then re-forms a warm core at low levels while still frontal, i.e.
+    4 then back to 1 (not 0, since B commonly stays above 10 m through
+    the seclusion) -- a drop in code number that looks like a
+    regression only if the sequence is read as strictly increasing;
+    read correctly, it is the seclusion signature itself. Evans and
+    Hart's own onset is the first frame whose code is 2 or 3 (B crossed
+    10 m while still warm-core), and completion is the first frame whose
+    code is 4 or 5 (VTL crossed 0); both are read off a *sequence* of
+    frames in an animation or loop, the same way a forecaster already
+    reads Hart's own two diagrams over time -- this field reports only
+    the current frame's class, with no memory of any earlier one (see
+    the module docstring's "Parameter B and the joint class" section).
 
     Returns a float32 array.
     """
     B = np.asarray(B, dtype=float)
     vtl = np.asarray(vtl, dtype=float)
+    vtu = np.asarray(vtu, dtype=float)
     mask = np.asarray(mask, dtype=bool)
+    thr = float(b_threshold)
 
     with np.errstate(invalid="ignore"):
-        stage = np.where(vtl < 0.0, 2.0, np.where(B > float(b_threshold), 1.0, 0.0))
+        conditions = [
+            (vtl < 0.0) & (vtu >= 0.0),                    # 6 mid-level vortex (checked first)
+            (B <= thr) & (vtl >= 0.0) & (vtu >= 0.0),      # 0 symmetric deep warm core
+            (B <= thr) & (vtl >= 0.0) & (vtu < 0.0),       # 1 symmetric shallow warm core
+            (B > thr) & (vtl >= 0.0) & (vtu >= 0.0),       # 2 frontal deep warm core
+            (B > thr) & (vtl >= 0.0) & (vtu < 0.0),        # 3 frontal shallow warm core
+            (B > thr) & (vtl < 0.0),                        # 4 frontal cold core
+            (B <= thr) & (vtl < 0.0),                       # 5 symmetric cold core
+        ]
+        choices = [6, 0, 1, 2, 3, 4, 5]
+        code = np.select(conditions, choices, default=np.nan)
 
-    valid = mask & np.isfinite(B) & np.isfinite(vtl)
-    stage = np.where(valid, stage, np.nan)
-    return stage.astype(np.float32)
+    valid = mask & np.isfinite(B) & np.isfinite(vtl) & np.isfinite(vtu)
+    code = np.where(valid, code, np.nan)
+    return code.astype(np.float32)
 
 
 # ---------------------------------------------------------------------------
@@ -1362,68 +1460,65 @@ def executeBand7(z1, z2, z3, z4, z5, z6, z7, psfc, dx, dy, radiusKm, p1, p2, p3,
     return slope.astype(np.float32)
 
 
-def executeClassStd(
-    z1000, z925, z850, z700, z500, z400, z300, psfc, dx, dy,
+def executeHartClass(
+    z1000, z925, z850, z700, z500, z400, z300,
+    u850, v850, u700, v700, u500, v500, u300, v300,
+    psfc, coriolis, dx, dy,
     radiusKm=RADIUS_KM,
-    neutralM=DEFAULT_NEUTRAL_M,
+    bThresholdM=B_THRESHOLD_M,
+    layerScale=HART_B_LAYER_SCALE,
     depthM=DEFAULT_DEPTH_M,
     blobKm=DEFAULT_BLOB_RADIUS_KM,
     capHpa=BELOW_GROUND_CAP_HPA,
 ):
-    """AWIPS derived-parameter entry point for HCPScat (HCPScat.xml).
+    """AWIPS derived-parameter entry point for HCPSclass (HCPSclass.xml):
+    the joint Hart CPS class -- see `hart_class`'s own docstring for the
+    full 7-code table, the boundary convention, and the ordering
+    rationale, and the module docstring's "Parameter B and the joint
+    class" and "Relation to Hart's storm-centered diagrams" sections for
+    why this single field replaces the retired `HCPScat` (Phase 2 class)
+    and `HETstage` (extratropical transition stage) fields.
 
     Computes the lower thermal wind (`LOWER_BAND`, 925/850/700 hPa) and
-    upper thermal wind (`UPPER_BAND`, 500/400/300 hPa) at every grid
-    point, buckets them into the same 5-category table
-    `CycloneCore.classify` uses (0 mid-level vortex, 1 cold core, 2
-    neutral, 3 shallow warm core, 4 deep warm core) with `band = neutralM`
-    (already in meters -- no unit rescaling needed here, unlike
-    `CycloneCore.py`'s vorticity units), and blanks (NaN) every point
-    outside `closed_low_mask` computed from `z1000`, using `radiusKm` as
-    both the thermal-wind window and the mask's own `ring_radius_km`. The
-    thermal-wind bands themselves are unchanged by this: the mask level
-    (`z1000`) and the band levels (`z925`...`z300`) are independent
-    arguments.
+    upper thermal wind (`UPPER_BAND`, 500/400/300 hPa, both via
+    `thermal_wind_grid`), parameter B (925-700 hPa thickness gradient
+    projected onto the steering-flow's right-hand normal, via `steering`
+    and `parameter_b_grid` -- same method as `executeB`), and
+    `closed_low_mask` on `z1000` (same mask `executeIndexStd` uses), then
+    combines all three with `hart_class`.
 
-    `z1000` (1000 hPa height) is used for the mask rather than a level
-    from `LOWER_BAND`/`UPPER_BAND` because it is nearly a linear function
-    of MSLP (about 8 m per hPa), so the closed low the mask finds is the
-    same closed low a forecaster already sees drawn on the MSLP
-    contours; `depthM`'s default of 40 m is therefore about 5 hPa of
-    MSLP.
+    `z1000`...`z300` are geopotential height (meters) at the seven
+    standard levels; `u850`/`v850`...`u300`/`v300` are the four
+    steering-flow wind level pairs (as in `executeB`). `psfc` is AWIPS
+    surface pressure (Pa or hPa -- `surface_pressure_hpa` auto-detects
+    which); `coriolis` is the AWIPS coriolis pseudo-field (as in
+    `executeB`) whose sign is parameter B's hemisphere factor. `dx`,
+    `dy` are the grid spacing pseudo-fields (meters).
 
-    `psfc` is AWIPS surface pressure (Pa or hPa -- `surface_pressure_hpa`
-    auto-detects which). Before anything else, every one of the seven
-    height arguments (`z1000` and the six band levels) is run through
-    `mask_below_ground` against its own pressure and `capHpa`: a point
-    below ground there is blanked (NaN) rather than left at whatever
-    fictitious extrapolated height the model assigned it, since 1000 hPa
-    (and, less often, 925/850 hPa) is below the ground surface over
-    major terrain -- see the module docstring's "Below-ground masking"
-    section and `BELOW_GROUND_CAP_HPA`'s own docstring for why the
-    threshold is capped (so a deep low's own legitimately low surface
-    pressure over open water is never mistaken for terrain). Masking
-    happens before `delta_z`'s window max/min and before
-    `closed_low_mask`'s own candidate/depth tests, so a below-ground
-    point (and, through the NaN-aware sliding windows this module uses
-    throughout, its neighbors) never contaminates either computation.
+    Before anything else, every one of the seven height arguments is run
+    through `mask_below_ground` against its own pressure and `capHpa` --
+    see the module docstring's "Below-ground masking" section and
+    `executeIndexStd`'s docstring for the full explanation (why `z1000`
+    is used for the mask rather than a band level, and why the
+    below-ground threshold is capped rather than applied at each level's
+    own literal pressure).
 
-    `radiusKm`, `neutralM`, `depthM`, `blobKm`, `capHpa` may each arrive
-    as a float, a 0-d numpy array, or a 1-element numpy array (AWIPS
-    `<ConstantField>` values) and are coerced with `_coerce_scalar`.
-    `capHpa` defaults to `BELOW_GROUND_CAP_HPA` (900 hPa). `closed_low_mask`'s
-    `min_radius_km` and `center_tol_m` are left at their module defaults
-    (`MIN_RADIUS_KM`, `DEFAULT_CENTER_TOL_M`) and not exposed as
-    `<ConstantField>` values -- they are fixed properties of "how big a
-    box finds a low's own local minimum" and "how tight a tolerance
-    counts as being at it", not something a site is expected to tune per
-    case the way `neutralM`/`depthM`/`blobKm`/`capHpa` are.
+    `radiusKm`, `bThresholdM`, `layerScale`, `depthM`, `blobKm`, `capHpa`
+    may each arrive as a float, a 0-d numpy array, or a 1-element numpy
+    array (AWIPS `<ConstantField>` values) and are coerced with
+    `_coerce_scalar`; see `executeIndexStd`'s docstring for why
+    `closed_low_mask`'s `min_radius_km`/`center_tol_m` are not exposed
+    here either.
 
-    Returns a float32 array, NaN outside the mask or below ground,
-    otherwise one of 0.0/1.0/2.0/3.0/4.0 (dimensionless).
+    Returns a float32 array: NaN outside the closed-low mask, below
+    ground, or wherever B is NaN (the steering-flow speed below
+    `MIN_STEERING_MS` -- rare, but see `parameter_b_grid`'s docstring);
+    otherwise one of 0.0 through 6.0 (dimensionless) per `hart_class`'s
+    table.
     """
     radius_km = _coerce_scalar(radiusKm)
-    neutral_m = _coerce_scalar(neutralM)
+    b_threshold_m = _coerce_scalar(bThresholdM)
+    layer_scale = _coerce_scalar(layerScale)
     depth_m = _coerce_scalar(depthM)
     blob_radius_km = _coerce_scalar(blobKm)
     cap_hpa = _coerce_scalar(capHpa)
@@ -1432,24 +1527,17 @@ def executeClassStd(
 
     vtl = thermal_wind_grid([z925, z850, z700], LOWER_BAND, dx, dy, radius_km, psfc_hpa=psfc_hpa, cap_hpa=cap_hpa)
     vtu = thermal_wind_grid([z500, z400, z300], UPPER_BAND, dx, dy, radius_km, psfc_hpa=psfc_hpa, cap_hpa=cap_hpa)
+
+    z925_masked = mask_below_ground(z925, psfc_hpa, 925.0, cap_hpa)
+    z700_masked = mask_below_ground(z700, psfc_hpa, 700.0, cap_hpa)
+    thickness = np.asarray(z700_masked, dtype=float) - np.asarray(z925_masked, dtype=float)
+    u_s, v_s = steering([u850, u700, u500, u300], [v850, v700, v500, v300])
+    b = parameter_b_grid(thickness, u_s, v_s, dx, dy, coriolis, radius_km, layer_scale)
+
     z1000_masked = mask_below_ground(z1000, psfc_hpa, 1000.0, cap_hpa)
     mask = closed_low_mask(z1000_masked, dx, dy, MIN_RADIUS_KM, radius_km, depth_m, blob_radius_km)
 
-    band = neutral_m
-    conditions = [
-        (vtl > band) & (vtu > band),
-        (vtl > band) & (vtu <= band),
-        (np.abs(vtl) <= band) & (vtu < -band),
-        (np.abs(vtl) <= band) & (vtu >= -band),
-        (vtl < -band) & (vtu > band),
-        (vtl < -band) & (vtu <= band),
-    ]
-    choices = [4, 3, 1, 2, 0, 1]
-    code = np.select(conditions, choices, default=np.nan)
-
-    masked = ~mask | ~np.isfinite(vtl) | ~np.isfinite(vtu)
-    code = np.where(masked, np.nan, code)
-    return code.astype(np.float32)
+    return hart_class(b, vtl, vtu, mask, b_threshold_m)
 
 
 def executeIndexStd(
@@ -1462,16 +1550,16 @@ def executeIndexStd(
 ):
     """AWIPS derived-parameter entry point for HCPSidx (HCPSidx.xml).
 
-    Same lower/upper thermal wind and mask as `executeClassStd`, combined
+    Same lower/upper thermal wind and mask as `executeHartClass`, combined
     into `2*tanh(VTL/scaleM) + tanh(VTU/scaleM)` (range -3 to +3, `scaleM`
     already in meters), blanked (NaN) outside the same `closed_low_mask`
     computed from `z1000`, and the same below-ground masking of `z1000`
-    and the six band levels via `psfc`/`capHpa` -- see `executeClassStd`'s
+    and the six band levels via `psfc`/`capHpa` -- see `executeHartClass`'s
     docstring for the full explanation (why `z1000` rather than a band
     level is used for the mask, and why the below-ground threshold is
     capped at `capHpa` rather than applied at each level's own literal
     pressure). `radiusKm`, `scaleM`, `depthM`, `blobKm`, `capHpa` are
-    coerced the same way as `executeClassStd`'s constants; see that
+    coerced the same way as `executeHartClass`'s constants; see that
     function's docstring for why `closed_low_mask`'s
     `min_radius_km`/`center_tol_m` are not exposed here either.
 
@@ -1507,7 +1595,8 @@ def executeB(
 ):
     """AWIPS derived-parameter entry point for HB (HB.xml): Hart's
     parameter B (thermal asymmetry), gridded -- see the module
-    docstring's "Parameter B and ET stage" section for the full method.
+    docstring's "Parameter B and the joint class" section for the full
+    method.
 
     `z925`/`z700` are geopotential height (meters); their difference
     (`z700 - z925`) is this module's thickness layer (see the module
@@ -1550,66 +1639,6 @@ def executeB(
 
     b = parameter_b_grid(thickness, u_s, v_s, dx, dy, coriolis, radius_km, layer_scale)
     return b.astype(np.float32)
-
-
-def executeETStage(
-    z1000, z925, z850, z700,
-    u850, v850, u700, v700, u500, v500, u300, v300,
-    psfc, coriolis, dx, dy,
-    radiusKm=RADIUS_KM,
-    bThresholdM=B_THRESHOLD_M,
-    layerScale=HART_B_LAYER_SCALE,
-    depthM=DEFAULT_DEPTH_M,
-    blobKm=DEFAULT_BLOB_RADIUS_KM,
-    capHpa=BELOW_GROUND_CAP_HPA,
-):
-    """AWIPS derived-parameter entry point for HETstage (HETstage.xml):
-    the Evans and Hart (2003) extratropical transition stage, gridded --
-    see the module docstring's "Parameter B and ET stage" section.
-
-    Computes the lower thermal wind (`LOWER_BAND`, 925/850/700 hPa, via
-    `thermal_wind_grid`, same as `executeClassStd`) for the completion
-    test, parameter B (same method as `executeB`) for the onset test,
-    and `closed_low_mask` on below-ground-masked `z1000` for the same
-    mask `executeClassStd`/`executeIndexStd` use, then combines all
-    three with `et_stage`.
-
-    `z1000`/`z925`/`z850`/`z700` are geopotential height (meters);
-    `u850`/`v850`...`u300`/`v300` are the four steering-flow wind level
-    pairs (as in `executeB`); `psfc`, `coriolis`, `dx`, `dy` are as in
-    `executeB`. `radiusKm`, `bThresholdM`, `layerScale`, `depthM`,
-    `blobKm`, `capHpa` may each arrive as a float, a 0-d numpy array, or
-    a 1-element numpy array (AWIPS `<ConstantField>` values) and are
-    coerced with `_coerce_scalar`; see `executeClassStd`'s docstring for
-    why `closed_low_mask`'s `min_radius_km`/`center_tol_m` are not
-    exposed here either.
-
-    Returns a float32 array: NaN outside the closed-low mask or below
-    ground; otherwise 0.0 (pre-onset), 1.0 (onset, B above `bThresholdM`),
-    or 2.0 (complete, VTL negative) -- see `et_stage`'s docstring for the
-    exact decision order and the warm-seclusion caveat.
-    """
-    radius_km = _coerce_scalar(radiusKm)
-    b_threshold_m = _coerce_scalar(bThresholdM)
-    layer_scale = _coerce_scalar(layerScale)
-    depth_m = _coerce_scalar(depthM)
-    blob_radius_km = _coerce_scalar(blobKm)
-    cap_hpa = _coerce_scalar(capHpa)
-
-    psfc_hpa = surface_pressure_hpa(psfc)
-
-    vtl = thermal_wind_grid([z925, z850, z700], LOWER_BAND, dx, dy, radius_km, psfc_hpa=psfc_hpa, cap_hpa=cap_hpa)
-
-    z925_masked = mask_below_ground(z925, psfc_hpa, 925.0, cap_hpa)
-    z700_masked = mask_below_ground(z700, psfc_hpa, 700.0, cap_hpa)
-    thickness = np.asarray(z700_masked, dtype=float) - np.asarray(z925_masked, dtype=float)
-    u_s, v_s = steering([u850, u700, u500, u300], [v850, v700, v500, v300])
-    b = parameter_b_grid(thickness, u_s, v_s, dx, dy, coriolis, radius_km, layer_scale)
-
-    z1000_masked = mask_below_ground(z1000, psfc_hpa, 1000.0, cap_hpa)
-    mask = closed_low_mask(z1000_masked, dx, dy, MIN_RADIUS_KM, radius_km, depth_m, blob_radius_km)
-
-    return et_stage(b, vtl, b_threshold_m, mask)
 
 
 # ---------------------------------------------------------------------------
@@ -1669,14 +1698,38 @@ if __name__ == "__main__":
     # No terrain: ordinary open-ocean surface pressure everywhere.
     psfc_ocean = np.full(lat2d.shape, 1013.0)
 
-    cls = executeClassStd(
+    # Joint class demo: this vortex sits in a purely radial background
+    # (no ambient thickness gradient at all -- see amp_by_level above),
+    # so parameter B at the exact center is near zero regardless of the
+    # steering direction; run it once in a westerly and once in an
+    # easterly steering flow to show that a real vortex's own class does
+    # not flip just because the storm is moving a different way when
+    # there is no environment to make B direction-dependent (contrast
+    # with the linear-thickness-gradient demo below, where direction is
+    # exactly what flips B's sign).
+    coriolis_nh = np.full(lat2d.shape, 1.0)  # Northern Hemisphere everywhere
+    v_zero = np.full(lat2d.shape, 0.0)
+
+    u_westerly = np.full(lat2d.shape, 8.0)
+    cls_westerly = executeHartClass(
         z_by_level[1000.0],
         z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
         z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
-        psfc_ocean, dx2d, dy_m,
+        u_westerly, v_zero, u_westerly, v_zero, u_westerly, v_zero, u_westerly, v_zero,
+        psfc_ocean, coriolis_nh, dx2d, dy_m,
     )
-    print("class at center (expect 4.0, deep warm core):", cls[ci, cj])
-    print("class far from the vortex (expect nan, outside the closed-low mask):", cls[0, 0])
+    print("class at center, 8 m/s westerly steering (expect 0.0, symmetric deep warm core):", cls_westerly[ci, cj])
+    print("class far from the vortex (expect nan, outside the closed-low mask):", cls_westerly[0, 0])
+
+    u_easterly = np.full(lat2d.shape, -8.0)
+    cls_easterly = executeHartClass(
+        z_by_level[1000.0],
+        z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
+        z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
+        u_easterly, v_zero, u_easterly, v_zero, u_easterly, v_zero, u_easterly, v_zero,
+        psfc_ocean, coriolis_nh, dx2d, dy_m,
+    )
+    print("class at center, 8 m/s easterly steering (expect 0.0, same symmetric deep warm core):", cls_easterly[ci, cj])
 
     # Below-ground masking demo: a fake terrain block (surface pressure
     # 750 hPa, well under BELOW_GROUND_CAP_HPA's 900) 800 km due west of
@@ -1692,13 +1745,14 @@ if __name__ == "__main__":
     )
     psfc_terrain[block_mask] = 750.0
 
-    cls_terrain = executeClassStd(
+    cls_terrain = executeHartClass(
         z_by_level[1000.0],
         z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
         z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
-        psfc_terrain, dx2d, dy_m,
+        u_westerly, v_zero, u_westerly, v_zero, u_westerly, v_zero, u_westerly, v_zero,
+        psfc_terrain, coriolis_nh, dx2d, dy_m,
     )
-    print("class at center with a terrain block 800 km west (expect unchanged, 4.0):", cls_terrain[ci, cj])
+    print("class at center with a terrain block 800 km west (expect unchanged, 0.0):", cls_terrain[ci, cj])
     block_i, block_j = np.argwhere(block_mask)[0]
     print("class over the terrain block (expect nan, below ground):", cls_terrain[block_i, block_j])
 

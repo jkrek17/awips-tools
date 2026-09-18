@@ -31,7 +31,7 @@
 
   VERIFY against an existing definition in
   /awips2/edex/data/utility/common_static/base/derivedParameters/definitions/
-  (for example VTL.xml or one of this package's own HVTL.xml/HCPScat.xml):
+  (for example VTL.xml or one of this package's own HVTL.xml/HCPSclass.xml):
     - the geopotential height field's abbreviation is "GH" as used below,
     - fixed-level Field references use the "925MB"/"700MB"/"850MB"/
       "700MB"/"500MB"/"300MB" spelling,

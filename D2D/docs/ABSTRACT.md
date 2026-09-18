@@ -24,9 +24,10 @@ separable sliding-extrema filter, the thermal wind is obtained by
 regression against log pressure over 925 to 700 hPa and 500 to 300 hPa,
 terrain is handled by excluding below-ground levels, and a closed-low
 detector on 1000 hPa height restricts classification to closed cyclones
-at least 5 hPa deep. A categorical structure field (deep warm, shallow
-warm, neutral, cold core) and a continuous index summarize the two
-terms. Computation on a global 0.25 degree grid takes one to two seconds
+at least 5 hPa deep. A single categorical field classifies each detected low into one of
+Hart's six named structures from all three parameters, and a
+continuous index summarizes the thermal wind terms. Computation on a
+global 0.25 degree grid takes one to two seconds
 per forecast hour. An initial evaluation on GFS forecasts found values
 for a mature typhoon comparable in magnitude to those Hart reported for
 hurricanes, allowing for the different layer definitions, a

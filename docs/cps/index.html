@@ -48,8 +48,9 @@
       regression against log pressure over 925 to 700&nbsp;hPa and 500 to 300&nbsp;hPa,
       terrain is handled by excluding below-ground levels, and a closed-low
       detector on 1000&nbsp;hPa height restricts classification to closed cyclones
-      at least 5&nbsp;hPa deep. A categorical structure field (deep warm, shallow
-      warm, neutral, cold core) and a continuous index summarize the two
+      at least 5&nbsp;hPa deep. A single categorical field classifies each detected
+      low into one of Hart's six named structures from all three
+      parameters, and a continuous index summarizes the thermal wind
       terms. Computation on a global 0.25&nbsp;degree grid takes one to two seconds
       per forecast hour. An initial evaluation on GFS forecasts found values
       for a mature typhoon comparable in magnitude to those Hart reported for
@@ -234,23 +235,8 @@
     height minimum is a candidate center within 5&nbsp;m of the minimum over
     its own 300&nbsp;km neighborhood, and counts only if the 300&ndash;500&nbsp;km
     annulus around it averages at least 40&nbsp;m (about 5&nbsp;hPa) higher &mdash;
-    two tests a uniform baroclinic slope cannot pass at once. The category
-    and continuous index follow directly:
-  </p>
-  <table>
-    <caption>Structure categories, band = 25&nbsp;m by default.</caption>
-    <thead><tr><th>Code</th><th>Category</th><th>Condition</th></tr></thead>
-    <tbody>
-      <tr><td>4</td><td>deep warm core</td><td>&minus;V<sub>T</sub><sup>L</sup> &gt; band and &minus;V<sub>T</sub><sup>U</sup> &gt; band</td></tr>
-      <tr><td>3</td><td>shallow warm core</td><td>&minus;V<sub>T</sub><sup>L</sup> &gt; band and &minus;V<sub>T</sub><sup>U</sup> &le; band</td></tr>
-      <tr><td>2</td><td>neutral</td><td>|&minus;V<sub>T</sub><sup>L</sup>| &le; band and &minus;V<sub>T</sub><sup>U</sup> &ge; &minus;band</td></tr>
-      <tr><td>1</td><td>cold core</td><td>|&minus;V<sub>T</sub><sup>L</sup>| &le; band and &minus;V<sub>T</sub><sup>U</sup> &lt; &minus;band, or &minus;V<sub>T</sub><sup>L</sup> &lt; &minus;band and &minus;V<sub>T</sub><sup>U</sup> &le; band</td></tr>
-      <tr><td>0</td><td>mid-level vortex</td><td>&minus;V<sub>T</sub><sup>L</sup> &lt; &minus;band and &minus;V<sub>T</sub><sup>U</sup> &gt; band</td></tr>
-    </tbody>
-  </table>
-  <p>
-    and the continuous index folds both terms into one number from
-    &minus;3 to +3:
+    two tests a uniform baroclinic slope cannot pass at once. The continuous
+    index folds both terms into one number from &minus;3 to +3:
   </p>
   <p class="eq">index = 2 tanh(&minus;<i>V</i><sub>T</sub><sup>L</sup> / 100) + tanh(&minus;<i>V</i><sub>T</sub><sup>U</sup> / 100)</p>
 
@@ -294,32 +280,56 @@
     stationary or steering-opposed system has no well-defined motion to
     split left from right, so <i>B</i> is blanked rather than guessed.
   </p>
+  <h3>Joint classification</h3>
   <p>
-    Evans and Hart (2003) turned <i>B</i> and &minus;V<sub>T</sub><sup>L</sup>
-    into three life-cycle stages:
+    Hart's two diagrams above are two projections of one
+    three-dimensional space (<i>B</i>,
+    &minus;V<sub>T</sub><sup>L</sup>, and &minus;V<sub>T</sub><sup>U</sup>)
+    that happen to share the &minus;V<sub>T</sub><sup>L</sup> axis.
+    Each diagram alone carries one piece of information the other lacks:
+    the <i>B</i>&ndash;&minus;V<sub>T</sub><sup>L</sup> diagram says
+    whether the storm is frontal, the
+    &minus;V<sub>T</sub><sup>L</sup>&ndash;&minus;V<sub>T</sub><sup>U</sup>
+    diagram says whether a warm core is deep or shallow. Classifying on
+    all three numbers at once carries both and loses neither, and it
+    turns "sample two panels and combine them by eye" into "sample one
+    number at the low center." <code>HCPSclass</code> does this,
+    replacing the two-field <code>HCPScat</code>/<code>HETstage</code>
+    product retired on 2026-09-18, using Hart's own strict lines:
+    <i>B</i> against 10&nbsp;m, and both thermal wind terms
+    against 0, with no neutral band on any of the three:
   </p>
   <table>
-    <caption>Evans and Hart (2003) extratropical transition stage.</caption>
-    <thead><tr><th>Code</th><th>Stage</th><th>Condition</th></tr></thead>
+    <caption><code>HCPSclass</code>: Hart's six named structures, plus a mid-level/hybrid code.</caption>
+    <thead><tr><th>Code</th><th>Name</th><th><i>B</i></th><th>&minus;V<sub>T</sub><sup>L</sup></th><th>&minus;V<sub>T</sub><sup>U</sup></th><th>Typical system</th></tr></thead>
     <tbody>
-      <tr><td>0</td><td>pre-onset</td><td><i>B</i> &le; 10&nbsp;m</td></tr>
-      <tr><td>1</td><td>onset</td><td><i>B</i> &gt; 10&nbsp;m and &minus;V<sub>T</sub><sup>L</sup> &ge; 0</td></tr>
-      <tr><td>2</td><td>complete</td><td>&minus;V<sub>T</sub><sup>L</sup> &lt; 0</td></tr>
+      <tr><td>0</td><td>symmetric deep warm core</td><td>&le; 10</td><td>warm</td><td>warm</td><td>hurricane, typhoon</td></tr>
+      <tr><td>1</td><td>symmetric shallow warm core</td><td>&le; 10</td><td>warm</td><td>cold</td><td>subtropical storm, or warm seclusion after transition</td></tr>
+      <tr><td>2</td><td>frontal deep warm core</td><td>&gt; 10</td><td>warm</td><td>warm</td><td>hurricane meeting a trough, transition beginning</td></tr>
+      <tr><td>3</td><td>frontal shallow warm core</td><td>&gt; 10</td><td>warm</td><td>cold</td><td>transition under way</td></tr>
+      <tr><td>4</td><td>frontal cold core</td><td>&gt; 10</td><td>cold</td><td>any</td><td>extratropical low, transition complete</td></tr>
+      <tr><td>5</td><td>symmetric cold core</td><td>&le; 10</td><td>cold</td><td>any</td><td>occluded or cutoff cold low</td></tr>
+      <tr><td>6</td><td>mid-level vortex</td><td>any</td><td>cold</td><td>warm</td><td>rare, treat as unclassified</td></tr>
+      <tr><td>blank</td><td colspan="4">no closed low, or <i>B</i> undefined (steering below 1&nbsp;m/s)</td></tr>
     </tbody>
   </table>
   <p>
-    The stage field keeps no memory of an earlier frame: it looks only at
-    the current <i>B</i> and &minus;V<sub>T</sub><sup>L</sup>, so a storm
-    that re-forms a low-level warm core after transitioning &mdash; a warm
-    seclusion &mdash; drops back to stage 0 or 1 rather than staying at 2.
-    That drop is the warm-seclusion signature, not a sign the transition
-    never completed, and is best read together with the category field at
-    the same point and time.
+    The codes are ordered along a typical extratropical transition
+    (0, 2, 3, 4), and a warm seclusion runs 4 then back to 1
+    with the upper term still cold. This also corrects a category error
+    in the retired fields: <code>HETstage</code>'s "onset" and "complete"
+    were event names, and an event needs a history of frames to detect,
+    while a value computed independently at each frame, with no memory
+    of the frame before it, can only report a state. <code>HCPSclass</code>
+    reports the states Hart defined; Evans and Hart's (2003) onset is the
+    first frame in class 2 or 3, and completion is the first frame in
+    class 4 or 5, both read from an animation, never from one frame.
   </p>
   <figure id="fig7">
     <img src="figures/fig7_parameter_b.png"
-         alt="Four-panel synthetic figure demonstrating parameter B. Top left: 925-700 hPa thickness contoured with steering-flow arrows and two identical warm-core vortex centers marked, one sitting in easterly steering, one in westerly steering. Top right: the gridded parameter B field, sharply split between a negative south half and a positive north half, with the B equals 10 meter contour drawn near the transition and labeled near the domain's west edge. Bottom left: the ET stage field, the westerly vortex showing a small onset ring and the easterly vortex an otherwise pre-onset blob, with no complete (stage 2) pixels at either. Bottom right: Hart's Phase 1 diagram of B against negative lower thermal wind, with the four structural quadrants shaded, a schematic 168 hour transition trajectory, the onset and completion crossings annotated, and the two synthetic vortices plotted as diamonds at their actual computed values.">
-    <figcaption><strong>Figure 7.</strong> Parameter B and the ET stage, on
+         alt="Four-panel synthetic figure demonstrating parameter B. Top left: 925-700 hPa thickness contoured with steering-flow arrows and two identical warm-core vortex centers marked, one sitting in easterly steering, one in westerly steering. Top right: the gridded parameter B field, sharply split between a negative south half and a positive north half, with the B equals 10 meter contour drawn near the transition and labeled near the domain's west edge. Bottom left: the joint classification field, the easterly vortex reading class 0 (symmetric deep warm core) and the westerly vortex reading class 2 (frontal deep warm core). Bottom right: Hart's Phase 1 diagram of B against negative lower thermal wind, with the four structural quadrants shaded, a schematic 168 hour transition trajectory, the onset and completion crossings annotated, and the two synthetic vortices plotted as diamonds at their actual computed values.">
+    <figcaption><strong>Figure 7.</strong> Parameter B and the joint
+      classification, on
       a <em>synthetic</em> case built for this figure alone (not the
       two-vortex domain of Figures 2&ndash;4): vortex A (deep warm core,
       28&deg;N 130&deg;W) and an identical second copy at 42&deg;N 140&deg;W, same
@@ -343,13 +353,15 @@
       &minus;25&nbsp;m, because moving west its right side faces the cold
       north &mdash; the same warm-core vortex, the same amplitude, opposite
       <i>B</i> purely from the environment and the motion.
-      <strong>(c)</strong> <code>HartCPS.executeETStage</code>: both cores
+      <strong>(c)</strong> <code>HartCPS.executeHartClass</code>: both cores
       keep a clearly positive lower thermal wind (about +119&nbsp;m at each
-      center), so the westerly vortex reads onset (stage 1) throughout its
-      footprint while the easterly one reads pre-onset (stage 0) almost
-      everywhere in its own (a sliver at its poleward edge, closest to the
-      steering reversal, already nears the onset line); neither shows a
-      single complete (stage 2) pixel.
+      center), so the easterly vortex (<i>B</i> = &minus;25&nbsp;m,
+      symmetric) reads class 0, symmetric deep warm core,
+      throughout almost all of its own footprint (a sliver at its
+      poleward edge, closest to the steering reversal, already nears the
+      frontal line), while the westerly vortex (<i>B</i> = +25&nbsp;m,
+      frontal) reads class 2, frontal deep warm core,
+      throughout its own footprint; neither shows a cold-core pixel.
       <strong>(d)</strong> The two vortices
       plotted on Hart's own axes at their actual computed
       (<i>B</i>, &minus;V<sub>T</sub><sup>L</sup>) values, alongside a
@@ -358,6 +370,50 @@
       Figure 1a now shows that same <i>B</i>&ndash;&minus;V<sub>T</sub><sup>L</sup>
       pairing directly, on its own (different) schematic trajectory.</figcaption>
   </figure>
+
+  <h3>Relation to the storm-centered diagrams</h3>
+  <p>
+    This package and Hart's own storm-centered diagrams (the FSU page)
+    compute the same three numbers but differ in several concrete
+    ways, worth keeping straight when comparing the two:
+  </p>
+  <ol>
+    <li>Hart evaluates at one tracked center following a storm's path;
+      this package evaluates at every grid point and shows the value
+      at each detected low center.</li>
+    <li>Hart's product is a trajectory through the phase diagram; this
+      package's product is a map per forecast hour. The trajectory is
+      recovered by animating and reading the class at the center, or
+      by sampling &minus;V<sub>T</sub><sup>L</sup>,
+      &minus;V<sub>T</sub><sup>U</sup>, and <i>B</i> there frame by
+      frame.</li>
+    <li>Hart uses a 500&nbsp;km circle; this package uses a
+      1000&nbsp;km square, kept deliberately for speed (Section 6). On
+      a strong background gradient the square overstates the height
+      range by up to 41% of the gradient's own contribution, which
+      carries a small cold bias relative to Hart's circle.</li>
+    <li>Hart regresses over 900&ndash;600&nbsp;hPa and
+      600&ndash;300&nbsp;hPa at 50&nbsp;hPa spacing; this package uses
+      925, 850, 700&nbsp;hPa and 500, 400, 300&nbsp;hPa. Magnitudes
+      come out near Hart's but not equal; sign, the zero threshold,
+      and transition timing carry over.</li>
+    <li>Hart's <i>B</i> uses the tracker's actual storm motion and true
+      half-circle means; this package uses the 850&ndash;300&nbsp;hPa
+      mean wind as a motion proxy and a first-order gradient
+      approximation scaled from the 925&ndash;700&nbsp;hPa layer, and
+      is unreliable for a stationary or steering-opposed storm.</li>
+    <li>Hart's diagrams need a tracked tropical cyclone; this package
+      classifies any closed low at least about 5&nbsp;hPa deep,
+      including post-tropical, hybrid, and non-tropical systems no
+      tracker follows.</li>
+    <li>Both are memoryless at any one time. Hart's onset and
+      completion times come from the plotted trajectory; this
+      package's come from the animation, the same way.</li>
+    <li>Terrain: Hart's tracker rarely meets significant terrain; this
+      package masks below-ground levels and blanks over ice sheets and
+      high terrain.</li>
+  </ol>
+
   <figure id="fig2">
     <img src="figures/fig2_method.png"
          alt="Two-panel method figure. Left: dZ profile against pressure for two synthetic vortices with their least-squares lower- and upper-band fit lines and slope values annotated, and Hart's original 50 hPa levels marked as faint right-axis ticks. Right: a map of the 925 hPa height of one synthetic warm-core vortex with the 1000 km square analysis window and Hart's 500 km circle both drawn around its center, and the window's max and min points marked.">
@@ -381,9 +437,10 @@
   </figure>
   <figure id="fig3">
     <img src="figures/fig3_gridded.png"
-         alt="Four-panel map figure over a synthetic domain: 1000 hPa height with both synthetic vortices visible; the gridded lower thermal wind field with a hatched terrain block; the gridded upper thermal wind field; and the categorical structure class with 1000 hPa height contours overlaid, all with a terrain block outlined in dashed gray.">
+         alt="Four-panel map figure over a synthetic domain: 1000 hPa height with both synthetic vortices visible; the gridded lower thermal wind field with a hatched terrain block; the gridded upper thermal wind field; and the joint classification field with 1000 hPa height contours overlaid, all with a terrain block outlined in dashed gray.">
     <figcaption><strong>Figure 3.</strong> The four gridded Hart-family
-      products on the <em>synthetic</em> two-vortex domain (deep warm core
+      products on the <em>synthetic</em> two-vortex domain (deep warm core,
+      symmetric, westerly steering,
       at 28&deg;N 130&deg;W, tilted cold core at 50&deg;N 140&deg;W, a 750&nbsp;hPa terrain
       block outlined dashed). <strong>(a)</strong> 1000&nbsp;hPa height, contoured
       every 20&nbsp;m. <strong>(b)</strong> HVTL (<code>executeBand3</code>, 925/850/700&nbsp;hPa)
@@ -394,9 +451,13 @@
       modestly with height; on a real baroclinic zone the ambient values
       are larger, which is why the class and index products are
       restricted to detected closed lows.
-      Terrain is hatched (NaN, below-ground). <strong>(d)</strong> HCPScat
-      (<code>executeClassStd</code>), the five-category field, with 1000&nbsp;hPa
-      height contoured thin gray for reference.</figcaption>
+      Terrain is hatched (NaN, below-ground). <strong>(d)</strong>
+      HCPSclass (<code>executeHartClass</code>), the joint
+      classification field, with 1000&nbsp;hPa height contoured thin
+      gray for reference: vortex A reads class 0, symmetric deep warm
+      core; vortex B, tilted and cold at the surface center, reads
+      class 5, symmetric cold core, because the uniform westerly steering keeps
+      its B below 10 m.</figcaption>
   </figure>
 
   <h2 id="why-not-vorticity">3. Why not vorticity</h2>
@@ -450,30 +511,34 @@
     per frame, from grids already in the local inventory &mdash; no server, no
     cron, no external tracker. The Hart family needs geopotential height on
     the seven standard isobaric levels and surface pressure for
-    &minus;V<sub>T</sub><sup>L</sup>/&minus;V<sub>T</sub><sup>U</sup>/HCPScat/HCPSidx;
-    parameter B and the ET stage additionally need wind components at four
+    &minus;V<sub>T</sub><sup>L</sup>/&minus;V<sub>T</sub><sup>U</sup>/HCPSclass/HCPSidx;
+    parameter B (and so <code>HCPSclass</code>, which depends on it) additionally
+    needs wind components at four
     levels (850, 700, 500, 300&nbsp;hPa) for the steering-flow motion proxy
     and the coriolis pseudo-field for the hemisphere sign. The vorticity
     family needs wind components at three levels. The sliding
     window that &Delta;Z is built from runs in O(N&nbsp;log&nbsp;w) per level
     via a doubling/sparse-table extremum filter rather than a naive
-    per-pixel scan, which is what keeps a full six-level classification
+    per-pixel scan, which is what keeps a full seven-level classification
     affordable on a global grid (Figure 5). The installed footprint is
-    eleven XML derived-parameter definitions (HVTL, HVTU, HCPScat, HCPSidx,
-    HB, HETstage, VTL, VTU, CPScat, CPSidx, cpsZ850), two Python files
+    ten XML derived-parameter definitions (HVTL, HVTU, HCPSclass, HCPSidx,
+    HB, VTL, VTU, CPScat, CPSidx, cpsZ850), two Python files
     (<code>HartCPS.py</code>, <code>CycloneCore.py</code>), and three
     colormaps (a diverging one for the thermal wind and B fields, a
-    categorical one for the class field, and a second categorical one for
-    the ET stage field). <code>executeETStage</code> layers parameter B's
+    categorical one for the vorticity-family class field, and a second
+    categorical one for the joint Hart classification field). Five Hart
+    products (<code>HVTL</code>, <code>HVTU</code>, <code>HCPSclass</code>,
+    <code>HCPSidx</code>, <code>HB</code>) result. <code>executeHartClass</code>
+    layers parameter B's
     window-mean gradient pass and the steering-flow average on top of the
     same thermal-wind computation and takes about 2&nbsp;s on the same
     0.25&deg; grid.
   </p>
   <figure id="fig5" class="half">
     <img src="figures/fig5_performance.png"
-         alt="Line chart of executeClassStd wall-clock time in seconds against grid size, for 181 by 360, 361 by 720, and 721 by 1440 grids, increasing from about 0.06 to about 1.5 seconds.">
+         alt="Line chart of executeHartClass wall-clock time in seconds against grid size, for 181 by 360, 361 by 720, and 721 by 1440 grids, increasing from about 0.06 to about 1.5 seconds.">
     <figcaption><strong>Figure 5.</strong> Wall-clock time of
-      <code>HartCPS.executeClassStd</code> on <em>random smooth fields</em>
+      <code>HartCPS.executeHartClass</code> on <em>random smooth fields</em>
       (not the vortex fields used elsewhere; timing only), median of 3 runs
       at each of three global grid resolutions (1&deg;, 0.5&deg;, 0.25&deg;), measured
       on the machine that built this page. The 0.25&deg; result is consistent
@@ -485,17 +550,20 @@
   <p>
     Validation to date is a small log of real GFS cases sampled at the
     MSLP center, not a season-scale study. A mature typhoon at 984&nbsp;mb (GFS
-    12Z, 72&nbsp;h) read HVTL = 120&nbsp;m, HVTU = 180&nbsp;m, HCPScat = 4 (deep warm
-    core), HCPSidx = 2.5, comparable in magnitude to the values Hart (2003)
+    12Z, 72&nbsp;h) read HVTL = 120&nbsp;m, HVTU = 180&nbsp;m, deep warm core
+    (class 4 in the earlier two-field product, class 0 or 2 in the joint
+    field depending on <em>B</em>), HCPSidx = 2.5, comparable in magnitude to the values Hart (2003)
     reported for hurricanes, allowing for the different layer definitions. For Typhoon Dujuan, the first forecast hour at which
-    HCPScat dropped below 4 in a GFS run (Monday, 21&nbsp;September&nbsp;2026, 18Z)
+    the storm's classification left its deep warm core state (HCPScat
+    dropping below 4 in the retired two-field product, now read as
+    HCPSclass leaving 0 or 2) in a GFS run (Monday, 21&nbsp;September&nbsp;2026, 18Z)
     matched the hour the Florida State University cyclone phase page
     showed the same run moving from deep to shallow warm core. That hour is
     the loss of the upper warm core, a sign that transition is under way,
     and not the Evans and Hart onset, which depends on <em>B</em> and is
     computed separately (Section 2) but not yet validated. A deep
-    extratropical low over the North Atlantic classified HCPScat = 1
-    (cold core), with both HVTL and HVTU negative, in the same GFS cycle.
+    extratropical low over the North Atlantic classified as cold core
+    (HCPScat = 1 in the retired two-field product), with both HVTL and HVTU negative, in the same GFS cycle.
     After the below-ground mask is applied, Greenland and the high
     terrain of western North America show no classification at all,
     rather than a contaminated one built from extrapolated sub-surface
@@ -521,11 +589,12 @@
       Hart's 50&nbsp;hPa-spaced 900&ndash;600/600&ndash;300&nbsp;hPa bands; a GFS-only
       exact-band definition (<code>executeBand7</code>) exists but is not
       yet wired into an XML definition.</li>
-    <li>Parameter B is computed only to first order: the window-mean thickness gradient across a steering-flow motion proxy (the mean 850 to 300&nbsp;hPa wind), scaled from the 925 to 700&nbsp;hPa layer to Hart's 900 to 600&nbsp;hPa equivalent. It misses nonlinear thickness structure inside the window and is unreliable for stationary or steering-opposed systems. The resulting Evans and Hart onset field awaits validation.</li>
+    <li>Parameter B is computed only to first order: the window-mean thickness gradient across a steering-flow motion proxy (the mean 850 to 300&nbsp;hPa wind), scaled from the 925 to 700&nbsp;hPa layer to Hart's 900 to 600&nbsp;hPa equivalent. It misses nonlinear thickness structure inside the window and is unreliable for stationary or steering-opposed systems. <code>HCPSclass</code> depends on <em>B</em> for its frontal/symmetric split and inherits this steering-flow caveat wherever <em>B</em> is unreliable or blank; the resulting Evans and Hart onset and completion reads await validation.</li>
+    <li><code>HCPSclass</code> flickers between adjacent codes when a storm sits on one of Hart's strict lines (<em>B</em> at 10&nbsp;m, or a thermal wind term at 0) from one frame to the next. This is expected, not a bug: the field has no neutral band by design. The continuous fields (HVTL, HVTU, HB) show the underlying trend through a flickering stretch.</li>
     <li>Validation is a handful of real cases, not a season.</li>
-  <li>No sensitivity analysis yet: the response to window size, band definition, grid resolution, and the 25&nbsp;m neutral band has not been quantified.</li>
+  <li>No sensitivity analysis yet: the response to window size, band definition, and grid resolution has not been quantified.</li>
   <li>The below-ground rule treats the 1000 and 925&nbsp;hPa surfaces as valid wherever the surface pressure exceeds 900&nbsp;hPa, so extrapolated heights over low terrain (surface pressure between 900 and 1000&nbsp;hPa) still enter the window.</li>
-  <li>The continuous index's weighting (twice the lower term) is a display heuristic with no physical derivation; the category field is the product to reason from.</li>
+  <li>The continuous index's weighting (twice the lower term) is a display heuristic with no physical derivation; the classification field is the product to reason from.</li>
     <li>A storm-centered trajectory product &mdash; the classic phase-space
       diagram, sampled along a TCM track &mdash; is planned via a GFE
       procedure.</li>

@@ -2,7 +2,7 @@
 <!--
   EXPERIMENTAL. Style rules for the CPS derived parameters:
     vorticity family  VTL, VTU, CPScat, CPSidx
-    Hart family       HVTL, HVTU, HCPScat, HCPSidx
+    Hart family       HVTL, HVTU, HCPSidx, HCPSclass, HB
 
   INSTALL (preferred): copy this file unchanged to the site style rules
   directory under its own name,
@@ -131,16 +131,22 @@
         </imageStyle>
     </styleRule>
 
+    <!-- Categorical: 0 sym deep warm, 1 sym shallow warm, 2 frontal deep
+         warm, 3 frontal shallow warm, 4 frontal cold, 5 sym cold, 6
+         mid-level vortex. Range is offset by half a category so each
+         code sits in the middle of one color bin; interpolate off so
+         colors hold flat across a bin. Replaces the retired HCPScat/
+         HETstage fields (see HCPSclass.xml). -->
     <styleRule>
         <paramLevelMatch>
-            <parameter>HCPScat</parameter>
+            <parameter>HCPSclass</parameter>
         </paramLevelMatch>
         <imageStyle>
             <interpolate>false</interpolate>
-            <defaultColormap>Grid/CPS_CoreClass</defaultColormap>
+            <defaultColormap>Grid/CPS_HartClass</defaultColormap>
             <range scale="LINEAR">
                 <minValue>-0.5</minValue>
-                <maxValue>4.5</maxValue>
+                <maxValue>6.5</maxValue>
             </range>
         </imageStyle>
     </styleRule>
@@ -174,21 +180,5 @@
         </contourStyle>
     </styleRule>
 
-    <!-- Categorical: 0 pre-onset, 1 onset, 2 complete. Range is offset by
-         half a category so each code sits in the middle of one color
-         bin; interpolate off so colors hold flat across a bin. -->
-    <styleRule>
-        <paramLevelMatch>
-            <parameter>HETstage</parameter>
-        </paramLevelMatch>
-        <imageStyle>
-            <interpolate>false</interpolate>
-            <defaultColormap>Grid/CPS_ETStage</defaultColormap>
-            <range scale="LINEAR">
-                <minValue>-0.5</minValue>
-                <maxValue>2.5</maxValue>
-            </range>
-        </imageStyle>
-    </styleRule>
 
 </styleRuleset>
