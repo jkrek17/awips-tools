@@ -89,18 +89,20 @@ works on every model in D2D with no tracker and no advisory. A
 closed-low detector on the 1000 hPa height blanks everything that isn't
 a real low, and terrain is masked below ground.
 
-**[Slide 7, why not the shortcut] 4:35**
+**[Slide 7, a tilted cold core] 4:35**
 
-We tried a cheaper version first, differencing vorticity between
-levels. It fails in a specific way worth knowing. A baroclinic low is
-tilted: its upper trough sits west of the surface center. At the
-surface low the upper vorticity is weak, so the proxy reads warm, and
-the cold signal shows up displaced to the west as a dipole. Hart's
-window spans the tilt and reads cold at the center. On a synthetic
-tilted low the proxy reads near zero at the center and the Hart field
-reads minus 285 meters.
+Here is why measuring the height field directly matters, on a
+synthetic case. Build a cold-core cyclone whose upper trough sits well
+to the west of its surface center, tilted the way many real baroclinic
+lows are. One panel shows that geometry: the 925 and 300 hectopascal
+height contours, offset from each other by the tilt. The other three
+are what the AWIPS field actually plots for that storm: the lower and
+upper thermal wind terms, and the joint class. Hart's 500 kilometer
+window is wide enough to take in the tilted upper trough from the
+surface center, so both terms read strongly cold there and the class
+comes out cold core, right where the surface low actually sits.
 
-**[Slide 8, on shift] 5:10**
+**[Slide 8, on shift] 5:20**
 
 This is the operational display. Four panels: the lower and upper
 terms, a joint class field, and an index. The class reads at the
@@ -113,18 +115,17 @@ first reaches 2 or 3, and the hour each first reaches 4 or 5; where
 they disagree is your transition uncertainty. That is a product nobody
 had before, because it needed a tracker for every model.
 
-**[Slide 9, validation] 5:55**
+**[Slide 9, validation] 6:00**
 
 Three checks so far. A typhoon at 984 millibars read 120 and 180
-meters, a deep warm core (class 4 in our earlier two-field product,
-class 0 or 2 in the joint field depending on B), comparable to what
-Hart published for hurricanes. For Typhoon Dujuan, the hour the
-storm's classification left its deep warm core state matched the hour
-FSU's page showed the same GFS run moving from deep to shallow warm
-core. And a deep North Atlantic low classified cold core, which the
-vorticity shortcut could not do. Greenland and the Rockies come out
-blank rather than contaminated. Compute cost is about a second per
-frame on the full global grid.
+meters, a deep warm core, class 0 or 2 in the joint field depending on
+B, comparable to what Hart published for hurricanes. For Typhoon
+Dujuan, the hour the storm's classification left its deep warm core
+state matched the hour FSU's page showed the same GFS run moving from
+deep to shallow warm core. And a deep North Atlantic low classified
+cold core. Greenland and the Rockies come out blank rather than
+contaminated. Compute cost is about a second per frame on the full
+global grid.
 
 **[Slide 10, limits and next] 6:35**
 

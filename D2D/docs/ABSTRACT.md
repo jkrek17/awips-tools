@@ -18,7 +18,13 @@ reformulates the thermal wind parameters as gridded fields computed on
 demand inside the AWIPS II display system as derived parameters,
 requiring only geopotential height on standard isobaric levels and
 surface pressure, and therefore available for every model in the local
-inventory without a cyclone tracker. At each grid point the height
+inventory without a cyclone tracker. Because Hart's thermal wind terms
+are simply the vertical derivative of the horizontal height
+perturbation amplitude with respect to log pressure, evaluating them
+directly from geopotential height on the grid measures the quantity
+itself, an orientation- and hemisphere-invariant measure, and the
+500 km window contains the whole thermal anomaly even in a vertically
+tilted system. At each grid point the height
 perturbation amplitude is evaluated over a 500 km window using a
 separable sliding-extrema filter, the thermal wind is obtained by
 regression against log pressure over 925 to 700 hPa and 500 to 300 hPa,
@@ -38,9 +44,7 @@ storm-centered diagnosis on the Florida State University cyclone phase
 page for the same model run. The asymmetry parameter B is implemented as a
 first-order approximation, the window-mean thickness gradient projected
 across a steering-flow motion proxy, giving an Evans and Hart onset
-field that has not yet been validated. A simpler formulation based on vertical differences of
-relative vorticity was found to misclassify vertically tilted and broad
-baroclinic systems as warm core and was retained only for comparison.
+field that has not yet been validated.
 Limitations include the use of standard levels in place of Hart's
 50 hPa spacing, a square analysis window whose corners overstate the
 height range on a background gradient, the steering-flow approximation
