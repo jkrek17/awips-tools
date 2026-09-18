@@ -10,10 +10,6 @@ one storm's moving center -- a D2D derived parameter has no concept of
 reference implementation (`cps/hart.py`) this family is checked
 against; see "Tests" below.
 
-An earlier, vorticity-based proxy family preceded this one and was
-retired on 2026-09-18; see "Retired: vorticity-proxy family" near the
-end of this file.
-
 ## Guides
 
 - `docs/USER_GUIDE.md`: for forecasters, how to load and read the
@@ -91,16 +87,15 @@ mountains it is not, so `z1000` (like every other height level this
 family uses) is run through the below-ground mask described next
 before it ever reaches this function.
 
-An earlier version of this mask used a plain "close to the local
-minimum, and the window max-minus-min is big enough" test, and turned
-out to pass
+A test based only on "close to the local minimum, and the window
+max-minus-min is big enough" passes
 **everywhere** on a uniform height gradient (e.g. a steady 40-60 m per
 1000 km slope across a front, no low at all): every point on a slope
 is, to a few meters, already the minimum of its own neighborhood in
 the one direction the slope descends, and the window max-minus-min
 over a 500 km box is large simply because the slope has covered a lot
-of height by the time it reaches the box's far edge. The current mask
-uses two tests a monotonic slope cannot satisfy together:
+of height by the time it reaches the box's far edge. The mask
+therefore uses two tests a monotonic slope cannot satisfy together:
 
 1. **Candidate test**: the point is within `centerTolM` (default
    **5 m** -- deliberately tight) of the local minimum height found
@@ -189,9 +184,7 @@ module docstring ("Below-ground masking") for the full explanation.
 
 ## Joint classification (HCPSclass) and index (HCPSidx)
 
-**Retired 2026-09-18: `HCPScat` (Phase 2 class) and `HETstage` (ET
-stage) are gone.** `HCPSclass` replaces the retired `HCPScat`/`HETstage`
-pair with one field computed from all three Hart parameters at once:
+`HCPSclass` is computed from all three Hart parameters at once:
 `B` (against Hart's frontal threshold of 10 m) and both thermal wind
 terms (each against 0, strictly; warm if greater than or equal to 0,
 cold if less than 0). Hart's own two diagrams are two projections of
@@ -215,7 +208,7 @@ eye" into "sample one number at the low center":
 
 The codes rise along a typical extratropical transition (0, 2, 3, 4)
 and a warm seclusion is 4 then back to 1. `HCPSclass` is NaN outside
-`closed_low_mask`, same as the retired `HCPScat`. There is no neutral
+`closed_low_mask`. There is no neutral
 band on `B` or on either thermal wind term here: Hart's own strict
 lines (10 m, 0, 0) are used exactly, unlike `HCPSidx` below, which
 keeps its 25 m neutral band because a continuous index needs one to
@@ -231,8 +224,7 @@ onset, the first frame in class 4 or 5 is completion), never from a
 single frame.
 
 `HCPSidx` is `2*tanh(HVTL/scaleM) + tanh(HVTU/scaleM)` (default
-`scaleM` = 100 m), range -3 to +3 (same reading convention as the
-retired vorticity-proxy family's CPSidx), and still the only place in
+`scaleM` = 100 m), range -3 to +3, and still the only place in
 this family a neutral band (via `scaleM`) survives.
 
 ## Parameter B (HB) and its role in HCPSclass
@@ -386,10 +378,7 @@ The `cps_` file prefix is only so the family sorts together in the
 Localization perspective and on disk; AWIPS keys each definition on the
 `abbreviation` inside the XML (HVTL, HVTU, HB, HCPSidx, HCPSclass) and
 the function module on the `Method name` in the XML, so the product
-names in D2D are unchanged. If you are upgrading from an older,
-unprefixed install, delete the old `HVTL.xml`, `HVTU.xml`, `HB.xml`,
-`HCPSidx.xml`, `HCPSclass.xml` and `HartCPS.py` from the same
-directories first, or the two copies of each definition will collide.
+names in D2D are unchanged.
 
 Restart CAVE (not necessarily EDEX, depending on your version's
 derived-parameter caching -- some versions pick up new definitions
@@ -507,87 +496,32 @@ printing the lower/upper slope and the class at its center, plus a
 parameter B demo on a linear thickness gradient with its analytic
 expectation) with no pytest or AWIPS runtime involved.
 
-## Retired: vorticity-proxy family
-
-A first version of this package (`VTL`, `VTU`, `CPScat`, `CPSidx`,
-`cpsZ850`, module `CycloneCore.py`) estimated core structure from the
-vertical difference of smoothed relative vorticity (850 minus 600 hPa,
-600 minus 300 hPa) instead of Hart's actual quantity. It was **retired
-on 2026-09-18** in favor of the Hart family documented above. Reason:
-the proxy's sign depends on the grid's axis orientation, it reads
-Southern Hemisphere warm cores with the wrong sign, its vortex mask
-goes entirely NaN over Southern Hemisphere cyclones, and on tilted
-extratropical lows it paints a cold ring where the upper trough sits
-rather than reading the core -- see `reference/vorticity_proxy/README.md`
-for the full rationale (Figure 4 in `docs/cps/` is the tilt-bias case
-that motivated the retirement). The Hart family measures Hart's actual
-thermal wind from geopotential height and shares none of these biases
-(see "What it is" above).
-
-The retired files now live under `reference/vorticity_proxy/`
-(`CycloneCore.py`, `definitions/*.xml`, `colormaps/CPS_CoreClass.cmap`,
-`menus/`, `styleRules/`, and its own `README.md`), with its tests under
-`tests/reference_vorticity/`. They are kept for reference only and are
-not part of the current install set. If an older install still has the
-proxy in place, remove it from EDEX site-level `common_static`:
-
-```
-derivedParameters/functions/CycloneCore.py
-derivedParameters/definitions/VTL.xml
-derivedParameters/definitions/VTU.xml
-derivedParameters/definitions/CPScat.xml
-derivedParameters/definitions/CPSidx.xml
-derivedParameters/definitions/cpsZ850.xml
-colormaps/Grid/CPS_CoreClass.cmap
-```
-
-An older pair of products, `HCPScat` (Phase 2 class) and `HETstage` (ET
-stage), was also retired on 2026-09-18, replaced by the single joint
-classification `HCPSclass` -- see "Joint classification (HCPSclass)
-and index (HCPSidx)" above.
-
 ## Validation log
 
 Real cases sampled at the MSLP center in D2D. Add to this as cases
-accumulate; it is the calibration record for the thresholds. **The
-VTL, VTU, CPScat, and CPSidx columns record the retired vorticity-proxy
-family (see "Retired: vorticity-proxy family" above) and are kept as
-history, not as current products.**
+accumulate; it is the calibration record for the thresholds.
 
-| Date sampled | Model, cycle, fhr | System | VTL | VTU | CPScat | CPSidx | HVTL (m) | HVTU (m) | HCPScat | HCPSidx |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| 2026-09-14 | GFS 12Z, 72 h | Typhoon, 24N 147E, 984 mb | 6.45 | 12.24 | 4 | 1.98 | | | | |
-| 2026-09-14 | GFS 12Z, 72 h | Post-tropical low, 62N 20W, 978 mb, tilted | -1.07 | 5.05 | 2 (cold ring) | 0.31 | | | | |
-| 2026-09-17 | GFS 12Z, 72 h | Same typhoon, 31N 139E, 984 mb | | | | | 120 | 180 | 4 | 2.5 |
-| 2026-09-17 | GFS 12Z, series | Typhoon Dujuan, loss of deep warm core | | | | | | | drops from 4 at Mon 21 Sep 18Z | |
-| 2026-09-17 | GFS 12Z | Deep extratropical low, North Atlantic | | | | | negative (value not recorded) | negative (value not recorded) | 1 | negative |
+| Date sampled | Model, cycle, fhr | System | HVTL (m) | HVTU (m) | HCPSclass | HCPSidx |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 2026-09-17 | GFS 12Z, 72 h | Typhoon, 31N 139E, 984 mb | 120 | 180 | deep warm core (0 or 2; B not sampled) | 2.5 |
+| 2026-09-17 | GFS 12Z, series | Typhoon Dujuan, loss of deep warm core | | | leaves the deep warm core classes (0 or 2) at Mon 21 Sep 2026 18Z | |
+| 2026-09-17 | GFS 12Z | Deep extratropical low, North Atlantic | negative (value not recorded) | negative (value not recorded) | a cold-core class | negative |
 
-**Note (2026-09-18):** `HCPScat` and `HETstage` were retired on this
-date in favor of the single joint classification `HCPSclass` (see
-"Joint classification (HCPSclass) and index (HCPSidx)" above). The
-rows above predate the change and are kept as recorded; reading them
-against the new field, `HCPScat` = 4 (deep warm core) corresponds to
-`HCPSclass` 0 (symmetric) or 2 (frontal) depending on `B`, which was
-not computed for those rows.
-
-Notes: the vorticity family read the tilted post-tropical low as
-neutral at the center with a cold ring where the upper trough sat,
-which is the tilt bias the Hart family was built to remove. The Hart
-values for the typhoon are in Hart's published hurricane range. The
-Hart family validated on a cold-core case (class 1, both terms
-negative). External check: the first forecast hour at which the
-storm's classification left its deep-warm-core state for Typhoon
-Dujuan (Mon 21 Sep 2026 18Z, `HCPScat` dropping below 4 in the
-now-retired product) matches the hour the FSU cyclone phase page shows
-the same GFS run moving from deep to shallow warm core. This is the
-loss of the upper warm core, not the Evans and Hart (2003) onset, which
-is read from the animation as the first frame `HCPSclass` reaches 2 or
-3 (`B` above 10 m) and awaits validation on a real case. After
-the surface-pressure mask, Greenland and the
-high terrain of western North America are blank rather than
-contaminated, which is the intended behavior. A few very weak closed
-lows (under about 5 hPa deep) get no class blob at the shipped depth of
-40 m; set depthM to 25 in cps_HCPSclass.xml and cps_HCPSidx.xml to include them.
+Notes: the Hart values for the typhoon are in Hart's published
+hurricane range. The Hart family validated on a cold-core case, both
+thermal wind terms negative, HCPSclass reading a cold-core class.
+External check: the first forecast hour at which HCPSclass leaves the
+deep warm core classes for Typhoon Dujuan (Mon 21 Sep 2026 18Z) matches
+the hour the FSU cyclone phase page shows the same GFS run moving from
+deep to shallow warm core. This is the loss of the upper warm core,
+not the Evans and Hart (2003) onset, which is read from the animation
+as the first frame `HCPSclass` reaches 2 or 3 (`B` above 10 m) and
+awaits validation on a real case. After the surface-pressure mask,
+Greenland and the high terrain of western North America are blank
+rather than contaminated, which is the intended behavior. A few very
+weak closed lows (under about 5 hPa deep) get no class blob at the
+shipped depth of 40 m; set depthM to 25 in cps_HCPSclass.xml and
+cps_HCPSidx.xml to include them.
 
 **Status: the D2D version is release-ready as of 2026-09-17**, still
 labeled experimental pending a season of use. Known limitations: the

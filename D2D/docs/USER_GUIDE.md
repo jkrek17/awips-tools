@@ -139,8 +139,7 @@ numbers at once carries both and loses neither. Operationally that
 means sampling one number at the low center instead of reading two
 panels and combining them by eye, and the resulting codes fall in
 order along the transition (see "Reading the class" in section 5).
-The old two-field product's "onset" and "complete" labels named
-events, and an event needs history to detect; a single frame can only
+An event needs history to detect; a single frame can only
 say what state the storm is in right now. HCPSclass names the states,
 which are Hart's; the events are still there, read from how the state
 changes frame to frame.
@@ -178,9 +177,6 @@ it as a gridded product at all.
 
 All products sit at a single Surface plane in the Product Browser and
 overlay on anything.
-
-See "Retired products" in section 7 for the earlier vorticity-based
-products that these replaced.
 
 ---
 
@@ -379,14 +375,6 @@ same direction is signal.
 - **Values near a coast.** Within about 500 km of high terrain the
   window has less data on one side. The value is still valid but less
   robust.
-
-### Retired products
-
-VTL, VTU, CPScat, CPSidx, and cpsZ850, the earlier vorticity-based
-family, were removed from the menu on 2026-09-18. They read tilted and
-broad systems too warm and blanked Southern Hemisphere warm cores
-outright. HVTL, HVTU, HB, HCPSidx, and HCPSclass, described above,
-replace them and cover the same ground without either problem.
 
 ---
 

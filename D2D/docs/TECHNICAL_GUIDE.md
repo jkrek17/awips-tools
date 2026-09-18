@@ -15,14 +15,11 @@ D2D derived parameters. Everything runs inside CAVE's embedded Python
 on demand, per frame, from grids already in the D2D inventory. There is
 no server, no cron, no tracker, no external data.
 
-One family, the Hart family, is installed today:
+The package implements the Hart family:
 
 | Family | Function file | Products | Inputs | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| Hart | `derivedParameters/functions/cps_HartCPS.py` | HVTL, HVTU, HCPSclass, HCPSidx, HB | geopotential height at 1000, 925, 850, 700, 500, 400, 300 hPa; u/v wind at 850, 700, 500, 300 hPa; surface pressure; coriolis (HB and HCPSclass only) | primary, validated (HB and HCPSclass's B term new, awaiting validation) |
-
-An earlier vorticity-based family (VTL, VTU, CPScat, CPSidx, cpsZ850)
-was retired on 2026-09-18; see section 3 for what it was and why.
+| Hart | `derivedParameters/functions/cps_HartCPS.py` | HVTL, HVTU, HCPSclass, HCPSidx, HB | geopotential height at 1000, 925, 850, 700, 500, 400, 300 hPa; u/v wind at 850, 700, 500, 300 hPa; surface pressure; coriolis (HB and HCPSclass only) | validated (HB and HCPSclass's B term new, awaiting validation) |
 
 The function file is self-contained numpy with no imports from the
 rest of the repository, because the CAVE interpreter only sees the
@@ -39,8 +36,8 @@ D2D/
   derivedParameters/functions/    cps_HartCPS.py
   derivedParameters/definitions/  one XML per product
   colormaps/Grid/                 CPS_CoreDiverging.cmap, CPS_HartClass.cmap
-  styleRules/cpsStyleRules.xml    base-schema style rules (see 6.3)
-  menus/volumebrowser/cpsFields.xml  Volume Browser entries (see 6.4)
+  styleRules/cpsStyleRules.xml    base-schema style rules (see 5.3)
+  menus/volumebrowser/cpsFields.xml  Volume Browser entries (see 5.4)
   docs/                           this guide, the user guide
   README.md                       install, troubleshooting, validation log
 tests/d2d_cps/                    pytest suite for the Hart family
@@ -72,7 +69,7 @@ The point definition is evaluated at every grid point by replacing "the
 500 km circle around the storm" with "a window of half-width 500 km
 around this point". The window is a square, not a circle, because a
 square sliding max and min is separable and runs in a handful of passes
-per level (section 4). Corners reach 707 km. For an isolated compact vortex the
+per level (section 3). Corners reach 707 km. For an isolated compact vortex the
 max and min are the far field and the center either way, so the
 difference from a circle is small; the test suite checks agreement with
 the circular point implementation in `cps/hart.py` to within 2 percent
@@ -82,7 +79,7 @@ dZ than the circle does, and because that contribution grows with
 height in a baroclinic environment, the square window carries a small
 cold bias relative to Hart's circle. This is the main methodological
 difference from Hart. It is a documented, permanent design decision,
-not an open question awaiting a fix; see section 8 for the reasoning.
+not an open question awaiting a fix; see section 7 for the reasoning.
 
 A consequence worth knowing: around a compact low, every point whose
 window contains the low center sees roughly the same dZ, so the raw
@@ -105,7 +102,7 @@ The 700 to 500 layer is deliberately in neither band. Magnitudes are
 therefore near but not equal to the FSU page's values for the same
 storm; signs, the zero threshold, and transition timing carry over, and
 the Dujuan case confirmed the timing matches. A GFS-only definition on
-Hart's exact levels can be added with `executeBand7` (section 5.4).
+Hart's exact levels can be added with `executeBand7` (section 4.4).
 
 ### 2.4 Below-ground masking
 
@@ -141,8 +138,7 @@ NaN-aware box sums.
 
 ### 2.6 Joint classification
 
-`HCPSclass` replaces the retired `HCPScat` (Phase 2 class) and
-`HETstage` (ET stage) with one field computed from all three Hart
+`HCPSclass` is computed from all three Hart
 parameters (B, VTL, and VTU) at once, using Hart's own strict
 lines: B against 10 m, and both thermal wind terms against 0, with no
 neutral band on any of the three (compare the index below, which
@@ -175,9 +171,8 @@ diagram says deep or shallow warm core; so a classification on all
 three numbers carries both and loses neither. Operationally this turns
 "sample two panels and combine them by eye" into "sample one number at
 the low center," and the resulting codes fall in the order the storm
-actually moves through them during a transition. It also corrects a
-category error in the retired fields: `HETstage`'s "onset" and
-"complete" were event names, and an event needs a history of frames to
+actually moves through them during a transition. Onset and completion
+are event names, and an event needs a history of frames to
 detect; a value computed independently at each frame, with no memory
 of the frame before it, can only ever report a state, not an event.
 `HCPSclass` reports the states Hart defined; onset and completion are
@@ -186,9 +181,8 @@ across an animation, never from one frame (see the User Guide's "Using
 it on shift").
 
 Index = 2 tanh(VTL / scaleM) + tanh(VTU / scaleM), scaleM = 100 m,
-unchanged from the retired product's neighbor `HCPSidx`, NaN outside
-the closed-low mask, and the only place in this family a neutral band
-(via `scaleM`) remains.
+NaN outside the closed-low mask, and the only place in this family a
+neutral band (via `scaleM`) remains.
 
 ### 2.7 Parameter B
 
@@ -218,9 +212,7 @@ treated as positive), matching `cps.hart.parameter_b`'s own
 
 Unlike every other function in this file, computing B's thickness
 gradient (`gradient_2d`) takes a spatial derivative, so it is subject
-to the same kind of grid-orientation ambiguity the earlier vorticity
-proxy, now retired, had at every one of its calls (section 3).
-`cps_HartCPS.py` therefore carries its own module-level
+to grid-orientation ambiguity. `cps_HartCPS.py` therefore carries its own module-level
 `ORIENTATION_MODE` (0 to 3, default 1, confirmed on the OPC build) --
 used only by `gradient_2d`; `HVTL`/`HVTU`/`HCPSidx` never call it and
 are unaffected, and neither does `HCPSclass`'s own thermal-wind
@@ -242,7 +234,7 @@ worth keeping straight when comparing the two:
    recovered by animating and reading the class at the center, or by
    sampling HVTL, HVTU, and HB there frame by frame.
 3. Hart uses a 500 km circle; this package uses a 1000 km square, kept
-   deliberately for speed (section 8). On a strong background gradient
+   deliberately for speed (section 7). On a strong background gradient
    the square overstates the height range by up to 41 percent of the
    gradient's own contribution, which carries a small cold bias
    relative to Hart's circle.
@@ -267,79 +259,9 @@ worth keeping straight when comparing the two:
 
 ---
 
-## 3. Retired products
+## 3. Implementation notes
 
-An earlier family, VTL, VTU, CPScat, CPSidx, and cpsZ850, was retired
-from the D2D install set on 2026-09-18 in favor of the Hart family
-described above. It is kept for reference only, not for reinstallation.
-
-What it was: a pointwise proxy for the thermal wind built from the
-vertical change of relative vorticity,
-
-    VTL = smooth(zeta_850 - zeta_600)
-    VTU = smooth(zeta_600 - zeta_300)
-
-with zeta = dv/dx - du/dy from centered differences and a 100 km box
-smoother, positive read as warm core. Values crossed the AWIPS
-boundary scaled by `UNIT_SCALE` = 1e5, so a readout of 12 meant
-1.2e-4 per second. `CPScat` and `CPSidx` combined VTL and VTU into a
-class and an index, masked to a vorticity-based vortex detector;
-`cpsZ850` was an installation and orientation-check field, not a
-forecast product.
-
-Why it was retired:
-
-- Tilt read as warm. The upper trough of a baroclinic low sits west of
-  the surface center, so the upper difference was positive at the
-  center and the cold signal landed in a ring to the west instead of
-  at the core.
-- Broad upper features have small vorticity for their height
-  perturbation, so upper cold cores were understated.
-- The vortex mask selected points where 850 hPa vorticity is high,
-  which favored positive lower differences.
-- Southern Hemisphere: cyclonic vorticity is negative there, so warm
-  cores read negative and the vortex mask blanked them outright. This
-  was never fixed. The Hart family has no such issue, because it
-  measures height perturbation amplitude, which is positive definite
-  in either hemisphere (section 2.1).
-- Grid orientation mattered because the vorticity calculation took a
-  derivative; every VTL/VTU/CPScat/CPSidx call needed the module's own
-  `ORIENTATION_MODE` (0 to 3, covering row direction and transposed
-  axes) to be set correctly for the site, and getting it wrong produced
-  a lobed pattern rather than a single blob. `cps_HartCPS.py` carries
-  an analogous, but independent, `ORIENTATION_MODE` of its own for the
-  one place it still takes a derivative (section 2.7); the two
-  constants never lived in the same module and setting one never
-  affected the other.
-
-Where it lives now: `reference/vorticity_proxy/` in this repository
-(module, definitions, colormap, the last menu and style-rule files
-that carried it) and `tests/reference_vorticity/` for its tests. See
-`reference/vorticity_proxy/README.md` for the full rationale and the
-figure it still feeds.
-
-EDEX delete list, for a site removing it from an existing install
-under `/awips2/edex/data/utility/common_static/site/<SITE>/`:
-
-```
-derivedParameters/functions/CycloneCore.py
-derivedParameters/definitions/VTL.xml
-derivedParameters/definitions/VTU.xml
-derivedParameters/definitions/CPScat.xml
-derivedParameters/definitions/CPSidx.xml
-derivedParameters/definitions/cpsZ850.xml
-colormaps/Grid/CPS_CoreClass.cmap
-```
-
-Restart CAVE after removing these. Two older products, `HCPScat` and
-`HETstage`, were retired earlier still, before this package's current
-form; `HCPSclass` replaced both of them at once (section 2.6).
-
----
-
-## 4. Implementation notes
-
-### 4.1 Sliding extrema
+### 3.1 Sliding extrema
 
 `running_extreme_1d` computes a sliding max or min over a window of
 length 2w+1 along one axis in O(N log w): pad with sentinels, build
@@ -357,7 +279,7 @@ dimensions; the per-row nanmean is used, which is an approximation.
 `window_sum_2d` does the same for NaN-aware sums and counts using
 cumulative sums, for the annulus mean.
 
-### 4.2 Performance
+### 3.2 Performance
 
 Measured on a 721 by 1440 grid (0.25 degree global) in the test suite:
 
@@ -369,16 +291,16 @@ Measured on a 721 by 1440 grid (0.25 degree global) in the test suite:
 CAVE computes per frame on load, so a 41-frame loop costs under a
 minute on first display and is cached after. A regional grid is faster.
 
-### 4.3 Missing data
+### 3.3 Missing data
 
 Anything non-finite or below `MISSING_THRESHOLD` (-99990) is treated as
 missing on input. Missing propagates to NaN on output at that point only.
 
 ---
 
-## 5. Derived parameter wiring
+## 4. Derived parameter wiring
 
-### 5.1 How a definition maps to a function
+### 4.1 How a definition maps to a function
 
 Each XML under `definitions/` names a Python entry point as
 `Module.function` and lists inputs. AWIPS passes the Field and
@@ -390,7 +312,7 @@ exactly.** The `dx` and `dy` pseudo-fields are grid spacing in meters.
 Definitions declare `unit=""`. A definition with no unit attribute
 raised a DataCubeException on the OPC build.
 
-### 5.2 Entry points and argument order
+### 4.2 Entry points and argument order
 
 Hart family (`cps_HartCPS.py`):
 
@@ -403,11 +325,7 @@ Hart family (`cps_HartCPS.py`):
 | `executeB` | z925, z700, u850, v850, u700, v700, u500, v500, u300, v300, psfc, coriolis, dx, dy, radiusKm, layerScale, capHpa |
 | `executeHartClass` | z1000, z925, z850, z700, z500, z400, z300, u850, v850, u700, v700, u500, v500, u300, v300, psfc, coriolis, dx, dy, radiusKm, bThresholdM, layerScale, depthM, blobKm, capHpa |
 
-The retired vorticity family's entry points (`CycloneCore.execute`,
-`executeVorticity`, `executeClass`, `executeIndex`) are documented in
-`reference/vorticity_proxy/README.md`, not here.
-
-### 5.3 Tunables by definition
+### 4.3 Tunables by definition
 
 Every tunable is a ConstantField in the XML. Edit the value and restart
 CAVE; no Python change is needed.
@@ -436,7 +354,7 @@ What each does:
 - `bThresholdM`: Hart's frontal threshold for B, used by `HCPSclass`.
   Hart's own is 10 m.
 
-### 5.4 Adding definitions
+### 4.4 Adding definitions
 
 To change the levels of a band, edit the GH Field levels and the
 matching pressure ConstantFields together. To add a GFS-only definition
@@ -449,9 +367,9 @@ levels.
 
 ---
 
-## 6. Installation and localization
+## 5. Installation and localization
 
-### 6.1 EDEX files
+### 5.1 EDEX files
 
 Site level under `/awips2/edex/data/utility/common_static/site/<SITE>/`:
 
@@ -462,10 +380,6 @@ colormaps/Grid/CPS_CoreDiverging.cmap
 colormaps/Grid/CPS_HartClass.cmap
 ```
 
-A site with the retired vorticity family still installed from before
-2026-09-18 should also remove the files listed in section 3's EDEX
-delete list.
-
 Restart CAVE after any change. The embedded interpreter caches Python
 modules until restart, and definitions are cached as well. Products
 already loaded in a pane keep their old data until cleared and
@@ -475,7 +389,7 @@ Colormaps go in the existing Grid folder because creating a new
 colormap subfolder at site level was not possible on the OPC build.
 They appear under Grid in the legend's Change Colormap menu.
 
-### 6.2 First-install verification
+### 5.2 First-install verification
 
 1. Product Browser, Grid, GFS: the five Hart products (HVTL, HVTU,
    HCPSclass, HCPSidx, HB) appear at Surface. Missing products mean a
@@ -494,7 +408,7 @@ They appear under Grid in the legend's Change Colormap menu.
    2.7) is the first thing to check; it affects only these two
    products' thickness-gradient step.
 
-### 6.3 Style rules
+### 5.3 Style rules
 
 `styleRules/cpsStyleRules.xml` is written in the base schema (one
 `paramLevelMatch` per rule with `parameter` children, `contourLabeling`
@@ -505,7 +419,7 @@ save a procedure; the bundle stores them. Untested fallback: paste the
 rules into site copies of `gridImageryStyleRules.xml` and
 `gridContourStyleRules.xml`.
 
-### 6.4 Menus
+### 5.4 Menus
 
 `menus/volumebrowser/cpsFields.xml` holds Volume Browser field entries
 in the standard `contribute` form. It is not a drop-in; paste its lines
@@ -519,13 +433,13 @@ bundle file extracted from the saved procedure:
             menuText="Cyclone Phase 4-panel" id="cpsHart4panel"/>
 ```
 
-### 6.5 Troubleshooting
+### 5.5 Troubleshooting
 
 | Symptom | Cause | Fix |
 | :--- | :--- | :--- |
 | product missing from Product Browser | definition failed to parse, or an input field or level spelling not in the inventory | CAVE log names the file; check Field spellings against a base definition |
 | DataCubeException on load | no unit attribute, or stale Python module | ensure `unit=""`; replace the .py and restart CAVE |
-| HB/HCPSclass mirrored or lobed at a low | wrong `ORIENTATION_MODE` in `cps_HartCPS.py` | check against mode 1 (section 2.7); see 6.2 step 4 |
+| HB/HCPSclass mirrored or lobed at a low | wrong `ORIENTATION_MODE` in `cps_HartCPS.py` | check against mode 1 (section 2.7); see 5.2 step 4 |
 | whole field green on load | style rule not applied | pick the colormap from the legend or load the procedure |
 | Hart products vanish after adding P | P field level spelling | check how base definitions reference Surface |
 | blank over land | below-ground mask | expected |
@@ -534,7 +448,7 @@ bundle file extracted from the saved procedure:
 
 ---
 
-## 7. Tests
+## 6. Tests
 
 ```
 python3 -m pytest tests/d2d_cps tests/cps -q
@@ -552,12 +466,9 @@ performance budget on a full 0.25 degree grid.
 `tests/d2d_cps/conftest.py` puts the functions directory on the path
 so the files import exactly as CAVE imports them.
 
-The retired vorticity family's tests live in `tests/reference_vorticity/`
-and are not part of this suite.
-
 ---
 
-## 8. Known limitations and future work
+## 7. Known limitations and future work
 
 **Design decision, final (2026-09-18).** The square analysis window is
 kept permanently. A circular window was considered and rejected: the
@@ -569,7 +480,7 @@ fixed. This is not future work; do not reopen it without a new reason
 to revisit the cost/accuracy trade-off.
 
 - Standard-level bands differ from Hart's. A GFS-only 13-level
-  definition is a small addition (5.4).
+  definition is a small addition (4.4).
 - Parameter B (`HB`, and `HCPSclass`, which depends on it for its
   frontal/symmetric split) uses the steering flow (mean wind at
   850/700/500/300 hPa) as its motion proxy and a linear-gradient
@@ -597,7 +508,7 @@ to revisit the cost/accuracy trade-off.
 
 ---
 
-## 9. References
+## 8. References
 
 - Hart, R. E., 2003: A cyclone phase space derived from thermal wind
   and thermal asymmetry. Mon. Wea. Rev., 131, 585 to 616.
@@ -607,7 +518,7 @@ to revisit the cost/accuracy trade-off.
 
 ---
 
-## 10. Document set
+## 9. Document set
 
 Where everything about this package lives, and what each piece is for:
 
