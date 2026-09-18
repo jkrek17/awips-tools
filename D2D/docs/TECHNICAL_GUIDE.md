@@ -152,7 +152,7 @@ keeps one).
 | 3 | frontal shallow warm core | > 10 | warm | cold | transition under way |
 | 4 | frontal cold core | > 10 | cold | any | extratropical low, transition complete |
 | 5 | symmetric cold core | <= 10 | cold | any | occluded or cutoff cold low |
-| 6 | mid-level vortex | any | cold | warm | rare, treat as unclassified |
+| 6 | mid-level vortex (lower cold, upper warm) | any | cold | warm | perturbation peaking at mid-levels; rarely occupied |
 | blank | | | | | no closed low, or B undefined (steering below 1 m/s) |
 
 Boundary convention: warm is VTL or VTU >= 0, cold is < 0; frontal is
@@ -247,15 +247,19 @@ worth keeping straight when comparing the two:
    and a first-order gradient approximation scaled from the 925-700 hPa
    layer (section 2.7), and is unreliable for a stationary or
    steering-opposed storm.
-6. Hart's diagrams need a tracked tropical cyclone; this package
-   classifies any closed low at least about 5 hPa deep, including
-   post-tropical, hybrid, and non-tropical systems no tracker follows.
-7. Both are memoryless at any one time. Hart's onset and completion
+6. Hart's diagrams are drawn for the cyclones a tracker identifies;
+   this package classifies any closed low at least about 5 hPa deep on
+   any model in the local inventory, with no tracker.
+7. Hart (2003) applies a 24 h running mean to the parameters before
+   plotting; this package's fields are instantaneous per forecast hour,
+   so they are noisier frame to frame (the flicker noted in section 7).
+8. Both are memoryless at any one time. Hart's onset and completion
    times come from the plotted trajectory; this package's come from
    the animation, the same way.
-8. Terrain: Hart's tracker rarely meets significant terrain; this
-   package masks below-ground levels (section 2.4) and blanks over ice
-   sheets and high terrain.
+9. Terrain: a tracked center is evaluated where the tracker places it;
+   this package evaluates every grid point, so it masks below-ground
+   levels explicitly (section 2.4) and blanks over ice sheets and high
+   terrain.
 
 ---
 

@@ -470,7 +470,7 @@ def make_fig1(lat2d=None, lon2d=None):
         (0, lim, 0, lim, "#e34948", "deep warm core"),
         (0, lim, -lim, 0, "#eb6834", "shallow warm core"),
         (-lim, 0, -lim, 0, "#2a78d6", "cold core"),
-        (-lim, 0, 0, lim, "#4a3aa7", "mid-level or hybrid"),
+        (-lim, 0, 0, lim, "#4a3aa7", "lower cold, upper warm"),
     ]
     for x0, x1, y0, y1, color, label in quadrants:
         ax.add_patch(Rectangle((x0, y0), x1 - x0, y1 - y0, facecolor=color, alpha=0.11, edgecolor="none", zorder=0))
@@ -479,7 +479,7 @@ def make_fig1(lat2d=None, lon2d=None):
         "deep warm core": (lim * 0.55, lim * 0.90),
         "shallow warm core": (lim * 0.55, -lim * 0.90),
         "cold core": (-lim * 0.95, -lim * 0.90),
-        "mid-level or hybrid": (-lim * 0.95, lim * 0.68),
+        "lower cold, upper warm": (-lim * 0.95, lim * 0.68),
     }
     for _, _, _, _, _, label in quadrants:
         x, y = label_pos[label]
@@ -1992,7 +1992,7 @@ def make_fig10():
         (0, lim, 0, lim, "#e34948", "deep warm core"),
         (0, lim, -lim, 0, "#eb6834", "shallow warm core"),
         (-lim, 0, -lim, 0, "#2a78d6", "cold core"),
-        (-lim, 0, 0, lim, "#4a3aa7", "mid-level or hybrid"),
+        (-lim, 0, 0, lim, "#4a3aa7", "lower cold, upper warm"),
     ]
     for x0, x1, y0, y1, color, _ in quadrants_b:
         ax_b.add_patch(Rectangle((x0, y0), x1 - x0, y1 - y0, facecolor=color, alpha=0.11, edgecolor="none", zorder=0))
@@ -2002,7 +2002,7 @@ def make_fig10():
         "deep warm core": (lim * 0.55, lim * 0.90),
         "shallow warm core": (lim * 0.55, -lim * 0.90),
         "cold core": (-lim * 0.95, -lim * 0.90),
-        "mid-level or hybrid": (-lim * 0.95, lim * 0.68),
+        "lower cold, upper warm": (-lim * 0.95, lim * 0.68),
     }
     for _, _, _, _, _, label in quadrants_b:
         x, y = label_pos_b[label]

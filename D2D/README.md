@@ -33,9 +33,7 @@ The magnitudes here are meters (of `dZ`) per unit of `ln(pressure in
 hPa)` -- plain meters. A mature hurricane typically samples HVTL/HVTU
 in the +100 to +300 m range; a cold-core low typically samples -100 to
 -300 m. These are **near but not equal to** the published Hart
-(2003)/FSU CPS values for the same real storms (typically well under
-the ~2% agreement measured against `cps.hart.thermal_wind` on a
-synthetic vortex in `tests/d2d_cps/test_hart_cps.py`), both because of
+(2003)/FSU CPS values for the same real storms, both because of
 the square-vs-circle window difference and because the standard levels
 used here are not exactly Hart's own bands (next section). Do not
 report HVTL/HVTU numbers as if they were the published FSU CPS
@@ -203,7 +201,7 @@ eye" into "sample one number at the low center":
 | 3 | frontal shallow warm core | > 10 | warm | cold | transition under way |
 | 4 | frontal cold core | > 10 | cold | any | extratropical low, transition complete |
 | 5 | symmetric cold core | <= 10 | cold | any | occluded or cutoff cold low |
-| 6 | mid-level vortex | any | cold | warm | rare, treat as unclassified |
+| 6 | mid-level vortex (lower cold, upper warm) | any | cold | warm | perturbation peaking at mid-levels; rarely occupied |
 | blank | | | | | no closed low, or B undefined (steering below 1 m/s) |
 
 The codes rise along a typical extratropical transition (0, 2, 3, 4)

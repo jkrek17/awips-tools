@@ -10,10 +10,11 @@ parameters, onset when the asymmetry exceeds 10 m and completion when
 the lower-tropospheric thermal wind turns negative, and Hart et al. (2006) linked
 the post-transition trajectory to whether a system re-intensifies as a
 warm-seclusion cyclone of the type described by Shapiro and Keyser
-(1990). Operational access to these diagnostics has been limited to
-static, storm-centered plots produced externally for tracked tropical
-cyclones, which excludes the hybrid, post-tropical, and non-tropical
-systems of greatest concern to marine forecast offices. This work
+(1990). Operational access to these diagnostics has been through
+storm-centered diagrams produced outside the forecast workstation for
+cyclones identified by an external tracker in a fixed set of models,
+which places them outside the forecaster's own display, model
+inventory and analysis workflow. This work
 reformulates the thermal wind parameters as gridded fields computed on
 demand inside the AWIPS II display system as derived parameters,
 requiring only geopotential height on standard isobaric levels and
@@ -31,7 +32,8 @@ regression against log pressure over 925 to 700 hPa and 500 to 300 hPa,
 terrain is handled by excluding below-ground levels, and a closed-low
 detector on 1000 hPa height restricts classification to closed cyclones
 at least 5 hPa deep. A single categorical field classifies each detected low into one of
-Hart's six named structures from all three parameters, and a
+seven classes, the intersection of the quadrants of Hart's two
+diagrams, from all three parameters, and a
 continuous index summarizes the thermal wind terms. Computation on a
 global 0.25 degree grid takes one to two seconds
 per forecast hour. An initial evaluation on GFS forecasts found values

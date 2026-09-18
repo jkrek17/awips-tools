@@ -74,10 +74,10 @@ expands, so these crossings are the forecast question.
 
 **[Slide 6, what we built] 3:50**
 
-Until now the only operational access was FSU's web page: static plots,
-computed externally, for tracked tropical cyclones only. The hybrid,
-post-tropical, and non-tropical systems that OPC actually warns on
-aren't on it.
+Until now the operational access was the FSU cyclone phase page:
+storm-centered diagrams for the cyclones its tracker finds, in a fixed
+set of models, outside the workstation. What OPC needs is the same
+diagnostic inside D2D, on every model we run, for any low we point at.
 
 We reformulated the parameters as gridded fields and implemented them
 as AWIPS derived parameters. At every grid point the code evaluates the
@@ -106,7 +106,7 @@ comes out cold core, right where the surface low actually sits.
 
 This is the operational display. Four panels: the lower and upper
 terms, a joint class field, and an index. The class reads at the
-storm's center, one number for one of Hart's seven named states:
+storm's center, one number for one of seven classes built from Hart's two diagrams:
 symmetric or frontal, deep or shallow warm core, cold core, or a rare
 mid-level vortex. Step through the frames on a transitioning storm and
 the class climbs 0, then 2, then 3, then 4; a warm seclusion runs 4 and

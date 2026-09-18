@@ -27,17 +27,17 @@
       structure through the lower- and upper-tropospheric thermal wind,
       derived from the vertical change of the geopotential height
       perturbation within 500&nbsp;km of the storm center, together with a measure
-      of low-level thermal asymmetry. Evans and Hart (2003) showed that the
-      defined objective onset and
-      completion times for extratropical transition (ET) from these
-      parameters, onset when the asymmetry exceeds 10 m and completion when
+      of low-level thermal asymmetry. Evans and Hart (2003) defined objective
+      onset and completion times for extratropical transition (ET) from these
+      parameters, onset when the asymmetry exceeds 10&nbsp;m and completion when
       the lower-tropospheric thermal wind turns negative, and Hart et al. (2006) linked
       the post-transition trajectory to whether a system re-intensifies as a
       warm-seclusion cyclone of the type described by Shapiro and Keyser
-      (1990). Operational access to these diagnostics has been limited to
-      static, storm-centered plots produced externally for tracked tropical
-      cyclones, which excludes the hybrid, post-tropical, and non-tropical
-      systems of greatest concern to marine forecast offices. This work
+      (1990). Operational access to these diagnostics has been through
+      storm-centered diagrams produced outside the forecast workstation for
+      cyclones identified by an external tracker in a fixed set of models,
+      which places them outside the forecaster's own display, model
+      inventory and analysis workflow. This work
       reformulates the thermal wind parameters as gridded fields computed on
       demand inside the AWIPS II display system as derived parameters,
       requiring only geopotential height on standard isobaric levels and
@@ -49,9 +49,9 @@
       terrain is handled by excluding below-ground levels, and a closed-low
       detector on 1000&nbsp;hPa height restricts classification to closed cyclones
       at least 5&nbsp;hPa deep. A single categorical field classifies each detected
-      low into one of Hart's six named structures from all three
-      parameters, and a continuous index summarizes the thermal wind
-      terms. Computation on a global 0.25&nbsp;degree grid takes one to two seconds
+      low into one of seven classes, the intersection of the quadrants of
+      Hart's two diagrams, from all three parameters, and a continuous index
+      summarizes the thermal wind terms. Computation on a global 0.25&nbsp;degree grid takes one to two seconds
       per forecast hour. An initial evaluation on GFS forecasts found values
       for a mature typhoon comparable in magnitude to those Hart reported for
       hurricanes, allowing for the different layer definitions, a
@@ -90,13 +90,16 @@
     re-intensify to hurricane-force winds far outside the tropics [3].
     Evans and Hart (2003) defined objective ET onset as the hour <em>B</em>
     exceeds 10&nbsp;m and completion as the hour &minus;V<sub>T</sub><sup>L</sup>
-    turns negative [2]; the loss of the upper warm core, &minus;V<sub>T</sub><sup>U</sup>
-    turning negative, typically falls between the two, and Jones et al. (2003) catalogued the forecast
-    challenges ET poses more broadly [5]. Until now, operational access to
-    these parameters has meant a static, storm-centered plot produced
-    externally for a tracked tropical cyclone, leaving exactly the
-    hybrid, post-tropical, and non-tropical systems a marine forecaster most
-    needs help with off the page entirely, because no tracker follows them.
+    turns negative [2]; the warm core erodes from the top down during
+    transition, so the loss of the upper warm core, &minus;V<sub>T</sub><sup>U</sup>
+    turning negative, commonly precedes completion [1]. Jones et al. (2003)
+    catalogued the forecast challenges ET poses more broadly [5].
+    Operational access to these parameters has been through storm-centered
+    diagrams on the Florida State University cyclone phase page, produced
+    for the cyclones that page's tracker identifies in a fixed set of
+    models. Those diagrams are not available inside the forecast
+    workstation, for every model in a local inventory, or for a low the
+    forecaster picks out on the map.
   </p>
   <figure id="fig1">
     <img src="figures/fig10_two_diagrams.png"
@@ -116,14 +119,13 @@
       <strong>(b)</strong> Phase 2: &minus;V<sub>T</sub><sup>L</sup> against
       &minus;V<sub>T</sub><sup>U</sup>, both in meters, with the four
       structural quadrants shaded and labeled: deep warm core, shallow
-      warm core, cold core, and mid-level/hybrid, the same categories
+      warm core, cold core, and lower cold with upper warm, the same categories
       Section 2's table defines. Both panels add a dashed branch from the
       trajectory's last point toward (5, 60, &minus;180)&nbsp;m, labeled
       "warm seclusion (some storms)": that endpoint sits back inside the
       symmetric warm core quadrant, where Hart places the re-formed
       low-level warm core of a warm seclusion, the frontal-fracture
-      structure of Shapiro and Keyser (1990) [4] this article's own
-      introduction mentions above. The validation case discussed with real
+      structure of Shapiro and Keyser (1990) [4] introduced in Section 1. The validation case discussed with real
       computed values in Section 5 (a typhoon sampled at 984&nbsp;mb in a
       72&nbsp;h GFS forecast) can be located on both panels using the
       definitions above.</figcaption>
@@ -218,9 +220,9 @@
   <p class="eq">&minus;<i>V</i><sub>T</sub> = &part;(&Delta;<i>Z</i>) / &part;(ln <i>p</i>)</p>
   <p>
     positive when &Delta;Z shrinks with height (warm core), negative when
-    it grows (cold core). Hart's own bands are 900&ndash;600 and
-    600&ndash;300&nbsp;hPa at 50&nbsp;hPa spacing, carried only by the GFS in this
-    D2D inventory; this package instead uses the universal standard levels
+    it grows (cold core). Hart's own layers are 900&ndash;600 and
+    600&ndash;300&nbsp;hPa, fitted over the 50&nbsp;hPa levels of his data, a
+    spacing carried only by the GFS in this D2D inventory; this package instead uses the universal standard levels
     925/850/700&nbsp;hPa (lower) and 500/400/300&nbsp;hPa (upper), leaving
     700&ndash;500&nbsp;hPa deliberately unassigned rather than biasing one
     band's slope with a layer that straddles Hart's true 600&nbsp;hPa
@@ -295,7 +297,7 @@
     against 0, with no neutral band on any of the three:
   </p>
   <table>
-    <caption><code>HCPSclass</code>: Hart's six named structures, plus a mid-level/hybrid code.</caption>
+    <caption><code>HCPSclass</code>: the seven classes formed by intersecting the quadrants of Hart's two diagrams.</caption>
     <thead><tr><th>Code</th><th>Name</th><th><i>B</i></th><th>&minus;V<sub>T</sub><sup>L</sup></th><th>&minus;V<sub>T</sub><sup>U</sup></th><th>Typical system</th></tr></thead>
     <tbody>
       <tr><td>0</td><td>symmetric deep warm core</td><td>&le; 10</td><td>warm</td><td>warm</td><td>hurricane, typhoon</td></tr>
@@ -304,7 +306,7 @@
       <tr><td>3</td><td>frontal shallow warm core</td><td>&gt; 10</td><td>warm</td><td>cold</td><td>transition under way</td></tr>
       <tr><td>4</td><td>frontal cold core</td><td>&gt; 10</td><td>cold</td><td>any</td><td>extratropical low, transition complete</td></tr>
       <tr><td>5</td><td>symmetric cold core</td><td>&le; 10</td><td>cold</td><td>any</td><td>occluded or cutoff cold low</td></tr>
-      <tr><td>6</td><td>mid-level vortex</td><td>any</td><td>cold</td><td>warm</td><td>rare, treat as unclassified</td></tr>
+      <tr><td>6</td><td>mid-level vortex (lower cold, upper warm)</td><td>any</td><td>cold</td><td>warm</td><td>perturbation peaking at mid-levels; rarely occupied</td></tr>
       <tr><td>blank</td><td colspan="4">no closed low, or <i>B</i> undefined (steering below 1&nbsp;m/s)</td></tr>
     </tbody>
   </table>
@@ -363,8 +365,8 @@
       (<i>B</i>, &minus;V<sub>T</sub><sup>L</sup>) values, alongside a
       schematic transition trajectory shaped like Figure 1's own but
       redrawn on <i>B</i> instead of &minus;V<sub>T</sub><sup>U</sup>.
-      Figure 1a now shows that same <i>B</i>&ndash;&minus;V<sub>T</sub><sup>L</sup>
-      pairing directly, on its own (different) schematic trajectory.</figcaption>
+      Figure 1a shows the same <i>B</i>&ndash;&minus;V<sub>T</sub><sup>L</sup>
+      pairing on its own (different) schematic trajectory.</figcaption>
   </figure>
 
   <h3>Relation to the storm-centered diagrams</h3>
@@ -398,16 +400,20 @@
       mean wind as a motion proxy and a first-order gradient
       approximation scaled from the 925&ndash;700&nbsp;hPa layer, and
       is unreliable for a stationary or steering-opposed storm.</li>
-    <li>Hart's diagrams need a tracked tropical cyclone; this package
-      classifies any closed low at least about 5&nbsp;hPa deep,
-      including post-tropical, hybrid, and non-tropical systems no
-      tracker follows.</li>
+    <li>Hart's diagrams are drawn for the cyclones a tracker identifies;
+      this package classifies any closed low at least about 5&nbsp;hPa
+      deep on any model in the local inventory, with no tracker.</li>
+    <li>Hart (2003) applies a 24&nbsp;h running mean to the parameters
+      before plotting; this package's fields are instantaneous per
+      forecast hour, so they are noisier frame to frame, and the flicker
+      described in Section 6 is the visible consequence.</li>
     <li>Both are memoryless at any one time. Hart's onset and
       completion times come from the plotted trajectory; this
       package's come from the animation, the same way.</li>
-    <li>Terrain: Hart's tracker rarely meets significant terrain; this
-      package masks below-ground levels and blanks over ice sheets and
-      high terrain.</li>
+    <li>Terrain: a tracked center is evaluated where the tracker places
+      it; this package evaluates every grid point, so it masks
+      below-ground levels explicitly and blanks over ice sheets and high
+      terrain.</li>
   </ol>
 
   <figure id="fig2">
@@ -434,7 +440,7 @@
   <figure id="fig3">
     <img src="figures/fig3_gridded.png"
          alt="Four-panel map figure over a synthetic domain: 1000 hPa height with both synthetic vortices visible; the gridded lower thermal wind field with a hatched terrain block; the gridded upper thermal wind field; and the joint classification field with 1000 hPa height contours overlaid, all with a terrain block outlined in dashed gray.">
-    <figcaption><strong>Figure 3.</strong> The four gridded Hart
+    <figcaption><strong>Figure 3.</strong> Four of the gridded
       products on the <em>synthetic</em> two-vortex domain (deep warm core,
       symmetric, westerly steering,
       at 28&deg;N 130&deg;W, tilted cold core at 50&deg;N 140&deg;W, a 750&nbsp;hPa terrain

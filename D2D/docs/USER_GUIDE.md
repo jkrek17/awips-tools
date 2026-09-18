@@ -169,7 +169,7 @@ it as a gridded product at all.
 
 | Product | Menu name | What it shows | Read as |
 | :--- | :--- | :--- | :--- |
-| HCPSclass | Hart CPS Class | one of Hart's six named structures (0-6) at each detected low, blank elsewhere | see "Reading the class" in section 5 |
+| HCPSclass | Hart CPS Class | one of seven classes (0-6), the intersection of the quadrants of Hart's two diagrams, at each detected low, blank elsewhere | see "Reading the class" in section 5 |
 | HVTL | Hart CPS -VT lower (925-700) (m) | lower thermal wind, meters | positive warm core, negative cold core |
 | HVTU | Hart CPS -VT upper (500-300) (m) | upper thermal wind, meters | positive warm core, negative cold core |
 | HB | Hart CPS B Asymmetry (HB) | thermal asymmetry, meters (900-600 hPa equivalent) | at or below 10 symmetric, above 10 frontal |
@@ -233,7 +233,7 @@ keeps one).
 | 3 | yellow | frontal shallow warm core | > 10 | warm | cold | transition under way |
 | 4 | blue | frontal cold core | > 10 | cold | any | extratropical low, transition complete |
 | 5 | violet | symmetric cold core | <= 10 | cold | any | occluded or cutoff cold low |
-| 6 | gray | mid-level vortex | any | cold | warm | rare, treat as unclassified |
+| 6 | gray | mid-level vortex (lower cold, upper warm) | any | cold | warm | perturbation peaking at mid-levels; rarely occupied |
 | blank | | not a closed low, or B undefined | | | | no closed low, or steering below 1 m/s |
 
 The codes rise along a typical extratropical transition: 0, 2, 3, 4. A
