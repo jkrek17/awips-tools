@@ -22,9 +22,9 @@
 -->
 <menuTemplate xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
     <contribute xsi:type="titleItem" titleText="------ Hart CPS (height based, experimental) ------" id="hartCpsTitle"/>
-    <contribute xsi:type="menuItem" menuText="Hart CPS Lower -VT (HVTL)" key="HVTL" indentText="false" id="hartCpsHVTL"/>
-    <contribute xsi:type="menuItem" menuText="Hart CPS Upper -VT (HVTU)" key="HVTU" indentText="false" id="hartCpsHVTU"/>
-    <contribute xsi:type="menuItem" menuText="Hart CPS Core Index" key="HCPSidx" indentText="false" id="hartCpsHCPSidx"/>
-    <contribute xsi:type="menuItem" menuText="Hart CPS B Asymmetry (HB)" key="HB" indentText="false" id="hartCpsHB"/>
-    <contribute xsi:type="menuItem" menuText="Hart CPS Class" key="HCPSclass" indentText="false" id="hartCpsHCPSclass"/>
+    <contribute xsi:type="menuItem" menuText="Hart CPS -VTL 925-700 (m)" key="HVTL" indentText="false" id="hartCpsHVTL"/>
+    <contribute xsi:type="menuItem" menuText="Hart CPS -VTU 500-300 (m)" key="HVTU" indentText="false" id="hartCpsHVTU"/>
+    <contribute xsi:type="menuItem" menuText="Hart CPS Index -3 to +3" key="HCPSidx" indentText="false" id="hartCpsHCPSidx"/>
+    <contribute xsi:type="menuItem" menuText="Hart CPS B 900-600 equiv (m)" key="HB" indentText="false" id="hartCpsHB"/>
+    <contribute xsi:type="menuItem" menuText="Hart CPS Class 0-6" key="HCPSclass" indentText="false" id="hartCpsHCPSclass"/>
 </menuTemplate>

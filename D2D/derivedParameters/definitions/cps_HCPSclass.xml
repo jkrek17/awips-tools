@@ -14,7 +14,7 @@
     3  frontal shallow warm core    B >  10, lower VT >= 0, upper VT <  0
     4  frontal cold core            B >  10, lower VT <  0
     5  symmetric cold core          B <= 10, lower VT <  0
-    6  mid-level vortex             any B,   lower VT <  0, upper VT >= 0
+    6  shallow cold core (lower cold, upper warm)  any B, lower VT < 0, upper VT >= 0
 
   (row 6 takes precedence over rows 4/5 whenever lower VT < 0 and upper
   VT >= 0 at once - see cps_HartCPS.hart_class's own docstring for the full
@@ -51,7 +51,7 @@
   Field with <ConstantField value="1.0"/> at the same position to
   assume the Northern Hemisphere.
 -->
-<DerivedParameter abbreviation="HCPSclass" name="Hart CPS class (0 sym deep warm,1 sym shallow warm,2 frontal deep warm,3 frontal shallow warm,4 frontal cold,5 sym cold,6 mid-level)" unit="">
+<DerivedParameter abbreviation="HCPSclass" name="Hart CPS Class 0-6" unit="">
     <Method name="cps_HartCPS.executeHartClass" levels="Surface">
         <Field abbreviation="GH" level="1000MB"/>
         <Field abbreviation="GH" level="925MB"/>
@@ -80,8 +80,9 @@
              line for parameter B (900-600 hPa equivalent) -->
         <ConstantField value="10.0"/>
         <!-- layerScale: rescales B from this module's 925-700 hPa layer
-             to a 900-600 hPa equivalent - see cps_HB.xml -->
-        <ConstantField value="1.4553"/>
+             to a 900-600 hPa equivalent, ln(900/600)/ln(925/700) =
+             1.45477... - see cps_HB.xml -->
+        <ConstantField value="1.4548"/>
         <!-- depthM (m): the closed-low mask's annulus depth test, see
              cps_HCPSidx.xml -->
         <ConstantField value="40.0"/>

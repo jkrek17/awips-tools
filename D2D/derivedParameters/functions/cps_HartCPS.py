@@ -88,7 +88,35 @@ smooth far field, and the far field's value changes little between
 square's corners rarely changes which value gets picked, or changes it
 only slightly. See `tests/d2d_cps/test_hart_cps.py` for a direct
 numerical comparison against `cps.hart.thermal_wind` on a synthetic
-warm-core vortex (agreement within 2%).
+warm-core vortex.
+
+Longitude wrap on global grids
+--------------------------------
+
+`window_extreme_2d`/`window_sum_2d` (and, through them, `delta_z`,
+`window_mean`, and `closed_low_mask`) slide their x-direction pass
+along axis 1 of the field array. On a regional grid that is exactly
+right: there is real "off the edge of the grid" on both sides, and the
+window should shrink there rather than wrap. On a *global* lat/lon
+grid, axis 1 is longitude running all the way around the planet, so
+column 0's true west neighbor is the *last* column, not nothing --
+clipping the window at the array edge instead of wrapping it silently
+halves the effective window (and so `dZ`) for every point within
+`RADIUS_KM` of the seam. `is_global_lon(nx, dy_m)` detects this case:
+for an equal-angular-spacing lat/lon grid, `nx` columns times the
+(latitude-independent) row spacing `dy_m` equals the Earth's
+circumference if and only if those `nx` columns span the full 360
+degrees of longitude at the same angular spacing as `dy_m`'s
+north-south step -- true for a genuinely global grid, false for a
+regional one (whose `nx` columns span less than 360 degrees) purely by
+how many columns happen to fit the same test. `delta_z`, `window_mean`,
+and `closed_low_mask` each take an optional `global_lon` keyword
+(`None`, the default, means "decide with `is_global_lon`"; `True`/
+`False` forces the decision either way, mainly so a test can exercise
+both code paths on the same grid) and pass the resulting `wrap_x` flag
+down to `window_extreme_2d`/`window_sum_2d`, which cyclically pad the
+columns (by the largest per-row half-width actually needed, clamped to
+`nx // 2`) before the x pass and crop the padding back off afterward.
 
 Closed-low mask level
 ----------------------
@@ -174,8 +202,13 @@ right-minus-left half-window mean of 900-600 hPa thickness across the
 storm's own direction of motion, over the same 500 km circle VTL/VTU
 use: `B = h * (mean_right - mean_left)`, `h = +1` in the Northern
 Hemisphere, `-1` in the Southern, so that the frontal configuration
-(warm/thick air on the equatorward flank of the track) always reads
-positive. `B_THRESHOLD_M` (10 m) separates a symmetric, tropical-like
+(warm/thick air to the right of the track in the Northern Hemisphere,
+to the left in the Southern) always reads positive. B is relative to
+the direction of motion, not to latitude -- it is not "warm air on the
+equatorward flank": a storm moving east has its warm side to the
+south, but a storm moving west has its warm side to the north, for the
+identical physical thickness field. `B_THRESHOLD_M` (10 m) separates a
+symmetric, tropical-like
 thickness field (below) from an asymmetric, frontal one (above), and
 Evans and Hart (2003) define the extratropical transition **onset**
 as the first time `B` exceeds this threshold, with **completion** at
@@ -202,15 +235,33 @@ its own.
 
 **Motion**: Hart's own B needs the storm's own track heading; a
 gridded pointwise field has no storm to track, so the motion at each
-grid point is taken from the **steering flow**, the mean of the wind
-at 850, 700, 500, and 300 hPa (`steering`). This is a reasonable proxy
-for translation speed and direction on most systems, but it is only a
-proxy: a storm moving against its own steering flow (unusual, but not
-unheard of at landfall or during a sharp recurvature), or a nearly
-stationary system (`MIN_STEERING_MS`, 1 m/s, below which B is blanked
-to NaN rather than divide by a near-zero speed and amplify noise),
-gets an unreliable or missing B from this method even where Hart's own
-track-based B would be well defined.
+grid point is taken from the **steering flow**, meant as a proxy for
+the environmental deep-layer flow that carries a storm along -- not
+for the storm's own circulation. The pointwise vertical mean of the
+wind at 850, 700, 500, and 300 hPa (`steering`) is *not* that
+environmental flow by itself: inside any developed cyclone, the
+pointwise deep-layer mean wind at a point near the center is
+dominated by the vortex's own rotating circulation, which sweeps
+through every compass heading within a degree or so of the center, so
+using it directly as "storm motion" mixes the vortex into its own
+motion proxy. `steering_window_mean` fixes this by area-averaging each
+component of `steering`'s output over the same `RADIUS_KM` (500 km)
+analysis window `delta_z`/parameter B's own gradient use (via
+`window_mean`) *before* `parameter_b_grid` takes its direction: a
+symmetric vortex's own tangential wind averages out over a window that
+large, leaving the environmental flow the vortex is actually embedded
+in and steered by. `executeB` and `executeHartClass` both call
+`steering` then `steering_window_mean` in sequence; a caller of
+`parameter_b_grid` directly is responsible for passing already
+window-averaged `u_s`/`v_s`. This window-averaged steering is still
+only a proxy for translation speed and direction on most systems, not
+a substitute for Hart's own track: a storm moving against its own
+steering flow (unusual, but not unheard of at landfall or during a
+sharp recurvature), or a nearly stationary system (`MIN_STEERING_MS`,
+2 m/s, below which B is blanked to NaN rather than divide by a
+near-zero speed and amplify noise), gets an unreliable or missing B
+from this method even where Hart's own track-based B would be well
+defined.
 
 **Right-hand normal**: for steering `(u_s, v_s)`, the right-hand
 normal used in the Northern Hemisphere is `(v_s, -u_s)/|V_s|` (e.g.
@@ -231,7 +282,7 @@ scalar (assume one hemisphere everywhere).
 consistency with `LOWER_BAND`, the same standard-level lower
 thermal-wind band), not Hart's 900-600 hPa. Because thickness scales
 with the log-pressure depth of the layer, `B` is multiplied by
-`HART_B_LAYER_SCALE = ln(900/600)/ln(925/700)` (~1.4553) by default,
+`HART_B_LAYER_SCALE = ln(900/600)/ln(925/700)` (~1.4548) by default,
 so the result reads as a "900-600 equivalent" against Hart's own 10 m
 threshold; a caller wanting the raw, unscaled 925-700 hPa value passes
 `layerScale=1.0`.
@@ -312,9 +363,12 @@ __all__ = [
     "B_THRESHOLD_M",
     "HART_B_LAYER_SCALE",
     "MIN_STEERING_MS",
+    "MIN_VALID_FRACTION",
+    "EARTH_CIRCUMFERENCE_KM",
     "surface_pressure_hpa",
     "mask_below_ground",
     "running_extreme_1d",
+    "is_global_lon",
     "window_extreme_2d",
     "window_sum_2d",
     "cells_per_row",
@@ -327,6 +381,7 @@ __all__ = [
     "gradient_2d",
     "window_mean",
     "steering",
+    "steering_window_mean",
     "parameter_b_grid",
     "hart_class",
     "executeBand3",
@@ -448,7 +503,7 @@ B_THRESHOLD_M = 10.0
 #: consistency with VTL) to a "900-600 hPa equivalent" magnitude, so Hart's
 #: 10 m `B_THRESHOLD_M` applies correctly -- see the module docstring's
 #: "Parameter B and the joint class" section for the derivation
-#: (`ln(900/600)/ln(925/700)`, about 1.4553). Pass `layerScale=1.0` to
+#: (`ln(900/600)/ln(925/700)`, about 1.4548). Pass `layerScale=1.0` to
 #: `executeB`/`executeHartClass` for the raw, unscaled 925-700 hPa value.
 HART_B_LAYER_SCALE = math.log(900.0 / 600.0) / math.log(925.0 / 700.0)
 
@@ -457,8 +512,27 @@ HART_B_LAYER_SCALE = math.log(900.0 / 600.0) / math.log(925.0 / 700.0)
 #: no well defined "right of motion", and dividing by a near-zero speed to
 #: normalize the motion vector would otherwise amplify noise into a huge,
 #: meaningless B. See the module docstring's "Parameter B and the joint
-#: class" section, "Motion", for the steering-flow proxy this guards.
-MIN_STEERING_MS = 1.0
+#: class" section, "Motion", for the (window-averaged) steering-flow proxy
+#: this guards.
+MIN_STEERING_MS = 2.0
+
+#: Dimensionless fraction in (0, 1]; `delta_z` blanks (NaN) any point whose
+#: `RADIUS_KM` window has fewer than this fraction of valid (finite,
+#: above-ground) cells out of the cells the window geometrically covers --
+#: see `delta_z`'s own docstring. Guards against a window that is mostly
+#: below ground (e.g. within `RADIUS_KM` of the Greenland ice sheet or the
+#: Iceland highlands) silently returning a max-minus-min computed from
+#: whatever handful of valid cells happened to survive clipping, which
+#: biases the slope without any visible sign that anything was wrong.
+MIN_VALID_FRACTION = 0.5
+
+#: km; the Earth's mean circumference, used only by `is_global_lon` to
+#: recognize a global lat/lon grid (see the module docstring's "Longitude
+#: wrap on global grids" section). Not a claim of geodetic precision --
+#: `is_global_lon`'s own 2% tolerance is far looser than the difference
+#: between the equatorial and polar circumference, so this single value is
+#: adequate for the yes/no "is this grid global" decision it is used for.
+EARTH_CIRCUMFERENCE_KM = 40030.0
 
 
 # ---------------------------------------------------------------------------
@@ -647,6 +721,7 @@ def window_extreme_2d(
     half_x_cells_per_row: np.ndarray,
     half_y_cells: int,
     kind: str,
+    wrap_x: bool = False,
 ) -> np.ndarray:
     """2D sliding-window max or min, with a per-row half-width along x.
 
@@ -665,6 +740,20 @@ def window_extreme_2d(
     reduces each row to its own `nanmean` of `dx`, an approximation that
     is exact on a regular lat/lon grid and only approximate elsewhere.
 
+    `wrap_x` (default `False`): if `True`, the x-direction pass treats
+    axis 1 as cyclic (column 0's left neighbor is the last column, and
+    vice versa) instead of clipping at the array edge -- the caller
+    (`delta_z`/`window_mean`/`closed_low_mask`, via `is_global_lon`) sets
+    this on a genuinely global lat/lon grid, where axis 1 really is a
+    full circle of longitude; see the module docstring's "Longitude wrap
+    on global grids" section. Implemented by cyclically padding the
+    columns -- by the largest half-width actually needed among the rows
+    processed in a given group, clamped to `nx // 2` (padding any more
+    than half the grid width cannot reach any column that padding by
+    `nx // 2` does not already reach) -- before that group's
+    `running_extreme_1d` call, then cropping the padding back off. The
+    y-direction pass is never wrapped (poles are not a wraparound case).
+
     Rows are grouped by their (post-clamp) half-width value and processed
     together: for each distinct half-width, the matching rows are pulled
     out with fancy indexing, `running_extreme_1d` is run once along axis
@@ -675,9 +764,16 @@ def window_extreme_2d(
     scalar `half_y_cells`) then does the y-direction pass over the whole
     array at once.
 
-    Any half-width -- x or y -- is clamped to at most `(n-1)//2` for its
-    own axis (a window half-width any larger cannot mean anything
-    different from using the whole axis).
+    Any half-width -- x or y -- is clamped to at most `n - 1` for its own
+    axis (length-`n`): a half-width of `n - 1` already makes every
+    position's clipped window span the whole axis (`lo = max(0, j -
+    (n-1))` is 0 and `hi = min(n-1, j + (n-1))` is `n-1` for every valid
+    `j`), so nothing larger can mean anything different. `(n-1)//2` (an
+    earlier version of this clamp) is too tight: with a window `w = 2*
+    half_width+1`, `half_width = (n-1)//2` gives `w` short of `2*n-1`,
+    the window length needed for every position's clip to reach both
+    edges, so it silently returned a *smaller*, off-center window at a
+    row/column near either edge instead of "the whole axis" as intended.
     """
     if kind not in ("max", "min"):
         raise ValueError(f"kind must be 'max' or 'min'; got {kind!r}")
@@ -689,16 +785,30 @@ def window_extreme_2d(
     half_x = np.asarray(half_x_cells_per_row).astype(int)
     if half_x.shape != (ny,):
         raise ValueError(f"half_x_cells_per_row must have shape ({ny},); got {half_x.shape}")
-    max_half_x = max((nx - 1) // 2, 0)
+    max_half_x = max(nx - 1, 0)
     half_x = np.clip(half_x, 0, max_half_x)
 
-    max_half_y = max((ny - 1) // 2, 0)
+    max_half_y = max(ny - 1, 0)
     half_y = int(np.clip(int(half_y_cells), 0, max_half_y))
 
     out_x = np.empty_like(field)
-    for hw in np.unique(half_x):
-        rows = np.nonzero(half_x == hw)[0]
-        out_x[rows, :] = running_extreme_1d(field[rows, :], int(hw), axis=1, kind=kind)
+    if wrap_x and nx > 1 and half_x.size:
+        pad = min(nx // 2, int(half_x.max()))
+        if pad > 0:
+            padded_field = np.concatenate([field[:, nx - pad :], field, field[:, :pad]], axis=1)
+        else:
+            padded_field = field
+        for hw in np.unique(half_x):
+            hw_eff = min(int(hw), pad)
+            rows = np.nonzero(half_x == hw)[0]
+            res = running_extreme_1d(padded_field[rows, :], hw_eff, axis=1, kind=kind)
+            if pad > 0:
+                res = res[:, pad : pad + nx]
+            out_x[rows, :] = res
+    else:
+        for hw in np.unique(half_x):
+            rows = np.nonzero(half_x == hw)[0]
+            out_x[rows, :] = running_extreme_1d(field[rows, :], int(hw), axis=1, kind=kind)
 
     return running_extreme_1d(out_x, half_y, axis=0, kind=kind)
 
@@ -740,6 +850,7 @@ def window_sum_2d(
     field: np.ndarray,
     half_x_cells_per_row: np.ndarray,
     half_y_cells: int,
+    wrap_x: bool = False,
 ):
     """2D sliding-window sum and valid-point count, with the same
     per-row half-width along x (and clamping) that `window_extreme_2d`
@@ -756,12 +867,22 @@ def window_sum_2d(
     points in it, and a window that is entirely missing comes back with
     `count == 0` (the caller must guard the division).
 
+    `wrap_x` (default `False`): same cyclic-column meaning as
+    `window_extreme_2d`'s own `wrap_x` -- set on a genuinely global
+    lat/lon grid (see the module docstring's "Longitude wrap on global
+    grids" section), implemented the same way (cyclic padding by the
+    group's needed half-width, clamped to `nx // 2`, cropped back off
+    after the box-sum pass). The y-direction pass is never wrapped.
+
     Rows are grouped by their (post-clamp) half-width value exactly as
     `window_extreme_2d` groups them (same fancy-indexing pass, same
     number of `_box_sum_1d` calls along axis 1 as there are distinct
     half-width values), then a single `_box_sum_1d` call along axis 0
     with the scalar `half_y_cells` finishes the box sum/count over the
-    full 2D window. Edges are clipped, like `window_extreme_2d`.
+    full 2D window. Edges are clipped (unless `wrap_x`), like
+    `window_extreme_2d`; any half-width is clamped to at most `n - 1`
+    for its own axis, matching `window_extreme_2d`'s own corrected
+    clamp (see its docstring for why `(n-1)//2` is too tight).
 
     Returns `(sum_field, count)`, two arrays the same shape as `field`.
     """
@@ -773,10 +894,10 @@ def window_sum_2d(
     half_x = np.asarray(half_x_cells_per_row).astype(int)
     if half_x.shape != (ny,):
         raise ValueError(f"half_x_cells_per_row must have shape ({ny},); got {half_x.shape}")
-    max_half_x = max((nx - 1) // 2, 0)
+    max_half_x = max(nx - 1, 0)
     half_x = np.clip(half_x, 0, max_half_x)
 
-    max_half_y = max((ny - 1) // 2, 0)
+    max_half_y = max(ny - 1, 0)
     half_y = int(np.clip(int(half_y_cells), 0, max_half_y))
 
     valid = np.isfinite(field)
@@ -785,9 +906,25 @@ def window_sum_2d(
 
     sum_x = np.empty_like(field)
     cnt_x = np.empty_like(field)
-    for hw in np.unique(half_x):
-        rows = np.nonzero(half_x == hw)[0]
-        sum_x[rows, :], cnt_x[rows, :] = _box_sum_1d(values[rows, :], counts[rows, :], int(hw), axis=1)
+    if wrap_x and nx > 1 and half_x.size:
+        pad = min(nx // 2, int(half_x.max()))
+        if pad > 0:
+            values_p = np.concatenate([values[:, nx - pad :], values, values[:, :pad]], axis=1)
+            counts_p = np.concatenate([counts[:, nx - pad :], counts, counts[:, :pad]], axis=1)
+        else:
+            values_p, counts_p = values, counts
+        for hw in np.unique(half_x):
+            hw_eff = min(int(hw), pad)
+            rows = np.nonzero(half_x == hw)[0]
+            s, c = _box_sum_1d(values_p[rows, :], counts_p[rows, :], hw_eff, axis=1)
+            if pad > 0:
+                s = s[:, pad : pad + nx]
+                c = c[:, pad : pad + nx]
+            sum_x[rows, :], cnt_x[rows, :] = s, c
+    else:
+        for hw in np.unique(half_x):
+            rows = np.nonzero(half_x == hw)[0]
+            sum_x[rows, :], cnt_x[rows, :] = _box_sum_1d(values[rows, :], counts[rows, :], int(hw), axis=1)
 
     return _box_sum_1d(sum_x, cnt_x, half_y, axis=0)
 
@@ -806,7 +943,13 @@ def cells_per_row(radius_km: float, dx: np.ndarray, ny: int, nx: int) -> np.ndar
     half-width uses that row's own `nanmean` of `dx`. Result is
     `round(radius_km * 1000 / row_dx)`, floored at a minimum of 1 cell (a
     window of half-width 0 would just be the point itself, never useful
-    for a max-minus-min diagnostic).
+    for a max-minus-min diagnostic) and clamped to at most `nx // 2` --
+    without this, a row near the pole on a global grid (`row_dx` shrinking
+    toward 0 as `cos(lat) -> 0`) can compute a half-width many times
+    larger than the grid is wide, which is meaningless and, pre-wrap, was
+    only ever silently rescued downstream by `window_extreme_2d`'s/
+    `window_sum_2d`'s own per-axis clamp -- see the module docstring's
+    "Longitude wrap on global grids" section.
     """
     dx_arr = np.asarray(dx, dtype=float)
     if dx_arr.ndim == 0:
@@ -820,13 +963,14 @@ def cells_per_row(radius_km: float, dx: np.ndarray, ny: int, nx: int) -> np.ndar
         raise ValueError("dx must be a scalar or a 2D array")
 
     radius_m = float(radius_km) * 1000.0
+    max_cells = max(int(nx) // 2, 1)
     cells = np.empty(ny, dtype=int)
     for i in range(ny):
         spacing = row_dx[i]
         if not np.isfinite(spacing) or spacing <= 0:
             cells[i] = 1
         else:
-            cells[i] = max(1, int(round(radius_m / spacing)))
+            cells[i] = min(max(1, int(round(radius_m / spacing))), max_cells)
     return cells
 
 
@@ -848,12 +992,47 @@ def cells_y(radius_km: float, dy: np.ndarray) -> int:
     return max(1, int(round(float(radius_km) * 1000.0 / float(spacing))))
 
 
+def is_global_lon(nx: int, dy_m: float) -> bool:
+    """True if a lat/lon grid with `nx` columns and (latitude-independent)
+    row spacing `dy_m` (meters) is, to within 2%, a global grid running
+    all the way around in longitude -- see the module docstring's
+    "Longitude wrap on global grids" section for why `dy_m` (not `dx`) is
+    the right spacing to test with.
+
+    Detection: for a regular lat/lon grid with equal angular spacing in
+    both directions (the overwhelmingly common case -- e.g. a 1 degree x
+    1 degree or 0.25 degree x 0.25 degree grid), `dy_m` (constant across
+    every row) is the same physical distance as `dx` at the equator. If
+    the grid's `nx` columns span the full 360 degrees of longitude at
+    that same angular spacing, then `nx * dy_m` equals the Earth's
+    circumference (`EARTH_CIRCUMFERENCE_KM`); a regional grid's `nx`
+    columns span less than 360 degrees, so the product falls well short.
+    `abs(nx * dy_m - circumference) <= 0.02 * circumference` is the
+    global/regional decision.
+
+    Returns False for a non-finite, non-positive `dy_m`, or `nx <= 0`
+    (nothing to test).
+    """
+    dy = float(dy_m)
+    if not np.isfinite(dy) or dy <= 0 or int(nx) <= 0:
+        return False
+    circumference_m = EARTH_CIRCUMFERENCE_KM * 1000.0
+    span_m = float(nx) * dy
+    return abs(span_m - circumference_m) <= 0.02 * circumference_m
+
+
 # ---------------------------------------------------------------------------
 # dZ and the band slope
 # ---------------------------------------------------------------------------
 
 
-def delta_z(z: np.ndarray, dx: np.ndarray, dy: np.ndarray, radius_km: float) -> np.ndarray:
+def delta_z(
+    z: np.ndarray,
+    dx: np.ndarray,
+    dy: np.ndarray,
+    radius_km: float,
+    global_lon: bool | None = None,
+) -> np.ndarray:
     """`window_max(z) - window_min(z)`, half-width `radius_km`, at every
     grid point -- the pointwise analogue of Hart's per-level `dZ`.
 
@@ -866,6 +1045,29 @@ def delta_z(z: np.ndarray, dx: np.ndarray, dy: np.ndarray, radius_km: float) -> 
     point where `z` itself was missing, even if that point's window
     happened to contain enough valid neighbors to compute *something*:
     `dZ` at a missing point is not meaningful.
+
+    `global_lon` (default `None`) decides whether the x-direction window
+    wraps cyclically at the longitude seam: `None` auto-detects with
+    `is_global_lon(nx, dy)`, `True`/`False` forces the decision either
+    way -- see the module docstring's "Longitude wrap on global grids"
+    section. Without the wrap, a point within `radius_km` of column 0 or
+    the last column of a genuinely global grid sees its window clipped
+    at the array edge instead of continuing around the planet, silently
+    shrinking (and biasing) `dZ` there.
+
+    A point's `dZ` is also forced to NaN if fewer than `MIN_VALID_FRACTION`
+    of the cells its own window geometrically covers are valid (finite)
+    `z` -- computed as a valid-cell count and a total-cell count, both
+    from a single `window_sum_2d` call on a 0/1 valid-cell indicator (an
+    indicator array has no NaN of its own, so the sum it returns is the
+    valid-cell count and the count it returns is the total cell count the
+    window covers, including cells shrunk off by the domain edge). This
+    guards a window that is mostly below ground or otherwise missing
+    (e.g. within `RADIUS_KM` of the Greenland ice sheet or the Iceland
+    highlands) from returning a max-minus-min computed from whatever
+    handful of valid cells happened to survive clipping -- a result that
+    would otherwise look like an ordinary, fully-sampled `dZ` with no
+    visible sign that most of its window was missing.
     """
     z_arr = np.asarray(z, dtype=float)
     ny, nx = z_arr.shape
@@ -875,10 +1077,19 @@ def delta_z(z: np.ndarray, dx: np.ndarray, dy: np.ndarray, radius_km: float) -> 
     half_x = cells_per_row(radius_km, dx, ny, nx)
     half_y = cells_y(radius_km, dy)
 
-    z_max = window_extreme_2d(z_clean, half_x, half_y, "max")
-    z_min = window_extreme_2d(z_clean, half_x, half_y, "min")
+    dy_m = float(np.nanmean(np.asarray(dy, dtype=float)))
+    wrap = is_global_lon(nx, dy_m) if global_lon is None else bool(global_lon)
 
+    z_max = window_extreme_2d(z_clean, half_x, half_y, "max", wrap_x=wrap)
+    z_min = window_extreme_2d(z_clean, half_x, half_y, "min", wrap_x=wrap)
     dz = z_max - z_min
+
+    valid_indicator = np.where(bad, 0.0, 1.0)
+    valid_count, total_count = window_sum_2d(valid_indicator, half_x, half_y, wrap_x=wrap)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        valid_fraction = np.where(total_count > 0, valid_count / total_count, 0.0)
+    dz = np.where(valid_fraction < MIN_VALID_FRACTION, np.nan, dz)
+
     return np.where(bad, np.nan, dz)
 
 
@@ -962,6 +1173,7 @@ def closed_low_mask(
     depth_m: float = DEFAULT_DEPTH_M,
     blob_radius_km: float = DEFAULT_BLOB_RADIUS_KM,
     center_tol_m: float = DEFAULT_CENTER_TOL_M,
+    global_lon: bool | None = None,
 ) -> np.ndarray:
     """Boolean mask: True within `blob_radius_km` of a real closed low's
     center in `z_low` (typically 1000 hPa height, passed by
@@ -1025,23 +1237,36 @@ def closed_low_mask(
     is False in numpy already, but missing input (see `_missing_mask`) is
     also explicitly excluded before dilation, so a bad `z_low` value can
     never masquerade as "yes, this is a low center."
+
+    `global_lon` (default `None`) is the same longitude-wrap decision
+    `delta_z`/`window_mean` take: `None` auto-detects with
+    `is_global_lon(nx, dy)`, `True`/`False` forces it -- see the module
+    docstring's "Longitude wrap on global grids" section. The one
+    decision is made once and used for every sliding-window call this
+    function makes (the candidate/local-min pass, both box sums of the
+    ring-mean depth test, and the final dilation), so a low near the
+    seam of a global grid is found and painted consistently on both
+    sides of it.
     """
     z_arr = np.asarray(z_low, dtype=float)
     ny, nx = z_arr.shape
     bad = _missing_mask(z_arr)
     z_clean = np.where(bad, np.nan, z_arr)
 
+    dy_m = float(np.nanmean(np.asarray(dy, dtype=float)))
+    wrap = is_global_lon(nx, dy_m) if global_lon is None else bool(global_lon)
+
     half_x_min = cells_per_row(min_radius_km, dx, ny, nx)
     half_y_min = cells_y(min_radius_km, dy)
-    local_min = window_extreme_2d(z_clean, half_x_min, half_y_min, "min")
+    local_min = window_extreme_2d(z_clean, half_x_min, half_y_min, "min", wrap_x=wrap)
 
     with np.errstate(invalid="ignore"):
         candidate = (z_clean - local_min) <= center_tol_m
 
     half_x_ring = cells_per_row(ring_radius_km, dx, ny, nx)
     half_y_ring = cells_y(ring_radius_km, dy)
-    sum_outer, count_outer = window_sum_2d(z_clean, half_x_ring, half_y_ring)
-    sum_inner, count_inner = window_sum_2d(z_clean, half_x_min, half_y_min)
+    sum_outer, count_outer = window_sum_2d(z_clean, half_x_ring, half_y_ring, wrap_x=wrap)
+    sum_inner, count_inner = window_sum_2d(z_clean, half_x_min, half_y_min, wrap_x=wrap)
 
     ring_sum = sum_outer - sum_inner
     ring_count = count_outer - count_inner
@@ -1054,7 +1279,7 @@ def closed_low_mask(
 
     half_x_blob = cells_per_row(blob_radius_km, dx, ny, nx)
     half_y_blob = cells_y(blob_radius_km, dy)
-    dilated = window_extreme_2d(raw, half_x_blob, half_y_blob, "max")
+    dilated = window_extreme_2d(raw, half_x_blob, half_y_blob, "max", wrap_x=wrap)
     return dilated > 0.5
 
 
@@ -1141,18 +1366,31 @@ def gradient_2d(
     return d_dx, d_dy
 
 
-def window_mean(field: np.ndarray, dx: np.ndarray, dy: np.ndarray, radius_km: float) -> np.ndarray:
+def window_mean(
+    field: np.ndarray,
+    dx: np.ndarray,
+    dy: np.ndarray,
+    radius_km: float,
+    global_lon: bool | None = None,
+) -> np.ndarray:
     """NaN-aware box mean of `field`, half-width `radius_km`, at every
     grid point -- `window_sum_2d`'s sum divided by its count, using the
     same per-row `dx`/scalar `dy` half-width conversion (`cells_per_row`,
     `cells_y`) `delta_z`/`closed_low_mask` use. NaN where the window's
     valid-point count is 0 (every point in it was missing).
+
+    `global_lon` (default `None`) is the same longitude-wrap decision
+    `delta_z` takes: `None` auto-detects with `is_global_lon(nx, dy)`,
+    `True`/`False` forces it -- see the module docstring's "Longitude
+    wrap on global grids" section.
     """
     field = np.asarray(field, dtype=float)
     ny, nx = field.shape
     half_x = cells_per_row(radius_km, dx, ny, nx)
     half_y = cells_y(radius_km, dy)
-    total, count = window_sum_2d(field, half_x, half_y)
+    dy_m = float(np.nanmean(np.asarray(dy, dtype=float)))
+    wrap = is_global_lon(nx, dy_m) if global_lon is None else bool(global_lon)
+    total, count = window_sum_2d(field, half_x, half_y, wrap_x=wrap)
     with np.errstate(invalid="ignore", divide="ignore"):
         mean = np.where(count > 0, total / count, np.nan)
     return mean
@@ -1191,6 +1429,46 @@ def steering(u_levels, v_levels) -> tuple[np.ndarray, np.ndarray]:
     return u_s, v_s
 
 
+def steering_window_mean(
+    u_s: np.ndarray,
+    v_s: np.ndarray,
+    dx: np.ndarray,
+    dy: np.ndarray,
+    radius_km: float,
+    global_lon: bool | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Area-average `steering`'s pointwise `(u_s, v_s)` output over a
+    `radius_km` window (via `window_mean`), one component at a time --
+    see the module docstring's "Parameter B and the joint class" section,
+    "Motion", for why this step is necessary before the result is used
+    as a motion proxy.
+
+    `steering`'s pointwise vertical mean is, by itself, the deep-layer
+    wind *at that point* -- inside a developed cyclone that is
+    dominated by the vortex's own circulation, not by the larger-scale
+    flow that actually carries the storm along. Averaging each
+    component horizontally over the same `radius_km` (500 km) analysis
+    window `delta_z`/parameter B's own thickness gradient use lets a
+    roughly axisymmetric vortex's own tangential wind cancel out over
+    the window (it circles the center, so its horizontal mean over a
+    large enough symmetric window is small), leaving the environmental
+    steering flow the vortex is embedded in and actually steered by.
+
+    `radius_km` should match the `radius_km` the caller's own B
+    computation uses (`executeB`/`executeHartClass` both pass the same
+    `radiusKm` here as they pass to `parameter_b_grid`), so the motion
+    proxy and the thickness-gradient window agree on what "the analysis
+    window" means. `global_lon` is passed straight through to
+    `window_mean` (see its own docstring and the module docstring's
+    "Longitude wrap on global grids" section).
+
+    Returns `(u_s_mean, v_s_mean)`, each the same shape as the input.
+    """
+    u_mean = window_mean(u_s, dx, dy, radius_km, global_lon=global_lon)
+    v_mean = window_mean(v_s, dx, dy, radius_km, global_lon=global_lon)
+    return u_mean, v_mean
+
+
 def parameter_b_grid(
     thickness: np.ndarray,
     u_s: np.ndarray,
@@ -1216,7 +1494,14 @@ def parameter_b_grid(
     this module.
 
     `u_s`/`v_s` (m/s) are the storm's motion at each point -- typically
-    `steering`'s output. `speed = hypot(u_s, v_s)`; the right-hand normal
+    `steering`'s output *after* `steering_window_mean` (both `executeB`
+    and `executeHartClass` call `steering` then `steering_window_mean`
+    in sequence before reaching this function); passing `steering`'s
+    raw, un-window-averaged output instead reintroduces the vortex's own
+    circulation into the motion proxy this function's normal direction
+    is built from -- see the module docstring's "Parameter B and the
+    joint class" section, "Motion". `speed = hypot(u_s, v_s)`; the
+    right-hand normal
     of motion (Northern Hemisphere convention) is `(v_s, -u_s)/speed`.
     `hemisphere` may be a scalar or a 2D array (e.g. a coriolis
     pseudo-field): `np.sign(hemisphere)` gives the hemisphere factor `h`
@@ -1286,19 +1571,23 @@ def hart_class(
 
     Otherwise, one of:
 
-        Code  Name                          B        lower VT   upper VT
-        0     symmetric deep warm core      <= thr   >= 0       >= 0
-        1     symmetric shallow warm core   <= thr   >= 0       <  0
-        2     frontal deep warm core        >  thr   >= 0       >= 0
-        3     frontal shallow warm core     >  thr   >= 0       <  0
-        4     frontal cold core             >  thr   <  0        (*)
-        5     symmetric cold core           <= thr   <  0        (*)
-        6     mid-level vortex              any      <  0       >= 0
+        Code  Name                                         B      lower VT  upper VT
+        0     symmetric deep warm core                    <= thr  >= 0      >= 0
+        1     symmetric shallow warm core                 <= thr  >= 0      <  0
+        2     frontal deep warm core                      >  thr  >= 0      >= 0
+        3     frontal shallow warm core                    >  thr  >= 0      <  0
+        4     frontal cold core                            >  thr  <  0      < 0 (row 6 takes lower cold, upper warm first)
+        5     symmetric cold core                         <= thr  <  0      < 0 (row 6 takes lower cold, upper warm first)
+        6     shallow cold core (lower cold, upper warm)   any     <  0      >= 0
 
-    (*) "any" for rows 4/5 means "whatever `vtu` is left once row 6 has
-    claimed the `lower VT < 0 and upper VT >= 0` corner" -- row 6 is
-    checked first and takes precedence over rows 4 and 5 there (see
-    "Ordering" below); in practice this means `vtu < 0` for rows 4/5.
+    Row 6 is checked first and takes precedence over rows 4 and 5
+    wherever `lower VT < 0 and upper VT >= 0` at once (see "Ordering"
+    below); rows 4/5's own `upper VT` cell is therefore always `< 0` in
+    practice, never "any".
+
+    Tie convention: a thermal wind term of exactly 0 counts as warm
+    (`>= 0`), and B of exactly `b_threshold` (10 m by default) counts as
+    symmetric (`<= b_threshold`).
 
     Boundary convention: **B is frontal at `B > b_threshold` (10 m by
     default), symmetric at `B <= b_threshold`** -- Hart's own strict
@@ -1320,16 +1609,16 @@ def hart_class(
     line actually is -- a categorical field's job is to draw the line
     Hart drew, not to soften it with a second, invented threshold.
 
-    Ordering / precedence: row 6 (mid-level vortex: cold at low levels,
-    warm aloft) is checked before rows 4 and 5, so it wins the corner of
-    `(B, vtl, vtu)` space that would otherwise also satisfy "lower VT
-    negative" -- a genuine mid-level vortex is a different structure
-    from a frontal or symmetric cold core (which are cold at *both*
-    levels), not a third way of being one of those two, regardless of
-    B. Every other row is a disjoint partition of the remaining
-    `(vtl >= 0 or < 0) x (vtu >= 0 or < 0)` quadrants by the B line, so
-    the six remaining codes plus row 6 exhaust the space with no gaps
-    and no overlaps for finite input.
+    Ordering / precedence: row 6 (shallow cold core: cold at low
+    levels, warm aloft) is checked before rows 4 and 5, so it wins the
+    corner of `(B, vtl, vtu)` space that would otherwise also satisfy
+    "lower VT negative" -- a genuine shallow cold core is a different
+    structure from a frontal or symmetric cold core (which are cold at
+    *both* levels), not a third way of being one of those two,
+    regardless of B. Every other row is a disjoint partition of the
+    remaining `(vtl >= 0 or < 0) x (vtu >= 0 or < 0)` quadrants by the
+    B line, so the six remaining codes plus row 6 exhaust the space
+    with no gaps and no overlaps for finite input.
 
     Rationale for the code numbering: codes rise, in order, along a
     typical extratropical transition -- 0 (symmetric deep warm core,
@@ -1361,7 +1650,7 @@ def hart_class(
 
     with np.errstate(invalid="ignore"):
         conditions = [
-            (vtl < 0.0) & (vtu >= 0.0),                    # 6 mid-level vortex (checked first)
+            (vtl < 0.0) & (vtu >= 0.0),                    # 6 shallow cold core (checked first)
             (B <= thr) & (vtl >= 0.0) & (vtu >= 0.0),      # 0 symmetric deep warm core
             (B <= thr) & (vtl >= 0.0) & (vtu < 0.0),       # 1 symmetric shallow warm core
             (B > thr) & (vtl >= 0.0) & (vtu >= 0.0),       # 2 frontal deep warm core
@@ -1465,8 +1754,9 @@ def executeHartClass(
     Computes the lower thermal wind (`LOWER_BAND`, 925/850/700 hPa) and
     upper thermal wind (`UPPER_BAND`, 500/400/300 hPa, both via
     `thermal_wind_grid`), parameter B (925-700 hPa thickness gradient
-    projected onto the steering-flow's right-hand normal, via `steering`
-    and `parameter_b_grid` -- same method as `executeB`), and
+    projected onto the window-averaged steering flow's right-hand
+    normal, via `steering`, `steering_window_mean`, and
+    `parameter_b_grid` -- same method as `executeB`), and
     `closed_low_mask` on `z1000` (same mask `executeIndexStd` uses), then
     combines all three with `hart_class`.
 
@@ -1515,6 +1805,7 @@ def executeHartClass(
     z700_masked = mask_below_ground(z700, psfc_hpa, 700.0, cap_hpa)
     thickness = np.asarray(z700_masked, dtype=float) - np.asarray(z925_masked, dtype=float)
     u_s, v_s = steering([u850, u700, u500, u300], [v850, v700, v500, v300])
+    u_s, v_s = steering_window_mean(u_s, v_s, dx, dy, radius_km)
     b = parameter_b_grid(thickness, u_s, v_s, dx, dy, coriolis, radius_km, layer_scale)
 
     z1000_masked = mask_below_ground(z1000, psfc_hpa, 1000.0, cap_hpa)
@@ -1591,8 +1882,11 @@ def executeB(
     propagating through `parameter_b_grid`'s gradient and window mean.
 
     `u850`/`v850`, `u700`/`v700`, `u500`/`v500`, `u300`/`v300` are the
-    wind components at those four levels, averaged by `steering` into
-    the motion proxy `parameter_b_grid` uses. `psfc` is AWIPS surface
+    wind components at those four levels, averaged by `steering` and
+    then area-averaged over `radiusKm` by `steering_window_mean` (see
+    the module docstring's "Parameter B and the joint class" section,
+    "Motion") into the motion proxy `parameter_b_grid` uses. `psfc` is
+    AWIPS surface
     pressure (Pa or hPa -- `surface_pressure_hpa` auto-detects which).
     `coriolis` is the AWIPS coriolis pseudo-field (positive Northern
     Hemisphere, negative Southern) -- `parameter_b_grid` uses its sign as
@@ -1619,6 +1913,7 @@ def executeB(
     thickness = np.asarray(z700_masked, dtype=float) - np.asarray(z925_masked, dtype=float)
 
     u_s, v_s = steering([u850, u700, u500, u300], [v850, v700, v500, v300])
+    u_s, v_s = steering_window_mean(u_s, v_s, dx, dy, radius_km)
 
     b = parameter_b_grid(thickness, u_s, v_s, dx, dy, coriolis, radius_km, layer_scale)
     return b.astype(np.float32)

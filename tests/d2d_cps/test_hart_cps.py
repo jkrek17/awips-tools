@@ -205,15 +205,18 @@ def test_window_sum_2d_all_nan_window_is_zero_count():
 
 def test_window_extreme_2d_clamps_half_width():
     # A half-width far larger than the axis size must not raise or index
-    # out of bounds -- it is clamped to (n-1)//2 for that axis and must
-    # then match a brute-force computation using that same clamped
-    # half-width (not "the whole axis": for e.g. nx=5, (nx-1)//2 == 2,
-    # a window that still shrinks away from the corners, not one that
-    # reaches every column from every starting position).
+    # out of bounds -- it is clamped to n-1 for that axis (a half-width
+    # of n-1 already makes every position's clipped window span the
+    # whole axis: lo = max(0, j-(n-1)) == 0 and hi = min(n-1, j+(n-1))
+    # == n-1 for every j), so the result must equal "the whole axis from
+    # every position", not a brute-force computation using the tighter
+    # (n-1)//2 (an earlier, too-tight clamp that left the window short of
+    # the whole axis near either edge -- see window_extreme_2d's own
+    # docstring).
     field = np.arange(20.0).reshape(4, 5)
     half_x_per_row = np.full(4, 1000)
-    clamped_x = np.full(4, (field.shape[1] - 1) // 2)
-    clamped_y = (field.shape[0] - 1) // 2
+    clamped_x = np.full(4, field.shape[1] - 1)
+    clamped_y = field.shape[0] - 1
 
     for kind in ("max", "min"):
         got = hc.window_extreme_2d(field, half_x_per_row, 1000, kind)
@@ -272,6 +275,138 @@ def test_band_slope_requires_at_least_two_levels():
 
 
 # ---------------------------------------------------------------------------
+# (c2) delta_z: longitude wrap on global grids (REVIEW_PANEL.md item 6) and
+#      the minimum valid fraction (REVIEW_PANEL.md item 15)
+# ---------------------------------------------------------------------------
+
+
+def test_is_global_lon_detects_global_and_regional_grids():
+    earth_radius_km = 6371.0
+    dy_1deg_m = earth_radius_km * math.radians(1.0) * 1000.0
+
+    # 360 columns at 1-degree spacing spans the full circumference.
+    assert hc.is_global_lon(360, dy_1deg_m)
+    # A regional grid's columns fall well short of the circumference.
+    assert not hc.is_global_lon(21, dy_1deg_m)
+    # Degenerate input.
+    assert not hc.is_global_lon(0, dy_1deg_m)
+    assert not hc.is_global_lon(360, 0.0)
+    assert not hc.is_global_lon(360, float("nan"))
+
+
+def test_delta_z_global_grid_seam_wrap_matches_interior():
+    """A purely zonal sinusoid on a global 1-degree grid: with the
+    longitude wrap, dZ at column 0 (the seam), the last column (also
+    the seam, from the other side), and mid-domain (an ordinary
+    interior point) all agree, because the window's true 500 km-radius
+    neighborhood is the same shape at every one of those three points
+    once it is allowed to continue around the planet instead of being
+    clipped. Forcing the wrap off (`global_lon=False`) reproduces the
+    pre-fix bug exactly on this field: the seam's dZ comes back exactly
+    half the interior value, because the clipped window only ever sees
+    one side of the sinusoid's local excursion around the seam instead
+    of both.
+    """
+    nx = 360
+    ny = 5
+    earth_radius_km = 6371.0
+    dlon_deg = 1.0
+    dx_m = earth_radius_km * math.radians(dlon_deg) * 1000.0
+    dy_m = dx_m  # same 1-degree angular spacing north-south
+
+    assert hc.is_global_lon(nx, dy_m)
+
+    lon_deg = np.arange(nx) * dlon_deg
+    z_row = 50.0 * np.sin(np.radians(lon_deg))
+    z = np.tile(z_row, (ny, 1))
+    dx2d = np.full((ny, nx), dx_m)
+
+    mid = nx // 2
+
+    dz_wrap = hc.delta_z(z, dx2d, dy_m, hc.RADIUS_KM, global_lon=True)
+    np.testing.assert_allclose(dz_wrap[:, 0], dz_wrap[:, mid], rtol=1e-6)
+    np.testing.assert_allclose(dz_wrap[:, nx - 1], dz_wrap[:, mid], rtol=1e-3)
+
+    # Auto-detection (no global_lon kwarg at all) must agree with the
+    # explicitly-forced wrap on this genuinely global grid.
+    dz_auto = hc.delta_z(z, dx2d, dy_m, hc.RADIUS_KM)
+    np.testing.assert_allclose(dz_auto, dz_wrap)
+
+    # Forcing the wrap off reproduces the documented pre-fix bug: the
+    # seam value is exactly half the interior value.
+    dz_nowrap = hc.delta_z(z, dx2d, dy_m, hc.RADIUS_KM, global_lon=False)
+    np.testing.assert_allclose(dz_nowrap[:, 0], dz_wrap[:, mid] / 2.0, rtol=1e-6)
+
+
+def test_delta_z_regional_grid_matches_brute_force_reference():
+    """A regional (non-global) grid must be entirely unaffected by the
+    longitude-wrap machinery added for global grids: `is_global_lon`
+    must say False for it, and `delta_z`'s result (auto-detecting, the
+    default) must match an independent brute-force max-minus-min
+    reference built with `_brute_window_extreme_2d` and no wrap at all
+    -- exactly the pre-wrap behavior.
+    """
+    rng = np.random.default_rng(20260918)
+    ny, nx = 15, 21
+    field = rng.standard_normal((ny, nx)) * 50.0 + 5000.0
+    dx_m = 20000.0  # 20 km spacing: nx * dy is nowhere near the Earth's circumference
+    dy_m = 20000.0
+
+    assert not hc.is_global_lon(nx, dy_m)
+
+    dz = hc.delta_z(field, dx_m, dy_m, hc.RADIUS_KM)
+
+    half_x = hc.cells_per_row(hc.RADIUS_KM, dx_m, ny, nx)
+    half_y = hc.cells_y(hc.RADIUS_KM, dy_m)
+    z_max_ref = _brute_window_extreme_2d(field, half_x, half_y, "max")
+    z_min_ref = _brute_window_extreme_2d(field, half_x, half_y, "min")
+    dz_ref = z_max_ref - z_min_ref  # every cell is valid here, so MIN_VALID_FRACTION never trips
+
+    np.testing.assert_allclose(dz, dz_ref, rtol=1e-10)
+
+
+def test_delta_z_min_valid_fraction_blanks_mostly_missing_windows():
+    """A window that is mostly below ground (modeled here as a NaN
+    block, the same thing mask_below_ground produces) must come back
+    NaN rather than a dZ computed from whatever handful of cells
+    survived -- REVIEW_PANEL.md item 15.
+    """
+    ny, nx = 25, 25
+    dx_m, dy_m = 100000.0, 100000.0  # half_x = half_y = 5 -> an 11x11 = 121-cell window
+    radius_km = hc.RADIUS_KM
+    ci, cj = 12, 12
+    rng = np.random.default_rng(3)
+
+    # ~73% of the center point's window is NaN (8 of its 11 window rows,
+    # all 11 window columns): valid fraction ~27%, below MIN_VALID_FRACTION.
+    z_mostly_missing = 5000.0 + rng.standard_normal((ny, nx)) * 10.0
+    z_mostly_missing[7:15, 7:18] = np.nan
+    dz_mostly_missing = hc.delta_z(z_mostly_missing, dx_m, dy_m, radius_km)
+    assert np.isnan(dz_mostly_missing[ci, cj])
+
+    # ~27% of the same window is NaN (3 of its 11 window rows): valid
+    # fraction ~73%, at or above MIN_VALID_FRACTION -- not blanked.
+    z_mostly_valid = 5000.0 + rng.standard_normal((ny, nx)) * 10.0
+    z_mostly_valid[7:10, 7:18] = np.nan
+    dz_mostly_valid = hc.delta_z(z_mostly_valid, dx_m, dy_m, radius_km)
+    assert np.isfinite(dz_mostly_valid[ci, cj])
+
+    # A low whose own window never touches the NaN block at all is
+    # completely unaffected -- same dZ with or without the block present.
+    ny2, nx2 = 41, 41
+    ii, jj = np.mgrid[0:ny2, 0:nx2]
+    low_center = (20, 10)
+    z_low = 5000.0 - 60.0 * np.exp(-(((ii - low_center[0]) ** 2 + (jj - low_center[1]) ** 2)) / 25.0)
+    z_low_with_block = z_low.copy()
+    z_low_with_block[15:26, 30:41] = np.nan  # far from the low's own window
+
+    dz_low_ref = hc.delta_z(z_low, dx_m, dy_m, radius_km)
+    dz_low_with_block = hc.delta_z(z_low_with_block, dx_m, dy_m, radius_km)
+    assert np.isfinite(dz_low_ref[low_center])
+    assert dz_low_with_block[low_center] == pytest.approx(float(dz_low_ref[low_center]), rel=1e-12)
+
+
+# ---------------------------------------------------------------------------
 # (d) Reference check against cps.hart on a synthetic warm/cold-core vortex
 # ---------------------------------------------------------------------------
 
@@ -320,10 +455,16 @@ def test_thermal_wind_grid_matches_hart_reference_warm_core():
 
     vtl_ref, vtu_ref = _standard_level_hart_reference(lat2d, lon2d, clat, clon, z_stack, levels)
 
-    # Square (this module) vs circle (cps.hart) window: agreement within
-    # 2% on a smooth 150 km-scale Gaussian, per the module docstring.
-    assert vtl_grid[ci, cj] == pytest.approx(vtl_ref, rel=0.02)
-    assert vtu_grid[ci, cj] == pytest.approx(vtu_ref, rel=0.02)
+    # Square (this module) vs circle (cps.hart) window: the agreement at
+    # this 150 km test scale is measured (see
+    # test_square_vs_circle_scale_sensitivity below) at about 1.5e-5
+    # relative -- tightened here to what the code actually achieves
+    # (rel=1e-3), not the much looser "within 2%" that was really just
+    # the test's own tolerance, not a measurement (see the module
+    # docstring's "Square window versus Hart's circle" section and
+    # REVIEW_PANEL.md item 5).
+    assert vtl_grid[ci, cj] == pytest.approx(vtl_ref, rel=1e-3)
+    assert vtu_grid[ci, cj] == pytest.approx(vtu_ref, rel=1e-3)
 
     # Warm core: both positive.
     assert vtl_grid[ci, cj] > 0
@@ -350,13 +491,58 @@ def test_thermal_wind_grid_matches_hart_reference_cold_core():
 
     vtl_ref, vtu_ref = _standard_level_hart_reference(lat2d, lon2d, clat, clon, z_stack, levels)
 
-    assert vtl_grid[ci, cj] == pytest.approx(vtl_ref, rel=0.02)
-    assert vtu_grid[ci, cj] == pytest.approx(vtu_ref, rel=0.02)
+    # See test_thermal_wind_grid_matches_hart_reference_warm_core's own
+    # comment for why rel=1e-3, not the old "within 2%".
+    assert vtl_grid[ci, cj] == pytest.approx(vtl_ref, rel=1e-3)
+    assert vtu_grid[ci, cj] == pytest.approx(vtu_ref, rel=1e-3)
 
     # Cold core: both negative.
     assert vtl_grid[ci, cj] < 0
     assert vtu_grid[ci, cj] < 0
     assert vtl_ref < 0 and vtu_ref < 0
+
+
+def test_square_vs_circle_scale_sensitivity():
+    """The square-window/circle-window agreement is scale dependent, not
+    a fixed "within 2%" (REVIEW_PANEL.md item 5): this documents the
+    measured ratio (this module's square-window VTL over cps.hart's own
+    circle-window VTL, at the grid center) at two more vortex scales
+    (250 km, 400 km) than the 150 km scale the other two reference
+    tests use, and pins down the 400 km number the article's limitations
+    section relies on.
+    """
+    clat, clon = 20.0, 0.0
+    lat2d, lon2d, dx2d, dy_m = _grid_and_dx_dy(clat, clon, half_width_deg=8.0, dlat=0.25)
+    ci, cj = lat2d.shape[0] // 2, lat2d.shape[1] // 2
+
+    A0 = 300.0
+
+    def warm_amp(p):
+        return A0 * (math.log(p / 300.0) / math.log(900.0 / 300.0)) ** 2
+
+    levels = hc.LOWER_BAND + hc.UPPER_BAND
+
+    def _ratio_at_scale(scale_km):
+        z_stack = synthetic.warm_core_heights(lat2d, lon2d, clat, clon, levels, warm_amp, scale_km=scale_km)
+        z_by_level = {p: z_stack[i] for i, p in enumerate(levels)}
+        vtl_grid = hc.thermal_wind_grid(
+            [z_by_level[p] for p in hc.LOWER_BAND], hc.LOWER_BAND, dx2d, dy_m, hc.RADIUS_KM
+        )
+        vtl_ref, _ = _standard_level_hart_reference(lat2d, lon2d, clat, clon, z_stack, levels)
+        return float(vtl_grid[ci, cj]) / float(vtl_ref)
+
+    ratio_250 = _ratio_at_scale(250.0)
+    ratio_400 = _ratio_at_scale(400.0)
+
+    # Recorded, not just asserted in a narrow band: at the time this test
+    # was written, ratio_250 measured about 1.02 (about 2% high, matching
+    # REVIEW_PANEL.md's "1.9 percent at 250 km") and ratio_400 measured
+    # about 1.22 (about 22% high, matching its "21 percent at 400 km").
+    assert 1.0 < ratio_250 < 1.10
+    # The number the article's limitations section states and this test
+    # enforces: at 400 km the square window overestimates the circle's
+    # own VTL by between 15% and 30%.
+    assert 1.15 < ratio_400 < 1.30
 
 
 # ---------------------------------------------------------------------------
@@ -680,9 +866,12 @@ def test_thermal_wind_grid_performance(capsys):
     lat_vals = np.linspace(-90.0, 90.0, ny)
     dlon_rad = math.radians(360.0 / nx)
     dx_row = EARTH_RADIUS_KM * np.cos(np.radians(lat_vals)) * dlon_rad * 1000.0
-    # Not externally clamped: window_extreme_2d's own per-axis clamp
-    # (half-width <= (n-1)//2) is what keeps the near-pole blow-up in
-    # cell count from being a problem, per the module docstring.
+    # Not externally clamped: cells_per_row's own nx//2 clamp (and, as a
+    # second line of defense, window_extreme_2d's/window_sum_2d's own
+    # per-axis n-1 clamp) is what keeps the near-pole blow-up in cell
+    # count from being a problem, per the module docstring. This grid is
+    # also global (nx * dy spans the Earth's circumference), so the
+    # longitude wrap is exercised here too.
     dx2d = np.repeat(dx_row[:, np.newaxis], nx, axis=1)
     dlat_rad = math.radians(180.0 / (ny - 1))
     dy_m = EARTH_RADIUS_KM * dlat_rad * 1000.0
@@ -862,7 +1051,126 @@ def test_parameter_b_grid_matches_cps_hart_parameter_b(hart_standard_orientation
     b_grid = hc.parameter_b_grid(thickness_field, u_s, v_s, dx2d, dy_m, 1.0, radius_km, 1.0)
 
     assert np.isfinite(b_ref)
-    assert b_grid[ci, cj] == pytest.approx(b_ref, rel=0.05)
+    # Tightened from rel=0.05 to what the code actually achieves on a
+    # perfectly linear thickness field (about 4.6e-4 relative -- the
+    # linear-gradient approximation is exact in this case, per the
+    # module docstring's "Parameter B and the joint class" section, so
+    # the small residual is square-vs-circle geometry, not the
+    # approximation itself).
+    assert b_grid[ci, cj] == pytest.approx(b_ref, rel=1e-3)
+
+
+# --- (c2) steering_window_mean: window-averaging removes the vortex's own
+#          circulation from the motion proxy (REVIEW_PANEL.md item 1) -------
+
+
+def test_steering_window_mean_recovers_environmental_flow_from_vortex_wind(hart_standard_orientation):
+    """Reproduces REVIEW_PANEL.md item 1 directly: a symmetric vortex's
+    own geostrophic wind, added to a uniform 8 m/s westerly, makes the
+    *pointwise* deep-layer mean wind (`steering`'s own output) sweep
+    through very different headings within a degree or so of the
+    vortex center -- nothing like "storm motion". Window-averaging that
+    same field over the same 500 km analysis window B's own gradient
+    uses (`steering_window_mean`) recovers the uniform 8 m/s westerly
+    (bearing 090, using bearing = atan2(u, v) so due east is 090) to
+    within tight tolerances at the center and at each of its 8 nearest
+    neighbors, and the un-window-averaged pointwise field does not --
+    this is the fix `executeB`/`executeHartClass` now apply.
+
+    The vortex center is offset by half a grid step from the nearest
+    grid point on purpose, so no sampled point sits exactly at the
+    vortex's true r=0 (where a perfectly symmetric bump's own gradient
+    -- and so its geostrophic wind -- is exactly zero even before any
+    fix): every one of the 9 sampled points genuinely has nonzero
+    vortex wind mixed into its pointwise total, the realistic case this
+    test is meant to document.
+    """
+    EARTH_RADIUS_KM_LOCAL = 6371.0
+    clat, clon = 20.0, 0.0
+    half_width_deg, dlat = 8.0, 0.25
+    vlat, vlon = clat + dlat / 2.0, clon + dlat / 2.0  # off-grid vortex center
+
+    lat_vals = np.arange(clat - half_width_deg, clat + half_width_deg + 1e-9, dlat)
+    lon_vals = np.arange(clon - half_width_deg, clon + half_width_deg + 1e-9, dlat)
+    lon2d, lat2d = np.meshgrid(lon_vals, lat_vals)
+
+    dx_row = EARTH_RADIUS_KM_LOCAL * np.cos(np.radians(lat_vals)) * np.radians(dlat) * 1000.0
+    dx2d = np.repeat(dx_row[:, np.newaxis], lon_vals.size, axis=1)
+    dy_m = EARTH_RADIUS_KM_LOCAL * np.radians(dlat) * 1000.0
+
+    r_km = synthetic._haversine_km(lat2d, lon2d, vlat, vlon)
+    amp_m, scale_km = 100.0, 150.0
+    z_level = 5000.0 - amp_m * np.exp(-(r_km / scale_km) ** 2)  # a single-level height bowl
+
+    OMEGA = 7.292115e-5
+    g = 9.80665
+    f = 2.0 * OMEGA * math.sin(math.radians(clat))
+
+    gx, gy = hc.gradient_2d(z_level, dx2d, dy_m, mode=0)
+    u_geo = -(g / f) * gy
+    v_geo = (g / f) * gx
+
+    background_speed = 8.0
+    u_total = u_geo + background_speed
+    v_total = v_geo + 0.0
+
+    # Same barotropic wind at all four steering levels, as `steering`
+    # expects (850/700/500/300 hPa).
+    u_pointwise, v_pointwise = hc.steering([u_total] * 4, [v_total] * 4)
+    u_windowed, v_windowed = hc.steering_window_mean(u_pointwise, v_pointwise, dx2d, dy_m, hc.RADIUS_KM)
+
+    ci, cj = lat_vals.size // 2, lon_vals.size // 2
+
+    def _speed_bearing(u, v):
+        return math.hypot(u, v), math.degrees(math.atan2(u, v)) % 360.0
+
+    def _bearing_diff(bearing, target=90.0):
+        return abs(((bearing - target + 180.0) % 360.0) - 180.0)
+
+    any_pointwise_out_of_tolerance = False
+    for di in (-1, 0, 1):
+        for dj in (-1, 0, 1):
+            i, j = ci + di, cj + dj
+
+            speed_w, bearing_w = _speed_bearing(u_windowed[i, j], v_windowed[i, j])
+            assert speed_w == pytest.approx(background_speed, rel=0.10), (di, dj, speed_w)
+            assert _bearing_diff(bearing_w) < 5.0, (di, dj, bearing_w)
+
+            speed_p, bearing_p = _speed_bearing(u_pointwise[i, j], v_pointwise[i, j])
+            if abs(speed_p - background_speed) / background_speed > 0.10 or _bearing_diff(bearing_p) >= 5.0:
+                any_pointwise_out_of_tolerance = True
+
+    # Documents the fix: at least one (in practice, every one) of the 9
+    # points fails the same tolerance on the raw pointwise mean that the
+    # window-averaged mean passes everywhere.
+    assert any_pointwise_out_of_tolerance
+
+    # Parameter B, with and without the vortex present in the steering
+    # wind: the vortex contributes no ambient thickness asymmetry here
+    # (same shape bump at both thickness levels, scaled), so B at the
+    # center should be close either way -- the fix changes *which
+    # direction* the motion proxy points, not whether a genuinely
+    # symmetric system's own B is near zero.
+    amp925, amp700 = 180.0, 110.0
+    z925 = 5000.0 - amp925 * np.exp(-(r_km / scale_km) ** 2)
+    z700 = 7000.0 - amp700 * np.exp(-(r_km / scale_km) ** 2)
+    z925_flat = np.full_like(z925, 5000.0)
+    z700_flat = np.full_like(z700, 7000.0)
+
+    psfc = np.full(lat2d.shape, 1013.0)
+    coriolis = np.full(lat2d.shape, 1.0)
+    u_flat = np.full_like(u_total, background_speed)
+    v_flat = np.full_like(v_total, 0.0)
+
+    b_with_vortex = hc.executeB(
+        z925, z700, u_total, v_total, u_total, v_total, u_total, v_total, u_total, v_total,
+        psfc, coriolis, dx2d, dy_m,
+    )
+    b_without_vortex = hc.executeB(
+        z925_flat, z700_flat, u_flat, v_flat, u_flat, v_flat, u_flat, v_flat, u_flat, v_flat,
+        psfc, coriolis, dx2d, dy_m,
+    )
+    assert abs(float(b_with_vortex[ci, cj]) - float(b_without_vortex[ci, cj])) < 5.0
 
 
 # --- (d) hart_class truth table ----------------------------------------------
@@ -1051,8 +1359,8 @@ def test_execute_hart_class_tilted_cold_core_in_gradient_gives_cold(capsys, hart
     # side of the table (frontal cold core, 4, if B has crossed the 10 m
     # line; symmetric cold core, 5, otherwise) -- whichever the setup
     # actually produces is asserted and B is printed for visibility,
-    # since only the qualitative "cold, not warm or mid-level" claim is
-    # the point of this test, not a specific B value.
+    # since only the qualitative "cold, not warm or shallow-cold-core"
+    # claim is the point of this test, not a specific B value.
     clat, clon = 20.0, 0.0
     half_width_deg, dlat = 20.0, 0.5
     lat2d, lon2d, dx2d, dy_m = _grid_and_dx_dy(clat, clon, half_width_deg, dlat)

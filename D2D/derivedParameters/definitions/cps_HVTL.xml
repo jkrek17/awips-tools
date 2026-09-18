@@ -41,7 +41,7 @@
     - unit="" (empty) is accepted - confirmed to load on a real AWIPS
       site for derived parameters using the same convention.
 -->
-<DerivedParameter abbreviation="HVTL" name="Hart CPS -VT lower (925-700) (m)" unit="">
+<DerivedParameter abbreviation="HVTL" name="Hart CPS -VTL 925-700 (m)" unit="">
     <Method name="cps_HartCPS.executeBand3" levels="Surface">
         <Field abbreviation="GH" level="925MB"/>
         <Field abbreviation="GH" level="850MB"/>

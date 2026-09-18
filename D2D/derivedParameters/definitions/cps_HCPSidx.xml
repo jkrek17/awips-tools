@@ -31,7 +31,7 @@
   pseudo-fields and ConstantField support, levels= value, unit=""
   acceptance).
 -->
-<DerivedParameter abbreviation="HCPSidx" name="Hart CPS Core Index (-3 cold to +3 deep warm)" unit="">
+<DerivedParameter abbreviation="HCPSidx" name="Hart CPS Index -3 to +3" unit="">
     <Method name="cps_HartCPS.executeIndexStd" levels="Surface">
         <Field abbreviation="GH" level="1000MB"/>
         <Field abbreviation="GH" level="925MB"/>

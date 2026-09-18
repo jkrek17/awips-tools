@@ -20,7 +20,7 @@
   pseudo-fields and ConstantField support, levels= value, unit=""
   acceptance).
 -->
-<DerivedParameter abbreviation="HVTU" name="Hart CPS -VT upper (500-300) (m)" unit="">
+<DerivedParameter abbreviation="HVTU" name="Hart CPS -VTU 500-300 (m)" unit="">
     <Method name="cps_HartCPS.executeBand3" levels="Surface">
         <Field abbreviation="GH" level="500MB"/>
         <Field abbreviation="GH" level="400MB"/>

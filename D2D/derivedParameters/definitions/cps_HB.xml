@@ -48,7 +48,7 @@
       site for this package's other CPS fields, which use the same
       convention.
 -->
-<DerivedParameter abbreviation="HB" name="Hart CPS B asymmetry (m, 900-600 equiv)" unit="">
+<DerivedParameter abbreviation="HB" name="Hart CPS B 900-600 equiv (m)" unit="">
     <Method name="cps_HartCPS.executeB" levels="Surface">
         <Field abbreviation="GH" level="925MB"/>
         <Field abbreviation="GH" level="700MB"/>
@@ -69,10 +69,10 @@
              8*radiusKm/(3*pi) geometry constant -->
         <ConstantField value="500.0"/>
         <!-- layerScale: rescales B from this module's 925-700 hPa layer
-             to a 900-600 hPa equivalent, ln(900/600)/ln(925/700), so
-             Hart's 10 m onset threshold applies; pass 1.0 for the raw,
-             unscaled 925-700 hPa value -->
-        <ConstantField value="1.4553"/>
+             to a 900-600 hPa equivalent, ln(900/600)/ln(925/700) =
+             1.45477..., so Hart's 10 m onset threshold applies; pass
+             1.0 for the raw, unscaled 925-700 hPa value -->
+        <ConstantField value="1.4548"/>
         <!-- capHpa: below-ground cap, see cps_HartCPS.py -->
         <ConstantField value="900.0"/>
     </Method>

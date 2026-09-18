@@ -11,12 +11,12 @@
     code 3  frontal shallow warm core    yellow   (0.93, 0.63, 0.00, 1.0)
     code 4  frontal cold core            blue     (0.16, 0.47, 0.84, 1.0)
     code 5  symmetric cold core          violet   (0.29, 0.23, 0.65, 1.0)
-    code 6  mid-level vortex             gray     (0.76, 0.76, 0.72, 1.0)
+    code 6  shallow cold core (lower cold, upper warm)  gray  (0.76, 0.76, 0.72, 1.0)
 
   The warm states (codes 0-3) are warm hues (red/orange/magenta/yellow)
   and the cold states (codes 4-5) are cool hues (blue/violet), so a
   glance at hue alone already tells warm-core from cold-core; code 6
-  (mid-level vortex, a different structure from either) is neutral
+  (shallow cold core, a different structure from either) is neutral
   gray.
 
   File format: a root <colorMap> element containing an ordered list of
