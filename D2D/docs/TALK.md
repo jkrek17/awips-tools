@@ -1,9 +1,10 @@
 # Seven-minute talk: Cyclone Phase Space in AWIPS
 
-About 1000 words, ten slides. Timings are cumulative. Slide cues are in
-brackets. The deck is `TALK.pptx` beside this file; the same text is in
-each slide's speaker notes. To give it in five minutes, skip slides 4
-and 5 and say only the first paragraph of slide 3.
+About 1200 words, ten slides, roughly 170 words a minute. Timings are
+cumulative. Slide cues are in brackets. The deck is `TALK.pptx` beside
+this file; the same text is in each slide's speaker notes. To give it
+in five minutes, skip slides 4 and 5 and say only the first paragraph
+of slide 3.
 
 ---
 
@@ -24,110 +25,120 @@ third, B, says whether the storm is frontal. Together they place any
 cyclone on a diagram, and a storm traces a path through it as it
 evolves.
 
-**[Slide 3, the thermal wind terms] 1:10**
+**[Slide 3, the thermal wind terms] 1:04**
 
-Here is what the thermal wind terms actually measure. Take a
-cross-section through a storm. The height of a pressure surface dips
-over the low. In a warm-core storm, a hurricane, the column is warm, so
-it is thick, so the dip is deepest at the surface and fills in with
-altitude. The pressure surfaces flatten out aloft. In a cold-core low
-the column is cold and thin, so the dip deepens with altitude and the
-trough is strongest at the top.
+Here is what the thermal wind terms measure. Take a cross-section
+through a storm: the height of a pressure surface dips over the low.
+In a warm-core storm, a hurricane, the column is warm and thick, so
+the dip is deepest at the surface and fills in with altitude; the
+pressure surfaces flatten out aloft. In a cold-core low the column is
+cold and thin, so the dip deepens with altitude and the trough is
+strongest at the top.
 
 Hart measures that with one number per level: the height range inside
-the circle, max minus min. Then he looks at how that range changes with
-height. Shrinking upward is warm core, positive. Growing upward is cold
-core, negative. He does it twice, once for the lower troposphere and
-once for the upper, and that split is what lets you tell a hurricane,
-warm all the way up, from a subtropical storm or a warm seclusion,
-which is warm only in the lower layer.
+the circle, max minus min, then how that range changes with height.
+Shrinking upward is warm core, positive; growing upward is cold core,
+negative. He does it twice, lower and upper troposphere, and that
+split tells a hurricane, warm all the way up, from a subtropical storm
+or warm seclusion, warm only in the lower layer.
 
-**[Slide 4, parameter B] 2:15**
+**[Slide 4, parameter B] 1:53**
 
 The third number, B, is about the environment rather than the core.
-Thickness between two pressure levels is a measure of the mean
-temperature of the layer. Draw the 500 kilometer circle around the
-storm, split it into left and right of the direction of motion, and
-subtract the mean thickness of the two halves.
+Thickness between two pressure levels measures a layer's mean
+temperature. The motion here is the deep-layer mean wind, averaged
+over that same 500 kilometer window: inside a symmetric vortex the
+storm's own circulation cancels out, leaving the environmental flow,
+with a floor of 2 meters per second. Split the circle left and right
+of that flow and subtract the mean thickness of the two halves.
 
-For a hurricane the thickness contours close around the storm, both
-halves are the same, and B is near zero. For a storm that has moved
-into a front, warm air sits on one flank and cold air on the other, and
-B is large. Hart's threshold is 10 meters. Evans and Hart use the hour
-B first exceeds it as the objective onset of extratropical transition,
-and the hour the lower thermal wind turns negative as completion.
+For a hurricane both halves are the same and B is near zero. For a
+storm that has moved into a front, warm air sits on one flank and cold
+on the other, and B is large. Hart's threshold is 10 meters. Onset is
+read as the frame HB crosses 10 meters, completion as the frame HVTL
+crosses zero, from animating those two fields; HCPSclass is just the
+summary.
 
-**[Slide 5, the two diagrams] 2:55**
+**[Slide 5, the two diagrams] 2:41**
 
 Put those together and you get Hart's two diagrams. On the left, B
 against the lower thermal wind: symmetric or frontal, warm or cold. On
 the right, lower against upper thermal wind: deep warm, shallow warm,
-or cold. A hurricane starts in the deep warm corner. During transition
-it crosses the B line first, then loses the upper warm core, then the
-lower one, and ends in the cold corner. Some storms then hook back
-toward shallow warm core: that is a warm seclusion re-forming a warm
-core at the surface, and those are the ones that deepen unexpectedly
-over cold water. The operational product we built turns all three
-numbers into one, so a forecaster reads a single class instead of two
-diagrams. For a marine center, transition is when the wind field
-expands, so these crossings are the forecast question.
+or cold. A hurricane starts in the deep warm corner; during transition
+it crosses the B line first, loses the upper warm core, then the lower
+one, and ends in the cold corner. Some storms hook back toward shallow
+warm core: a warm seclusion re-forming a warm core at the surface, the
+ones that deepen unexpectedly over cold water. The product we built
+turns all three numbers into one, so a forecaster reads a single class
+instead of two diagrams. For a marine center, transition is when the
+wind field expands, so these crossings are the forecast question.
 
-**[Slide 6, what we built] 3:50**
+**[Slide 6, what we built] 3:26**
 
-Until now the operational access was the FSU cyclone phase page:
-storm-centered diagrams for the cyclones its tracker finds, in a fixed
+Until now, operational access was the FSU cyclone phase page:
+storm-centered diagrams for tracker-identified cyclones, in a fixed
 set of models, outside the workstation. What OPC needs is the same
 diagnostic inside D2D, on every model we run, for any low we point at.
 
 We reformulated the parameters as gridded fields and implemented them
 as AWIPS derived parameters. At every grid point the code evaluates the
 height range inside a 500 kilometer window at each level and regresses
-it against log pressure. That is Hart's exact quantity, everywhere
-instead of at one tracked center. It needs only geopotential height on
-standard levels, surface pressure, and winds for the motion in B, so it
-works on every model in D2D with no tracker and no advisory. A
-closed-low detector on the 1000 hPa height blanks everything that isn't
-a real low, and terrain is masked below ground.
+it against log pressure: Hart's own definition, evaluated everywhere
+instead of at one tracked center. The square window and standard
+levels keep the magnitudes close to his, not identical. It needs
+geopotential height on standard levels and surface pressure; the
+frontal term also needs winds at four levels. That runs on any model
+in D2D carrying those fields, with no tracker and no advisory. A
+closed-low detector on the 1000 hPa height keeps the class off open
+ocean and open troughs in the cases we've tested, and terrain is
+masked below ground.
 
-**[Slide 7, a tilted cold core] 4:35**
+**[Slide 7, a tilted cold core] 4:23**
 
 Here is why measuring the height field directly matters, on a
-synthetic case. Build a cold-core cyclone whose upper trough sits well
-to the west of its surface center, tilted the way many real baroclinic
-lows are. One panel shows that geometry: the 925 and 300 hectopascal
-height contours, offset from each other by the tilt. The other three
-are what the AWIPS field actually plots for that storm: the lower and
-upper thermal wind terms, and the joint class. Hart's 500 kilometer
+synthetic case. Build a cold-core cyclone whose upper trough sits 393
+kilometers west of its surface center, tilted the way many real
+baroclinic lows are, under a uniform 8 meter per second westerly
+steering flow. One panel shows that geometry: the 925 and 300
+hectopascal height contours, offset by the tilt. The others show the
+upper thermal wind term and the joint class. Hart's 500 kilometer
 window is wide enough to take in the tilted upper trough from the
-surface center, so both terms read strongly cold there and the class
-comes out cold core, right where the surface low actually sits.
+surface center, so both thermal wind terms read strongly cold there,
+HVTL minus 285 meters and HVTU minus 284, and the class comes out 5,
+symmetric cold core, right where the surface low sits.
 
-**[Slide 8, on shift] 5:20**
+**[Slide 8, on shift] 5:02**
 
-This is the operational display. Four panels: the lower and upper
-terms, a joint class field, and an index. The class reads at the
-storm's center, one number for one of seven classes built from Hart's two diagrams:
-symmetric or frontal, deep or shallow warm core, cold core, or a rare
-mid-level vortex. Step through the frames on a transitioning storm and
-the class climbs 0, then 2, then 3, then 4; a warm seclusion runs 4 and
-back to 1. Load a second model beside it and compare the hour each
-first reaches 2 or 3, and the hour each first reaches 4 or 5; where
-they disagree is your transition uncertainty. That is a product nobody
-had before, because it needed a tracker for every model.
+This is the operational display: four fields, HVTL, HVTU, the joint
+class, and the index. The photograph shows the two thermal wind
+panels, HVTL and HVTU, on a typhoon forecast. The class reads at the
+storm's center, one number for one of seven classes built from Hart's
+two diagrams: symmetric or frontal, deep or shallow warm core, cold
+core, or shallow cold core, lower cold and upper warm, a rare state.
+Step through the frames on a transitioning storm and the class climbs
+0, then 2, then 3, then 4; a warm seclusion runs it from 4 to 3, or to
+1 if B falls too. Load a second model beside it and compare the hour
+each HB crosses 10 meters and each HVTL crosses zero; where they
+disagree is your transition uncertainty. That's not something we've
+had inside our own workstation before, because it needed a tracker
+for every model.
 
-**[Slide 9, validation] 6:00**
+**[Slide 9, validation] 5:49**
 
-Three checks so far. A typhoon at 984 millibars read 120 and 180
-meters, a deep warm core, class 0 or 2 in the joint field depending on
-B, comparable to what Hart published for hurricanes. For Typhoon
-Dujuan, the hour the storm's classification left its deep warm core
-state matched the hour FSU's page showed the same GFS run moving from
-deep to shallow warm core. And a deep North Atlantic low classified
-cold core. Greenland and the Rockies come out blank rather than
-contaminated. Compute cost is about a second per frame on the full
-global grid.
+Three checks so far, all GFS cases from one model cycle: a smoke test,
+not a calibration. A typhoon at 984 millibars read 120 and 180 meters,
+a deep warm core; our bands differ from Hart's, so we don't compare
+that magnitude to his published values. For Typhoon Dujuan, the 2026
+September 17, 1200 UTC GFS run valid 21 September 1800 UTC: the hour
+the class left its deep warm core state matched the hour FSU's page
+showed deep to shallow warm core, within one 6 hour frame. A deep
+North Atlantic low in the same cycle classified cold core; its values
+weren't recorded, so that case needs re-sampling. Greenland and the
+Rockies come out blank rather than contaminated. Compute cost is
+about 2.6 seconds per forecast hour on the full global grid, the
+median of four runs, ranging 2.4 to 3.0 seconds.
 
-**[Slide 10, limits and next] 6:35**
+**[Slide 10, limits and next] 6:33**
 
 Honest limits: we use standard levels, not Hart's 50 hectopascal
 spacing, so magnitudes are near his but not identical. The window is a
