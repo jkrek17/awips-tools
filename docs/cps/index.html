@@ -100,18 +100,97 @@
     needs help with off the page entirely, because no tracker follows them.
   </p>
   <figure id="fig1">
-    <img src="figures/fig1_phase_space.png"
-         alt="Hart's cyclone phase space diagram with the four structural quadrants shaded and labeled, a schematic 168-hour extratropical transition trajectory colored from light to dark blue by forecast hour, and a red star marking a validation case.">
-    <figcaption><strong>Figure 1.</strong> Hart's (2003) cyclone phase space:
-      &minus;V<sub>T</sub><sup>L</sup> (x) against &minus;V<sub>T</sub><sup>U</sup> (y), both in meters.
-      The four shaded quadrants are the deep warm core, shallow warm core,
-      cold core, and mid-level/hybrid structures. The colored trajectory is
-      a <em>schematic</em> extratropical transition, not data from any
-      storm, plotted at the eight points listed in the figure script and
-      colored light to dark by forecast hour (0 to 168&nbsp;h) to show the
-      sense of travel from deep warm core toward cold core. The star marks
-      this article's own validation case, a typhoon sampled at 984&nbsp;mb in a
-      72&nbsp;h GFS forecast (Section 5).</figcaption>
+    <img src="figures/fig10_two_diagrams.png"
+         alt="Two-panel schematic of Hart's cyclone phase space diagrams sharing one 168-hour extratropical transition trajectory colored from light to dark blue by forecast hour. Left: parameter B against the lower thermal wind, the four asymmetry and warm/cold quadrants shaded and labeled, the trajectory crossing the B equals 10 meter onset line and then the negative lower thermal wind equals zero completion line, both crossings marked with an x, and a dashed branch toward a warm seclusion point in the symmetric warm core quadrant. Right: lower against upper thermal wind, the four structural quadrants shaded and labeled exactly as in the original single-panel version of this figure, the same trajectory and warm seclusion branch.">
+    <figcaption><strong>Figure 1.</strong> Hart's (2003) two cyclone phase
+      space diagrams, sharing one <em>schematic</em> extratropical
+      transition trajectory (not data from any storm), plotted at the eight
+      (<i>B</i>, &minus;V<sub>T</sub><sup>L</sup>, &minus;V<sub>T</sub><sup>U</sup>)
+      triples listed in the figure script and colored light to dark by
+      forecast hour (0 to 168&nbsp;h). <strong>(a)</strong> Phase 1: <i>B</i>
+      against &minus;V<sub>T</sub><sup>L</sup>, both in meters, with the four
+      symmetric/asymmetric, warm/cold combinations shaded and labeled,
+      Evans and Hart's
+      (2003) <i>B</i> = 10&nbsp;m onset line and
+      &minus;V<sub>T</sub><sup>L</sup> = 0 completion line drawn, and the
+      trajectory's own crossings of each marked with an &times;.
+      <strong>(b)</strong> Phase 2: &minus;V<sub>T</sub><sup>L</sup> against
+      &minus;V<sub>T</sub><sup>U</sup>, both in meters, with the four
+      structural quadrants shaded and labeled &mdash; deep warm core, shallow
+      warm core, cold core, and mid-level/hybrid, the same categories
+      Section 2's table defines. Both panels add a dashed branch from the
+      trajectory's last point toward (5, 60, &minus;180)&nbsp;m, labeled
+      "warm seclusion (some storms)": that endpoint sits back inside the
+      symmetric warm core quadrant, where Hart places the re-formed
+      low-level warm core of a warm seclusion &mdash; the frontal-fracture
+      structure of Shapiro and Keyser (1990) [4] this article's own
+      introduction mentions above. This
+      composite view replaces an earlier, single-diagram version of this
+      figure that showed panel (b) alone with a validation-case marker; the
+      validation case itself (a typhoon sampled at 984&nbsp;mb in a 72&nbsp;h
+      GFS forecast) is discussed directly, with real computed values, in
+      Section 5.</figcaption>
+  </figure>
+  <figure id="fig8">
+    <img src="figures/fig8_thermal_wind_concept.png"
+         alt="Three-panel figure illustrating the thermal wind concept. Left and center: vertical cross-sections with pressure on a logarithmic axis from 1000 to 300 hectopascals, showing seven flat reference lines each with a height-perturbation curve dipping toward the bottom of the panel over the storm center, shaded light red for a warm core whose dip shrinks with height and light blue for a cold core whose dip grows with height, with the 500 kilometer circle marked by dashed vertical lines and the height range at 925 and 500 hectopascals labeled with double arrows. Right: height range plotted against pressure on the same logarithmic axis for both cores, with least-squares fit lines and slope values for a shaded lower band and a shaded upper band.">
+    <figcaption><strong>Figure 8.</strong> The thermal wind concept, on
+      <em>synthetic</em> single-point cross-sections built for this figure
+      alone (not the two-vortex domain of Figures 2&ndash;4) and computed with
+      <code>cps.hart</code>, the storm-centered reference implementation
+      (Section 7), rather than the operational <code>HartCPS.py</code> every
+      other figure in this article uses. At each pressure <i>p</i> the
+      height perturbation is a Gaussian depression of 150&nbsp;km e-folding
+      radius, amplitude <i>A</i>(<i>p</i>) linear in ln(<i>p</i>) from
+      <strong>(a)</strong> 250&nbsp;m at 1000&nbsp;hPa to 20&nbsp;m at
+      300&nbsp;hPa (warm core) and <strong>(b)</strong> 100&nbsp;m at
+      1000&nbsp;hPa to 450&nbsp;m at 300&nbsp;hPa (cold core). Each of the
+      seven standard levels is drawn as a flat reference line with its own
+      perturbation curve, converted to a vertical offset at one fixed scale
+      for both panels, 9620&nbsp;m per natural-log-pressure axis unit
+      (chosen so 250&nbsp;m, panel a's largest amplitude, draws as about one
+      third of the 1000&ndash;925&nbsp;hPa tick spacing), filled light red or
+      light blue. Dashed lines mark the 500&nbsp;km circle; the labeled
+      double arrows give the height range (max minus min) inside that
+      circle at 925 and 500&nbsp;hPa &mdash; 235 and 118&nbsp;m for the warm
+      core, 123 and 301&nbsp;m for the cold core. <strong>(c)</strong> That
+      same range plotted against ln(<i>p</i>) for both cores (markers at the
+      seven standard levels), from <code>cps.hart.thermal_wind</code> run on
+      a 2D grid (<code>tests/cps/synthetic.py</code>'s <code>make_grid</code>/
+      <code>warm_core_heights</code>, centered 30&deg;N 0&deg;E, 0.5&deg;
+      spacing, the same 150&nbsp;km scale) built at Hart's own 50&nbsp;hPa
+      levels so the fit is real. The shaded "lower band" (900&ndash;600&nbsp;hPa)
+      and "upper band" (600&ndash;300&nbsp;hPa) are <code>cps.hart</code>'s
+      own bands &mdash; Hart's original 50&nbsp;hPa spacing, not the
+      standard-level approximation (925/850/700 and 500/400/300&nbsp;hPa)
+      the operational package in Section 2 uses. Because both cores'
+      amplitudes are one single line in ln(<i>p</i>) over the whole
+      1000&ndash;300&nbsp;hPa depth, the lower- and upper-band slopes come
+      out identical for each core: &minus;V<sub>T</sub><sup>L</sup> =
+      &minus;V<sub>T</sub><sup>U</sup> = +191&nbsp;m for the warm core,
+      &minus;291&nbsp;m for the cold core.</figcaption>
+  </figure>
+  <figure id="fig9">
+    <img src="figures/fig9_b_concept.png"
+         alt="Two-panel plan-view figure illustrating parameter B. Left: a warm-core vortex at the origin of a 1200 kilometer square, its thickness contours closing symmetrically around the center, a 500 kilometer dashed circle split by a northeast-pointing motion arrow into left and right halves shaded two neutral tints, and B annotated as near zero. Right: the same vortex on a north-south thickness gradient with the warm flank labeled to the south and the cold flank to the north, the same circle, motion arrow and split, and B annotated as positive and above the 10 meter line.">
+    <figcaption><strong>Figure 9.</strong> Parameter <i>B</i>, as a plan
+      view, on a <em>synthetic</em> case built for this figure alone, evaluated
+      with <code>cps.hart.parameter_b</code> over the 500&nbsp;km circle for
+      a storm heading 45&deg; (northeast), on a grid centered 30&deg;N 0&deg;E
+      (<code>tests/cps/synthetic.py</code>'s <code>make_grid</code>).
+      <strong>(a)</strong> A warm-core vortex alone (a 60&nbsp;m 925&ndash;700&nbsp;hPa
+      thickness anomaly, 150&nbsp;km scale) on a flat 2480&nbsp;m thickness
+      background: the thickness contours (every 10&nbsp;m) close
+      symmetrically around the center, the circle's motion-relative left
+      and right halves (shaded two neutral tints, carrying no warm/cold
+      meaning here) average out, and <i>B</i> = &minus;0.1&nbsp;m, near
+      Hart's zero. <strong>(b)</strong> The same vortex superimposed on a
+      40&nbsp;m per 1000&nbsp;km north&ndash;south thickness gradient (warm
+      to the south): for northeast motion, <code>parameter_b</code>'s own
+      heading convention makes the right half of the circle the south/east
+      half, which now averages warmer (thicker) than the left, and <i>B</i>
+      = +11.7&nbsp;m, above the 10&nbsp;m onset threshold Evans and Hart
+      (2003) use for extratropical transition (Section 1).</figcaption>
   </figure>
 
   <h2 id="method">2. Method</h2>
@@ -273,9 +352,11 @@
       single complete (stage 2) pixel.
       <strong>(d)</strong> The two vortices
       plotted on Hart's own axes at their actual computed
-      (<i>B</i>, &minus;V<sub>T</sub><sup>L</sup>) values, alongside the
-      schematic transition trajectory from Figure 1's own axes redrawn on
-      <i>B</i> instead of &minus;V<sub>T</sub><sup>U</sup>.</figcaption>
+      (<i>B</i>, &minus;V<sub>T</sub><sup>L</sup>) values, alongside a
+      schematic transition trajectory shaped like Figure 1's own but
+      redrawn on <i>B</i> instead of &minus;V<sub>T</sub><sup>U</sup> &mdash;
+      Figure 1a now shows that same <i>B</i>&ndash;&minus;V<sub>T</sub><sup>L</sup>
+      pairing directly, on its own (different) schematic trajectory.</figcaption>
   </figure>
   <figure id="fig2">
     <img src="figures/fig2_method.png"
@@ -487,12 +568,18 @@
   </ol>
 
   <footer>
-    Figures 1&ndash;5 and 7 are synthetic, regenerated from
-    <code>docs/cps/figures/make_figures.py</code>, which runs the
-    package's own <code>HartCPS.py</code> and <code>CycloneCore.py</code>
-    on synthetic fields; see that file's header for the exact field
-    definitions, including Figure 7's own separate synthetic case. Figure
-    6 alone is a photograph, cropped and resized only.
+    Figures 1&ndash;5 and 7&ndash;9 are synthetic, regenerated from
+    <code>docs/cps/figures/make_figures.py</code>. Figures 2&ndash;5 and 7
+    run the package's own operational <code>HartCPS.py</code> and
+    <code>CycloneCore.py</code> on synthetic fields; see that file's header
+    for the exact field definitions, including Figure 7's own separate
+    synthetic case. Figure 1 (both panels) and Figures 8 and 9 are teaching
+    figures: Figure 1 is a schematic life-cycle trajectory drawn on Hart's
+    own axes, not computed from any field, replacing an earlier
+    single-diagram version of this figure; Figures 8 and 9 are computed
+    with <code>cps.hart</code>, the storm-centered reference implementation,
+    on their own small synthetic grids built with <code>tests/cps/synthetic.py</code>.
+    Figure 6 alone is a photograph, cropped and resized only.
   </footer>
 
 </div>

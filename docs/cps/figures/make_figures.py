@@ -10,9 +10,10 @@ Run from the repository root:
     python3 docs/cps/figures/make_figures.py
 
 Outputs land next to this script, in docs/cps/figures/:
-    fig1_phase_space.png   fig2_method.png       fig3_gridded.png
+    fig1_phase_space.png    fig2_method.png       fig3_gridded.png
     fig4_tilt.png           fig5_performance.png   fig6_cave_typhoon.jpg
-    fig7_parameter_b.png
+    fig7_parameter_b.png    fig8_thermal_wind_concept.png
+    fig9_b_concept.png      fig10_two_diagrams.png
 
 No test fixtures are reused: everything is built here so the figures are
 reproducible from nothing but this file, HartCPS.py, CycloneCore.py and
@@ -123,7 +124,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap, ListedColormap, BoundaryNorm
-from matplotlib.patches import Rectangle, Circle
+from matplotlib.patches import Rectangle, Circle, Wedge
 from matplotlib.lines import Line2D
 
 # ---------------------------------------------------------------------------
@@ -134,11 +135,25 @@ from matplotlib.lines import Line2D
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parent.parent.parent  # docs/cps/figures -> docs/cps -> docs -> repo root
 FUNCTIONS_DIR = REPO_ROOT / "D2D" / "derivedParameters" / "functions"
+SYNTHETIC_TEST_DIR = REPO_ROOT / "tests" / "cps"
 sys.path.insert(0, str(FUNCTIONS_DIR))
 sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(SYNTHETIC_TEST_DIR))
 
 import HartCPS  # noqa: E402
 import CycloneCore  # noqa: E402
+
+# Figures 8-10 (teaching figures) are built with cps/hart.py, the pure-numpy
+# reference implementation of Hart (2003) itself -- Hart's own 900-600/
+# 600-300 hPa, 50 hPa-spaced bands and a circular window -- rather than
+# HartCPS.py's operational, standard-level approximation (925/850/700 and
+# 500/400/300 hPa, a square window) used by every other figure in this
+# script. tests/cps/synthetic.py's make_grid/warm_core_heights (a second,
+# independently written implementation of the same offset geometry, per its
+# own module docstring) builds the small lat/lon grid these three figures
+# need.
+import cps.hart as hart  # noqa: E402
+import synthetic as cps_synthetic  # noqa: E402  (tests/cps/synthetic.py)
 
 OUT_DIR = HERE
 UPLOAD_PHOTO = Path("/root/.claude/uploads/3a4711f2-52b1-52e4-8d45-df8bae2bffec/2bca2450-image.jpg")
@@ -175,6 +190,17 @@ NORM_CATEGORY = BoundaryNorm(np.arange(-0.5, 5.5, 1.0), CMAP_CATEGORY.N)
 
 VORTEX_A_COLOR = "#e34948"
 VORTEX_B_COLOR = "#2a78d6"
+
+# Light fill tints for Figure 8's cross-sections: VORTEX_A/B_COLOR blended
+# 30% color / 70% white.
+LIGHT_RED = "#f7c8c8"
+LIGHT_BLUE = "#bfd7f3"
+
+# Very light, non-thermal neutral tints for Figure 9a's left/right split
+# (deliberately not red/blue, since that panel carries no warm/cold
+# meaning -- only Figure 9b's flanks do).
+NEUTRAL_TINT_1 = "#c3c2b7"
+NEUTRAL_TINT_2 = "#e8e7e2"
 
 FULL_WIDTH_IN = 7.0
 HALF_WIDTH_IN = 3.4
@@ -1313,6 +1339,525 @@ def make_fig7(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m):
 
 
 # ===========================================================================
+# Figure 8: the thermal wind concept, as a vertical cross-section
+# ===========================================================================
+#
+# A(p) profiles for the two synthetic cores, linear in ln(p) between
+# 1000 and 300 hPa (the same construction VORTEX_A/VORTEX_B use, but with
+# the exact amplitudes this teaching figure's own spec calls for).
+
+FIG8_WARM_AMP1000, FIG8_WARM_AMP300 = 250.0, 20.0   # warm core (panel a)
+FIG8_COLD_AMP1000, FIG8_COLD_AMP300 = 100.0, 450.0  # cold core (panel b)
+FIG8_SCALE_KM = 150.0
+FIG8_XLIM_KM = 800.0
+FIG8_CIRCLE_KM = 500.0
+FIG8_CENTER_LAT, FIG8_CENTER_LON = 30.0, 0.0
+FIG8_HALF_WIDTH_DEG = 6.0  # ~+/-667 km, safely past the 500 km circle
+
+# Single vertical scale for both cross-section panels, in meters per
+# ln(p) axis unit, chosen so 250 m (panel a's largest amplitude, at
+# 1000 hPa) draws as about one third of the 1000-925 hPa tick spacing.
+FIG8_LNP_UNIT_M = FIG8_WARM_AMP1000 / (np.log(1000.0 / 925.0) / 3.0)
+
+
+def fig8_amp_warm(p):
+    return _linear_in_lnp(p, 1000.0, FIG8_WARM_AMP1000, 300.0, FIG8_WARM_AMP300)
+
+
+def fig8_amp_cold(p):
+    return _linear_in_lnp(p, 1000.0, FIG8_COLD_AMP1000, 300.0, FIG8_COLD_AMP300)
+
+
+def _fig8_pressure_axis(ax):
+    ax.set_yscale("log")
+    ax.invert_yaxis()
+    # Bottom limit well past 1000 hPa (not just to 1030) so the deepest
+    # dip -- up to ~1026 hPa for the 250 m warm-core amplitude at
+    # 1000 hPa -- has visible clearance above the axis frame instead of
+    # sitting right on it; 1000 remains the lowest tick regardless.
+    ax.set_ylim(1075, 280)
+    ax.yaxis.set_major_locator(plt.FixedLocator(STANDARD_LEVELS))
+    ax.yaxis.set_minor_locator(plt.NullLocator())
+    ax.set_yticklabels([f"{int(p)}" for p in STANDARD_LEVELS])
+    ax.grid(True, which="major", color=GRID_COLOR, linewidth=0.5, zorder=0.2)
+    ax.tick_params(length=3)
+
+
+def _fig8_cross_section(ax, amp_fn, fill_color, line_color):
+    """Draw one cross-section panel: for every standard level, a flat
+    reference line at that pressure and a curve dipping toward higher
+    (visual) pressure by Z'(x, p)/FIG8_LNP_UNIT_M, filled between the
+    two. Returns {level: (A(p), range_within_circle_m)} for the caption.
+    """
+    x = np.linspace(-FIG8_XLIM_KM, FIG8_XLIM_KM, 400)
+    edge_factor = np.exp(-(FIG8_CIRCLE_KM / FIG8_SCALE_KM) ** 2)  # ~1.5e-5, negligible
+    out = {}
+
+    for p in STANDARD_LEVELS:
+        amp = amp_fn(p)
+        zprime = -amp * np.exp(-(x / FIG8_SCALE_KM) ** 2)  # <= 0, meters
+        p_visual = p * np.exp(-zprime / FIG8_LNP_UNIT_M)  # >= p: dips "below" the line
+        flat = np.full_like(x, p)
+        ax.fill_between(x, flat, p_visual, color=fill_color, linewidth=0, zorder=2)
+        ax.plot(x, flat, color=TEXT_SECONDARY, linewidth=0.7, zorder=3)
+        ax.plot(x, p_visual, color=line_color, linewidth=1.3, zorder=4)
+        out[p] = (float(amp), float(amp * (1.0 - edge_factor)))
+
+    for p in (925.0, 500.0):
+        amp, rng = out[p]
+        p_bot = p * np.exp(rng / FIG8_LNP_UNIT_M)
+        ax.annotate(
+            "", xy=(0, p_bot), xytext=(0, p),
+            arrowprops=dict(arrowstyle="<->", color=TEXT_DARK, linewidth=1.1, shrinkA=0, shrinkB=0),
+            zorder=6,
+        )
+        ax.annotate(
+            f"{rng:.0f} m",
+            (0, np.sqrt(p * p_bot)),
+            textcoords="offset points",
+            xytext=(10, 0),
+            fontsize=7.0,
+            color=TEXT_DARK,
+            va="center",
+            ha="left",
+            zorder=6,
+            bbox=dict(facecolor="white", edgecolor="none", alpha=0.8, pad=0.8),
+        )
+
+    for xline in (-FIG8_CIRCLE_KM, FIG8_CIRCLE_KM):
+        ax.axvline(xline, color=TEXT_SECONDARY, linewidth=0.9, linestyle="--", zorder=5)
+
+    ax.set_xlim(-FIG8_XLIM_KM, FIG8_XLIM_KM)
+    ax.set_xlabel("x, distance from center (km)")
+    _fig8_pressure_axis(ax)
+    return out
+
+
+def make_fig8():
+    fig, axes = plt.subplots(1, 3, figsize=(FULL_WIDTH_IN, 3.0))
+    ax_a, ax_b, ax_c = axes
+
+    warm_ranges = _fig8_cross_section(ax_a, fig8_amp_warm, LIGHT_RED, VORTEX_A_COLOR)
+    ax_a.text(
+        0, 340, "warm core:\nrange shrinks upward\n" + r"$-V_T$ > 0",
+        ha="center", va="top", fontsize=7.0, color=TEXT_DARK, zorder=7,
+        bbox=dict(facecolor="white", edgecolor="none", alpha=0.8, pad=1.0),
+    )
+    ax_a.set_ylabel("pressure (hPa)")
+    panel_letter(ax_a, "a")
+
+    cold_ranges = _fig8_cross_section(ax_b, fig8_amp_cold, LIGHT_BLUE, VORTEX_B_COLOR)
+    ax_b.text(
+        0, 340, "cold core:\nrange grows upward\n" + r"$-V_T$ < 0",
+        ha="center", va="top", fontsize=7.0, color=TEXT_DARK, zorder=7,
+        bbox=dict(facecolor="white", edgecolor="none", alpha=0.8, pad=1.0),
+    )
+    panel_letter(ax_b, "b")
+
+    # --- panel (c): height range vs ln(p), both cases, from cps.hart -------
+    lat2d_c, lon2d_c = cps_synthetic.make_grid(
+        FIG8_CENTER_LAT, FIG8_CENTER_LON, half_width_deg=FIG8_HALF_WIDTH_DEG, dlat=0.5, dlon=0.5
+    )
+    # Union of the seven standard levels (markers) and Hart's own 13
+    # 50 hPa levels (900-300, exactly hart.LOWER_LEVELS + hart.UPPER_LEVELS)
+    # -- the band fits need the latter; only the former is plotted with
+    # its own marker.
+    union_levels = sorted(set(int(p) for p in STANDARD_LEVELS) | set(HART_50HPA_LEVELS), reverse=True)
+
+    # Per (core, band) anchor pressure and text side: warm-core labels
+    # sit to the right of the red line (ha="left", anchored a fixed
+    # number of *data* units to the right of the line's own value),
+    # cold-core labels to the left of the blue line (ha="right", the
+    # same fixed pad to the left). A data-unit pad (not an offset in
+    # points) is what actually keeps text off the line here: this axis
+    # is only ~2 inches wide for a 0-500+ m data range, so even a few
+    # points of offset is a huge swing in data space. The two cores'
+    # anchor pressures are also deliberately offset from each other
+    # within each band (the two lines' dZ values are nearly equal at
+    # the band's own mean pressure, which is what made the two labels
+    # collide before) so the labels stay vertically separated even
+    # where the lines themselves pass close together. The label text
+    # itself is just the number: the shaded band, the outside "lower/
+    # upper band" tag, and the legend's color already say what it is.
+    DZ_LABEL_PAD = 16.0
+    ann_spec = {
+        ("warm", "lower"): dict(p_anchor=820.0, ha="left"),
+        ("warm", "upper"): dict(p_anchor=480.0, ha="left"),
+        ("cold", "lower"): dict(p_anchor=660.0, ha="right"),
+        ("cold", "upper"): dict(p_anchor=390.0, ha="right"),
+    }
+    results = {}
+    for name, amp_fn, color in (("warm", fig8_amp_warm, VORTEX_A_COLOR), ("cold", fig8_amp_cold, VORTEX_B_COLOR)):
+        z_stack = cps_synthetic.warm_core_heights(
+            lat2d_c, lon2d_c, FIG8_CENTER_LAT, FIG8_CENTER_LON, union_levels, amp_fn, scale_km=FIG8_SCALE_KM
+        )
+        tw = hart.thermal_wind(
+            union_levels, z_stack, lat2d_c, lon2d_c, FIG8_CENTER_LAT, FIG8_CENTER_LON, radius_km=FIG8_CIRCLE_KM
+        )
+        results[name] = tw
+
+        xs = [tw["dz_by_level"][int(p)] for p in STANDARD_LEVELS]
+        ax_c.plot(
+            xs, STANDARD_LEVELS, marker="o", markersize=5.5, linewidth=1.2, color=color,
+            markerfacecolor=color, markeredgecolor="white", markeredgewidth=0.5, zorder=5,
+        )
+
+        for band, band_name, slope_key in ((hart.LOWER_LEVELS, "lower", "VTL"), (hart.UPPER_LEVELS, "upper", "VTU")):
+            slope = tw[slope_key]
+            band_dz = [tw["dz_by_level"][lvl] for lvl in band]
+            ybar = np.mean(band_dz)
+            xbar = np.mean(np.log(band))
+            p_line = np.linspace(min(band), max(band), 30)
+            dz_line = ybar + slope * (np.log(p_line) - xbar)
+            ax_c.plot(dz_line, p_line, color=color, linewidth=1.8, linestyle="-", zorder=4)
+            spec = ann_spec[(name, band_name)]
+            p_anchor = spec["p_anchor"]
+            dz_anchor = ybar + slope * (np.log(p_anchor) - xbar)
+            dz_text = dz_anchor + (DZ_LABEL_PAD if spec["ha"] == "left" else -DZ_LABEL_PAD)
+            ax_c.text(
+                dz_text, p_anchor, f"{slope:+.0f} m",
+                ha=spec["ha"], va="center", fontsize=7.2, color=color, fontweight="bold",
+                bbox=dict(facecolor="white", edgecolor="none", alpha=0.85, pad=0.8),
+                zorder=6,
+            )
+
+    xmax = 1.15 * max(
+        max(results["warm"]["dz_by_level"].values()),
+        max(results["cold"]["dz_by_level"].values()),
+    )
+    ax_c.axhspan(min(hart.LOWER_LEVELS), max(hart.LOWER_LEVELS), color=NEUTRAL_TINT_1, alpha=0.35, zorder=0)
+    ax_c.axhspan(min(hart.UPPER_LEVELS), max(hart.UPPER_LEVELS), color=NEUTRAL_TINT_2, alpha=0.6, zorder=0)
+    # Placed just outside the right edge of the axes (axes-fraction x,
+    # data-coordinate y) so the two band labels never collide with the
+    # curves, markers, or slope annotations inside the panel.
+    band_label_kw = dict(transform=ax_c.get_yaxis_transform(), fontsize=7.2, color=TEXT_SECONDARY, ha="left", va="center", style="italic", zorder=1)
+    ax_c.text(1.02, np.sqrt(min(hart.LOWER_LEVELS) * max(hart.LOWER_LEVELS)), "lower\nband", **band_label_kw)
+    ax_c.text(1.02, np.sqrt(min(hart.UPPER_LEVELS) * max(hart.UPPER_LEVELS)), "upper\nband", **band_label_kw)
+
+    ax_c.set_xlim(0, xmax)
+    ax_c.set_xlabel(r"height range, max $-$ min (m)")
+    _fig8_pressure_axis(ax_c)
+
+    legend_handles = [
+        Line2D([0], [0], color=VORTEX_A_COLOR, marker="o", markerfacecolor=VORTEX_A_COLOR, markeredgecolor="white", linewidth=1.8, markersize=5.5, label="warm core"),
+        Line2D([0], [0], color=VORTEX_B_COLOR, marker="o", markerfacecolor=VORTEX_B_COLOR, markeredgecolor="white", linewidth=1.8, markersize=5.5, label="cold core"),
+    ]
+    # "Lower right" (the literal bottom-right corner) sits on top of the
+    # 1000 hPa markers, since the legend box is wide enough to reach
+    # left of the corner it anchors on; center-right, well above the
+    # 1000 hPa row and well right of both lines at that pressure, is
+    # clear of everything.
+    ax_c.legend(handles=legend_handles, loc="center right", bbox_to_anchor=(0.99, 0.42), frameon=False, fontsize=7.0)
+    panel_letter(ax_c, "c")
+
+    fig.tight_layout()
+    fig.savefig(OUT_DIR / "fig8_thermal_wind_concept.png")
+    plt.close(fig)
+
+    report = dict(
+        lnp_unit_m=float(FIG8_LNP_UNIT_M),
+        warm_range_925=warm_ranges[925.0][1],
+        warm_range_500=warm_ranges[500.0][1],
+        cold_range_925=cold_ranges[925.0][1],
+        cold_range_500=cold_ranges[500.0][1],
+        warm_VTL=results["warm"]["VTL"],
+        warm_VTU=results["warm"]["VTU"],
+        cold_VTL=results["cold"]["VTL"],
+        cold_VTU=results["cold"]["VTU"],
+    )
+    print("Figure 8 (thermal wind concept):")
+    print(f"  vertical scale: 1 ln(p) unit = {report['lnp_unit_m']:.0f} m")
+    print(f"  warm core: range(925 hPa)={report['warm_range_925']:.0f} m, range(500 hPa)={report['warm_range_500']:.0f} m, "
+          f"cps.hart -V_T^L={report['warm_VTL']:+.1f} m, -V_T^U={report['warm_VTU']:+.1f} m")
+    print(f"  cold core: range(925 hPa)={report['cold_range_925']:.0f} m, range(500 hPa)={report['cold_range_500']:.0f} m, "
+          f"cps.hart -V_T^L={report['cold_VTL']:+.1f} m, -V_T^U={report['cold_VTU']:+.1f} m")
+    return report
+
+
+# ===========================================================================
+# Figure 9: parameter B as a plan view
+# ===========================================================================
+
+FIG9_CENTER_LAT, FIG9_CENTER_LON = 30.0, 0.0
+FIG9_HALF_WIDTH_DEG = 8.0  # ~+/-890 km, past the 1200 km/2 = 600 km box half-width
+FIG9_BOX_KM = 1200.0
+FIG9_CIRCLE_KM = 500.0
+FIG9_VORTEX_AMP_M = 60.0
+FIG9_VORTEX_SCALE_KM = 150.0
+FIG9_BACKGROUND_THICKNESS_M = 2480.0
+FIG9_HEADING_DEG = 45.0  # northeast
+FIG9_GRADIENT_M_PER_1000KM = 40.0  # 925-700 hPa thickness, warm (thick) to the south
+
+
+def _fig9_thickness_and_b(lat2d, lon2d, x_km, y_km, r_km, with_gradient):
+    vortex = FIG9_VORTEX_AMP_M * np.exp(-(r_km / FIG9_VORTEX_SCALE_KM) ** 2)
+    thickness = np.full_like(x_km, FIG9_BACKGROUND_THICKNESS_M) + vortex
+    if with_gradient:
+        # Warm (thick) to the south: thickness decreases northward (+y).
+        thickness = thickness - (FIG9_GRADIENT_M_PER_1000KM / 1000.0) * y_km
+    z900 = np.zeros_like(thickness)
+    z600 = z900 + thickness  # only the difference (thickness) matters to parameter_b
+    b_value = hart.parameter_b(
+        z900, z600, lat2d, lon2d, FIG9_CENTER_LAT, FIG9_CENTER_LON, FIG9_HEADING_DEG, radius_km=FIG9_CIRCLE_KM
+    )
+    return thickness, float(b_value)
+
+
+def _fig9_panel(ax, lon2d, lat2d, x_km, y_km, r_km, mx, my, thickness, b_value, label_text):
+    half = 0.5 * FIG9_BOX_KM
+    levels = np.arange(np.floor(thickness.min() / 10.0) * 10.0, thickness.max() + 10.0, 10.0)
+    ax.contourf(x_km, y_km, thickness, levels=levels, cmap=CMAP_SEQ_BLUE, zorder=1)
+    ax.contour(x_km, y_km, thickness, levels=levels, colors=TEXT_SECONDARY, linewidths=0.4, zorder=2)
+
+    # Left/right split of the analysis circle, exactly the half-planes
+    # hart.parameter_b uses (cross = mx*dy - my*dx; right where cross < 0
+    # -- algebraically cross = r*sin(alpha - theta_m) for a point at math
+    # angle alpha, theta_m the motion vector's own math angle, so "right"
+    # is the 180 deg wedge from theta_m-180 to theta_m and "left" is
+    # theta_m to theta_m+180). Drawn as vector Wedge patches (no raster
+    # edges), under the contour lines but over the filled contourf.
+    theta_m = 90.0 - FIG9_HEADING_DEG  # math-convention angle of the motion vector
+    right_wedge = Wedge((0, 0), FIG9_CIRCLE_KM, theta_m - 180.0, theta_m, facecolor=NEUTRAL_TINT_2, edgecolor="none", alpha=0.55, zorder=1.5)
+    left_wedge = Wedge((0, 0), FIG9_CIRCLE_KM, theta_m, theta_m + 180.0, facecolor=NEUTRAL_TINT_1, edgecolor="none", alpha=0.55, zorder=1.5)
+    ax.add_patch(right_wedge)
+    ax.add_patch(left_wedge)
+
+    circle = Circle((0, 0), FIG9_CIRCLE_KM, facecolor="none", edgecolor=TEXT_DARK, linewidth=1.3, linestyle="--", zorder=6)
+    ax.add_patch(circle)
+
+    arrow_len = 320.0
+    ax.annotate(
+        "", xy=(arrow_len * mx, arrow_len * my), xytext=(0, 0),
+        arrowprops=dict(arrowstyle="-|>", color=TEXT_DARK, linewidth=1.8, mutation_scale=16),
+        zorder=8,
+    )
+    ax.annotate("motion", (arrow_len * mx, arrow_len * my), textcoords="offset points", xytext=(8, -14), fontsize=7.3, color=TEXT_DARK, fontweight="bold", ha="left", va="top", zorder=8)
+
+    ax.plot(0, 0, marker="+", markersize=10, markeredgewidth=1.8, color=TEXT_DARK, zorder=8)
+
+    ax.text(
+        0.03, 0.03, f"B = {b_value:+.1f} m\n({label_text})",
+        transform=ax.transAxes, fontsize=8.0, color=TEXT_DARK, ha="left", va="bottom",
+        bbox=dict(facecolor="white", edgecolor=TEXT_SECONDARY, linewidth=0.6, alpha=0.9, pad=2.5), zorder=9,
+    )
+
+    ax.set_xlim(-half, half)
+    ax.set_ylim(-half, half)
+    ax.set_aspect("equal")
+    ax.set_xlabel("km east of storm")
+    ax.grid(True, color=GRID_COLOR, linewidth=0.4, zorder=0.3)
+    ax.tick_params(length=3)
+
+
+def make_fig9():
+    lat2d, lon2d = cps_synthetic.make_grid(
+        FIG9_CENTER_LAT, FIG9_CENTER_LON, half_width_deg=FIG9_HALF_WIDTH_DEG, dlat=0.25, dlon=0.25
+    )
+    x_km, y_km = hart.local_offsets_km(lat2d, lon2d, FIG9_CENTER_LAT, FIG9_CENTER_LON)
+    r_km = hart.great_circle_km(lat2d, lon2d, FIG9_CENTER_LAT, FIG9_CENTER_LON)
+    heading_rad = np.radians(FIG9_HEADING_DEG)
+    mx, my = np.sin(heading_rad), np.cos(heading_rad)
+
+    thickness_sym, b_sym = _fig9_thickness_and_b(lat2d, lon2d, x_km, y_km, r_km, with_gradient=False)
+    thickness_front, b_front = _fig9_thickness_and_b(lat2d, lon2d, x_km, y_km, r_km, with_gradient=True)
+
+    fig, axes = plt.subplots(1, 2, figsize=(FULL_WIDTH_IN, 3.7))
+    ax_a, ax_b = axes
+
+    _fig9_panel(ax_a, lon2d, lat2d, x_km, y_km, r_km, mx, my, thickness_sym, b_sym, "symmetric")
+    ax_a.set_ylabel("km north of storm")
+    # Right of NE motion is the south/east half (cross < 0, per
+    # hart.parameter_b's own convention), left is north/west; place each
+    # label at its half's own angular midpoint (northwest, southeast),
+    # near the rim but inside the circle (radius 420 < 500).
+    theta_m = 90.0 - FIG9_HEADING_DEG
+    label_r = 420.0
+    nw_deg, se_deg = np.radians(theta_m + 90.0), np.radians(theta_m - 90.0)
+    ax_a.text(label_r * np.cos(nw_deg), label_r * np.sin(nw_deg), "left", fontsize=7.8, color=TEXT_SECONDARY, ha="center", va="center", style="italic", zorder=7)
+    ax_a.text(label_r * np.cos(se_deg), label_r * np.sin(se_deg), "right", fontsize=7.8, color=TEXT_SECONDARY, ha="center", va="center", style="italic", zorder=7)
+    panel_letter(ax_a, "a")
+
+    _fig9_panel(ax_b, lon2d, lat2d, x_km, y_km, r_km, mx, my, thickness_front, b_front, "frontal, above the 10 m line")
+    ax_b.text(0.95, 0.22, "warm flank (south)", transform=ax_b.transAxes, fontsize=7.3, color=TEXT_DARK, ha="right", va="bottom", style="italic",
+               bbox=dict(facecolor="white", edgecolor="none", alpha=0.75, pad=1.2), clip_on=False)
+    ax_b.text(0.95, 0.92, "cold flank (north)", transform=ax_b.transAxes, fontsize=7.3, color=TEXT_DARK, ha="right", va="top", style="italic",
+               bbox=dict(facecolor="white", edgecolor="none", alpha=0.75, pad=1.2), clip_on=False)
+    panel_letter(ax_b, "b")
+
+    fig.tight_layout()
+    fig.savefig(OUT_DIR / "fig9_b_concept.png")
+    plt.close(fig)
+
+    print("Figure 9 (parameter B, plan view):")
+    print(f"  (a) symmetric vortex alone: B = {b_sym:+.2f} m")
+    print(f"  (b) vortex + {FIG9_GRADIENT_M_PER_1000KM:.0f} m/1000km southward-warm gradient, heading {FIG9_HEADING_DEG:.0f} deg (NE): B = {b_front:+.2f} m")
+    return dict(b_symmetric=b_sym, b_frontal=b_front)
+
+
+# ===========================================================================
+# Figure 10: Hart's two diagrams, one schematic life cycle drawn on both
+# ===========================================================================
+
+# Columns: B (m), -V_T^L (m), -V_T^U (m), at 24 h spacing.
+FIG10_TRAJ = np.array(
+    [
+        (3, 240, 200),
+        (6, 210, 150),
+        (12, 160, 80),
+        (25, 110, 10),
+        (40, 60, -70),
+        (45, 0, -140),
+        (35, -80, -200),
+        (20, -150, -230),
+    ],
+    dtype=float,
+)
+FIG10_SECLUSION_END = np.array([5.0, 60.0, -180.0])
+FIG10_XLIM_A = (-20.0, 80.0)
+FIG10_YLIM = (-300.0, 300.0)
+
+
+def make_fig10():
+    fig, axes = plt.subplots(1, 2, figsize=(FULL_WIDTH_IN, 3.6))
+    ax_a, ax_b = axes
+    hours = np.arange(0, 24 * FIG10_TRAJ.shape[0], 24)
+    b_thr = HartCPS.B_THRESHOLD_M  # 10 m, Evans and Hart (2003)
+
+    # --- panel (a): Phase 1, B vs -V_T^L, quadrants as Figure 7(d) ---------
+    xlim, ylim = FIG10_XLIM_A, FIG10_YLIM
+    ax_a.set_xlim(*xlim)
+    ax_a.set_ylim(*ylim)
+
+    quadrants_a = [
+        (-1e4, b_thr, 0, 1e4, STAGE_COLORS[0], "symmetric\nwarm core"),
+        (b_thr, 1e4, 0, 1e4, STAGE_COLORS[1], "asymmetric warm core"),
+        (b_thr, 1e4, -1e4, 0, STAGE_COLORS[2], "asymmetric cold core"),
+        (-1e4, b_thr, -1e4, 0, "#4a3aa7", "symmetric\ncold core"),
+    ]
+    for x0, x1, y0, y1, color, _ in quadrants_a:
+        x0c, x1c = max(x0, xlim[0]), min(x1, xlim[1])
+        y0c, y1c = max(y0, ylim[0]), min(y1, ylim[1])
+        ax_a.add_patch(Rectangle((x0c, y0c), x1c - x0c, y1c - y0c, facecolor=color, alpha=0.30, edgecolor="none", zorder=0))
+    label_pos_a = {
+        "symmetric\nwarm core": (-15, 130, "left", "center"),
+        "asymmetric warm core": (xlim[1] - 3, 275, "right", "center"),
+        "asymmetric cold core": (xlim[1] - 3, -270, "right", "center"),
+        "symmetric\ncold core": (xlim[0] + 3, -235, "left", "center"),
+    }
+    for _, _, _, _, _, label in quadrants_a:
+        x, y, ha, va = label_pos_a[label]
+        ax_a.text(x, y, label, color=TEXT_SECONDARY, fontsize=7.2, ha=ha, va=va, style="italic", zorder=1)
+
+    ax_a.axhline(0, color=TEXT_DARK, linewidth=1.0, zorder=2)
+    ax_a.axvline(b_thr, color=TEXT_DARK, linewidth=1.0, zorder=2)
+
+    ax_a.plot(FIG10_TRAJ[:, 0], FIG10_TRAJ[:, 1], color=TEXT_SECONDARY, linewidth=2.0, zorder=5)
+    for k in range(FIG10_TRAJ.shape[0]):
+        bval, vtl = FIG10_TRAJ[k, 0], FIG10_TRAJ[k, 1]
+        color = CMAP_SEQ_BLUE(k / (FIG10_TRAJ.shape[0] - 1))
+        ax_a.plot(bval, vtl, marker="o", markersize=7, markerfacecolor=color, markeredgecolor="white", markeredgewidth=0.8, zorder=6)
+        dx_txt, dy_txt, va = 8, 8, "bottom"
+        if k == FIG10_TRAJ.shape[0] - 1:
+            dx_txt, dy_txt, va = 8, -14, "top"
+        ax_a.annotate(f"{hours[k]:.0f} h", (bval, vtl), textcoords="offset points", xytext=(dx_txt, dy_txt), fontsize=6.7, color=TEXT_SECONDARY, va=va)
+
+    seclusion_a = np.vstack([FIG10_TRAJ[-1, [0, 1]], FIG10_SECLUSION_END[[0, 1]]])
+    ax_a.plot(seclusion_a[:, 0], seclusion_a[:, 1], color=TEXT_SECONDARY, linewidth=1.6, linestyle="--", zorder=5)
+    ax_a.plot(FIG10_SECLUSION_END[0], FIG10_SECLUSION_END[1], marker="D", markersize=6.5, markerfacecolor=CMAP_SEQ_BLUE(1.0), markeredgecolor="white", markeredgewidth=0.8, zorder=6)
+    ax_a.annotate(
+        "warm seclusion\n(some storms)", (FIG10_SECLUSION_END[0], FIG10_SECLUSION_END[1]),
+        textcoords="offset points", xytext=(-14, 4), fontsize=6.7, color=TEXT_SECONDARY, style="italic", ha="right", va="center",
+    )
+
+    onset_xy = _interp_crossing(FIG10_TRAJ[:, [0, 1]], 0, b_thr)
+    completion_xy = _interp_crossing(FIG10_TRAJ[:, [0, 1]], 1, 0.0)
+    if onset_xy is not None:
+        ax_a.plot(*onset_xy, marker="x", markersize=7, color=TEXT_DARK, markeredgewidth=1.6, zorder=7)
+        ax_a.annotate(
+            "onset: B > 10 m", onset_xy, textcoords="offset points", xytext=(10, 14), fontsize=6.8, color=TEXT_DARK,
+            va="bottom", bbox=dict(facecolor="white", edgecolor="none", alpha=0.85, pad=0.8), zorder=7,
+        )
+    if completion_xy is not None:
+        ax_a.plot(*completion_xy, marker="x", markersize=7, color=TEXT_DARK, markeredgewidth=1.6, zorder=7)
+        ax_a.annotate(
+            "completion:\n" + r"$-V_T^L$ < 0", completion_xy, textcoords="offset points", xytext=(10, -32),
+            fontsize=6.8, color=TEXT_DARK, va="top", bbox=dict(facecolor="white", edgecolor="none", alpha=0.85, pad=0.8), zorder=7,
+        )
+
+    ax_a.set_xlabel("B (m)")
+    ax_a.set_ylabel(r"$-V_T^L$  (m)")
+    ax_a.grid(True, color=GRID_COLOR, linewidth=0.5, zorder=0.2)
+    ax_a.tick_params(length=3)
+    panel_letter(ax_a, "a")
+
+    # --- panel (b): Phase 2, -V_T^L vs -V_T^U, quadrants as Figure 1 -------
+    lim = 300.0
+    ax_b.set_xlim(-lim, lim)
+    ax_b.set_ylim(-lim, lim)
+    quadrants_b = [
+        (0, lim, 0, lim, "#e34948", "deep warm core"),
+        (0, lim, -lim, 0, "#eb6834", "shallow warm core"),
+        (-lim, 0, -lim, 0, "#2a78d6", "cold core"),
+        (-lim, 0, 0, lim, "#4a3aa7", "mid-level or hybrid"),
+    ]
+    for x0, x1, y0, y1, color, _ in quadrants_b:
+        ax_b.add_patch(Rectangle((x0, y0), x1 - x0, y1 - y0, facecolor=color, alpha=0.11, edgecolor="none", zorder=0))
+    # Same quadrant labels and positions as Figure 1's own single-panel
+    # version of this diagram.
+    label_pos_b = {
+        "deep warm core": (lim * 0.55, lim * 0.90),
+        "shallow warm core": (lim * 0.55, -lim * 0.90),
+        "cold core": (-lim * 0.95, -lim * 0.90),
+        "mid-level or hybrid": (-lim * 0.95, lim * 0.68),
+    }
+    for _, _, _, _, _, label in quadrants_b:
+        x, y = label_pos_b[label]
+        ax_b.text(x, y, label, color=TEXT_SECONDARY, fontsize=7.3, ha="left", va="center", style="italic", zorder=1)
+    ax_b.axhline(0, color=TEXT_DARK, linewidth=1.0, zorder=2)
+    ax_b.axvline(0, color=TEXT_DARK, linewidth=1.0, zorder=2)
+
+    ax_b.plot(FIG10_TRAJ[:, 1], FIG10_TRAJ[:, 2], color=TEXT_SECONDARY, linewidth=2.0, zorder=5)
+    for k in range(FIG10_TRAJ.shape[0]):
+        vtl, vtu = FIG10_TRAJ[k, 1], FIG10_TRAJ[k, 2]
+        color = CMAP_SEQ_BLUE(k / (FIG10_TRAJ.shape[0] - 1))
+        ax_b.plot(vtl, vtu, marker="o", markersize=7, markerfacecolor=color, markeredgecolor="white", markeredgewidth=0.8, zorder=6)
+        dx_txt, dy_txt, va, ha = 8, 8, "bottom", "left"
+        if k == FIG10_TRAJ.shape[0] - 1:
+            dx_txt, dy_txt, va = 8, -14, "top"
+        elif hours[k] == 144:
+            # Default placement sits right on the solid trajectory line
+            # here (it continues up-right toward 120 h) and close to the
+            # dashed warm-seclusion branch passing just below; up-and-left
+            # clears both.
+            dx_txt, dy_txt, va, ha = -8, 14, "bottom", "right"
+        ax_b.annotate(f"{hours[k]:.0f} h", (vtl, vtu), textcoords="offset points", xytext=(dx_txt, dy_txt), fontsize=6.7, color=TEXT_SECONDARY, va=va, ha=ha)
+
+    seclusion_b = np.vstack([FIG10_TRAJ[-1, [1, 2]], FIG10_SECLUSION_END[[1, 2]]])
+    ax_b.plot(seclusion_b[:, 0], seclusion_b[:, 1], color=TEXT_SECONDARY, linewidth=1.6, linestyle="--", zorder=5)
+    ax_b.plot(FIG10_SECLUSION_END[1], FIG10_SECLUSION_END[2], marker="D", markersize=6.5, markerfacecolor=CMAP_SEQ_BLUE(1.0), markeredgecolor="white", markeredgewidth=0.8, zorder=6)
+    ax_b.annotate(
+        "warm seclusion\n(some storms)", (FIG10_SECLUSION_END[1], FIG10_SECLUSION_END[2]),
+        textcoords="offset points", xytext=(10, -4), fontsize=6.7, color=TEXT_SECONDARY, style="italic", ha="left", va="top",
+    )
+
+    ax_b.set_xlabel(r"$-V_T^L$  (m)")
+    ax_b.set_ylabel(r"$-V_T^U$  (m)")
+    ax_b.grid(True, color=GRID_COLOR, linewidth=0.5, zorder=0.2)
+    ax_b.tick_params(length=3)
+    panel_letter(ax_b, "b")
+
+    fig.tight_layout()
+    fig.savefig(OUT_DIR / "fig10_two_diagrams.png")
+    plt.close(fig)
+
+    report = dict(onset_B=onset_xy[0] if onset_xy else None, onset_VTL=onset_xy[1] if onset_xy else None,
+                  completion_B=completion_xy[0] if completion_xy else None, completion_VTL=completion_xy[1] if completion_xy else None)
+    print("Figure 10 (Hart's two diagrams, schematic life cycle):")
+    print(f"  onset crossing (B=10 m): {report}")
+    return report
+
+
+# ===========================================================================
 # Main
 # ===========================================================================
 
@@ -1371,6 +1916,18 @@ def main():
     print("Building Figure 7 (parameter B and the ET stage) ...")
     fig7_values = make_fig7(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m)
     print("Figure 7 center values:", fig7_values)
+
+    print("Building Figure 8 (thermal wind concept, cross-section) ...")
+    fig8_values = make_fig8()
+    print("Figure 8 values:", fig8_values)
+
+    print("Building Figure 9 (parameter B, plan view) ...")
+    fig9_values = make_fig9()
+    print("Figure 9 values:", fig9_values)
+
+    print("Building Figure 10 (Hart's two diagrams, schematic life cycle) ...")
+    fig10_values = make_fig10()
+    print("Figure 10 values:", fig10_values)
 
     print("Done. Figures written to", OUT_DIR)
 
