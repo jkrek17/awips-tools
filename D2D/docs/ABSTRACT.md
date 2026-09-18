@@ -1,5 +1,7 @@
 # Gridded Cyclone Phase Space as an AWIPS Derived Parameter for Diagnosing Tropical Cyclone Structure and Extratropical Transition
 
+Jason Krekeler, NOAA/NWS Ocean Prediction Center
+
 The cyclone phase space of Hart (2003) characterizes a cyclone's thermal
 structure through the lower- and upper-tropospheric thermal wind,
 derived from the vertical change of the geopotential height
