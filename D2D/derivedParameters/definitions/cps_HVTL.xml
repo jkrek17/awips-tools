@@ -9,14 +9,14 @@
   standard-level stand-in for Hart's 900-600 hPa band; see cps_HartCPS.py for
   why). Units are meters (of dZ) per unit of ln(p), i.e. plain meters.
   Positive = warm core, negative = cold core - same sign convention as
-  CycloneCore.py's VTL and as cps.hart.thermal_wind. Unlike VTL.xml/VTU.xml
-  (CycloneCore.py), this field needs NO unit rescaling: its physical
+  cps.hart.thermal_wind. Unlike the retired vorticity-proxy VTL, this
+  field needs NO unit rescaling: its physical
   magnitude (order 1e2 m) already samples readably at CAVE's two-decimal
   rounding.
 
-  This is a second, independent family from CycloneCore.py's VTL/VTU/
-  CPScat/CPSidx - see D2D/README.md's "Hart CPS family" section for how
-  the two compare and why this one is the more physically faithful
+  This family replaced the vorticity-proxy VTL/VTU/CPScat/CPSidx
+  (retired 2026-09-18, kept under reference/vorticity_proxy/) - see
+  D2D/README.md for how the two compare and why this one is the more physically faithful
   successor.
 
   Below-ground masking: each of the three height levels above is
@@ -45,7 +45,7 @@
     - "Surface" is the right levels= value to make this show under a
       surface plane in the Volume Browser (alternatively use levels="MSL"),
     - unit="" (empty) is accepted - confirmed to load on a real AWIPS
-      site for CycloneCore.py's own fields, which use the same convention.
+      site for the retired vorticity-proxy fields, which used the same convention.
 -->
 <DerivedParameter abbreviation="HVTL" name="Hart CPS -VT lower (925-700) (m)" unit="">
     <Method name="cps_HartCPS.executeBand3" levels="Surface">

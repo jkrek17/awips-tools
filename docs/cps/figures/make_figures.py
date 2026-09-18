@@ -135,8 +135,10 @@ from matplotlib.lines import Line2D
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parent.parent.parent  # docs/cps/figures -> docs/cps -> docs -> repo root
 FUNCTIONS_DIR = REPO_ROOT / "D2D" / "derivedParameters" / "functions"
+REFERENCE_DIR = REPO_ROOT / "reference" / "vorticity_proxy"  # retired CycloneCore.py, kept for Figure 4
 SYNTHETIC_TEST_DIR = REPO_ROOT / "tests" / "cps"
 sys.path.insert(0, str(FUNCTIONS_DIR))
+sys.path.insert(0, str(REFERENCE_DIR))
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(SYNTHETIC_TEST_DIR))
 

@@ -4,16 +4,15 @@ wind parameters, computed pointwise on the grid.
 
 *** EXPERIMENTAL.  NOT OPERATIONALLY VETTED. ***
 
-This is a second, independent implementation of the cyclone-core-
-structure idea already covered by `CycloneCore.py` (VTL, VTU, CPScat,
-CPSidx) in this same directory. That family is a vorticity-based proxy
-chosen because it is cheap and because relative vorticity is what a
-forecaster already has muscle memory for reading. This family instead
-computes Hart's own quantity -- the actual -V_T^L / -V_T^U thermal wind
-parameters from `cps/hart.py`'s `thermal_wind` -- at every point of the
-grid, using nothing but geopotential height. `CycloneCore.py` is left
-completely untouched; the two families are meant to be compared against
-each other, not merged.
+This is the operational cyclone phase space module. It computes Hart's
+own quantity -- the actual -V_T^L / -V_T^U thermal wind parameters from
+`cps/hart.py`'s `thermal_wind` -- at every point of the grid, using
+nothing but geopotential height, plus parameter B and the joint class.
+
+It replaced an earlier vorticity-based proxy (`CycloneCore.py`: VTL, VTU,
+CPScat, CPSidx), retired from the install set on 2026-09-18 and kept
+under `reference/vorticity_proxy/` for comparison. References to
+`CycloneCore` below are to that retired module; nothing here imports it.
 
 Method
 ------
@@ -261,7 +260,7 @@ depends on which way the grid's axes actually run. `ORIENTATION_MODE`
 controls this; every other function in this module (`window_mean`,
 `steering`, `parameter_b_grid`'s cross-product-style normal, `hart_class`)
 takes no derivative and is orientation-free. Mode 1 is confirmed on
-the OPC build, matching `CycloneCore.py`'s own default.
+the OPC build, matching the retired `CycloneCore.py`'s default.
 
 `hart_class` reports a single joint category (0-6) at every point
 inside a closed low (`closed_low_mask` on 1000 hPa height, same as

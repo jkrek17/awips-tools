@@ -6,8 +6,8 @@
   universal standard-level stand-in for Hart's 600-300 hPa band). Units
   are meters (of dZ) per unit of ln(p). Positive = warm core, negative =
   cold core. See cps_HVTL.xml's comment and cps_HartCPS.py's module docstring for
-  the full method description, and D2D/README.md's "Hart CPS family"
-  section for how this compares to CycloneCore.py's vorticity-proxy VTU.
+  the full method description, and D2D/README.md for how this compares
+  to the retired vorticity-proxy VTU.
 
   Below-ground masking: same as cps_HVTL.xml, via the surface pressure field
   (P, Surface) and capHpa below - see cps_HartCPS.mask_below_ground. In

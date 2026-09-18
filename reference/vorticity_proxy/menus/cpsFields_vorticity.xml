@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <!--
   EXPERIMENTAL. Volume Browser fields-menu contribution for the CPS core
-  structure derived parameters, the height-based Hart-method family
-  (HVTL, HVTU, HCPSidx, HB, HCPSclass - cps_HartCPS.py). See D2D/README.md.
-  The earlier vorticity-proxy family (VTL, VTU, CPScat, CPSidx, cpsZ850)
-  was retired on 2026-09-18 and lives under reference/vorticity_proxy/.
+  structure derived parameters: the vorticity-proxy family (VTL, VTU,
+  CPScat, CPSidx, cpsZ850 - CycloneCore.py) and the height-based, actual
+  Hart-method family (HVTL, HVTU, HCPSidx, HB, HCPSclass - cps_HartCPS.py).
+  See D2D/README.md.
 
   VERIFY against cave_static/base/menus/volumebrowser/ on your AWIPS
   version - the contribute element names, attributes (xsi:type values,
@@ -23,6 +23,13 @@
   section.
 -->
 <menuTemplate xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <contribute xsi:type="titleItem" titleText="------ CPS Core (experimental) ------" id="cpsCoreTitle"/>
+    <contribute xsi:type="menuItem" menuText="CPS Lower Core (VTL)" key="VTL" indentText="false" id="cpsVTL"/>
+    <contribute xsi:type="menuItem" menuText="CPS Upper Core (VTU)" key="VTU" indentText="false" id="cpsVTU"/>
+    <contribute xsi:type="menuItem" menuText="CPS Core Class" key="CPScat" indentText="false" id="cpsCPScat"/>
+    <contribute xsi:type="menuItem" menuText="CPS Core Index" key="CPSidx" indentText="false" id="cpsCPSidx"/>
+    <contribute xsi:type="menuItem" menuText="CPS debug 850 vort" key="cpsZ850" indentText="false" id="cpsZ850"/>
+
     <contribute xsi:type="titleItem" titleText="------ Hart CPS (height based, experimental) ------" id="hartCpsTitle"/>
     <contribute xsi:type="menuItem" menuText="Hart CPS Lower -VT (HVTL)" key="HVTL" indentText="false" id="hartCpsHVTL"/>
     <contribute xsi:type="menuItem" menuText="Hart CPS Upper -VT (HVTU)" key="HVTU" indentText="false" id="hartCpsHVTU"/>

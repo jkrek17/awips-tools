@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <!--
-  EXPERIMENTAL. Style rules for the CPS derived parameters, the Hart
-  family HVTL, HVTU, HCPSidx, HCPSclass, HB. (The retired vorticity
-  family's rules are kept with it under reference/vorticity_proxy/.)
+  EXPERIMENTAL. Style rules for the CPS derived parameters:
+    vorticity family  VTL, VTU, CPScat, CPSidx
+    Hart family       HVTL, HVTU, HCPSidx, HCPSclass, HB
 
   INSTALL (preferred): copy this file unchanged to the site style rules
   directory under its own name,
@@ -32,6 +32,64 @@
   fails to load.
 -->
 <styleRuleset>
+
+    <!-- Vorticity family, x1e-5 /s -->
+    <styleRule>
+        <paramLevelMatch>
+            <parameter>VTL</parameter>
+            <parameter>VTU</parameter>
+        </paramLevelMatch>
+        <imageStyle>
+            <defaultColormap>Grid/CPS_CoreDiverging</defaultColormap>
+            <range scale="LINEAR">
+                <minValue>-20</minValue>
+                <maxValue>20</maxValue>
+            </range>
+        </imageStyle>
+    </styleRule>
+
+    <styleRule>
+        <paramLevelMatch>
+            <parameter>VTL</parameter>
+            <parameter>VTU</parameter>
+        </paramLevelMatch>
+        <contourStyle>
+            <contourLabeling labelSpacing="4">
+                <values>-20 -15 -10 -5 5 10 15 20</values>
+            </contourLabeling>
+        </contourStyle>
+    </styleRule>
+
+    <styleRule>
+        <paramLevelMatch>
+            <parameter>CPSidx</parameter>
+        </paramLevelMatch>
+        <imageStyle>
+            <defaultColormap>Grid/CPS_CoreDiverging</defaultColormap>
+            <range scale="LINEAR">
+                <minValue>-3</minValue>
+                <maxValue>3</maxValue>
+            </range>
+        </imageStyle>
+    </styleRule>
+
+    <!-- Categorical: 0 mid-vortex, 1 cold, 2 neutral, 3 shallow warm,
+         4 deep warm. Range is offset by half a category so each code
+         sits in the middle of one color bin; interpolate off so colors
+         hold flat across a bin. -->
+    <styleRule>
+        <paramLevelMatch>
+            <parameter>CPScat</parameter>
+        </paramLevelMatch>
+        <imageStyle>
+            <interpolate>false</interpolate>
+            <defaultColormap>Grid/CPS_CoreClass</defaultColormap>
+            <range scale="LINEAR">
+                <minValue>-0.5</minValue>
+                <maxValue>4.5</maxValue>
+            </range>
+        </imageStyle>
+    </styleRule>
 
     <!-- Hart family, meters per unit ln p -->
     <styleRule>
