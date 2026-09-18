@@ -17,7 +17,7 @@ python3 docs/cps/figures/make_figures.py
 ```
 
 This overwrites the six files in `docs/cps/figures/` (five PNGs computed
-from `D2D/derivedParameters/functions/HartCPS.py` and `CycloneCore.py`
+from `D2D/derivedParameters/functions/cps_HartCPS.py` and `CycloneCore.py`
 on synthetic fields, plus `fig6_cave_typhoon.jpg`, a crop and resize of
 a real CAVE screenshot). It prints Figure 4's tilt check and Figure 5's
 timings.

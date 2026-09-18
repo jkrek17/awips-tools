@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <!--
   HartClass: 7 entry categorical colormap for HCPSclass (the joint Hart
-  CPS class, see D2D/README.md and HartCPS.hart_class). Pair this with a
+  CPS class, see D2D/README.md and cps_HartCPS.hart_class). Pair this with a
   styleRule range of -0.5 to 6.5 so each integer code below lands in the
   middle of one color bin instead of on a boundary between two:
 

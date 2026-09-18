@@ -3,10 +3,10 @@
   EXPERIMENTAL. Hart CPS lower thermal wind, actual method: at every grid
   point, dZ = window max minus window min of geopotential height over a
   square window of half-width 500 km (Hart's own analysis radius, but a
-  square instead of his circle - see HartCPS.py's module docstring), then
+  square instead of his circle - see cps_HartCPS.py's module docstring), then
   -V_T^L is the least-squares slope of dZ against ln(pressure) across
-  925/850/700 hPa (HartCPS.LOWER_BAND - the nearest universal
-  standard-level stand-in for Hart's 900-600 hPa band; see HartCPS.py for
+  925/850/700 hPa (cps_HartCPS.LOWER_BAND - the nearest universal
+  standard-level stand-in for Hart's 900-600 hPa band; see cps_HartCPS.py for
   why). Units are meters (of dZ) per unit of ln(p), i.e. plain meters.
   Positive = warm core, negative = cold core - same sign convention as
   CycloneCore.py's VTL and as cps.hart.thermal_wind. Unlike VTL.xml/VTU.xml
@@ -22,7 +22,7 @@
   Below-ground masking: each of the three height levels above is
   blanked (NaN) before dZ wherever it is below the local ground surface
   for its own pressure, using the surface pressure field (P, Surface)
-  and capHpa below - see HartCPS.mask_below_ground and the module
+  and capHpa below - see cps_HartCPS.mask_below_ground and the module
   docstring's "Below-ground masking" section. This keeps a level that
   is fictitious over high terrain (extrapolated below ground) out of
   the window max/min without needing a separate terrain field.
@@ -48,7 +48,7 @@
       site for CycloneCore.py's own fields, which use the same convention.
 -->
 <DerivedParameter abbreviation="HVTL" name="Hart CPS -VT lower (925-700) (m)" unit="">
-    <Method name="HartCPS.executeBand3" levels="Surface">
+    <Method name="cps_HartCPS.executeBand3" levels="Surface">
         <Field abbreviation="GH" level="925MB"/>
         <Field abbreviation="GH" level="850MB"/>
         <Field abbreviation="GH" level="700MB"/>
@@ -64,7 +64,7 @@
         <ConstantField value="850"/>
         <!-- p3: pressure (hPa) matching z3 (700MB) above -->
         <ConstantField value="700"/>
-        <!-- capHpa: below-ground cap, see HartCPS.py -->
+        <!-- capHpa: below-ground cap, see cps_HartCPS.py -->
         <ConstantField value="900.0"/>
     </Method>
 </DerivedParameter>

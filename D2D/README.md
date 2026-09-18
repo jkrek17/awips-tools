@@ -432,8 +432,8 @@ causes:
 **The five Hart fields (HVTL, HVTU, HCPSclass, HCPSidx, HB)
 disappear from the Product Browser after adding the below-ground
 mask.** The first suspect is the `P` (surface pressure)
-`<Field level="Surface"/>` in HVTL.xml/HVTU.xml/HCPSclass.xml/HCPSidx.xml/
-HB.xml -- specifically its level spelling. This site's
+`<Field level="Surface"/>` in cps_HVTL.xml/cps_HVTU.xml/cps_HCPSclass.xml/cps_HCPSidx.xml/
+cps_HB.xml -- specifically its level spelling. This site's
 other Field level spellings in these files ("925MB", "Surface" on the
 `<Method>` itself, etc.) are already confirmed to load; `P`'s own
 level was not independently re-verified against a base surface-pressure
@@ -451,8 +451,8 @@ CPS family" below.
 ## Hart CPS family (HVTL, HVTU, HCPSclass, HCPSidx, HB)
 
 *** EXPERIMENTAL. NOT OPERATIONALLY VETTED. *** This is a second,
-independent derived-parameter family (`HartCPS.py`, `HVTL.xml`,
-`HVTU.xml`, `HCPSclass.xml`, `HCPSidx.xml`, `HB.xml`)
+independent derived-parameter family (`cps_HartCPS.py`, `cps_HVTL.xml`,
+`cps_HVTU.xml`, `cps_HCPSclass.xml`, `cps_HCPSidx.xml`, `cps_HB.xml`)
 alongside everything above (`CycloneCore.py` and
 VTL/VTU/CPScat/CPSidx/cpsZ850). `CycloneCore.py` is completely
 untouched by this family -- the two exist so a site can compare them
@@ -478,11 +478,11 @@ forecasters already read vorticity fields. It only *rhymes* with
 Hart's VTL/VTU -- same sign convention, same rough level bands -- it is
 not the same quantity.
 
-`HartCPS.py` instead computes **Hart's actual quantity**: at every grid
+`cps_HartCPS.py` instead computes **Hart's actual quantity**: at every grid
 point, `dZ(level) = max(Z) - min(Z)` of geopotential height over a
 window of half-width 500 km centered on that point (Hart's own analysis
 radius, evaluated at every point instead of only at one storm's moving
-center -- see `HartCPS.py`'s module docstring for why a square window is
+center -- see `cps_HartCPS.py`'s module docstring for why a square window is
 used instead of Hart's circle, and why the difference is small in
 practice), then `-V_T` is the least-squares slope of `dZ` against
 `ln(pressure)` over a band of levels. This uses **geopotential height
@@ -552,13 +552,13 @@ band's slope toward whichever side got glued on; a small gap between
 the two bands is a smaller, more honest error than that.
 
 A future GFS-only, Hart-exact definition using the true 900-600/
-600-300 hPa bands at 50 hPa spacing is supported by `HartCPS.
+600-300 hPa bands at 50 hPa spacing is supported by `cps_HartCPS.
 executeBand7` and needs only a new XML definition, no Python change
 -- see "Adding a GFS-only 13-level definition" below.
 
 ### Closed-low mask
 
-HCPSclass and HCPSidx are blanked (NaN) outside of `HartCPS.
+HCPSclass and HCPSidx are blanked (NaN) outside of `cps_HartCPS.
 closed_low_mask`, computed from **1000 hPa height alone** (`executeHartClass`/
 `executeIndexStd`'s leading `z1000` argument), not from any of the six
 HVTL/HVTU band levels. 1000 hPa height is used because it is nearly a
@@ -596,7 +596,7 @@ uses two tests a monotonic slope cannot satisfy together:
    `minRadiusKm` and `radiusKm` (the same 500 km `<ConstantField>` used
    for HVTL/HVTU) exceeds the point's own height by at least `depthM`
    (default 40 m). The annulus mean is a difference of two NaN-aware
-   box sums (`HartCPS.window_sum_2d`, called once for the outer
+   box sums (`cps_HartCPS.window_sum_2d`, called once for the outer
    `radiusKm` box and once for the inner `minRadiusKm` box, then
    `(sum_outer - sum_inner) / (count_outer - count_inner)`). On a real
    closed low the surrounding annulus sits on higher ground and this
@@ -614,8 +614,8 @@ claim about the low's own physical size.
 All of `centerTolM`, `depthM`, `blobKm` are already in meters/km -- no
 `UNIT_SCALE` round trip like CycloneCore.py's `vortexMin`, since this
 field was never rescaled to begin with. `centerTolM` itself is not
-exposed as a public `<ConstantField>` on HCPSclass.xml/HCPSidx.xml (see
-`HartCPS.executeHartClass`'s docstring) -- only `radiusKm`, `depthM`,
+exposed as a public `<ConstantField>` on cps_HCPSclass.xml/cps_HCPSidx.xml (see
+`cps_HartCPS.executeHartClass`'s docstring) -- only `radiusKm`, `depthM`,
 `blobKm`, and (below) `capHpa` are.
 
 ### Below-ground masking
@@ -631,7 +631,7 @@ high mountains it is not, and letting a fictitious below-ground level
 into a window's max/min or the closed-low mask's ring mean can quietly
 bias the result.
 
-`HartCPS.mask_below_ground(z, psfc_hpa, level_hpa, cap_hpa)` blanks
+`cps_HartCPS.mask_below_ground(z, psfc_hpa, level_hpa, cap_hpa)` blanks
 (NaN) `z` wherever a point is below ground for pressure level
 `level_hpa`:
 
@@ -639,7 +639,7 @@ bias the result.
 psfc_hpa < min(level_hpa, capHpa)
 ```
 
-`capHpa` (`<ConstantField>`, default **900 hPa**, `HartCPS.
+`capHpa` (`<ConstantField>`, default **900 hPa**, `cps_HartCPS.
 BELOW_GROUND_CAP_HPA`) is a cap on the threshold, not the literal level
 pressure. Without it, a deep low's own surface pressure (which can
 legitimately fall well under 1000 or 925 hPa at its center) would be
@@ -654,7 +654,7 @@ threshold; 700 hPa and above are masked only where the surface itself
 is at or below that level's own pressure -- effectively never, except
 over the Himalaya and Antarctica.
 
-`HartCPS.surface_pressure_hpa(psfc)` coerces the surface pressure
+`cps_HartCPS.surface_pressure_hpa(psfc)` coerces the surface pressure
 input field (`P`, `level="Surface"` in the XML) to hPa, auto-detecting
 units: AWIPS normally hands pressure in Pa (sea level is roughly
 101325 Pa), but this checks the field's own finite median rather than
@@ -671,7 +671,7 @@ height arguments before doing anything else with them: before
 sliding window extrema and box sums this family uses throughout are
 already NaN-aware, a below-ground point's neighbors simply see one
 fewer valid sample in their own window -- no extra plumbing was needed
-beyond masking the input before it reaches them. See `HartCPS.py`'s
+beyond masking the input before it reaches them. See `cps_HartCPS.py`'s
 module docstring ("Below-ground masking") for the full explanation.
 
 ### Joint classification (HCPSclass) and index (HCPSidx)
@@ -772,11 +772,11 @@ Northern Hemisphere right-hand normal of steering `(u_s, v_s)` is
 multiplies the projected gradient so warm air on the right in the NH
 (or on the left in the SH) always reads positive. **VERIFY**: the
 coriolis pseudo-field is referenced by base vorticity definitions on
-most AWIPS sites; if `HB.xml`/`HCPSclass.xml` fail to load, replace the
+most AWIPS sites; if `cps_HB.xml`/`cps_HCPSclass.xml` fail to load, replace the
 `coriolis` `<Field>` with `<ConstantField value="1.0"/>` at the same
 position to assume the Northern Hemisphere everywhere.
 
-Constants (all `<ConstantField>` values in `HB.xml`/`HCPSclass.xml`):
+Constants (all `<ConstantField>` values in `cps_HB.xml`/`cps_HCPSclass.xml`):
 
 | Constant | Meaning | Default |
 | :--- | :--- | :--- |
@@ -798,12 +798,12 @@ same way (positive = warm core) at every latitude, with no
 verification procedure needed before trusting the sign.
 
 `HB` and `HCPSclass` are the exception in this family: both need `B`,
-which needs the thickness field's own spatial *gradient* (`HartCPS.
+which needs the thickness field's own spatial *gradient* (`cps_HartCPS.
 gradient_2d`), which -- like `CycloneCore.relative_vorticity` -- does
-depend on the grid's axis layout. `HartCPS.py` therefore has its own
+depend on the grid's axis layout. `cps_HartCPS.py` therefore has its own
 `ORIENTATION_MODE` (same 0..3 semantics as `CycloneCore.py`'s, default
 1, confirmed on the OPC build), used only by `gradient_2d`; every other
-function in `HartCPS.py`, including `HVTL`/`HVTU`/`HCPSidx`'s own
+function in `cps_HartCPS.py`, including `HVTL`/`HVTU`/`HCPSidx`'s own
 computation, is unaffected and needs no orientation check. Hemisphere
 is handled explicitly for `HB`/`HCPSclass` via the coriolis
 pseudo-field's sign (see "Parameter B (HB) and its role in HCPSclass"
@@ -814,7 +814,7 @@ carry over.
 ### Performance
 
 Expect a few sliding-window passes per level (one `max` and one `min`
-each, via the doubling/sparse-table trick in `HartCPS.
+each, via the doubling/sparse-table trick in `cps_HartCPS.
 running_extreme_1d` -- see that function's docstring), so a few seconds
 per analysis time on a global 0.25 degree grid. Measured in this repo's
 environment, on a 721x1440 grid (`tests/d2d_cps/test_hart_cps.py`'s
@@ -843,7 +843,7 @@ of the 3-level standard-level approximation above, on a site that
 confirms its grid actually carries every 50 hPa level from 900 to 300:
 
 1. Write a new definition XML (e.g. `HVTLexact.xml`) shaped exactly
-   like `HVTL.xml`, but with `Method name="HartCPS.executeBand7"` and
+   like `cps_HVTL.xml`, but with `Method name="cps_HartCPS.executeBand7"` and
    seven `<Field abbreviation="GH" level="...MB"/>` entries (900, 850,
    800, 750, 700, 650, 600 hPa) followed by the `P` (`level="Surface"`)
    field, then `dx`, `dy`, the `radiusKm` `<ConstantField>`, then seven
@@ -852,7 +852,7 @@ confirms its grid actually carries every 50 hPa level from 900 to 300:
    `<ConstantField>` (900.0) last.
 2. Do the same for the upper band (600, 550, 500, 450, 400, 350, 300
    hPa) in a second file (e.g. `HVTUexact.xml`).
-3. No change to `HartCPS.py` is needed -- `executeBand7` already takes
+3. No change to `cps_HartCPS.py` is needed -- `executeBand7` already takes
    7 heights, `psfc`, `dx`/`dy`, `radiusKm`, 7 pressures, and `capHpa`,
    in exactly that shape.
 
@@ -862,14 +862,23 @@ EDEX, site-level `common_static` (in addition to the CycloneCore.py
 files under "Install" above -- this family does not replace them):
 
 ```
-/awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/definitions/HVTL.xml
-/awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/definitions/HVTU.xml
-/awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/definitions/HCPSclass.xml
-/awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/definitions/HCPSidx.xml
-/awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/definitions/HB.xml
-/awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/functions/HartCPS.py
+/awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/definitions/cps_HVTL.xml
+/awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/definitions/cps_HVTU.xml
+/awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/definitions/cps_HCPSclass.xml
+/awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/definitions/cps_HCPSidx.xml
+/awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/definitions/cps_HB.xml
+/awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/functions/cps_HartCPS.py
 /awips2/edex/data/utility/common_static/site/<SITE>/colormaps/Grid/CPS_HartClass.cmap
 ```
+
+The `cps_` file prefix is only so the family sorts together in the
+Localization perspective and on disk; AWIPS keys each definition on the
+`abbreviation` inside the XML (HVTL, HVTU, HB, HCPSidx, HCPSclass) and
+the function module on the `Method name` in the XML, so the product
+names in D2D are unchanged. If you are upgrading from the unprefixed
+files, delete the old `HVTL.xml`, `HVTU.xml`, `HB.xml`, `HCPSidx.xml`,
+`HCPSclass.xml` and `HartCPS.py` from the same directories first, or
+the two copies of each definition will collide.
 
 Restart CAVE (and EDEX, if new definitions do not show up in the
 Volume Browser on their own -- see the CycloneCore.py "Install" note
@@ -902,7 +911,7 @@ cross-check against `cps.hart.parameter_b`'s true half-disk means
 a 2D coriolis field straddling the equator, and `executeHartClass`'s
 behavior across Hart's strict B/thermal-wind lines on synthetic
 vortices. Run
-`python3 D2D/derivedParameters/functions/HartCPS.py` directly for a
+`python3 D2D/derivedParameters/functions/cps_HartCPS.py` directly for a
 quick standalone sanity check (a synthetic warm-core vortex, printing
 the lower/upper slope and the class at its center, plus a parameter B
 demo on a linear thickness gradient with its analytic expectation)
@@ -946,7 +955,7 @@ the surface-pressure mask, Greenland and the
 high terrain of western North America are blank rather than
 contaminated, which is the intended behavior. A few very weak closed
 lows (under about 5 hPa deep) get no class blob at the shipped depth of
-40 m; set depthM to 25 in HCPSclass.xml and HCPSidx.xml to include them.
+40 m; set depthM to 25 in cps_HCPSclass.xml and cps_HCPSidx.xml to include them.
 
 **Status: the D2D version is release-ready as of 2026-09-17**, still
 labeled experimental pending a season of use. Known limitations: the

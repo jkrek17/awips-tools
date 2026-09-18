@@ -19,7 +19,7 @@ Two independent families share the same delivery mechanism:
 
 | Family | Function file | Products | Inputs | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| Hart | `derivedParameters/functions/HartCPS.py` | HVTL, HVTU, HCPSclass, HCPSidx, HB | geopotential height at 1000, 925, 850, 700, 500, 400, 300 hPa; u/v wind at 850, 700, 500, 300 hPa; surface pressure; coriolis (HB and HCPSclass only) | primary, validated (HB and HCPSclass's B term new, awaiting validation) |
+| Hart | `derivedParameters/functions/cps_HartCPS.py` | HVTL, HVTU, HCPSclass, HCPSidx, HB | geopotential height at 1000, 925, 850, 700, 500, 400, 300 hPa; u/v wind at 850, 700, 500, 300 hPa; surface pressure; coriolis (HB and HCPSclass only) | primary, validated (HB and HCPSclass's B term new, awaiting validation) |
 | Vorticity | `derivedParameters/functions/CycloneCore.py` | VTL, VTU, CPScat, CPSidx, cpsZ850 | u and v wind at 850, 600, 300 hPa | secondary, warm bias |
 
 Both function files are self-contained numpy with no imports from the
@@ -27,7 +27,7 @@ rest of the repository, because the CAVE interpreter only sees the
 functions directory. Both can be run standalone for a sanity check:
 
 ```
-python3 D2D/derivedParameters/functions/HartCPS.py
+python3 D2D/derivedParameters/functions/cps_HartCPS.py
 python3 D2D/derivedParameters/functions/CycloneCore.py
 ```
 
@@ -35,7 +35,7 @@ Package layout:
 
 ```
 D2D/
-  derivedParameters/functions/    HartCPS.py, CycloneCore.py
+  derivedParameters/functions/    cps_HartCPS.py, CycloneCore.py
   derivedParameters/definitions/  one XML per product
   colormaps/Grid/                 CPS_CoreDiverging.cmap, CPS_CoreClass.cmap, CPS_HartClass.cmap
   styleRules/cpsStyleRules.xml    base-schema style rules (see 6.3)
@@ -218,7 +218,7 @@ treated as positive), matching `cps.hart.parameter_b`'s own
 Unlike every other function in this file, computing B's thickness
 gradient (`gradient_2d`) takes a spatial derivative, so it is subject
 to the same grid-orientation ambiguity `CycloneCore.relative_vorticity`
-has. `HartCPS.py` therefore carries its own `ORIENTATION_MODE` (0 to 3,
+has. `cps_HartCPS.py` therefore carries its own `ORIENTATION_MODE` (0 to 3,
 same semantics as `CycloneCore.py`'s, default 1, confirmed on the OPC
 build) -- used only by `gradient_2d`; `HVTL`/`HVTU`/`HCPSidx` never
 call it and are unaffected, and neither does `HCPSclass`'s own
@@ -291,7 +291,7 @@ Grid orientation matters because derivatives are taken. `ORIENTATION_MODE`
 (0 to 3) covers row direction and transposed axes. Mode 1 is confirmed
 on the OPC build. The cpsZ850 debug definition takes the mode from its
 last ConstantField so a new site can find its mode without editing
-Python. `HartCPS.py` now carries its own `ORIENTATION_MODE` as well
+Python. `cps_HartCPS.py` now carries its own `ORIENTATION_MODE` as well
 (section 2.7) -- same 0-to-3 semantics, used only by `HB`/`HCPSclass`'s
 thickness-gradient step; the two `ORIENTATION_MODE` constants are
 independent module-level values, so setting one does not affect the
@@ -358,7 +358,7 @@ raised a DataCubeException on the OPC build.
 
 ### 5.2 Entry points and argument order
 
-Hart family (`HartCPS.py`):
+Hart family (`cps_HartCPS.py`):
 
 | Entry point | Arguments in order |
 | :--- | :--- |
@@ -415,10 +415,10 @@ What each does:
 
 To change the levels of a band, edit the GH Field levels and the
 matching pressure ConstantFields together. To add a GFS-only definition
-on Hart's exact 900 to 600 band, copy HVTL.xml, list GH at 900, 850,
+on Hart's exact 900 to 600 band, copy cps_HVTL.xml, list GH at 900, 850,
 800, 750, 700, 650, 600, then P, dx, dy, then ConstantFields radiusKm,
 the seven pressures, capHpa, and name the method
-`HartCPS.executeBand7`. A classification product on those levels would
+`cps_HartCPS.executeBand7`. A classification product on those levels would
 need a new entry point; `executeHartClass` is fixed to the standard
 levels.
 
@@ -431,9 +431,9 @@ levels.
 Site level under `/awips2/edex/data/utility/common_static/site/<SITE>/`:
 
 ```
-derivedParameters/functions/HartCPS.py
+derivedParameters/functions/cps_HartCPS.py
 derivedParameters/functions/CycloneCore.py
-derivedParameters/definitions/HVTL.xml HVTU.xml HCPSclass.xml HCPSidx.xml HB.xml
+derivedParameters/definitions/cps_HVTL.xml cps_HVTU.xml cps_HCPSclass.xml cps_HCPSidx.xml cps_HB.xml
 derivedParameters/definitions/VTL.xml VTU.xml CPScat.xml CPSidx.xml cpsZ850.xml
 colormaps/Grid/CPS_CoreDiverging.cmap
 colormaps/Grid/CPS_CoreClass.cmap
@@ -466,7 +466,7 @@ They appear under Grid in the legend's Change Colormap menu.
    HVTU turns negative, 4 once HVTL turns negative too. If HB/HCPSclass
    fail to load specifically (while HVTL/HVTU/HCPSidx load fine), the
    first suspect is the coriolis pseudo-field's abbreviation; see
-   HB.xml's/HCPSclass.xml's own VERIFY comment for the
+   cps_HB.xml's/cps_HCPSclass.xml's own VERIFY comment for the
    `<ConstantField value="1.0"/>` fallback.
 
 ### 6.3 Style rules

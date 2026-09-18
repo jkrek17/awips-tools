@@ -2,27 +2,27 @@
 <!--
   EXPERIMENTAL. Hart CPS upper thermal wind, actual method: same window
   max-minus-min / least-squares-slope-against-ln(p) computation as
-  HVTL.xml, but over 500/400/300 hPa (HartCPS.UPPER_BAND - the nearest
+  cps_HVTL.xml, but over 500/400/300 hPa (cps_HartCPS.UPPER_BAND - the nearest
   universal standard-level stand-in for Hart's 600-300 hPa band). Units
   are meters (of dZ) per unit of ln(p). Positive = warm core, negative =
-  cold core. See HVTL.xml's comment and HartCPS.py's module docstring for
+  cold core. See cps_HVTL.xml's comment and cps_HartCPS.py's module docstring for
   the full method description, and D2D/README.md's "Hart CPS family"
   section for how this compares to CycloneCore.py's vorticity-proxy VTU.
 
-  Below-ground masking: same as HVTL.xml, via the surface pressure field
-  (P, Surface) and capHpa below - see HartCPS.mask_below_ground. In
+  Below-ground masking: same as cps_HVTL.xml, via the surface pressure field
+  (P, Surface) and capHpa below - see cps_HartCPS.mask_below_ground. In
   practice 500/400/300 hPa are almost never below ground (only over the
   Himalaya or Antarctica), so this mostly has no effect here, but the
   Field/ConstantField are still required since executeBand3 always
   expects psfc/capHpa.
 
-  VERIFY: same checks as HVTL.xml (GH abbreviation, fixed-level Field
+  VERIFY: same checks as cps_HVTL.xml (GH abbreviation, fixed-level Field
   spelling, P abbreviation and its Surface level spelling, dx/dy
   pseudo-fields and ConstantField support, levels= value, unit=""
   acceptance).
 -->
 <DerivedParameter abbreviation="HVTU" name="Hart CPS -VT upper (500-300) (m)" unit="">
-    <Method name="HartCPS.executeBand3" levels="Surface">
+    <Method name="cps_HartCPS.executeBand3" levels="Surface">
         <Field abbreviation="GH" level="500MB"/>
         <Field abbreviation="GH" level="400MB"/>
         <Field abbreviation="GH" level="300MB"/>
@@ -38,7 +38,7 @@
         <ConstantField value="400"/>
         <!-- p3: pressure (hPa) matching z3 (300MB) above -->
         <ConstantField value="300"/>
-        <!-- capHpa: below-ground cap, see HartCPS.py -->
+        <!-- capHpa: below-ground cap, see cps_HartCPS.py -->
         <ConstantField value="900.0"/>
     </Method>
 </DerivedParameter>

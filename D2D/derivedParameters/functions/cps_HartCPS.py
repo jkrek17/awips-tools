@@ -1,5 +1,5 @@
 """
-HartCPS.py -- AWIPS II D2D derived parameter: Hart (2003) actual thermal
+cps_HartCPS.py -- AWIPS II D2D derived parameter: Hart (2003) actual thermal
 wind parameters, computed pointwise on the grid.
 
 *** EXPERIMENTAL.  NOT OPERATIONALLY VETTED. ***
@@ -305,7 +305,7 @@ derivedParameters/functions directory on the classpath. It is written
 so it can also be run standalone for a sanity check with no AWIPS
 present at all:
 
-    python3 D2D/derivedParameters/functions/HartCPS.py
+    python3 D2D/derivedParameters/functions/cps_HartCPS.py
 """
 
 from __future__ import annotations
@@ -1471,7 +1471,7 @@ def executeHartClass(
     blobKm=DEFAULT_BLOB_RADIUS_KM,
     capHpa=BELOW_GROUND_CAP_HPA,
 ):
-    """AWIPS derived-parameter entry point for HCPSclass (HCPSclass.xml):
+    """AWIPS derived-parameter entry point for HCPSclass (cps_HCPSclass.xml):
     the joint Hart CPS class -- see `hart_class`'s own docstring for the
     full 7-code table, the boundary convention, and the ordering
     rationale, and the module docstring's "Parameter B and the joint
@@ -1548,7 +1548,7 @@ def executeIndexStd(
     blobKm=DEFAULT_BLOB_RADIUS_KM,
     capHpa=BELOW_GROUND_CAP_HPA,
 ):
-    """AWIPS derived-parameter entry point for HCPSidx (HCPSidx.xml).
+    """AWIPS derived-parameter entry point for HCPSidx (cps_HCPSidx.xml).
 
     Same lower/upper thermal wind and mask as `executeHartClass`, combined
     into `2*tanh(VTL/scaleM) + tanh(VTU/scaleM)` (range -3 to +3, `scaleM`
@@ -1593,7 +1593,7 @@ def executeB(
     layerScale=HART_B_LAYER_SCALE,
     capHpa=BELOW_GROUND_CAP_HPA,
 ):
-    """AWIPS derived-parameter entry point for HB (HB.xml): Hart's
+    """AWIPS derived-parameter entry point for HB (cps_HB.xml): Hart's
     parameter B (thermal asymmetry), gridded -- see the module
     docstring's "Parameter B and the joint class" section for the full
     method.

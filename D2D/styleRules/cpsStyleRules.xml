@@ -136,7 +136,7 @@
          mid-level vortex. Range is offset by half a category so each
          code sits in the middle of one color bin; interpolate off so
          colors hold flat across a bin. Replaces the retired HCPScat/
-         HETstage fields (see HCPSclass.xml). -->
+         HETstage fields (see cps_HCPSclass.xml). -->
     <styleRule>
         <paramLevelMatch>
             <parameter>HCPSclass</parameter>

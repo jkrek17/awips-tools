@@ -139,7 +139,7 @@
       <em>synthetic</em> single-point cross-sections built for this figure
       alone (not the two-vortex domain of Figures 2&ndash;4) and computed with
       <code>cps.hart</code>, the storm-centered reference implementation
-      (Section 7), rather than the operational <code>HartCPS.py</code> every
+      (Section 7), rather than the operational <code>cps_HartCPS.py</code> every
       other figure in this article uses. At each pressure <i>p</i> the
       height perturbation is a Gaussian depression of 150&nbsp;km e-folding
       radius, amplitude <i>A</i>(<i>p</i>) linear in ln(<i>p</i>) from
@@ -342,18 +342,18 @@
       core's own lower thermal wind cold at the edges of its footprint.
       Steering is a uniform 12&nbsp;m/s westerly
       north of 35&deg;N and a uniform 6&nbsp;m/s easterly south of 25&deg;N, blended
-      smoothly between; <code>HartCPS.ORIENTATION_MODE</code> was set to 0
+      smoothly between; <code>cps_HartCPS.ORIENTATION_MODE</code> was set to 0
       for this synthetic grid, rows increasing northward, the same
       convention Figure 4 sets for <code>CycloneCore</code>.
       <strong>(a)</strong> The thickness field and steering arrows.
-      <strong>(b)</strong> <code>HartCPS.executeB</code>: the vortex in
+      <strong>(b)</strong> <code>cps_HartCPS.executeB</code>: the vortex in
       westerlies (42&deg;N) reads <i>B</i> = +25&nbsp;m, comfortably above the
       10&nbsp;m onset threshold, because moving east its right side faces the
       warm south; the vortex in easterlies (28&deg;N) reads <i>B</i> =
       &minus;25&nbsp;m, because moving west its right side faces the cold
       north &mdash; the same warm-core vortex, the same amplitude, opposite
       <i>B</i> purely from the environment and the motion.
-      <strong>(c)</strong> <code>HartCPS.executeHartClass</code>: both cores
+      <strong>(c)</strong> <code>cps_HartCPS.executeHartClass</code>: both cores
       keep a clearly positive lower thermal wind (about +119&nbsp;m at each
       center), so the easterly vortex (<i>B</i> = &minus;25&nbsp;m,
       symmetric) reads class 0, symmetric deep warm core,
@@ -421,8 +421,8 @@
       fields defined in the figure script's header. <strong>(a)</strong>
       &Delta;Z (m) against pressure at the center of vortex A (deep warm
       core, red) and vortex B (cold core, tilted, blue), computed by
-      <code>HartCPS.delta_z</code>; solid lines are the least-squares fits
-      <code>HartCPS.band_slope</code> returns for the lower (925&ndash;700&nbsp;hPa)
+      <code>cps_HartCPS.delta_z</code>; solid lines are the least-squares fits
+      <code>cps_HartCPS.band_slope</code> returns for the lower (925&ndash;700&nbsp;hPa)
       and upper (500&ndash;300&nbsp;hPa) bands, annotated with the resulting
       &minus;V<sub>T</sub> in meters. Faint ticks on the right axis mark Hart's
       original 50&nbsp;hPa levels, which the seven standard levels on the left
@@ -523,7 +523,7 @@
     affordable on a global grid (Figure 5). The installed footprint is
     ten XML derived-parameter definitions (HVTL, HVTU, HCPSclass, HCPSidx,
     HB, VTL, VTU, CPScat, CPSidx, cpsZ850), two Python files
-    (<code>HartCPS.py</code>, <code>CycloneCore.py</code>), and three
+    (<code>cps_HartCPS.py</code>, <code>CycloneCore.py</code>), and three
     colormaps (a diverging one for the thermal wind and B fields, a
     categorical one for the vorticity-family class field, and a second
     categorical one for the joint Hart classification field). Five Hart
@@ -538,7 +538,7 @@
     <img src="figures/fig5_performance.png"
          alt="Line chart of executeHartClass wall-clock time in seconds against grid size, for 181 by 360, 361 by 720, and 721 by 1440 grids, increasing from about 0.06 to about 1.5 seconds.">
     <figcaption><strong>Figure 5.</strong> Wall-clock time of
-      <code>HartCPS.executeHartClass</code> on <em>random smooth fields</em>
+      <code>cps_HartCPS.executeHartClass</code> on <em>random smooth fields</em>
       (not the vortex fields used elsewhere; timing only), median of 3 runs
       at each of three global grid resolutions (1&deg;, 0.5&deg;, 0.25&deg;), measured
       on the machine that built this page. The 0.25&deg; result is consistent
@@ -639,7 +639,7 @@
   <footer>
     Figures 1&ndash;5 and 7&ndash;9 are synthetic, regenerated from
     <code>docs/cps/figures/make_figures.py</code>. Figures 2&ndash;5 and 7
-    run the package's own operational <code>HartCPS.py</code> and
+    run the package's own operational <code>cps_HartCPS.py</code> and
     <code>CycloneCore.py</code> on synthetic fields; see that file's header
     for the exact field definitions, including Figure 7's own separate
     synthetic case. Figure 1 (both panels) and Figures 8 and 9 are teaching

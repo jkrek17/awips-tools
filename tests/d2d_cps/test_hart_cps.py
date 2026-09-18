@@ -1,13 +1,13 @@
-"""Analytic tests for D2D/derivedParameters/functions/HartCPS.py.
+"""Analytic tests for D2D/derivedParameters/functions/cps_HartCPS.py.
 
 Expectations here are derived independently from the algorithm's own
 specification (brute-force sliding-window loops, the closed-form
 least-squares formula, and a second numerical implementation of Hart's
-actual method via `cps.hart`) rather than copied from HartCPS.py's own
+actual method via `cps.hart`) rather than copied from cps_HartCPS.py's own
 implementation, per the task instructions.
 
 `tests/d2d_cps/conftest.py` puts `D2D/derivedParameters/functions` on
-sys.path (`import HartCPS`), the repo root on sys.path (`import cps`),
+sys.path (`import cps_HartCPS`), the repo root on sys.path (`import cps`),
 and `tests/cps` on sys.path (`import synthetic`, the vortex-generator
 module `tests/cps/test_hart.py` itself uses).
 """
@@ -21,7 +21,7 @@ import warnings
 import numpy as np
 import pytest
 
-import HartCPS as hc
+import cps_HartCPS as hc
 import cps
 import synthetic
 
@@ -35,7 +35,7 @@ EARTH_RADIUS_KM = 6371.0
 
 def _brute_extreme_1d(a: np.ndarray, half_width: int, axis: int, kind: str) -> np.ndarray:
     """Naive O(N*w) sliding max/min along `axis`, NaN-ignoring, edges
-    clipped -- independent of HartCPS.running_extreme_1d's doubling-trick
+    clipped -- independent of cps_HartCPS.running_extreme_1d's doubling-trick
     implementation.
     """
     a = np.asarray(a, dtype=float)
@@ -59,7 +59,7 @@ def _brute_extreme_1d(a: np.ndarray, half_width: int, axis: int, kind: str) -> n
 
 def _brute_window_sum_2d(field, half_x_per_row, half_y):
     """Naive nested-loop two-pass (row then column) box sum/count, NaN
-    treated as missing -- independent of HartCPS.window_sum_2d's
+    treated as missing -- independent of cps_HartCPS.window_sum_2d's
     cumulative-sum implementation, matching only its two-pass
     definition (per-row x half-width, then a scalar y half-width).
     """
@@ -91,7 +91,7 @@ def _brute_window_extreme_2d(field, half_x_per_row, half_y, kind) -> np.ndarray:
     """Naive nested-loop two-pass (row then column) sliding extreme,
     matching window_extreme_2d's own definition (per-row x half-width,
     then a scalar y half-width) but with no vectorization or doubling
-    trick at all -- independent of HartCPS.window_extreme_2d's
+    trick at all -- independent of cps_HartCPS.window_extreme_2d's
     grouped-rows-plus-running_extreme_1d implementation.
     """
     field = np.asarray(field, dtype=float)
@@ -290,7 +290,7 @@ def _standard_level_hart_reference(lat2d, lon2d, clat, clon, z_stack, levels):
     one of `levels`, then this module's own closed-form band slope
     (cps.hart._band_slope, called directly rather than through
     thermal_wind()'s built-in LOWER_LEVELS/UPPER_LEVELS bands, which do
-    not line up with HartCPS's standard-level bands) over LOWER_BAND and
+    not line up with cps_HartCPS's standard-level bands) over LOWER_BAND and
     UPPER_BAND -- the reference this module's square-window
     thermal_wind_grid is compared against.
     """
@@ -523,7 +523,7 @@ def _ocean_psfc(shape, hpa=1013.0):
 def test_execute_index_std_deep_warm_core_and_far_field_nan():
     # z1000 is built the same way as z925 (same synthetic-vortex machinery),
     # with a slightly larger amplitude so the low is deepest at 1000 hPa --
-    # closed_low_mask reads z1000, not z925 (see HartCPS.py's module
+    # closed_low_mask reads z1000, not z925 (see cps_HartCPS.py's module
     # docstring, "Closed-low mask level").
     amp_by_level = {1000.0: 200.0, 925.0: 180.0, 850.0: 150.0, 700.0: 110.0, 500.0: 50.0, 400.0: 25.0, 300.0: 5.0}
     lat2d, lon2d, z_by_level, dx2d, dy_m = _warm_core_fields(amp_by_level)
@@ -722,11 +722,11 @@ def test_thermal_wind_grid_performance(capsys):
 
 @pytest.fixture
 def hart_standard_orientation(monkeypatch):
-    """Monkeypatch `HartCPS.ORIENTATION_MODE` to 0 (the plain numpy-default
+    """Monkeypatch `cps_HartCPS.ORIENTATION_MODE` to 0 (the plain numpy-default
     grid layout: axis 0 = y increasing northward, axis 1 = x) for the
     duration of a test -- the same pattern `conftest.py`'s
     `standard_orientation` fixture uses for `CycloneCore.ORIENTATION_MODE`.
-    `HartCPS.ORIENTATION_MODE`'s own real default is 1 (tuned for AWIPS
+    `cps_HartCPS.ORIENTATION_MODE`'s own real default is 1 (tuned for AWIPS
     sites, per `gradient_2d`'s module-level comment), not "the standard
     layout" a test wants to reason about directly.
     """
