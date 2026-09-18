@@ -11,10 +11,13 @@ Run from the repository root:
     python3 docs/cps/figures/make_figures.py
 
 Outputs land next to this script, in docs/cps/figures/:
-    fig1_phase_space.png    fig2_method.png       fig3_gridded.png
-    fig4_tilt.png           fig5_performance.png   fig6_cave_typhoon.jpg
-    fig7_parameter_b.png    fig8_thermal_wind_concept.png
-    fig9_b_concept.png      fig10_two_diagrams.png
+    fig2_method.png         fig3_gridded.png       fig4_tilt.png
+    fig5_performance.png    fig6_cave_typhoon.jpg  fig7_parameter_b.png
+    fig8_thermal_wind_concept.png  fig9_b_concept.png
+    fig10_two_diagrams.png
+
+The article's Figure 1 is fig10_two_diagrams.png; there is no
+fig1_phase_space.png (an orphan, unused schematic, removed).
 
 No test fixtures are reused: everything is built here so the figures are
 reproducible from nothing but this file, cps_HartCPS.py, and
@@ -68,8 +71,7 @@ Terrain
     1013 hPa elsewhere (open ocean).
 
 Levels
-    1000, 925, 850, 700, 500, 400, 300 hPa everywhere; Figure 4 also
-    builds 600 hPa by the same ln(p) interpolation, used nowhere else.
+    1000, 925, 850, 700, 500, 400, 300 hPa everywhere, including Figure 4.
 
 Figure 7 -- transitioning-storm case (Parameter B and the ET stage)
     A separate, self-contained synthetic case built only for Figure 7
@@ -77,7 +79,7 @@ Figure 7 -- transitioning-storm case (Parameter B and the ET stage)
     the same grid and the same vortex A amplitude profile as everywhere
     else, but with two changes so a transitioning storm is represented:
 
-    * The background 925-700 hPa thickness gradient is raised to 90 m
+    * The background 925-700 hPa thickness gradient is raised to 40 m
       per 1000 km, decreasing northward (warm/thick to the south) --
       much stronger than the modest background above, on purpose, since
       the point of this figure is an environment strong enough to move
@@ -86,7 +88,9 @@ Figure 7 -- transitioning-storm case (Parameter B and the ET stage)
       scale, no tilt) sit in different steering flow: one at 28N 130W
       (vortex A's own center) in a uniform 6 m/s easterly, one at 42N
       140W in a uniform 12 m/s westerly, blended smoothly (tanh) between
-      25N and 35N. Because the steering is (almost) purely zonal, the
+      31N and 39N, clear of both vortices' 500 km windows so the
+      window-averaged motion proxy sees one regime at each center.
+      Because the steering is (almost) purely zonal, the
       right-hand normal of motion is due south for the westerly copy and
       due north for the easterly one, so the same southward thickness
       gradient projects with opposite sign at the two centers -- see
@@ -182,8 +186,8 @@ CATEGORY_COLORS = ["#4a3aa7", "#2a78d6", "#c3c2b7", "#eb6834", "#e34948"]
 # D2D/colormaps/Grid/CPS_HartClass.cmap's own colors exactly, so the
 # figure and the shipped D2D colormap read identically. Warm states
 # (codes 0-3) are warm hues, cold states (4-5) are cool hues, and the
-# mid-level vortex (6) is neutral gray -- see that .cmap file's header
-# comment for the same convention.
+# shallow cold core state (6) is neutral gray -- see that .cmap file's
+# header comment for the same convention.
 HARTCLASS_COLORS = [
     (0.89, 0.29, 0.28, 1.0),  # 0 symmetric deep warm core -- red
     (0.92, 0.41, 0.20, 1.0),  # 1 symmetric shallow warm core -- orange
@@ -191,7 +195,7 @@ HARTCLASS_COLORS = [
     (0.93, 0.63, 0.00, 1.0),  # 3 frontal shallow warm core -- yellow
     (0.16, 0.47, 0.84, 1.0),  # 4 frontal cold core -- blue
     (0.29, 0.23, 0.65, 1.0),  # 5 symmetric cold core -- violet
-    (0.76, 0.76, 0.72, 1.0),  # 6 mid-level vortex -- gray
+    (0.76, 0.76, 0.72, 1.0),  # 6 shallow cold core -- gray
 ]
 HARTCLASS_NAMES = [
     "0  sym. deep warm core",
@@ -200,7 +204,7 @@ HARTCLASS_NAMES = [
     "3  frontal shallow warm core",
     "4  frontal cold core",
     "5  sym. cold core",
-    "6  mid-level vortex",
+    "6  shallow cold core",
 ]
 CMAP_HARTCLASS = ListedColormap(HARTCLASS_COLORS)
 NORM_HARTCLASS = BoundaryNorm(np.arange(-0.5, 7.5, 1.0), CMAP_HARTCLASS.N)
@@ -238,8 +242,8 @@ plt.rcParams.update(
         "grid.color": GRID_COLOR,
         "grid.linewidth": 0.5,
         "legend.fontsize": 8,
-        "figure.dpi": 200,
-        "savefig.dpi": 200,
+        "figure.dpi": 300,
+        "savefig.dpi": 300,
         "savefig.bbox": "tight",
     }
 )
@@ -348,7 +352,7 @@ def vortex_b_westward_shift_km(p, tilt_km):
 
 def height_field(lat2d, lon2d, p, tilt_km=DEFAULT_TILT_KM, include_a=True, include_b=True):
     """Full synthetic height field (m) at pressure p (any value, not just
-    a standard level -- used to build the 600 hPa level for Figure 4).
+    a standard level).
     """
     z = z_std(p) + meridional_gradient_m(lat2d, p)
 
@@ -455,101 +459,6 @@ def draw_terrain_box(ax, hatch=False):
 
 
 # ===========================================================================
-# Figure 1: Hart's phase-space diagram, schematic
-# ===========================================================================
-
-
-def make_fig1(lat2d=None, lon2d=None):
-    fig, ax = plt.subplots(figsize=(FULL_WIDTH_IN, 5.0))
-
-    lim = 300.0
-    ax.set_xlim(-lim, lim)
-    ax.set_ylim(-lim, lim)
-
-    quadrants = [
-        (0, lim, 0, lim, "#e34948", "deep warm core"),
-        (0, lim, -lim, 0, "#eb6834", "shallow warm core"),
-        (-lim, 0, -lim, 0, "#2a78d6", "cold core"),
-        (-lim, 0, 0, lim, "#4a3aa7", "lower cold, upper warm"),
-    ]
-    for x0, x1, y0, y1, color, label in quadrants:
-        ax.add_patch(Rectangle((x0, y0), x1 - x0, y1 - y0, facecolor=color, alpha=0.11, edgecolor="none", zorder=0))
-
-    label_pos = {
-        "deep warm core": (lim * 0.55, lim * 0.90),
-        "shallow warm core": (lim * 0.55, -lim * 0.90),
-        "cold core": (-lim * 0.95, -lim * 0.90),
-        "lower cold, upper warm": (-lim * 0.95, lim * 0.68),
-    }
-    for _, _, _, _, _, label in quadrants:
-        x, y = label_pos[label]
-        ha = "left" if x > 0 else "left"
-        ax.text(x, y, label, color=TEXT_SECONDARY, fontsize=8.5, ha=ha, va="center", style="italic")
-
-    ax.axhline(0, color=TEXT_DARK, linewidth=1.0, zorder=2)
-    ax.axvline(0, color=TEXT_DARK, linewidth=1.0, zorder=2)
-
-    # Schematic ET trajectory, 0-168 h every 24 h.
-    traj = np.array(
-        [
-            (240, 200),
-            (210, 150),
-            (160, 80),
-            (110, 10),
-            (60, -70),
-            (0, -140),
-            (-80, -200),
-            (-150, -230),
-        ],
-        dtype=float,
-    )
-    hours = np.arange(0, 24 * traj.shape[0], 24)
-    ax.plot(traj[:, 0], traj[:, 1], color=TEXT_SECONDARY, linewidth=2.0, zorder=5)
-    for k, (x, y) in enumerate(traj):
-        color = CMAP_SEQ_BLUE(k / (traj.shape[0] - 1))
-        ax.plot(x, y, marker="o", markersize=7, markerfacecolor=color, markeredgecolor="white", markeredgewidth=0.8, zorder=6)
-        dx_txt, dy_txt = 10, 10
-        va = "bottom"
-        if k == traj.shape[0] - 1:
-            dy_txt = -14
-            va = "top"
-        ax.annotate(
-            f"{hours[k]} h",
-            (x, y),
-            textcoords="offset points",
-            xytext=(dx_txt, dy_txt),
-            fontsize=7.5,
-            color=TEXT_SECONDARY,
-            va=va,
-        )
-
-    # Validation-case star.
-    ax.plot(120, 180, marker="*", markersize=15, markerfacecolor="#e34948", markeredgecolor="white", markeredgewidth=0.8, zorder=7)
-    ax.annotate(
-        "Typhoon, GFS 72 h forecast\n(validation case)",
-        (120, 180),
-        textcoords="offset points",
-        xytext=(10, 16),
-        fontsize=7.8,
-        color=TEXT_DARK,
-        va="bottom",
-        ha="left",
-    )
-
-    ax.set_xlabel(r"$-V_T^L$  (m)")
-    ax.set_ylabel(r"$-V_T^U$  (m)")
-    ax.grid(True, color=GRID_COLOR, linewidth=0.5, zorder=0.2)
-    ax.tick_params(length=3)
-    for spine in ax.spines.values():
-        spine.set_linewidth(0.6)
-
-    panel_letter(ax, "a")
-    fig.tight_layout()
-    fig.savefig(OUT_DIR / "fig1_phase_space.png")
-    plt.close(fig)
-
-
-# ===========================================================================
 # Figure 2: method (dZ profile + window)
 # ===========================================================================
 
@@ -595,6 +504,11 @@ def make_fig2(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m, z_std_stack):
             ax_a.plot(dz_line, p_line, color=color, linewidth=1.8, linestyle="-", zorder=4)
             p_anchor = ann_anchor_p[band_name]
             dz_anchor = ybar + slope * (np.log(p_anchor) - xbar)
+            # A thin leader line from the fitted segment to its own label,
+            # colored to match, so which line a label belongs to reads
+            # from position (the leader) and not from color matching
+            # alone -- needed for the (B, U) label, offset well clear of
+            # vortex A's own line.
             ax_a.annotate(
                 f"$-V_T^{band_name}$ = {slope:+.0f} m",
                 (dz_anchor, p_anchor),
@@ -603,6 +517,8 @@ def make_fig2(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m, z_std_stack):
                 fontsize=7.5,
                 color=color,
                 bbox=dict(facecolor="white", edgecolor="none", alpha=0.75, pad=0.8),
+                arrowprops=dict(arrowstyle="-", color=color, linewidth=0.8, shrinkA=0, shrinkB=3),
+                zorder=6,
             )
 
     ax_a.set_yscale("log")
@@ -701,7 +617,12 @@ def make_fig3(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m, z_std_stack, psfc):
     # and constrained_layout parks the leftover space as a band between
     # rows. 5.4 in keeps that gap close to the column gap.
     fig, axes = plt.subplots(2, 2, figsize=(FULL_WIDTH_IN, 5.4), constrained_layout=True)
-    fig.get_layout_engine().set(h_pad=0.06, w_pad=0.04, hspace=0.02, wspace=0.02)
+    # wspace wide enough that panel (c)'s colorbar label ("-V_T^U (m)",
+    # 8 pt) has room to clear panel (d)'s own left edge -- at the
+    # original 0.02 the two now collide, since the categorical legend
+    # and axis label font-size floor (see this script's own item 8)
+    # made every label in this row wider than before.
+    fig.get_layout_engine().set(h_pad=0.06, w_pad=0.04, hspace=0.02, wspace=0.14)
     (ax_a, ax_b), (ax_c, ax_d) = axes
 
     for ax in (ax_a, ax_b, ax_c, ax_d):
@@ -776,7 +697,7 @@ def make_fig3(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m, z_std_stack, psfc):
     ax_d.contour(lon2d, lat2d, z1000, levels=np.arange(np.floor(z1000.min() / 20) * 20, z1000.max() + 20, 20), colors="#8a8a86", linewidths=0.35, zorder=3)
     panel_letter(ax_d, "d")
     cb_d = fig.colorbar(pm_d, ax=ax_d, pad=0.02, fraction=0.05, ticks=range(7))
-    cb_d.ax.set_yticklabels(HARTCLASS_NAMES, fontsize=6.2)
+    cb_d.ax.set_yticklabels(HARTCLASS_NAMES, fontsize=8)
 
     fig.savefig(OUT_DIR / "fig3_gridded.png")
     plt.close(fig)
@@ -790,24 +711,11 @@ def make_fig3(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m, z_std_stack, psfc):
 # ===========================================================================
 
 OMEGA_EARTH = 7.2921159e-5
-G_ACCEL = 9.81
-
-
-def geostrophic_wind(z, dx2d, dy_m, f):
-    dzdy = np.gradient(z, axis=0) / dy_m
-    dzdx = np.gradient(z, axis=1) / dx2d
-    u = -(G_ACCEL / f) * dzdy
-    v = (G_ACCEL / f) * dzdx
-    return u, v
 
 
 def _fig4_fields(lat2d, lon2d, dx2d, dy_m, tilt_km):
-    """Height fields (1000-300 hPa) and their geostrophic winds (850,
-    700, 500, 300 hPa) for Figure 4's tilted cold-core cyclone (Vortex
-    B), at the given 300 hPa tilt. A single, fixed f (this synthetic
-    grid's own f at Vortex B's 50N) is used for every level's
-    geostrophic wind, the same simplification the module docstring's
-    "Grid" section already makes for this whole script's synthetic dx.
+    """Height fields (1000-300 hPa) for Figure 4's tilted cold-core
+    cyclone (Vortex B), at the given 300 hPa tilt.
     """
     z1000 = height_field(lat2d, lon2d, 1000.0, tilt_km=tilt_km)
     z925 = height_field(lat2d, lon2d, 925.0, tilt_km=tilt_km)
@@ -817,35 +725,27 @@ def _fig4_fields(lat2d, lon2d, dx2d, dy_m, tilt_km):
     z400 = height_field(lat2d, lon2d, 400.0, tilt_km=tilt_km)
     z300 = height_field(lat2d, lon2d, 300.0, tilt_km=tilt_km)
 
-    f50 = 2.0 * OMEGA_EARTH * np.sin(np.radians(50.0))
-    u850, v850 = geostrophic_wind(z850, dx2d, dy_m, f50)
-    u700, v700 = geostrophic_wind(z700, dx2d, dy_m, f50)
-    u500, v500 = geostrophic_wind(z500, dx2d, dy_m, f50)
-    u300, v300 = geostrophic_wind(z300, dx2d, dy_m, f50)
-
-    return dict(
-        z1000=z1000, z925=z925, z850=z850, z700=z700, z500=z500, z400=z400, z300=z300,
-        u850=u850, v850=v850, u700=u700, v700=v700, u500=u500, v500=v500, u300=u300, v300=v300,
-    )
+    return dict(z1000=z1000, z925=z925, z850=z850, z700=z700, z500=z500, z400=z400, z300=z300)
 
 
-def _fig4_hart_class(fields, lat2d, dx2d, dy_m, psfc, depth_m):
-    """HCPSclass for Figure 4's fields, with closed_low_mask's own depth
-    threshold overridden to `depth_m` -- see make_fig4's own report for
-    why this figure's synthetic low needs a lower value than
-    cps_HartCPS.DEFAULT_DEPTH_M. Everything else matches Figure 7's own
-    executeHartClass call: the same constants, and coriolis from this
-    grid's own latitude.
+def _fig4_hart_class(fields, lat2d, dx2d, dy_m, psfc):
+    """HCPSclass for Figure 4's fields, steered by a uniform 8 m/s
+    westerly at all four wind levels -- exactly the environmental
+    steering Figure 3 uses -- rather than a geostrophic wind derived
+    from the vortex's own height field (which is the vortex's own
+    circulation, not its motion; see REVIEW_PANEL.md item 2).
+    cps_HartCPS.DEFAULT_DEPTH_M (the shipped 40 m) is used unmodified.
     """
     coriolis = 2.0 * OMEGA_EARTH * np.sin(np.radians(lat2d))
+    u_steer = np.full(lat2d.shape, 8.0)
+    v_steer = np.zeros_like(u_steer)
     return cps_HartCPS.executeHartClass(
         fields["z1000"], fields["z925"], fields["z850"], fields["z700"],
         fields["z500"], fields["z400"], fields["z300"],
-        fields["u850"], fields["v850"], fields["u700"], fields["v700"],
-        fields["u500"], fields["v500"], fields["u300"], fields["v300"],
+        u_steer, v_steer, u_steer, v_steer, u_steer, v_steer, u_steer, v_steer,
         psfc, coriolis, dx2d, dy_m,
         500.0, cps_HartCPS.B_THRESHOLD_M, cps_HartCPS.HART_B_LAYER_SCALE,
-        depth_m, cps_HartCPS.DEFAULT_BLOB_RADIUS_KM, 900.0,
+        cps_HartCPS.DEFAULT_DEPTH_M, cps_HartCPS.DEFAULT_BLOB_RADIUS_KM, 900.0,
     )
 
 
@@ -855,7 +755,10 @@ def make_fig4(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m, psfc):
     surface-level center. HVTL, HVTU and HCPSclass are all evaluated at
     the *surface-level* center, to show that cps_HartCPS.py's whole-depth
     diagnostics still read cold core there even though the vortex's own
-    upper-level center has moved several grid points away.
+    upper-level center has moved several grid points away. The steering
+    flow is a uniform 8 m/s westerly at all four wind levels, exactly as
+    Figure 3 uses, so the steering is environmental rather than the
+    vortex's own geostrophic wind (see REVIEW_PANEL.md item 2).
 
     The surface pressure is uniform ocean here: this figure isolates the
     effect of tilt, so the synthetic terrain block used by Figure 3 is
@@ -903,31 +806,16 @@ def make_fig4(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m, psfc):
         500.0, 500.0, 400.0, 300.0,
     )
 
-    depth_m_used = cps_HartCPS.DEFAULT_DEPTH_M
-    hart_cls = _fig4_hart_class(fields, lat2d, dx2d, dy_m, psfc, depth_m_used)
-    if not np.isfinite(hart_cls[iC, jC]):
-        # closed_low_mask's own DEFAULT_DEPTH_M (40 m) test compares the
-        # point's height against the mean height of the annulus between
-        # MIN_RADIUS_KM and RADIUS_KM (300-500 km) around it. Vortex B's
-        # own e-folding scale is 350 km, close enough to that annulus
-        # that the ring mean is still well down inside the vortex's own
-        # depression rather than sitting on the surrounding background,
-        # so the annulus-minus-center depth comes back under 40 m even
-        # though this is a real, closed low. A lower depthM, applied
-        # here only, is what a low this broad relative to the mask's
-        # own annulus needs; cps_HartCPS.DEFAULT_DEPTH_M itself is left
-        # unchanged, since a real analyzed low is deep enough that the
-        # shipped 40 m default is no obstacle.
-        depth_m_used = 15.0
-        hart_cls = _fig4_hart_class(fields, lat2d, dx2d, dy_m, psfc, depth_m_used)
-        print(
-            f"  HCPSclass at the surface center is NaN at cps_HartCPS.DEFAULT_DEPTH_M "
-            f"({cps_HartCPS.DEFAULT_DEPTH_M:.0f} m); re-evaluated for this figure only "
-            f"at depthM={depth_m_used:.0f} m."
-        )
+    # cps_HartCPS.DEFAULT_DEPTH_M (the shipped 40 m) is reported as-is,
+    # with no per-figure override.
+    hart_cls = _fig4_hart_class(fields, lat2d, dx2d, dy_m, psfc)
 
     fig, axes = plt.subplots(2, 2, figsize=(FULL_WIDTH_IN, 6.0), constrained_layout=True)
-    fig.get_layout_engine().set(h_pad=0.06, w_pad=0.04, hspace=0.02, wspace=0.02)
+    # wspace widened for the same reason as Figure 3's own: panel (c)'s
+    # colorbar label needs more clearance from panel (d) now that the
+    # categorical legend and axis label font-size floor (item 8) made
+    # every label in this row wider.
+    fig.get_layout_engine().set(h_pad=0.06, w_pad=0.04, hspace=0.02, wspace=0.14)
     (ax_a, ax_b), (ax_c, ax_d) = axes
 
     lon_min, lon_max = -155.0, -125.0
@@ -1016,7 +904,7 @@ def make_fig4(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m, psfc):
     mark_center(ax_d, f"at center: class {cls_label}")
     panel_letter(ax_d, "d")
     cb_d = fig.colorbar(pm_d, ax=ax_d, pad=0.02, fraction=0.05, ticks=range(7))
-    cb_d.ax.set_yticklabels(HARTCLASS_NAMES, fontsize=6.2)
+    cb_d.ax.set_yticklabels(HARTCLASS_NAMES, fontsize=8)
 
     fig.savefig(OUT_DIR / "fig4_tilt.png")
     plt.close(fig)
@@ -1027,7 +915,7 @@ def make_fig4(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m, psfc):
         class_center=cls_c,
         tilt_km=tilt_km,
         displacement_km=displacement_km,
-        depth_m_used=depth_m_used,
+        depth_m=cps_HartCPS.DEFAULT_DEPTH_M,
     )
     return center_values
 
@@ -1078,29 +966,51 @@ def _time_execute_hart_class(ny, nx, rng):
 
 
 def make_fig5():
+    """Five timed runs per grid size; the first (warm-up: first import,
+    first JIT/cache-fill pass through executeHartClass) is discarded, and
+    the remaining four are summarized by their median, with the min-max
+    range drawn as an asymmetric error bar -- one number the article can
+    quote per size, plus the spread it was drawn from.
+    """
     rng = np.random.default_rng(20260917)
     sizes = [(181, 360), (361, 720), (721, 1440)]
     labels = ["181×360\n(1°)", "361×720\n(0.5°)", "721×1440\n(0.25°)"]
-    medians = []
+    medians, err_lo, err_hi, ranges = [], [], [], []
     for ny, nx in sizes:
-        runs = [_time_execute_hart_class(ny, nx, rng) for _ in range(3)]
+        runs_all = [_time_execute_hart_class(ny, nx, rng) for _ in range(5)]
+        runs = runs_all[1:]  # discard the first (warm-up) run
         med = float(np.median(runs))
+        rmin, rmax = float(min(runs)), float(max(runs))
         medians.append(med)
-        print(f"executeHartClass timing, {ny}x{nx}: runs={[f'{r:.3f}' for r in runs]} s, median={med:.3f} s")
+        err_lo.append(med - rmin)
+        err_hi.append(rmax - med)
+        ranges.append((rmin, rmax))
+        print(
+            f"executeHartClass timing, {ny}x{nx}: runs={[f'{r:.3f}' for r in runs_all]} s "
+            f"(first discarded), kept={[f'{r:.3f}' for r in runs]} s, "
+            f"median={med:.3f} s, range=[{rmin:.3f}, {rmax:.3f}] s"
+        )
 
     fig, ax = plt.subplots(figsize=(HALF_WIDTH_IN, 3.1))
     xs = np.arange(len(sizes))
-    ax.plot(xs, medians, marker="o", markersize=6.5, color=VORTEX_B_COLOR, linewidth=1.8, markerfacecolor=VORTEX_B_COLOR, markeredgecolor="white", markeredgewidth=0.6, zorder=5)
-    for x, m in zip(xs, medians):
+    ax.errorbar(
+        xs, medians, yerr=[err_lo, err_hi], fmt="o-", color=VORTEX_B_COLOR, linewidth=1.8,
+        markersize=6.5, markerfacecolor=VORTEX_B_COLOR, markeredgecolor="white", markeredgewidth=0.6,
+        ecolor=TEXT_SECONDARY, elinewidth=1.2, capsize=4, capthick=1.2, zorder=5,
+    )
+    for k, (x, m) in enumerate(zip(xs, medians)):
         # To the right of the marker, so the label clears both the line
         # and the y-axis tick labels (the first point sits low, right by
-        # the "0.0"/"0.2" ticks).
-        ax.annotate(f"{m:.2f} s", (x, m), textcoords="offset points", xytext=(10, 6), ha="left", fontsize=8, color=TEXT_DARK)
+        # the "0.0"/"0.2" ticks). The first point's label is pushed
+        # further up (above its own error bar's top whisker) so the line
+        # rising toward the second point does not run through the text.
+        xytext = (10, 22) if k == 0 else (10, 6)
+        ax.annotate(f"{m:.2f} s", (x, m), textcoords="offset points", xytext=xytext, ha="left", fontsize=8, color=TEXT_DARK, zorder=6)
 
     ax.set_xticks(xs)
     ax.set_xticklabels(labels, fontsize=8)
     ax.set_xlim(-0.3, len(sizes) - 1 + 0.55)
-    ax.set_ylim(0, max(medians) * 1.35)
+    ax.set_ylim(0, max(m + h for m, h in zip(medians, err_hi)) * 1.45)
     ax.set_ylabel("wall-clock time (s)")
     ax.grid(True, axis="y", color=GRID_COLOR, linewidth=0.5)
     ax.set_axisbelow(True)
@@ -1110,7 +1020,13 @@ def make_fig5():
     fig.tight_layout()
     fig.savefig(OUT_DIR / "fig5_performance.png")
     plt.close(fig)
-    return dict(zip(["181x360", "361x720", "721x1440"], medians))
+
+    report = {
+        size: dict(median=med, min=rng_[0], max=rng_[1])
+        for size, med, rng_ in zip(["181x360", "361x720", "721x1440"], medians, ranges)
+    }
+    print(f"Figure 5 summary (median [min, max], s, first run of five discarded): {report}")
+    return report
 
 
 # ===========================================================================
@@ -1131,7 +1047,12 @@ def make_fig6():
 
     im = Image.open(UPLOAD_PHOTO)
     w, h = im.size
-    box = (int(0.03 * w), int(0.21 * h), int(0.95 * w), int(0.92 * h))
+    # Top two panels only (lower and upper thermal wind) -- the bottom
+    # row (Hart CPS core class/index, the earlier five-code product; see
+    # REVIEW_PANEL.md item 14) is dropped entirely, and the crop ends
+    # well above the bottom row's own color bar, so neither it nor the
+    # desktop task bar at the very bottom of the photo is included.
+    box = (int(0.03 * w), int(0.21 * h), int(0.95 * w), int(0.571 * h))
     cropped = im.crop(box)
     new_w = 1600
     new_h = int(round(cropped.size[1] * new_w / cropped.size[0]))
@@ -1152,10 +1073,10 @@ def make_fig6():
 
 FIG7_VORTEX_A2_LAT, FIG7_VORTEX_A2_LON = 42.0, -140.0
 FIG7_THICKNESS_GRADIENT_M_PER_1000KM = 40.0  # 925-700 hPa thickness, decreasing northward
-FIG7_STEERING_WESTERLY_MS = 12.0   # north of 35N
-FIG7_STEERING_EASTERLY_MS = -6.0   # south of 25N (negative = easterly, i.e. blowing from the east)
-FIG7_STEERING_BLEND_CENTER_LAT = 30.0
-FIG7_STEERING_BLEND_WIDTH_DEG = 3.0
+FIG7_STEERING_WESTERLY_MS = 12.0   # north of about 39N
+FIG7_STEERING_EASTERLY_MS = -6.0   # south of about 31N (negative = easterly, i.e. blowing from the east)
+FIG7_STEERING_BLEND_CENTER_LAT = 35.0  # reversal sits between the two vortices' 500 km windows
+FIG7_STEERING_BLEND_WIDTH_DEG = 2.0
 # A small, short-lived poleward turn superimposed only on the blend itself
 # (a Gaussian in latitude, centered on the same blend and negligible by the
 # time either vortex center is reached -- see fig7_steering_v): physically,
@@ -1171,10 +1092,10 @@ FIG7_STEERING_BLEND_WIDTH_DEG = 3.0
 FIG7_STEERING_TURN_MS = 2.5
 FIG7_STEERING_TURN_WIDTH_DEG = 1.2
 
-#: Colors reused for Hart's own Phase 1 diagram quadrants (panel (d) of
-#: this figure, and Figure 10) -- a schematic of Hart's own B-vs-VTL
-#: plot; three colors borrowed from CATEGORY_COLORS purely
-#: for visual consistency with the rest of this script's palette.
+#: Colors reused for Hart's own B-vs-lower-thermal-wind diagram quadrants
+#: (panel (d) of this figure, and Figure 10 panel a); three colors
+#: borrowed from CATEGORY_COLORS purely for visual consistency with the
+#: rest of this script's palette.
 STAGE_COLORS = [CATEGORY_COLORS[2], CATEGORY_COLORS[3], CATEGORY_COLORS[1]]  # pale gray, orange, blue
 
 
@@ -1240,8 +1161,8 @@ def fig7_height_field(lat2d, lon2d, p):
 
 def fig7_steering_u(lat2d):
     """Zonal steering wind (m/s) for Figure 7: FIG7_STEERING_EASTERLY_MS
-    (negative, i.e. blowing from the east) south of 25N,
-    FIG7_STEERING_WESTERLY_MS (positive) north of 35N, a smooth tanh
+    (negative, i.e. blowing from the east) south of about 31N,
+    FIG7_STEERING_WESTERLY_MS (positive) north of about 39N, a smooth tanh
     blend of the two centered on FIG7_STEERING_BLEND_CENTER_LAT. The
     meridional component is always 0 -- both regimes, and the blend
     between them, are purely zonal.
@@ -1351,8 +1272,18 @@ def make_fig7(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m):
     if not class_ok:
         print("  WARNING: HCPSclass at A/A' did not land on the expected 0/2 codes.")
 
-    fig, axes = plt.subplots(2, 2, figsize=(FULL_WIDTH_IN, 7.6), constrained_layout=True)
-    fig.get_layout_engine().set(h_pad=0.08, w_pad=0.06, hspace=0.04, wspace=0.04)
+    # No constrained/compressed layout engine here: three of the four
+    # panels have a fixed (map) aspect and the fourth (d) does not, and
+    # either layout engine tries to be "smart" about that mix and ends
+    # up reserving a lot of dead space (a wide empty band between the
+    # rows, or two overlapping columns squeezed to a sliver) -- see
+    # REVIEW_PANEL.md item 37 / this script's own item 3. Plain,
+    # explicitly-sized subplot cells sidestep this: each of (a)-(c)
+    # shrinks and centers itself within its own fixed cell to honor its
+    # aspect (a normal, local effect, not a whole-row/column one), and
+    # (d), with no aspect set, simply fills its cell exactly.
+    fig, axes = plt.subplots(2, 2, figsize=(FULL_WIDTH_IN, 7.6))
+    fig.subplots_adjust(left=0.075, right=0.90, bottom=0.055, top=0.98, wspace=0.55, hspace=0.12)
     (ax_a, ax_b), (ax_c, ax_d) = axes
 
     for ax in (ax_a, ax_b, ax_c):
@@ -1418,41 +1349,66 @@ def make_fig7(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m):
     ax_c.contour(lon2d, lat2d, z1000, levels=z1000_levels, colors="#8a8a86", linewidths=0.35, zorder=3)
     mark_vortex_centers(ax_c)
     cb_c = fig.colorbar(pm_c, ax=ax_c, pad=0.02, fraction=0.05, ticks=range(7))
-    cb_c.ax.set_yticklabels(HARTCLASS_NAMES, fontsize=6.2)
+    cb_c.ax.set_yticklabels(HARTCLASS_NAMES, fontsize=8)
     panel_letter(ax_c, "c")
 
-    # --- (d) Hart's Phase 1 diagram: B vs -V_T^L -----------------------------
-    xlim = (min(-20.0, 1.15 * b1), 80.0)
-    ylim = (-300.0, 300.0)
+    # --- (d) Hart's B-vs-lower-thermal-wind diagram --------------------------
+    # B on the vertical axis, -V_T^L on the horizontal axis (Hart's own
+    # convention; see REVIEW_PANEL.md item 12). The onset line (B = 10 m)
+    # is therefore horizontal and the completion line (-V_T^L = 0) is
+    # vertical.
+    xlim = (-300.0, 300.0)  # -V_T^L (m)
+    ylim = (min(-20.0, 1.15 * b1), 80.0)  # B (m)
     ax_d.set_xlim(*xlim)
     ax_d.set_ylim(*ylim)
+    # A fixed (non-"auto") aspect, matched to the same box shape
+    # style_map_axes gives panels (a)-(c), so the compressed layout
+    # engine treats all four panels as fixed-aspect and sizes them
+    # uniformly. Left free ("auto"), this panel is the only one of the
+    # four without a fixed aspect, and compressed layout can then give
+    # it a box so narrow that the two opposite-corner quadrant labels
+    # (each anchored a fixed fraction in from its own edge) overlap.
+    map_box_hw_ratio = (LAT_MAX - LAT_MIN) / (LON_MAX - LON_MIN) / np.cos(np.radians(0.5 * (LAT_MIN + LAT_MAX)))
+    ax_d.set_aspect(map_box_hw_ratio * (xlim[1] - xlim[0]) / (ylim[1] - ylim[0]))
 
     quadrants = [
-        (-1e4, cps_HartCPS.B_THRESHOLD_M, 0, 1e4, STAGE_COLORS[0], "symmetric\nwarm core"),
-        (cps_HartCPS.B_THRESHOLD_M, 1e4, 0, 1e4, STAGE_COLORS[1], "asymmetric warm core"),
-        (cps_HartCPS.B_THRESHOLD_M, 1e4, -1e4, 0, STAGE_COLORS[2], "asymmetric cold core"),
-        (-1e4, cps_HartCPS.B_THRESHOLD_M, -1e4, 0, "#4a3aa7", "symmetric\ncold core"),
+        (0, 1e4, -1e4, cps_HartCPS.B_THRESHOLD_M, STAGE_COLORS[0], "symmetric warm core"),
+        (0, 1e4, cps_HartCPS.B_THRESHOLD_M, 1e4, STAGE_COLORS[1], "frontal warm core"),
+        (-1e4, 0, cps_HartCPS.B_THRESHOLD_M, 1e4, STAGE_COLORS[2], "frontal cold core"),
+        (-1e4, 0, -1e4, cps_HartCPS.B_THRESHOLD_M, "#4a3aa7", "symmetric cold core"),
     ]
     for x0, x1, y0, y1, color, _ in quadrants:
         x0c, x1c = max(x0, xlim[0]), min(x1, xlim[1])
         y0c, y1c = max(y0, ylim[0]), min(y1, ylim[1])
         ax_d.add_patch(Rectangle((x0c, y0c), x1c - x0c, y1c - y0c, facecolor=color, alpha=0.30, edgecolor="none", zorder=0))
 
-    label_pos = {
-        # Lower part of the quadrant, well clear of the 0 h/24 h points
-        # (which sit up near y=200-240) and of the trajectory itself.
-        "symmetric\nwarm core": (-18, 25, "left"),
-        "asymmetric warm core": (xlim[1] - 3, 260, "right"),
-        "asymmetric cold core": (xlim[1] - 3, -190, "right"),
-        "symmetric\ncold core": (0.5 * xlim[0], -230, "center"),
+    # Quadrant labels sit in the panel's own corners (axes fraction, so
+    # they track xlim/ylim automatically), each inset just enough to
+    # clear the axes frame; the top-left one is further inset than the
+    # rest so it never collides with the panel-letter box, which also
+    # anchors top-left (see panel_letter).
+    quadrant_label_pos = {
+        "frontal cold core": (0.04, 0.83, "left", "top"),
+        "frontal warm core": (0.97, 0.96, "right", "top"),
+        # A tighter inset than the top row's: the bottom two labels'
+        # combined width is close to the panel's own width at the top
+        # row's insets, close enough that the "cold"/"warm" strings
+        # touch at the completion line -- the bottom row's inset is
+        # relaxed just enough to clear that.
+        "symmetric cold core": (0.015, 0.04, "left", "bottom"),
+        "symmetric warm core": (0.985, 0.04, "right", "bottom"),
     }
     for _, _, _, _, _, label in quadrants:
-        x, y, ha = label_pos[label]
-        ax_d.text(x, y, label, color=TEXT_SECONDARY, fontsize=7.5, ha=ha, va="center", style="italic", zorder=1)
+        x, y, ha, va = quadrant_label_pos[label]
+        ax_d.text(
+            x, y, label, transform=ax_d.transAxes, color=TEXT_SECONDARY, fontsize=7.2,
+            ha=ha, va=va, style="italic", zorder=1,
+        )
 
-    ax_d.axhline(0, color=TEXT_DARK, linewidth=1.0, zorder=2)
-    ax_d.axvline(cps_HartCPS.B_THRESHOLD_M, color=TEXT_DARK, linewidth=1.0, zorder=2)
+    ax_d.axhline(cps_HartCPS.B_THRESHOLD_M, color=TEXT_DARK, linewidth=1.0, zorder=2)
+    ax_d.axvline(0, color=TEXT_DARK, linewidth=1.0, zorder=2)
 
+    # Columns: B (m), -V_T^L (m), at 24 h spacing.
     traj = np.array(
         [
             (3, 240), (6, 200), (12, 150), (25, 90),
@@ -1461,65 +1417,71 @@ def make_fig7(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m):
         dtype=float,
     )
     hours = np.arange(0, 24 * traj.shape[0], 24)
-    ax_d.plot(traj[:, 0], traj[:, 1], color=TEXT_SECONDARY, linewidth=2.0, zorder=5)
-    for k, (x, y) in enumerate(traj):
+    labeled_hours = (0, 48, 96, 168)  # every other point, per the style rules
+    ax_d.plot(traj[:, 1], traj[:, 0], color=TEXT_SECONDARY, linewidth=2.0, zorder=5)
+    for k, (bval, vval) in enumerate(traj):
         color = CMAP_SEQ_BLUE(k / (traj.shape[0] - 1))
-        ax_d.plot(x, y, marker="o", markersize=7, markerfacecolor=color, markeredgecolor="white", markeredgewidth=0.8, zorder=6)
-        va, ha, dx_txt, dy_txt = "bottom", "left", 8, 10
+        ax_d.plot(vval, bval, marker="o", markersize=7, markerfacecolor=color, markeredgecolor="white", markeredgewidth=0.8, zorder=6)
+        if hours[k] not in labeled_hours:
+            continue
+        va, ha, dx_txt, dy_txt = "bottom", "left", 8, 8
         if k == traj.shape[0] - 1:
-            dx_txt, dy_txt, va = 8, -14, "top"
+            dx_txt, dy_txt, va = 8, -12, "top"
         elif k == 0:
-            # Directly to the left of its own point (not above it, which
-            # pushed the label up against the top axis edge at y=240 on
-            # a ylim topping out at 300).
-            dx_txt, dy_txt, ha, va = -10, 0, "right", "center"
-        elif hours[k] == 120:
-            dx_txt, dy_txt = 16, 18  # clear of the "asymmetric cold core" label just above
-        elif hours[k] == 72:
-            # dy=0 instead of the default 10 -- the "A' (westerly)"
-            # annotation now anchors at a fixed (32, 130) and reaches down
-            # to about y=109, which the default's extra upward push
-            # clipped into.
-            dx_txt, dy_txt = 8, 0
-        ax_d.annotate(f"{hours[k]} h", (x, y), textcoords="offset points", xytext=(dx_txt, dy_txt), fontsize=7.2, color=TEXT_SECONDARY, ha=ha, va=va)
+            dx_txt, dy_txt, ha, va = 8, 10, "left", "bottom"
+        elif hours[k] == 96:
+            # Above the point rather than the default below-right: that
+            # side collides with the completion crossing, the diamond
+            # marker and the "A' (westerly)" call-out box, all of which
+            # sit within a few tens of meters of this point.
+            dx_txt, dy_txt, ha, va = -6, 16, "right", "bottom"
+        ax_d.annotate(f"{hours[k]} h", (vval, bval), textcoords="offset points", xytext=(dx_txt, dy_txt), fontsize=7.2, color=TEXT_SECONDARY, ha=ha, va=va, zorder=6)
 
-    onset_xy = _interp_crossing(traj, 0, cps_HartCPS.B_THRESHOLD_M)
-    completion_xy = _interp_crossing(traj, 1, 0.0)
+    onset_xy = _interp_crossing(traj, 0, cps_HartCPS.B_THRESHOLD_M)  # (B, VTL)
+    completion_xy = _interp_crossing(traj, 1, 0.0)  # (B, VTL)
+    # Both callouts lead back to their own crossing with a thin line,
+    # since the crossings themselves sit right against the trajectory
+    # (the completion crossing in particular is only ~20 m from the
+    # 96 h point) and a same-spot label would collide with it; the
+    # leader lets each label sit in genuinely open panel space instead.
     if onset_xy is not None:
-        ax_d.plot(*onset_xy, marker="x", markersize=7, color=TEXT_DARK, markeredgewidth=1.6, zorder=7)
+        ax_d.plot(onset_xy[1], onset_xy[0], marker="x", markersize=7, color=TEXT_DARK, markeredgewidth=1.6, zorder=7)
         ax_d.annotate(
-            "onset: B > 10 m\n(Evans and Hart 2003)", onset_xy, textcoords="offset points",
-            xytext=(34, 16), fontsize=7.0, color=TEXT_DARK, va="bottom", ha="left",
+            "onset: $B$ > 10 m\n(Evans and Hart 2003)", (onset_xy[1], onset_xy[0]), textcoords="offset points",
+            xytext=(45, 65), fontsize=7.0, color=TEXT_DARK, va="bottom", ha="left",
             bbox=dict(facecolor="white", edgecolor="none", alpha=0.85, pad=1.0), zorder=7,
+            arrowprops=dict(arrowstyle="-", color=TEXT_DARK, linewidth=0.7, shrinkA=0, shrinkB=3),
         )
     if completion_xy is not None:
-        ax_d.plot(*completion_xy, marker="x", markersize=7, color=TEXT_DARK, markeredgewidth=1.6, zorder=7)
+        ax_d.plot(completion_xy[1], completion_xy[0], marker="x", markersize=7, color=TEXT_DARK, markeredgewidth=1.6, zorder=7)
         ax_d.annotate(
-            "completion: −V_T^L < 0", completion_xy, textcoords="offset points",
-            xytext=(10, -28), fontsize=7.0, color=TEXT_DARK, va="top", ha="left",
+            r"completion: $-V_T^L$ < 0", (completion_xy[1], completion_xy[0]), textcoords="offset points",
+            xytext=(15, -55), fontsize=7.0, color=TEXT_DARK, va="top", ha="left",
             bbox=dict(facecolor="white", edgecolor="none", alpha=0.85, pad=1.0), zorder=7,
+            arrowprops=dict(arrowstyle="-", color=TEXT_DARK, linewidth=0.7, shrinkA=0, shrinkB=3),
         )
 
-    # Fixed data-space anchors, not offsets from each diamond: after the
-    # background-gradient clamp (see fig7_rate_per_1000km) both diamonds
-    # sit close together around VTL=120 m, so an offset-from-point
-    # placement put the two annotations on top of each other and on the
-    # trajectory. A's label goes below-and-left of its own diamond;
-    # A''s goes to the right of its own diamond, clear of both A's label
-    # and the trajectory line between them.
+    # Vortex call-out boxes, fixed data-space anchors (not offsets from
+    # each diamond): both diamonds sit close together around VTL=120 m,
+    # so an offset-from-point placement puts the two boxes on top of one
+    # another. A's box sits low along the left spine, below the
+    # "frontal cold core" corner label and clear of the 168 h point;
+    # A''s box sits above its own diamond, inside the frontal-warm-core
+    # quadrant, clear of the diamond, the 48 h/96 h points and the
+    # "symmetric warm core" corner label below the B = 10 m line.
     for (bval, vval), label, anchor, ha, va in (
-        ((b1, vtl1), "A (easterly)", (-28, 90), "left", "top"),
-        ((b2, vtl2), "A′ (westerly)", (32, 130), "left", "center"),
+        ((b1, vtl1), "A (easterly)", (-295, 28), "left", "bottom"),
+        ((b2, vtl2), "A′ (westerly)", (95, 58), "left", "top"),
     ):
-        ax_d.plot(bval, vval, marker="D", markersize=8, markerfacecolor=VORTEX_A_COLOR, markeredgecolor="white", markeredgewidth=1.0, zorder=9)
+        ax_d.plot(vval, bval, marker="D", markersize=8, markerfacecolor=VORTEX_A_COLOR, markeredgecolor="white", markeredgewidth=1.0, zorder=9)
         ax_d.annotate(
-            f"{label}\nB={bval:+.0f} m", (bval, vval), xytext=anchor, textcoords="data", ha=ha, va=va,
+            f"{label}\nB={bval:+.0f} m", (vval, bval), xytext=anchor, textcoords="data", ha=ha, va=va,
             fontsize=7.2, color=TEXT_DARK, fontweight="bold",
             bbox=dict(facecolor="white", edgecolor="none", alpha=0.85, pad=1.0), zorder=9,
         )
 
-    ax_d.set_xlabel("B (m)")
-    ax_d.set_ylabel(r"$-V_T^L$  (m)")
+    ax_d.set_xlabel(r"$-V_T^L$  (m)")
+    ax_d.set_ylabel("B (m)")
     ax_d.grid(True, color=GRID_COLOR, linewidth=0.5, zorder=0.2)
     ax_d.tick_params(length=3)
     for spine in ax_d.spines.values():
@@ -1780,7 +1742,12 @@ FIG9_VORTEX_AMP_M = 60.0
 FIG9_VORTEX_SCALE_KM = 150.0
 FIG9_BACKGROUND_THICKNESS_M = 2480.0
 FIG9_HEADING_DEG = 45.0  # northeast
-FIG9_GRADIENT_M_PER_1000KM = 40.0  # 925-700 hPa thickness, warm (thick) to the south
+FIG9_GRADIENT_M_PER_1000KM = 40.0  # 900-600 hPa thickness, warm (thick) to the south
+
+# Thick (warm) reads warm-colored, thin (cold) reads pale -- a sequential
+# map keyed to the physical sense of thickness, not the script's generic
+# blue sequential map used for height fields elsewhere.
+CMAP_THICKNESS = plt.get_cmap("YlOrRd")
 
 
 def _fig9_thickness_and_b(lat2d, lon2d, x_km, y_km, r_km, with_gradient):
@@ -1800,7 +1767,7 @@ def _fig9_thickness_and_b(lat2d, lon2d, x_km, y_km, r_km, with_gradient):
 def _fig9_panel(ax, lon2d, lat2d, x_km, y_km, r_km, mx, my, thickness, b_value, label_text):
     half = 0.5 * FIG9_BOX_KM
     levels = np.arange(np.floor(thickness.min() / 10.0) * 10.0, thickness.max() + 10.0, 10.0)
-    ax.contourf(x_km, y_km, thickness, levels=levels, cmap=CMAP_SEQ_BLUE, zorder=1)
+    cf = ax.contourf(x_km, y_km, thickness, levels=levels, cmap=CMAP_THICKNESS, zorder=1)
     ax.contour(x_km, y_km, thickness, levels=levels, colors=TEXT_SECONDARY, linewidths=0.4, zorder=2)
 
     # Left/right split of the analysis circle, exactly the half-planes
@@ -1841,6 +1808,7 @@ def _fig9_panel(ax, lon2d, lat2d, x_km, y_km, r_km, mx, my, thickness, b_value, 
     ax.set_xlabel("km east of storm")
     ax.grid(True, color=GRID_COLOR, linewidth=0.4, zorder=0.3)
     ax.tick_params(length=3)
+    return cf
 
 
 def make_fig9():
@@ -1871,12 +1839,25 @@ def make_fig9():
     ax_a.text(label_r * np.cos(se_deg), label_r * np.sin(se_deg), "right", fontsize=7.8, color=TEXT_SECONDARY, ha="center", va="center", style="italic", zorder=7)
     panel_letter(ax_a, "a")
 
-    _fig9_panel(ax_b, lon2d, lat2d, x_km, y_km, r_km, mx, my, thickness_front, b_front, "frontal, above the 10 m line")
-    ax_b.text(0.95, 0.22, "warm flank (south)", transform=ax_b.transAxes, fontsize=7.3, color=TEXT_DARK, ha="right", va="bottom", style="italic",
-               bbox=dict(facecolor="white", edgecolor="none", alpha=0.75, pad=1.2), clip_on=False)
-    ax_b.text(0.95, 0.92, "cold flank (north)", transform=ax_b.transAxes, fontsize=7.3, color=TEXT_DARK, ha="right", va="top", style="italic",
-               bbox=dict(facecolor="white", edgecolor="none", alpha=0.75, pad=1.2), clip_on=False)
+    cf_b = _fig9_panel(ax_b, lon2d, lat2d, x_km, y_km, r_km, mx, my, thickness_front, b_front, "frontal, above the 10 m line")
+    # Geographic flanks (warm/thick south, cold/thin north -- fixed by
+    # the background gradient, independent of the motion vector), well
+    # outside the 500 km circle (radius 500 vs a 600 km box half-width)
+    # and clear of the spine. The north label sits on the panel's own
+    # vertical centerline, above the circle; the south one is offset to
+    # the bottom-right corner instead of the centerline, and wrapped to
+    # two lines, so it clears the "B = ..." box that occupies most of
+    # the bottom-left at that same height.
+    half_b = 0.5 * FIG9_BOX_KM
+    flank_y = 0.5 * (FIG9_CIRCLE_KM + half_b)
+    ax_b.text(0.73 * half_b, -flank_y, "warm flank\n(south)", fontsize=7.3, color=TEXT_DARK, ha="center", va="center", style="italic",
+               bbox=dict(facecolor="white", edgecolor="none", alpha=0.8, pad=1.5), zorder=7)
+    ax_b.text(0, flank_y, "cold flank (north)", fontsize=7.3, color=TEXT_DARK, ha="center", va="center", style="italic",
+               bbox=dict(facecolor="white", edgecolor="none", alpha=0.8, pad=1.5), zorder=7)
     panel_letter(ax_b, "b")
+    cb_b = fig.colorbar(cf_b, ax=ax_b, pad=0.02, fraction=0.05)
+    cb_b.set_label("900-600 hPa thickness (m)", fontsize=8)
+    cb_b.ax.tick_params(labelsize=7.5)
 
     fig.tight_layout()
     fig.savefig(OUT_DIR / "fig9_b_concept.png")
@@ -1907,8 +1888,8 @@ FIG10_TRAJ = np.array(
     dtype=float,
 )
 FIG10_SECLUSION_END = np.array([5.0, 60.0, -180.0])
-FIG10_XLIM_A = (-20.0, 80.0)
-FIG10_YLIM = (-300.0, 300.0)
+FIG10_B_LIM = (-20.0, 80.0)  # panel (a) vertical axis: B (m)
+FIG10_VTL_LIM = (-300.0, 300.0)  # panel (a) horizontal axis: -V_T^L (m)
 
 
 def make_fig10():
@@ -1917,92 +1898,102 @@ def make_fig10():
     hours = np.arange(0, 24 * FIG10_TRAJ.shape[0], 24)
     b_thr = cps_HartCPS.B_THRESHOLD_M  # 10 m, Evans and Hart (2003)
 
-    # --- panel (a): Phase 1, B vs -V_T^L, quadrants as Figure 7(d) ---------
-    xlim, ylim = FIG10_XLIM_A, FIG10_YLIM
+    # --- panel (a): B vs -V_T^L, quadrants as Figure 7(d) -------------------
+    # B on the vertical axis, -V_T^L on the horizontal axis (Hart's own
+    # convention); onset (B = 10 m) horizontal, completion (-V_T^L = 0)
+    # vertical.
+    xlim, ylim = FIG10_VTL_LIM, FIG10_B_LIM
     ax_a.set_xlim(*xlim)
     ax_a.set_ylim(*ylim)
 
     quadrants_a = [
-        (-1e4, b_thr, 0, 1e4, STAGE_COLORS[0], "symmetric\nwarm core"),
-        (b_thr, 1e4, 0, 1e4, STAGE_COLORS[1], "asymmetric warm core"),
-        (b_thr, 1e4, -1e4, 0, STAGE_COLORS[2], "asymmetric cold core"),
-        (-1e4, b_thr, -1e4, 0, "#4a3aa7", "symmetric\ncold core"),
+        (0, 1e4, -1e4, b_thr, STAGE_COLORS[0], "symmetric warm core"),
+        (0, 1e4, b_thr, 1e4, STAGE_COLORS[1], "frontal warm core"),
+        (-1e4, 0, b_thr, 1e4, STAGE_COLORS[2], "frontal cold core"),
+        (-1e4, 0, -1e4, b_thr, "#4a3aa7", "symmetric cold core"),
     ]
     for x0, x1, y0, y1, color, _ in quadrants_a:
         x0c, x1c = max(x0, xlim[0]), min(x1, xlim[1])
         y0c, y1c = max(y0, ylim[0]), min(y1, ylim[1])
         ax_a.add_patch(Rectangle((x0c, y0c), x1c - x0c, y1c - y0c, facecolor=color, alpha=0.30, edgecolor="none", zorder=0))
+    # Corners, in axes fraction, so the labels track xlim/ylim; top-left
+    # is inset further than the rest to clear the panel-letter box.
     label_pos_a = {
-        "symmetric\nwarm core": (-15, 130, "left", "center"),
-        "asymmetric warm core": (xlim[1] - 3, 275, "right", "center"),
-        "asymmetric cold core": (xlim[1] - 3, -270, "right", "center"),
-        "symmetric\ncold core": (xlim[0] + 3, -235, "left", "center"),
+        "frontal cold core": (0.04, 0.83, "left", "top"),
+        "frontal warm core": (0.97, 0.96, "right", "top"),
+        "symmetric cold core": (0.04, 0.04, "left", "bottom"),
+        "symmetric warm core": (0.97, 0.04, "right", "bottom"),
     }
     for _, _, _, _, _, label in quadrants_a:
         x, y, ha, va = label_pos_a[label]
-        ax_a.text(x, y, label, color=TEXT_SECONDARY, fontsize=7.2, ha=ha, va=va, style="italic", zorder=1)
+        ax_a.text(x, y, label, transform=ax_a.transAxes, color=TEXT_SECONDARY, fontsize=7.2, ha=ha, va=va, style="italic", zorder=1)
 
-    ax_a.axhline(0, color=TEXT_DARK, linewidth=1.0, zorder=2)
-    ax_a.axvline(b_thr, color=TEXT_DARK, linewidth=1.0, zorder=2)
+    ax_a.axhline(b_thr, color=TEXT_DARK, linewidth=1.0, zorder=2)
+    ax_a.axvline(0, color=TEXT_DARK, linewidth=1.0, zorder=2)
 
-    ax_a.plot(FIG10_TRAJ[:, 0], FIG10_TRAJ[:, 1], color=TEXT_SECONDARY, linewidth=2.0, zorder=5)
+    ax_a.plot(FIG10_TRAJ[:, 1], FIG10_TRAJ[:, 0], color=TEXT_SECONDARY, linewidth=2.0, zorder=5)
+    labeled_hours = (0, 48, 96, 168)
     for k in range(FIG10_TRAJ.shape[0]):
         bval, vtl = FIG10_TRAJ[k, 0], FIG10_TRAJ[k, 1]
         color = CMAP_SEQ_BLUE(k / (FIG10_TRAJ.shape[0] - 1))
-        ax_a.plot(bval, vtl, marker="o", markersize=7, markerfacecolor=color, markeredgecolor="white", markeredgewidth=0.8, zorder=6)
-        dx_txt, dy_txt, va = 8, 8, "bottom"
+        ax_a.plot(vtl, bval, marker="o", markersize=7, markerfacecolor=color, markeredgecolor="white", markeredgewidth=0.8, zorder=6)
+        if hours[k] not in labeled_hours:
+            continue
+        dx_txt, dy_txt, ha, va = 8, 8, "left", "bottom"
         if k == FIG10_TRAJ.shape[0] - 1:
-            dx_txt, dy_txt, va = 8, -14, "top"
-        ax_a.annotate(f"{hours[k]:.0f} h", (bval, vtl), textcoords="offset points", xytext=(dx_txt, dy_txt), fontsize=6.7, color=TEXT_SECONDARY, va=va)
+            # Up-left instead of down-right: down-right (this point's
+            # own incoming-line direction under the old, untransposed
+            # axes) now runs straight into the dashed warm-seclusion
+            # branch and its label, both of which also start here.
+            dx_txt, dy_txt, ha, va = -8, 8, "right", "bottom"
+        ax_a.annotate(f"{hours[k]:.0f} h", (vtl, bval), textcoords="offset points", xytext=(dx_txt, dy_txt), fontsize=6.7, color=TEXT_SECONDARY, ha=ha, va=va)
 
-    seclusion_a = np.vstack([FIG10_TRAJ[-1, [0, 1]], FIG10_SECLUSION_END[[0, 1]]])
+    seclusion_a = np.vstack([FIG10_TRAJ[-1, [1, 0]], FIG10_SECLUSION_END[[1, 0]]])
     ax_a.plot(seclusion_a[:, 0], seclusion_a[:, 1], color=TEXT_SECONDARY, linewidth=1.6, linestyle="--", zorder=5)
-    ax_a.plot(FIG10_SECLUSION_END[0], FIG10_SECLUSION_END[1], marker="D", markersize=6.5, markerfacecolor=CMAP_SEQ_BLUE(1.0), markeredgecolor="white", markeredgewidth=0.8, zorder=6)
+    ax_a.plot(FIG10_SECLUSION_END[1], FIG10_SECLUSION_END[0], marker="D", markersize=6.5, markerfacecolor=CMAP_SEQ_BLUE(1.0), markeredgecolor="white", markeredgewidth=0.8, zorder=6)
     ax_a.annotate(
-        "warm seclusion\n(some storms)", (FIG10_SECLUSION_END[0], FIG10_SECLUSION_END[1]),
+        "warm seclusion\n(some storms)", (FIG10_SECLUSION_END[1], FIG10_SECLUSION_END[0]),
         textcoords="offset points", xytext=(-14, 4), fontsize=6.7, color=TEXT_SECONDARY, style="italic", ha="right", va="center",
     )
 
-    onset_xy = _interp_crossing(FIG10_TRAJ[:, [0, 1]], 0, b_thr)
-    completion_xy = _interp_crossing(FIG10_TRAJ[:, [0, 1]], 1, 0.0)
+    onset_xy = _interp_crossing(FIG10_TRAJ[:, [0, 1]], 0, b_thr)  # (B, VTL)
+    completion_xy = _interp_crossing(FIG10_TRAJ[:, [0, 1]], 1, 0.0)  # (B, VTL)
     if onset_xy is not None:
-        ax_a.plot(*onset_xy, marker="x", markersize=7, color=TEXT_DARK, markeredgewidth=1.6, zorder=7)
+        ax_a.plot(onset_xy[1], onset_xy[0], marker="x", markersize=7, color=TEXT_DARK, markeredgewidth=1.6, zorder=7)
         ax_a.annotate(
-            "onset: B > 10 m", onset_xy, textcoords="offset points", xytext=(10, 14), fontsize=6.8, color=TEXT_DARK,
-            va="bottom", bbox=dict(facecolor="white", edgecolor="none", alpha=0.85, pad=0.8), zorder=7,
+            "onset: $B$ > 10 m", (onset_xy[1], onset_xy[0]), textcoords="offset points", xytext=(-10, 12), fontsize=6.8, color=TEXT_DARK,
+            va="bottom", ha="right", bbox=dict(facecolor="white", edgecolor="none", alpha=0.85, pad=0.8), zorder=7,
         )
     if completion_xy is not None:
-        ax_a.plot(*completion_xy, marker="x", markersize=7, color=TEXT_DARK, markeredgewidth=1.6, zorder=7)
+        ax_a.plot(completion_xy[1], completion_xy[0], marker="x", markersize=7, color=TEXT_DARK, markeredgewidth=1.6, zorder=7)
         ax_a.annotate(
-            "completion:\n" + r"$-V_T^L$ < 0", completion_xy, textcoords="offset points", xytext=(10, -32),
-            fontsize=6.8, color=TEXT_DARK, va="top", bbox=dict(facecolor="white", edgecolor="none", alpha=0.85, pad=0.8), zorder=7,
+            r"completion: $-V_T^L$ < 0", (completion_xy[1], completion_xy[0]), textcoords="offset points", xytext=(10, -20),
+            fontsize=6.8, color=TEXT_DARK, va="top", ha="left", bbox=dict(facecolor="white", edgecolor="none", alpha=0.85, pad=0.8), zorder=7,
         )
 
-    ax_a.set_xlabel("B (m)")
-    ax_a.set_ylabel(r"$-V_T^L$  (m)")
+    ax_a.set_xlabel(r"$-V_T^L$  (m)")
+    ax_a.set_ylabel("B (m)")
     ax_a.grid(True, color=GRID_COLOR, linewidth=0.5, zorder=0.2)
     ax_a.tick_params(length=3)
     panel_letter(ax_a, "a")
 
-    # --- panel (b): Phase 2, -V_T^L vs -V_T^U, quadrants as Figure 1 -------
+    # --- panel (b): thermal wind diagram, -V_T^L vs -V_T^U -----------------
     lim = 300.0
     ax_b.set_xlim(-lim, lim)
     ax_b.set_ylim(-lim, lim)
     quadrants_b = [
         (0, lim, 0, lim, "#e34948", "deep warm core"),
         (0, lim, -lim, 0, "#eb6834", "shallow warm core"),
-        (-lim, 0, -lim, 0, "#2a78d6", "cold core"),
-        (-lim, 0, 0, lim, "#4a3aa7", "lower cold, upper warm"),
+        (-lim, 0, -lim, 0, "#2a78d6", "deep cold core"),
+        (-lim, 0, 0, lim, "#4a3aa7", "shallow cold core"),
     ]
     for x0, x1, y0, y1, color, _ in quadrants_b:
         ax_b.add_patch(Rectangle((x0, y0), x1 - x0, y1 - y0, facecolor=color, alpha=0.11, edgecolor="none", zorder=0))
-    # Same quadrant labels and positions as Figure 1's own single-panel
-    # version of this diagram.
     label_pos_b = {
         "deep warm core": (lim * 0.55, lim * 0.90),
         "shallow warm core": (lim * 0.55, -lim * 0.90),
-        "cold core": (-lim * 0.95, -lim * 0.90),
-        "lower cold, upper warm": (-lim * 0.95, lim * 0.68),
+        "deep cold core": (-lim * 0.95, -lim * 0.90),
+        "shallow cold core": (-lim * 0.95, lim * 0.68),
     }
     for _, _, _, _, _, label in quadrants_b:
         x, y = label_pos_b[label]
@@ -2017,13 +2008,22 @@ def make_fig10():
         ax_b.plot(vtl, vtu, marker="o", markersize=7, markerfacecolor=color, markeredgecolor="white", markeredgewidth=0.8, zorder=6)
         dx_txt, dy_txt, va, ha = 8, 8, "bottom", "left"
         if k == FIG10_TRAJ.shape[0] - 1:
-            dx_txt, dy_txt, va = 8, -14, "top"
+            # Up-left instead of down-right: down-right runs into the
+            # "deep cold core" corner label just below this point.
+            dx_txt, dy_txt, ha, va = -8, 10, "right", "bottom"
         elif hours[k] == 144:
             # Default placement sits right on the solid trajectory line
             # here (it continues up-right toward 120 h) and close to the
             # dashed warm-seclusion branch passing just below; up-and-left
             # clears both.
             dx_txt, dy_txt, va, ha = -8, 14, "bottom", "right"
+        elif hours[k] == 120:
+            # Default placement sits right on the line as it climbs
+            # toward 96 h; below-right runs into the warm-seclusion
+            # diamond and its dashed branch instead. Above-left, into
+            # the open corner the line's own bend leaves there, clears
+            # the line, the diamond and the 144 h label alike.
+            dx_txt, dy_txt, va, ha = -12, 10, "bottom", "right"
         ax_b.annotate(f"{hours[k]:.0f} h", (vtl, vtu), textcoords="offset points", xytext=(dx_txt, dy_txt), fontsize=6.7, color=TEXT_SECONDARY, va=va, ha=ha)
 
     seclusion_b = np.vstack([FIG10_TRAJ[-1, [1, 2]], FIG10_SECLUSION_END[[1, 2]]])
@@ -2086,9 +2086,6 @@ def main():
     psfc = build_psfc(lat2d, lon2d)
 
     print_ambient_check(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m, z_std_stack, psfc)
-
-    print("Building Figure 1 (phase-space schematic) ...")
-    make_fig1()
 
     print("Building Figure 2 (method: dZ profile + window) ...")
     make_fig2(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m, z_std_stack)

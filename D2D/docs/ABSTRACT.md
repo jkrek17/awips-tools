@@ -3,57 +3,29 @@
 Jason Krekeler, NOAA/NWS Ocean Prediction Center
 
 The cyclone phase space of Hart (2003) characterizes a cyclone's thermal
-structure through the lower- and upper-tropospheric thermal wind,
-derived from the vertical change of the geopotential height
-perturbation within 500 km of the storm center, together with a measure
-of low-level thermal asymmetry. Evans and Hart (2003) defined objective onset and
-completion times for extratropical transition (ET) from these
-parameters, onset when the asymmetry exceeds 10 m and completion when
-the lower-tropospheric thermal wind turns negative, and Hart et al. (2006) linked
-the post-transition trajectory to whether a system re-intensifies as a
-warm-seclusion cyclone of the type described by Shapiro and Keyser
-(1990). Operational access to these diagnostics has been through
-storm-centered diagrams produced outside the forecast workstation for
-cyclones identified by an external tracker in a fixed set of models,
-which places them outside the forecaster's own display, model
-inventory and analysis workflow. This work
-reformulates the thermal wind parameters as gridded fields computed on
-demand inside the AWIPS II display system as derived parameters,
-requiring only geopotential height on standard isobaric levels and
-surface pressure, and therefore available for every model in the local
-inventory without a cyclone tracker. Because Hart's thermal wind terms
-are simply the vertical derivative of the horizontal height
-perturbation amplitude with respect to log pressure, evaluating them
-directly from geopotential height on the grid measures the quantity
-itself, an orientation- and hemisphere-invariant measure, and the
-500 km window contains the whole thermal anomaly even in a vertically
-tilted system. At each grid point the height
-perturbation amplitude is evaluated over a 500 km window using a
-separable sliding-extrema filter, the thermal wind is obtained by
-regression against log pressure over 925 to 700 hPa and 500 to 300 hPa,
-terrain is handled by excluding below-ground levels, and a closed-low
-detector on 1000 hPa height restricts classification to closed cyclones
-at least 5 hPa deep. A single categorical field classifies each detected low into one of
-seven classes, the intersection of the quadrants of Hart's two
-diagrams, from all three parameters, and a
-continuous index summarizes the thermal wind terms. Computation on a
-global 0.25 degree grid takes one to two seconds
-per forecast hour. An initial evaluation on GFS forecasts found values
-for a mature typhoon comparable in magnitude to those Hart reported for
-hurricanes, allowing for the different layer definitions, a
-correct cold-core classification of a deep North Atlantic cyclone, and
-a forecast hour for the loss of Typhoon Dujuan's deep warm core (the
-transition from deep to shallow warm core) that matched the
-storm-centered diagnosis on the Florida State University cyclone phase
-page for the same model run. The asymmetry parameter B is implemented as a
-first-order approximation, the window-mean thickness gradient projected
-across a steering-flow motion proxy, giving an Evans and Hart onset
-field that has not yet been validated.
-Limitations include the use of standard levels in place of Hart's
-50 hPa spacing, a square analysis window whose corners overstate the
-height range on a background gradient, the steering-flow approximation
-of the asymmetry parameter, and validation on a small number of cases; a full season of operational use at the
-Ocean Prediction Center is planned.
+structure through lower- and upper-tropospheric thermal wind parameters,
+derived from the vertical change of the geopotential height perturbation
+within 500 km of the center, and a low-level thermal asymmetry, from
+which Evans and Hart (2003) defined objective onset and completion times
+for extratropical transition. This work reformulates the parameters as
+gridded AWIPS II derived parameters computed on demand from geopotential
+height on standard isobaric levels, surface pressure and, for the
+asymmetry parameter, the deep-layer wind. At each grid point the height
+perturbation is evaluated over a 500 km window by a separable sliding-
+extrema filter, the thermal wind is the regression slope against log
+pressure over 925 to 700 hPa and 500 to 300 hPa, below-ground levels are
+excluded, and a closed-low detector on 1000 hPa height restricts
+classification to closed lows about 5 hPa deep. One categorical field
+assigns each detected low to one of seven classes formed from the
+quadrants of Hart's two diagrams. A global 0.25° grid takes about 2.6 s
+per forecast hour. On GFS forecasts, the hour at which a typhoon lost
+its deep warm core matched the storm-centered diagnosis on the Florida
+State University cyclone phase page. The asymmetry parameter uses the
+window-mean deep-layer wind as a motion proxy and a first-order
+thickness-gradient approximation, and is not yet validated. The
+standard-level bands and the square window differ systematically from
+Hart's definitions, and the size of those differences on real storms has
+not been measured.
 
 ## References
 

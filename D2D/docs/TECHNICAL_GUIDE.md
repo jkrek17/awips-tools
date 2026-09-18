@@ -379,7 +379,7 @@ Measured on a 721 by 1440 grid (0.25 degree global) in the test suite:
 | Call | Time |
 | :--- | :--- |
 | `thermal_wind_grid`, three levels | about 0.8 s |
-| `executeHartClass`, seven levels, B, and mask | about 1.7 s per forecast hour on a 0.25 degree global grid |
+| `executeHartClass`, seven levels, B, and mask | about 2.6 s per forecast hour on a 0.25 degree global grid |
 
 CAVE computes per frame on load, so a 41-frame loop costs about a
 minute on first display and is cached after. A regional grid is faster.

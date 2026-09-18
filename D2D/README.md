@@ -399,7 +399,7 @@ is no Southern Hemisphere sign caveat to verify for this family.
 Expect a few sliding-window passes per level (one `max` and one `min`
 each, via the doubling/sparse-table trick in `cps_HartCPS.
 running_extreme_1d` -- see that function's docstring). The full
-`executeHartClass` computation runs at about 1.7 s per forecast hour on
+`executeHartClass` computation runs at about 2.6 s per forecast hour on
 a 0.25 degree global grid. Measured in this repo's
 environment, on a 721x1440 grid (`tests/d2d_cps/test_hart_cps.py`'s
 performance tests -- see their `-s` output for the exact numbers on
@@ -410,7 +410,7 @@ your own machine):
 - `executeHartClass`, all 7 standard levels plus `B` (both thermal wind
   bands, the area-averaged steering pass `B` needs, `closed_low_mask`'s
   candidate test, its two `window_sum_2d` ring box sums, and its blob
-  dilation): about 1.7 s per forecast hour on a 0.25 degree global
+  dilation): about 2.6 s per forecast hour on a 0.25 degree global
   grid; the mask and `B` pass add a modest, not a dominant, amount of
   work on top of the two `thermal_wind_grid` calls it also makes.
 
