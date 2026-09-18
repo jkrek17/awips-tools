@@ -45,6 +45,14 @@ CPScat.xml/CPSidx.xml).
   difference, no smoothing, scaled to 1e-5 /s like VTL/VTU. Debug-only
   field for the orientation check below.
 
+Two more fields, **HB** and **HETstage**, exist in the separate, more
+physically faithful Hart CPS family below (`HVTL`, `HVTU`, `HCPScat`,
+`HCPSidx`, `HB`, `HETstage`) and are **not** in the 1e-5 /s convention
+above: `HB` is Hart's frontal-asymmetry parameter in meters, and
+`HETstage` is the Evans and Hart (2003) extratropical transition stage
+(0/1/2) built from `HB` and `HVTL`. See "Hart CPS family" below for
+both.
+
 850/600 and 600/300 were picked to bracket Hart's 900-600 and 600-300
 bands using pressure levels every model carries at every AWIPS site
 (900 and 800 hPa are not universal on all D2D grids; 850, 600, and 300
@@ -272,7 +280,10 @@ Colormaps: copy `D2D/colormaps/Grid/CPS_CoreDiverging.cmap` and
 `CoreClass.cmap` to
 `/awips2/edex/data/utility/common_static/site/<SITE>/colormaps/Grid/`.
 Restart CAVE. Even without the style rules, both then appear in the
-right-click legend menu under Change Colormap, in a CPS submenu.
+right-click legend menu under Change Colormap, listed under Grid (a
+separate colormap subfolder at site level was not possible on the
+OPC build, so both live in the existing Grid folder with the `CPS_`
+prefix telling them apart, not in a submenu of their own).
 
 Colormaps (referenced by the imagery style rules above instead of a
 base colormap like `Grid/Difference`, which is not guaranteed to exist
@@ -419,21 +430,24 @@ causes:
    verification" procedure above to find the right `ORIENTATION_MODE`
    for your site.
 
-**The four Hart fields (HVTL, HVTU, HCPScat, HCPSidx) disappear from
-the Product Browser after adding the below-ground mask.** The first
-suspect is the new `P` (surface pressure) `<Field level="Surface"/>`
-in HVTL.xml/HVTU.xml/HCPScat.xml/HCPSidx.xml -- specifically its level
-spelling. This site's other Field level spellings in these files
-("925MB", "Surface" on the `<Method>` itself, etc.) are already
-confirmed to load; `P`'s own level was not independently re-verified
-against a base surface-pressure definition when this mask was added.
-Some AWIPS builds spell the surface plane `level="0.0SFC"` instead of
-`level="Surface"` for a Field reference (as opposed to the `<Method
-levels="...">` attribute, which is a different thing and unaffected).
-Check a base definition that already uses surface pressure (or GRIB
-metadata for the `P` parameter) and adjust the `level` attribute on
-that one `<Field>` line in all four files if needed -- everything
-else in the definitions is unchanged.
+**The six Hart fields (HVTL, HVTU, HCPScat, HCPSidx, HB, HETstage)
+disappear from the Product Browser after adding the below-ground
+mask.** The first suspect is the `P` (surface pressure)
+`<Field level="Surface"/>` in HVTL.xml/HVTU.xml/HCPScat.xml/HCPSidx.xml/
+HB.xml/HETstage.xml -- specifically its level spelling. This site's
+other Field level spellings in these files ("925MB", "Surface" on the
+`<Method>` itself, etc.) are already confirmed to load; `P`'s own
+level was not independently re-verified against a base surface-pressure
+definition when this mask was added. Some AWIPS builds spell the
+surface plane `level="0.0SFC"` instead of `level="Surface"` for a Field
+reference (as opposed to the `<Method levels="...">` attribute, which
+is a different thing and unaffected). Check a base definition that
+already uses surface pressure (or GRIB metadata for the `P` parameter)
+and adjust the `level` attribute on that one `<Field>` line in all six
+files if needed -- everything else in the definitions is unchanged. If
+only `HB`/`HETstage` fail to load while the other four still work, the
+more likely cause is the `coriolis` pseudo-field, not `P` -- see "Hart
+CPS family" below.
 
 ## Hart CPS family (HVTL, HVTU, HCPScat, HCPSidx, HB, HETstage)
 

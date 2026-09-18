@@ -80,8 +80,8 @@ square sees up to 41 percent more of the gradient's contribution to
 dZ than the circle does, and because that contribution grows with
 height in a baroclinic environment, the square window carries a small
 cold bias relative to Hart's circle. This is the main methodological
-difference from Hart and the first thing to quantify in a sensitivity
-study.
+difference from Hart. It is a documented, permanent design decision,
+not an open question awaiting a fix; see section 8 for the reasoning.
 
 A consequence worth knowing: around a compact low, every point whose
 window contains the low center sees roughly the same dZ, so the raw
@@ -452,7 +452,7 @@ bundle file extracted from the saved procedure:
 python3 -m pytest tests -q
 ```
 
-81 tests: the storm-centered reference in `tests/cps`, and the two
+89 tests: the storm-centered reference in `tests/cps`, and the two
 families in `tests/d2d_cps`. Every expected value is analytic or from a
 brute-force comparison, never copied from the implementation. Coverage
 includes sliding extrema against brute force, band slopes on exact
@@ -467,8 +467,15 @@ directory on the path so the files import exactly as CAVE imports them.
 
 ## 8. Known limitations and future work
 
-- Square window footprint on the raw Hart fields. A circular filter is
-  possible at several times the cost.
+**Design decision, final (2026-09-18).** The square analysis window is
+kept permanently. A circular window was considered and rejected: the
+square supports the fast separable sliding-extrema filter (section
+4.1), and a circular filter would cost several times more per frame.
+The trade-off is a small cold bias on a strong background gradient
+(section 2.2), which is documented and understood, not a defect to be
+fixed. This is not future work; do not reopen it without a new reason
+to revisit the cost/accuracy trade-off.
+
 - Standard-level bands differ from Hart's. A GFS-only 13-level
   definition is a small addition (5.4).
 - Parameter B (`HB`/`HETstage`) now uses the steering flow (mean wind
@@ -498,3 +505,26 @@ directory on the path so the files import exactly as CAVE imports them.
 - FSU cyclone phase page: https://moe.met.fsu.edu/cyclonephase/
 - Storm-centered reference implementation: `cps/hart.py` in this
   repository.
+
+---
+
+## 10. Document set
+
+Where everything about this package lives, and what each piece is for:
+
+- `D2D/README.md`: install checklist, per-field method notes, and the
+  validation log. The first thing to read when standing up the package
+  at a new site.
+- `D2D/docs/USER_GUIDE.md`: for forecasters, how to load and read the
+  products, what the three terms mean, and where they mislead.
+- `D2D/docs/TECHNICAL_GUIDE.md`: this document, for whoever installs,
+  tunes, maintains, or ports the package.
+- `D2D/docs/ABSTRACT.md`: the one-paragraph scientific abstract, for
+  anyone citing or summarizing this work outside the repository.
+- `D2D/docs/TALK.md`: the script for a seven-minute spoken
+  introduction to the package, timed and slide-cued.
+- `D2D/docs/TALK.pptx`: the slide deck that goes with `TALK.md`, same
+  text in each slide's speaker notes.
+- `docs/cps/index.html`: the longer web article, with the method,
+  figures, and validation cases in full; the source for the teaching
+  figures embedded in the User Guide.
