@@ -168,10 +168,6 @@ it as a gridded product at all.
 
 ## 3. The products
 
-Two families exist. **Use the Hart family.** The vorticity family is an
-earlier shortcut that reads tilted or broad systems as too warm and is
-kept for comparison only.
-
 | Product | Menu name | What it shows | Read as |
 | :--- | :--- | :--- | :--- |
 | HCPSclass | Hart CPS Class | one of Hart's six named structures (0-6) at each detected low, blank elsewhere | see "Reading the class" in section 5 |
@@ -180,13 +176,11 @@ kept for comparison only.
 | HB | Hart CPS B Asymmetry (HB) | thermal asymmetry, meters (900-600 hPa equivalent) | at or below 10 symmetric, above 10 frontal |
 | HCPSidx | Hart CPS Core Index | one number from -3 to +3 at each detected low | -3 deep cold, 0 neutral, +3 deep warm |
 
-Vorticity family, secondary: VTL, VTU, CPScat, CPSidx, same layout,
-different method and units (1e-5 per second, not meters). cpsZ850 is an
-installation and orientation check for site administrators, not a
-forecast product.
-
 All products sit at a single Surface plane in the Product Browser and
 overlay on anything.
+
+See "Retired products" in section 7 for the earlier vorticity-based
+products that these replaced.
 
 ---
 
@@ -385,11 +379,14 @@ same direction is signal.
 - **Values near a coast.** Within about 500 km of high terrain the
   window has less data on one side. The value is still valid but less
   robust.
-- **The vorticity family reads warm too often.** Tilted systems and
-  broad upper troughs bias it warm, which is why the Hart family
-  replaced it. If you use it, do not call cold core from it.
-- **Southern Hemisphere.** The Hart family is fine there. The vorticity
-  family blanks Southern Hemisphere cyclones entirely.
+
+### Retired products
+
+VTL, VTU, CPScat, CPSidx, and cpsZ850, the earlier vorticity-based
+family, were removed from the menu on 2026-09-18. They read tilted and
+broad systems too warm and blanked Southern Hemisphere warm cores
+outright. HVTL, HVTU, HB, HCPSidx, and HCPSclass, described above,
+replace them and cover the same ground without either problem.
 
 ---
 
@@ -404,9 +401,8 @@ same direction is signal.
   cold, 5 symmetric cold, 6 mid-level vortex (rare), blank not a closed
   low.
 - Numbers: positive warm, negative cold, zero is the line for HVTL and
-  HVTU; B at or below 10 m is symmetric, above 10 m frontal; meters for
-  the Hart family (HVTL, HVTU, HB); the vorticity family is secondary
-  and reads in 1e-5 per second.
+  HVTU; B at or below 10 m is symmetric, above 10 m frontal; HVTL, HVTU,
+  and HB read in meters, HCPSidx is a dimensionless -3 to +3 index.
 - Transition sequence: 0, then 2 (onset, B above 10), then 3 (upper
   warm core lost), then 4 (completion, HVTL negative). A warm seclusion
   runs 4 then back to 1. Read onset and completion from the animation.

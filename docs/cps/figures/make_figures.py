@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """
 make_figures.py -- regenerates every figure on the GitHub Pages article
-(../index.html) from the package's own code (D2D/derivedParameters/functions/
-cps_HartCPS.py and CycloneCore.py) run on synthetic fields, plus one photograph
-of the real CAVE display that is cropped/resized only (fig6).
+(../index.html) from the package's own operational code
+(D2D/derivedParameters/functions/cps_HartCPS.py), run on synthetic fields,
+plus one photograph of the real CAVE display that is cropped/resized only
+(fig6). Figure 4 alone also runs CycloneCore.py, the retired vorticity-proxy
+module (retired from the install set on 2026-09-18) that now lives in
+reference/vorticity_proxy/ and is kept only so that figure's proxy-versus-
+Hart comparison stays reproducible.
 
 Run from the repository root:
 
@@ -16,7 +20,8 @@ Outputs land next to this script, in docs/cps/figures/:
     fig9_b_concept.png      fig10_two_diagrams.png
 
 No test fixtures are reused: everything is built here so the figures are
-reproducible from nothing but this file, cps_HartCPS.py, CycloneCore.py and
+reproducible from nothing but this file, cps_HartCPS.py, the retired
+CycloneCore.py (for Figure 4 only, from reference/vorticity_proxy/) and
 numpy/matplotlib.
 
 ---------------------------------------------------------------------------
@@ -27,8 +32,9 @@ quote it precisely; every number below matches what is actually computed)
 Grid
     Regular lat/lon, 0.5 degree spacing, longitude -160 to -100 (west to
     east), latitude 15 to 65 (south to north; array row 0 is the
-    southernmost row, i.e. rows increase northward -- CycloneCore's
-    ORIENTATION_MODE 0 convention).  ``dy`` is a scalar, 0.5 degree of
+    southernmost row, i.e. rows increase northward -- the retired
+    CycloneCore module's ORIENTATION_MODE 0 convention, used for Figure 4
+    only).  ``dy`` is a scalar, 0.5 degree of
     latitude = 55.6 km, in meters.  ``dx`` is a full 2D array in meters,
     ``dx[i, j] = 55.6 km * cos(lat[i])`` -- 0.5 degree of longitude at
     that row's latitude -- passed as AWIPS itself would pass it (a
@@ -128,8 +134,11 @@ from matplotlib.patches import Rectangle, Circle, Wedge
 from matplotlib.lines import Line2D
 
 # ---------------------------------------------------------------------------
-# Make cps_HartCPS.py / CycloneCore.py importable exactly as CAVE imports them
-# (bare modules, no package), per tests/d2d_cps/conftest.py's own approach.
+# Make cps_HartCPS.py importable exactly as CAVE imports it (a bare module,
+# no package), per tests/d2d_cps/conftest.py's own approach. CycloneCore.py,
+# the retired vorticity-proxy module, is no longer part of the operational
+# install; it is imported here only from reference/vorticity_proxy/ so
+# Figure 4's proxy-versus-Hart comparison stays reproducible.
 # ---------------------------------------------------------------------------
 
 HERE = Path(__file__).resolve().parent
@@ -787,7 +796,10 @@ def make_fig3(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m, z_std_stack, psfc):
 
 
 # ===========================================================================
-# Figure 4: vorticity family versus Hart family on the tilted cold core
+# Figure 4: the retired vorticity proxy versus the Hart family on the
+# tilted cold core. This is the only figure that imports CycloneCore.py
+# (from reference/vorticity_proxy/); everywhere else in this script uses
+# cps_HartCPS.py alone.
 # ===========================================================================
 
 OMEGA_EARTH = 7.2921159e-5

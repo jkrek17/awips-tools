@@ -17,7 +17,9 @@ python3 docs/cps/figures/make_figures.py
 ```
 
 This overwrites the six files in `docs/cps/figures/` (five PNGs computed
-from `D2D/derivedParameters/functions/cps_HartCPS.py` and `CycloneCore.py`
-on synthetic fields, plus `fig6_cave_typhoon.jpg`, a crop and resize of
-a real CAVE screenshot). It prints Figure 4's tilt check and Figure 5's
-timings.
+from `D2D/derivedParameters/functions/cps_HartCPS.py` and, for Figure 4
+only, `CycloneCore.py`, the retired vorticity-proxy module that now lives
+in `reference/vorticity_proxy/` (kept there so Figure 4's comparison
+stays reproducible), on synthetic fields, plus `fig6_cave_typhoon.jpg`, a
+crop and resize of a real CAVE screenshot). It prints Figure 4's tilt
+check and Figure 5's timings.

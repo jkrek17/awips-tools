@@ -62,9 +62,12 @@
       page for the same model run. The asymmetry parameter B is implemented as a
       first-order approximation, the window-mean thickness gradient projected
       across a steering-flow motion proxy, giving an Evans and Hart onset
-      field that has not yet been validated. A simpler formulation based on vertical differences of
-      relative vorticity was found to misclassify vertically tilted and broad
-      baroclinic systems as warm core and was retained only for comparison.
+      field that has not yet been validated. An earlier, simpler formulation
+      based on vertical differences of relative vorticity motivated this
+      height-based approach; it was found to misclassify vertically tilted
+      and broad baroclinic systems as warm core and has since been retired
+      from the operational package, kept only as reference code for the
+      reproducibility of the comparison in Figure 4.
       Limitations include the use of standard levels in place of Hart's
       50&nbsp;hPa spacing, the steering-flow approximation of the asymmetry parameter, and validation
       on a small number of cases; a full season of operational use at the
@@ -478,7 +481,12 @@
     height perturbation, understating upper cold cores. <strong>Mask
     selection</strong> compounds both: the vortex mask is itself built from
     850&nbsp;hPa vorticity, which favors positive lower differences by
-    construction. Figure 4 demonstrates the tilt bias directly.
+    construction. Figure 4 demonstrates the tilt bias directly. This proxy
+    was the project's first attempt at a gridded phase-space diagnostic and
+    motivated the height-based method above; it was retired from the
+    operational package on 2026-09-18 and its module, <code>CycloneCore.py</code>,
+    now lives in <code>reference/vorticity_proxy/</code>, kept only so
+    Figure 4's comparison stays reproducible.
   </p>
   <figure id="fig4">
     <img src="figures/fig4_tilt.png"
@@ -506,27 +514,32 @@
 
   <h2 id="implementation">4. Implementation</h2>
   <p>
-    Both families are plain, self-contained AWIPS II D2D derived
+    The Hart family is a plain, self-contained set of AWIPS II D2D derived
     parameters, run inside CAVE's embedded Python interpreter on demand,
     per frame, from grids already in the local inventory &mdash; no server, no
-    cron, no external tracker. The Hart family needs geopotential height on
+    cron, no external tracker. It needs geopotential height on
     the seven standard isobaric levels and surface pressure for
     &minus;V<sub>T</sub><sup>L</sup>/&minus;V<sub>T</sub><sup>U</sup>/HCPSclass/HCPSidx;
     parameter B (and so <code>HCPSclass</code>, which depends on it) additionally
     needs wind components at four
     levels (850, 700, 500, 300&nbsp;hPa) for the steering-flow motion proxy
-    and the coriolis pseudo-field for the hemisphere sign. The vorticity
-    family needs wind components at three levels. The sliding
+    and the coriolis pseudo-field for the hemisphere sign. (The retired
+    vorticity proxy of Section 3 needed wind components at three levels;
+    it no longer figures into the operational cost.) The sliding
     window that &Delta;Z is built from runs in O(N&nbsp;log&nbsp;w) per level
     via a doubling/sparse-table extremum filter rather than a naive
     per-pixel scan, which is what keeps a full seven-level classification
     affordable on a global grid (Figure 5). The installed footprint is
-    ten XML derived-parameter definitions (HVTL, HVTU, HCPSclass, HCPSidx,
-    HB, VTL, VTU, CPScat, CPSidx, cpsZ850), two Python files
-    (<code>cps_HartCPS.py</code>, <code>CycloneCore.py</code>), and three
-    colormaps (a diverging one for the thermal wind and B fields, a
-    categorical one for the vorticity-family class field, and a second
-    categorical one for the joint Hart classification field). Five Hart
+    five XML derived-parameter definitions (HVTL, HVTU, HCPSclass, HCPSidx,
+    HB), one Python file
+    (<code>cps_HartCPS.py</code>), and two
+    colormaps (a diverging one for the thermal wind and B fields, and a
+    categorical one for the joint Hart classification field). The
+    vorticity proxy's module, <code>CycloneCore.py</code>, and its five XML
+    definitions (VTL, VTU, CPScat, CPSidx, cpsZ850) were retired from the
+    install set on 2026-09-18 and moved to
+    <code>reference/vorticity_proxy/</code> (Section 7), kept only so
+    Figure 4's comparison stays reproducible. Five Hart
     products (<code>HVTL</code>, <code>HVTU</code>, <code>HCPSclass</code>,
     <code>HCPSidx</code>, <code>HB</code>) result. <code>executeHartClass</code>
     layers parameter B's
@@ -612,9 +625,12 @@
     and the technical, user, and installation guides under
     <code>D2D/docs/</code> and <code>D2D/README.md</code>. The test suite
     (<code>tests/cps</code> and <code>tests/d2d_cps</code>, run with
-    <code>python3 -m pytest tests -q</code>) currently counts 81 tests,
+    <code>python3 -m pytest tests/cps tests/d2d_cps -q</code>) currently counts 56 tests,
     every expected value analytic or from an independent brute-force
-    comparison. No license is specified.
+    comparison. The retired vorticity proxy that motivated this method is
+    kept, for reference and Figure 4's reproducibility only, at
+    <code>reference/vorticity_proxy/</code>, with its own tests under
+    <code>tests/reference_vorticity/</code>. No license is specified.
   </p>
 
   <h2 id="references">References</h2>
@@ -638,11 +654,13 @@
 
   <footer>
     Figures 1&ndash;5 and 7&ndash;9 are synthetic, regenerated from
-    <code>docs/cps/figures/make_figures.py</code>. Figures 2&ndash;5 and 7
-    run the package's own operational <code>cps_HartCPS.py</code> and
-    <code>CycloneCore.py</code> on synthetic fields; see that file's header
-    for the exact field definitions, including Figure 7's own separate
-    synthetic case. Figure 1 (both panels) and Figures 8 and 9 are teaching
+    <code>docs/cps/figures/make_figures.py</code>. Figures 2, 3, 5, and 7
+    run the package's own operational <code>cps_HartCPS.py</code> on
+    synthetic fields; Figure 4 additionally runs <code>CycloneCore.py</code>,
+    the retired vorticity-proxy module kept in
+    <code>reference/vorticity_proxy/</code> for that comparison alone. See
+    the script's header for the exact field definitions, including Figure
+    7's own separate synthetic case. Figure 1 (both panels) and Figures 8 and 9 are teaching
     figures: Figure 1 is a schematic life-cycle trajectory drawn on Hart's
     own axes, not computed from any field, replacing an earlier
     single-diagram version of this figure; Figures 8 and 9 are computed

@@ -15,34 +15,35 @@ D2D derived parameters. Everything runs inside CAVE's embedded Python
 on demand, per frame, from grids already in the D2D inventory. There is
 no server, no cron, no tracker, no external data.
 
-Two independent families share the same delivery mechanism:
+One family, the Hart family, is installed today:
 
 | Family | Function file | Products | Inputs | Status |
 | :--- | :--- | :--- | :--- | :--- |
 | Hart | `derivedParameters/functions/cps_HartCPS.py` | HVTL, HVTU, HCPSclass, HCPSidx, HB | geopotential height at 1000, 925, 850, 700, 500, 400, 300 hPa; u/v wind at 850, 700, 500, 300 hPa; surface pressure; coriolis (HB and HCPSclass only) | primary, validated (HB and HCPSclass's B term new, awaiting validation) |
-| Vorticity | `derivedParameters/functions/CycloneCore.py` | VTL, VTU, CPScat, CPSidx, cpsZ850 | u and v wind at 850, 600, 300 hPa | secondary, warm bias |
 
-Both function files are self-contained numpy with no imports from the
+An earlier vorticity-based family (VTL, VTU, CPScat, CPSidx, cpsZ850)
+was retired on 2026-09-18; see section 3 for what it was and why.
+
+The function file is self-contained numpy with no imports from the
 rest of the repository, because the CAVE interpreter only sees the
-functions directory. Both can be run standalone for a sanity check:
+functions directory. It can be run standalone for a sanity check:
 
 ```
 python3 D2D/derivedParameters/functions/cps_HartCPS.py
-python3 D2D/derivedParameters/functions/CycloneCore.py
 ```
 
 Package layout:
 
 ```
 D2D/
-  derivedParameters/functions/    cps_HartCPS.py, CycloneCore.py
+  derivedParameters/functions/    cps_HartCPS.py
   derivedParameters/definitions/  one XML per product
-  colormaps/Grid/                 CPS_CoreDiverging.cmap, CPS_CoreClass.cmap, CPS_HartClass.cmap
+  colormaps/Grid/                 CPS_CoreDiverging.cmap, CPS_HartClass.cmap
   styleRules/cpsStyleRules.xml    base-schema style rules (see 6.3)
   menus/volumebrowser/cpsFields.xml  Volume Browser entries (see 6.4)
   docs/                           this guide, the user guide
   README.md                       install, troubleshooting, validation log
-tests/d2d_cps/                    pytest suite for both families
+tests/d2d_cps/                    pytest suite for the Hart family
 cps/hart.py                       storm-centered reference implementation
 ```
 
@@ -217,13 +218,15 @@ treated as positive), matching `cps.hart.parameter_b`'s own
 
 Unlike every other function in this file, computing B's thickness
 gradient (`gradient_2d`) takes a spatial derivative, so it is subject
-to the same grid-orientation ambiguity `CycloneCore.relative_vorticity`
-has. `cps_HartCPS.py` therefore carries its own `ORIENTATION_MODE` (0 to 3,
-same semantics as `CycloneCore.py`'s, default 1, confirmed on the OPC
-build) -- used only by `gradient_2d`; `HVTL`/`HVTU`/`HCPSidx` never
-call it and are unaffected, and neither does `HCPSclass`'s own
-thermal-wind arithmetic, though `HCPSclass` still calls `gradient_2d`
-internally to get B.
+to the same kind of grid-orientation ambiguity the earlier vorticity
+proxy, now retired, had at every one of its calls (section 3).
+`cps_HartCPS.py` therefore carries its own module-level
+`ORIENTATION_MODE` (0 to 3, default 1, confirmed on the OPC build) --
+used only by `gradient_2d`; `HVTL`/`HVTU`/`HCPSidx` never call it and
+are unaffected, and neither does `HCPSclass`'s own thermal-wind
+arithmetic, though `HCPSclass` still calls `gradient_2d` internally to
+get B. In other words, only the code paths behind `HB` and `HCPSclass`
+depend on `ORIENTATION_MODE` at all.
 
 ### 2.8 Relation to Hart's storm-centered diagrams
 
@@ -264,42 +267,73 @@ worth keeping straight when comparing the two:
 
 ---
 
-## 3. Vorticity family method
+## 3. Retired products
 
-Kept for comparison. The local analogue of the thermal wind is the
-vertical change of relative vorticity:
+An earlier family, VTL, VTU, CPScat, CPSidx, and cpsZ850, was retired
+from the D2D install set on 2026-09-18 in favor of the Hart family
+described above. It is kept for reference only, not for reinstallation.
+
+What it was: a pointwise proxy for the thermal wind built from the
+vertical change of relative vorticity,
 
     VTL = smooth(zeta_850 - zeta_600)
     VTU = smooth(zeta_600 - zeta_300)
 
 with zeta = dv/dx - du/dy from centered differences and a 100 km box
-smoother. Positive is warm core. Values cross the AWIPS boundary scaled
-by `UNIT_SCALE` = 1e5, so a readout of 12 means 1.2e-4 per second, and
-the XML thresholds are in the same units.
+smoother, positive read as warm core. Values crossed the AWIPS
+boundary scaled by `UNIT_SCALE` = 1e5, so a readout of 12 meant
+1.2e-4 per second. `CPScat` and `CPSidx` combined VTL and VTU into a
+class and an index, masked to a vorticity-based vortex detector;
+`cpsZ850` was an installation and orientation-check field, not a
+forecast product.
 
-Known biases, which are why the Hart family exists:
+Why it was retired:
 
-- Tilt reads as warm. The upper trough of a baroclinic low sits west of
-  the surface center, so the upper difference is positive at the center
-  and the cold signal lands in a ring to the west.
+- Tilt read as warm. The upper trough of a baroclinic low sits west of
+  the surface center, so the upper difference was positive at the
+  center and the cold signal landed in a ring to the west instead of
+  at the core.
 - Broad upper features have small vorticity for their height
-  perturbation, so upper cold cores are understated.
-- The vortex mask selects points where 850 hPa vorticity is high, which
-  favors positive lower differences.
+  perturbation, so upper cold cores were understated.
+- The vortex mask selected points where 850 hPa vorticity is high,
+  which favored positive lower differences.
+- Southern Hemisphere: cyclonic vorticity is negative there, so warm
+  cores read negative and the vortex mask blanked them outright. This
+  was never fixed. The Hart family has no such issue, because it
+  measures height perturbation amplitude, which is positive definite
+  in either hemisphere (section 2.1).
+- Grid orientation mattered because the vorticity calculation took a
+  derivative; every VTL/VTU/CPScat/CPSidx call needed the module's own
+  `ORIENTATION_MODE` (0 to 3, covering row direction and transposed
+  axes) to be set correctly for the site, and getting it wrong produced
+  a lobed pattern rather than a single blob. `cps_HartCPS.py` carries
+  an analogous, but independent, `ORIENTATION_MODE` of its own for the
+  one place it still takes a derivative (section 2.7); the two
+  constants never lived in the same module and setting one never
+  affected the other.
 
-Grid orientation matters because derivatives are taken. `ORIENTATION_MODE`
-(0 to 3) covers row direction and transposed axes. Mode 1 is confirmed
-on the OPC build. The cpsZ850 debug definition takes the mode from its
-last ConstantField so a new site can find its mode without editing
-Python. `cps_HartCPS.py` now carries its own `ORIENTATION_MODE` as well
-(section 2.7) -- same 0-to-3 semantics, used only by `HB`/`HCPSclass`'s
-thickness-gradient step; the two `ORIENTATION_MODE` constants are
-independent module-level values, so setting one does not affect the
-other.
+Where it lives now: `reference/vorticity_proxy/` in this repository
+(module, definitions, colormap, the last menu and style-rule files
+that carried it) and `tests/reference_vorticity/` for its tests. See
+`reference/vorticity_proxy/README.md` for the full rationale and the
+figure it still feeds.
 
-Southern Hemisphere: cyclonic vorticity is negative there, so warm cores
-read negative and the vortex mask blanks them. Not fixed; the Hart
-family has no such issue.
+EDEX delete list, for a site removing it from an existing install
+under `/awips2/edex/data/utility/common_static/site/<SITE>/`:
+
+```
+derivedParameters/functions/CycloneCore.py
+derivedParameters/definitions/VTL.xml
+derivedParameters/definitions/VTU.xml
+derivedParameters/definitions/CPScat.xml
+derivedParameters/definitions/CPSidx.xml
+derivedParameters/definitions/cpsZ850.xml
+colormaps/Grid/CPS_CoreClass.cmap
+```
+
+Restart CAVE after removing these. Two older products, `HCPScat` and
+`HETstage`, were retired earlier still, before this package's current
+form; `HCPSclass` replaced both of them at once (section 2.6).
 
 ---
 
@@ -369,14 +403,9 @@ Hart family (`cps_HartCPS.py`):
 | `executeB` | z925, z700, u850, v850, u700, v700, u500, v500, u300, v300, psfc, coriolis, dx, dy, radiusKm, layerScale, capHpa |
 | `executeHartClass` | z1000, z925, z850, z700, z500, z400, z300, u850, v850, u700, v700, u500, v500, u300, v300, psfc, coriolis, dx, dy, radiusKm, bThresholdM, layerScale, depthM, blobKm, capHpa |
 
-Vorticity family (`CycloneCore.py`):
-
-| Entry point | Arguments in order |
-| :--- | :--- |
-| `execute` | uLo, vLo, uHi, vHi, dx, dy, smoothKm |
-| `executeVorticity` | u, v, dx, dy, mode |
-| `executeClass` | uLo, vLo, uMid, vMid, uHi, vHi, dx, dy, smoothKm, band, vortexMin |
-| `executeIndex` | uLo, vLo, uMid, vMid, uHi, vHi, dx, dy, smoothKm, scale, vortexMin |
+The retired vorticity family's entry points (`CycloneCore.execute`,
+`executeVorticity`, `executeClass`, `executeIndex`) are documented in
+`reference/vorticity_proxy/README.md`, not here.
 
 ### 5.3 Tunables by definition
 
@@ -390,10 +419,6 @@ CAVE; no Python change is needed.
 | HCPSclass | radiusKm, bThresholdM, layerScale, depthM, blobKm, capHpa | 500, 10, 1.4553, 40, 200, 900 |
 | HCPSidx | radiusKm, scaleM, depthM, blobKm, capHpa | 500, 100, 40, 200, 900 |
 | HB | radiusKm, layerScale, capHpa | 500, 1.4553, 900 |
-| VTL, VTU | smoothKm | 100 |
-| CPScat | smoothKm, band, vortexMin | 100, 3, 5 |
-| CPSidx | smoothKm, scale, vortexMin | 100, 10, 5 |
-| cpsZ850 | mode | 1 |
 
 What each does:
 
@@ -432,13 +457,14 @@ Site level under `/awips2/edex/data/utility/common_static/site/<SITE>/`:
 
 ```
 derivedParameters/functions/cps_HartCPS.py
-derivedParameters/functions/CycloneCore.py
 derivedParameters/definitions/cps_HVTL.xml cps_HVTU.xml cps_HCPSclass.xml cps_HCPSidx.xml cps_HB.xml
-derivedParameters/definitions/VTL.xml VTU.xml CPScat.xml CPSidx.xml cpsZ850.xml
 colormaps/Grid/CPS_CoreDiverging.cmap
-colormaps/Grid/CPS_CoreClass.cmap
 colormaps/Grid/CPS_HartClass.cmap
 ```
+
+A site with the retired vorticity family still installed from before
+2026-09-18 should also remove the files listed in section 3's EDEX
+delete list.
 
 Restart CAVE after any change. The embedded interpreter caches Python
 modules until restart, and definitions are cached as well. Products
@@ -452,15 +478,10 @@ They appear under Grid in the legend's Change Colormap menu.
 ### 6.2 First-install verification
 
 1. Product Browser, Grid, GFS: the five Hart products (HVTL, HVTU,
-   HCPSclass, HCPSidx, HB) and the five vorticity products
-   appear at Surface. Missing products mean a definition failed to
-   parse; the CAVE log names the file.
-2. Vorticity family only: load cpsZ850 beside D2D's own relative
-   vorticity at 850 mb on a known hurricane. Matching sign and a single
-   blob means the orientation mode is right. Lobes mean try mode 2 then
-   3 in cpsZ850.xml, then set `ORIENTATION_MODE` in CycloneCore.py.
-3. Load HCPSclass on a hurricane: 0 at the center, blank ocean.
-4. Step the same hurricane toward its extratropical transition and
+   HCPSclass, HCPSidx, HB) appear at Surface. Missing products mean a
+   definition failed to parse; the CAVE log names the file.
+2. Load HCPSclass on a hurricane: 0 at the center, blank ocean.
+3. Step the same hurricane toward its extratropical transition and
    watch HCPSclass climb: 0 (or 2, once B crosses 10 m) while the
    storm is still frontal-testing but warm all the way up, 3 once
    HVTU turns negative, 4 once HVTL turns negative too. If HB/HCPSclass
@@ -468,6 +489,10 @@ They appear under Grid in the legend's Change Colormap menu.
    first suspect is the coriolis pseudo-field's abbreviation; see
    cps_HB.xml's/cps_HCPSclass.xml's own VERIFY comment for the
    `<ConstantField value="1.0"/>` fallback.
+4. If HB or HCPSclass look mirrored or lobed on a known storm, the
+   OPC-confirmed `ORIENTATION_MODE = 1` in `cps_HartCPS.py` (section
+   2.7) is the first thing to check; it affects only these two
+   products' thickness-gradient step.
 
 ### 6.3 Style rules
 
@@ -500,9 +525,7 @@ bundle file extracted from the saved procedure:
 | :--- | :--- | :--- |
 | product missing from Product Browser | definition failed to parse, or an input field or level spelling not in the inventory | CAVE log names the file; check Field spellings against a base definition |
 | DataCubeException on load | no unit attribute, or stale Python module | ensure `unit=""`; replace the .py and restart CAVE |
-| readout 0.00 on VTL/VTU | old CycloneCore.py without unit scaling | install current .py and definitions together |
-| lobed pattern on cpsZ850 | wrong orientation mode | mode search per 6.2 |
-| dipole on vorticity family at a low | tilt, inherent | use the Hart family |
+| HB/HCPSclass mirrored or lobed at a low | wrong `ORIENTATION_MODE` in `cps_HartCPS.py` | check against mode 1 (section 2.7); see 6.2 step 4 |
 | whole field green on load | style rule not applied | pick the colormap from the legend or load the procedure |
 | Hart products vanish after adding P | P field level spelling | check how base definitions reference Surface |
 | blank over land | below-ground mask | expected |
@@ -514,19 +537,23 @@ bundle file extracted from the saved procedure:
 ## 7. Tests
 
 ```
-python3 -m pytest tests -q
+python3 -m pytest tests/d2d_cps tests/cps -q
 ```
 
-89 tests: the storm-centered reference in `tests/cps`, and the two
-families in `tests/d2d_cps`. Every expected value is analytic or from a
-brute-force comparison, never copied from the implementation. Coverage
-includes sliding extrema against brute force, band slopes on exact
-linear profiles, agreement between the gridded and the point Hart
-implementation on a synthetic vortex, the closed-low mask on flat,
-sloped, and two-low fields, the terrain mask, Pa versus hPa detection,
-orientation modes on transposed inputs, and a performance budget on a
-full 0.25 degree grid. `tests/d2d_cps/conftest.py` puts the functions
-directory on the path so the files import exactly as CAVE imports them.
+56 tests: the storm-centered reference in `tests/cps` and the Hart
+family in `tests/d2d_cps/test_hart_cps.py`. Every expected value is
+analytic or from a brute-force comparison, never copied from the
+implementation. Coverage includes sliding extrema against brute force,
+band slopes on exact linear profiles, agreement between the gridded and
+the point Hart implementation on a synthetic vortex, the closed-low
+mask on flat, sloped, and two-low fields, the terrain mask, Pa versus
+hPa detection, orientation modes on transposed inputs, and a
+performance budget on a full 0.25 degree grid.
+`tests/d2d_cps/conftest.py` puts the functions directory on the path
+so the files import exactly as CAVE imports them.
+
+The retired vorticity family's tests live in `tests/reference_vorticity/`
+and are not part of this suite.
 
 ---
 
@@ -559,7 +586,6 @@ to revisit the cost/accuracy trade-off.
   neutral band by design (section 2.6). The continuous fields (`HVTL`,
   `HVTU`, `HB`) show the underlying trend through a flickering stretch
   and are the right place to look when it happens.
-- Vorticity family Southern Hemisphere sign. Needs a latitude input.
 - Below-ground rule uses one cap for all levels. A per-level margin
   would be more precise.
 - Style rules did not auto-apply at site level; the mechanism on this
