@@ -1282,8 +1282,33 @@ def make_fig7(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m):
     # shrinks and centers itself within its own fixed cell to honor its
     # aspect (a normal, local effect, not a whole-row/column one), and
     # (d), with no aspect set, simply fills its cell exactly.
-    fig, axes = plt.subplots(2, 2, figsize=(FULL_WIDTH_IN, 7.6))
-    fig.subplots_adjust(left=0.075, right=0.90, bottom=0.055, top=0.98, wspace=0.55, hspace=0.12)
+    #
+    # The figure height itself is solved for, not guessed: with left/
+    # right/wspace below, each column is 2.265 in wide, so each row
+    # (a)-(c)'s own map aspect needs must be 2.265 * 1.0878 = 2.464 in
+    # tall for the map panels to fill their cells with no shrink; top,
+    # bottom and hspace are small, fixed paddings (for the panel-letter
+    # margin and each row's own tick labels) added on top of twice that
+    # row height. A figure height picked by trial (e.g. by widening it
+    # to "see more") instead reopens exactly the empty band this is
+    # solving.
+    # wspace widened from 0.55 to 1.05 so the widest of the shortened
+    # HCPSclass legend labels above ("3 frontal shallow warm") ends at
+    # least 0.25 in before panel (d)'s own y-tick labels (measured gap
+    # 0.31 in); the figure height is re-solved from the resulting
+    # (narrower) column width the same way, so this does not reopen the
+    # row gap.
+    _wspace = 1.05
+    _map_hw = (LAT_MAX - LAT_MIN) / (LON_MAX - LON_MIN) / np.cos(np.radians(0.5 * (LAT_MIN + LAT_MAX)))
+    _col_w = (0.90 - 0.075) * FULL_WIDTH_IN / (2.0 + _wspace)  # in
+    _row_h = _col_w * _map_hw
+    _top_in, _bottom_in, _hspace_in = 0.15, 0.45, 0.42
+    _fig7_h = _top_in + 2.0 * _row_h + _hspace_in + _bottom_in
+    fig, axes = plt.subplots(2, 2, figsize=(FULL_WIDTH_IN, _fig7_h))
+    fig.subplots_adjust(
+        left=0.075, right=0.90, wspace=_wspace,
+        top=1.0 - _top_in / _fig7_h, bottom=_bottom_in / _fig7_h, hspace=_hspace_in / _row_h,
+    )
     (ax_a, ax_b), (ax_c, ax_d) = axes
 
     for ax in (ax_a, ax_b, ax_c):
@@ -1349,7 +1374,14 @@ def make_fig7(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m):
     ax_c.contour(lon2d, lat2d, z1000, levels=z1000_levels, colors="#8a8a86", linewidths=0.35, zorder=3)
     mark_vortex_centers(ax_c)
     cb_c = fig.colorbar(pm_c, ax=ax_c, pad=0.02, fraction=0.05, ticks=range(7))
-    cb_c.ax.set_yticklabels(HARTCLASS_NAMES, fontsize=8)
+    # Shortened here only (the full names are in the caption): the full
+    # HARTCLASS_NAMES strings run into panel (d)'s own y-tick labels
+    # and its "B (m)" axis label at this figure's column width.
+    fig7_hartclass_names_short = [
+        "0 sym. deep warm", "1 sym. shallow warm", "2 frontal deep warm",
+        "3 frontal shallow warm", "4 frontal cold", "5 sym. cold", "6 shallow cold",
+    ]
+    cb_c.ax.set_yticklabels(fig7_hartclass_names_short, fontsize=8)
     panel_letter(ax_c, "c")
 
     # --- (d) Hart's B-vs-lower-thermal-wind diagram --------------------------
@@ -1389,21 +1421,28 @@ def make_fig7(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m):
     # anchors top-left (see panel_letter).
     quadrant_label_pos = {
         "frontal cold core": (0.04, 0.83, "left", "top"),
-        "frontal warm core": (0.97, 0.96, "right", "top"),
-        # A tighter inset than the top row's: the bottom two labels'
-        # combined width is close to the panel's own width at the top
-        # row's insets, close enough that the "cold"/"warm" strings
-        # touch at the completion line -- the bottom row's inset is
-        # relaxed just enough to clear that.
-        "symmetric cold core": (0.015, 0.04, "left", "bottom"),
-        "symmetric warm core": (0.985, 0.04, "right", "bottom"),
     }
     for _, _, _, _, _, label in quadrants:
+        if label in ("frontal warm core", "symmetric cold core", "symmetric warm core"):
+            continue  # placed in data coordinates below
         x, y, ha, va = quadrant_label_pos[label]
         ax_d.text(
             x, y, label, transform=ax_d.transAxes, color=TEXT_SECONDARY, fontsize=7.2,
             ha=ha, va=va, style="italic", zorder=1,
         )
+    # Data coordinates, not axes fraction, and wrapped to two lines: the
+    # "A"/"A'" call-out boxes sit right at this quadrant's own bottom
+    # corners (at each diamond's own B value, +/-25 m, a few meters
+    # above the axis floor), so hugging the bottom spine the way the
+    # top row's corner label does puts the quadrant name underneath
+    # them. Mid-height instead, extending down and away from the
+    # 0 h/48 h points just above.
+    ax_d.text(270, -10.5, "symmetric\nwarm core", color=TEXT_SECONDARY, fontsize=6.5, ha="right", va="top", style="italic", zorder=1)
+    ax_d.text(-270, -10.5, "symmetric\ncold core", color=TEXT_SECONDARY, fontsize=6.5, ha="left", va="top", style="italic", zorder=1)
+    # Data coordinates, not axes fraction: this corner is where the
+    # onset label now sits (moved in from outside the axes), so its
+    # position needs to track that label rather than a fixed inset.
+    ax_d.text(290, 76, "frontal warm core", color=TEXT_SECONDARY, fontsize=7.2, ha="right", va="top", style="italic", zorder=1)
 
     ax_d.axhline(cps_HartCPS.B_THRESHOLD_M, color=TEXT_DARK, linewidth=1.0, zorder=2)
     ax_d.axvline(0, color=TEXT_DARK, linewidth=1.0, zorder=2)
@@ -1426,57 +1465,82 @@ def make_fig7(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m):
             continue
         va, ha, dx_txt, dy_txt = "bottom", "left", 8, 8
         if k == traj.shape[0] - 1:
-            dx_txt, dy_txt, va = 8, -12, "top"
+            # Above, biased left, rather than fully above-left: at this
+            # string's own width (about 91 m), anchoring its right edge
+            # even a little left of the point (as "above-left" would
+            # read most naturally) pushes its own left edge past the
+            # VTL = -300 frame edge. Centering it a little left of the
+            # point instead keeps the whole label inside the frame.
+            dx_txt, dy_txt, ha, va = -7, 10, "center", "bottom"
         elif k == 0:
-            dx_txt, dy_txt, ha, va = 8, 10, "left", "bottom"
+            # Below-right, not above-right: above-right crosses the
+            # B = 10 m line right next to this point's own B = 3 m. Only
+            # a small rightward nudge (not the usual 8 pt), since the
+            # frame's right edge (VTL = 300) is close to this point's
+            # own VTL = 240 once the string's own width is added.
+            dx_txt, dy_txt, ha, va = 1, -10, "left", "top"
         elif hours[k] == 96:
-            # Above the point rather than the default below-right: that
-            # side collides with the completion crossing, the diamond
-            # marker and the "A' (westerly)" call-out box, all of which
-            # sit within a few tens of meters of this point.
-            dx_txt, dy_txt, ha, va = -6, 16, "right", "bottom"
+            # Below-right of the point: above runs into the "frontal
+            # cold core" corner label at this panel's narrower width
+            # (see this figure's own header on the wider wspace), and
+            # a modest offset here stays clear of the completion
+            # crossing, the diamond marker and the "A'" call-out box,
+            # all of which sit further right and below.
+            dx_txt, dy_txt, ha, va = 10, -10, "left", "top"
+        elif hours[k] == 48:
+            # Below-right instead of the default above-right: above
+            # runs into the "A'" call-out box, which sits a few tens of
+            # meters above and to the right of this point.
+            dx_txt, dy_txt, ha, va = 10, -14, "left", "top"
         ax_d.annotate(f"{hours[k]} h", (vval, bval), textcoords="offset points", xytext=(dx_txt, dy_txt), fontsize=7.2, color=TEXT_SECONDARY, ha=ha, va=va, zorder=6)
 
     onset_xy = _interp_crossing(traj, 0, cps_HartCPS.B_THRESHOLD_M)  # (B, VTL)
     completion_xy = _interp_crossing(traj, 1, 0.0)  # (B, VTL)
-    # Both callouts lead back to their own crossing with a thin line,
-    # since the crossings themselves sit right against the trajectory
-    # (the completion crossing in particular is only ~20 m from the
-    # 96 h point) and a same-spot label would collide with it; the
-    # leader lets each label sit in genuinely open panel space instead.
+    # Both labels sit inside the axes, in open panel space, as in
+    # Figure 10 panel (a) -- fixed data-space anchors rather than
+    # offsets from the crossing (the crossings themselves sit right
+    # against the trajectory), and no leader line.
     if onset_xy is not None:
         ax_d.plot(onset_xy[1], onset_xy[0], marker="x", markersize=7, color=TEXT_DARK, markeredgewidth=1.6, zorder=7)
-        ax_d.annotate(
-            "onset: $B$ > 10 m\n(Evans and Hart 2003)", (onset_xy[1], onset_xy[0]), textcoords="offset points",
-            xytext=(45, 65), fontsize=7.0, color=TEXT_DARK, va="bottom", ha="left",
+        # (40, 12): the open space left of the crossing -- centered at
+        # x = 150 (the crossing's own VTL) ran into the trajectory near
+        # the 24 h point.
+        ax_d.text(
+            40, 12, "onset: $B$ > 10 m",
+            fontsize=7.0, color=TEXT_DARK, va="bottom", ha="left",
             bbox=dict(facecolor="white", edgecolor="none", alpha=0.85, pad=1.0), zorder=7,
-            arrowprops=dict(arrowstyle="-", color=TEXT_DARK, linewidth=0.7, shrinkA=0, shrinkB=3),
         )
     if completion_xy is not None:
         ax_d.plot(completion_xy[1], completion_xy[0], marker="x", markersize=7, color=TEXT_DARK, markeredgewidth=1.6, zorder=7)
-        ax_d.annotate(
-            r"completion: $-V_T^L$ < 0", (completion_xy[1], completion_xy[0]), textcoords="offset points",
-            xytext=(15, -55), fontsize=7.0, color=TEXT_DARK, va="top", ha="left",
+        # y = 65.5, not the 60 a first pass tried: at fontsize 7 this
+        # string is wide enough that its box reaches almost to the left
+        # spine regardless of y, so the only row in this quadrant clear
+        # of both the panel-letter box above (y > 69.5) and the
+        # "frontal cold core" corner label below (y < 61.6) is this
+        # narrow one in between.
+        ax_d.text(
+            -20, 65.5, r"completion: $-V_T^L$ < 0",
+            fontsize=7.0, color=TEXT_DARK, va="center", ha="right",
             bbox=dict(facecolor="white", edgecolor="none", alpha=0.85, pad=1.0), zorder=7,
-            arrowprops=dict(arrowstyle="-", color=TEXT_DARK, linewidth=0.7, shrinkA=0, shrinkB=3),
         )
 
-    # Vortex call-out boxes, fixed data-space anchors (not offsets from
-    # each diamond): both diamonds sit close together around VTL=120 m,
-    # so an offset-from-point placement puts the two boxes on top of one
-    # another. A's box sits low along the left spine, below the
-    # "frontal cold core" corner label and clear of the 168 h point;
-    # A''s box sits above its own diamond, inside the frontal-warm-core
-    # quadrant, clear of the diamond, the 48 h/96 h points and the
-    # "symmetric warm core" corner label below the B = 10 m line.
-    for (bval, vval), label, anchor, ha, va in (
-        ((b1, vtl1), "A (easterly)", (-295, 28), "left", "bottom"),
-        ((b2, vtl2), "A′ (westerly)", (95, 58), "left", "top"),
+    # Vortex call-out boxes, directly to the right of each diamond
+    # (both diamonds sit close together, around VTL=120 m, at B = -25 m
+    # and +25 m -- placing each label beside its own diamond, rather
+    # than a shared offset direction, is what keeps the two apart).
+    # Short labels, real minus sign (not the ASCII hyphen "+.0f" would
+    # give): both stay inside the frame (x = 135 plus the string's own
+    # width is well short of xlim[1] = 300), where the longer
+    # "A (easterly): B = ... m" form used to spill past the right spine.
+    for (bval, vval), label, anchor in (
+        ((b1, vtl1), "A", (135, -25)),
+        ((b2, vtl2), "A′", (135, 25)),
     ):
         ax_d.plot(vval, bval, marker="D", markersize=8, markerfacecolor=VORTEX_A_COLOR, markeredgecolor="white", markeredgewidth=1.0, zorder=9)
-        ax_d.annotate(
-            f"{label}\nB={bval:+.0f} m", (vval, bval), xytext=anchor, textcoords="data", ha=ha, va=va,
-            fontsize=7.2, color=TEXT_DARK, fontweight="bold",
+        signed = f"+{bval:.0f}" if bval >= 0 else f"−{abs(bval):.0f}"
+        ax_d.text(
+            anchor[0], anchor[1], f"{label}: {signed} m", ha="left", va="center",
+            fontsize=7.0, color=TEXT_DARK,
             bbox=dict(facecolor="white", edgecolor="none", alpha=0.85, pad=1.0), zorder=9,
         )
 
@@ -1764,7 +1828,7 @@ def _fig9_thickness_and_b(lat2d, lon2d, x_km, y_km, r_km, with_gradient):
     return thickness, float(b_value)
 
 
-def _fig9_panel(ax, lon2d, lat2d, x_km, y_km, r_km, mx, my, thickness, b_value, label_text):
+def _fig9_panel(ax, lon2d, lat2d, x_km, y_km, r_km, mx, my, thickness, b_value, label_text, box_corner="bottom-left"):
     half = 0.5 * FIG9_BOX_KM
     levels = np.arange(np.floor(thickness.min() / 10.0) * 10.0, thickness.max() + 10.0, 10.0)
     cf = ax.contourf(x_km, y_km, thickness, levels=levels, cmap=CMAP_THICKNESS, zorder=1)
@@ -1796,9 +1860,19 @@ def _fig9_panel(ax, lon2d, lat2d, x_km, y_km, r_km, mx, my, thickness, b_value, 
 
     ax.plot(0, 0, marker="+", markersize=10, markeredgewidth=1.8, color=TEXT_DARK, zorder=8)
 
+    # box_corner picks which corner the B-value box sits in -- panel
+    # (b) uses top-left instead of the default bottom-left, since its
+    # bottom-left is where the dashed circle meets the "warm flank
+    # (south)" label.
+    box_x, box_ha = (0.03, "left") if "left" in box_corner else (0.97, "right")
+    # The top anchor sits below the panel-letter box (top-left, at 0.96)
+    # rather than sharing its row at 0.97, since the two would otherwise
+    # overlap in that corner the way the bottom row never does (the
+    # panel letter is always top, never bottom).
+    box_y, box_va = (0.03, "bottom") if "bottom" in box_corner else (0.85, "top")
     ax.text(
-        0.03, 0.03, f"B = {b_value:+.1f} m\n({label_text})",
-        transform=ax.transAxes, fontsize=8.0, color=TEXT_DARK, ha="left", va="bottom",
+        box_x, box_y, f"B = {b_value:+.1f} m\n({label_text})",
+        transform=ax.transAxes, fontsize=8.0, color=TEXT_DARK, ha=box_ha, va=box_va,
         bbox=dict(facecolor="white", edgecolor=TEXT_SECONDARY, linewidth=0.6, alpha=0.9, pad=2.5), zorder=9,
     )
 
@@ -1839,15 +1913,17 @@ def make_fig9():
     ax_a.text(label_r * np.cos(se_deg), label_r * np.sin(se_deg), "right", fontsize=7.8, color=TEXT_SECONDARY, ha="center", va="center", style="italic", zorder=7)
     panel_letter(ax_a, "a")
 
-    cf_b = _fig9_panel(ax_b, lon2d, lat2d, x_km, y_km, r_km, mx, my, thickness_front, b_front, "frontal, above the 10 m line")
+    cf_b = _fig9_panel(
+        ax_b, lon2d, lat2d, x_km, y_km, r_km, mx, my, thickness_front, b_front, "frontal, above the 10 m line",
+        box_corner="top-left",
+    )
     # Geographic flanks (warm/thick south, cold/thin north -- fixed by
     # the background gradient, independent of the motion vector), well
     # outside the 500 km circle (radius 500 vs a 600 km box half-width)
-    # and clear of the spine. The north label sits on the panel's own
-    # vertical centerline, above the circle; the south one is offset to
-    # the bottom-right corner instead of the centerline, and wrapped to
-    # two lines, so it clears the "B = ..." box that occupies most of
-    # the bottom-left at that same height.
+    # and clear of the spine. The north label stays on the panel's own
+    # vertical centerline; the south one stays offset to the
+    # bottom-right corner rather than the centerline, wrapped to two
+    # lines, clear of the circle and the spine.
     half_b = 0.5 * FIG9_BOX_KM
     flank_y = 0.5 * (FIG9_CIRCLE_KM + half_b)
     ax_b.text(0.73 * half_b, -flank_y, "warm flank\n(south)", fontsize=7.3, color=TEXT_DARK, ha="center", va="center", style="italic",
