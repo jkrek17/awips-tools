@@ -75,8 +75,9 @@
   <p>
     Cyclone phase space (CPS) describes a cyclone's thermal structure from
     the geopotential height field alone, with no appeal to satellite
-    presentation or a forecaster's eye [1]. Three numbers locate a storm in
-    the space: <em>B</em>, the left&ndash;right asymmetry of low-level
+    presentation or a forecaster's eye [1]. Three numbers, each computed
+    here as a gridded field (Section 2), locate a storm in the space:
+    <em>B</em>, the left&ndash;right asymmetry of low-level
     thickness across the storm's track, and the lower- and
     upper-tropospheric thermal wind parameters &minus;V<sub>T</sub><sup>L</sup>
     and &minus;V<sub>T</sub><sup>U</sup>, which are positive for a warm
@@ -173,6 +174,109 @@
     &minus;3 to +3:
   </p>
   <p class="eq">index = 2 tanh(&minus;<i>V</i><sub>T</sub><sup>L</sup> / 100) + tanh(&minus;<i>V</i><sub>T</sub><sup>U</sup> / 100)</p>
+
+  <h3>Parameter B and the ET stage</h3>
+  <p>
+    Hart's third number is a left&ndash;right asymmetry, not a vertical
+    one. Over the same 500&nbsp;km circle &minus;V<sub>T</sub><sup>L</sup> and
+    &minus;V<sub>T</sub><sup>U</sup> use, split into a right half and a left
+    half relative to the storm's own direction of motion:
+  </p>
+  <p class="eq"><i>B</i> = <i>h</i> (<i>Z</i><sub>R</sub> &minus; <i>Z</i><sub>L</sub>)</p>
+  <p>
+    where <i>Z</i><sub>R</sub> and <i>Z</i><sub>L</sub> are the mean 900 to
+    600&nbsp;hPa thickness over the right and left halves and <i>h</i> is
+    +1 in the Northern Hemisphere and &minus;1 in the Southern, so that
+    warm/thick air on the storm's equatorward flank always reads positive.
+    Evans and Hart (2003) took 10&nbsp;m as the threshold separating a
+    symmetric, tropical-like thickness field from an asymmetric, frontal
+    one. A single grid point has no "left half" of anything, so this
+    package instead uses a gridded approximation:
+  </p>
+  <p class="eq"><i>B</i> = <i>h</i> (8<i>R</i> / 3&pi;) (<b>n</b><sub>R</sub> &middot; &lang;&nabla;<i>Z</i><sub>thk</sub>&rang;<sub><i>W</i></sub>) &lambda;</p>
+  <p>
+    with <b>n</b><sub>R</sub> the right-hand unit normal of the steering
+    flow (the mean 850 to 300&nbsp;hPa wind, the motion proxy used in place
+    of a storm's own track), the angle brackets a window-mean over the
+    same 500&nbsp;km radius <i>R</i>, and &lambda; the layer-scaling factor
+    below. This rests on an identity for a linear field: the right-minus-left
+    half-disk mean difference equals the projected gradient times
+    8<i>R</i>/3&pi; exactly, and the module's implementation of it was
+    checked against the storm-centered half-disk calculation to within
+    0.05% on a synthetic linear field. The 925 to 700&nbsp;hPa layer this
+    package uses elsewhere is not Hart's 900 to 600&nbsp;hPa layer, so the
+    result is rescaled by
+  </p>
+  <p class="eq">&lambda; = ln(900/600) / ln(925/700) = 1.455</p>
+  <p>
+    What this loses: a genuinely nonlinear thickness structure inside the
+    window &mdash; most notably a warm-seclusion tongue folding back into
+    one side of the circle &mdash; is only captured to first order, and a
+    stationary or steering-opposed system has no well-defined motion to
+    split left from right, so <i>B</i> is blanked rather than guessed.
+  </p>
+  <p>
+    Evans and Hart (2003) turned <i>B</i> and &minus;V<sub>T</sub><sup>L</sup>
+    into three life-cycle stages:
+  </p>
+  <table>
+    <caption>Evans and Hart (2003) extratropical transition stage.</caption>
+    <thead><tr><th>Code</th><th>Stage</th><th>Condition</th></tr></thead>
+    <tbody>
+      <tr><td>0</td><td>pre-onset</td><td><i>B</i> &le; 10&nbsp;m</td></tr>
+      <tr><td>1</td><td>onset</td><td><i>B</i> &gt; 10&nbsp;m and &minus;V<sub>T</sub><sup>L</sup> &ge; 0</td></tr>
+      <tr><td>2</td><td>complete</td><td>&minus;V<sub>T</sub><sup>L</sup> &lt; 0</td></tr>
+    </tbody>
+  </table>
+  <p>
+    The stage field keeps no memory of an earlier frame: it looks only at
+    the current <i>B</i> and &minus;V<sub>T</sub><sup>L</sup>, so a storm
+    that re-forms a low-level warm core after transitioning &mdash; a warm
+    seclusion &mdash; drops back to stage 0 or 1 rather than staying at 2.
+    That drop is the warm-seclusion signature, not a sign the transition
+    never completed, and is best read together with the category field at
+    the same point and time.
+  </p>
+  <figure id="fig7">
+    <img src="figures/fig7_parameter_b.png"
+         alt="Four-panel synthetic figure demonstrating parameter B. Top left: 925-700 hPa thickness contoured with steering-flow arrows and two identical warm-core vortex centers marked, one sitting in easterly steering, one in westerly steering. Top right: the gridded parameter B field, sharply split between a negative south half and a positive north half, with the B equals 10 meter contour drawn near the transition and labeled near the domain's west edge. Bottom left: the ET stage field, the westerly vortex showing a small onset ring and the easterly vortex an otherwise pre-onset blob, with no complete (stage 2) pixels at either. Bottom right: Hart's Phase 1 diagram of B against negative lower thermal wind, with the four structural quadrants shaded, a schematic 168 hour transition trajectory, the onset and completion crossings annotated, and the two synthetic vortices plotted as diamonds at their actual computed values.">
+    <figcaption><strong>Figure 7.</strong> Parameter B and the ET stage, on
+      a <em>synthetic</em> case built for this figure alone (not the
+      two-vortex domain of Figures 2&ndash;4): vortex A (deep warm core,
+      28&deg;N 130&deg;W) and an identical second copy at 42&deg;N 140&deg;W, same
+      amplitude and 150&nbsp;km scale, on a background whose 925 to
+      700&nbsp;hPa thickness decreases northward at 40&nbsp;m per 1000&nbsp;km
+      (warm to the south) &mdash; raised past the modest
+      background of Figures 2&ndash;4 so a transitioning storm's own
+      environment is represented, but not raised so far that the square
+      window's own background sensitivity (Section 2) turns either
+      core's own lower thermal wind cold at the edges of its footprint.
+      Steering is a uniform 12&nbsp;m/s westerly
+      north of 35&deg;N and a uniform 6&nbsp;m/s easterly south of 25&deg;N, blended
+      smoothly between; <code>HartCPS.ORIENTATION_MODE</code> was set to 0
+      for this synthetic grid, rows increasing northward, the same
+      convention Figure 4 sets for <code>CycloneCore</code>.
+      <strong>(a)</strong> The thickness field and steering arrows.
+      <strong>(b)</strong> <code>HartCPS.executeB</code>: the vortex in
+      westerlies (42&deg;N) reads <i>B</i> = +25&nbsp;m, comfortably above the
+      10&nbsp;m onset threshold, because moving east its right side faces the
+      warm south; the vortex in easterlies (28&deg;N) reads <i>B</i> =
+      &minus;25&nbsp;m, because moving west its right side faces the cold
+      north &mdash; the same warm-core vortex, the same amplitude, opposite
+      <i>B</i> purely from the environment and the motion.
+      <strong>(c)</strong> <code>HartCPS.executeETStage</code>: both cores
+      keep a clearly positive lower thermal wind (about +119&nbsp;m at each
+      center), so the westerly vortex reads onset (stage 1) throughout its
+      footprint while the easterly one reads pre-onset (stage 0) almost
+      everywhere in its own (a sliver at its poleward edge, closest to the
+      steering reversal, already nears the onset line); neither shows a
+      single complete (stage 2) pixel.
+      <strong>(d)</strong> The two vortices
+      plotted on Hart's own axes at their actual computed
+      (<i>B</i>, &minus;V<sub>T</sub><sup>L</sup>) values, alongside the
+      schematic transition trajectory from Figure 1's own axes redrawn on
+      <i>B</i> instead of &minus;V<sub>T</sub><sup>U</sup>.</figcaption>
+  </figure>
   <figure id="fig2">
     <img src="figures/fig2_method.png"
          alt="Two-panel method figure. Left: dZ profile against pressure for two synthetic vortices with their least-squares lower- and upper-band fit lines and slope values annotated, and Hart's original 50 hPa levels marked as faint right-axis ticks. Right: a map of the 925 hPa height of one synthetic warm-core vortex with the 1000 km square analysis window and Hart's 500 km circle both drawn around its center, and the window's max and min points marked.">
@@ -263,18 +367,26 @@
     Both families are plain, self-contained AWIPS II D2D derived
     parameters, run inside CAVE's embedded Python interpreter on demand,
     per frame, from grids already in the local inventory &mdash; no server, no
-    cron, no external tracker. The Hart family needs only geopotential
-    height on the seven standard isobaric levels and surface pressure; the
-    vorticity family needs wind components at three levels. The sliding
+    cron, no external tracker. The Hart family needs geopotential height on
+    the seven standard isobaric levels and surface pressure for
+    &minus;V<sub>T</sub><sup>L</sup>/&minus;V<sub>T</sub><sup>U</sup>/HCPScat/HCPSidx;
+    parameter B and the ET stage additionally need wind components at four
+    levels (850, 700, 500, 300&nbsp;hPa) for the steering-flow motion proxy
+    and the coriolis pseudo-field for the hemisphere sign. The vorticity
+    family needs wind components at three levels. The sliding
     window that &Delta;Z is built from runs in O(N&nbsp;log&nbsp;w) per level
     via a doubling/sparse-table extremum filter rather than a naive
     per-pixel scan, which is what keeps a full six-level classification
     affordable on a global grid (Figure 5). The installed footprint is
-    nine XML derived-parameter definitions (HVTL, HVTU, HCPScat, HCPSidx,
-    VTL, VTU, CPScat, CPSidx, cpsZ850), two Python files
-    (<code>HartCPS.py</code>, <code>CycloneCore.py</code>), and two
-    colormaps (a diverging one for the thermal wind fields, a categorical
-    one for the class field).
+    eleven XML derived-parameter definitions (HVTL, HVTU, HCPScat, HCPSidx,
+    HB, HETstage, VTL, VTU, CPScat, CPSidx, cpsZ850), two Python files
+    (<code>HartCPS.py</code>, <code>CycloneCore.py</code>), and three
+    colormaps (a diverging one for the thermal wind and B fields, a
+    categorical one for the class field, and a second categorical one for
+    the ET stage field). <code>executeETStage</code> layers parameter B's
+    window-mean gradient pass and the steering-flow average on top of the
+    same thermal-wind computation and takes about 2&nbsp;s on the same
+    0.25&deg; grid.
   </p>
   <figure id="fig5" class="half">
     <img src="figures/fig5_performance.png"
@@ -375,11 +487,12 @@
   </ol>
 
   <footer>
-    Figures regenerated from <code>docs/figures/make_figures.py</code>,
-    which runs the package's own <code>HartCPS.py</code> and
-    <code>CycloneCore.py</code> on synthetic fields; see that file's
-    header for the exact field definitions. Figure 6 alone is a
-    photograph, cropped and resized only.
+    Figures 1&ndash;5 and 7 are synthetic, regenerated from
+    <code>docs/cps/figures/make_figures.py</code>, which runs the
+    package's own <code>HartCPS.py</code> and <code>CycloneCore.py</code>
+    on synthetic fields; see that file's header for the exact field
+    definitions, including Figure 7's own separate synthetic case. Figure
+    6 alone is a photograph, cropped and resized only.
   </footer>
 
 </div>
