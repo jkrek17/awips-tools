@@ -4,10 +4,7 @@ make_figures.py -- regenerates every figure on the GitHub Pages article
 (../index.html) from the package's own operational code
 (D2D/derivedParameters/functions/cps_HartCPS.py), run on synthetic fields,
 plus one photograph of the real CAVE display that is cropped/resized only
-(fig6). Figure 4 alone also runs CycloneCore.py, the retired vorticity-proxy
-module (retired from the install set on 2026-09-18) that now lives in
-reference/vorticity_proxy/ and is kept only so that figure's proxy-versus-
-Hart comparison stays reproducible.
+(fig6).
 
 Run from the repository root:
 
@@ -20,8 +17,7 @@ Outputs land next to this script, in docs/cps/figures/:
     fig9_b_concept.png      fig10_two_diagrams.png
 
 No test fixtures are reused: everything is built here so the figures are
-reproducible from nothing but this file, cps_HartCPS.py, the retired
-CycloneCore.py (for Figure 4 only, from reference/vorticity_proxy/) and
+reproducible from nothing but this file, cps_HartCPS.py, and
 numpy/matplotlib.
 
 ---------------------------------------------------------------------------
@@ -32,9 +28,8 @@ quote it precisely; every number below matches what is actually computed)
 Grid
     Regular lat/lon, 0.5 degree spacing, longitude -160 to -100 (west to
     east), latitude 15 to 65 (south to north; array row 0 is the
-    southernmost row, i.e. rows increase northward -- the retired
-    CycloneCore module's ORIENTATION_MODE 0 convention, used for Figure 4
-    only).  ``dy`` is a scalar, 0.5 degree of
+    southernmost row, i.e. rows increase northward -- cps_HartCPS.py's
+    own ORIENTATION_MODE 0 convention).  ``dy`` is a scalar, 0.5 degree of
     latitude = 55.6 km, in meters.  ``dx`` is a full 2D array in meters,
     ``dx[i, j] = 55.6 km * cos(lat[i])`` -- 0.5 degree of longitude at
     that row's latitude -- passed as AWIPS itself would pass it (a
@@ -63,10 +58,10 @@ Vortex B -- cold core, center 50N, 140W, tilted
     linear in ln(p) from 120 m at 1000 hPa to 450 m at 300 hPa (amplitude
     grows with height -> negative VTL/VTU, cold core).  The center is
     displaced westward with height, linearly in ln(p), by
-    ``TILT_KM`` at 300 hPa (400 km per the spec; the script checks the
-    vorticity-family dipole this is meant to demonstrate and re-runs at
-    600 km if the 400 km tilt does not produce it -- see
-    ``_verify_or_increase_tilt`` and the printed report).
+    ``TILT_KM`` at 300 hPa (400 km per the spec; the script checks that
+    this displaces the 300 hPa center at least a few grid points from
+    the surface center and re-runs at 600 km if 400 km does not -- see
+    ``make_fig4`` and the printed report).
 
 Terrain
     Surface pressure 750 hPa over the rectangle 118W-108W, 35N-48N;
@@ -110,10 +105,9 @@ Figure 7 -- transitioning-storm case (Parameter B and the ET stage)
       contour to draw.
 
     cps_HartCPS.ORIENTATION_MODE is set to 0 for this figure, same reason
-    and same convention as CycloneCore.ORIENTATION_MODE in Figure 4:
-    cps_HartCPS.gradient_2d (the one function in that module that takes a
-    spatial derivative) needs to know that this synthetic grid's rows
-    increase northward.
+    and same convention as Figure 4's own setting: cps_HartCPS.gradient_2d
+    (the one function in that module that takes a spatial derivative)
+    needs to know that this synthetic grid's rows increase northward.
 """
 
 from __future__ import annotations
@@ -135,24 +129,18 @@ from matplotlib.lines import Line2D
 
 # ---------------------------------------------------------------------------
 # Make cps_HartCPS.py importable exactly as CAVE imports it (a bare module,
-# no package), per tests/d2d_cps/conftest.py's own approach. CycloneCore.py,
-# the retired vorticity-proxy module, is no longer part of the operational
-# install; it is imported here only from reference/vorticity_proxy/ so
-# Figure 4's proxy-versus-Hart comparison stays reproducible.
+# no package), per tests/d2d_cps/conftest.py's own approach.
 # ---------------------------------------------------------------------------
 
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parent.parent.parent  # docs/cps/figures -> docs/cps -> docs -> repo root
 FUNCTIONS_DIR = REPO_ROOT / "D2D" / "derivedParameters" / "functions"
-REFERENCE_DIR = REPO_ROOT / "reference" / "vorticity_proxy"  # retired CycloneCore.py, kept for Figure 4
 SYNTHETIC_TEST_DIR = REPO_ROOT / "tests" / "cps"
 sys.path.insert(0, str(FUNCTIONS_DIR))
-sys.path.insert(0, str(REFERENCE_DIR))
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(SYNTHETIC_TEST_DIR))
 
 import cps_HartCPS  # noqa: E402
-import CycloneCore  # noqa: E402
 
 # Figures 8-10 (teaching figures) are built with cps/hart.py, the pure-numpy
 # reference implementation of Hart (2003) itself -- Hart's own 900-600/
@@ -190,8 +178,7 @@ CMAP_SEQ_BLUE = LinearSegmentedColormap.from_list("cps_seq_blue", ["#cde2fb", "#
 
 CATEGORY_COLORS = ["#4a3aa7", "#2a78d6", "#c3c2b7", "#eb6834", "#e34948"]
 
-# HCPSclass (the joint Hart CPS class replacing the retired HCPScat/
-# HETstage fields): 7 entries in code order, matching
+# HCPSclass (the joint Hart CPS class): 7 entries in code order, matching
 # D2D/colormaps/Grid/CPS_HartClass.cmap's own colors exactly, so the
 # figure and the shipped D2D colormap read identically. Warm states
 # (codes 0-3) are warm hues, cold states (4-5) are cool hues, and the
@@ -759,8 +746,8 @@ def make_fig3(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m, z_std_stack, psfc):
     cb_c.set_label(r"$-V_T^U$ (m)", fontsize=8)
     cb_c.ax.tick_params(labelsize=7.5)
 
-    # (d) HCPSclass -- the joint Hart CPS class (replaces the retired
-    # HCPScat). Needs a steering flow and a coriolis pseudo-field that
+    # (d) HCPSclass -- the joint Hart CPS class. Needs a steering flow
+    # and a coriolis pseudo-field that
     # HVTL/HVTU do not: a uniform 8 m/s westerly everywhere (the figure's
     # own spec -- uniform steering is enough to demonstrate the class,
     # since the point here is B's sign/magnitude relative to the 10 m
@@ -796,10 +783,10 @@ def make_fig3(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m, z_std_stack, psfc):
 
 
 # ===========================================================================
-# Figure 4: the retired vorticity proxy versus the Hart family on the
-# tilted cold core. This is the only figure that imports CycloneCore.py
-# (from reference/vorticity_proxy/); everywhere else in this script uses
-# cps_HartCPS.py alone.
+# Figure 4: the Hart family alone on a vertically tilted cold-core
+# cyclone (Vortex B) -- HVTL, HVTU and HCPSclass, all from cps_HartCPS.py,
+# evaluated at the surface-level center even though the vortex's own
+# upper-level center has moved several grid points away.
 # ===========================================================================
 
 OMEGA_EARTH = 7.2921159e-5
@@ -814,57 +801,132 @@ def geostrophic_wind(z, dx2d, dy_m, f):
     return u, v
 
 
-def _fig4_fields(lat2d, lon2d, dx2d, dy_m, psfc, tilt_km):
-    f50 = 2.0 * OMEGA_EARTH * np.sin(np.radians(50.0))
-
-    z850 = height_field(lat2d, lon2d, 850.0, tilt_km=tilt_km)
-    z600 = height_field(lat2d, lon2d, 600.0, tilt_km=tilt_km)
-    z300 = height_field(lat2d, lon2d, 300.0, tilt_km=tilt_km)
+def _fig4_fields(lat2d, lon2d, dx2d, dy_m, tilt_km):
+    """Height fields (1000-300 hPa) and their geostrophic winds (850,
+    700, 500, 300 hPa) for Figure 4's tilted cold-core cyclone (Vortex
+    B), at the given 300 hPa tilt. A single, fixed f (this synthetic
+    grid's own f at Vortex B's 50N) is used for every level's
+    geostrophic wind, the same simplification the module docstring's
+    "Grid" section already makes for this whole script's synthetic dx.
+    """
+    z1000 = height_field(lat2d, lon2d, 1000.0, tilt_km=tilt_km)
     z925 = height_field(lat2d, lon2d, 925.0, tilt_km=tilt_km)
+    z850 = height_field(lat2d, lon2d, 850.0, tilt_km=tilt_km)
     z700 = height_field(lat2d, lon2d, 700.0, tilt_km=tilt_km)
     z500 = height_field(lat2d, lon2d, 500.0, tilt_km=tilt_km)
     z400 = height_field(lat2d, lon2d, 400.0, tilt_km=tilt_km)
+    z300 = height_field(lat2d, lon2d, 300.0, tilt_km=tilt_km)
 
+    f50 = 2.0 * OMEGA_EARTH * np.sin(np.radians(50.0))
     u850, v850 = geostrophic_wind(z850, dx2d, dy_m, f50)
-    u600, v600 = geostrophic_wind(z600, dx2d, dy_m, f50)
+    u700, v700 = geostrophic_wind(z700, dx2d, dy_m, f50)
+    u500, v500 = geostrophic_wind(z500, dx2d, dy_m, f50)
     u300, v300 = geostrophic_wind(z300, dx2d, dy_m, f50)
 
-    CycloneCore.ORIENTATION_MODE = 0  # rows increase northward on this synthetic grid
-    cps_HartCPS.ORIENTATION_MODE = 0  # rows increase northward on this synthetic grid
-    vtl = CycloneCore.execute(u850, v850, u600, v600, dx2d, dy_m, 100.0)
-    vtu = CycloneCore.execute(u600, v600, u300, v300, dx2d, dy_m, 100.0)
+    return dict(
+        z1000=z1000, z925=z925, z850=z850, z700=z700, z500=z500, z400=z400, z300=z300,
+        u850=u850, v850=v850, u700=u700, v700=v700, u500=u500, v500=v500, u300=u300, v300=v300,
+    )
 
-    hvtl = cps_HartCPS.executeBand3(z925, z850, z700, psfc, dx2d, dy_m, 500.0, 925.0, 850.0, 700.0)
-    hvtu = cps_HartCPS.executeBand3(z500, z400, z300, psfc, dx2d, dy_m, 500.0, 500.0, 400.0, 300.0)
 
-    return vtl, vtu, hvtl, hvtu
+def _fig4_hart_class(fields, lat2d, dx2d, dy_m, psfc, depth_m):
+    """HCPSclass for Figure 4's fields, with closed_low_mask's own depth
+    threshold overridden to `depth_m` -- see make_fig4's own report for
+    why this figure's synthetic low needs a lower value than
+    cps_HartCPS.DEFAULT_DEPTH_M. Everything else matches Figure 7's own
+    executeHartClass call: the same constants, and coriolis from this
+    grid's own latitude.
+    """
+    coriolis = 2.0 * OMEGA_EARTH * np.sin(np.radians(lat2d))
+    return cps_HartCPS.executeHartClass(
+        fields["z1000"], fields["z925"], fields["z850"], fields["z700"],
+        fields["z500"], fields["z400"], fields["z300"],
+        fields["u850"], fields["v850"], fields["u700"], fields["v700"],
+        fields["u500"], fields["v500"], fields["u300"], fields["v300"],
+        psfc, coriolis, dx2d, dy_m,
+        500.0, cps_HartCPS.B_THRESHOLD_M, cps_HartCPS.HART_B_LAYER_SCALE,
+        depth_m, cps_HartCPS.DEFAULT_BLOB_RADIUS_KM, 900.0,
+    )
 
 
 def make_fig4(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m, psfc):
-    tilt_km = DEFAULT_TILT_KM
+    """Figure 4: Vortex B, its 300 hPa center displaced DEFAULT_TILT_KM
+    (or further, if that is not yet enough -- see below) west of its own
+    surface-level center. HVTL, HVTU and HCPSclass are all evaluated at
+    the *surface-level* center, to show that cps_HartCPS.py's whole-depth
+    diagnostics still read cold core there even though the vortex's own
+    upper-level center has moved several grid points away.
+
+    The surface pressure is uniform ocean here: this figure isolates the
+    effect of tilt, so the synthetic terrain block used by Figure 3 is
+    not included (its edge would otherwise sit inside the map window).
+    """
+    psfc = np.full(lat2d.shape, PSFC_OCEAN_HPA)  # flat ocean, see docstring
+    cps_HartCPS.ORIENTATION_MODE = 0  # rows increase northward on this synthetic grid
+
     iC, jC = nearest_index(lat_vals, lon_vals, VORTEX_B["lat"], VORTEX_B["lon"])
 
-    report_lines = []
+    # A box around Vortex B's own nominal location, wide enough to hold
+    # its 300 hPa center at either candidate tilt below, but far enough
+    # from the domain edges that the background meridional gradient
+    # (which keeps falling northward across the whole grid) cannot be
+    # mistaken for the vortex's own minimum.
+    near_b = (
+        (lat2d >= VORTEX_B["lat"] - 8.0) & (lat2d <= VORTEX_B["lat"] + 8.0)
+        & (lon2d >= VORTEX_B["lon"] - 12.0) & (lon2d <= VORTEX_B["lon"] + 4.0)
+    )
+
+    tilt_km = DEFAULT_TILT_KM
+    fields = i300 = j300 = displacement_km = None
     for attempt_tilt in (DEFAULT_TILT_KM, 600.0):
-        vtl, vtu, hvtl, hvtu = _fig4_fields(lat2d, lon2d, dx2d, dy_m, psfc, attempt_tilt)
-        vtl_c = float(vtl[iC, jC])
-        # "displaced west" -> sample a few grid columns west of center.
-        j_west = max(jC - 8, 0)
-        vtl_west = float(vtl[iC, j_west])
-        dipole_present = (vtl_c >= -1.0) and (vtl_west < vtl_c - 1.0)
-        report_lines.append(
-            f"tilt={attempt_tilt:.0f} km: VTL at center={vtl_c:.2f} (1e-5/s), "
-            f"VTL 8 pts west={vtl_west:.2f} (1e-5/s), dipole_present={dipole_present}"
-        )
+        fields = _fig4_fields(lat2d, lon2d, dx2d, dy_m, attempt_tilt)
+        z300_near = np.where(near_b, fields["z300"], np.nan)
+        i300, j300 = np.unravel_index(np.nanargmin(z300_near), z300_near.shape)
+        col_shift = jC - j300  # positive: the 300 hPa center sits west of the surface center
+        displacement_km = float(haversine_km(lat_vals[iC], lon_vals[jC], lat_vals[i300], lon_vals[j300]))
+        displaced_enough = col_shift >= 3
         tilt_km = attempt_tilt
-        if dipole_present:
+        print(
+            f"Figure 4 tilt check: tilt={attempt_tilt:.0f} km: 300 hPa center is "
+            f"{displacement_km:.0f} km ({col_shift} grid columns) west of the surface "
+            f"center; displaced_enough={displaced_enough}"
+        )
+        if displaced_enough:
             break
 
-    print("Figure 4 tilt/dipole check:")
-    for line in report_lines:
-        print("  " + line)
+    hvtl = cps_HartCPS.executeBand3(
+        fields["z925"], fields["z850"], fields["z700"], psfc, dx2d, dy_m,
+        500.0, 925.0, 850.0, 700.0,
+    )
+    hvtu = cps_HartCPS.executeBand3(
+        fields["z500"], fields["z400"], fields["z300"], psfc, dx2d, dy_m,
+        500.0, 500.0, 400.0, 300.0,
+    )
 
-    fig, axes = plt.subplots(2, 2, figsize=(FULL_WIDTH_IN, 7.6), constrained_layout=True)
+    depth_m_used = cps_HartCPS.DEFAULT_DEPTH_M
+    hart_cls = _fig4_hart_class(fields, lat2d, dx2d, dy_m, psfc, depth_m_used)
+    if not np.isfinite(hart_cls[iC, jC]):
+        # closed_low_mask's own DEFAULT_DEPTH_M (40 m) test compares the
+        # point's height against the mean height of the annulus between
+        # MIN_RADIUS_KM and RADIUS_KM (300-500 km) around it. Vortex B's
+        # own e-folding scale is 350 km, close enough to that annulus
+        # that the ring mean is still well down inside the vortex's own
+        # depression rather than sitting on the surrounding background,
+        # so the annulus-minus-center depth comes back under 40 m even
+        # though this is a real, closed low. A lower depthM, applied
+        # here only, is what a low this broad relative to the mask's
+        # own annulus needs; cps_HartCPS.DEFAULT_DEPTH_M itself is left
+        # unchanged, since a real analyzed low is deep enough that the
+        # shipped 40 m default is no obstacle.
+        depth_m_used = 15.0
+        hart_cls = _fig4_hart_class(fields, lat2d, dx2d, dy_m, psfc, depth_m_used)
+        print(
+            f"  HCPSclass at the surface center is NaN at cps_HartCPS.DEFAULT_DEPTH_M "
+            f"({cps_HartCPS.DEFAULT_DEPTH_M:.0f} m); re-evaluated for this figure only "
+            f"at depthM={depth_m_used:.0f} m."
+        )
+
+    fig, axes = plt.subplots(2, 2, figsize=(FULL_WIDTH_IN, 6.0), constrained_layout=True)
     fig.get_layout_engine().set(h_pad=0.06, w_pad=0.04, hspace=0.02, wspace=0.02)
     (ax_a, ax_b), (ax_c, ax_d) = axes
 
@@ -873,20 +935,15 @@ def make_fig4(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m, psfc):
     for ax in (ax_a, ax_b, ax_c, ax_d):
         style_map_axes(ax, lon_min, lon_max, lat_min, lat_max)
 
-    vort_lim = float(np.nanmax(np.abs(np.concatenate([vtl.ravel(), vtu.ravel()]))))
-    vort_lim = max(vort_lim, 1.0)
-    hart_lim = float(np.nanmax(np.abs(np.concatenate([hvtl.ravel(), hvtu.ravel()]))))
-    hart_lim = max(hart_lim, 1.0)
-
     clat, clon = VORTEX_B["lat"], VORTEX_B["lon"]
+    clat300, clon300 = lat_vals[i300], lon_vals[j300]
 
-    def mark_center(ax, value, unit):
+    def mark_center(ax, label):
         ax.plot(clon, clat, marker="+", markersize=11, markeredgewidth=2.2, color="black", zorder=10)
-        sign = "+" if value >= 0 else "−"
         # Always offset down-left of the plus: every panel has a colorbar
         # hugging its right edge, so this keeps the label clear of both.
         ax.annotate(
-            f"at center: {sign}{abs(value):.0f} {unit}",
+            label,
             (clon, clat),
             textcoords="offset points",
             xytext=(-10, -16),
@@ -898,39 +955,79 @@ def make_fig4(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m, psfc):
             bbox=dict(facecolor="white", edgecolor="none", alpha=0.8, pad=1.2),
         )
 
-    pm_a = ax_a.pcolormesh(lon2d, lat2d, vtl, cmap=CMAP_DIVERGING, vmin=-vort_lim, vmax=vort_lim, shading="auto", zorder=2)
-    mark_center(ax_a, float(vtl[iC, jC]), r"$\times 10^{-5}$ s$^{-1}$")
+    # (a) tilt geometry alone: 925 hPa (solid) and 300 hPa (dashed)
+    # height contours, the two level centers, and the displacement
+    # between them -- no HVTL/HVTU/class field, so the reader sees the
+    # tilt itself before any diagnostic built on top of it.
+    ax_a.contour(lon2d, lat2d, fields["z925"], levels=12, colors=TEXT_DARK, linewidths=0.8, linestyles="solid", zorder=2)
+    ax_a.contour(lon2d, lat2d, fields["z300"], levels=12, colors=VORTEX_B_COLOR, linewidths=1.1, linestyles="dashed", zorder=3)
+    ax_a.plot(clon, clat, marker="+", markersize=11, markeredgewidth=2.2, color="black", zorder=10)
+    ax_a.plot(clon300, clat300, marker="o", markersize=8, markerfacecolor="none", markeredgecolor=VORTEX_B_COLOR, markeredgewidth=1.8, zorder=10)
+    ax_a.annotate(
+        "",
+        xy=(clon300, clat300),
+        xytext=(clon, clat),
+        arrowprops=dict(arrowstyle="->", color=TEXT_SECONDARY, linewidth=1.3, shrinkA=6, shrinkB=6),
+        zorder=9,
+    )
+    ax_a.annotate(
+        f"{displacement_km:.0f} km",
+        (0.5 * (clon + clon300), 0.5 * (clat + clat300)),
+        textcoords="offset points",
+        xytext=(8, 6),
+        fontsize=7.5,
+        color=TEXT_DARK,
+        zorder=11,
+        bbox=dict(facecolor="white", edgecolor="none", alpha=0.8, pad=1.0),
+    )
+    legend_handles = [
+        Line2D([0], [0], color=TEXT_DARK, linewidth=1.4, label="925 hPa"),
+        Line2D([0], [0], color=VORTEX_B_COLOR, linewidth=1.4, linestyle="--", label="300 hPa"),
+        Line2D([0], [0], marker="+", color="black", markersize=9, markeredgewidth=2.0, linewidth=0, label="surface center"),
+        Line2D([0], [0], marker="o", markerfacecolor="none", markeredgecolor=VORTEX_B_COLOR, markersize=7, markeredgewidth=1.6, linewidth=0, label="300 hPa center"),
+    ]
+    ax_a.legend(handles=legend_handles, loc="lower left", frameon=True, framealpha=0.85, edgecolor="none", fontsize=6.8)
     panel_letter(ax_a, "a")
 
-    pm_b = ax_b.pcolormesh(lon2d, lat2d, vtu, cmap=CMAP_DIVERGING, vmin=-vort_lim, vmax=vort_lim, shading="auto", zorder=2)
-    mark_center(ax_b, float(vtu[iC, jC]), r"$\times 10^{-5}$ s$^{-1}$")
+    # (b) HVTL, (c) HVTU -- identical +/- range so the two panels read
+    # on the same scale.
+    hart_lim = float(np.nanmax(np.abs(np.concatenate([hvtl.ravel(), hvtu.ravel()]))))
+    hart_lim = max(hart_lim, 1.0)
+
+    pm_b = ax_b.pcolormesh(lon2d, lat2d, hvtl, cmap=CMAP_DIVERGING, vmin=-hart_lim, vmax=hart_lim, shading="auto", zorder=2)
+    mark_center(ax_b, f"at center: {'+' if hvtl[iC, jC] >= 0 else '-'}{abs(float(hvtl[iC, jC])):.0f} m")
     panel_letter(ax_b, "b")
+    cb_b = fig.colorbar(pm_b, ax=ax_b, pad=0.02, fraction=0.05)
+    cb_b.set_label(r"$-V_T^L$ (m)", fontsize=8)
+    cb_b.ax.tick_params(labelsize=7.5)
 
-    cb_ab = fig.colorbar(pm_b, ax=[ax_a, ax_b], location="right", pad=0.02, fraction=0.035, shrink=0.9)
-    cb_ab.set_label("vorticity proxy VTL, VTU (1e-5 / s)", fontsize=8)
-    cb_ab.ax.tick_params(labelsize=7.5)
-
-    pm_c = ax_c.pcolormesh(lon2d, lat2d, hvtl, cmap=CMAP_DIVERGING, vmin=-hart_lim, vmax=hart_lim, shading="auto", zorder=2)
-    mark_center(ax_c, float(hvtl[iC, jC]), "m")
+    pm_c = ax_c.pcolormesh(lon2d, lat2d, hvtu, cmap=CMAP_DIVERGING, vmin=-hart_lim, vmax=hart_lim, shading="auto", zorder=2)
+    mark_center(ax_c, f"at center: {'+' if hvtu[iC, jC] >= 0 else '-'}{abs(float(hvtu[iC, jC])):.0f} m")
     panel_letter(ax_c, "c")
+    cb_c = fig.colorbar(pm_c, ax=ax_c, pad=0.02, fraction=0.05)
+    cb_c.set_label(r"$-V_T^U$ (m)", fontsize=8)
+    cb_c.ax.tick_params(labelsize=7.5)
 
-    pm_d = ax_d.pcolormesh(lon2d, lat2d, hvtu, cmap=CMAP_DIVERGING, vmin=-hart_lim, vmax=hart_lim, shading="auto", zorder=2)
-    mark_center(ax_d, float(hvtu[iC, jC]), "m")
+    # (d) HCPSclass
+    cls_c = float(hart_cls[iC, jC])
+    cls_label = f"{cls_c:.0f}" if np.isfinite(cls_c) else "NaN"
+    pm_d = ax_d.pcolormesh(lon2d, lat2d, hart_cls, cmap=CMAP_HARTCLASS, norm=NORM_HARTCLASS, shading="auto", zorder=2)
+    ax_d.contour(lon2d, lat2d, fields["z1000"], levels=12, colors="#8a8a86", linewidths=0.35, zorder=3)
+    mark_center(ax_d, f"at center: class {cls_label}")
     panel_letter(ax_d, "d")
-
-    cb_cd = fig.colorbar(pm_d, ax=[ax_c, ax_d], location="right", pad=0.02, fraction=0.035, shrink=0.9)
-    cb_cd.set_label(r"Hart family $-V_T^L$, $-V_T^U$ (m)", fontsize=8)
-    cb_cd.ax.tick_params(labelsize=7.5)
+    cb_d = fig.colorbar(pm_d, ax=ax_d, pad=0.02, fraction=0.05, ticks=range(7))
+    cb_d.ax.set_yticklabels(HARTCLASS_NAMES, fontsize=6.2)
 
     fig.savefig(OUT_DIR / "fig4_tilt.png")
     plt.close(fig)
 
     center_values = dict(
-        vtl_center=float(vtl[iC, jC]),
-        vtu_center=float(vtu[iC, jC]),
         hvtl_center=float(hvtl[iC, jC]),
         hvtu_center=float(hvtu[iC, jC]),
-        tilt_km_used=tilt_km,
+        class_center=cls_c,
+        tilt_km=tilt_km,
+        displacement_km=displacement_km,
+        depth_m_used=depth_m_used,
     )
     return center_values
 
@@ -1047,11 +1144,11 @@ def make_fig6():
 # Figure 7: Parameter B and the ET stage (transitioning-storm case)
 # ===========================================================================
 
-# cps_HartCPS.ORIENTATION_MODE = 0 is set inside _fig4_fields (above), next to
-# CycloneCore's own assignment; that is a real mutation of the imported
-# module's attribute, so it is still in effect here (make_fig7 runs after
-# make_fig4 in main()). Set again here anyway, defensively, so this
-# function is correct even if called on its own.
+# cps_HartCPS.ORIENTATION_MODE = 0 is set inside make_fig4 (above); that is
+# a real mutation of the imported module's attribute, so it is still in
+# effect here (make_fig7 runs after make_fig4 in main()). Set again here
+# anyway, defensively, so this function is correct even if called on its
+# own.
 
 FIG7_VORTEX_A2_LAT, FIG7_VORTEX_A2_LON = 42.0, -140.0
 FIG7_THICKNESS_GRADIENT_M_PER_1000KM = 40.0  # 925-700 hPa thickness, decreasing northward
@@ -1076,8 +1173,7 @@ FIG7_STEERING_TURN_WIDTH_DEG = 1.2
 
 #: Colors reused for Hart's own Phase 1 diagram quadrants (panel (d) of
 #: this figure, and Figure 10) -- a schematic of Hart's own B-vs-VTL
-#: plot, unrelated to the retired HETstage field's own (removed)
-#: colormap; kept as three colors borrowed from CATEGORY_COLORS purely
+#: plot; three colors borrowed from CATEGORY_COLORS purely
 #: for visual consistency with the rest of this script's palette.
 STAGE_COLORS = [CATEGORY_COLORS[2], CATEGORY_COLORS[3], CATEGORY_COLORS[1]]  # pale gray, orange, blue
 
@@ -1094,8 +1190,8 @@ def fig7_rate_per_1000km(p):
     hPa only matters for HVTL and the closed-low mask, not for B itself.
 
     Above 700 hPa (500/400/300 hPa, needed for HVTU/HCPSclass since this
-    figure also now reports the joint class, not just B and VTL as it
-    did when it only fed the retired HETstage) the rate is held flat at
+    figure also reports the joint class, not just B and VTL) the rate is
+    held flat at
     its own 700 hPa value rather than continuing the same line: the
     raised background here represents a *low-level* baroclinic zone (a
     frontal environment near the surface), and letting the line
@@ -1316,7 +1412,7 @@ def make_fig7(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m):
     cb_b.ax.tick_params(labelsize=7.5)
     panel_letter(ax_b, "b")
 
-    # --- (c) HCPSclass (replaces the retired HETstage) -----------------------
+    # --- (c) HCPSclass ------------------------------------------------------
     pm_c = ax_c.pcolormesh(lon2d, lat2d, hart_cls, cmap=CMAP_HARTCLASS, norm=NORM_HARTCLASS, shading="auto", zorder=2)
     z1000_levels = np.arange(np.floor(z1000.min() / 20) * 20, z1000.max() + 20, 20)
     ax_c.contour(lon2d, lat2d, z1000, levels=z1000_levels, colors="#8a8a86", linewidths=0.35, zorder=3)
@@ -2000,7 +2096,7 @@ def main():
     print("Building Figure 3 (gridded fields) ...")
     make_fig3(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m, z_std_stack, psfc)
 
-    print("Building Figure 4 (vorticity vs Hart family, tilted cold core) ...")
+    print("Building Figure 4 (Hart family, tilted cold core) ...")
     center_values = make_fig4(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m, psfc)
     print("Figure 4 center values:", center_values)
 

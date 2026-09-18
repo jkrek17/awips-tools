@@ -18,11 +18,9 @@
 
   (row 6 takes precedence over rows 4/5 whenever lower VT < 0 and upper
   VT >= 0 at once - see cps_HartCPS.hart_class's own docstring for the full
-  ordering rationale). This one field replaces the two, separately
-  categorical HCPScat (Phase 2 class) and HETstage (extratropical
-  transition stage) fields this package used to publish, both now
-  retired - see cps_HartCPS.py's module docstring, "Parameter B and the
-  joint class" and "Relation to Hart's storm-centered diagrams"
+  ordering rationale). This one field carries all three parameters (B,
+  HVTL, HVTU) at once - see cps_HartCPS.py's module docstring, "Parameter
+  B and the joint class" and "Relation to Hart's storm-centered diagrams"
   sections, for why a single joint class is preferred over reading two
   separate categorical fields side by side. NaN outside a closed low in
   1000 hPa height (cps_HartCPS.closed_low_mask, same height-based mask

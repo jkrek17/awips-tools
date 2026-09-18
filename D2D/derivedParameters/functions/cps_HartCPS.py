@@ -9,10 +9,6 @@ own quantity -- the actual -V_T^L / -V_T^U thermal wind parameters from
 `cps/hart.py`'s `thermal_wind` -- at every point of the grid, using
 nothing but geopotential height, plus parameter B and the joint class.
 
-It replaced an earlier vorticity-based proxy (`CycloneCore.py`: VTL, VTU,
-CPScat, CPSidx), retired from the install set on 2026-09-18 and kept
-under `reference/vorticity_proxy/` for comparison. References to
-`CycloneCore` below are to that retired module; nothing here imports it.
 
 Method
 ------
@@ -30,14 +26,7 @@ over a window of half-width `RADIUS_KM` centered on `(i, j)`, and the
 thermal wind at `(i, j)` is the least-squares slope of that pointwise
 `dZ` against `ln(pressure)` over a band of levels. This is exactly
 Hart's formula, just evaluated at every point instead of at one moving
-storm center -- unlike `CycloneCore.py`, which computes a genuinely
-different quantity (a vertical vorticity difference) that only rhymes
-with Hart's sign convention. The two should be read as complementary:
-this family is the more physically faithful one and is meant to
-eventually replace the vorticity proxy for cold-core detection (see
-D2D/README.md for the vorticity proxy's known biases -- vertical tilt,
-sensitivity to which upper-level feature happens to sit overhead, and
-mask-selection bias from using vorticity itself as the vortex test).
+storm center.
 
 Sign convention: identical to `cps.hart.thermal_wind` -- **positive
 means warm core**. A tropical cyclone has more low-level thickness
@@ -49,10 +38,7 @@ cold-core system is the opposite and comes back negative.
 Units: like Hart's own VTL/VTU, the output is in meters (of `dZ`) per
 unit of `ln(pressure in hPa)` -- i.e. plain meters, since `ln(p)` is
 dimensionless. A mature hurricane typically samples in the +100 to
-+300 m range; a cold-core low typically samples -100 to -300 m. These
-are not the same units as `CycloneCore.py`'s VTL/VTU (which are scaled
-relative vorticity, 1e-5 /s) and the two should never be plotted on
-the same axis or compared numerically -- only by sign and trend.
++300 m range; a cold-core low typically samples -100 to -300 m.
 
 Standard level bands
 ---------------------
@@ -254,24 +240,22 @@ This entire scheme -- the linear-gradient approximation, the
 steering-flow motion proxy, and the layer scaling -- is orientation-
 and sign-free by construction except for one place: computing the
 thickness gradient itself (`gradient_2d`) takes a spatial derivative,
-and like `CycloneCore.relative_vorticity`, that derivative's sign
-depends on which way the grid's axes actually run. `ORIENTATION_MODE`
-(module level, same 0..3 semantics as `CycloneCore.ORIENTATION_MODE`)
-controls this; every other function in this module (`window_mean`,
-`steering`, `parameter_b_grid`'s cross-product-style normal, `hart_class`)
-takes no derivative and is orientation-free. Mode 1 is confirmed on
-the OPC build, matching the retired `CycloneCore.py`'s default.
+and that derivative's sign depends on which way the grid's axes
+actually run. `ORIENTATION_MODE` (module level; see its own comment
+for the full description of the four conventions) controls this;
+every other function in this module (`window_mean`, `steering`,
+`parameter_b_grid`'s cross-product-style normal, `hart_class`) takes
+no derivative and is orientation-free. Mode 1 is confirmed on the OPC
+build.
 
 `hart_class` reports a single joint category (0-6) at every point
 inside a closed low (`closed_low_mask` on 1000 hPa height, same as
 `executeIndexStd`), NaN elsewhere, from all three Hart parameters at
 once -- B, the lower thermal wind VTL, and the upper thermal wind VTU
--- rather than reporting VTL/VTU's Phase 2 category and B/VTL's
-extratropical-transition stage as two separate categorical fields
-(`HCPScat`/`HETstage`, retired). See `hart_class`'s own docstring for
+-- as a single categorical field. See `hart_class`'s own docstring for
 the full table, the boundary convention it uses (warm/frontal on the
 line, not cold/symmetric), and why a joint class carries information
-neither field alone does. `hart_class` does not use history: it looks
+neither parameter alone does. `hart_class` does not use history: it looks
 only at the current frame's B, VTL, and VTU, so a storm that re-forms
 a low-level warm core after transitioning (a warm seclusion) reads
 back as a warm class (0/1) rather than staying "stuck" at a cold one
@@ -365,8 +349,7 @@ RADIUS_KM = 500.0
 
 #: AWIPS may hand us -999999 (or similar) fill values for missing data.
 #: Anything below this threshold, or non-finite (NaN/Inf), is treated as
-#: missing. Same value and meaning as CycloneCore.py's constant of the same
-#: name.
+#: missing.
 MISSING_THRESHOLD = -99990.0
 
 #: Half-width (km) of the small window closed_low_mask() uses for its
@@ -430,16 +413,28 @@ BELOW_GROUND_CAP_HPA = 900.0
 
 #: Grid orientation mode used by `gradient_2d` (and, through it,
 #: `parameter_b_grid`/`executeB`/`executeHartClass`) when no explicit `mode`
-#: argument is given. Same 0..3 semantics as `CycloneCore.ORIENTATION_MODE`
-#: -- see that constant's own comment for the full description of the four
-#: conventions. Only `gradient_2d`'s thickness-gradient computation in this
-#: module takes a spatial derivative; every other function here (`window_mean`,
-#: `steering`, the rest of `parameter_b_grid`, `hart_class`) is orientation-free,
-#: unlike `CycloneCore.py` where every VTL/VTU/CPScat/CPSidx call goes through
-#: `relative_vorticity`. Mode 1 is confirmed correct on the OPC build (see
-#: `CycloneCore.ORIENTATION_MODE`'s own comment and D2D/README.md's
-#: "Orientation verification" procedure) -- it is not merely the untested
-#: default here either.
+#: argument is given: which way the grid's axes actually run, so the
+#: thickness-gradient computation's sign comes out right no matter how a
+#: site's grid is laid out.
+#:
+#:     0: axis 0 (rows) increases northward, axis 1 (columns) increases
+#:        eastward -- the plain numpy/mathematical default layout.
+#:     1: same axis assignment as 0, but axis 0 increases southward (row
+#:        0 is the north edge, as most raster and AWIPS grids are
+#:        stored) -- the y-derivative's sign is flipped to compensate.
+#:     2: axes swapped relative to 0 -- axis 0 is the eastward direction,
+#:        axis 1 the northward one; the field and its gradients are
+#:        transposed into mode 0's layout internally, and back on the
+#:        way out.
+#:     3: axes swapped as in 2, with axis 1 (now the north-south axis)
+#:        increasing southward -- mode 2's counterpart to mode 1.
+#:
+#: Only `gradient_2d`'s thickness-gradient computation in this module
+#: takes a spatial derivative; every other function here (`window_mean`,
+#: `steering`, the rest of `parameter_b_grid`, `hart_class`) is
+#: orientation-free. Mode 1 is confirmed correct on the OPC build (see
+#: D2D/README.md's "Orientation verification" procedure) -- it is not
+#: merely the untested default here either.
 ORIENTATION_MODE = 1
 
 #: Meters; Evans and Hart (2003) extratropical transition **onset**
@@ -461,8 +456,8 @@ HART_B_LAYER_SCALE = math.log(900.0 / 600.0) / math.log(925.0 / 700.0)
 #: speed is below this -- a near-stationary or dead-calm-steering point has
 #: no well defined "right of motion", and dividing by a near-zero speed to
 #: normalize the motion vector would otherwise amplify noise into a huge,
-#: meaningless B. See the module docstring's "Parameter B and ET stage"
-#: section, "Motion", for the steering-flow proxy this guards.
+#: meaningless B. See the module docstring's "Parameter B and the joint
+#: class" section, "Motion", for the steering-flow proxy this guards.
 MIN_STEERING_MS = 1.0
 
 
@@ -473,10 +468,9 @@ MIN_STEERING_MS = 1.0
 
 def _missing_mask(*arrays: np.ndarray) -> np.ndarray:
     """True wherever any of `arrays` is non-finite or below
-    `MISSING_THRESHOLD`, broadcast together. Identical in behavior to
-    CycloneCore.py's function of the same name (duplicated here rather than
-    imported, since this file must be self-contained -- see the module
-    docstring).
+    `MISSING_THRESHOLD`, broadcast together. Kept self-contained here
+    rather than imported from elsewhere, since this file must be
+    self-contained -- see the module docstring.
     """
     mask = None
     for arr in arrays:
@@ -491,8 +485,7 @@ def _missing_mask(*arrays: np.ndarray) -> np.ndarray:
 def _coerce_scalar(x) -> float:
     """Coerce a value that may arrive as a Python float, a 0-d numpy
     array, or a 1-element numpy array (as AWIPS ConstantField values do)
-    into a plain float. Identical to CycloneCore.py's function of the same
-    name.
+    into a plain float.
     """
     return float(np.asarray(x).ravel()[0])
 
@@ -720,8 +713,8 @@ def _box_sum_1d(values: np.ndarray, counts: np.ndarray, half_width: int, axis: i
 
     Implemented with a cumulative sum along `axis` (a leading zero
     prepended so `windowsum[i] = cumsum[hi] - cumsum[lo]`, `lo`/`hi`
-    clipped to `[0, n]`), the same O(N) trick `CycloneCore.box_smooth`
-    uses -- cost does not depend on `half_width`.
+    clipped to `[0, n]`): an O(N) trick whose cost does not depend on
+    `half_width`.
     """
     if half_width == 0:
         return values.copy(), counts.copy()
@@ -757,12 +750,11 @@ def window_sum_2d(
     that difference -- see `closed_low_mask`).
 
     NaN (or otherwise missing, per whatever the caller has already done
-    to `field`) entries are excluded from both the sum and the count,
-    the same way `CycloneCore.box_smooth` excludes them: they contribute
-    0 to the sum and 0 to the count, so a window's mean (`sum / count`,
-    left to the caller) is the mean of only the valid points in it, and a
-    window that is entirely missing comes back with `count == 0` (the
-    caller must guard the division).
+    to `field`) entries are excluded from both the sum and the count:
+    they contribute 0 to the sum and 0 to the count, so a window's mean
+    (`sum / count`, left to the caller) is the mean of only the valid
+    points in it, and a window that is entirely missing comes back with
+    `count == 0` (the caller must guard the division).
 
     Rows are grouped by their (post-clamp) half-width value exactly as
     `window_extreme_2d` groups them (same fancy-indexing pass, same
@@ -1067,7 +1059,7 @@ def closed_low_mask(
 
 
 # ---------------------------------------------------------------------------
-# Parameter B (thermal asymmetry) and ET stage
+# Parameter B (thermal asymmetry) and the joint class
 # ---------------------------------------------------------------------------
 
 
@@ -1075,7 +1067,7 @@ def b_geometry_km(radius_km: float) -> float:
     """`8*radius_km/(3*pi)` -- the geometric constant that converts a
     window-mean thickness gradient into an approximation of Hart's
     right-minus-left half-window mean difference (see the module
-    docstring's "Parameter B and ET stage" section). Computed from
+    docstring's "Parameter B and the joint class" section). Computed from
     `radius_km` at call time rather than baked into a module constant, so
     a caller using a non-default `radiusKm` gets the matching constant.
     For Hart's own 500 km radius this is about 424.4 km.
@@ -1092,24 +1084,21 @@ def gradient_2d(
     array the same shape as `field`.
 
     `mode` selects the grid-orientation convention `field`/`dx`/`dy` are
-    actually laid out in, exactly the same four conventions
-    `CycloneCore.relative_vorticity` uses (see `ORIENTATION_MODE`, module
-    level, for the full description); `None` (the default) means "use
-    `ORIENTATION_MODE`", read fresh from the module on every call so a
-    monkeypatch takes effect without touching this function. Modes 2 and 3
-    (transposed axes) transpose `field`/`dx`/`dy` on the way in and both
-    result arrays back on the way out, exactly as `relative_vorticity`
-    does for `zeta` -- `d(field)/dx` and `d(field)/dy` are themselves
-    scalar fields (not vector components tied to an axis), so transposing
-    them back needs no swap between the two, only a reshape. Modes 1 and 3
-    negate the y-derivative (axis 0 increasing southward instead of
-    northward), also exactly as `relative_vorticity` does.
+    actually laid out in (see `ORIENTATION_MODE`, module level, for the
+    full description of the four conventions); `None` (the default)
+    means "use `ORIENTATION_MODE`", read fresh from the module on every
+    call so a monkeypatch takes effect without touching this function.
+    Modes 2 and 3 (transposed axes) transpose `field`/`dx`/`dy` on the
+    way in and transpose both result arrays back on the way out --
+    `d(field)/dx` and `d(field)/dy` are themselves scalar fields (not
+    vector components tied to an axis), so transposing them back needs
+    no swap between the two, only a reshape. Modes 1 and 3 negate the
+    y-derivative (axis 0 increasing southward instead of northward).
 
     Missing values (see `_missing_mask`) in `field`, `dx`, or `dy` are set
     to NaN before differencing and any resulting NaN (including the
     immediate-neighbor contamination `np.gradient`'s centered-difference
-    stencil causes -- unavoidable, same caveat as `relative_vorticity`) is
-    left as NaN in the output.
+    stencil unavoidably causes) is left as NaN in the output.
 
     Raises `ValueError` if `mode` (after defaulting) is not one of 0, 1,
     2, 3.
@@ -1173,7 +1162,7 @@ def steering(u_levels, v_levels) -> tuple[np.ndarray, np.ndarray]:
     """`(u_s, v_s)`: the elementwise (NaN-aware) mean of a list of u
     arrays and a list of v arrays, the steering-flow proxy for a storm's
     motion at every grid point (see the module docstring's "Parameter B
-    and ET stage" section, "Motion") -- typically the 850/700/500/300 hPa
+    and the joint class" section, "Motion") -- typically the 850/700/500/300 hPa
     wind components, one entry per level, all the same shape.
 
     Missing values (see `_missing_mask`) in any individual level are set
@@ -1214,8 +1203,8 @@ def parameter_b_grid(
     min_speed: float = MIN_STEERING_MS,
 ) -> np.ndarray:
     """Gridded approximation of Hart's parameter B at every grid point --
-    see the module docstring's "Parameter B and ET stage" section for the
-    full derivation.
+    see the module docstring's "Parameter B and the joint class" section
+    for the full derivation.
 
     `thickness` is a layer thickness field (meters, e.g. 700 hPa height
     minus 925 hPa height). Its gradient (`gradient_2d`) is computed once,
@@ -1282,13 +1271,10 @@ def hart_class(
 ) -> np.ndarray:
     """The joint Hart CPS class (0-6) at every grid point, from all three
     Hart (2003) parameters at once -- B (thermal asymmetry), VTL (lower
-    thermal wind), and VTU (upper thermal wind) -- replacing the two,
-    separately-categorical `HCPScat` (Phase 2 class)/`HETstage`
-    (extratropical transition stage) fields this package used to publish
-    (both retired; see the module docstring's "Relation to Hart's
-    storm-centered diagrams" section for why one joint class is a strict
-    improvement over reading two separate categorical fields side by
-    side).
+    thermal wind), and VTU (upper thermal wind) -- combined into a
+    single categorical field (see the module docstring's "Relation to
+    Hart's storm-centered diagrams" section for why a single joint class
+    carries information neither parameter alone does).
 
     NaN outside `mask` (typically `closed_low_mask` on 1000 hPa height)
     or wherever any of `B`, `vtl`, `vtu` is not finite -- `B` is NaN
@@ -1327,9 +1313,7 @@ def hart_class(
     exactly. The same `>= 0` warm / `< 0` cold split is used for VTU for
     consistency (Hart's own Phase 2 diagram treats the two thermal wind
     axes identically). This module deliberately draws these as *strict
-    lines*, not a neutral band the way the retired `HCPScat`'s 5-category
-    table used one (a fixed-width band around zero, now removed along
-    with that function): Hart's own thresholds (10 m for
+    lines*, not a neutral band: Hart's own thresholds (10 m for
     B, 0 m for VTL/VTU) are themselves strict lines with no neutral zone,
     and the continuous `HB`/`HVTL`/`HVTU` fields already carry the
     magnitude a forecaster needs to judge "how marginal" a call at the
@@ -1475,8 +1459,8 @@ def executeHartClass(
     full 7-code table, the boundary convention, and the ordering
     rationale, and the module docstring's "Parameter B and the joint
     class" and "Relation to Hart's storm-centered diagrams" sections for
-    why this single field replaces the retired `HCPScat` (Phase 2 class)
-    and `HETstage` (extratropical transition stage) fields.
+    why a single joint class carries information neither parameter alone
+    does.
 
     Computes the lower thermal wind (`LOWER_BAND`, 925/850/700 hPa) and
     upper thermal wind (`UPPER_BAND`, 500/400/300 hPa, both via
@@ -1766,9 +1750,9 @@ if __name__ == "__main__":
     # This grid (lat_vals increasing northward, axis 0 = y increasing
     # northward) is the plain numpy-default layout, i.e. ORIENTATION_MODE
     # mode 0 -- not this module's real default (mode 1, tuned for AWIPS
-    # sites). Setting it here, like CycloneCore.py's own __main__ demo,
-    # is a plain module-level assignment that gradient_2d (and so
-    # parameter_b_grid/executeB) picks up with no other change needed.
+    # sites). Setting it here is a plain module-level assignment that
+    # gradient_2d (and so parameter_b_grid/executeB) picks up with no
+    # other change needed.
     ORIENTATION_MODE = 0
 
     y_km_from_center = EARTH_RADIUS_KM * np.radians(lat2d - CENTER_LAT)
