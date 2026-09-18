@@ -4,9 +4,10 @@ The cyclone phase space of Hart (2003) characterizes a cyclone's thermal
 structure through the lower- and upper-tropospheric thermal wind,
 derived from the vertical change of the geopotential height
 perturbation within 500 km of the storm center, together with a measure
-of low-level thermal asymmetry. Evans and Hart (2003) showed that the
-crossings of these parameters provide objective onset and completion
-times for extratropical transition (ET), and Hart et al. (2006) linked
+of low-level thermal asymmetry. Evans and Hart (2003) defined objective onset and
+completion times for extratropical transition (ET) from these
+parameters, onset when the asymmetry exceeds 10 m and completion when
+the lower-tropospheric thermal wind turns negative, and Hart et al. (2006) linked
 the post-transition trajectory to whether a system re-intensifies as a
 warm-seclusion cyclone of the type described by Shapiro and Keyser
 (1990). Operational access to these diagnostics has been limited to
@@ -25,18 +26,23 @@ terrain is handled by excluding below-ground levels, and a closed-low
 detector on 1000 hPa height restricts classification to closed cyclones
 at least 5 hPa deep. A categorical structure field (deep warm, shallow
 warm, neutral, cold core) and a continuous index summarize the two
-terms. Computation on a global 0.25 degree grid takes about one second
+terms. Computation on a global 0.25 degree grid takes one to two seconds
 per forecast hour. An initial evaluation on GFS forecasts found values
-for a mature typhoon within the range Hart reported for hurricanes, a
+for a mature typhoon comparable in magnitude to those Hart reported for
+hurricanes, allowing for the different layer definitions, a
 correct cold-core classification of a deep North Atlantic cyclone, and
-an ET onset time for Typhoon Dujuan that matched the storm-centered
-diagnosis on the Florida State University cyclone phase page for the
-same model run. A simpler formulation based on vertical differences of
+a forecast hour for the loss of Typhoon Dujuan's deep warm core (the
+transition from deep to shallow warm core) that matched the
+storm-centered diagnosis on the Florida State University cyclone phase
+page for the same model run. Because the asymmetry parameter is not
+computed, the Evans and Hart onset time itself is not available from
+the gridded fields. A simpler formulation based on vertical differences of
 relative vorticity was found to misclassify vertically tilted and broad
 baroclinic systems as warm core and was retained only for comparison.
 Limitations include the use of standard levels in place of Hart's
-50 hPa spacing, the absence of the asymmetry parameter, and validation
-on a small number of cases; a full season of operational use at the
+50 hPa spacing, a square analysis window whose corners overstate the
+height range on a background gradient, the absence of the asymmetry
+parameter, and validation on a small number of cases; a full season of operational use at the
 Ocean Prediction Center is planned.
 
 ## References

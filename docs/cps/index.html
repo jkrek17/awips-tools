@@ -28,8 +28,10 @@
       derived from the vertical change of the geopotential height
       perturbation within 500&nbsp;km of the storm center, together with a measure
       of low-level thermal asymmetry. Evans and Hart (2003) showed that the
-      crossings of these parameters provide objective onset and completion
-      times for extratropical transition (ET), and Hart et al. (2006) linked
+      defined objective onset and
+      completion times for extratropical transition (ET) from these
+      parameters, onset when the asymmetry exceeds 10 m and completion when
+      the lower-tropospheric thermal wind turns negative, and Hart et al. (2006) linked
       the post-transition trajectory to whether a system re-intensifies as a
       warm-seclusion cyclone of the type described by Shapiro and Keyser
       (1990). Operational access to these diagnostics has been limited to
@@ -48,13 +50,17 @@
       detector on 1000&nbsp;hPa height restricts classification to closed cyclones
       at least 5&nbsp;hPa deep. A categorical structure field (deep warm, shallow
       warm, neutral, cold core) and a continuous index summarize the two
-      terms. Computation on a global 0.25&nbsp;degree grid takes about one second
+      terms. Computation on a global 0.25&nbsp;degree grid takes one to two seconds
       per forecast hour. An initial evaluation on GFS forecasts found values
-      for a mature typhoon within the range Hart reported for hurricanes, a
+      for a mature typhoon comparable in magnitude to those Hart reported for
+      hurricanes, allowing for the different layer definitions, a
       correct cold-core classification of a deep North Atlantic cyclone, and
-      an ET onset time for Typhoon Dujuan that matched the storm-centered
-      diagnosis on the Florida State University cyclone phase page for the
-      same model run. A simpler formulation based on vertical differences of
+      a forecast hour for the loss of Typhoon Dujuan's deep warm core (the
+      transition from deep to shallow warm core) that matched the
+      storm-centered diagnosis on the Florida State University cyclone phase
+      page for the same model run. Because the asymmetry parameter is not
+      computed, the Evans and Hart onset time itself is not available from
+      the gridded fields. A simpler formulation based on vertical differences of
       relative vorticity was found to misclassify vertically tilted and broad
       baroclinic systems as warm core and was retained only for comparison.
       Limitations include the use of standard levels in place of Hart's
@@ -81,9 +87,10 @@
     instead completes ET into a warm-seclusion cyclone &mdash; the frontal-fracture
     structure described by Shapiro and Keyser (1990) [4] &mdash; can
     re-intensify to hurricane-force winds far outside the tropics [3].
-    Evans and Hart (2003) showed that the crossings of &minus;V<sub>T</sub><sup>L</sup>
-    and &minus;V<sub>T</sub><sup>U</sup> through zero give objective ET onset and
-    completion times [2], and Jones et al. (2003) catalogued the forecast
+    Evans and Hart (2003) defined objective ET onset as the hour <em>B</em>
+    exceeds 10&nbsp;m and completion as the hour &minus;V<sub>T</sub><sup>L</sup>
+    turns negative [2]; the loss of the upper warm core, &minus;V<sub>T</sub><sup>U</sup>
+    turning negative, typically falls between the two, and Jones et al. (2003) catalogued the forecast
     challenges ET poses more broadly [5]. Until now, operational access to
     these parameters has meant a static, storm-centered plot produced
     externally for a tracked tropical cyclone &mdash; leaving exactly the
@@ -119,9 +126,14 @@
     because a square sliding max/min along grid axes runs in
     O(N&nbsp;log&nbsp;w) per level (Section 4), while a pointwise circular
     window over a whole grid cannot. The square's corners reach 707&nbsp;km,
-    about 41% farther than Hart's circle, but for a roughly axisymmetric
+    about 41% farther than Hart's circle, but for an isolated, roughly axisymmetric
     vortex this changes little; agreement with the circular point
-    implementation is within 2% on a synthetic vortex. The thermal wind
+    implementation is within 2% on an isolated synthetic vortex. On a
+    background height gradient the square sees a larger range than the
+    circle, by up to 41% of the gradient's contribution, and since that
+    contribution grows with height in a baroclinic environment the square
+    window carries a small cold bias relative to Hart's circle. Figure 2b
+    shows the effect: the window maximum sits at a corner. The thermal wind
     for a layer is the least-squares slope of &Delta;Z against ln(<em>p</em>)
     over that layer's levels:
   </p>
@@ -314,6 +326,9 @@
       motion direction at every grid point, and a deep-layer mean wind is
       a plausible proxy.</li>
     <li>Validation is a handful of real cases, not a season.</li>
+  <li>No sensitivity analysis yet: the response to window size, band definition, grid resolution, and the 25&nbsp;m neutral band has not been quantified.</li>
+  <li>The below-ground rule treats the 1000 and 925&nbsp;hPa surfaces as valid wherever the surface pressure exceeds 900&nbsp;hPa, so extrapolated heights over low terrain (surface pressure between 900 and 1000&nbsp;hPa) still enter the window.</li>
+  <li>The continuous index's weighting (twice the lower term) is a display heuristic with no physical derivation; the category field is the product to reason from.</li>
     <li>A storm-centered trajectory product &mdash; the classic phase-space
       diagram, sampled along a TCM track &mdash; is planned via a GFE
       procedure.</li>

@@ -71,11 +71,17 @@ The point definition is evaluated at every grid point by replacing "the
 500 km circle around the storm" with "a window of half-width 500 km
 around this point". The window is a square, not a circle, because a
 square sliding max and min is separable and runs in a handful of passes
-per level (section 4). Corners reach 707 km. For a compact vortex the
+per level (section 4). Corners reach 707 km. For an isolated compact vortex the
 max and min are the far field and the center either way, so the
 difference from a circle is small; the test suite checks agreement with
 the circular point implementation in `cps/hart.py` to within 2 percent
-on a synthetic vortex.
+on an isolated synthetic vortex. On a background height gradient the
+square sees up to 41 percent more of the gradient's contribution to
+dZ than the circle does, and because that contribution grows with
+height in a baroclinic environment, the square window carries a small
+cold bias relative to Hart's circle. This is the main methodological
+difference from Hart and the first thing to quantify in a sensitivity
+study.
 
 A consequence worth knowing: around a compact low, every point whose
 window contains the low center sees roughly the same dZ, so the raw

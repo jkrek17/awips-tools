@@ -140,11 +140,22 @@ and the category for the call.
 ## 5. Using it on shift
 
 **Extratropical transition timing.** Step through the frames on a
-tropical cyclone and note the first hour the category drops from 4.
-That is the model's onset of transition. The hour HVTU goes negative is
-the upper trough taking over; the hour HVTL goes negative completes it.
-The 34 and 50 kt radii expand and the strongest winds shift toward the
-equatorward side of the track around the same hours.
+tropical cyclone. Two markers are available here:
+
+- The first hour the category drops from 4 is the loss of the deep warm
+  core, HVTU turning negative, which usually means the upper trough has
+  reached the storm. This is a sign transition is under way, not the
+  formal onset.
+- The hour HVTL turns negative and the category reaches 1 is the loss
+  of the low-level warm core. This is the Evans and Hart (2003)
+  completion time.
+
+The formal Evans and Hart onset, when the thermal asymmetry B exceeds
+10 m, is not computed here because B needs a storm motion. Read it from
+the thickness overlay instead: the low moving from closed thickness
+contours into a tight gradient is onset. Around these hours the wind
+field expands well beyond its tropical radius and becomes strongly
+asymmetric, and the gale and storm-force radii grow fastest.
 
 **Model comparison.** Load HCPScat for two models on the same storm and
 step frames side by side. Where they disagree on the hour the category
@@ -198,5 +209,6 @@ noise. Two or three consecutive frames in the same direction is signal.
 - Read: category at the MSLP center. 4 deep warm, 3 shallow warm,
   2 neutral, 1 cold, 0 unclassified.
 - Numbers: positive warm, negative cold, zero is the line, meters.
-- Transition onset: first frame the category leaves 4.
+- Deep warm core lost: first frame the category leaves 4. Transition
+  complete: HVTL negative, category 1. Onset: read from thickness.
 - Always overlay MSLP and thickness.
