@@ -724,9 +724,7 @@ def test_thermal_wind_grid_performance(capsys):
 def hart_standard_orientation(monkeypatch):
     """Monkeypatch `cps_HartCPS.ORIENTATION_MODE` to 0 (the plain numpy-default
     grid layout: axis 0 = y increasing northward, axis 1 = x) for the
-    duration of a test -- the same pattern `conftest.py`'s
-    `standard_orientation` fixture uses for `CycloneCore.ORIENTATION_MODE`.
-    `cps_HartCPS.ORIENTATION_MODE`'s own real default is 1 (tuned for AWIPS
+    duration of a test. `cps_HartCPS.ORIENTATION_MODE`'s own real default is 1 (tuned for AWIPS
     sites, per `gradient_2d`'s module-level comment), not "the standard
     layout" a test wants to reason about directly.
     """

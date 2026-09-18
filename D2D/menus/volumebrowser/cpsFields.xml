@@ -3,8 +3,6 @@
   EXPERIMENTAL. Volume Browser fields-menu contribution for the CPS core
   structure derived parameters, the height-based Hart-method family
   (HVTL, HVTU, HCPSidx, HB, HCPSclass - cps_HartCPS.py). See D2D/README.md.
-  The earlier vorticity-proxy family (VTL, VTU, CPScat, CPSidx, cpsZ850)
-  was retired on 2026-09-18 and lives under reference/vorticity_proxy/.
 
   VERIFY against cave_static/base/menus/volumebrowser/ on your AWIPS
   version - the contribute element names, attributes (xsi:type values,
@@ -18,7 +16,7 @@
   fields as HVTL/HVTU/HCPSidx - see cps_HartCPS.py's module docstring,
   "Parameter B and the joint class" section. HCPSclass is the joint
   Hart CPS class (all three of B, HVTL, and HVTU bucketed into a single
-  7-code field), replacing the retired HCPScat/HETstage fields - see
+  7-code field) - see
   cps_HartCPS.hart_class's docstring and D2D/README.md's "Hart CPS family"
   section.
 -->

@@ -17,15 +17,13 @@
   and the cold states (codes 4-5) are cool hues (blue/violet), so a
   glance at hue alone already tells warm-core from cold-core; code 6
   (mid-level vortex, a different structure from either) is neutral
-  gray, matching CPS_CoreClass.cmap's own convention for its analogous
-  category.
+  gray.
 
   File format: a root <colorMap> element containing an ordered list of
   <color r="" g="" b="" a=""/> entries, each component a float from
   0.0 to 1.0, in code order (this file's first <color> is code 0, and
-  so on), same format and comment style as CPS_CoreClass.cmap; see that
-  file's own comment for the VERIFY note on the element/attribute names
-  against your site's actual .cmap schema.
+  so on). VERIFY the element/attribute names against your site's actual
+  .cmap schema.
 -->
 <colorMap>
         <color r="0.89" g="0.29" b="0.28" a="1.0"/>
