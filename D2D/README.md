@@ -597,7 +597,17 @@ cycle recorded with this package: onset before 30 h, completion before
 single 6 h frame of 0 at peak intensity). The 0 at 126 h means the upper
 term crossed zero for one frame; whether that is a genuine deep warm
 seclusion or a marginal upper term is decided by the HVTU magnitude,
-still to be sampled. At 946 hPa every level of both bands is above the
+still to be sampled. The FSU cyclone phase page's diagrams for the same
+run (0.5 degree GFS, cyclone 2, 24 h running mean) show the same
+sequence: a symmetric deep warm core cluster near B 0 to 10 m and
+-VTL +100 m for the typhoon; B rising past 10 m with the lower core
+still warm; an asymmetric deep cold core phase with -VTL near -80 m,
+-VTU near -300 m and B near 70 m at 980 hPa; then a return through
+-VTL near +5 m with B near 50 m at 960 hPa to a symmetric warm core at
+950 hPa with -VTU straddling zero between about -30 and +20 m, filling
+to 1000 hPa by 198 h. The class sequence 0, 2, 4, 3, 0, 1 reproduces
+that path, and the FSU upper term at peak shows the 126 h class 0 to be
+a marginal upper term rather than a deep warm core. At 946 hPa every level of both bands is above the
 surface, so the terms there stand on analyzed levels; only the 1000 hPa
 detector level is extrapolated. The typhoon values have the expected sign and order of
 magnitude for a deep warm core; they are not compared with Hart's
