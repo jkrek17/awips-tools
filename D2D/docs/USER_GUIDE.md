@@ -194,7 +194,7 @@ building it as a gridded product at all.
 
 | Product | Menu name | What it shows | Read as |
 | :--- | :--- | :--- | :--- |
-| HCPSclass | Hart CPS Class 0-6 | one of seven classes (0-6), the intersection of the quadrants of Hart's two diagrams, at each detected low, blank elsewhere | see "Reading the class" in section 5 |
+| HCPSclass | Hart CPS Class (0 sym deep warm, 1 sym shallow warm, 2 frontal deep warm, 3 frontal shallow warm, 4 frontal cold, 5 sym cold, 6 shallow cold) | one of seven classes (0-6), the intersection of the quadrants of Hart's two diagrams, at each detected low, blank elsewhere | see "Reading the class" in section 5 |
 | HVTL | Hart CPS -VTL 925-700 (m) | lower thermal wind, meters | positive warm core, negative cold core |
 | HVTU | Hart CPS -VTU 500-300 (m) | upper thermal wind, meters | positive warm core, negative cold core |
 | HB | Hart CPS B 900-600 equiv (m) | thermal asymmetry, meters (900-600 hPa equivalent) | at or below 10 symmetric, above 10 frontal |

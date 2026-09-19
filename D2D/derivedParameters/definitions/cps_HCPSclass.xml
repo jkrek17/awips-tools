@@ -51,7 +51,7 @@
   Field with <ConstantField value="1.0"/> at the same position to
   assume the Northern Hemisphere.
 -->
-<DerivedParameter abbreviation="HCPSclass" name="Hart CPS Class 0-6" unit="">
+<DerivedParameter abbreviation="HCPSclass" name="Hart CPS Class (0 sym deep warm, 1 sym shallow warm, 2 frontal deep warm, 3 frontal shallow warm, 4 frontal cold, 5 sym cold, 6 shallow cold)" unit="">
     <Method name="cps_HartCPS.executeHartClass" levels="Surface">
         <Field abbreviation="GH" level="1000MB"/>
         <Field abbreviation="GH" level="925MB"/>
