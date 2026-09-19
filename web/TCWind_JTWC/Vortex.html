@@ -1263,12 +1263,15 @@ function describeStorm(header) {
 // NHC TCM (Forecast/Advisory) parser - Atlantic/East Pacific, no Python side
 // ===========================================================================
 //
-// There is NO Python reference for this parser.  GFE/procedures/
-// TCWind_JTWC.py is JTWC-only by design (see its own header comment) and
-// does not ingest NHC products, so the usual "Python wins, then Vortex.html,
-// then Code.gs" tiebreak at the top of this file does not apply here:
-// Vortex.html is canonical over its Code.gs mirror and that is the whole
-// hierarchy for parseTCM().
+// This file had parseTCM() FIRST - the live web tool grew NHC support
+// before the GFE procedure did - and for a while there was no Python
+// reference for it at all.  That is no longer true: GFE/procedures/
+// TCWind_JTWC.py now carries parseTCM() and reads Atlantic, East Pacific
+// and Central Pacific TCM products alongside JTWC's WestPac warnings.  So
+// the usual tiebreak at the top of this file applies here in full - Python
+// wins, then Vortex.html, then Code.gs - and
+// tests/tcwind_jtwc/compare_py_js.py drives all three on the fixtures in
+// tests/tcwind_jtwc/fixtures/tcm/ to keep them from drifting.
 //
 // The TCM ("Forecast/Advisory") product is NHC's structural equivalent of
 // JTWC's WTPN warning - position/intensity/motion/quadrant wind radii per

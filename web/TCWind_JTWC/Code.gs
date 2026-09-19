@@ -84,9 +84,9 @@
  * parseJTWC() AND parseTCM() each exist TWICE in this repo on the
  * JavaScript side: here, and in Vortex.html.  That is not an oversight
  * and it is not free.  Everything below applies equally to both parsers
- * unless it says otherwise; parseTCM() additionally has no Python side at
- * all (GFE/procedures/TCWind_JTWC.py is JTWC-only by design), so for it
- * the tiebreak at the bottom of this comment is just "Vortex.html wins".
+ * unless it says otherwise, including the tiebreak at the bottom of this
+ * comment: GFE/procedures/TCWind_JTWC.py now carries parseTCM() as well as
+ * parseJTWC(), so Python is canonical over both.
  *
  * Why it cannot be deduplicated by including the shared file: Apps Script
  * server code cannot `include` an HTML file's <script> at load time.  The

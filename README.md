@@ -230,9 +230,30 @@ tests/tcwind_jtwc/                 parser goldens, Python/JS parity, GTCM verifi
 
 #### The GFE procedure
 
-`TCWind_JTWC.py` fetches the five NW Pacific JTWC warnings from the AWIPS text
-database, parses them, builds a wind field per forecast hour, and inserts it
-over the background wind grid. `VORTEX_METHOD` selects `"gtcm"` (the shipped
+`TCWind_JTWC.py` fetches tropical cyclone forecast text from the AWIPS text
+database, parses it, builds a wind field per forecast hour, and inserts it
+over the background wind grid. It reads two products across four basins:
+
+| Basin | Product | AWIPS PILs | Parser |
+|---|---|---|---|
+| WP | JTWC WTPN warning | `NFDTCPWP1-5` | `parseJTWC()` |
+| AT | NHC TCM forecast/advisory | `MIATCMAT1-5` | `parseTCM()` |
+| EP | NHC TCM forecast/advisory | `MIATCMEP1-5` | `parseTCM()` |
+| CP | CPHC TCM forecast/advisory | `HFOTCMCP1-5` | `parseTCM()` |
+
+Both parsers return the identical `(taus, header)` shape, so everything
+downstream is shared and knows nothing about which product produced it.
+`parseBulletin()` chooses the parser by inspecting the text, not by trusting
+the bin the bulletin arrived in — an office can put anything in any PIL, and a
+wrong guess would yield a confident parse of the wrong shape rather than an
+error. The dialog has a basin row and a per-slot row; a PIL runs only if both
+agree.
+
+JTWC's WestPac is the case with no gridded alternative and the reason this
+tool exists. **NHC and CPHC do publish a gridded TCM**, and AWIPS already
+ships `TCMWindTool` to consume it — for those basins that grid stays
+authoritative, and this is a text-only fallback and cross-check rather than a
+replacement. `VORTEX_METHOD` selects `"gtcm"` (the shipped
 default) or `"perquad"` (the retired per-quadrant construction, kept only for
 comparison). Tunables are at the top of the file and are deliberately not
 exposed in the dialog: none of them is a per-run decision.

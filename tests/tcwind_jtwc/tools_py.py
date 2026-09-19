@@ -3,8 +3,9 @@
 regression/cross-check scripts in this directory. Prints JSON to stdout so
 it can be driven from another Python process or diffed against the JS side.
 
-    tools_py.py parse <bulletin.txt>
-    tools_py.py vortex <snapshot.json> <points.json>
+    tools_py.py parse    <bulletin.txt>      JTWC WTPN warning
+    tools_py.py parsetcm <bulletin.txt>      NHC/CPHC TCM forecast/advisory
+    tools_py.py vortex   <snapshot.json> <points.json>
 """
 import argparse
 import json
@@ -26,10 +27,29 @@ def tau_to_dict(t):
     }
 
 
-def cmd_parse(path):
+def cmd_parse(path, now=None):
     with open(path) as f:
         text = f.read()
-    taus, header = tc.parseJTWC(text)
+    # `now` pins the wall clock. parseJTWC() falls back to the WMO header day
+    # plus the current time when a warning's REMARKS block carries no
+    # DDMMMYY, so without a pin a golden snapshot of such a fixture silently
+    # re-dates itself every month and the test can never stay green.
+    taus, header = tc.parseJTWC(text, now)
+    out = {"header": header, "taus": [tau_to_dict(t) for t in taus]}
+    print(json.dumps(out, sort_keys=True))
+
+
+def cmd_parse_tcm(path):
+    with open(path) as f:
+        text = f.read()
+    taus, header = tc.parseTCM(text)
+    # The TCM header carries a `basin` key the JTWC header has no equivalent
+    # for. It is dropped here rather than compared: the point of this harness
+    # is the fields both ports must agree on, and Vortex.html emits it too, so
+    # comparing it would pass trivially while making the JTWC and TCM groups
+    # need different diff logic.
+    header = dict(header)
+    header.pop("basin", None)
     out = {"header": header, "taus": [tau_to_dict(t) for t in taus]}
     print(json.dumps(out, sort_keys=True))
 
@@ -93,12 +113,18 @@ if __name__ == "__main__":
     sub = ap.add_subparsers(dest="cmd", required=True)
     p1 = sub.add_parser("parse")
     p1.add_argument("file")
+    p1.add_argument("--now", type=float, default=None,
+                    help="pin wall-clock now, unix seconds (see cmd_parse)")
+    p1t = sub.add_parser("parsetcm")
+    p1t.add_argument("file")
     p2 = sub.add_parser("vortex")
     p2.add_argument("snapshot")
     p2.add_argument("points")
     args = ap.parse_args()
 
     if args.cmd == "parse":
-        cmd_parse(args.file)
+        cmd_parse(args.file, args.now)
+    elif args.cmd == "parsetcm":
+        cmd_parse_tcm(args.file)
     elif args.cmd == "vortex":
         cmd_vortex(args.snapshot, args.points)

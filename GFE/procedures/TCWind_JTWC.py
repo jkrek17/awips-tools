@@ -1,8 +1,25 @@
 # ----------------------------------------------------------------------------
 # TCWind_JTWC.py
 #
-# GFE Procedure: build Wind grids from JTWC tropical cyclone warnings
+# GFE Procedure: build Wind grids from tropical cyclone forecast text
 # retrieved from the AWIPS text database.
+#
+# Two products, four basins, one wind field:
+#   WP   JTWC WTPN warning          NFDTCPWP1-5   parseJTWC()
+#   AT   NHC TCM forecast/advisory  MIATCMAT1-5   parseTCM()
+#   EP   NHC TCM forecast/advisory  MIATCMEP1-5   parseTCM()
+#   CP   CPHC TCM forecast/advisory HFOTCMCP1-5   parseTCM()
+# Both parsers return the identical (taus, header) shape, so everything
+# downstream - interpolateTrack(), fitGTCM(), buildVortex(), insertStorms(),
+# the grid writing - is shared and knows nothing about which product it came
+# from. parseBulletin() picks the parser by inspecting the text rather than
+# trusting the PIL it arrived under.
+#
+# The file keeps its name for continuity: JTWC's WestPac is the case with no
+# gridded alternative, and the reason this exists. NHC and CPHC do publish a
+# gridded TCM, and AWIPS already ships TCMWindTool to consume it - for those
+# basins that grid remains authoritative and this is a text-only fallback and
+# cross-check, not a replacement.
 #
 # *** EXPERIMENTAL.  NOT OPERATIONALLY VETTED. ***
 # Wind fields come from an analytic modified-Rankine vortex fit to the
@@ -17,6 +34,7 @@
 # The parser and vortex math have no AWIPS dependencies, so this file can be
 # run standalone for testing:
 #   python TCWind_JTWC.py sample_bulletin.txt
+# It accepts either product and says which one it detected.
 #
 # The dialog's "Run test case" toggle runs the tool end to end against a
 # bundled real bulletin (TEST_CASE_BULLETIN, a real WTPN31 KROVANH warning)
@@ -52,6 +70,37 @@ except ImportError:
 # heading appears on the bulletin itself, but textdb stores it under NFDTCPWP.
 JTWC_PILS_WESTPAC = ["NFDTCPWP1", "NFDTCPWP2", "NFDTCPWP3",
                      "NFDTCPWP4", "NFDTCPWP5"]
+
+# NHC and CPHC issue the TCM ("Forecast/Advisory"), the structural equivalent
+# of JTWC's WTPN warning.  Their AWIPS ids are the office node plus TCM plus
+# the basin and storm slot, and each product carries its own id on line 1:
+# "ZCZC MIATCMAT5 ALL" on a real Atlantic advisory, "ZCZC HFOTCMCP1 ALL" on a
+# real Central Pacific one, both confirmed against archived products.
+NHC_PILS_ATLANTIC = ["MIATCMAT1", "MIATCMAT2", "MIATCMAT3",
+                     "MIATCMAT4", "MIATCMAT5"]
+NHC_PILS_EASTPAC = ["MIATCMEP1", "MIATCMEP2", "MIATCMEP3",
+                    "MIATCMEP4", "MIATCMEP5"]
+CPHC_PILS_CENTPAC = ["HFOTCMCP1", "HFOTCMCP2", "HFOTCMCP3",
+                     "HFOTCMCP4", "HFOTCMCP5"]
+
+# Ordered, because this drives the dialog's basin row and the default PIL
+# order underneath it.  The label text is what the forecaster sees.
+BASINS = [
+    ("WP - JTWC, West Pacific", JTWC_PILS_WESTPAC),
+    ("AT - NHC, Atlantic", NHC_PILS_ATLANTIC),
+    ("EP - NHC, East Pacific", NHC_PILS_EASTPAC),
+    ("CP - CPHC, Central Pacific", CPHC_PILS_CENTPAC),
+]
+ALL_PILS = [pil for _, pils in BASINS for pil in pils]
+PIL_BASIN = dict((pil, label) for label, pils in BASINS for pil in pils)
+
+# NOTE on what this does NOT claim.  NHC and CPHC already distribute a
+# gridded TCM, and AWIPS already ships TCMWindTool to ingest it; for those
+# basins that grid is the authoritative product and this reconstruction is
+# not a replacement for it.  Reading their text matters where the grid is
+# late, missing, or being checked - and because rendering a bulletin whose
+# real grid also exists is the only way to test this tool's core claim, which
+# JTWC's text alone can never provide.
 
 # Locations of the command-line textdb, tried in order for the fallback.
 TEXTDB_PATHS = ["/awips/fxa/bin/textdb", "/awips2/fxa/bin/textdb", "textdb"]
@@ -703,6 +752,335 @@ def parseJTWC(text, nowSecs=None):
         header["pressureMb"] = int(m.group(1))
 
     return taus, header
+
+
+# ---------------------------------------------------------------------------
+# NHC / CPHC TCM ("Forecast/Advisory") parser
+# ---------------------------------------------------------------------------
+#
+# The TCM is NHC's structural equivalent of JTWC's WTPN warning - position,
+# intensity, motion and quadrant wind radii per forecast hour - but its text
+# format differs in nine ways.  Each is called out at the regex or the code
+# line that handles it, and the numbering matches the block in Vortex.html so
+# the two can be read side by side.
+#
+# This is a PORT.  web/TCWind_JTWC/Vortex.html had parseTCM() first, because
+# the live web tool grew NHC support before this procedure did.  That inverts
+# the usual hierarchy for the length of this comment only: from here on
+# THIS FILE IS CANONICAL for parseTCM(), exactly as it already is for
+# parseJTWC(), and tests/tcwind_jtwc/compare_py_js.py drives both sides on
+# the fixtures in tests/tcwind_jtwc/fixtures/tcm/ to keep them honest.
+#
+#   1. Header: a title line carrying system type + name + advisory number, an
+#      office line carrying the ATCF basin+number+year, then an issuance line
+#      carrying the reference date outright (RE_TCM_ISSUE).  No REMARKS block
+#      to hunt through the way parseJTWC()'s RE_REFDATE needs, and so no need
+#      for its wall-clock fallback either.
+#   2. Current position: "<TYPE> CENTER LOCATED NEAR lat lon AT DD/HHMMZ"
+#      (RE_TCM_CURPOS).  DD/HHMMZ, not JTWC's concatenated DDHHMMZ.  The type
+#      word is NHC's own vocabulary - it never says TYPHOON, and JTWC never
+#      says POTENTIAL TROPICAL CYCLONE - so TCM_TYPE_CONF maps NHC's ladder
+#      onto the same CONF_* levels the rest of this file already uses.
+#   3. Movement: "PRESENT MOVEMENT ... OR <deg> DEGREES AT <kt> KT"
+#      (RE_TCM_MOVEMENT) gives the current block's motion directly.  Forecast
+#      blocks never repeat it, so the _bearing_speed() backfill parseJTWC()
+#      already does is reused unchanged.
+#   4. Max wind: "MAX SUSTAINED WINDS <v> KT WITH GUSTS TO <g> KT" on the
+#      current block, "MAX WIND <v> KT...GUSTS <g> KT" on every forecast
+#      block.  Different wording, same two numbers.
+#   5. Wind radii: all four quadrants on ONE line with dot leaders and no
+#      "NM"/"QUADRANT" words ("64 KT....... 40NE  35SE  30SW  40NW.").
+#      RE_TCM_RADII is anchored at the start of the line precisely so it can
+#      never match the seas line right below it ("12 FT SEAS.. 90NE ..."),
+#      which does not start with a bare "<n> KT".  A quadrant absent from the
+#      line stays 0.0 - the same "a 000 NM quadrant contributes no fit
+#      target" convention _gtcmTargets() already applies to JTWC radii.
+#   6. "AT DD/HHMMZ CENTER WAS LOCATED NEAR ..." (RE_TCM_BACKFILL) is a
+#      six-hour-earlier position NHC prints so the CURRENT block's motion can
+#      be recovered when no PRESENT MOVEMENT line exists.  It is NOT a
+#      forecast time and is never appended to taus.
+#   7. Forecast blocks start "FORECAST VALID DD/HHMMZ lat lon" (days 1-3) or
+#      "OUTLOOK VALID ..." (days 4-5); RE_TCM_FCST treats both alike.  Neither
+#      carries a tau-hour label the way JTWC's "XX HRS, VALID AT:" does, so
+#      tau is computed from each block's own epoch once all are known - never
+#      from file order, which free text can disturb.  The pattern is not
+#      anchored at end of line: a live product can weld a status word onto
+#      the longitude with no space ("...147.6W...POST-TROPICAL"), which still
+#      parses and downgrades confidence.  A terminal block with a valid time
+#      and no position at all ("OUTLOOK VALID 08/1200Z...DISSIPATED") fails
+#      the pattern outright and is skipped, which is the wanted behaviour.
+#   8. Free text between blocks (WINDS AND SEAS VARY GREATLY..., REPEAT...,
+#      EXTENDED OUTLOOK..., REQUEST FOR 3 HOURLY SHIP REPORTS...) matches
+#      nothing here and is skipped, the same tolerant line scan parseJTWC()
+#      uses.
+#   9. "$$" ends the meaningful content - a hard stop, unlike parseJTWC()'s
+#      REMARKS: boundary, because the reference date was already read off the
+#      issuance line before the scan began.
+
+_TCM_TYPES = (r"HURRICANE|TROPICAL STORM|TROPICAL DEPRESSION|"
+              r"POTENTIAL TROPICAL CYCLONE|SUBTROPICAL STORM|"
+              r"SUBTROPICAL DEPRESSION|POST-TROPICAL CYCLONE|REMNANTS OF")
+
+# re.M: matched against the whole product, so ^ must anchor at the start of
+# the title line rather than only at offset 0.
+RE_TCM_TITLE = re.compile(
+    r"^\s*(" + _TCM_TYPES + r")\s+(.+?)\s+FORECAST/ADVISORY NUMBER\s+(\d+)",
+    re.M)
+RE_TCM_ATCFID = re.compile(r"\b(AL|EP|CP)(\d{2})(\d{4})\b")
+RE_TCM_ISSUE = re.compile(
+    r"(\d{3,4})\s+UTC\s+[A-Z]{3}\s+([A-Z]{3})\s+(\d{1,2})\s+(\d{4})")
+RE_TCM_CURPOS = re.compile(
+    r"^\s*(" + _TCM_TYPES + r")\s+CENTER LOCATED NEAR\s+"
+    r"(\d+(?:\.\d+)?)\s*([NS])\s+(\d+(?:\.\d+)?)\s*([EW])\s+AT\s+"
+    r"(\d{2})/(\d{4})Z")
+RE_TCM_BACKFILL = re.compile(
+    r"^\s*AT\s+(\d{2})/(\d{4})Z\s+CENTER WAS LOCATED NEAR\s+"
+    r"(\d+(?:\.\d+)?)\s*([NS])\s+(\d+(?:\.\d+)?)\s*([EW])")
+RE_TCM_FCST = re.compile(
+    r"^\s*(FORECAST|OUTLOOK)\s+VALID\s+(\d{2})/(\d{4})Z\s+"
+    r"(\d+(?:\.\d+)?)\s*([NS])\s+(\d+(?:\.\d+)?)\s*([EW])"
+    r"(?:\.\.\.([A-Z][A-Z\- ]*))?")
+RE_TCM_MOVEMENT = re.compile(
+    r"PRESENT MOVEMENT.*?(\d+)\s*DEGREES AT\s+(\d+)\s*KT")
+RE_TCM_WINDS_CUR = re.compile(
+    r"MAX SUSTAINED WINDS\s+(\d+)\s*KT WITH GUSTS TO\s+(\d+)\s*KT")
+RE_TCM_WINDS_FCST = re.compile(r"MAX WIND\s+(\d+)\s*KT\.*\s*GUSTS\s+(\d+)\s*KT")
+# Anchored at the line start so it cannot match the seas line - difference 5.
+RE_TCM_RADII = re.compile(r"^\s*(\d+)\s*KT\.+\s*(.+?)\.?\s*$")
+RE_TCM_QUAD = re.compile(r"(\d+)\s*(NE|SE|SW|NW)")
+RE_TCM_PRESSURE = re.compile(
+    r"(?:ESTIMATED\s+)?MINIMUM\s+CENTRAL\s+PRESSURE\s+(\d+)\s*MB")
+RE_TCM_TERM = re.compile(r"^\s*\$\$\s*$")
+
+# NHC's own system-type vocabulary on the same confidence ladder this file
+# already uses - difference 2.  REMNANTS OF and POST-TROPICAL CYCLONE both
+# land on CONF_BECOMING: by definition no longer an organized tropical
+# cyclone.  A REMNANTS OF current-position line carries no storm name at all
+# ("REMNANTS OF CENTER LOCATED NEAR ..."); the name survives only on the
+# title line, which is why REMNANTS OF appears in both patterns.
+TCM_TYPE_CONF = {
+    "HURRICANE": CONF_TROPICAL,
+    "TROPICAL STORM": CONF_TROPICAL,
+    "TROPICAL DEPRESSION": CONF_TROPICAL,
+    "POTENTIAL TROPICAL CYCLONE": CONF_TROPICAL,
+    "SUBTROPICAL STORM": CONF_SUBTROPICAL,
+    "SUBTROPICAL DEPRESSION": CONF_SUBTROPICAL,
+    "POST-TROPICAL CYCLONE": CONF_BECOMING,
+    "REMNANTS OF": CONF_BECOMING,
+}
+
+
+def parseTCM(text, nowSecs=None):
+    """Parse an NHC/CPHC TCM into the same (taus, header) parseJTWC() returns.
+
+    Every downstream consumer - interpolateTrack(), fitGTCM(), buildVortex(),
+    insertStorms(), the grid writing - works on either parser's output
+    unmodified, which is the whole reason this returns the identical shape
+    rather than something TCM-shaped.
+
+    `nowSecs` is accepted and ignored.  parseJTWC() needs it because a WTPN
+    warning can omit the DDMMMYY reference date from its REMARKS block and
+    has to fall back on the WMO header day plus wall-clock now; a TCM always
+    carries its own issuance date (difference 1), so there is nothing to
+    guess and no clock dependency here.  The argument exists so a caller can
+    dispatch to either parser without special-casing the signature.
+
+    Header fields carry adapted meanings, since the products name things
+    differently:
+      systemType     the advisory's own type word (HURRICANE, ...)
+      stormId        ATCF basin+number ("AL13", "EP09").  JTWC's stormId is
+                     a basin-suffixed number ("22W"); NHC's text never
+                     repeats a short id, so this is the nearest stable
+                     per-storm identifier the product actually carries.
+      stormName      the name from the title line ("LEE")
+      warningNumber  the FORECAST/ADVISORY NUMBER
+      pressureMb     from (ESTIMATED) MINIMUM CENTRAL PRESSURE
+      refDate        (day, month, year) off the issuance line
+      basin          'AT', 'EP' or 'CP'.  Extra to parseJTWC()'s header
+                     shape, so callers that do not know about it can ignore
+                     it safely.
+    """
+    if isinstance(text, (list, tuple)):
+        lines = list(text)
+        text = "\n".join(lines)
+    else:
+        lines = text.split("\n")
+    full = "\n".join(lines)
+
+    m = RE_TCM_ISSUE.search(full)
+    if not m or m.group(2) not in MONTHS:
+        raise ValueError(
+            'Could not find a "<time> UTC <dow> <mon> <day> <year>" issuance '
+            'line in the bulletin; cannot resolve DTGs.')
+    ref_day = int(m.group(3))
+    ref_month = MONTHS[m.group(2)]
+    ref_year = int(m.group(4))
+
+    taus = []
+    cur = None
+    prior_pos = None        # difference 6: a backfill point, never a tau
+
+    for ln in lines:
+        if RE_TCM_TERM.match(ln):
+            break           # "$$" - hard stop, difference 9
+
+        m = RE_TCM_CURPOS.search(ln)
+        if m:
+            cur = Tau(0)    # real tau assigned once every epoch is known
+            cur.epoch = _dtg_to_epoch(m.group(6) + m.group(7),
+                                      ref_day, ref_month, ref_year)
+            lat = float(m.group(2))
+            lon = float(m.group(4))
+            cur.lat = -lat if m.group(3) == "S" else lat
+            cur.lon = -lon if m.group(5) == "W" else lon
+            if m.group(1) in TCM_TYPE_CONF:
+                cur.conf = TCM_TYPE_CONF[m.group(1)]
+            taus.append(cur)
+            continue
+
+        m = RE_TCM_FCST.search(ln)
+        if m:
+            cur = Tau(0)
+            cur.epoch = _dtg_to_epoch(m.group(2) + m.group(3),
+                                      ref_day, ref_month, ref_year)
+            lat = float(m.group(4))
+            lon = float(m.group(6))
+            cur.lat = -lat if m.group(5) == "S" else lat
+            cur.lon = -lon if m.group(7) == "W" else lon
+            # Difference 7: a status word can ride on this line with no line
+            # break.  Downgrade the same way a JTWC "BECOMING EXTRATROPICAL"
+            # line does, and ignore anything else it might say.
+            status = (m.group(8) or "").upper()
+            if "POST-TROPICAL" in status or "EXTRATROPICAL" in status:
+                cur.conf = CONF_BECOMING
+            elif "SUBTROPICAL" in status:
+                cur.conf = CONF_SUBTROPICAL
+            taus.append(cur)
+            continue
+
+        m = RE_TCM_BACKFILL.search(ln)
+        if m:
+            lat = float(m.group(3))
+            lon = float(m.group(5))
+            prior_pos = Tau(0)
+            prior_pos.lat = -lat if m.group(4) == "S" else lat
+            prior_pos.lon = -lon if m.group(6) == "W" else lon
+            prior_pos.epoch = _dtg_to_epoch(m.group(1) + m.group(2),
+                                            ref_day, ref_month, ref_year)
+            continue
+
+        if cur is None:
+            continue
+
+        m = RE_TCM_WINDS_CUR.search(ln)
+        if m:
+            cur.vmax = float(m.group(1))
+            cur.gust = float(m.group(2))
+            continue
+
+        m = RE_TCM_WINDS_FCST.search(ln)
+        if m:
+            cur.vmax = float(m.group(1))
+            cur.gust = float(m.group(2))
+            continue
+
+        m = RE_TCM_RADII.match(ln)
+        if m:
+            threshold = int(m.group(1))
+            if threshold not in cur.radii:
+                cur.radii[threshold] = dict((q, 0.0) for q in QUADS)
+            for tok in RE_TCM_QUAD.finditer(m.group(2)):
+                cur.radii[threshold][tok.group(2)] = float(tok.group(1))
+            continue
+
+        m = RE_TCM_MOVEMENT.search(ln)
+        if m:
+            cur.motionDir = float(m.group(1))
+            cur.motionSpd = float(m.group(2))
+            continue
+
+        if "BECOMING SUBTROPICAL" in ln or "BECOMING EXTRATROPICAL" in ln:
+            cur.conf = CONF_BECOMING
+        elif re.search(r"^\s*(SUB|EXTRA)TROPICAL\s*$", ln):
+            cur.conf = CONF_SUBTROPICAL
+
+    # Drop anything incomplete - a DISSIPATED block carries a valid time and
+    # no position (difference 7) - then order by valid time.
+    taus = [t for t in taus
+            if t.lat is not None and t.epoch is not None and t.vmax is not None]
+    taus.sort(key=lambda t: t.epoch)
+    if not taus:
+        raise ValueError("No usable FORECAST/ADVISORY position blocks parsed "
+                         "from this bulletin.")
+
+    # Difference 7: no printed tau label, so derive it from the epochs.
+    t0 = taus[0].epoch
+    for t in taus:
+        t.tau = int(round((t.epoch - t0) / 3600.0))
+
+    # Once flagged sub/post-tropical it stays that way, exactly as parseJTWC().
+    worst = CONF_TROPICAL
+    for t in taus:
+        worst = min(worst, t.conf)
+        t.conf = worst
+
+    # Backfill the current block's motion from the six-hour-earlier position
+    # when no PRESENT MOVEMENT line supplied it (differences 3 and 6).
+    if taus[0].motionSpd is None and prior_pos is not None:
+        taus[0].motionDir, taus[0].motionSpd = _bearing_speed(prior_pos, taus[0])
+    # Everything else exactly as parseJTWC() does it: forward from the next
+    # tau, else carried back from the previous one.
+    for i, t in enumerate(taus):
+        if t.motionSpd is None:
+            if i + 1 < len(taus):
+                t.motionDir, t.motionSpd = _bearing_speed(t, taus[i + 1])
+            elif i > 0:
+                t.motionDir = taus[i - 1].motionDir
+                t.motionSpd = taus[i - 1].motionSpd
+            else:
+                t.motionDir = 0.0
+                t.motionSpd = 0.0
+
+    header = {"refDate": (ref_day, ref_month, ref_year),
+              "systemType": None, "stormId": None, "stormName": None,
+              "warningNumber": None, "pressureMb": None, "basin": None}
+
+    m = RE_TCM_TITLE.search(full)
+    if m:
+        header["systemType"] = m.group(1)
+        header["stormName"] = m.group(2).rstrip()
+        header["warningNumber"] = int(m.group(3))
+    m = RE_TCM_ATCFID.search(full)
+    if m:
+        header["stormId"] = m.group(1) + m.group(2)
+        header["basin"] = "AT" if m.group(1) == "AL" else m.group(1)
+    m = RE_TCM_PRESSURE.search(full)
+    if m:
+        header["pressureMb"] = int(m.group(1))
+
+    return taus, header
+
+
+# A TCM always carries this phrase on its title line and a WTPN warning never
+# does, so it is the whole test.  Sniffing the text is deliberate: the AWIPS
+# PIL a bulletin arrived under is a hint, not a guarantee - an office can
+# stuff anything into any bin - and a wrong guess here produces a confident
+# parse of the wrong shape rather than an error.
+RE_TCM_SNIFF = re.compile(r"FORECAST/ADVISORY NUMBER", re.I)
+
+
+def parseBulletin(text, nowSecs=None):
+    """Parse either product, choosing by content rather than by PIL.
+
+    Returns (taus, header, kind) where kind is "tcm" or "jtwc".  Callers that
+    already know which product they hold can still call parseTCM() or
+    parseJTWC() directly.
+    """
+    if RE_TCM_SNIFF.search(text or ""):
+        taus, header = parseTCM(text, nowSecs)
+        return taus, header, "tcm"
+    taus, header = parseJTWC(text, nowSecs)
+    return taus, header, "jtwc"
 
 
 def describeStorm(header):
@@ -1857,7 +2235,8 @@ if _IN_GFE:
         # -------------------------------------------------------------
 
         def _buildVarDict(self):
-            pilList = list(JTWC_PILS_WESTPAC)
+            pilList = list(ALL_PILS)
+            basinList = [label for label, _ in BASINS]
 
             # Everything else lives in the tunables block at the top of this
             # file.  None of it is a per-run decision, and two of the old
@@ -1887,6 +2266,11 @@ if _IN_GFE:
             # line but keeps every varDict key unique.
             VariableList += [
                 ("Select the bulletins to process:", "", "label"),
+                # Two rows rather than twenty checkboxes to scroll: the basin
+                # row is the one click the common case needs, and the slot row
+                # below it keeps the per-storm selection the WestPac-only
+                # version had.  A PIL is processed only if BOTH agree.
+                ("Basins to process:", basinList, "check", basinList),
                 ("Bulletins to process:", pilList, "check", pilList),
                 ("  ", "", "label"),
                 ("Choose where to write the output:", "", "label"),
@@ -2089,6 +2473,12 @@ if _IN_GFE:
             testCase = varDict.get(TEST_CASE_LABEL, "No") == "Yes"
 
             pils = list(varDict.get("Bulletins to process:") or [])
+            # Intersect with the basin row.  Unchecking a basin is the quick
+            # way to ignore a whole ocean; unchecking a slot is the way to
+            # ignore one storm within one.
+            wantBasins = set(varDict.get("Basins to process:") or
+                             [label for label, _ in BASINS])
+            pils = [p for p in pils if PIL_BASIN.get(p) in wantBasins]
 
             # Test case mode uses its own bundled storm, not any selected
             # PIL, so the "no bulletins selected" guard does not apply to it
@@ -2176,11 +2566,14 @@ if _IN_GFE:
                     if not raw:
                         continue          # empty slot, entirely normal
                     try:
-                        # nowSecs: GFE's own clock, already computed above -
-                        # only consulted by parseJTWC()'s no-DDMMMYY
-                        # fallback (see its docstring), so this changes
-                        # nothing for the normal case.
-                        taus, header = parseJTWC(raw, nowSecs)
+                        # parseBulletin, not parseJTWC: with four basins in
+                        # play the product type is decided by the text, not
+                        # by which bin it arrived in.  nowSecs is GFE's own
+                        # clock, already computed above - only the WTPN
+                        # no-DDMMMYY fallback consults it (see the parser
+                        # docstrings), so this changes nothing for the
+                        # normal case of either format.
+                        taus, header, _kind = parseBulletin(raw, nowSecs)
                     except Exception as exc:
                         problems.append("%s: %s" % (pil, exc))
                         continue
@@ -2433,8 +2826,12 @@ if __name__ == "__main__":
     with open(sys.argv[1]) as fh:
         text = fh.read()
 
-    taus, header = parseJTWC(text)
+    taus, header, kind = parseBulletin(text)
+    print("product: %s" % ("NHC/CPHC TCM" if kind == "tcm"
+                           else "JTWC WTPN warning"))
     print("system: %s" % describeStorm(header))
+    if header.get("basin"):
+        print("basin: %s" % header["basin"])
     if header.get("pressureMb"):
         print("min central pressure: %d mb" % header["pressureMb"])
     print("reference date (dd, mm, yyyy): %s" % (header["refDate"],))

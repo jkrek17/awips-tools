@@ -151,6 +151,37 @@ function cmdParseVortex(file) {
     { header: result.header, taus: result.taus.map(tauToObj) }));
 }
 
+/** The TCM parser, Code.gs mirror and Vortex.html canonical copy.  Same
+ *  shape as cmdParse/cmdParseVortex above, minus the `basin` key: it exists
+ *  on both JavaScript sides and on the Python side, so comparing it would
+ *  pass trivially while forcing the TCM group to diff a header shape the
+ *  JTWC group does not have. */
+function stripBasin(header) {
+  const h = Object.assign({}, header);
+  delete h.basin;
+  return h;
+}
+
+function cmdParseTcm(file) {
+  const sandbox = loadCodeGs();
+  if (typeof sandbox.parseTCM !== 'function') {
+    fail('Code.gs no longer defines parseTCM().');
+  }
+  const result = sandbox.parseTCM(fs.readFileSync(file, 'utf8'));
+  process.stdout.write(JSON.stringify(
+    { header: stripBasin(result.header), taus: result.taus.map(tauToObj) }));
+}
+
+function cmdParseTcmVortex(file) {
+  const sandbox = loadVortex();
+  if (typeof sandbox.parseTCM !== 'function') {
+    fail('Vortex.html no longer defines parseTCM().');
+  }
+  const result = sandbox.parseTCM(fs.readFileSync(file, 'utf8'));
+  process.stdout.write(JSON.stringify(
+    { header: stripBasin(result.header), taus: result.taus.map(tauToObj) }));
+}
+
 function cmdGtcm(snapshotFile, pointsFile) {
   const V = loadVortex();
   const { raw, snap } = readSnap(snapshotFile);
@@ -199,6 +230,10 @@ if (cmd === 'parse') {
   cmdParse(rest[0]);
 } else if (cmd === 'parsev') {
   cmdParseVortex(rest[0]);
+} else if (cmd === 'parsetcm') {
+  cmdParseTcm(rest[0]);
+} else if (cmd === 'parsetcmv') {
+  cmdParseTcmVortex(rest[0]);
 } else if (cmd === 'gtcm') {
   cmdGtcm(rest[0], rest[1]);
 } else if (cmd === 'perquad' || cmd === 'vortex') {
@@ -206,7 +241,7 @@ if (cmd === 'parse') {
   // GTCM port, and nothing is served by breaking a name in a test harness.
   cmdPerquad(rest[0], rest[1]);
 } else {
-  console.error('usage: tools_js.js parse|parsev <file>');
+  console.error('usage: tools_js.js parse|parsev|parsetcm|parsetcmv <file>');
   console.error('       tools_js.js gtcm|perquad <snapshot.json> <points.json>');
   process.exit(2);
 }

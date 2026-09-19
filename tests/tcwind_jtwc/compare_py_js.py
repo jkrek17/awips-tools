@@ -67,6 +67,10 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIXTURES = sorted(glob.glob(os.path.join(HERE, "fixtures", "*.txt")))
+# The TCM fixtures live one directory down specifically so the glob above -
+# which assumes every file it finds is a JTWC WTPN warning - never picks them
+# up. They get their own group below.
+TCM_FIXTURES = sorted(glob.glob(os.path.join(HERE, "fixtures", "tcm", "*.txt")))
 
 sys.path.insert(0, os.path.join(HERE, "..", "..", "GFE", "procedures"))
 import numpy as np                      # noqa: E402
@@ -172,6 +176,75 @@ def check_parse(js_cmd, title):
                 print("       " + d)
         else:
             print("PASS   %s" % name)
+    return failed
+
+
+# ---------------------------------------------------------------------------
+# Group 2c: the NHC/CPHC TCM parser
+# ---------------------------------------------------------------------------
+#
+# parseTCM() reached Vortex.html before TCWind_JTWC.py did, because the live
+# web tool grew NHC support first. Now that the Python exists it is canonical
+# again, and this group is what holds the three copies together - the same job
+# check_parse() does for parseJTWC(), on the fixtures the flat glob skips.
+
+
+def check_parse_tcm(js_cmd, title):
+    print("=== parseTCM(): Python vs %s ===" % title)
+    failed = 0
+    if not TCM_FIXTURES:
+        print("SKIP   no fixtures in fixtures/tcm/")
+        return 0
+    for fixture in TCM_FIXTURES:
+        name = os.path.basename(fixture)
+        py, _ = run([sys.executable, os.path.join(HERE, "tools_py.py"),
+                     "parsetcm", fixture])
+        js, why = run(["node", os.path.join(HERE, "tools_js.js"), js_cmd, fixture],
+                      allow_unavailable=True)
+        if js is None:
+            print("SKIP   %s - %s" % (name, why))
+            continue
+        diffs = []
+        diff_scalar(name, py, js, diffs)
+        if diffs:
+            failed += 1
+            print("FAIL   %s" % name)
+            for d in diffs[:20]:
+                print("       " + d)
+        else:
+            print("PASS   %s (%d taus)" % (name, len(py["taus"])))
+    return failed
+
+
+def check_tcm_sniff():
+    """parseBulletin() must route each product to the right parser.
+
+    The AWIPS PIL a bulletin arrives under is a hint, not a guarantee, so the
+    procedure dispatches on content. A misroute would not raise - it would
+    quietly return a confident parse of the wrong shape - so it is checked
+    directly rather than assumed.
+    """
+    print("\n=== parseBulletin(): product detection ===")
+    failed = 0
+    for fixture, want in ([(f, "tcm") for f in TCM_FIXTURES] +
+                          [(f, "jtwc") for f in FIXTURES]):
+        name = os.path.basename(fixture)
+        with open(fixture) as fh:
+            text = fh.read()
+        try:
+            _, _, kind = tc.parseBulletin(text)
+        except Exception as exc:                       # noqa: BLE001
+            print("FAIL   %s - parseBulletin raised %s: %s"
+                  % (name, type(exc).__name__, exc))
+            failed += 1
+            continue
+        if kind != want:
+            print("FAIL   %s - detected %r, expected %r" % (name, kind, want))
+            failed += 1
+    if not failed:
+        print("PASS   %d fixture(s) routed correctly (%d TCM, %d WTPN)"
+              % (len(TCM_FIXTURES) + len(FIXTURES), len(TCM_FIXTURES),
+                 len(FIXTURES)))
     return failed
 
 
@@ -715,6 +788,11 @@ def main():
     failed += check_parse("parse", "Code.gs (server)")
     print()
     failed += check_parse("parsev", "Vortex.html (client)")
+    print()
+    failed += check_parse_tcm("parsetcm", "Code.gs (server)")
+    print()
+    failed += check_parse_tcm("parsetcmv", "Vortex.html (client)")
+    failed += check_tcm_sniff()
     failed += check_parse_variants()
     failed += check_gtcm()
     failed += check_perquad()
