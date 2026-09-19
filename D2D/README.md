@@ -586,8 +586,17 @@ or representative sample. Add to this table as cases accumulate.
 | 2026-09-17 | GFS 2026-09-17 12Z, 72 h | Typhoon, 31N 139E, 984 mb | 120 | 180 | deep warm core (0 or 2; B not sampled) | 2.5 (sampled near, not at, the point where HVTL/HVTU were read; see notes) |
 | 2026-09-17 | GFS 2026-09-17 12Z, valid 2026-09-21 18Z | Typhoon Dujuan, loss of deep warm core | not recorded | not recorded | leaves the deep warm core classes (0 or 2) at this valid time | not recorded |
 | 2026-09-17 | GFS 12Z | Deep extratropical low, North Atlantic | not recorded, to be re-sampled | not recorded, to be re-sampled | a cold-core class (underlying values not recorded) | not recorded, to be re-sampled |
+| 2026-09-19 | GFS 12Z, 12 to 144 h | Western Pacific typhoon through transition to a 946 hPa Bering Sea low (class only; terms and B to be sampled) | | | 0 at 12 h (29.7N 137.7E); 2 at 30 h (32.2N 137.0E); 4 at 96 h (45.3N 168.4E, 981 hPa); 3 at 114 h (53.8N 179.6E, 964 hPa); 0 at 126 h (56.4N 174.3W, 946 hPa); 1 at 144 h (57.8N 179.5E, 946 hPa) | |
 
-Notes: the typhoon values have the expected sign and order of
+Notes: the 2026-09-19 case is the first full Evans and Hart life
+cycle recorded with this package: onset before 30 h, completion before
+96 h, then a warm seclusion during rapid deepening (4 to 3 to 1, with a
+single 6 h frame of 0 at peak intensity). The 0 at 126 h means the upper
+term crossed zero for one frame; whether that is a genuine deep warm
+seclusion or a marginal upper term is decided by the HVTU magnitude,
+still to be sampled. At 946 hPa the 925 hPa surface is below ground at
+the center and remains in the fit, so the lower term there carries the
+post-processor's extrapolation. The typhoon values have the expected sign and order of
 magnitude for a deep warm core; they are not compared with Hart's
 published magnitudes because the bands differ (see "What it is").
 `B` was not sampled for any of the three cases above
