@@ -258,16 +258,18 @@ against 0, warm if greater than or equal to zero and cold if less
 than zero. There is no neutral band here (compare HCPSidx below, which
 keeps one).
 
-The colors follow the transition path so the progression reads at a
-glance: red (0), orange (2), green (3), blue (4), indigo (5). Magenta
-(1) marks the symmetric shallow warm core, a warm seclusion or a
-subtropical storm, off that path; gray (6) is the rare shallow cold core.
+The colors form three groups so onset and completion read as abrupt
+shifts: reds for a symmetric warm core (0 red, 1 magenta), yellow and
+green for a storm in transition (2 yellow once B passes 10 m, 3 green
+once the upper warm core is lost), blues for a cold core (4 blue once
+HVTL turns negative, 5 indigo once symmetric). Gray (6) is the rare
+shallow cold core.
 
 | Code | Color | Name | B | lower VT | upper VT | Typical system |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | 0 | red | symmetric deep warm core | <= 10 | warm | warm | hurricane, typhoon |
 | 1 | magenta | symmetric shallow warm core | <= 10 | warm | cold | subtropical storm, or warm seclusion after transition |
-| 2 | orange | frontal deep warm core | > 10 | warm | warm | hurricane meeting a trough, transition beginning |
+| 2 | yellow | frontal deep warm core | > 10 | warm | warm | hurricane meeting a trough, transition beginning |
 | 3 | green | frontal shallow warm core | > 10 | warm | cold | transition under way |
 | 4 | blue | frontal cold core | > 10 | cold | cold (code 6 takes lower cold, upper warm first) | extratropical low, transition complete |
 | 5 | indigo | symmetric cold core | <= 10 | cold | cold (code 6 takes lower cold, upper warm first) | occluded or cutoff cold low |

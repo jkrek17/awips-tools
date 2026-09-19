@@ -191,7 +191,7 @@ CATEGORY_COLORS = ["#4a3aa7", "#2a78d6", "#c3c2b7", "#eb6834", "#e34948"]
 HARTCLASS_COLORS = [
     (0.85, 0.15, 0.15, 1.0),  # 0 symmetric deep warm core -- red
     (0.80, 0.20, 0.75, 1.0),  # 1 symmetric shallow warm core -- magenta
-    (0.96, 0.55, 0.10, 1.0),  # 2 frontal deep warm core -- orange
+    (0.98, 0.85, 0.10, 1.0),  # 2 frontal deep warm core -- yellow
     (0.20, 0.68, 0.25, 1.0),  # 3 frontal shallow warm core -- green
     (0.15, 0.50, 0.90, 1.0),  # 4 frontal cold core -- blue
     (0.35, 0.22, 0.72, 1.0),  # 5 symmetric cold core -- indigo
