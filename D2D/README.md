@@ -204,13 +204,16 @@ fewer valid sample in their own window -- no extra plumbing was needed
 beyond masking the input before it reaches them. See `cps_HartCPS.py`'s
 module docstring ("Below-ground masking") for the full explanation.
 
-For a low deep enough that its center pressure is below about 960 hPa,
-the 1000 and 925 hPa heights *at the center* are themselves the
-model's post-processor extrapolating below its own analyzed surface,
-not a directly analyzed value, and different models extrapolate
-differently even for what is otherwise the same storm. Keep that in
-mind before comparing `HVTL` (which uses both levels) between models
-for a very deep low; the difference can be the extrapolation scheme,
+A level is below ground wherever the surface pressure is lower than
+that level's pressure. In any low deeper than 1000 hPa the 1000 hPa
+height at the center is the model's post-processor extrapolating below
+its own analyzed surface; that level feeds only the closed-low
+detector. The 925 hPa level, the lowest level in `HVTL`, is
+extrapolated only where the surface pressure is between 900 and
+925 hPa, which at sea means the core of a major hurricane. Different
+models extrapolate differently, so keep that in mind before comparing
+`HVTL` between models in that rare case; the difference can be the
+extrapolation scheme,
 not the storm.
 
 **Window valid-fraction masking.** Even after the below-ground mask, a
@@ -594,9 +597,9 @@ cycle recorded with this package: onset before 30 h, completion before
 single 6 h frame of 0 at peak intensity). The 0 at 126 h means the upper
 term crossed zero for one frame; whether that is a genuine deep warm
 seclusion or a marginal upper term is decided by the HVTU magnitude,
-still to be sampled. At 946 hPa the 925 hPa surface is below ground at
-the center and remains in the fit, so the lower term there carries the
-post-processor's extrapolation. The typhoon values have the expected sign and order of
+still to be sampled. At 946 hPa every level of both bands is above the
+surface, so the terms there stand on analyzed levels; only the 1000 hPa
+detector level is extrapolated. The typhoon values have the expected sign and order of
 magnitude for a deep warm core; they are not compared with Hart's
 published magnitudes because the bands differ (see "What it is").
 `B` was not sampled for any of the three cases above

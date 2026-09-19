@@ -657,8 +657,9 @@
     path of Section 2, with the lower core re-forming during rapid
     deepening while the upper core stayed cold except for one frame. The
     thermal wind and <i>B</i> values along that track have not yet been
-    sampled, and at 946&nbsp;hPa the 925&nbsp;hPa level lies below ground
-    at the center and remains in the fit. After the below-ground mask is
+    sampled. At 946&nbsp;hPa every level of both bands lies above the
+    surface; only the 1000&nbsp;hPa height used by the closed-low detector
+    is extrapolated there. After the below-ground mask is
     applied, Greenland and the
     high terrain of western North America carry no classification,
     rather than one contaminated by extrapolated sub-surface heights.
@@ -713,11 +714,14 @@
       smoothing; the continuous fields resolve the trend through such an
       interval, and no estimate of the frame-to-frame noise of HB and
       HVTL at a fixed center has yet been made.</li>
-    <li>The below-ground rule treats the 1000 and 925&nbsp;hPa surfaces
-      as valid wherever the surface pressure is at or above
-      900&nbsp;hPa, so extrapolated heights over low terrain and inside
-      deep lows enter the window, and the extrapolation differs between
-      models.</li>
+    <li>The below-ground rule treats a level as valid wherever the
+      surface pressure is at or above the smaller of that level and
+      900&nbsp;hPa, so extrapolated heights enter the window over low
+      terrain (surface pressure between 900 and 1000&nbsp;hPa) and, for
+      the 1000&nbsp;hPa detector level, inside any low deeper than
+      1000&nbsp;hPa. The 925&nbsp;hPa level is extrapolated only where the
+      surface pressure is between 900 and 925&nbsp;hPa. The extrapolation
+      differs between models.</li>
     <li>The continuous index's weighting (twice the lower term) is a
       display heuristic with no physical derivation; the classification
       is the product to reason from.</li>

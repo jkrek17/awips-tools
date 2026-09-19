@@ -131,13 +131,15 @@ is why Greenland and the Rockies are blank. The cap keeps a deep low
 over open water, where the surface pressure is below 1000 or 925 but
 the extrapolated height is fine, from being treated as terrain.
 Surface pressure arrives in Pa from AWIPS; the code detects Pa versus
-hPa from the finite median and converts. For a low deep enough that
-its center pressure is below about 960 hPa, the 1000 and 925 hPa
-heights at the center are themselves the model's post-processor
-extrapolating below its own analyzed surface, and different models'
-extrapolation schemes disagree even for what is otherwise the same
-storm; keep that in mind before comparing `HVTL` between models for a
-very deep low.
+hPa from the finite median and converts. A level is below ground
+wherever the surface pressure is lower than that level's pressure, so
+in any low deeper than 1000 hPa the 1000 hPa height at the center is
+the post-processor's extrapolation; that level feeds only the
+closed-low detector. The 925 hPa level, the lowest in the lower band,
+is extrapolated only where the surface pressure is between 900 and
+925 hPa, the core of a major hurricane, and different models'
+extrapolation schemes disagree there; keep that in mind before
+comparing `HVTL` between models in that case.
 
 **Window valid-fraction masking.** The below-ground mask alone still
 lets a level's 500 km window be evaluated when most of the window is
