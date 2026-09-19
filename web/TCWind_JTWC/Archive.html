@@ -110,10 +110,17 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monosp
 .provenance strong { color: var(--text); }
 
 /* ---------- layout ---------- */
-.wrap { padding: .9rem; display: grid; gap: .9rem; grid-template-columns: 1fr; }
+.wrap { padding: .9rem; display: grid; gap: .9rem; grid-template-columns: minmax(0, 1fr); }
 @media (min-width: 1100px) {
   .wrap { grid-template-columns: 336px minmax(0, 1fr); align-items: start; }
 }
+/* A bare `1fr` grid track only shrinks to its content's min-content width,
+   and a <canvas> (a replaced element) contributes its width="" attribute to
+   that regardless of the width:100% CSS on #plan/#cbar/#tl - so on a narrow
+   phone the 720px-wide plan-view canvas was pushing the WHOLE page (finder
+   included) wider than the viewport. min-width:0 on every grid/flex item
+   between .wrap and those canvases lets width:100% actually take over. */
+.wrap > .card, .planwrap > div { min-width: 0; }
 .card {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 6px; box-shadow: var(--shadow);
@@ -220,6 +227,13 @@ caption { caption-side: top; text-align: left; font-size: .8rem; color: var(--te
 }
 .msg.plain { border-color: var(--border); background: var(--surface-2); color: var(--text-2); }
 .hide { display: none !important; }
+.verdict {
+  border: 1px solid var(--border-2); background: var(--surface-2); border-radius: 6px;
+  padding: .75rem .9rem; margin-bottom: .7rem; font-size: .93rem; line-height: 1.6;
+}
+.verdict h4 { margin: 0 0 .35rem; font-size: .8rem; text-transform: uppercase;
+  letter-spacing: .04em; color: var(--text-2); }
+.verdict b { color: var(--text); }
 
 /* ---------- plan view (fixed dark instrument panel, both themes) ---------- */
 .panel-dark {
@@ -259,6 +273,13 @@ footer.pagefoot {
 footer.pagefoot h3 { font-size: .82rem; text-transform: uppercase; letter-spacing: .06em; margin: .9rem 0 .3rem; color: var(--text); }
 footer.pagefoot ul { margin: .2rem 0; padding-left: 1.1rem; }
 footer.pagefoot li { margin: .2rem 0; }
+footer.pagefoot details { margin: .9rem 0 0; }
+footer.pagefoot summary {
+  font-size: .82rem; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--text); cursor: pointer; font-weight: 700;
+}
+footer.pagefoot summary:hover { color: var(--accent, var(--text)); }
+footer.pagefoot details p { margin: .3rem 0; }
 .visually-hidden {
   position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
@@ -270,7 +291,7 @@ footer.pagefoot li { margin: .2rem 0; }
 <header class="masthead">
   <div class="mast-row">
     <div>
-      <div class="mast-title">TC Wind (JTWC) &mdash; best-track archive</div>
+      <div class="mast-title">TC Wind (JTWC): best-track archive</div>
       <div class="mast-sub">GTCM/WTCM wind field replayed against IBTrACS post-season best track</div>
     </div>
     <div class="spacer"></div>
@@ -288,7 +309,7 @@ footer.pagefoot li { margin: .2rem 0; }
 
 <p class="provenance">
   <strong>What this page is.</strong> Every storm here is <strong>post-season best-track
-  reanalysis</strong> from IBTrACS &mdash; not a live bulletin. The positions, intensities and wind
+  reanalysis</strong> from IBTrACS, not a live bulletin. The positions, intensities and wind
   radii were assigned after the fact, with data the forecaster on shift did not have. When the
   modelled field agrees with the plotted radii, that means <strong>consistency with an
   after-the-fact analysis</strong>. It is <strong>not</strong> verification against observations,
@@ -358,7 +379,7 @@ footer.pagefoot li { margin: .2rem 0; }
         <ul id="stormList" role="listbox" aria-label="Matching storms" tabindex="0"></ul>
         <p class="note" style="margin:.5rem 0 0">
           Arrow keys move through the list when it has focus; Enter or click loads a storm.
-          One storm is fetched per selection &mdash; the archive is never requested whole.
+          One storm is fetched per selection. The archive is never requested whole.
         </p>
       </div>
     </div>
@@ -384,6 +405,11 @@ footer.pagefoot li { margin: .2rem 0; }
           <span id="stormBadges"></span>
           <div class="spacer"></div>
           <span class="note" id="stormSpan"></span>
+        </div>
+
+        <div class="verdict" id="stormVerdict">
+          <h4>How did the tool do on this storm?</h4>
+          <p id="stormVerdictText" style="margin:0"></p>
         </div>
 
         <div class="statgrid" id="stormStats" style="margin-bottom:.7rem"></div>
@@ -413,7 +439,7 @@ footer.pagefoot li { margin: .2rem 0; }
               <canvas id="plan" width="720" height="720"
                       role="img" aria-label="Storm-relative GTCM wind field"></canvas>
               <div class="cbar-wrap"><canvas id="cbar" width="720" height="68"
-                      role="img" aria-label="Wind speed colour scale, knots"></canvas></div>
+                      role="img" aria-label="Modelled wind speed colour scale, knots"></canvas></div>
             </div>
             <div class="scrubbar" style="margin-top:.45rem">
               <label for="rangeSel" class="note">Half-width</label>
@@ -433,7 +459,7 @@ footer.pagefoot li { margin: .2rem 0; }
             <p class="note" style="margin:.4rem 0 0">
               Storm-relative plan view, north up, in nautical miles from the best-track centre.
               Shading is the same GTCM field the GFE tool inserts, sampled point-by-point through
-              <code>vortexFieldGTCM()</code> &mdash; including the outer taper beyond the modelled
+              <code>vortexFieldGTCM()</code>, including the outer taper beyond the modelled
               34 kt radius. It is drawn on a fixed dark ground in both themes so the overlay
               colours stay calibrated.
             </p>
@@ -444,7 +470,7 @@ footer.pagefoot li { margin: .2rem 0; }
             <div id="fitWarn" class="msg hide" style="margin-bottom:.6rem"></div>
 
             <div class="chartbox" style="margin-bottom:.6rem">
-              <div class="chart-title">Best track at this time &mdash; what a live bulletin never carries</div>
+              <div class="chart-title">Best track at this time: what a live bulletin never carries</div>
               <dl class="kv" id="obsKv"></dl>
             </div>
 
@@ -461,7 +487,7 @@ footer.pagefoot li { margin: .2rem 0; }
             <caption>
               Radii in nautical miles on the quadrant bisectors (NE&nbsp;045, SE&nbsp;135,
               SW&nbsp;225, NW&nbsp;315). <em>Fit target</em> is the reported quadrant maximum
-              scaled by 0.85 to a quadrant average &mdash; that scaled value, not the reported
+              scaled by 0.85 to a quadrant average. That scaled value, not the reported
               one, is what GTCM actually minimises against.
               &Delta; is modelled minus the column it sits under; positive means the model is
               larger than the analysis. A 34 kt row marked <em>3&times;r&#8344; fallback</em> is one
@@ -512,7 +538,7 @@ footer.pagefoot li { margin: .2rem 0; }
               <em>vs target</em> repeats the comparison against the 0.85-scaled quadrant average
               GTCM actually fits. <em>unreached</em> counts quadrant points where the modelled
               field never attains the threshold at any radius out to 900 nm. 34 kt is never
-              counted unreached &mdash; the tool substitutes 3&times;r&#8344; there instead, and
+              counted unreached; the tool substitutes 3&times;r&#8344; there instead, and
               the tile above reports how often that happened.</caption>
           </table></div>
         </div>
@@ -554,47 +580,53 @@ footer.pagefoot li { margin: .2rem 0; }
 </div>
 
 <footer class="pagefoot">
-  <h3>How to read this page</h3>
+  <details id="howToRead">
+    <summary>How to read this page</summary>
   <ul>
-    <li><strong>Post-season, not live.</strong> IBTrACS best track is a reanalysis. Agreement is
-      consistency with an after-the-fact analysis, not verification against observations.</li>
+    <li><strong>Post-season, not live.</strong> The International Best Track Archive for Climate
+      Stewardship (IBTrACS) is a reanalysis, done after the season ends. Agreement here is
+      consistency with that after-the-fact analysis, not verification against observations.</li>
     <li><strong>GTCM is not trying to hit the rings.</strong> It minimises weighted wind error
       (weight 5 on the 34 kt points, 1 on 50 and 64 kt) against the reported radii scaled by 0.85
-      from quadrant maximum to quadrant average. Ring misses are expected and were accepted in
-      exchange for a field without kinks at the quadrant boundaries.</li>
+      from quadrant maximum to quadrant average. Ring misses are expected: the tool trades them
+      for a field with no kinks at the quadrant boundaries.</li>
     <li><strong>r<sub>m</sub> is not RMW.</strong> The fitted r<sub>m</sub> is the radius of maximum
       symmetric tangential wind in the Rankine profile, chosen by least squares on wind error at
-      the reported radii &mdash; frequently with no 64 kt ring and sometimes with no radii at all.
-      The best-track RMW is an analyst's estimate of the radius of maximum surface wind, from
-      aircraft, scatterometer, radar or satellite. They are related quantities, differently
-      defined and differently measured. A difference between them is not by itself an error in
-      either, and this page never scores one against the other.</li>
+      the reported radii, frequently with no 64 kt ring and sometimes with no radii at all.
+      The best-track RMW (radius of maximum wind) is an analyst's estimate of the radius of maximum
+      surface wind, from aircraft, scatterometer, radar or satellite. The two are related but
+      differently defined and differently measured. A difference between them is not by itself an
+      error in either, and this page never scores one against the other.</li>
     <li><strong>Two documented departures from the Gridded TCM Users Guide v1.9.1</strong>, both
-      present in the field drawn here: (1) the profile is tapered exponentially beyond the modelled
-      34 kt radius so the GFE insert terminates &mdash; the guide leaves the outer blend to the
-      receiving office; (2) the guide's step 4 boundary-layer and land-roughness reduction is
-      <em>not</em> implemented, as it needs the USGS land-surface database. The field is therefore
-      marine exposure everywhere and will be too strong over land. Watch the distance-to-land
-      figure when judging near-shore cases.</li>
-    <li><strong>A known profile defect is reproduced deliberately.</strong> The continuity factor
-      <code>A</code> in eq. (3) is the reciprocal of the continuous one in the reference Python, so
-      the profile steps at r<sub>i</sub> whenever x<sub>1</sub> &ne; x<sub>2</sub>. The JavaScript
-      here copies the Python verbatim so the web preview and the GFE grid show the same field.</li>
+      present in the field drawn here. First, the profile is tapered exponentially beyond the
+      modelled 34 kt radius so the GFE insert terminates; the guide leaves that outer blend to the
+      receiving office. Second, the guide's step 4 boundary-layer and land-roughness reduction is
+      <em>not</em> implemented, since it needs the USGS land-surface database. The field is
+      therefore marine exposure everywhere and will be too strong over land: watch the
+      distance-to-land figure when judging near-shore cases.</li>
   </ul>
+  </details>
 
-  <h3>Data</h3>
+  <details id="dataNotes">
+    <summary>Data</summary>
   <ul>
     <li>IBTrACS <code>USA_*</code> columns. North Atlantic and East Pacific are NHC values
       (<code>hurdat_atl</code>, <code>hurdat_epa</code>), archive window <strong>2004&ndash;2024</strong>,
       chosen because 64 kt radii are reported as zero everywhere before 2004. West Pacific is a
-      JTWC sample (<code>jtwc_wp</code>) over <strong>2005&ndash;2024</strong>; the one-year
-      difference is real and is not smoothed over here.</li>
+      Joint Typhoon Warning Center (JTWC) sample (<code>jtwc_wp</code>) over
+      <strong>2005&ndash;2024</strong>; the one-year difference is real and not smoothed over
+      here.</li>
     <li>The archive is a bounded sample, not the whole record: at most 120 NHC storms drawn with a
       fixed seed and stratified across seasons and intensity, plus 100 West Pacific storms. It is
       enough to characterise behaviour, not enough to be a climatology.</li>
-    <li>RMW and ROCI are in nautical miles; distance to land is IBTrACS' own field in kilometres and
-      is shown converted. Times are UTC and carry an explicit <code>Z</code>.</li>
+    <li>RMW and the radius of the outermost closed isobar (ROCI) are in nautical miles; distance to
+      land is IBTrACS' own field in kilometres and is shown converted. Times are UTC and carry an
+      explicit <code>Z</code>.</li>
   </ul>
+  </details>
+
+  <div id="footerGlossary"></div>
+
   <p style="margin-top:.9rem">
     Server API used by this page: <code>getArchiveIndex()</code>, <code>getArchiveStorm(sid)</code>.
     Wind-field mathematics is <code>Vortex.html</code>, the single client-side copy, ported from
@@ -603,6 +635,8 @@ footer.pagefoot li { margin: .2rem 0; }
 </footer>
 
 <?!= HtmlService.createHtmlOutputFromFile('Vortex').getContent(); ?>
+
+<?!= HtmlService.createHtmlOutputFromFile('Help').getContent(); ?>
 
 <script>
 /* ==========================================================================
@@ -740,9 +774,14 @@ function snapOf(rec) {
  *  _buildVortexGTCM() uses.  Built once per record and shared by every ring
  *  search, because gtcmProfile() does not depend on azimuth. */
 function profileOf(snap, fit) {
+  // Magnitude of the asymmetry vector actually applied, not the Schwerdt
+  // first guess fit.a - see Vortex.html's gtcmProfile() docstring. Using
+  // fit.a here would silently undershoot every ring this page reports
+  // whenever fitGTCM()'s step 3 moved (ax, ay) away from that first guess.
+  var amag = Math.sqrt(fit.ax * fit.ax + fit.ay * fit.ay);
   var p = new Array(PROBE_MAX), i;
   for (i = 0; i < PROBE_MAX; i++) {
-    p[i] = V.gtcmProfile(i + 1, snap.vmax, fit.a, fit.rm, fit.ri, fit.x1, fit.x2);
+    p[i] = V.gtcmProfile(i + 1, snap.vmax, amag, fit.rm, fit.ri, fit.x1, fit.x2);
   }
   return p;
 }
@@ -970,7 +1009,7 @@ function loadIndex() {
     if (!idx || !idx.length) {
       box.className = 'msg';
       box.textContent = 'The archive index came back empty. BestTrackData.gs is generated by ' +
-        'tests/tcwind_jtwc/prep_besttrack_data.py — regenerate it, clasp push, and cut a new ' +
+        'tests/tcwind_jtwc/prep_besttrack_data.py. Regenerate it, clasp push, and cut a new ' +
         'deployment.';
       return;
     }
@@ -982,7 +1021,7 @@ function loadIndex() {
   }, function (err) {
     box.className = 'msg';
     box.textContent = 'Could not load the archive index: ' + (err && err.message ? err.message : err) +
-      ' — the storm list and every view below depend on it. Reload the page; if it persists, ' +
+      '. The storm list and every view below depend on it. Reload the page; if it persists, ' +
       'check that BestTrackData.gs is in the deployment.';
   });
 }
@@ -1010,7 +1049,7 @@ function buildFinder() {
   var chips = '';
   for (var b in basins) if (basins.hasOwnProperty(b)) {
     chips += '<label class="chip"><input type="checkbox" class="fbasin" value="' + esc(b) +
-      '" checked> ' + esc(b) + ' — ' + esc(BASINS[b] || b) + ' (' + basins[b] + ')</label>';
+      '" checked> ' + esc(b) + ' - ' + esc(BASINS[b] || b) + ' (' + basins[b] + ')</label>';
   }
   $('basinChips').innerHTML = chips;
 
@@ -1085,7 +1124,7 @@ function renderMatchLine() {
     recs += S.filtered[i].n; withRadii += S.filtered[i].radiiRecords;
   }
   $('matchLine').innerHTML =
-    '<b>' + n + '</b> of ' + tot + ' storms match — ' + recs.toLocaleString() +
+    '<b>' + n + '</b> of ' + tot + ' storms match: ' + recs.toLocaleString() +
     ' synoptic times, ' + withRadii.toLocaleString() + ' of them with reported wind radii.';
 }
 
@@ -1134,7 +1173,7 @@ function selectStorm(sid) {
       st.className = 'msg';
       st.textContent = 'Could not load storm ' + sid + ': ' +
         (err && err.message ? err.message : err) +
-        ' — pick another storm, or reload the page if this repeats.';
+        '. Pick another storm, or reload the page if this repeats.';
       return;
     }
     if (!recs) {
@@ -1174,9 +1213,57 @@ function metaOf(sid) {
   return { sid: sid, basin: '?', name: sid, season: '?', agency: '?' };
 }
 
+/**
+ * Plain-language "How did the tool do on this storm?" verdict, built ONLY
+ * from numbers renderStormHeader() already computes (sum from summarise(),
+ * nRings/nUnreached, and the fitted rm / observed RMW lists) - no separate
+ * calculation, so this can never disagree with the numeric stat tiles right
+ * below it.
+ */
+function renderStormVerdict_(sum, nRings, nUnreached, rms, rmws) {
+  var el = $('stormVerdictText');
+  var parts = [];
+
+  var bias = sum.all.bias;
+  if (bias === null) {
+    parts.push('No reported radii were available at any synoptic time for ' +
+      'this storm, so there is nothing to compare the modelled field ' +
+      'against here.');
+  } else if (Math.abs(bias) < 0.5) {
+    parts.push('On average, the modelled 34/50/64 kt boundaries sit almost ' +
+      'exactly on the analysed ones.');
+  } else {
+    parts.push('On average, the modelled 34/50/64 kt boundaries sit ' +
+      f1(Math.abs(bias)) + ' nm ' + (bias < 0 ? 'inside' : 'outside') +
+      ' the analysed ones.');
+  }
+
+  var rmMed = median(rms), rmwMed = median(rmws);
+  if (rmMed !== null && rmwMed !== null) {
+    var d = rmMed - rmwMed;
+    var sizeWord = Math.abs(d) < 3 ? 'about the same size as'
+      : (d < 0 ? 'smaller than' : 'larger than');
+    parts.push('The tool’s fitted core (median r<sub>m</sub> ' + f1(rmMed) +
+      ' nm) runs ' + sizeWord + ' the best track’s observed radius of ' +
+      'maximum wind (median RMW ' + f1(rmwMed) + ' nm).');
+  } else {
+    parts.push('This storm has no usable rm/RMW pairs to compare core size.');
+  }
+
+  if (nRings > 0) {
+    parts.push(nUnreached + ' of ' + nRings + ' reported ring points (' +
+      Math.round(100 * nUnreached / nRings) + '%) were never reached by the ' +
+      'modelled field' +
+      (nUnreached ? ', typically far out where the wind has already ' +
+        'tapered below that threshold.' : '.'));
+  }
+
+  el.innerHTML = parts.join(' ');
+}
+
 function renderStormHeader() {
   var m = metaOf(S.sel);
-  $('stormTitle').textContent = (m.name || '(unnamed)') + ' — ' + m.season;
+  $('stormTitle').textContent = (m.name || '(unnamed)') + ' (' + m.season + ')';
   $('stormBadges').innerHTML =
     '<span class="badge">' + esc(m.basin) + ' ' + esc(BASINS[m.basin] || '') + '</span> ' +
     '<span class="badge">' + esc(m.agency) + '</span> ' +
@@ -1196,6 +1283,8 @@ function renderStormHeader() {
     if (S.analyses[i].rmw !== null && S.analyses[i].rmw > 0) rmws.push(S.analyses[i].rmw);
     if (S.analyses[i].fit && S.analyses[i].fit.n > 0) rms.push(S.analyses[i].fit.rm);
   }
+
+  renderStormVerdict_(sum, nRings, nUnreached, rms, rmws);
 
   $('stormStats').innerHTML =
     stat('Synoptic times', S.storm.length, 'best track, 6-hourly') +
@@ -1273,7 +1362,7 @@ function kv(k, v) { return '<dt>' + esc(k) + '</dt><dd>' + v + '</dd>'; }
 function renderFit(an) {
   var f = an.fit;
   var html = '';
-  html += kv('rₘ (fitted)', f1(f.rm) + ' nm' +
+  html += kv(f.rmSource === 'climatology' ? 'rₘ (climatology)' : 'rₘ (fitted)', f1(f.rm) + ' nm' +
     (an.rmw !== null && an.rmw > 0
       ? '  <span class="note">(RMW ' + f0(an.rmw) + ' nm; ' + sgn(f.rm - an.rmw) + ' nm)</span>'
       : ''));
@@ -1281,7 +1370,7 @@ function renderFit(an) {
   html += kv('x₁ / x₂', f2(f.x1) + ' / ' + f2(f.x2));
   html += kv('Asymmetry a', f2(f.a) + ' kt  <span class="note">(aₓ ' + f2(f.ax) +
              ', aᵧ ' + f2(f.ay) + ')</span>');
-  html += kv('Fit targets', f.n + (f.n === 0 ? '  — climatology only' : ' quadrant points'));
+  html += kv('Fit targets', f.n + (f.n === 0 ? '  (climatology only)' : ' quadrant points'));
   html += kv('Fit RMS', isNaN(f.rms) ? '–' : f1(f.rms) + ' kt  <span class="note">weighted, on wind</span>');
   html += kv('Climatology', 'rₘ ' + f1(V.gtcmClimoRmax(an.snap.vmax, an.snap.lat)) +
              ' nm, x ' + f2(V.gtcmClimoX(an.snap.vmax, an.snap.lat)));
@@ -1313,7 +1402,7 @@ function renderQuadTable(an) {
   for (i = 0; i < an.rings.length; i++) pushAcc(acc, an.rings[i]);
   var st = statsOf(acc);
   var foot = '</tbody><tfoot><tr><td colspan="6">This time, ' + st.n + ' ring points' +
-    (st.unreached ? ' (' + st.unreached + ' never reached)' : '') + ' — mean absolute error</td>' +
+    (st.unreached ? ' (' + st.unreached + ' never reached)' : '') + ': mean absolute error</td>' +
     '<td>' + f1(st.mae) + '</td><td>' + f1(st.maeTgt) + '</td></tr>' +
     '<tr><td colspan="6">bias (modelled &minus; column)</td><td>' + sgn(st.bias) +
     '</td><td>' + sgn(st.biasTgt) + '</td></tr></tfoot>';
@@ -1600,7 +1689,7 @@ function drawColorBar() {
     labelHalo(ctx, String(ticks[i]), Math.min(Math.max(tx, 8), W - 8), 4 + barH + 14,
               C_GRIDT, 'center', 'bold 11px system-ui, sans-serif');
   }
-  labelHalo(ctx, 'wind speed, kt', W - 4, 12, C_GRIDT, 'right', 'bold 11px system-ui, sans-serif');
+  labelHalo(ctx, 'modelled wind speed, kt', W - 4, 12, C_GRIDT, 'right', 'bold 11px system-ui, sans-serif');
 }
 
 /** Legend swatch.  `bg` is only supplied for the plan-view legend, whose
@@ -1628,13 +1717,13 @@ function renderPlanLegend(an, half) {
   h += '<div class="note" style="margin-bottom:.3rem"><strong>Half-width ' + half +
        ' nm</strong>; range rings every ' + (half <= 120 ? 30 : (half <= 300 ? 60 : 120)) +
        ' nm. <strong>Colour is the wind speed; line style is where it came from</strong> ' +
-       '&mdash; solid is the GTCM model, dashed is the best-track report. ' +
+       ': solid is the GTCM model, dashed is the best-track report. ' +
        'The gap between a solid and a dashed curve of the same colour is the error.</div>';
   var THRS_L = [34, 50, 64];
   for (var i = 0; i < THRS_L.length; i++) {
     var t = THRS_L[i], c = THR_COLOR[t];
     h += '<div class="li"><span>' + swatchSvg(c, [], BG) + swatchSvg(c, [8, 5], BG) +
-         '</span><span><strong>' + t + ' kt</strong> &mdash; modelled (solid) vs reported (dashed)</span></div>';
+         '</span><span><strong>' + t + ' kt</strong>: modelled (solid) vs reported (dashed)</span></div>';
   }
   h += swatch(C_MODEL, [2, 3], 'r\u2098 \u2014 fitted radius of maximum wind', '', BG);
   h += swatch(C_OBS, [6, 4], 'RMW / ROCI \u2014 observed, from best track', '', BG);
@@ -1778,7 +1867,7 @@ function renderStormSummary() {
     rows = rows.replace('</caption>',
       ' Of the ' + a.n34 + ' 34 kt ring points, <strong>' + a.fallback + '</strong> (' +
       f1(a.fallbackPct) + '%) took the tool\'s 3×rₘ fallback because the modelled field never ' +
-      'reached 34 kt on that bearing — those rows compare a taper anchor against a reported ' +
+      'reached 34 kt on that bearing; those rows compare a taper anchor against a reported ' +
       'radius, which is a weaker statement than the rest of the column.</caption>');
   }
   $('stormSummary').innerHTML = rows;
@@ -1795,8 +1884,8 @@ function buildMap() {
       var fb = $('mapFallback');
       fb.classList.remove('hide');
       fb.textContent = 'The Leaflet map library did not load from the CDN, so the geographic ' +
-        'track is unavailable. Everything else on this page — the storm-relative plan view, ' +
-        'the radii tables and the cohort statistics — is computed locally and is unaffected. ' +
+        'track is unavailable. Everything else on this page (the storm-relative plan view, ' +
+        'the radii tables and the cohort statistics) is computed locally and is unaffected. ' +
         'Positions are listed in the record panel.';
     }
     return;
@@ -1911,7 +2000,7 @@ function cohortRun() {
   function step() {
     if (S.cohortAbort || i >= list.length) { finish(); return; }
     var meta = list[i];
-    $('cohortStatus').textContent = 'storm ' + (i + 1) + ' of ' + list.length + ' — ' +
+    $('cohortStatus').textContent = 'storm ' + (i + 1) + ' of ' + list.length + ': ' +
       meta.name + ' (' + meta.season + ')';
     loadStorm(meta.sid, function (recs, err) {
       if (err) { failed++; if (!firstErr) firstErr = err; }
@@ -1953,7 +2042,7 @@ function cohortRun() {
     $('cohortMsg').innerHTML =
       'Pooled <strong>' + per.length + '</strong> storms and <strong>' + analyses.length +
       '</strong> synoptic times' +
-      (S.cohortAbort ? ' <strong>(stopped early &mdash; this is a partial set)</strong>' : '') +
+      (S.cohortAbort ? ' <strong>(stopped early: this is a partial set)</strong>' : '') +
       (failed ? ' <strong>(' + failed + ' storm(s) failed to load and are missing)</strong>' : '') +
       '. These are the same replays the single-storm view shows, pooled.';
     buildNatureChips();
@@ -1974,7 +2063,7 @@ function buildNatureChips() {
   for (i = 0; i < order.length; i++) {
     if (!seen[order[i]]) continue;
     html += '<label class="chip"><input type="checkbox" class="fnat" value="' + order[i] +
-      '" checked> ' + order[i] + ' — ' + esc(NATURES[order[i]] || '') +
+      '" checked> ' + order[i] + ' - ' + esc(NATURES[order[i]] || '') +
       ' (' + seen[order[i]] + ')</label>';
   }
   for (var k in seen) if (seen.hasOwnProperty(k) && order.indexOf(k) < 0) {
@@ -2170,7 +2259,7 @@ function drawScatterRm(sum) {
     f1(median(ys)) + ' nm, median RMW ' + f1(median(xs)) + ' nm; median difference ' +
     sgn(median(diffs)) + ' nm, mean |difference| ' + f1(mean(abs)) + ' nm, Pearson r ' +
     (r === null ? '–' : f2(r)) + '. Filled circles are tropical (nature TS); open diamonds ' +
-    'are ET, SS, MX or DS. <strong>The 1:1 line is a reference, not a target</strong> — ' +
+    'are ET, SS, MX or DS. <strong>The 1:1 line is a reference, not a target</strong>. ' +
     'rₘ and RMW are different quantities, differently measured, and are not expected to be ' +
     'equal. What is worth reading here is whether they track each other and where they diverge.';
 }
@@ -2262,7 +2351,7 @@ function drawHist(sum) {
     var th2 = THRS[tk], arr = series[th2];
     var med = median(arr), mn = mean(arr);
     leg += swatch(styles[th2].c, tk === 0 ? [] : (tk === 1 ? [5, 4] : [2, 3]),
-      '<strong>' + th2 + ' kt</strong> — ' + arr.length + ' ring points',
+      '<strong>' + th2 + ' kt</strong>: ' + arr.length + ' ring points',
       'median ' + sgn(med) + ' nm, mean ' + sgn(mn) + ' nm' +
       (tk === 0 ? ' (solid bars)' : tk === 1 ? ' (diagonal hatch)' : ' (cross hatch)'));
   }
@@ -2386,6 +2475,20 @@ function boot() {
       'The Apps Script project is missing the Vortex file or it failed to evaluate.';
     return;
   }
+
+  // Glossary (Help.html, one copy of everything - see README.md). Only run
+  // over STATIC prose (the "How to read this page" / "Data" details): any
+  // container this page's own code overwrites with innerHTML/textContent on
+  // every redraw would just have its wrapped terms discarded.
+  if (window.TCGlossary) {
+    ['howToRead', 'dataNotes'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) TCGlossary.linkify(el);
+    });
+    var slot = document.getElementById('footerGlossary');
+    if (slot) slot.appendChild(TCGlossary.buildDetailsEl());
+  }
+
   loadIndex();
 }
 

@@ -324,8 +324,12 @@ def snapshot_cases():
       exact-threshold vmax vmax == a reported threshold - the case the `<`
                            guard exists to keep, and the one a `<=` copy
                            silently drops.
-      no motion            motionSpd 0, so a = 0 and fitGTCM() skips the
-                           whole asymmetry-release stage.
+      no motion            motionSpd 0, so a = 0 and the motion-derived
+                           first guess (ax0, ay0) is (0, 0); the asymmetry-
+                           release stage still runs (GTCM_ASYM_MIN_CAP_KT
+                           floors the magnitude cap above 0), so a JS port
+                           that special-cased `a == 0` to skip it would
+                           diverge here.
       dateline / seam      centre on the dateline, so sample azimuths land
                            either side of the 0/360 longitude wrap as well
                            as the 0/360 azimuth wrap.
@@ -510,7 +514,7 @@ def py_gtcm(snap, points):
     _, az = tc._distBearingGrids(lat, lon, snap.lat, snap.lon)
     return {
         "rmax": rmax,
-        "fit": dict((k, jnum(float(v)) if k != "n" else v)
+        "fit": dict((k, jnum(float(v)) if k not in ("n", "rmSource") else v)
                     for k, v in fit.items()),
         "points": [{"lat": points[i][0], "lon": points[i][1],
                     "mag": float(mag[i]), "dir": float(direc[i]),
@@ -558,6 +562,12 @@ def check_gtcm():
 
         if py["fit"]["n"] != js["fit"]["n"]:
             diffs.append("fit.n: py=%r js=%r" % (py["fit"]["n"], js["fit"]["n"]))
+        if int(py["fit"]["freeParams"]) != int(js["fit"]["freeParams"]):
+            diffs.append("fit.freeParams: py=%r js=%r"
+                         % (py["fit"]["freeParams"], js["fit"]["freeParams"]))
+        if py["fit"]["rmSource"] != js["fit"]["rmSource"]:
+            diffs.append("fit.rmSource: py=%r js=%r"
+                         % (py["fit"]["rmSource"], js["fit"]["rmSource"]))
         for k, tol in FIT_TOL.items():
             a, b = py["fit"][k], js["fit"][k]
             if a is None or b is None:

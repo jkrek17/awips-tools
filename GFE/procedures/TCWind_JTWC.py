@@ -18,6 +18,13 @@
 # run standalone for testing:
 #   python TCWind_JTWC.py sample_bulletin.txt
 #
+# The dialog's "Run test case" toggle runs the tool end to end against a
+# bundled real bulletin (TEST_CASE_BULLETIN, a real WTPN31 KROVANH warning)
+# translated onto the office's own grid and rebased onto "now", so a
+# forecaster can see example output with zero live storms in the text
+# database (outside NW Pacific season, or between storms) - no network and
+# no live bulletin required. It always writes to the preview grid only.
+#
 # Author: (OPC)
 # ----------------------------------------------------------------------------
 
@@ -48,6 +55,145 @@ JTWC_PILS_WESTPAC = ["NFDTCPWP1", "NFDTCPWP2", "NFDTCPWP3",
 
 # Locations of the command-line textdb, tried in order for the fallback.
 TEXTDB_PATHS = ["/awips/fxa/bin/textdb", "/awips2/fxa/bin/textdb", "textdb"]
+
+
+# ---------------------------------------------------------------------------
+# Test case bulletin
+#
+# Real WTPN31 warning for Tropical Storm 22W (KROVANH), issued 2026-09-02,
+# captured verbatim from tests/tcwind_jtwc/fixtures/real_2026-09-02_wtpn31_krovanh.txt
+# (also used by tests/tcwind_jtwc/test_procedure_harness.py). It carries
+# full R34 quadrant radii across nine forecast hours (0-120h). It exists
+# ONLY to back the dialog's "Run test case" toggle below, so a forecaster
+# can see example output with zero live storms in the text database (e.g.
+# outside NW Pacific season, or between storms) - it is never retrieved
+# from textdb and never represents a real, current storm.
+# ---------------------------------------------------------------------------
+
+TEST_CASE_BULLETIN = """WTPN31 PGTW 020900
+MSGID/GENADMIN/JOINT TYPHOON WRNCEN PEARL HARBOR HI//
+SUBJ/TROPICAL STORM 22W (KROVANH) WARNING NR 005//
+RMKS/
+1. TROPICAL STORM 22W (KROVANH) WARNING NR 005
+   UPGRADED FROM TROPICAL DEPRESSION 22W
+   02 ACTIVE TROPICAL CYCLONES IN NORTHWESTPAC
+   MAX SUSTAINED WINDS BASED ON ONE-MINUTE AVERAGE
+   WIND RADII VALID OVER OPEN WATER ONLY
+    ---
+   WARNING POSITION:
+   020600Z --- NEAR 23.1N 132.4E
+     MOVEMENT PAST SIX HOURS - 310 DEGREES AT 06 KTS
+     POSITION ACCURATE TO WITHIN 030 NM
+     POSITION BASED ON CENTER LOCATED BY SATELLITE
+   PRESENT WIND DISTRIBUTION:
+   MAX SUSTAINED WINDS - 035 KT, GUSTS 045 KT
+   WIND RADII VALID OVER OPEN WATER ONLY
+   RADIUS OF 034 KT WINDS - 120 NM NORTHEAST QUADRANT
+                            090 NM SOUTHEAST QUADRANT
+                            080 NM SOUTHWEST QUADRANT
+                            100 NM NORTHWEST QUADRANT
+   REPEAT POSIT: 23.1N 132.4E
+    ---
+   FORECASTS:
+   12 HRS, VALID AT:
+   021800Z --- 24.7N 130.9E
+   MAX SUSTAINED WINDS - 035 KT, GUSTS 045 KT
+   WIND RADII VALID OVER OPEN WATER ONLY
+   RADIUS OF 034 KT WINDS - 130 NM NORTHEAST QUADRANT
+                            080 NM SOUTHEAST QUADRANT
+                            080 NM SOUTHWEST QUADRANT
+                            100 NM NORTHWEST QUADRANT
+   VECTOR TO 24 HR POSIT: 325 DEG/ 11 KTS
+    ---
+   24 HRS, VALID AT:
+   030600Z --- 26.5N 129.5E
+   MAX SUSTAINED WINDS - 040 KT, GUSTS 050 KT
+   WIND RADII VALID OVER OPEN WATER ONLY
+   RADIUS OF 034 KT WINDS - 130 NM NORTHEAST QUADRANT
+                            080 NM SOUTHEAST QUADRANT
+                            080 NM SOUTHWEST QUADRANT
+                            100 NM NORTHWEST QUADRANT
+   VECTOR TO 36 HR POSIT: 325 DEG/ 09 KTS
+    ---
+   36 HRS, VALID AT:
+   031800Z --- 28.0N 128.4E
+   MAX SUSTAINED WINDS - 040 KT, GUSTS 050 KT
+   WIND RADII VALID OVER OPEN WATER ONLY
+   RADIUS OF 034 KT WINDS - 130 NM NORTHEAST QUADRANT
+                            080 NM SOUTHEAST QUADRANT
+                            080 NM SOUTHWEST QUADRANT
+                            100 NM NORTHWEST QUADRANT
+   VECTOR TO 48 HR POSIT: 330 DEG/ 03 KTS
+    ---
+   EXTENDED OUTLOOK:
+   48 HRS, VALID AT:
+   040600Z --- 28.6N 128.0E
+   MAX SUSTAINED WINDS - 045 KT, GUSTS 055 KT
+   WIND RADII VALID OVER OPEN WATER ONLY
+   RADIUS OF 034 KT WINDS - 190 NM NORTHEAST QUADRANT
+                            090 NM SOUTHEAST QUADRANT
+                            090 NM SOUTHWEST QUADRANT
+                            160 NM NORTHWEST QUADRANT
+   VECTOR TO 60 HR POSIT: 180 DEG/ 02 KTS
+    ---
+   60 HRS, VALID AT:
+   041800Z --- 28.3N 128.0E
+   MAX SUSTAINED WINDS - 040 KT, GUSTS 050 KT
+   WIND RADII VALID OVER OPEN WATER ONLY
+   RADIUS OF 034 KT WINDS - 190 NM NORTHEAST QUADRANT
+                            080 NM SOUTHEAST QUADRANT
+                            090 NM SOUTHWEST QUADRANT
+                            160 NM NORTHWEST QUADRANT
+   VECTOR TO 72 HR POSIT: 160 DEG/ 04 KTS
+    ---
+   72 HRS, VALID AT:
+   050600Z --- 27.5N 128.3E
+   MAX SUSTAINED WINDS - 040 KT, GUSTS 050 KT
+   WIND RADII VALID OVER OPEN WATER ONLY
+   RADIUS OF 034 KT WINDS - 190 NM NORTHEAST QUADRANT
+                            080 NM SOUTHEAST QUADRANT
+                            080 NM SOUTHWEST QUADRANT
+                            160 NM NORTHWEST QUADRANT
+   VECTOR TO 96 HR POSIT: 150 DEG/ 03 KTS
+    ---
+   LONG RANGE OUTLOOK:
+    ---
+   96 HRS, VALID AT:
+   060600Z --- 26.4N 129.0E
+   MAX SUSTAINED WINDS - 035 KT, GUSTS 045 KT
+   WIND RADII VALID OVER OPEN WATER ONLY
+   RADIUS OF 034 KT WINDS - 190 NM NORTHEAST QUADRANT
+                            080 NM SOUTHEAST QUADRANT
+                            080 NM SOUTHWEST QUADRANT
+                            160 NM NORTHWEST QUADRANT
+   VECTOR TO 120 HR POSIT: 110 DEG/ 03 KTS
+    ---
+   120 HRS, VALID AT:
+   070600Z --- 26.0N 130.2E
+   MAX SUSTAINED WINDS - 035 KT, GUSTS 045 KT
+   WIND RADII VALID OVER OPEN WATER ONLY
+   RADIUS OF 034 KT WINDS - 190 NM NORTHEAST QUADRANT
+                            080 NM SOUTHEAST QUADRANT
+                            080 NM SOUTHWEST QUADRANT
+                            150 NM NORTHWEST QUADRANT
+    ---
+REMARKS:
+020900Z POSITION NEAR 23.5N 132.0E. 02SEP26. TROPICAL STORM 22W
+(KROVANH), LOCATED APPROXIMATELY 323 NM SOUTHEAST OF KADENA AB, HAS
+TRACKED NORTHWESTWARD AT 06 KNOTS OVER THE PAST SIX HOURS. MINIMUM
+CENTRAL PRESSURE AT 020600Z IS 994 MB. MAXIMUM SIGNIFICANT WAVE HEIGHT
+AT 020600Z IS 18 FEET. NEXT WARNINGS AT 021500Z, 022100Z, 030300Z AND
+030900Z. REFER TO TROPICAL DEPRESSION 17W (SAUDEL) WARNINGS (WTPN32
+PGTW) FOR SIX-HOURLY UPDATES.//
+NNNN
+
+
+"""
+
+# Dialog label for the "Run test case" toggle.  Also the varDict key it is
+# read back under (see _buildVarDict()/execute()) - a module constant so the
+# two stay in sync and the test harness can reuse it exactly.
+TEST_CASE_LABEL = "Run test case (no live storm needed):"
 
 
 # ---------------------------------------------------------------------------
@@ -94,8 +240,28 @@ GTCM_W_INNER = 1.0
 # The asymmetry is not always aligned with the motion vector, particularly at
 # higher latitudes and during extratropical transition.  After the size
 # parameters are fit, the guide lets the asymmetry components move up to this
-# far from their motion-derived first guess to further reduce the error.
+# far from their motion-derived first guess to further reduce the error. This
+# is a search radius only; GTCM_ASYM_MIN_CAP_KT below now binds first (see
+# its comment), so most candidates this radius alone would still admit are
+# rejected for magnitude before they are ever reached.
 GTCM_ASYM_MAX_DEV_KT = 10.0
+
+# Hard ceiling on the FITTED asymmetry magnitude |(ax, ay)|, relative to the
+# motion-derived first guess `a = GTCM_ASYM_A * c**GTCM_ASYM_B`:
+#   |(ax, ay)| <= max(1.5 * a, GTCM_ASYM_MIN_CAP_KT)
+# Unbound, a one-sided radii report (gales reported only in the quadrants
+# facing the motion vector, 000 nm behind it) pulls |(ax, ay)| up toward
+# `a + GTCM_ASYM_MAX_DEV_KT` to chase the lopsided WIND error, which drags
+# the symmetric amplitude vs = Vmax - |(ax, ay)| down with it. On a live 40
+# kt storm with gales reported only in the two eastern quadrants this put
+# |(ax, ay)| at 15.8 kt against a motion value of 8.1 kt, collapsing vs to
+# 24 kt and modelling 5 kt only 34 nm upwind of the centre of a 40 kt storm
+# - a reported 000 nm quadrant means no gales there, not calm air. Capping
+# the magnitude at 1.5x the motion value keeps the weak side physical while
+# still letting the fit lean asymmetric; direction is unconstrained. The
+# GTCM_ASYM_MIN_CAP_KT floor lets a slow-moving or stationary storm (a near
+# or at 0) take a modest asymmetry rather than being locked to (0, 0).
+GTCM_ASYM_MIN_CAP_KT = 3.0
 
 # Equations (8) and (9) build the wind field from the tangential wind and the
 # asymmetry vector alone - there is no inflow term.  Set this True to rotate
@@ -117,6 +283,22 @@ GTCM_X_MAX = 1.20
 
 GTCM_MAX_ITER = 220
 GTCM_ASYM_STEPS = 9
+
+# The modelled 34 kt radius (insert footprint/taper anchor) is solved by
+# probing the symmetric profile out to this many nm, then finding where the
+# asymmetric field crosses 34 kt.  It depends on azimuth alone - the fit
+# (rm, ri, x1, x2, ax, ay) is the same everywhere on one grid - so it is
+# solved once per azimuth bin on this fixed table and linearly interpolated
+# (wrapping at 360) onto the grid's own azimuths, rather than broadcasting
+# the probe against every grid point. That broadcast used to make the cost
+# scale with grid size: on a 500x500 domain, 250,000 points x 900 probe
+# samples is a 225,000,000-element intermediate array, computed twice over
+# (34 s, 6.9 GB peak). Solving it on GTCM_R34_AZ_BINS azimuths instead costs
+# 360 x 900 = 324,000 elements, independent of grid resolution. 1 degree
+# bins keep the azimuthal interpolation error on r34 well under the 1 nm
+# parity tolerance (tests/tcwind_jtwc/compare_py_js.py).
+GTCM_R34_PROBE_MAX_NM = 900
+GTCM_R34_AZ_BINS = 360
 
 # Share of the storm's translation speed added to the field, which makes the
 # right of track stronger than the left.  Raising it also pushes the field
@@ -173,11 +355,24 @@ WIND_AVERAGING_FACTOR = 1.0
 NORMALIZE_CORE_PEAK = True
 PEAK_NORMALIZE_MAX_FACTOR = 2.0
 
-# A grid block is valid from its start time on, so each forecast time
-# populates the block that begins at it.  If no block begins there, create
-# one, otherwise the final group of a bulletin is silently lost whenever the
-# Fcst inventory happens to stop at that hour.
-CREATE_MISSING_TAU_BLOCKS = True
+# The tool owns its own output cadence.  It always writes fixed-width grid
+# blocks spanning the whole bulletin, regardless of what cadence the
+# office's own background Fcst Wind inventory happens to use nearby.
+#
+# An earlier version instead matched each written block's duration to
+# whatever cadence was locally in effect in the existing Fcst Wind
+# inventory (offices commonly run 3-hourly near term and 6-hourly further
+# out, mirroring how JTWC itself spaces its own forecast groups).  That
+# made the office's OWN inventory - not the bulletin, not this tool -
+# decide the tool's output granularity, and produced exactly the "grids
+# get created in random 3 or 6 hour chunks" behavior forecasters reported:
+# whichever cadence a created block happened to land near came along for
+# the ride.  Now the tool computes its own fixed-interval time series
+# across the span up front and writes every block at that interval,
+# splitting a coarser background block wherever a write lands inside one.
+# A future office could change the interval deliberately by editing this
+# constant, but the default behavior is strict, uniform 3-hourly output.
+OUTPUT_GRID_INTERVAL_SECONDS = 3 * 3600  # 3 hours, always, regardless of the background Fcst Wind grid cadence.
 
 # Name of the scratch weather element used for preview runs.  It is created
 # on the fly as a temporary parm, so it needs no serverConfig entry, is not
@@ -195,7 +390,7 @@ REQUIRE_ACKNOWLEDGEMENT = True
 
 # Shown in the dialog title and the status bar.  Bump it on every install so
 # there is never any doubt about which copy GFE actually loaded.
-VERSION = "2026-09-02a"
+VERSION = "2026-09-03a"
 
 # A bulletin older than this is treated as a dead slot and skipped.  textdb
 # returns whatever was last stored under a PIL, so without this check a storm
@@ -224,9 +419,15 @@ QUAD_AZ = {"NE": 45.0, "SE": 135.0, "SW": 225.0, "NW": 315.0}
 MONTHS = {"JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
           "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12}
 
-# Confidence weight applied to the vortex as the system loses tropical
-# structure.  The Rankine assumption stops being defensible once JTWC flags
-# subtropical transition, so we hand the field back to the background.
+# Not a blend weight - see INSERT_AFTER_SUBTROPICAL's only consumer, in
+# execute()'s buildFor(): once a storm-time's conf drops below 1.0 (i.e.
+# from CONF_BECOMING onward) it is skipped entirely, all or nothing, and
+# only when INSERT_AFTER_SUBTROPICAL is False. With the tunable's default of
+# True that branch never runs and conf has no effect on the output at all.
+# The Rankine assumption stops being defensible once JTWC flags subtropical
+# transition; these values exist to let an office opt into handing the
+# field back to the background at that point, in one all-or-nothing step,
+# not a continuous fade.
 CONF_TROPICAL = 1.00
 CONF_BECOMING = 0.60
 CONF_SUBTROPICAL = 0.25
@@ -237,6 +438,16 @@ CONF_SUBTROPICAL = 0.25
 # ---------------------------------------------------------------------------
 
 RE_REFDATE = re.compile(r"\b(\d{2})([A-Z]{3})(\d{2})\b")
+# WMO abbreviated header line ("WTPN35 PGTW 242100"): T1T2A1A2ii, an
+# originating station, then a DDHHMM group. Confirmed real, live fallback
+# case: a JTWC bulletin whose REMARKS opens straight into the synopsis with
+# no "DDMMMYY." token anywhere at all (WTPN35 PGTW, SOULIK, 22W, extra-
+# tropical transition) - RE_REFDATE then finds nothing anywhere in the
+# bulletin. This gives the reference DAY only (no month/year); see the
+# fallback in parseJTWC() below for how that day is combined with the
+# current wall-clock month/year.
+RE_WMO_HEADER = re.compile(
+    r"^[A-Z]{4}\d{2}\s+[A-Z]{4}\s+(\d{2})(\d{2})(\d{2})\s*$", re.MULTILINE)
 RE_POSITION = re.compile(
     r"(\d{6})Z\s*---\s*(?:NEAR\s+)?(\d+(?:\.\d+)?)\s*([NS])\s+(\d+(?:\.\d+)?)\s*([EW])")
 RE_TAU = re.compile(r"^\s*(\d+)\s+HRS,\s+VALID AT:")
@@ -277,6 +488,7 @@ class Tau(object):
         self.motionDir = None       # heading toward next position
         self.motionSpd = None       # kt
         self.conf = CONF_TROPICAL
+        self.fit = None             # cache: fitGTCM(self), set by _fitTau()
 
     def quad(self, threshold):
         """Radii dict for a threshold, zeros if the threshold is absent."""
@@ -308,8 +520,13 @@ def _dtg_to_epoch(ddhhmm, ref_day, ref_month, ref_year):
     return calendar.timegm((year, month, dd, hh, mm, 0, 0, 0, 0))
 
 
-def parseJTWC(text):
+def parseJTWC(text, nowSecs=None):
     """Parse a WTPN warning into a time-ordered list of Tau objects.
+
+    `nowSecs` is unix seconds for "now"; only consulted by the no-DDMMMYY
+    fallback below (real wall clock when omitted - callers pass it only to
+    pin the fallback for a deterministic test). It plays no part at all
+    when the bulletin carries a normal DDMMMYY reference date.
 
     Returns (taus, header) where header is a dict of odds and ends.
     """
@@ -318,7 +535,11 @@ def parseJTWC(text):
     else:
         lines = text.split("\n")
 
-    # Reference date lives in the remarks block ("27AUG26.").
+    # Reference date lives in the remarks block ("27AUG26."), on every
+    # fixture seen until today. Real, live counter-example: a JTWC bulletin
+    # (WTPN35 PGTW, SOULIK, extratropical transition) whose REMARKS opens
+    # straight into the synopsis with no DDMMMYY token anywhere - confirmed
+    # by inspecting the real product text, not assumed.
     ref_day = ref_month = ref_year = None
     for ln in lines:
         m = RE_REFDATE.search(ln)
@@ -327,9 +548,32 @@ def parseJTWC(text):
             ref_month = MONTHS[m.group(2)]
             ref_year = 2000 + int(m.group(3))
             break
+
     if ref_day is None:
-        raise ValueError("Could not find a DDMMMYY reference date in the "
-                         "bulletin remarks; cannot resolve DTGs.")
+        # Fallback: no DDMMMYY anywhere in the bulletin. The WMO
+        # abbreviated header line ("WTPN35 PGTW 242100") gives the
+        # reference DAY directly (24) but not month/year, so resolve those
+        # by combining that day with wall-clock "now" through the exact
+        # same rollover rule _dtg_to_epoch() already uses for every DTG in
+        # the bulletin against its own reference day - seeded from "now"
+        # instead of a remarks-derived date. A day far from today's rolls
+        # to the adjacent month/year, precisely as any other far-from-
+        # reference DTG already does.
+        mh = RE_WMO_HEADER.search("\n".join(lines))
+        if mh is None:
+            raise ValueError(
+                "Could not find a DDMMMYY reference date in the bulletin "
+                "remarks, and no WMO header DDHHMM group to fall back to; "
+                "cannot resolve DTGs.")
+        if nowSecs is None:
+            nowSecs = time.time()
+        now = time.gmtime(nowSecs)
+        fallback_epoch = _dtg_to_epoch(mh.group(1) + mh.group(2) + mh.group(3),
+                                       now.tm_mday, now.tm_mon, now.tm_year)
+        resolved = time.gmtime(fallback_epoch)
+        ref_day = resolved.tm_mday
+        ref_month = resolved.tm_mon
+        ref_year = resolved.tm_year
 
     taus = []
     cur = None
@@ -492,6 +736,74 @@ def _bearing_speed(t1, t2):
     return float(brg), float(dist / dt)
 
 
+def _gridCenterLatLon(latGrid, lonGrid):
+    """Center lat/lon of a GFE grid, wrapped to -180..180.
+
+    Latitude is a plain mean. Longitude uses a circular mean (mean of unit
+    vectors, then atan2) rather than a plain mean of the raw values, so a
+    grid straddling the dateline (e.g. a Guam office's domain, which spans
+    it) still centers correctly instead of averaging +179 and -179 into 0.
+    """
+    clat = float(np.mean(latGrid))
+    lonRad = np.radians(np.asarray(lonGrid, dtype=np.float64))
+    clon = float(np.degrees(np.arctan2(np.mean(np.sin(lonRad)),
+                                       np.mean(np.cos(lonRad)))))
+    return clat, clon
+
+
+def _rebaseTestCaseTrack(taus, header, nowSecs, latGrid, lonGrid):
+    """Rebase TEST_CASE_BULLETIN's parsed track onto "now" and the active
+    grid, so the built-in test case never looks stale and always lands
+    somewhere the forecaster can see it, regardless of where or when it is
+    run.
+
+    Time: every tau's epoch is shifted by one constant offset so taus[0]
+    (the analysis time) lands MAX_BULLETIN_AGE_HOURS-safe - 3 hours before
+    `nowSecs` - which is what a bulletin that just came in looks like. The
+    header's DDMMMYY reference date is shifted to match, for display. This
+    does not re-parse the DDMMMYY string; it adjusts the already-parsed
+    epochs directly, then derives a display date from the new taus[0].
+
+    Space: every tau's lat/lon is translated by the constant offset that
+    puts taus[0]'s position exactly at the grid's own center (see
+    _gridCenterLatLon()). The track's shape and motion vector are
+    untouched - motionDir/motionSpd are never read here - only position
+    translates, so the storm keeps moving the same way relative to itself,
+    just centered somewhere the forecaster's own grid actually covers.
+    Longitude is wrapped back to -180..180 after the shift, the same
+    convention interpolateTrack() uses for the dateline.
+
+    Mutates and returns (taus, header); taus are freshly parsed from
+    TEST_CASE_BULLETIN by the caller each run, so this is not run on
+    anything shared across runs.
+    """
+    if not taus:
+        return taus, header
+
+    targetEpoch0 = nowSecs - 3 * 3600.0
+    epochShift = targetEpoch0 - taus[0].epoch
+    for t in taus:
+        t.epoch += epochShift
+
+    refStruct = time.gmtime(taus[0].epoch)
+    header = dict(header)
+    header["refDate"] = (refStruct.tm_mday, refStruct.tm_mon, refStruct.tm_year)
+
+    clat, clon = _gridCenterLatLon(latGrid, lonGrid)
+    dlat = clat - taus[0].lat
+    dlon = clon - taus[0].lon
+    if dlon > 180.0:
+        dlon -= 360.0
+    elif dlon < -180.0:
+        dlon += 360.0
+
+    for t in taus:
+        t.lat += dlat
+        t.lon = ((t.lon + dlon + 180.0) % 360.0) - 180.0
+
+    return taus, header
+
+
 # ---------------------------------------------------------------------------
 # Track interpolation
 # ---------------------------------------------------------------------------
@@ -506,6 +818,42 @@ class Snapshot(object):
         self.radii = {}
         self.motionDir = self.motionSpd = None
         self.conf = CONF_TROPICAL
+        self.fit = None             # GTCM fit params for this instant, or
+                                    # None if the caller (e.g. a hand-built
+                                    # snapshot in a verification script)
+                                    # never set one - _buildVortexGTCM()
+                                    # falls back to fitGTCM(self) then.
+        self.fitInterpolated = False  # True if .fit was blended from two
+                                      # taus rather than fit directly
+
+
+def _fitTau(tau):
+    """GTCM fit for one Tau's own reported radii, lazily computed and
+    cached on the Tau (see Tau.fit).
+
+    interpolateTrack() used to fit the LINEARLY INTERPOLATED radii at the
+    requested epoch instead of this. That manufactures targets nobody
+    reported: a threshold missing at one tau interpolates from zero, so a
+    64-kt ring that has not appeared yet shows up a few nm wide midway to
+    the tau where it does, and the shared (rm, x1, x2) fit swings to chase
+    it - on one probed 12h span that pulled rm from 35 nm down to 8.5 nm and
+    back up, non-monotonic, for a storm whose reported radii only grew
+    smoothly. fitGTCM() needs nothing a Tau doesn't already carry (vmax,
+    lat, motion, radii - the same fields interpolateTrack() puts on a
+    Snapshot), so each tau is fit exactly once, from what JTWC actually
+    reported at that tau, and interpolateTrack() blends the two RESULTS
+    instead of blending their inputs and re-fitting.
+    """
+    if tau.fit is None:
+        tau.fit = fitGTCM(tau)
+    return tau.fit
+
+
+# Fit fields interpolateTrack() blends linearly between two taus. n, rms,
+# freeParams and rmSource describe how well-constrained a fit is, not a
+# field parameter, so those are carried from the nearer tau instead (see
+# interpolateTrack()).
+_GTCM_FIT_BLEND_KEYS = ("rm", "ri", "x1", "x2", "ax", "ay", "a")
 
 
 def interpolateTrack(taus, epoch):
@@ -542,14 +890,38 @@ def interpolateTrack(taus, epoch):
     s.motionDir = lo.motionDir
     s.motionSpd = lo.motionSpd + f * (hi.motionSpd - lo.motionSpd)
 
-    # Radii: a threshold missing at one end interpolates from zero, so a
+    # Radii: still interpolated, for drawing the reported-radii rings on the
+    # map. A threshold missing at one end interpolates from zero, so a
     # 64-kt ring that first appears at 24h grows in rather than popping.
+    # The wind FIELD no longer comes from fitting these interpolated values
+    # - see _fitTau()'s docstring - it is built from s.fit below instead.
     for threshold in (64, 50, 34):
         a = lo.quad(threshold)
         b = hi.quad(threshold)
         vals = dict((q, a[q] + f * (b[q] - a[q])) for q in QUADS)
         if max(vals.values()) > 0.0:
             s.radii[threshold] = vals
+
+    # The vortex FIELD comes from interpolating each tau's OWN fit (each
+    # fit exactly once, from that tau's own reported radii, and cached).
+    loFit = _fitTau(lo)
+    if hi is lo:
+        s.fit = dict(loFit)
+        s.fitInterpolated = False
+    else:
+        hiFit = _fitTau(hi)
+        blended = dict((k, loFit[k] + f * (hiFit[k] - loFit[k]))
+                       for k in _GTCM_FIT_BLEND_KEYS)
+        nearer = hiFit if f >= 0.5 else loFit
+        blended["n"] = nearer["n"]
+        blended["rms"] = nearer["rms"]
+        blended["freeParams"] = nearer["freeParams"]
+        # rmSource is categorical (climatology/fit), not a number to blend -
+        # rm itself interpolates linearly either way (_GTCM_FIT_BLEND_KEYS
+        # above), so this only labels which one the blended rm is nearer to.
+        blended["rmSource"] = nearer["rmSource"]
+        s.fit = blended
+        s.fitInterpolated = True
     return s
 
 
@@ -679,6 +1051,26 @@ def _gtcmProfile(r, vmax, a, rm, ri, x1, x2):
     A makes V continuous across ri.  Two exponents, not one: the inner and
     outer parts of a real vortex do not share a decay rate, and forcing them
     to was the single biggest error in the pre-guide reconstruction of this.
+
+    `a` must be the magnitude of the (ax, ay) asymmetry vector actually
+    applied on top of V by _gtcmUV(), not necessarily the Schwerdt estimate
+    fitGTCM() also computes under the same name. As azimuth sweeps 360deg at
+    a fixed r, |wind| = |V*t_hat + (ax, ay)| traces a full circle of radius
+    V centred on (ax, ay), so its maximum over azimuth is V + |(ax, ay)|.
+    Passing the actual |(ax, ay)| here makes that V + |(ax, ay)| equal Vmax
+    exactly at r = rm - (Vmax - |(ax, ay)|) + |(ax, ay)| = Vmax - regardless
+    of what the fit's step 3 did to (ax, ay). Passing the fixed Schwerdt `a`
+    instead (the first guess/cap fitGTCM() returns) only gives that identity
+    when (ax, ay) never moved from its motion-derived first guess; once step
+    3 shrinks it - which it is free to do, to reduce wind-radius error - the
+    analytic peak fell up to ~15% short of Vmax with no way for
+    NORMALIZE_CORE_PEAK to reach it (its weight is 0 at r = rm, exactly
+    where the shortfall lives). Every caller of this function for the
+    GTCM field or its r34 probe must pass the actual |(ax, ay)|, computed
+    once as amag = hypot(fit["ax"], fit["ay"]); only fitGTCM()'s own
+    rm/x1/x2-sizing steps, which hold (ax, ay) at the first guess, may pass
+    the plain Schwerdt value (and get the same number either way, since
+    |(ax0, ay0)| == a by construction).
     """
     vs = max(float(vmax) - float(a), 0.0)
     rm = max(float(rm), 1e-3)
@@ -785,10 +1177,29 @@ def _nelderMead(fn, guess, step, maxIter):
 def fitGTCM(snapshot):
     """Fit the GTCM vortex to one storm-time.
 
-    Returns dict(rm, ri, x1, x2, ax, ay, a, n, rms).  Users Guide steps 2b-3:
-    climatological first guess from (5)/(6); ri at the median reported radius;
-    (rm, x1, x2) by weighted least squares on WIND error (7); then ax/ay
-    released within GTCM_ASYM_MAX_DEV_KT with the size parameters held fixed.
+    Returns dict(rm, ri, x1, x2, ax, ay, a, n, freeParams, rms, rmSource).
+    Users Guide steps 2b-3: climatological first guess from (5)/(6); ri at
+    the median reported radius; (rm, x1, x2) by weighted least squares on
+    WIND error (7); then ax/ay released within GTCM_ASYM_MAX_DEV_KT of that
+    first guess, size parameters held fixed, but only among candidates whose
+    magnitude |(ax, ay)| does not exceed
+    max(1.5 * a, GTCM_ASYM_MIN_CAP_KT) - see that constant's comment.  The
+    magnitude cap binds first whenever it is tighter than the deviation
+    radius, which for anything but a fast-moving storm it is.
+
+    rmSource is "fit" unless the target set contains no 50/64 kt radii, in
+    which case it is "climatology": a bulletin (or best-track record)
+    reporting ONLY 34 kt quadrants carries no information at all about core
+    size - a tight eye and a broad one can report the same R34 ring - so rm
+    is pinned to willoughbyRmax(vmax, lat) (the WestPac-refit RMW
+    regression, about -2 nm bias against best-track RMW) instead of being
+    searched, and only the shared decay exponent is fit.  If even that
+    pinned-rm profile cannot reach 34 kt at any target - a broad, weak
+    system, e.g. Vmax 35 kt with R34 150 nm, needs an exponent below
+    GTCM_X_MIN to flare out that far - the exponent is clamped at
+    GTCM_X_MIN rather than letting rm move to compensate; the resulting
+    miss is left for the residual/never-reached accounting downstream to
+    record.
     """
     vmax = float(snapshot.vmax)
     lat = float(snapshot.lat)
@@ -803,9 +1214,13 @@ def fitGTCM(snapshot):
     targets = _gtcmTargets(snapshot)
     if not targets:
         # No radii anywhere: climatology is all there is.  Guide step 2c.
+        # (This is the guide's own eq. (5) climatology, rmc - not
+        # willoughbyRmax() - since that is what step 2c specifies and there
+        # is no fit at all here for willoughbyRmax's better per-storm skill
+        # to improve on.)
         return dict(rm=rmc, ri=rmc * 3.0, x1=xc, x2=xc,
                     ax=float(ax0), ay=float(ay0), a=a, n=0, freeParams=0,
-                    rms=float("nan"))
+                    rms=float("nan"), rmSource="climatology")
 
     rr = np.array([t[0] for t in targets])
     az = np.array([t[1] for t in targets])
@@ -814,95 +1229,146 @@ def fitGTCM(snapshot):
     ri = float(np.median(rr))
 
     def err(rm, x1, x2, ax, ay):
-        V = _gtcmProfile(rr, vmax, a, rm, ri, x1, x2)
+        # amag, not the closed-over `a`: see _gtcmProfile()'s docstring.
+        # During the rm/x1/x2-sizing steps ax==ax0, ay==ay0 always, so
+        # amag == a there by construction (no behaviour change). Step 3
+        # below is the one place ax/ay actually move, and it needs the
+        # core's amplitude to track whatever it is testing, not stay
+        # pinned to the first guess it may be moving away from.
+        amag = float(np.hypot(ax, ay))
+        V = _gtcmProfile(rr, vmax, amag, rm, ri, x1, x2)
         u, v = _gtcmUV(V, az, ax, ay, lat)
         return float(np.sum(wt * (np.sqrt(u * u + v * v) - vt) ** 2))
 
-    # Only estimate what the reported radii can actually identify.  rm, x1 and
-    # x2 are three free parameters; a bulletin reporting two nonzero radii
-    # constrains two numbers.  Fitting all three to two targets leaves a whole
-    # manifold of exact solutions - every one scoring RMS 0.00 - and the
-    # optimiser lands on an arbitrary point of it.  On live TS 22W (KROVANH),
-    # two reported R34 quadrants produced rm 7.8 nm with x1 = x2 = 0.05: a wind
-    # field that barely decays with radius, drawn as a flat sheet chopped into
-    # a one-sided wedge by the asymmetry vector.  19% of two-target
-    # configurations did this.
-    #
-    # So drop a parameter when the data cannot carry it.  The Users Guide is
-    # silent here - it only says climatology is used when NO radius is
-    # reported - but estimating an unidentifiable parameter is not something a
-    # least-squares fit should be asked to do.
-    nfit = len(targets)
-    if nfit >= 5:
-        freeParams = 3          # rm, x1, x2 all identifiable
-    elif nfit >= 3:
-        freeParams = 2          # rm and one shared exponent
+    # A bulletin (or best-track record) reporting ONLY 34 kt radii carries no
+    # information at all about core size - see fitGTCM()'s docstring - so rm
+    # is pinned to climatology rather than searched, whatever nfit is.  This
+    # check comes before the nfit-based identifiability logic below because
+    # it changes which parameter is free even in cases nfit alone would
+    # otherwise hand rm to the optimiser (up to 4 quadrants can all be 34 kt
+    # only, landing in what used to be the freeParams == 1 or == 2 branches).
+    hasHigherTargets = any(t[2] > 34.0 for t in targets)
+
+    if not hasHigherTargets:
+        rmSource = "climatology"
+        rm = willoughbyRmax(vmax, lat)
+        freeParams = 1           # the shared decay exponent only
+
+        def sizeObj(p):
+            x_ = p[0]
+            if not (GTCM_X_MIN <= x_ <= GTCM_X_MAX):
+                return 1e12
+            return err(rm, x_, x_, ax0, ay0)
+        # If even the pinned-rm profile cannot reach 34 kt, the optimum lies
+        # below GTCM_X_MIN and the bound clamps it there rather than letting
+        # rm drift outward to compensate - the miss is real and is left for
+        # the modelled-radius / never-reached accounting to record.
+        (xf,), _ = _nelderMead(sizeObj, [xc], [0.12], GTCM_MAX_ITER)
+        x1 = x2 = xf
     else:
-        freeParams = 1          # rm only; exponent stays at climatology
+        rmSource = "fit"
 
-    # And keep rm near climatology when the radii cannot pin it down.  The
-    # guide describes the climatological/CP rm as a first guess that is
-    # "adjusted to better fit" the reported radii - adjusted, not replaced.
-    # Unbounded, a thin fit walks rm outward chasing a 34 kt radius the
-    # symmetric vortex cannot reach: on the KROVANH case rm went to 92.8 nm
-    # against a climatological 40.8, putting the peak wind 90 nm off the
-    # centre.  That happens whenever Vm - a falls below the threshold being
-    # fitted, which for a marginal storm with a fast translation is routine:
-    # 40 kt with a = 8.4 leaves a symmetric peak of 31.6 kt, below gale.
-    rmLo, rmHi = (2.0, 150.0) if freeParams == 3 else (
-        (0.4 * rmc, 2.5 * rmc) if freeParams == 2 else (0.5 * rmc, 2.0 * rmc))
+        # Only estimate what the reported radii can actually identify.  rm,
+        # x1 and x2 are three free parameters; a bulletin reporting two
+        # nonzero radii constrains two numbers.  Fitting all three to two
+        # targets leaves a whole manifold of exact solutions - every one
+        # scoring RMS 0.00 - and the optimiser lands on an arbitrary point of
+        # it.  On live TS 22W (KROVANH), two reported R34 quadrants produced
+        # rm 7.8 nm with x1 = x2 = 0.05: a wind field that barely decays with
+        # radius, drawn as a flat sheet chopped into a one-sided wedge by the
+        # asymmetry vector.  19% of two-target configurations did this.
+        #
+        # So drop a parameter when the data cannot carry it.  The Users
+        # Guide is silent here - it only says climatology is used when NO
+        # radius is reported - but estimating an unidentifiable parameter is
+        # not something a least-squares fit should be asked to do.
+        nfit = len(targets)
+        if nfit >= 5:
+            freeParams = 3          # rm, x1, x2 all identifiable
+        elif nfit >= 3:
+            freeParams = 2          # rm and one shared exponent
+        else:
+            freeParams = 1          # rm only; exponent stays at climatology
 
-    if freeParams == 3:
-        def sizeObj(p):
-            rm_, x1_, x2_ = p
-            if not (rmLo <= rm_ <= rmHi) or not (GTCM_X_MIN <= x1_ <= GTCM_X_MAX) \
-               or not (GTCM_X_MIN <= x2_ <= GTCM_X_MAX):
-                return 1e12
-            return err(rm_, x1_, x2_, ax0, ay0)
-        (rm, x1, x2), _ = _nelderMead(sizeObj, [rmc, xc, xc],
-                                      [max(rmc * 0.35, 4.0), 0.12, 0.12],
-                                      GTCM_MAX_ITER)
-    elif freeParams == 2:
-        def sizeObj(p):
-            rm_, x_ = p
-            if not (rmLo <= rm_ <= rmHi) or not (GTCM_X_MIN <= x_ <= GTCM_X_MAX):
-                return 1e12
-            return err(rm_, x_, x_, ax0, ay0)
-        (rm, xs), _ = _nelderMead(sizeObj, [rmc, xc],
-                                  [max(rmc * 0.35, 4.0), 0.12], GTCM_MAX_ITER)
-        x1 = x2 = xs
-    else:
-        def sizeObj(p):
-            rm_ = p[0]
-            if not (rmLo <= rm_ <= rmHi):
-                return 1e12
-            return err(rm_, xc, xc, ax0, ay0)
-        (rm,), _ = _nelderMead(sizeObj, [rmc], [max(rmc * 0.35, 4.0)],
-                               GTCM_MAX_ITER)
-        x1 = x2 = xc
+        # And keep rm near climatology when the radii cannot pin it down.
+        # The guide describes the climatological/CP rm as a first guess that
+        # is "adjusted to better fit" the reported radii - adjusted, not
+        # replaced. Unbounded, a thin fit walks rm outward chasing a
+        # threshold the symmetric vortex cannot reach: on the KROVANH case
+        # rm went to 92.8 nm against a climatological 40.8, putting the peak
+        # wind 90 nm off the centre. That happens whenever Vm - a falls
+        # below the threshold being fitted, which for a marginal storm with
+        # a fast translation is routine: 40 kt with a = 8.4 leaves a
+        # symmetric peak of 31.6 kt, below gale.
+        rmLo, rmHi = (2.0, 150.0) if freeParams == 3 else (
+            (0.4 * rmc, 2.5 * rmc) if freeParams == 2 else (0.5 * rmc, 2.0 * rmc))
 
-    # Step 3: release the asymmetry, size parameters fixed.
+        if freeParams == 3:
+            def sizeObj(p):
+                rm_, x1_, x2_ = p
+                if not (rmLo <= rm_ <= rmHi) or not (GTCM_X_MIN <= x1_ <= GTCM_X_MAX) \
+                   or not (GTCM_X_MIN <= x2_ <= GTCM_X_MAX):
+                    return 1e12
+                return err(rm_, x1_, x2_, ax0, ay0)
+            (rm, x1, x2), _ = _nelderMead(sizeObj, [rmc, xc, xc],
+                                          [max(rmc * 0.35, 4.0), 0.12, 0.12],
+                                          GTCM_MAX_ITER)
+        elif freeParams == 2:
+            def sizeObj(p):
+                rm_, x_ = p
+                if not (rmLo <= rm_ <= rmHi) or not (GTCM_X_MIN <= x_ <= GTCM_X_MAX):
+                    return 1e12
+                return err(rm_, x_, x_, ax0, ay0)
+            (rm, xs), _ = _nelderMead(sizeObj, [rmc, xc],
+                                      [max(rmc * 0.35, 4.0), 0.12], GTCM_MAX_ITER)
+            x1 = x2 = xs
+        else:
+            def sizeObj(p):
+                rm_ = p[0]
+                if not (rmLo <= rm_ <= rmHi):
+                    return 1e12
+                return err(rm_, xc, xc, ax0, ay0)
+            (rm,), _ = _nelderMead(sizeObj, [rmc], [max(rmc * 0.35, 4.0)],
+                                   GTCM_MAX_ITER)
+            x1 = x2 = xc
+
+    # Step 3: release the asymmetry, size parameters fixed.  Candidates are
+    # bounded two ways: the GTCM_ASYM_MAX_DEV_KT deviation disk around the
+    # motion-derived first guess (ax0, ay0), as before, AND - new - the
+    # GTCM_ASYM_MIN_CAP_KT-floored magnitude cap around the ORIGIN.  The
+    # magnitude cap is what stops a one-sided radii report from starving the
+    # weak side; see its comment.  asymCap >= a always (1.5x with a floor),
+    # so (ax0, ay0) itself - magnitude exactly a - is always admissible, and
+    # the floor means the cap is never zero even when a is (a stationary
+    # storm can still pick up a modest asymmetry from the grid/Nelder-Mead
+    # search below, so this no longer needs an `if a > 0.0` guard).
+    asymCap = max(1.5 * a, GTCM_ASYM_MIN_CAP_KT)
+    asymCap2 = asymCap * asymCap
     best = (err(rm, x1, x2, ax0, ay0), float(ax0), float(ay0))
-    if a > 0.0:
-        grid = np.linspace(-GTCM_ASYM_MAX_DEV_KT, GTCM_ASYM_MAX_DEV_KT,
-                           GTCM_ASYM_STEPS)
-        for dx in grid:
-            for dy in grid:
-                e = err(rm, x1, x2, ax0 + dx, ay0 + dy)
-                if e < best[0]:
-                    best = (e, float(ax0 + dx), float(ay0 + dy))
-        def asymObj(p):
-            dx, dy = p[0] - ax0, p[1] - ay0
-            if dx * dx + dy * dy > GTCM_ASYM_MAX_DEV_KT ** 2:
-                return 1e12
-            return err(rm, x1, x2, p[0], p[1])
-        (axf, ayf), ef = _nelderMead(asymObj, [best[1], best[2]], [2.0, 2.0], 80)
-        if ef < best[0]:
-            best = (ef, float(axf), float(ayf))
+    grid = np.linspace(-GTCM_ASYM_MAX_DEV_KT, GTCM_ASYM_MAX_DEV_KT,
+                       GTCM_ASYM_STEPS)
+    for dx in grid:
+        for dy in grid:
+            axc, ayc = ax0 + dx, ay0 + dy
+            if axc * axc + ayc * ayc > asymCap2:
+                continue          # magnitude cap rejects this candidate
+            e = err(rm, x1, x2, axc, ayc)
+            if e < best[0]:
+                best = (e, float(axc), float(ayc))
+    def asymObj(p):
+        dx, dy = p[0] - ax0, p[1] - ay0
+        if dx * dx + dy * dy > GTCM_ASYM_MAX_DEV_KT ** 2:
+            return 1e12
+        if p[0] * p[0] + p[1] * p[1] > asymCap2:
+            return 1e12
+        return err(rm, x1, x2, p[0], p[1])
+    (axf, ayf), ef = _nelderMead(asymObj, [best[1], best[2]], [2.0, 2.0], 80)
+    if ef < best[0]:
+        best = (ef, float(axf), float(ayf))
 
     return dict(rm=float(rm), ri=ri, x1=float(x1), x2=float(x2),
                 ax=best[1], ay=best[2], a=a, n=len(targets),
-                freeParams=freeParams,
+                freeParams=freeParams, rmSource=rmSource,
                 rms=float(np.sqrt(best[0] / np.sum(wt))))
 
 
@@ -924,18 +1390,34 @@ def _buildVortexGTCM(latGrid, lonGrid, snapshot, rmax_nm, outerDecayFactor,
         too strong over land.
     """
     r, az = _distBearingGrids(latGrid, lonGrid, snapshot.lat, snapshot.lon)
-    fit = fitGTCM(snapshot)
+    fit = snapshot.fit if getattr(snapshot, "fit", None) is not None \
+        else fitGTCM(snapshot)
 
-    V = _gtcmProfile(r, snapshot.vmax, fit["a"], fit["rm"], fit["ri"],
+    # Use the magnitude of the asymmetry vector actually applied, not the
+    # Schwerdt first guess fit["a"] - see _gtcmProfile()'s docstring. This
+    # is what makes the analytic field's peak over azimuth hit Vmax exactly
+    # at r = rm, whatever the fit's step 3 did to (ax, ay).
+    amag = float(np.hypot(fit["ax"], fit["ay"]))
+
+    V = _gtcmProfile(r, snapshot.vmax, amag, fit["rm"], fit["ri"],
                      fit["x1"], fit["x2"])
     u, v = _gtcmUV(V, az, fit["ax"], fit["ay"], snapshot.lat)
     mag = np.sqrt(u * u + v * v)
 
     # Modelled 34 kt radius per azimuth, for the insert footprint and taper.
-    probe = np.linspace(1.0, 900.0, 900)
-    prof = _gtcmProfile(probe, snapshot.vmax, fit["a"], fit["rm"], fit["ri"],
+    # This depends on azimuth ALONE - fit/amag are the same everywhere on
+    # this grid - so solve it once on a fixed azimuth table
+    # (GTCM_R34_AZ_BINS bins) and interpolate onto the grid's own azimuths,
+    # rather than broadcasting the probe against every grid point. See
+    # GTCM_R34_AZ_BINS's comment: that broadcast used to cost
+    # grid_points x GTCM_R34_PROBE_MAX_NM, computed twice over (34 s, 6.9 GB
+    # peak on a 500x500 domain); this costs GTCM_R34_AZ_BINS x
+    # GTCM_R34_PROBE_MAX_NM regardless of grid size.
+    probe = np.linspace(1.0, GTCM_R34_PROBE_MAX_NM, GTCM_R34_PROBE_MAX_NM)
+    prof = _gtcmProfile(probe, snapshot.vmax, amag, fit["rm"], fit["ri"],
                         fit["x1"], fit["x2"])
-    uu, vv = _gtcmUV(prof[None, :], np.asarray(az).ravel()[:, None],
+    azTable = np.linspace(0.0, 360.0, GTCM_R34_AZ_BINS, endpoint=False)
+    uu, vv = _gtcmUV(prof[None, :], azTable[:, None],
                      fit["ax"], fit["ay"], snapshot.lat)
     prof2d = np.sqrt(uu * uu + vv * vv)
     # The OUTERMOST radius still at 34 kt.  Not the first crossing: the profile
@@ -961,21 +1443,55 @@ def _buildVortexGTCM(latGrid, lonGrid, snapshot, rmax_nm, outerDecayFactor,
     frac = np.clip(frac, 0.0, 1.0)
     r34_exact = probe[last] + frac * (probe[nxt] - probe[last])
 
-    r34 = np.where(anyAbove, r34_exact, fit["rm"] * 3.0)
+    # Where the profile never reaches 34 kt at all - a weak system, or a
+    # quadrant of a marginal one where the asymmetry vector opposes the flow
+    # after the Vm-a reduction - anchor the footprint on the LOCATION OF THE
+    # PROFILE'S OWN PEAK on that azimuth, not a fixed 3*rm.  This used to
+    # jump straight to 3*rm the moment the peak fell even 0.01 kt short of
+    # 34, while r34_exact above approaches the peak's own radius as the peak
+    # approaches 34 from above (right at the threshold the outermost >=34 kt
+    # point IS the peak, by definition).  So "peak location" is the r34_exact
+    # branch's own limit, and switching to it there makes r34(az) continuous
+    # across the anyAbove boundary instead of stepping between two radii that
+    # can differ by 100+ nm.
+    #
+    # This boundary is not a rare edge case: the 34 kt targets that drive the
+    # fit (_gtcmTargets, weighted 5x) sit exactly at the quadrant bisectors
+    # (QUAD_AZ), so the fit is, by construction, trying to land the field as
+    # close to 34 kt as the least-squares average allows AT those azimuths.
+    # For a marginal storm that means the peak-over-r frequently straddles 34
+    # kt right around a bisector, which is exactly where
+    # tests/tcwind_jtwc/verify_gtcm.py's azimuthal-kink estimator samples.
+    # The 3*rm cliff there - not the fixed-bin r34(az) table below, which
+    # reproduces this jump (or its absence) faithfully at any resolution -
+    # was the azimuthalKinkKtPerDeg regression this fix addresses; confirmed
+    # by recomputing r34 exactly per grid azimuth (bypassing the table
+    # entirely), which reproduced the same jump.
+    peakIdx = np.argmax(prof2d, axis=1)
+    peakR = probe[peakIdx]
+    r34_table = np.where(anyAbove, r34_exact, peakR)
+
+    # Interpolate r34(az) onto the grid's own azimuths, linear and wrapping
+    # at 360 so the 0/360 seam stays continuous (azTable's last bin is
+    # centered below 360, so it and azTable[0] must both anchor the wrap).
+    azTableWrap = np.concatenate([azTable, [360.0]])
+    r34TableWrap = np.concatenate([r34_table, r34_table[:1]])
+    azFlat = np.asarray(az, dtype=float).ravel() % 360.0
+    r34 = np.interp(azFlat, azTableWrap, r34TableWrap)
     r34 = r34.reshape(r.shape).astype(np.float32)
 
     # Anchor the taper on the field's OWN value at r34, not on a constant 34.
     # Where the field does reach 34 kt these are the same number, because r34
-    # is solved as the radius where it does.  Where it never reaches 34 - a
-    # weak system, or a quadrant of a marginal one where the asymmetry vector
-    # opposes the flow after the Vm-a reduction - r34 falls back to 3*rm, and
-    # anchoring on 34 there made the field jump UP at that radius: a 30 kt
+    # is solved as the radius where it does.  Where it never reaches 34, r34
+    # is now the profile's own peak location on that azimuth (see above), so
+    # the anchor there is the peak wind itself, just short of 34 - anchoring
+    # on a constant 34 instead made the field jump UP at that radius: a 30 kt
     # system came out with its peak of 34 kt sitting 113 nm from the centre
     # instead of in its core.  Evaluating the profile at r34 handles both
     # branches with one expression.
     az1d = np.asarray(az).ravel()
     r341d = np.asarray(r34).ravel()
-    Vanchor = _gtcmProfile(r341d, snapshot.vmax, fit["a"], fit["rm"],
+    Vanchor = _gtcmProfile(r341d, snapshot.vmax, amag, fit["rm"],
                            fit["ri"], fit["x1"], fit["x2"])
     ua, va = _gtcmUV(Vanchor, az1d, fit["ax"], fit["ay"], snapshot.lat)
     anchorV = np.sqrt(ua * ua + va * va).reshape(r.shape)
@@ -1364,8 +1880,16 @@ if _IN_GFE:
                     (" ", "", "label"),
                 ]
 
+            # Section headers and blank spacer rows are plain "label" rows
+            # too, so each one still needs its own distinct text (see the
+            # note above) -- the spacers below differ only in how much
+            # whitespace they hold, which renders identically as a blank
+            # line but keeps every varDict key unique.
             VariableList += [
+                ("Select the bulletins to process:", "", "label"),
                 ("Bulletins to process:", pilList, "check", pilList),
+                ("  ", "", "label"),
+                ("Choose where to write the output:", "", "label"),
                 ("Write to:", "Preview grid", "radio",
                  ["Preview grid", "Fcst Wind"]),
                 ("Run over selected time range only?", "No", "radio",
@@ -1384,9 +1908,16 @@ if _IN_GFE:
 
             if EXPERIMENTAL and REQUIRE_ACKNOWLEDGEMENT:
                 VariableList += [
+                    ("   ", "", "label"),
                     ("I understand this tool is experimental and I have "
                      "reviewed the output:", "No", "radio", ["No", "Yes"]),
                 ]
+
+            VariableList += [
+                ("    ", "", "label"),
+                ("Testing only:", "", "label"),
+                (TEST_CASE_LABEL, "No", "radio", ["No", "Yes"]),
+            ]
 
             title = "JTWC Tropical Cyclone Wind  (v%s)" % VERSION
             if EXPERIMENTAL:
@@ -1555,13 +2086,30 @@ if _IN_GFE:
                 if varDict is None:
                     return
 
+            testCase = varDict.get(TEST_CASE_LABEL, "No") == "Yes"
+
             pils = list(varDict.get("Bulletins to process:") or [])
 
-            if not pils:
+            # Test case mode uses its own bundled storm, not any selected
+            # PIL, so the "no bulletins selected" guard does not apply to it
+            # (nor does the "Bulletins to process:" checklist otherwise
+            # matter - it is simply ignored below).
+            if not pils and not testCase:
                 self.statusBarMsg("No bulletins selected.", "S")
                 return
 
             preview = varDict.get("Write to:", "Preview grid") == "Preview grid"
+
+            # Safety property, enforced in code rather than only by dialog
+            # wiring: a synthetic test-case storm must never land in Fcst
+            # Wind, no matter what "Write to:" says or whether the
+            # forecaster acknowledged writing to Fcst. Force preview before
+            # the acknowledgement gate below even runs, and say so once in
+            # the final status message.
+            forcedPreviewMsg = ""
+            if testCase and not preview:
+                preview = True
+                forcedPreviewMsg = "Test case always writes to the preview grid. "
 
             # Writing to Fcst needs an explicit acknowledgement while the
             # tool is experimental.  Preview runs never do, so nothing stops
@@ -1602,6 +2150,11 @@ if _IN_GFE:
                 utcHr = self._gmtime().timetuple().tm_hour
                 activeTR = self.createTimeRange(utcHr - 6, utcHr + 175, "Zulu")
 
+            # Needed by the test-case track translation below, so this is
+            # fetched before the storms are collected rather than after, as
+            # a live-bulletin-only run used to do.
+            latGrid, lonGrid = self.getLatLonGrids()
+
             # --- collect every bulletin with a live storm in it -------
             storms = []
             # Per-run override of INSERT_AFTER_SUBTROPICAL.
@@ -1611,34 +2164,45 @@ if _IN_GFE:
 
             stale = []
             problems = []
-            for pil in pils:
-                raw = self._retrieveBulletin(pil)
-                if not raw:
-                    continue          # empty slot, entirely normal
-                try:
-                    taus, header = parseJTWC(raw)
-                except Exception as exc:
-                    problems.append("%s: %s" % (pil, exc))
-                    continue
-                if len(taus) < 2:
-                    problems.append("%s: only %d usable forecast times"
-                                    % (pil, len(taus)))
-                    continue
+            if testCase:
+                taus, header = parseJTWC(TEST_CASE_BULLETIN)
+                taus, header = _rebaseTestCaseTrack(
+                    taus, header, nowSecs, latGrid, lonGrid)
+                storms.append(
+                    {"pil": "TESTCASE", "taus": taus, "header": header})
+            else:
+                for pil in pils:
+                    raw = self._retrieveBulletin(pil)
+                    if not raw:
+                        continue          # empty slot, entirely normal
+                    try:
+                        # nowSecs: GFE's own clock, already computed above -
+                        # only consulted by parseJTWC()'s no-DDMMMYY
+                        # fallback (see its docstring), so this changes
+                        # nothing for the normal case.
+                        taus, header = parseJTWC(raw, nowSecs)
+                    except Exception as exc:
+                        problems.append("%s: %s" % (pil, exc))
+                        continue
+                    if len(taus) < 2:
+                        problems.append("%s: only %d usable forecast times"
+                                        % (pil, len(taus)))
+                        continue
 
-                # textdb hands back whatever was last stored under this PIL,
-                # so a dissipated storm sits there indefinitely.  Judge the
-                # slot by the bulletin's own analysis time.
-                ageHours = (nowSecs - taus[0].epoch) / 3600.0
-                if ageHours > MAX_BULLETIN_AGE_HOURS:
-                    stale.append("%s %s is %.0f h old"
-                                 % (pil, describeStorm(header), ageHours))
-                    continue
-                if taus[-1].epoch <= nowSecs:
-                    stale.append("%s %s forecast period has ended"
-                                 % (pil, describeStorm(header)))
-                    continue
+                    # textdb hands back whatever was last stored under this
+                    # PIL, so a dissipated storm sits there indefinitely.
+                    # Judge the slot by the bulletin's own analysis time.
+                    ageHours = (nowSecs - taus[0].epoch) / 3600.0
+                    if ageHours > MAX_BULLETIN_AGE_HOURS:
+                        stale.append("%s %s is %.0f h old"
+                                     % (pil, describeStorm(header), ageHours))
+                        continue
+                    if taus[-1].epoch <= nowSecs:
+                        stale.append("%s %s forecast period has ended"
+                                     % (pil, describeStorm(header)))
+                        continue
 
-                storms.append({"pil": pil, "taus": taus, "header": header})
+                    storms.append({"pil": pil, "taus": taus, "header": header})
 
             if not storms:
                 msg = "No live bulletins found in %s." % ", ".join(pils)
@@ -1664,27 +2228,47 @@ if _IN_GFE:
 
             # Fragment so partially overlapping blocks can be written.  A
             # preview run must not touch Fcst at all, and fragmenting would
-            # rewrite its inventory, so it is skipped.
+            # rewrite its inventory, so it is skipped.  testCase always
+            # forces preview above, so this never fires for it either. This
+            # is a defensive safety net for writing into whatever the
+            # background inventory looks like - it is not what decides this
+            # tool's own output cadence; that is fixed below regardless of
+            # what fragmentCmd leaves behind.
             if not preview:
                 self._fragment(activeTR)
-                fcstTRList = self._fcstInventory(activeTR)
 
-            latGrid, lonGrid = self.getLatLonGrids()
+            # The tool computes its own fixed 3-hourly (OUTPUT_GRID_INTERVAL_
+            # SECONDS) time series across the whole bulletin span and writes
+            # a block at every point in it, splitting a coarser background
+            # block wherever a write lands inside one.  It never looks at
+            # the background Fcst Wind inventory's own block boundaries to
+            # decide where or how wide to write - see OUTPUT_GRID_INTERVAL_
+            # SECONDS's comment in the tunables block for why.
+            #
+            # `spanStart`/`spanEnd` are tau epochs and so should already sit
+            # on interval boundaries, but that is not trusted blindly: floor
+            # the start down and ceiling the end up to the nearest interval
+            # boundary, so the series is never a fencepost short of the
+            # bulletins' own limits even if a tau ever lands off-boundary.
+            interval = OUTPUT_GRID_INTERVAL_SECONDS
+            seriesLo = (int(spanStart) // interval) * interval
+            seriesHi = -(-int(spanEnd) // interval) * interval  # ceil
 
-            # A grid block is valid from its start time onward, so a
-            # forecast time populates the block that BEGINS at it.  Every
-            # block is evaluated at its own start; blocks between two
-            # forecast times interpolate to their start.  This means a tau
-            # landing on a block start is hit exactly, which is how the
-            # forecast peak reaches the grid.
-            blockBounds = [self._trBounds(tr) for tr in fcstTRList]
-            blockStarts = set(a for a, _b in blockBounds)
+            if selectedTimeOnly:
+                # Bounded within the selected range too, snapped the same
+                # way: round the selected range's start UP and its end DOWN
+                # to the nearest interval boundary so nothing is ever
+                # written outside it, without clipping a boundary that
+                # already sits exactly on one (no fencepost gap either way).
+                trLo, trHi = self._trBounds(activeTR)
+                seriesLo = max(seriesLo, -(-int(trLo) // interval) * interval)
+                seriesHi = min(seriesHi, (int(trHi) // interval) * interval)
 
-            durations = [b - a for a, b in blockBounds]
-            if durations:
-                blockDur = max(set(durations), key=durations.count)
-            else:
-                blockDur = 3600
+            series = []
+            when = seriesLo
+            while when <= seriesHi:
+                series.append(when)
+                when += interval
 
             written = 0
             skippedST = 0
@@ -1764,12 +2348,19 @@ if _IN_GFE:
                                  direc.astype(np.float32)), tr, preview)
                 return float(mag[footprint].max())
 
-            for tr in fcstTRList:
-                trStart, _trEnd = self._trBounds(tr)
-                if trStart < spanStart or trStart > spanEnd:
-                    continue
+            # One loop, one series: every point in `series` gets its own
+            # fixed-width block, written whether or not the background Fcst
+            # Wind inventory already has a block starting there.  A tau
+            # that lands off the interval's own boundaries never occurs in
+            # practice (every JTWC tau is itself a multiple of 3 hours),
+            # but nothing here depends on that - each `when` gets evaluated
+            # at its own instant via `interpolateTrack` regardless.
+            for when in series:
+                tr = TimeRange.TimeRange(
+                    AbsTime.AbsTime(int(when)),
+                    AbsTime.AbsTime(int(when + interval)))
 
-                built, stFlag, tdCount = buildFor(trStart, tr)
+                built, stFlag, tdCount = buildFor(when, tr)
                 skippedTD += tdCount
                 if stFlag:
                     skippedST += 1
@@ -1782,51 +2373,12 @@ if _IN_GFE:
                     peakWritten = max(peakWritten, peak)
                     written += 1
 
-            # A forecast time with no block beginning at it gets one created,
-            # so the last group of a bulletin is never lost just because the
-            # Fcst inventory happened to stop there.
-            created = []
-            unplaced = []
-            if CREATE_MISSING_TAU_BLOCKS:
-                wanted = sorted(set(
-                    x.epoch for s in storms for x in s["taus"]
-                    if x.epoch not in blockStarts))
-                for when in wanted:
-                    # Three values, not two.  buildFor() grew a
-                    # tdSkipped count and this call site was not
-                    # updated, so every run that reached here raised
-                    # ValueError: too many values to unpack.  That is
-                    # exactly the case this block exists for - a JTWC
-                    # forecast time with no Fcst block beginning at it -
-                    # and the call sits outside the try below, so it
-                    # took the whole procedure down rather than losing
-                    # one grid.
-                    built, stFlag, tdCount = buildFor(when, None)
-                    skippedTD += tdCount
-                    if stFlag:
-                        skippedST += 1
-                        continue
-                    if not built:
-                        continue
-                    try:
-                        tr = TimeRange.TimeRange(
-                            AbsTime.AbsTime(int(when)),
-                            AbsTime.AbsTime(int(when + blockDur)))
-                        peak = writeBlock(tr, built)
-                    except Exception as exc:
-                        unplaced.append("%s (%s)" % (
-                            time.strftime("%d/%H%MZ", time.gmtime(when)), exc))
-                        continue
-                    if peak:
-                        peakWritten = max(peakWritten, peak)
-                        written += 1
-                        created.append(
-                            time.strftime("%d/%H%MZ", time.gmtime(when)))
-
             if not written:
-                self.statusBarMsg(
-                    "Parsed %d live bulletin(s), but no Fcst Wind grids fell "
-                    "inside their valid periods." % len(storms), "S")
+                msg = "Parsed %d live bulletin(s), but no Fcst Wind grids " \
+                      "fell inside their valid periods." % len(storms)
+                if testCase:
+                    msg = "TEST CASE (not a live storm). " + msg
+                self.statusBarMsg(msg, "S")
                 return
 
             parts = []
@@ -1839,17 +2391,23 @@ if _IN_GFE:
 
             where = "%s preview grids" % PREVIEW_ELEMENT if preview \
                 else "Fcst Wind grids"
-            msg = "v%s. " % VERSION
+            intervalHours = interval // 3600
+            msg = ""
+            if testCase:
+                msg += "TEST CASE (not a live storm). "
+            if forcedPreviewMsg:
+                msg += forcedPreviewMsg
+            msg += "v%s. " % VERSION
             if EXPERIMENTAL:
                 msg += "EXPERIMENTAL, verify before use. "
-            msg += "Updated %d %s. " % (written, where) + "; ".join(parts) + "."
+            # Every block this run writes comes from the same fixed-interval
+            # series, so there is no longer a separate "updated" vs.
+            # "created" distinction to report - just the total written and
+            # the (always 3-hourly, by default) interval used.
+            msg += "Wrote %d %d-hourly %s. " % (
+                written, intervalHours, where) + "; ".join(parts) + "."
             msg += " Peak wind written %.0f kt vs bulletin max %.0f kt." % (
                 peakWritten, bulletinPeak)
-            if created:
-                msg += " Created blocks at " + ", ".join(created) + "."
-            if unplaced:
-                msg += " Could not create a block at " + \
-                       "; ".join(unplaced) + "."
             if skippedST:
                 msg += " Skipped %d storm-times after subtropical " \
                        "transition." % skippedST

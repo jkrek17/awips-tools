@@ -75,8 +75,58 @@ so the page can state the definition next to the number.
 Ring and field numbers are NOT recomputed here - compare_vortex_methods.py
 owns them and this script imports it, so there is one implementation.
 
-    python3 verify_gtcm.py [--cases N] [--coherence-cases N] [--basins WP,NA,EP]
-                           [--out PATH]
+SCHEMA ADDITIONS (holdout / byNature / byLand)
+-----------------------------------------------
+Three new top-level blocks, each built by its own script and embedded here
+verbatim (same "one implementation" discipline as ringFit/fieldDiff above):
+
+    holdout    verify_holdout.compute()'s return value directly. Answers
+               the question nothing else in this pipeline asks: fit GTCM/
+               perquad to a SUBSET of one record's reported radii and score
+               the prediction of the radii withheld from the fit. See that
+               script's own docstring for the full method, its CAVEAT
+               (read this before quoting a holdout number - r34Only is a
+               harder, synthetic task; r34R50 is the more representative
+               one), and the exact JSON shape (byBasin/pooled, each holding
+               r34Only/r34R50/rmwContext).
+    byNature   verify_stratified.compute()["byNature"]. The SAME ringFit
+               and holdout statistics above, pooled by IBTrACS storm-nature
+               flag (TS/ET/SS/MX/other) instead of by basin.
+    byLand     verify_stratified.compute()["byLand"]. The same statistics
+               again, pooled by distance-to-nearest-land bucket instead.
+
+byNature/byLand fold verify_besttrack_context.py's question (does accuracy
+hold up near land and during transition?) into this hermetic, archive-based,
+all-three-basin pipeline; see verify_stratified.py's docstring for why that
+script, not the original CSV-driven one, now feeds this JSON. Every group in
+both blocks carries n and nStorms - some strata (ET, SS especially) are thin
+even pooled across three basins; read nStorms before trusting a stratum's
+number, and see verify_stratified.py's own caveat.
+
+A statistic that cannot be computed (e.g. a correlation r over too few
+records) is written as JSON null, never as NaN/Infinity - see
+_sanitize_nans() below; the page's gap marker is the intended rendering of
+that null.
+
+Every stat everywhere in this file - not just the three new blocks - carries
+both n (records) and nStorms (distinct storms): compare_vortex_methods.stats()
+and this script's own accumulators were extended to track storm SIDs
+alongside every value for exactly this reason. Records are not independent
+by storm (see the top-level notes.independence below); n alone overstates
+how much independent evidence a number rests on.
+
+    python3 verify_gtcm.py [--cases N] [--coherence-cases N] [--seed N]
+                           [--basins WP,NA,EP] [--out PATH]
+                           [--no-holdout] [--no-stratified]
+
+--cases 0 (the default) means the WHOLE usable population of each basin,
+not a sample - see the CLI help and the runtime numbers this script prints
+and writes to findings["runtime"]. --coherence-cases keeps a real subsample
+(that block's cost scales with grid points x cases, not just cases) but
+its default (50) is chosen so seeded round-robin sampling still covers at
+least 40 distinct storms in every basin (compare_vortex_methods.load_cases's
+docstring explains why a small --cases used to silently collapse onto 1-3
+storms; this default is the fix applied to this script's own defaults).
 """
 
 import argparse
@@ -84,6 +134,7 @@ import datetime
 import json
 import os
 import sys
+import time
 
 import numpy as np
 
@@ -93,6 +144,8 @@ sys.path.insert(0, os.path.join(HERE, "..", "..", "GFE", "procedures"))
 
 import TCWind_JTWC as T                # noqa: E402
 import compare_vortex_methods as C     # noqa: E402
+import verify_holdout               # noqa: E402
+import verify_stratified            # noqa: E402
 
 OUT = os.path.join(HERE, "data", "gtcm_findings.json")
 
@@ -179,6 +232,27 @@ COHERENCE_DEFS = {
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
+
+def _sanitize_nans(obj):
+    """Recursively replace float NaN/Infinity with None.
+
+    Statistics computed over too few records (e.g. a correlation r for an
+    n=1 bucket) come back as float('nan') from numpy; json.dump's default
+    allow_nan=True would emit those as the bare token NaN, which is valid
+    JavaScript but not valid JSON - google.script.run cannot serialize a
+    NaN in a return value at all, so the whole findings object is dropped
+    client-side instead of just the one bad field. Replacing every such
+    value with None here makes it real JSON null, which the page already
+    renders as its gap marker (see val()/num() in Findings.html).
+    """
+    if isinstance(obj, float):
+        return obj if np.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return dict((k, _sanitize_nans(v)) for k, v in obj.items())
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_nans(v) for v in obj]
+    return obj
+
 
 def _one_sided_fit(x, y, x0, lo, hi):
     """Line fit to (x, y) over x0+lo .. x0+hi. Returns (slope, value at x0)."""
@@ -416,6 +490,7 @@ def coherence_for(cases, progress=None):
             if np.isfinite(fr[m]):
                 acc[m]["rough"].append(fr[m])
             acc[m]["cases"] += 1
+            acc[m]["storms"].add(sid)
         n += 1
         if progress and n % progress == 0:
             sys.stderr.write("      coherence %d cases (%s)\n" % (n, sid))
@@ -426,7 +501,7 @@ def coherence_for(cases, progress=None):
 def _new_acc():
     return dict((m, {"az": [], "azc": [], "brk": [], "jmp": [],
                      "brkNT": [], "jmpNT": [], "mv": 0, "mt": 0,
-                     "rough": [], "cases": 0, "detail": {}})
+                     "rough": [], "cases": 0, "storms": set(), "detail": {}})
                 for m in C.METHODS)
 
 
@@ -449,6 +524,7 @@ def coherence_block(acc):
                                          if a["mt"] else float("nan")),
             "fieldRoughnessPctVmax": _mean(a["rough"]),
             "cases": a["cases"],
+            "casesStorms": len(a["storms"]),
             "byKnot": dict((label,
                             {"kinkKtPerNm": _mean(d["break"]),
                              "jumpKt": _mean(d["jump"]),
@@ -469,6 +545,7 @@ def merge_acc(dst, src):
         dst[m]["mv"] += src[m]["mv"]
         dst[m]["mt"] += src[m]["mt"]
         dst[m]["cases"] += src[m]["cases"]
+        dst[m]["storms"] |= src[m]["storms"]
     return dst
 
 
@@ -506,19 +583,31 @@ def coherence_with_continuous_ri(cases, progress=None):
 
     fitGTCM() calls _gtcmProfile too, so the fit is redone against the
     corrected profile - which is what a corrected implementation would do.
+
+    compare_vortex_methods.py memoises T.fitGTCM by the snapshot's own
+    content, which says nothing about which T._gtcmProfile is active - so a
+    snapshot already fit under the normal profile (by the ring/field/
+    coherence passes above) would otherwise hand back its stale, wrong-
+    profile fit here instead of being re-fit under this patched one. Clear
+    the cache around the swap so every fit in this pass is genuinely
+    recomputed, and again on the way out so the normal profile's callers
+    after this don't inherit a fit computed under the patched one either.
     """
+    C.clear_fit_cache()
     original = T._gtcmProfile
     T._gtcmProfile = _gtcm_profile_continuous
     try:
         return coherence_for(cases, progress=progress)
     finally:
+        C.clear_fit_cache()
         T._gtcmProfile = original
 
 
 def ri_step_stats(cases):
     """Size of the step in V at ri, as the shipped profile builds it."""
     ratios, kt = [], []
-    for _sid, rec in cases:
+    storms = set()
+    for sid, rec in cases:
         snap = C._snapshot(rec)
         if not snap.radii:
             continue
@@ -531,10 +620,11 @@ def ri_step_stats(cases):
         if lo > 0:
             ratios.append(hi / lo)
             kt.append(hi - lo)
+            storms.add(sid)
     if not ratios:
         return {}
     r = np.asarray(ratios)
-    return {"n": len(ratios),
+    return {"n": len(ratios), "nStorms": len(storms),
             "meanRatio": float(np.mean(r)),
             "medianRatio": float(np.median(r)),
             "maxRatio": float(np.max(r)),
@@ -550,7 +640,8 @@ def ri_step_stats(cases):
 
 def fit_quality(cases):
     rms, rm, x1, x2, ri = [], [], [], [], []
-    for _sid, rec in cases:
+    storms = set()
+    for sid, rec in cases:
         snap = C._snapshot(rec)
         if not snap.radii:
             continue
@@ -561,12 +652,14 @@ def fit_quality(cases):
         ri.append(f["ri"])
         x1.append(f["x1"])
         x2.append(f["x2"])
+        storms.add(sid)
 
     def med(v):
         return float(np.median(v)) if len(v) else float("nan")
     return {"rmsWindErrKt": _mean(rms), "medianRmsWindErrKt": med(rms),
             "medianRm": med(rm), "medianRi": med(ri),
-            "medianX1": med(x1), "medianX2": med(x2), "n": len(rm)}
+            "medianX1": med(x1), "medianX2": med(x2),
+            "n": len(rm), "nStorms": len(storms)}
 
 
 # ---------------------------------------------------------------------------
@@ -577,19 +670,40 @@ def main():
     ap = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--cases", type=int, default=120,
-                    help="storm-times per basin for ring/field numbers "
-                         "(default 120)")
-    ap.add_argument("--coherence-cases", type=int, default=60,
-                    help="storm-times per basin for coherence (default 60)")
+    ap.add_argument("--cases", type=int, default=0,
+                    help="storm-times per basin for ring/field numbers. "
+                         "0 (default) = the whole usable population of "
+                         "each basin, sampled by seeded round-robin across "
+                         "storms if a smaller value is given (see "
+                         "compare_vortex_methods.load_cases)")
+    ap.add_argument("--coherence-cases", type=int, default=50,
+                    help="storm-times per basin for the coherence block "
+                         "(default 50 - a real subsample, not the whole "
+                         "archive, because that block's cost scales with "
+                         "grid points x cases; chosen so seeded round-robin "
+                         "still covers at least 40 distinct storms in "
+                         "every basin, all of which have >=57 usable "
+                         "storms)")
+    ap.add_argument("--seed", type=int, default=C.DEFAULT_SEED,
+                    help="storm-shuffle seed for --cases/--coherence-cases "
+                         "sampling (default %d)" % C.DEFAULT_SEED)
     ap.add_argument("--basins", default="WP,NA,EP")
     ap.add_argument("--out", default=OUT)
     ap.add_argument("--progress", type=int, default=20)
     ap.add_argument("--no-ri-diagnostic", action="store_true",
                     help="skip the continuous-eq-(3) diagnostic pass")
+    ap.add_argument("--no-holdout", action="store_true",
+                    help="skip verify_holdout.py's held-out-radius block "
+                         "(fast - only skip this for a quick smoke test)")
+    ap.add_argument("--no-stratified", action="store_true",
+                    help="skip verify_stratified.py's byNature/byLand "
+                         "blocks (the slowest part of a full run - its "
+                         "ringFit pass touches every usable() record)")
     args = ap.parse_args()
 
+    t_start = time.time()
     basins = [b.strip().upper() for b in args.basins.split(",") if b.strip()]
+    cases_limit = args.cases if args.cases and args.cases > 0 else None
 
     findings = {
         "generated": datetime.date.today().isoformat(),
@@ -613,31 +727,36 @@ def main():
         "scope": {}, "ringFit": {}, "ringFitVsTarget": {}, "neverReached": {},
         "fieldDiff": {}, "fitQuality": {}, "coherence": {},
         "coherenceByBasin": {}, "coherenceDefinitions": COHERENCE_DEFS,
-        "coherenceDiagnostics": {}, "notes": {},
+        "coherenceDiagnostics": {}, "holdout": {}, "byNature": {},
+        "byLand": {}, "runtime": {}, "notes": {},
     }
 
     pooled = _new_acc()
     pooled_fix = _new_acc()
     ri_cases = []
+    runtime = {}
 
     for basin in basins:
         scope = C.basin_scope(basin)
         if scope is None:
             sys.stderr.write("%s: no data on disk, skipped\n" % basin)
             continue
-        cases = C.load_cases(basin, args.cases)
+        t0 = time.time()
+        cases = C.load_cases(basin, cases_limit, seed=args.seed)
         sys.stderr.write("%s: %d storms, %d records, %d usable; "
-                         "evaluating %d\n"
+                         "evaluating %d (%d distinct storms)\n"
                          % (basin, scope["storms"], scope["records"],
-                            scope["usableRecords"], len(cases)))
+                            scope["usableRecords"], len(cases),
+                            len(C.case_storms(cases))))
         res = C.evaluate(cases, progress=args.progress)
         findings["ringFit"][basin] = res["ringFit"]
         findings["ringFitVsTarget"][basin] = res["ringFitVsTarget"]
         findings["neverReached"][basin] = res["neverReached"]
         findings["fieldDiff"][basin] = res["fieldDiff"]
         findings["fitQuality"][basin] = fit_quality(cases)
+        t_ring = time.time()
 
-        ccases = cases[:args.coherence_cases]
+        ccases = cases[:args.coherence_cases] if args.coherence_cases else cases
         acc = coherence_for(ccases, progress=args.progress)
         findings["coherenceByBasin"][basin] = coherence_block(acc)
         merge_acc(pooled, acc)
@@ -646,13 +765,18 @@ def main():
             merge_acc(pooled_fix,
                       coherence_with_continuous_ri(ccases,
                                                    progress=args.progress))
+        t_coh = time.time()
 
         scope = dict(scope)
         scope["casesEvaluated"] = res["cases"]
+        scope["casesEvaluatedStorms"] = res["storms"]
         scope["coherenceCases"] = len(ccases)
+        scope["coherenceCasesStorms"] = len(C.case_storms(ccases))
         scope["agency"] = {"WP": "jtwc_wp", "NA": "hurdat_atl",
                            "EP": "hurdat_epa"}.get(basin, "")
         findings["scope"][basin] = scope
+        runtime[basin] = {"ringFieldSec": round(t_ring - t0, 1),
+                          "coherenceSec": round(t_coh - t_ring, 1)}
 
     findings["coherence"] = coherence_block(pooled)
     if not args.no_ri_diagnostic and ri_cases:
@@ -660,20 +784,46 @@ def main():
             "riStep": ri_step_stats(ri_cases),
             "gtcmWithContinuousRi": coherence_block(pooled_fix)["gtcm"],
             "note":
-                "TCWind_JTWC._gtcmProfile's continuity factor for eq. (3) is "
-                "A = (ri/rm)**x1 * (rm/ri)**x2. Matching the two branches at "
-                "r = ri requires the reciprocal, A = (rm/ri)**x1 * "
-                "(ri/rm)**x2; as written the outer branch is scaled by "
-                "(ri/rm)**(2*(x1-x2)) and the modelled wind STEPS at ri. "
-                "riStep measures that step in the field as built. "
-                "gtcmWithContinuousRi is the whole coherence block recomputed "
-                "with the continuity-preserving factor patched in at runtime "
-                "(the fit is redone too), so a reader can separate what the "
-                "GTCM model does from what this one line does. Nothing is "
-                "fixed here: GFE/procedures/TCWind_JTWC.py is the reference "
-                "implementation and this verification does not own it. The "
-                "step is reported to the maintainer, not worked around.",
+                "HISTORICAL, NOT A LIVE BUG - kept as a regression "
+                "indicator. TCWind_JTWC._gtcmProfile's continuity factor "
+                "for eq. (3) was A = (ri/rm)**x1 * (rm/ri)**x2. Matching "
+                "the two branches at r = ri requires the reciprocal, "
+                "A = (rm/ri)**x1 * (ri/rm)**x2; as originally written the "
+                "outer branch was scaled by (ri/rm)**(2*(x1-x2)) and the "
+                "modelled wind STEPPED at ri. That was fixed in "
+                "GFE/procedures/TCWind_JTWC.py (commit 530f876, 'Fix "
+                "eq. (3) continuity factor...') before this note was last "
+                "edited - the fix is live: _gtcmProfile now uses the "
+                "reciprocal form, and riStep below (computed from the "
+                "SHIPPED profile, every run) is the proof: it should read "
+                "at or near zero. riStep measures the step in the field as "
+                "built, whatever that currently is. gtcmWithContinuousRi is "
+                "the whole coherence block recomputed with the continuity-"
+                "preserving factor patched in at runtime (the fit is redone "
+                "too, via a temporary T._gtcmProfile swap - see "
+                "coherence_with_continuous_ri()), so a reader can separate "
+                "what the GTCM model does from what this one line does. "
+                "This diagnostic changes no source: GFE/procedures/"
+                "TCWind_JTWC.py is the reference implementation and this "
+                "verification does not own it - kept running every time so "
+                "a regression here (riStep drifting back off zero) would be "
+                "caught, not so it can keep describing a bug that is gone.",
         }
+
+    findings["runtime"] = {
+        "byBasin": runtime,
+        "totalSec": round(time.time() - t_start, 1),
+        "note":
+            "ringFieldSec/coherenceSec are wall-clock seconds for THIS run "
+            "(this machine, this --cases/--coherence-cases), not a "
+            "portable benchmark - see tests/tcwind_jtwc/README.md for a "
+            "worked full-archive example. compare_vortex_methods.py "
+            "memoises T.fitGTCM per snapshot and uses a coarser (but still "
+            "sub-nm-accurate) radial search grid than its original 12000-"
+            "step version specifically to make a whole-archive default run "
+            "tractable - see that module's own comments on R_STEPS and "
+            "_cached_fit_gtcm.",
+    }
 
     findings["notes"] = {
         "ringFit":
@@ -720,10 +870,73 @@ def main():
             "WP: JTWC best track via IBTrACS, agency jtwc_wp, from the "
             "committed 100-storm sample. NA/EP: NHC HURDAT via IBTrACS, "
             "agencies hurdat_atl / hurdat_epa, from the generated archive.",
+        "holdout":
+            "verify_holdout.py's held-out-radius skill check - see its own "
+            "docstring/caveat and findings.holdout.caveat. The only block "
+            "here that scores GTCM against radii it was NOT fit to; every "
+            "other block above is self-consistency (scored at the fit's "
+            "own target points) or coherence (smoothness, explicitly not "
+            "accuracy).",
+        "byNature": "verify_stratified.py's byNature block - the ringFit "
+            "and holdout statistics above, split by IBTrACS storm-nature "
+            "flag instead of by basin. See its own docstring/caveat.",
+        "byLand": "verify_stratified.py's byLand block - the same "
+            "statistics again, split by distance to nearest land instead. "
+            "See its own docstring/caveat.",
+        "independence":
+            "STORM-LEVEL INDEPENDENCE CAVEAT, applies to every n/nStorms "
+            "pair in this file. Every stat's n counts individual 6-hourly "
+            "storm-time RECORDS, and consecutive records of one storm are "
+            "highly autocorrelated - same Vmax within a few kt, same radii "
+            "within one report, same motion. nStorms (the distinct-storm "
+            "count behind those n records) is reported alongside every "
+            "stat for this reason: treat n as the sample size for the "
+            "estimate's precision, but nStorms as the sample size for how "
+            "many genuinely independent storms that estimate is drawn "
+            "from - a stat with a large n but a small nStorms (a handful "
+            "of storms reporting many records each) generalizes less than "
+            "the same n spread across many storms would. Nothing here "
+            "does a storm-level train/test split or a storm-clustered "
+            "variance correction; fit_westpac_rmax.py is the one script in "
+            "this suite that does (an 80/20 split by storm SID).",
+        "quadAvgFactor":
+            "T.GTCM_QUAD_AVG_FACTOR (0.85), used throughout ringFitVsTarget "
+            "above, is a CITATION, not a local measurement: it comes from "
+            "the Gridded TCM Users Guide (step 2c), which in turn cites the "
+            "Wind Speed Probability model (DeMaria et al. 2009) - see the "
+            "comment at GFE/procedures/TCWind_JTWC.py's GTCM_QUAD_AVG_"
+            "FACTOR definition. No script in this suite independently "
+            "measures a quadrant-max/quadrant-average ratio against this "
+            "project's own archive data, and IBTrACS best-track only ever "
+            "reports the quadrant MAXIMUM, never the quadrant average, so "
+            "there is no ground truth in this project's data to check the "
+            "0.85 figure against directly. Read ringFitVsTarget as scoring "
+            "against an imported, unvalidated-here convention, not a "
+            "locally-verified target.",
     }
 
+    if not args.no_holdout:
+        sys.stderr.write("holdout: scoring verify_holdout.py's held-out-"
+                         "radius experiments...\n")
+        findings["holdout"] = verify_holdout.compute(
+            tuple(basins), progress=args.progress)
+    if not args.no_stratified:
+        sys.stderr.write("byNature/byLand: scoring verify_stratified.py's "
+                         "stratified pipeline (the slowest part of a full "
+                         "run - touches every usable() record)...\n")
+        strat = verify_stratified.compute(tuple(basins),
+                                          progress=args.progress)
+        findings["byNature"] = strat["byNature"]
+        findings["byLand"] = strat["byLand"]
+        findings["runtime"]["stratifiedSec"] = strat["runtimeSec"]
+    if findings.get("holdout"):
+        findings["runtime"]["holdoutSec"] = findings["holdout"].get(
+            "runtimeSec")
+    findings["runtime"]["totalSec"] = round(time.time() - t_start, 1)
+
     with open(args.out, "w") as fh:
-        json.dump(findings, fh, indent=2, sort_keys=True)
+        json.dump(_sanitize_nans(findings), fh, indent=2, sort_keys=True,
+                  allow_nan=False)
         fh.write("\n")
     print("wrote %s" % args.out)
 
@@ -764,6 +977,16 @@ def main():
         for label, d in findings["coherence"][method]["byKnot"].items():
             print("   %-9s %-10s break %8.4f   jump %8.4f   n=%d"
                   % (method, label, d["kinkKtPerNm"], d["jumpKt"], d["n"]))
+
+    print("\nRUNTIME (this run, this machine)")
+    for basin, rt in findings["runtime"].get("byBasin", {}).items():
+        print("   %-4s ring/field %6.1fs   coherence %6.1fs"
+              % (basin, rt["ringFieldSec"], rt["coherenceSec"]))
+    if "holdoutSec" in findings["runtime"]:
+        print("   holdout      %6.1fs" % findings["runtime"]["holdoutSec"])
+    if "stratifiedSec" in findings["runtime"]:
+        print("   stratified   %6.1fs" % findings["runtime"]["stratifiedSec"])
+    print("   TOTAL        %6.1fs" % findings["runtime"]["totalSec"])
 
 
 if __name__ == "__main__":

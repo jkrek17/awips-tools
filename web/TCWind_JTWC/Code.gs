@@ -7,8 +7,12 @@
  * procedure GFE/procedures/TCWind_JTWC.py.  It does four things and
  * nothing else:
  *
- *   1. fetches the five NW Pacific JTWC warnings from the NWS
- *      Telecommunications Gateway, parses them, reports slot health
+ *   1. fetches real-time tropical cyclone bulletins across three basins -
+ *      JTWC's five West Pacific WTPN warnings from the NWS
+ *      Telecommunications Gateway, and NHC's five Atlantic + five East
+ *      Pacific TCM Forecast/Advisories from NHC's own text server (see
+ *      NHC_TEXT_BASE's comment for why that is a different source from
+ *      JTWC's) - parses them, and reports slot health
  *      (getBulletins / parsePasted);
  *   2. serves the best-track archive, one storm at a time
  *      (getArchiveIndex / getArchiveStorm);
@@ -19,7 +23,14 @@
  * It does NOT do vortex math.  All wind-field math lives in exactly one
  * place, Vortex.html, and runs client-side.  See "PARSER DUPLICATION"
  * below for the one function that is deliberately duplicated here and how
- * the two copies are kept honest.
+ * the two copies are kept honest.  Theme.html (design tokens) and
+ * Help.html (the shared glossary: term tooltips plus one drop-in
+ * <details> glossary block) are two more single-copy client includes -
+ * Code.gs never touches either, it only has to keep shipping them so the
+ * pages that `<?!= HtmlService.createHtmlOutputFromFile(...) ?>` them do
+ * not break. See PAGES below for the top-level templates doGet() serves;
+ * Vortex/Theme/Help are partials, included BY those, never routed to
+ * directly.
  *
  * Deploy with clasp (see README.md), or Extensions > Apps Script >
  * Deploy > New deployment > Web app.
@@ -46,17 +57,19 @@
  * ---------------------------------------------------------------------
  * QUOTAS that actually bite here (Apps Script published limits)
  * ---------------------------------------------------------------------
- * - UrlFetch calls: 20,000/day.  getBulletins(force=true) spends FIVE of
- *   them per call, one per WTPN slot.  A page that auto-refreshed every
- *   30 s with force=true would burn 14,400/day on its own; that is why
- *   the 30-minute CacheService layer exists and why force is opt-in.
+ * - UrlFetch calls: 20,000/day.  getBulletins(force=true) spends FIFTEEN of
+ *   them per call, one per bulletin slot across all three basins (five
+ *   WP + five AT + five EP - see BULLETIN_SLOTS). A page that auto-
+ *   refreshed every 30 s with force=true would burn 43,200/day on its own;
+ *   that is why the 30-minute CacheService layer exists and why force is
+ *   opt-in.
  * - CacheService: 100 KB per value, 250-char keys, 6 h (21600 s) maximum
- *   TTL.  Real WTPN bulletins are 2-5 KB, so they fit with room to spare.
- *   The best-track archive (~2 MB) does NOT fit in cache under any
+ *   TTL.  Real WTPN/TCM bulletins are 2-5 KB, so they fit with room to
+ *   spare.  The best-track archive (~2 MB) does NOT fit in cache under any
  *   slicing worth doing, so it is not cached: it is a script global in
  *   BestTrackData.gs, already resident in the execution.
- * - Script runtime: 6 minutes per execution.  Five sequential fetches are
- *   the only slow path; each has no explicit timeout of its own.
+ * - Script runtime: 6 minutes per execution.  Fifteen sequential fetches
+ *   are the only slow path; each has no explicit timeout of its own.
  * - Simultaneous executions: 30 per user.
  * - Apps Script loads and compiles EVERY .gs file in the project for
  *   EVERY execution.  BestTrackData.gs is a ~2 MB JSON literal, so every
@@ -66,10 +79,14 @@
  *   or a Sheet and read it on demand, not to shard it into the cache.
  *
  * ---------------------------------------------------------------------
- * PARSER DUPLICATION - read before touching parseJTWC() below
+ * PARSER DUPLICATION - read before touching parseJTWC() or parseTCM() below
  * ---------------------------------------------------------------------
- * parseJTWC() exists TWICE in this repo on the JavaScript side: here, and
- * in Vortex.html.  That is not an oversight and it is not free.
+ * parseJTWC() AND parseTCM() each exist TWICE in this repo on the
+ * JavaScript side: here, and in Vortex.html.  That is not an oversight
+ * and it is not free.  Everything below applies equally to both parsers
+ * unless it says otherwise; parseTCM() additionally has no Python side at
+ * all (GFE/procedures/TCWind_JTWC.py is JTWC-only by design), so for it
+ * the tiebreak at the bottom of this comment is just "Vortex.html wins".
  *
  * Why it cannot be deduplicated by including the shared file: Apps Script
  * server code cannot `include` an HTML file's <script> at load time.  The
@@ -118,20 +135,62 @@
  * the three disagree: Python wins, then Vortex.html, then this file.
  */
 
-var VERSION = '2026-09-02b';
+var VERSION = '2026-09-03a';
 
 var BULLETIN_BASE = 'https://tgftp.nws.noaa.gov/data/raw/wt/';
 
-// NW Pacific tropical cyclone warnings, storms 1-5. These are the same
-// products as the NFDTCPWP1-5 bins in the AWIPS text database, under their
-// WMO headings instead of the AWIPS PIL.
-var BULLETIN_FILES = [
-  'wtpn31.pgtw..txt',
-  'wtpn32.pgtw..txt',
-  'wtpn33.pgtw..txt',
-  'wtpn34.pgtw..txt',
-  'wtpn35.pgtw..txt'
-];
+// NHC's own text server. tgftp does NOT mirror the Atlantic/East Pacific
+// TCM (Forecast/Advisory) product class - verified directly against real,
+// currently active storms: every wtnt2N.knhc../wtpz2N.knhc..txt path under
+// BULLETIN_BASE 404s even while a live advisory is being issued, because
+// tgftp simply does not carry this product there, not because the slot is
+// empty. NHC's refresh server DOES carry it, confirmed live (Hurricane
+// Karina, EP112026): https://www.nhc.noaa.gov/text/refresh/MIATCMEP1+shtml/
+// See fetchNhcText_() for the small HTML-unwrap this needs that a plain
+// tgftp fetch does not. JTWC's fetch (BULLETIN_BASE, below) is completely
+// unchanged by this.
+var NHC_TEXT_BASE = 'https://www.nhc.noaa.gov/text/refresh/';
+
+// Every bulletin slot this tool watches, across three basins. Each basin
+// has its own file-naming and pil scheme, but source/basin/file/pil fully
+// determine how a slot is fetched, parsed and labelled - nothing past this
+// table string-sniffs a pil to figure any of that out.
+//
+//   WP (JTWC, West Pacific): the same five NFDTCPWP1-5 bins as before,
+//     under their WMO headings, fetched straight off tgftp exactly as
+//     always - source/file/pil/parser for these five entries are BYTE FOR
+//     BYTE what BULLETIN_FILES used to produce, on purpose: nothing about
+//     the JTWC path may change here.
+//   AT (NHC, Atlantic) and EP (NHC, East Pacific): five bins each, WTNT21-
+//     25/WTPZ21-25 KNHC, AWIPS ids TCMAT1-5/TCMEP1-5 - the bin number
+//     rotates by cyclone number within the season exactly like JTWC's WP
+//     slots, so an empty bin outside/between storms is normal. `file` is
+//     the WMO-style label these slots are shown under (matching what the
+//     product's OWN WMO header line reads, regardless of the NHC-text-
+//     server transport actually used to fetch it - see NHC_TEXT_BASE
+//     above); it is not literally fetched as a filename the way the WP
+//     entries are.
+function buildBulletinSlots_() {
+  var slots = [], i;
+  for (i = 1; i <= 5; i++) {
+    slots.push({ basin: 'WP', source: 'tgftp',
+                 file: 'wtpn3' + i + '.pgtw..txt', pil: 'NFDTCPWP' + i });
+  }
+  for (i = 1; i <= 5; i++) {
+    slots.push({ basin: 'AT', source: 'nhctext',
+                 file: 'wtnt2' + i + '.knhc..txt', pil: 'TCMAT' + i });
+  }
+  for (i = 1; i <= 5; i++) {
+    slots.push({ basin: 'EP', source: 'nhctext',
+                 file: 'wtpz2' + i + '.knhc..txt', pil: 'TCMEP' + i });
+  }
+  return slots;
+}
+var BULLETIN_SLOTS = buildBulletinSlots_();
+
+// Human-readable basin name for status/hint text, keyed by the `basin`
+// field above.
+var BASIN_NAME = { WP: 'NW Pacific', AT: 'Atlantic', EP: 'East Pacific' };
 
 var CACHE_SECONDS = 1800;             // 30 min; CacheService caps at 21600
 var CACHE_PREFIX = 'wtpn:v1:';        // namespaced so nothing else collides
@@ -152,7 +211,7 @@ var VORTEX_FILE = 'Vortex';
 // parserFingerprint() and paste the value it reports - in the same commit
 // as the Vortex.html change, after checkParserParity() passes.
 var VORTEX_PARSER_SHA =
-  '122513fce6814b8f6260238369780680852b0f4547a53e43c208c60d5cd984cc';
+  'b6a1055814a9c55f75772f7642c20848cf8ac46ba07f9c8fecd68728568353e7';
 
 var MONTHS = {
   JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, JUN: 6,
@@ -167,6 +226,20 @@ var QUAD_WORD = {
 var CONF_TROPICAL = 1.0;
 var CONF_BECOMING = 0.6;
 var CONF_SUBTROPICAL = 0.25;
+
+// NHC's own system-type vocabulary, mapped to the same CONF_* ladder as
+// JTWC's SUPER TYPHOON/TYPHOON/TROPICAL STORM/TROPICAL DEPRESSION words -
+// same spirit, different words. See parseTCM()'s docstring below.
+var TCM_TYPE_CONF = {
+  'HURRICANE': CONF_TROPICAL,
+  'TROPICAL STORM': CONF_TROPICAL,
+  'TROPICAL DEPRESSION': CONF_TROPICAL,
+  'POTENTIAL TROPICAL CYCLONE': CONF_TROPICAL,
+  'SUBTROPICAL STORM': CONF_SUBTROPICAL,
+  'SUBTROPICAL DEPRESSION': CONF_SUBTROPICAL,
+  'POST-TROPICAL CYCLONE': CONF_BECOMING,
+  'REMNANTS OF': CONF_BECOMING
+};
 
 
 // ---------------------------------------------------------------------------
@@ -323,14 +396,56 @@ function missingTemplatePage_(file, page, err) {
 // ---------------------------------------------------------------------------
 
 /**
- * Fetch and parse all five NW Pacific warning slots.
+ * Fetch one AT/EP slot's product off NHC's own text server and unwrap it.
  *
- * Returns an array of {file, pil, ok, error, errorKind, hint, stale,
- * ageHours, storm}. `ok`, `error`, `stale`, `ageHours` and `storm` are
- * unchanged from previous versions - existing callers keep working.
- * `errorKind` (machine-readable) and `hint` (what to do about it) are
- * additions, so the UI can say what failed without string-matching
- * `error`.
+ * tgftp does not carry this product class (see NHC_TEXT_BASE's comment),
+ * so this is a second, small fetch helper alongside the plain tgftp fetch
+ * getBulletins() still uses for WP - JTWC's path is untouched by this.
+ *
+ * The page is HTML: `<pre>...</pre>` wraps the raw product, preceded by a
+ * bare line-count number on its own line before the WMO header (the same
+ * kind of leading artifact tgftp's own raw files can carry). Both are
+ * stripped here so the parser sees exactly the WMO-header-first text it
+ * already expects from tgftp.
+ *
+ * Returns {ok, httpStatus, text}. `text` is null when !ok.
+ */
+function fetchNhcText_(pil) {
+  var url = NHC_TEXT_BASE + 'MIA' + pil + '+shtml/';
+  var resp = UrlFetchApp.fetch(url, {
+    muteHttpExceptions: true,
+    followRedirects: true,
+    validateHttpsCertificates: true
+  });
+  var code = resp.getResponseCode();
+  if (code !== 200) return { ok: false, httpStatus: code, text: null };
+
+  var html = resp.getContentText();
+  var m = /<pre[^>]*>([\s\S]*?)<\/pre>/i.exec(html);
+  if (!m) return { ok: false, httpStatus: code, text: null };
+
+  var body = m[1]
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, '\'').replace(/&nbsp;/g, ' ');
+
+  var lines = body.split(/\r?\n/);
+  while (lines.length && lines[0].replace(/\s/g, '') === '') lines.shift();
+  if (lines.length && /^\d+\s*$/.test(lines[0])) lines.shift();   // line-count token
+  return { ok: true, httpStatus: code, text: lines.join('\n') };
+}
+
+
+/**
+ * Fetch and parse every bulletin slot across all three basins (WP/AT/EP -
+ * see BULLETIN_SLOTS).
+ *
+ * Returns an array of {file, pil, basin, ok, error, errorKind, hint,
+ * stale, ageHours, storm}. `ok`, `error`, `stale`, `ageHours` and `storm`
+ * are unchanged from previous versions - existing callers keep working.
+ * `errorKind` (machine-readable) and `hint` (what to do about it) let the
+ * UI say what failed without string-matching `error`. `basin` ('WP'/'AT'/
+ * 'EP') lets callers dispatch on it directly instead of string-sniffing
+ * `pil`.
  *
  * errorKind is one of: http | fetch | empty | thin | parse.
  */
@@ -339,10 +454,11 @@ function getBulletins(force) {
   var nowSecs = Math.floor(new Date().getTime() / 1000);
   var out = [];
 
-  for (var i = 0; i < BULLETIN_FILES.length; i++) {
-    var file = BULLETIN_FILES[i];
-    var pil = 'NFDTCPWP' + (i + 1);
-    var entry = { file: file, pil: pil, ok: false, error: null,
+  for (var i = 0; i < BULLETIN_SLOTS.length; i++) {
+    var slot = BULLETIN_SLOTS[i];
+    var file = slot.file, pil = slot.pil, basin = slot.basin;
+    var basinName = BASIN_NAME[basin] || basin;
+    var entry = { file: file, pil: pil, basin: basin, ok: false, error: null,
                   errorKind: null, hint: null, stale: false, cached: false };
 
     var key = CACHE_PREFIX + file;
@@ -351,30 +467,44 @@ function getBulletins(force) {
       entry.cached = true;
     } else {
       try {
-        var resp = UrlFetchApp.fetch(BULLETIN_BASE + file, {
-          muteHttpExceptions: true,      // never throw on 4xx/5xx; we report
-          followRedirects: true,
-          validateHttpsCertificates: true
-        });
-        var code = resp.getResponseCode();
-        if (code !== 200) {
+        var code, fetchFailHint;
+        if (slot.source === 'tgftp') {
+          var resp = UrlFetchApp.fetch(BULLETIN_BASE + file, {
+            muteHttpExceptions: true,    // never throw on 4xx/5xx; we report
+            followRedirects: true,
+            validateHttpsCertificates: true
+          });
+          code = resp.getResponseCode();
+          if (code === 200) text = resp.getContentText();
+          fetchFailHint = (code === 404)
+            ? 'The gateway has no product in this slot right now. Normal ' +
+              'when fewer than five ' + basinName + ' systems are active.'
+            : 'tgftp.nws.noaa.gov returned ' + code + '. Retry; if it ' +
+              'persists, paste the bulletin text instead.';
+        } else {   // 'nhctext'
+          var nr = fetchNhcText_(pil);
+          code = nr.httpStatus;
+          if (nr.ok) text = nr.text;
+          fetchFailHint = (code === 404)
+            ? 'NHC\'s text server has no current product for this bin. ' +
+              'Normal when fewer than five ' + basinName + ' systems are ' +
+              'active.'
+            : 'nhc.noaa.gov returned ' + code + '. Retry; if it persists, ' +
+              'paste the bulletin text instead.';
+        }
+        if (!text) {
           entry.error = 'HTTP ' + code;
           entry.errorKind = 'http';
           entry.httpStatus = code;
-          entry.hint = (code === 404)
-            ? 'The gateway has no product in this slot right now. Normal ' +
-              'when fewer than five NW Pacific systems are active.'
-            : 'tgftp.nws.noaa.gov returned ' + code + '. Retry; if it ' +
-              'persists, paste the bulletin text instead.';
+          entry.hint = fetchFailHint;
           out.push(entry);
           continue;
         }
-        text = resp.getContentText();
         // Caching must never be able to fail a good fetch: a value over
         // the 100 KB CacheService cap, or a cache hiccup, costs us the
         // next 30 minutes of speed and nothing else.
         try {
-          if (text && text.length < MAX_CACHE_VALUE_BYTES) {
+          if (text.length < MAX_CACHE_VALUE_BYTES) {
             cache.put(key, text, CACHE_SECONDS);
           }
         } catch (errCache) {
@@ -383,8 +513,11 @@ function getBulletins(force) {
       } catch (err) {
         entry.error = String(err);
         entry.errorKind = 'fetch';
-        entry.hint = 'Could not reach tgftp.nws.noaa.gov. Check the ' +
-                     'network path, or paste the bulletin text instead.';
+        entry.hint = (slot.source === 'tgftp')
+          ? 'Could not reach tgftp.nws.noaa.gov. Check the network path, ' +
+            'or paste the bulletin text instead.'
+          : 'Could not reach nhc.noaa.gov. Check the network path, or ' +
+            'paste the bulletin text instead.';
         out.push(entry);
         continue;
       }
@@ -399,7 +532,12 @@ function getBulletins(force) {
     }
 
     try {
-      var storm = parseJTWC(text);
+      var parseFn = (basin === 'WP') ? parseJTWC : parseTCM;
+      // nowSecs: already computed above; only consulted by parseJTWC()'s
+      // no-DDMMMYY fallback (see its own comment) and ignored by
+      // parseTCM() (extra arg, unused) - changes nothing for either
+      // parser's normal case.
+      var storm = parseFn(text, nowSecs);
       if (storm.taus.length < 2) {
         entry.error = 'only ' + storm.taus.length + ' usable forecast times';
         entry.errorKind = 'thin';
@@ -408,23 +546,28 @@ function getBulletins(force) {
         out.push(entry);
         continue;
       }
-      // textdb and tgftp both serve the last product stored, so a
-      // dissipated storm sits in its slot indefinitely. Judge by the
-      // bulletin's own analysis time, exactly as the GFE tool does.
+      // textdb/tgftp/NHC's refresh server all serve the last product
+      // stored, so a dissipated storm sits in its slot indefinitely. Judge
+      // by the bulletin's own analysis time, exactly as the GFE tool does.
       var ageHours = (nowSecs - storm.taus[0].epoch) / 3600.0;
       entry.ageHours = ageHours;
       entry.stale = (ageHours > MAX_BULLETIN_AGE_HOURS) ||
                     (storm.taus[storm.taus.length - 1].epoch <= nowSecs);
       storm.file = file;
       storm.pil = pil;
+      storm.basin = basin;
       entry.storm = storm;
       entry.ok = true;
     } catch (err2) {
       entry.error = String(err2);
       entry.errorKind = 'parse';
-      entry.hint = 'The text was retrieved but did not parse as a WTPN ' +
-                   'warning. Check the raw product; the parser may need ' +
-                   'to learn a new line format.';
+      entry.hint = (basin === 'WP')
+        ? 'The text was retrieved but did not parse as a WTPN warning. ' +
+          'Check the raw product; the parser may need to learn a new ' +
+          'line format.'
+        : 'The text was retrieved but did not parse as a TCM Forecast/' +
+          'Advisory. Check the raw product; the parser may need to learn ' +
+          'a new line format.';
     }
     out.push(entry);
   }
@@ -432,12 +575,58 @@ function getBulletins(force) {
 }
 
 
-/** Parse pasted bulletin text. Used when tgftp is unreachable. */
+/**
+ * Parse pasted bulletin text. Used when tgftp/NHC's text server is
+ * unreachable, or to preview a bulletin that isn't in any live slot.
+ *
+ * Tries parseJTWC() first, then parseTCM() if that fails to produce a
+ * usable result - a forecaster can paste either a JTWC WTPN warning or an
+ * NHC TCM Forecast/Advisory and have it just work, with no basin flag to
+ * pick. "Fails" means either parser threw (parseJTWC() throws immediately
+ * when it cannot find a DDMMMYY reference date anywhere in the text, which
+ * is exactly what happens on real NHC text - it has no REMARKS block and
+ * no DDMMMYY-shaped substring anywhere) or it parsed with zero usable
+ * taus. The error surfaced on a DOUBLE failure is parseJTWC()'s, since a
+ * WTPN warning is the more common paste and its error message is the more
+ * actionable one for that case.
+ *
+ * The returned envelope matches getBulletins()'s per-slot shape exactly
+ * (top-level file/pil/basin/ok/error/errorKind/hint/stale/ageHours/storm)
+ * so the client can push it into the same `slots` array getBulletins()
+ * fills, instead of needing a special case. `pil` is the literal string
+ * 'PASTED' (there is no real product id for hand-pasted text) so chip/
+ * status code that does `sl.pil.replace(...)` never sees an undefined
+ * field.
+ */
 function parsePasted(text) {
-  var storm = parseJTWC(text);
+  var storm = null, primaryErr = null;
+  try {
+    storm = parseJTWC(text);
+    if (!storm.taus || !storm.taus.length) storm = null;
+  } catch (e1) {
+    primaryErr = e1;
+  }
+  if (!storm) {
+    try {
+      storm = parseTCM(text);
+    } catch (e2) {
+      throw primaryErr || e2;
+    }
+    if (!storm.taus || !storm.taus.length) throw primaryErr || new Error('no usable taus');
+  }
   storm.file = 'pasted';
-  storm.pil = 'pasted';
-  return { file: 'pasted', ok: true, error: null, stale: false, storm: storm };
+  storm.pil = 'PASTED';
+  // parseJTWC()'s header carries no basin field at all (it only ever
+  // parses West Pacific WTPN text); parseTCM()'s does ('AT'/'EP'/other).
+  storm.basin = (storm.header && storm.header.basin) ? storm.header.basin : 'WP';
+  var ageHours = null;
+  if (storm.taus && storm.taus.length) {
+    var nowSecs = Math.floor(new Date().getTime() / 1000);
+    ageHours = (nowSecs - storm.taus[0].epoch) / 3600.0;
+  }
+  return { file: 'pasted', pil: 'PASTED', basin: storm.basin, ok: true,
+           error: null, errorKind: null, hint: null, stale: false,
+           ageHours: ageHours, cached: false, storm: storm };
 }
 
 
@@ -562,9 +751,18 @@ function emptyQuads() {
 }
 
 
-function parseJTWC(text) {
+// RE_WMO_HEADER-equivalent: WMO abbreviated header line ("WTPN35 PGTW
+// 242100"). Used only by the no-DDMMMYY fallback below - see Vortex.html's
+// parseJTWC() comment. Gives the reference DAY only, never month/year.
+var RE_WMO_HEADER = /^[A-Z]{4}\d{2}\s+[A-Z]{4}\s+(\d{2})(\d{2})(\d{2})\s*$/m;
+
+function parseJTWC(text, nowSecs) {
   var lines = text.split(/\r?\n/);
 
+  // Reference date lives in the remarks block ("27AUG26."), on every
+  // fixture seen until today. Real, live counter-example: a JTWC bulletin
+  // whose REMARKS opens straight into the synopsis with no DDMMMYY token
+  // anywhere at all - see the fallback below.
   var refDay = null, refMonth = null, refYear = null;
   for (var i = 0; i < lines.length; i++) {
     var m = /\b(\d{2})([A-Z]{3})(\d{2})\b/.exec(lines[i]);
@@ -575,8 +773,28 @@ function parseJTWC(text) {
       break;
     }
   }
+
   if (refDay === null) {
-    throw new Error('no DDMMMYY reference date in remarks; cannot resolve DTGs');
+    // Fallback: no DDMMMYY anywhere in the bulletin. The WMO header's
+    // DDHHMM group gives the reference DAY directly, but not month/year -
+    // resolve those by combining that day with wall-clock "now" through
+    // the exact same rollover rule dtgToEpoch() already uses for every
+    // DTG against its own reference day, seeded from "now" instead of a
+    // remarks-derived date.
+    var mh = RE_WMO_HEADER.exec(lines.join('\n'));
+    if (mh === null) {
+      throw new Error('no DDMMMYY reference date in remarks, and no WMO ' +
+                      'header DDHHMM group to fall back to; cannot resolve DTGs');
+    }
+    if (nowSecs === undefined || nowSecs === null) nowSecs = Date.now() / 1000;
+    var now = new Date(nowSecs * 1000);
+    var fallbackEpoch = dtgToEpoch(mh[1] + mh[2] + mh[3],
+                                    now.getUTCDate(), now.getUTCMonth() + 1,
+                                    now.getUTCFullYear());
+    var resolved = new Date(fallbackEpoch * 1000);
+    refDay = resolved.getUTCDate();
+    refMonth = resolved.getUTCMonth() + 1;
+    refYear = resolved.getUTCFullYear();
   }
 
   var taus = [];
@@ -749,6 +967,187 @@ function describeStorm(header) {
 }
 
 
+/**
+ * MIRROR COPY of parseTCM() - canonical in Vortex.html. See the big
+ * comment above Vortex.html's own parseTCM() for the nine WTPN/TCM format
+ * differences this handles and the header field-mapping notes; both are
+ * reproduced there in full and are not repeated here. There is no Python
+ * side to this parser at all (GFE/procedures/TCWind_JTWC.py is JTWC-only),
+ * so unlike parseJTWC() the tiebreak is just "Vortex.html wins".
+ */
+function parseTCM(text) {
+  var lines = String(text).split(/\r?\n/);
+  var full = lines.join('\n');
+
+  var mi = /(\d{3,4})\s+UTC\s+[A-Z]{3}\s+([A-Z]{3})\s+(\d{1,2})\s+(\d{4})/.exec(full);
+  if (!mi || !MONTHS[mi[2]]) {
+    throw new Error('no "<time> UTC <dow> <mon> <day> <year>" issuance line; cannot resolve DTGs');
+  }
+  var refDay = parseInt(mi[3], 10);
+  var refMonth = MONTHS[mi[2]];
+  var refYear = parseInt(mi[4], 10);
+
+  // REMNANTS OF: see Vortex.html's parseTCM() comment - carries no name of
+  // its own on the current-position line ("REMNANTS OF CENTER LOCATED
+  // NEAR ..."), only on the title line ("REMNANTS OF BERTHA
+  // FORECAST/ADVISORY NUMBER  19"), which this same TYPE string also feeds
+  // below (mt). Mapped to CONF_BECOMING in TCM_TYPE_CONF above.
+  var TYPE = 'HURRICANE|TROPICAL STORM|TROPICAL DEPRESSION|POTENTIAL TROPICAL CYCLONE|SUBTROPICAL STORM|SUBTROPICAL DEPRESSION|POST-TROPICAL CYCLONE|REMNANTS OF';
+  var reCurpos = new RegExp('^\\s*(' + TYPE + ')\\s+CENTER LOCATED NEAR\\s+(\\d+(?:\\.\\d+)?)\\s*([NS])\\s+(\\d+(?:\\.\\d+)?)\\s*([EW])\\s+AT\\s+(\\d{2})\\/(\\d{4})Z');
+  var reBackfill = /^\s*AT\s+(\d{2})\/(\d{4})Z\s+CENTER WAS LOCATED NEAR\s+(\d+(?:\.\d+)?)\s*([NS])\s+(\d+(?:\.\d+)?)\s*([EW])/;
+  var reFcst = /^\s*(FORECAST|OUTLOOK)\s+VALID\s+(\d{2})\/(\d{4})Z\s+(\d+(?:\.\d+)?)\s*([NS])\s+(\d+(?:\.\d+)?)\s*([EW])(?:\.\.\.([A-Z][A-Z\- ]*))?/;
+  var reTerm = /^\s*\$\$\s*$/;
+
+  var taus = [];
+  var cur = null;
+  var curThreshold = null;
+  var priorPos = null;
+
+  for (var j = 0; j < lines.length; j++) {
+    var ln = lines[j];
+    if (reTerm.test(ln)) break;
+
+    var mc = reCurpos.exec(ln);
+    if (mc) {
+      cur = { tau: 0, epoch: null, lat: null, lon: null, vmax: null,
+              gust: null, radii: {}, motionDir: null, motionSpd: null,
+              conf: CONF_TROPICAL };
+      cur.epoch = dtgToEpoch(mc[6] + mc[7], refDay, refMonth, refYear);
+      var cla = parseFloat(mc[2]); if (mc[3] === 'S') cla = -cla;
+      var clo = parseFloat(mc[4]); if (mc[5] === 'W') clo = -clo;
+      cur.lat = cla; cur.lon = clo;
+      if (TCM_TYPE_CONF[mc[1]] !== undefined) cur.conf = TCM_TYPE_CONF[mc[1]];
+      taus.push(cur);
+      curThreshold = null;
+      continue;
+    }
+
+    var mf = reFcst.exec(ln);
+    if (mf) {
+      cur = { tau: 0, epoch: null, lat: null, lon: null, vmax: null,
+              gust: null, radii: {}, motionDir: null, motionSpd: null,
+              conf: CONF_TROPICAL };
+      cur.epoch = dtgToEpoch(mf[2] + mf[3], refDay, refMonth, refYear);
+      var fla = parseFloat(mf[4]); if (mf[5] === 'S') fla = -fla;
+      var flo = parseFloat(mf[6]); if (mf[7] === 'W') flo = -flo;
+      cur.lat = fla; cur.lon = flo;
+      if (mf[8]) {
+        var status = mf[8].toUpperCase();
+        if (status.indexOf('POST-TROPICAL') >= 0 || status.indexOf('EXTRATROPICAL') >= 0) {
+          cur.conf = CONF_BECOMING;
+        } else if (status.indexOf('SUBTROPICAL') >= 0) {
+          cur.conf = CONF_SUBTROPICAL;
+        }
+      }
+      taus.push(cur);
+      curThreshold = null;
+      continue;
+    }
+
+    var mb = reBackfill.exec(ln);
+    if (mb) {
+      var pla = parseFloat(mb[3]); if (mb[4] === 'S') pla = -pla;
+      var plo = parseFloat(mb[5]); if (mb[6] === 'W') plo = -plo;
+      priorPos = { lat: pla, lon: plo,
+                   epoch: dtgToEpoch(mb[1] + mb[2], refDay, refMonth, refYear) };
+      continue;
+    }
+
+    if (!cur) continue;
+
+    var mw1 = /MAX SUSTAINED WINDS\s+(\d+)\s*KT WITH GUSTS TO\s+(\d+)\s*KT/.exec(ln);
+    if (mw1) { cur.vmax = parseFloat(mw1[1]); cur.gust = parseFloat(mw1[2]); continue; }
+
+    var mw2 = /MAX WIND\s+(\d+)\s*KT\.*\s*GUSTS\s+(\d+)\s*KT/.exec(ln);
+    if (mw2) { cur.vmax = parseFloat(mw2[1]); cur.gust = parseFloat(mw2[2]); continue; }
+
+    var mr = /^\s*(\d+)\s*KT\.+\s*(.+?)\.?\s*$/.exec(ln);
+    if (mr) {
+      curThreshold = parseInt(mr[1], 10);
+      if (!cur.radii[curThreshold]) cur.radii[curThreshold] = emptyQuads();
+      var toks = mr[2].match(/\d+\s*(?:NE|SE|SW|NW)/g) || [];
+      for (var ti = 0; ti < toks.length; ti++) {
+        var tm = /(\d+)\s*(NE|SE|SW|NW)/.exec(toks[ti]);
+        if (tm) cur.radii[curThreshold][tm[2]] = parseFloat(tm[1]);
+      }
+      continue;
+    }
+
+    var mm = /PRESENT MOVEMENT.*?(\d+)\s*DEGREES AT\s+(\d+)\s*KT/.exec(ln);
+    if (mm) { cur.motionDir = parseFloat(mm[1]); cur.motionSpd = parseFloat(mm[2]); continue; }
+
+    if (ln.indexOf('BECOMING SUBTROPICAL') >= 0 ||
+        ln.indexOf('BECOMING EXTRATROPICAL') >= 0) {
+      cur.conf = CONF_BECOMING;
+    } else if (/^\s*(SUB|EXTRA)TROPICAL\s*$/.test(ln)) {
+      cur.conf = CONF_SUBTROPICAL;
+    }
+  }
+
+  taus = taus.filter(function (t) {
+    return t.lat !== null && t.epoch !== null && t.vmax !== null;
+  });
+  taus.sort(function (a, b) { return a.epoch - b.epoch; });
+
+  if (!taus.length) {
+    throw new Error('no usable FORECAST/ADVISORY position blocks parsed from this bulletin');
+  }
+
+  var t0epoch = taus[0].epoch;
+  for (var ti2 = 0; ti2 < taus.length; ti2++) {
+    taus[ti2].tau = Math.round((taus[ti2].epoch - t0epoch) / 3600);
+  }
+
+  var worst = CONF_TROPICAL;
+  for (var k = 0; k < taus.length; k++) {
+    worst = Math.min(worst, taus[k].conf);
+    taus[k].conf = worst;
+  }
+
+  if (taus[0].motionSpd === null && priorPos !== null) {
+    var bsp = bearingSpeed(priorPos, taus[0]);
+    taus[0].motionDir = bsp[0];
+    taus[0].motionSpd = bsp[1];
+  }
+  for (var n = 0; n < taus.length; n++) {
+    if (taus[n].motionSpd === null) {
+      if (n + 1 < taus.length) {
+        var bs = bearingSpeed(taus[n], taus[n + 1]);
+        taus[n].motionDir = bs[0];
+        taus[n].motionSpd = bs[1];
+      } else if (n > 0) {
+        taus[n].motionDir = taus[n - 1].motionDir;
+        taus[n].motionSpd = taus[n - 1].motionSpd;
+      } else {
+        taus[n].motionDir = 0; taus[n].motionSpd = 0;
+      }
+    }
+  }
+
+  var header = {
+    refDate: [refDay, refMonth, refYear],
+    systemType: null, stormId: null, stormName: null,
+    warningNumber: null, pressureMb: null, basin: null
+  };
+
+  var mt = new RegExp('^\\s*(' + TYPE + ')\\s+(.+?)\\s+FORECAST\\/ADVISORY NUMBER\\s+(\\d+)', 'm').exec(full);
+  if (mt) {
+    header.systemType = mt[1];
+    header.stormName = mt[2].replace(/\s+$/, '');
+    header.warningNumber = parseInt(mt[3], 10);
+  }
+  var ma = /\b(AL|EP|CP)(\d{2})(\d{4})\b/.exec(full);
+  if (ma) {
+    header.stormId = ma[1] + ma[2];
+    header.basin = (ma[1] === 'AL') ? 'AT' : ma[1];
+  }
+  var mp = /(?:ESTIMATED\s+)?MINIMUM\s+CENTRAL\s+PRESSURE\s+(\d+)\s*MB/.exec(full);
+  if (mp) header.pressureMb = parseInt(mp[1], 10);
+
+  return { header: header, taus: taus, text: text };
+}
+
+
 // ===========================================================================
 // Parser parity - the mechanical drift check for the duplication above
 // ===========================================================================
@@ -831,6 +1230,84 @@ var PARITY_FIXTURE = [
 ].join('\n');
 
 
+/**
+ * A synthetic NHC TCM (Forecast/Advisory) product, parseTCM()'s own
+ * embedded parity fixture, mirroring PARITY_FIXTURE's role above but for
+ * the TCM format. Built to hit every branch parseTCM() and its Vortex.html
+ * twin share:
+ *
+ *   - the issuance line's reference date, read directly (no REMARKS hunt)
+ *   - "<TYPE> CENTER LOCATED NEAR ... AT DD/HHMMZ" plus PRESENT MOVEMENT
+ *   - the "AT DD/HHMMZ CENTER WAS LOCATED NEAR ..." backfill line (present
+ *     but unused here, since PRESENT MOVEMENT already supplies motion -
+ *     this only proves it does not spawn a spurious extra tau)
+ *   - multi-quadrant radii on one line, at only ONE threshold per block
+ *     for two of the four blocks (fewer than 3 KT lines - a weakening
+ *     forecast/outlook)
+ *   - the seas-radii line, which must NOT be read as wind radii
+ *   - a trailing "...POST-TROPICAL" status riding on an OUTLOOK VALID
+ *     line with no line break (confidence downgrade, sticky downstream)
+ *   - a day rollover across the end of the month AND the year (issuance
+ *     31DEC25, forecast DTGs 01/0600Z and 01/1800Z, outlook 02/1800Z)
+ *   - (ESTIMATED )MINIMUM CENTRAL PRESSURE
+ *   - the "$$" hard stop (forecaster sign-off past it is never scanned)
+ *
+ * Verified (see the Node fixture-parsing harness referenced in this
+ * change's commit message) to parse identically in Vortex.html and the
+ * mirror below: header {refDate [31,12,2025], TROPICAL STORM AL09
+ * (PARITY), warning 9, 995 mb, basin AT}, four taus at 2025-12-31T21Z,
+ * 2026-01-01T06Z/18Z and 2026-01-02T18Z, vmax 55/60/50/35 kt, conf
+ * 1/1/1/0.6.
+ */
+var PARITY_FIXTURE_TCM = [
+  'WTNT99 KNHC 312100',
+  'TCMAT9',
+  '',
+  'TROPICAL STORM PARITY FORECAST/ADVISORY NUMBER  9',
+  'NWS NATIONAL HURRICANE CENTER MIAMI FL       AL092025',
+  '2100 UTC WED DEC 31 2025',
+  '',
+  'TROPICAL STORM CENTER LOCATED NEAR 18.0N  55.0W AT 31/2100Z',
+  'POSITION ACCURATE WITHIN  20 NM',
+  '',
+  'PRESENT MOVEMENT TOWARD THE NORTH OR 010 DEGREES AT   8 KT',
+  '',
+  'ESTIMATED MINIMUM CENTRAL PRESSURE  995 MB',
+  'MAX SUSTAINED WINDS 55 KT WITH GUSTS TO 70 KT.',
+  '50 KT....... 20NE  15SE  10SW  20NW.',
+  '34 KT.......100NE  80SE  60SW  90NW.',
+  '4 M SEAS....150NE 120SE 100SW 140NW.',
+  'WINDS AND SEAS VARY GREATLY IN EACH QUADRANT. THIS IS A SYNTHETIC',
+  'PRODUCT (NOTE: PARITY) EMBEDDED SOLELY TO DRIVE THE PARSER SELF TEST -',
+  'IT IS NOT A REAL NHC ADVISORY.',
+  '',
+  'REPEAT...CENTER LOCATED NEAR 18.0N  55.0W AT 31/2100Z',
+  'AT 31/1800Z CENTER WAS LOCATED NEAR 17.6N  55.2W',
+  '',
+  'FORECAST VALID 01/0600Z 18.9N  54.6W',
+  'MAX WIND  60 KT...GUSTS  75 KT.',
+  '50 KT... 25NE  20SE  15SW  25NW.',
+  '34 KT...110NE  90SE  70SW 100NW.',
+  '',
+  'FORECAST VALID 01/1800Z 19.8N  54.0W',
+  'MAX WIND  50 KT...GUSTS  65 KT.',
+  '34 KT...100NE  80SE  60SW  90NW.',
+  '',
+  'OUTLOOK VALID 02/1800Z 21.5N  53.0W...POST-TROPICAL',
+  'MAX WIND  35 KT...GUSTS  45 KT.',
+  '34 KT... 70NE  50SE  40SW  60NW.',
+  '',
+  'REQUEST FOR 3 HOURLY SHIP REPORTS WITHIN 300 MILES OF 18.0N  55.0W',
+  '',
+  'NEXT ADVISORY AT 01/0300Z',
+  '',
+  '$$',
+  'FORECASTER PARITY',
+  '',
+  'NNNN'
+].join('\n');
+
+
 /** Raw text of Vortex.html's single <script> block. */
 function vortexScriptSource_() {
   var html = HtmlService.createHtmlOutputFromFile(VORTEX_FILE).getContent();
@@ -904,12 +1381,15 @@ function sha256Hex_(s) {
 
 
 /**
- * Fingerprint the canonical parser.
+ * Fingerprint the canonical parser(s).
  *
  * Slices Vortex.html's script between its "JTWC warning parser" and
  * "Exports" section banners. If either banner has moved or been renamed,
  * the whole script is fingerprinted instead and `scope` says so - a
- * coarser tripwire, never a silently passing one.
+ * coarser tripwire, never a silently passing one. parseTCM() lives inside
+ * that same span (right after describeStorm(), before the Exports banner),
+ * so this ONE fingerprint already covers both parsers - no second anchor
+ * pair was needed.
  *
  * Returns {scope, digest, pinned, matches, chars}.
  */
@@ -939,11 +1419,12 @@ function parserFingerprint() {
 }
 
 
-/** Field-by-field diff of two parseJTWC() results. Returns [] when equal. */
+/** Field-by-field diff of two parser results (parseJTWC() or parseTCM(),
+ *  same shape either way). Returns [] when equal. */
 function diffParseResults_(a, b, tol) {
   var diffs = [];
   var HEADER_FIELDS = ['systemType', 'stormId', 'stormName',
-                       'warningNumber', 'pressureMb'];
+                       'warningNumber', 'pressureMb', 'basin'];
   var TAU_FIELDS = ['tau', 'epoch', 'lat', 'lon', 'vmax', 'gust',
                     'conf', 'motionDir', 'motionSpd'];
 
@@ -1001,13 +1482,15 @@ function diffParseResults_(a, b, tol) {
 
 
 /**
- * THE drift check for the duplicated parser. Run it from the Apps Script
- * editor after touching parseJTWC() in either file, and after any change
- * to Vortex.html that the fingerprint flags.
+ * THE drift check for the duplicated parsers (parseJTWC() AND parseTCM()).
+ * Run it from the Apps Script editor after touching either parser in
+ * either file, and after any change to Vortex.html that the fingerprint
+ * flags.
  *
- * @param {boolean} includeLive also run every live WTPN slot through both
- *        parsers (5 UrlFetch calls, cache-first). The embedded fixture
- *        always runs.
+ * @param {boolean} includeLive also run every live bulletin slot (all
+ *        three basins) through both parsers (15 UrlFetch calls,
+ *        cache-first). The two embedded fixtures (one per parser) always
+ *        run.
  * @return {string} a report; also written to the log.
  */
 function checkParserParity(includeLive) {
@@ -1016,7 +1499,8 @@ function checkParserParity(includeLive) {
                'canonical: ' + VORTEX_FILE + '.html   mirror: Code.gs', ''];
   var failures = 0;
 
-  // 1. fingerprint
+  // 1. fingerprint (covers parseJTWC() and parseTCM() together - see
+  // parserFingerprint()'s docstring)
   try {
     var fp = parserFingerprint();
     lines.push('fingerprint scope : ' + fp.scope);
@@ -1047,20 +1531,24 @@ function checkParserParity(includeLive) {
     Logger.log(lines.join('\n'));
     return lines.join('\n');
   }
-  if (typeof api.parseJTWC !== 'function') {
+  if (typeof api.parseJTWC !== 'function' || typeof api.parseTCM !== 'function') {
     lines.push('BEHAVIOURAL CHECK COULD NOT RUN: ' + VORTEX_FILE +
-               '.html did not export parseJTWC on window.');
+               '.html did not export both parseJTWC and parseTCM on window.');
     Logger.log(lines.join('\n'));
     return lines.join('\n');
   }
 
-  var cases = [{ name: 'embedded synthetic fixture', text: PARITY_FIXTURE }];
+  var cases = [
+    { name: 'embedded synthetic JTWC fixture', text: PARITY_FIXTURE, parser: 'JTWC' },
+    { name: 'embedded synthetic TCM fixture', text: PARITY_FIXTURE_TCM, parser: 'TCM' }
+  ];
   if (includeLive) {
     var slots = getBulletins(false);
     for (var s = 0; s < slots.length; s++) {
       if (slots[s].ok && slots[s].storm && slots[s].storm.text) {
-        cases.push({ name: 'live ' + slots[s].file,
-                     text: slots[s].storm.text });
+        cases.push({ name: 'live ' + slots[s].basin + ' ' + slots[s].file,
+                     text: slots[s].storm.text,
+                     parser: (slots[s].basin === 'WP') ? 'JTWC' : 'TCM' });
       } else {
         lines.push('live ' + slots[s].file + ': skipped (' +
                    (slots[s].error || 'no data') + ')');
@@ -1070,9 +1558,12 @@ function checkParserParity(includeLive) {
 
   for (var c = 0; c < cases.length; c++) {
     var name = cases[c].name;
+    var isTcm = (cases[c].parser === 'TCM');
+    var localFn = isTcm ? parseTCM : parseJTWC;
+    var apiFn = isTcm ? api.parseTCM : api.parseJTWC;
     var mine, theirs, mineErr = null, theirsErr = null;
-    try { mine = parseJTWC(cases[c].text); } catch (e1) { mineErr = String(e1); }
-    try { theirs = api.parseJTWC(cases[c].text); } catch (e2) { theirsErr = String(e2); }
+    try { mine = localFn(cases[c].text); } catch (e1) { mineErr = String(e1); }
+    try { theirs = apiFn(cases[c].text); } catch (e2) { theirsErr = String(e2); }
 
     if (mineErr || theirsErr) {
       if (mineErr === theirsErr) {
@@ -1116,16 +1607,16 @@ function checkParserParity(includeLive) {
  */
 function runSelfTest() {
   var res = getBulletins(true);
-  var lines = ['JTWC parser self test, v' + VERSION, ''];
+  var lines = ['bulletin parser self test (WP/AT/EP), v' + VERSION, ''];
   for (var i = 0; i < res.length; i++) {
     var r = res[i];
     if (!r.ok) {
-      lines.push(r.file + ': ' + (r.error || 'no data') +
+      lines.push(r.basin + ' ' + r.file + ': ' + (r.error || 'no data') +
                  (r.hint ? '  [' + r.hint + ']' : ''));
       continue;
     }
     var s = r.storm;
-    lines.push(r.file + ': ' + describeStorm(s.header) +
+    lines.push(r.basin + ' ' + r.file + ': ' + describeStorm(s.header) +
                ', ' + s.taus.length + ' forecast times' +
                ', age ' + r.ageHours.toFixed(1) + ' h' +
                (r.stale ? ' [STALE]' : ''));

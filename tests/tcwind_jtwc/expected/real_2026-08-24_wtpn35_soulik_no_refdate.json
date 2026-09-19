@@ -1,0 +1,59 @@
+{
+  "header": {
+    "pressureMb": null,
+    "refDate": [
+      24,
+      8,
+      2026
+    ],
+    "stormId": "22W",
+    "stormName": "SOULIK",
+    "systemType": "TROPICAL STORM",
+    "warningNumber": 38
+  },
+  "taus": [
+    {
+      "conf": 0.6,
+      "epoch": 1787594400,
+      "gust": 45.0,
+      "lat": 42.0,
+      "lon": 134.5,
+      "motionDir": 40.0,
+      "motionSpd": 30.0,
+      "radii": {
+        "34": {
+          "NE": 190.0,
+          "NW": 140.0,
+          "SE": 145.0,
+          "SW": 120.0
+        }
+      },
+      "tau": 0,
+      "vmax": 35.0
+    },
+    {
+      "conf": 0.25,
+      "epoch": 1787637600,
+      "gust": 40.0,
+      "lat": 44.6,
+      "lon": 139.5,
+      "motionDir": 65.0,
+      "motionSpd": 25.0,
+      "radii": {},
+      "tau": 12,
+      "vmax": 30.0
+    },
+    {
+      "conf": 0.25,
+      "epoch": 1787680800,
+      "gust": 35.0,
+      "lat": 46.7,
+      "lon": 146.1,
+      "motionDir": 65.0,
+      "motionSpd": 25.0,
+      "radii": {},
+      "tau": 24,
+      "vmax": 25.0
+    }
+  ]
+}

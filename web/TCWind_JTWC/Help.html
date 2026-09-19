@@ -1,0 +1,301 @@
+<!--
+  Help.html - the shared glossary include (one copy of everything, see
+  README.md's "One copy of everything").
+
+  Index.html and Archive.html both use technical vocabulary a forecaster who
+  has not read the Gridded TCM Users Guide will not recognise on sight:
+  isotach, quadrant bisector, ROCI, and so on. Rather than each page writing
+  its own tooltip code and its own list of terms (and drifting, the way a
+  second resolveRmax() or a second colour palette did), this file is the one
+  place both pages get it from.
+
+  Include it once, after Theme.html and Vortex.html:
+
+    <?!= HtmlService.createHtmlOutputFromFile('Help').getContent(); ?>
+
+  Then, from your own script, AFTER you have finished writing a piece of
+  static prose into the DOM (do not call this on a container whose
+  textContent your own code overwrites on every render - the wrapped terms
+  would just be discarded on the next redraw and rebuilt from scratch, which
+  is wasted work at best):
+
+    TCGlossary.linkify(document.getElementById('someStaticContainer'));
+
+  and, wherever a full glossary belongs on the page (typically inside a
+  <details> near the foot of the page):
+
+    someEl.appendChild(TCGlossary.buildDetailsEl());
+
+  `linkify()` is idempotent per element (it marks the element once it has
+  run) and wraps at most the FIRST occurrence of each term inside the
+  element it is given, so a term that appears many times on one page is not
+  turned into a wall of dotted underlines.
+-->
+<style>
+/* Scoped, token-based (Theme.html's tokens, with hard fallbacks so this
+   still renders sanely if Theme.html is ever missing). Falls back to plain
+   text with no visual change if JS never runs. */
+abbr.gloss-term {
+  border: none;
+  cursor: help;
+  font: inherit;
+  position: relative;
+  text-decoration: underline dotted;
+  text-decoration-color: var(--muted, #7c8798);
+  text-underline-offset: 3px;
+}
+abbr.gloss-term .gloss-tip {
+  background: var(--panel, #16202c);
+  border: 1px solid var(--border, #2a3644);
+  border-radius: 8px;
+  bottom: 100%;
+  box-shadow: 0 8px 24px rgba(0,0,0,.28);
+  color: var(--text, #e7edf5);
+  font-size: 12px;
+  font-weight: 400;
+  left: 0;
+  line-height: 1.45;
+  margin-bottom: 7px;
+  max-width: min(280px, 78vw);
+  opacity: 0;
+  padding: 8px 10px;
+  pointer-events: none;
+  position: absolute;
+  transform: translateY(3px);
+  transition: opacity .12s ease, transform .12s ease;
+  visibility: hidden;
+  width: max-content;
+  z-index: 60;
+}
+abbr.gloss-term:hover .gloss-tip,
+abbr.gloss-term:focus .gloss-tip,
+abbr.gloss-term:focus-visible .gloss-tip {
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
+}
+.tc-glossary summary { cursor: pointer; }
+.tc-glossary dl { margin: 8px 0 0; }
+.tc-glossary dt { color: var(--text, #e7edf5); font-weight: 700; margin-top: 10px; }
+.tc-glossary dt:first-child { margin-top: 0; }
+.tc-glossary dd { color: var(--muted, #7c8798); line-height: 1.55; margin: 2px 0 0; }
+</style>
+<script>
+(function (root) {
+'use strict';
+
+/* [term as it appears in prose, definition]. Order matters: linkify() tries
+ * these longest-first at each scan position, so "modified Rankine vortex"
+ * is offered before a hypothetical shorter overlapping term would be. */
+var TERMS = [
+  ['wavenumber-1 asymmetry',
+    'The one-cycle-per-revolution, left/right lopsidedness GTCM adds on top ' +
+    'of an otherwise symmetric vortex - stronger wind ahead and to the ' +
+    'right of the storm’s motion, weaker behind and to the left.'],
+  ['modified Rankine vortex',
+    'The symmetric wind-speed shape GTCM fits: wind rises linearly from the ' +
+    'center to a peak at radius rm, then falls off as a power of radius ' +
+    'beyond it. One vortex plus one wavenumber-1 asymmetry is the whole ' +
+    'model - it is not a gridded numerical forecast.'],
+  ['quadrant bisector',
+    'The compass direction through the middle of a 90° quadrant: 045° ' +
+    'for NE, 135° for SE, 225° for SW, 315° for NW. Reported radii ' +
+    'are read as applying along this one direction, not smoothly across the ' +
+    'whole quadrant.'],
+  ['quadrant maximum',
+    'What JTWC’s warning text actually reports: the farthest a threshold ' +
+    'wind speed reaches anywhere within that 90° quadrant, not an average ' +
+    'across it.'],
+  ['quadrant average',
+    'What GTCM’s vortex fit targets instead of the reported quadrant ' +
+    'maximum: 0.85 × the reported radius, an estimate of the quadrant’s ' +
+    'typical (not farthest) extent, from the Gridded TCM Users Guide.'],
+  ['fit target',
+    'One (bearing, wind speed) point the least-squares fit is actually ' +
+    'scored against: the quadrant bisector direction, at 0.85 × the ' +
+    'reported radius for that threshold - not the raw reported radius ' +
+    'itself.'],
+  ['isotach',
+    'A line of constant wind speed. The 34/50/64 kt radii JTWC reports, and ' +
+    'the shaded bands on the map, are all isotachs.'],
+  ['ROCI',
+    'Radius of Outermost Closed Isobar: how far out the storm’s closed ' +
+    'pressure contour extends - a measure of the storm’s overall size, ' +
+    'independent of its wind speed.'],
+  ['RMW',
+    'Radius of Maximum Wind: an analyst’s best-track estimate of the ' +
+    'observed distance from center to the strongest surface wind, drawn ' +
+    'from aircraft, scatterometer, radar or satellite data. This tool’s ' +
+    'own fitted rm is a related but different number: the peak-wind radius ' +
+    'of the modelled vortex, chosen by least squares to match the reported ' +
+    'radii, not an independent observation. The two frequently disagree; ' +
+    'that disagreement is not by itself an error in either one.'],
+  ['best track',
+    'The post-season, human-reanalysed record of a storm’s position and ' +
+    'intensity (IBTrACS), built after the fact from all available data. ' +
+    'Matching best track is consistency with that reanalysis, not ' +
+    'verification against live observations.'],
+  ['extrapolation',
+    'Wherever the modelled field is drawn without a reported radius to ' +
+    'anchor it: inside the innermost reported ring, and outside the ' +
+    'outermost one. Only the fitted vortex shape - not a reported number - ' +
+    'decides the wind speed there. Shown hatched on the map.'],
+  ['held-out test',
+    'A prediction check: fit the vortex to some of the reported radii ' +
+    '(say 34 and 50 kt), then score it against a radius withheld from ' +
+    'that fit (64 kt). The only test on the Findings page that scores a ' +
+    'genuine prediction, rather than agreement with data the fit already ' +
+    'saw.'],
+  ['coherence',
+    'How smooth the modelled field is - the absence of the corners and ' +
+    'slope breaks a per-quadrant construction leaves at the compass ' +
+    'bisectors. A roughness measure, not an accuracy measure: it says ' +
+    'nothing about whether the field is closer to the truth.'],
+  ['noise floor',
+    'The same roughness estimator run where the construction has no ' +
+    'corner to find, giving the size of a slope break that is too small ' +
+    'to mean anything. A measured roughness only means something read ' +
+    'against its own noise floor.'],
+  ['bias',
+    'Mean signed error: the average of modelled minus reported, so a ' +
+    'negative bias means the modelled isotach sits inside the reported ' +
+    'radius on average. Unlike mean absolute error, a positive miss and ' +
+    'a negative miss can cancel in this number.'],
+  ['MAE',
+    'Mean Absolute Error: the average size of the miss, ignoring its ' +
+    'direction. Unlike bias, MAE cannot hide a large miss one way behind ' +
+    'a large miss the other way.'],
+  ['correlation r',
+    'The Pearson correlation between modelled and reported (or held-out) ' +
+    'radii across cases, from -1 to 1: how well the two track each other. ' +
+    'A high r does not by itself mean the two are close in size - see ' +
+    'bias and MAE for that.'],
+  ['never reached',
+    'A reported ring-quadrant the modelled isotach does not cross at any ' +
+    'radius, because one symmetric vortex could not hold that much ' +
+    'structure. Excluded from bias and MAE, since there is no crossing to ' +
+    'measure, and counted separately as a total miss.'],
+  ['extratropical transition',
+    'The process by which a tropical cyclone loses its warm core and ' +
+    'takes on the frontal structure of a mid-latitude storm. GTCM fits a ' +
+    'single symmetric vortex, and fits transitioning storms worse than ' +
+    'purely tropical ones.']
+];
+
+var IBTRACS_RE_CACHE = null;
+
+function buildRegex_() {
+  if (IBTRACS_RE_CACHE) return IBTRACS_RE_CACHE;
+  var parts = TERMS.map(function (t) {
+    return t[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  });
+  // Longest first so "modified Rankine vortex" wins over any shorter
+  // overlapping alternative before it is tried.
+  parts.sort(function (a, b) { return b.length - a.length; });
+  IBTRACS_RE_CACHE = new RegExp('\\b(' + parts.join('|') + ')\\b', 'i');
+  return IBTRACS_RE_CACHE;
+}
+
+function defFor_(term) {
+  var lower = term.toLowerCase();
+  for (var i = 0; i < TERMS.length; i++) {
+    if (TERMS[i][0].toLowerCase() === lower) return TERMS[i][1];
+  }
+  return '';
+}
+
+var tipSeq = 0;
+
+function makeAbbr_(matchedText) {
+  var abbr = document.createElement('abbr');
+  abbr.className = 'gloss-term';
+  abbr.tabIndex = 0;
+  var tipId = 'glossTip' + (tipSeq++);
+  abbr.setAttribute('aria-describedby', tipId);
+  abbr.appendChild(document.createTextNode(matchedText));
+  var tip = document.createElement('span');
+  tip.className = 'gloss-tip';
+  tip.id = tipId;
+  tip.setAttribute('role', 'tooltip');
+  tip.textContent = defFor_(matchedText);
+  abbr.appendChild(tip);
+  return abbr;
+}
+
+/**
+ * Wrap the first occurrence of each glossary term found under `root` in an
+ * <abbr> with a hover/focus (so touch-tap-via-focus works too) tooltip.
+ * Safe to call on a container that mixes glossary prose with other markup:
+ * skips script/style/textarea/already-linked text, and never re-scans an
+ * element it has already processed.
+ */
+function linkify(root) {
+  if (!root || typeof document === 'undefined') return;
+  if (root.getAttribute && root.getAttribute('data-gloss-done')) return;
+  var re = buildRegex_();
+  var used = {};
+  var SKIP_TAGS = { SCRIPT: 1, STYLE: 1, TEXTAREA: 1, ABBR: 1, DFN: 1, INPUT: 1 };
+
+  var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: function (node) {
+      var p = node.parentNode;
+      while (p && p !== root) {
+        if (SKIP_TAGS[p.nodeName]) return NodeFilter.FILTER_REJECT;
+        p = p.parentNode;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
+
+  var nodes = [];
+  var n;
+  while ((n = walker.nextNode())) nodes.push(n);
+
+  for (var i = 0; i < nodes.length; i++) {
+    var node = nodes[i];
+    var text = node.nodeValue;
+    var m = re.exec(text);
+    if (!m) continue;
+    var key = m[1].toLowerCase();
+    if (used[key]) continue; // already wrapped once under this root
+    used[key] = true;
+
+    var before = text.slice(0, m.index);
+    var after = text.slice(m.index + m[1].length);
+    var frag = document.createDocumentFragment();
+    if (before) frag.appendChild(document.createTextNode(before));
+    frag.appendChild(makeAbbr_(m[1]));
+    if (after) frag.appendChild(document.createTextNode(after));
+    node.parentNode.replaceChild(frag, node);
+  }
+
+  if (root.setAttribute) root.setAttribute('data-gloss-done', '1');
+}
+
+/** A ready-to-insert <details><summary>Glossary</summary>... block listing
+ *  every term. Pages append this once wherever a full glossary belongs. */
+function buildDetailsEl() {
+  var det = document.createElement('details');
+  det.className = 'tc-glossary';
+  var sum = document.createElement('summary');
+  sum.textContent = 'Glossary';
+  det.appendChild(sum);
+  var dl = document.createElement('dl');
+  for (var i = 0; i < TERMS.length; i++) {
+    var dt = document.createElement('dt');
+    dt.textContent = TERMS[i][0];
+    var dd = document.createElement('dd');
+    dd.textContent = TERMS[i][1];
+    dl.appendChild(dt);
+    dl.appendChild(dd);
+  }
+  det.appendChild(dl);
+  return det;
+}
+
+if (root) {
+  root.TCGlossary = { TERMS: TERMS, linkify: linkify, buildDetailsEl: buildDetailsEl };
+}
+})(typeof window !== 'undefined' ? window
+   : (typeof globalThis !== 'undefined' ? globalThis : null));
+</script>

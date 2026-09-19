@@ -164,6 +164,7 @@ function cmdGtcm(snapshotFile, pointsFile) {
     rmax: rmax,
     fit: { rm: jnum(f.rm), ri: jnum(f.ri), x1: jnum(f.x1), x2: jnum(f.x2),
            ax: jnum(f.ax), ay: jnum(f.ay), a: jnum(f.a), n: f.n,
+           freeParams: f.freeParams, rmSource: f.rmSource,
            rms: jnum(f.rms) },
     points: points.map(function (p) {
       const s = field.at(p[0], p[1]);
