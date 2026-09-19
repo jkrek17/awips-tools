@@ -83,16 +83,19 @@ NHC_PILS_EASTPAC = ["MIATCMEP1", "MIATCMEP2", "MIATCMEP3",
 CPHC_PILS_CENTPAC = ["HFOTCMCP1", "HFOTCMCP2", "HFOTCMCP3",
                      "HFOTCMCP4", "HFOTCMCP5"]
 
-# Ordered, because this drives the dialog's basin row and the default PIL
-# order underneath it.  The label text is what the forecaster sees.
+# One run, one basin.  The dialog is a radio, so this list is both the
+# option list and the label-to-PIL lookup, and its order is the order the
+# forecaster sees.  The labels are deliberately the ocean names rather than
+# ATCF codes or office ids - "Atlantic", not "AT - NHC".
 BASINS = [
-    ("WP - JTWC, West Pacific", JTWC_PILS_WESTPAC),
-    ("AT - NHC, Atlantic", NHC_PILS_ATLANTIC),
-    ("EP - NHC, East Pacific", NHC_PILS_EASTPAC),
-    ("CP - CPHC, Central Pacific", CPHC_PILS_CENTPAC),
+    ("Atlantic", NHC_PILS_ATLANTIC),
+    ("East Pac", NHC_PILS_EASTPAC),
+    ("West Pac", JTWC_PILS_WESTPAC),
+    ("Central Pac", CPHC_PILS_CENTPAC),
 ]
-ALL_PILS = [pil for _, pils in BASINS for pil in pils]
-PIL_BASIN = dict((pil, label) for label, pils in BASINS for pil in pils)
+BASIN_PILS = dict(BASINS)
+BASIN_LABELS = [label for label, _ in BASINS]
+DEFAULT_BASIN = BASIN_LABELS[0]
 
 # NOTE on what this does NOT claim.  NHC and CPHC already distribute a
 # gridded TCM, and AWIPS already ships TCMWindTool to ingest it; for those
@@ -439,7 +442,7 @@ REQUIRE_ACKNOWLEDGEMENT = True
 
 # Shown in the dialog title and the status bar.  Bump it on every install so
 # there is never any doubt about which copy GFE actually loaded.
-VERSION = "2026-09-03a"
+VERSION = "2026-09-19a"
 
 # A bulletin older than this is treated as a dead slot and skipped.  textdb
 # returns whatever was last stored under a PIL, so without this check a storm
@@ -2235,8 +2238,7 @@ if _IN_GFE:
         # -------------------------------------------------------------
 
         def _buildVarDict(self):
-            pilList = list(ALL_PILS)
-            basinList = [label for label, _ in BASINS]
+            basinList = list(BASIN_LABELS)
 
             # Everything else lives in the tunables block at the top of this
             # file.  None of it is a per-run decision, and two of the old
@@ -2265,13 +2267,12 @@ if _IN_GFE:
             # whitespace they hold, which renders identically as a blank
             # line but keeps every varDict key unique.
             VariableList += [
-                ("Select the bulletins to process:", "", "label"),
-                # Two rows rather than twenty checkboxes to scroll: the basin
-                # row is the one click the common case needs, and the slot row
-                # below it keeps the per-storm selection the WestPac-only
-                # version had.  A PIL is processed only if BOTH agree.
-                ("Basins to process:", basinList, "check", basinList),
-                ("Bulletins to process:", pilList, "check", pilList),
+                ("Select the basin to process:", "", "label"),
+                # One radio, not a list of every PIL in every basin. All five
+                # slots in the chosen basin are read; an empty or stale slot
+                # is skipped already, so there is nothing for a per-slot
+                # checkbox to save anyone.
+                ("Basin:", DEFAULT_BASIN, "radio", basinList),
                 ("  ", "", "label"),
                 ("Choose where to write the output:", "", "label"),
                 ("Write to:", "Preview grid", "radio",
@@ -2472,18 +2473,17 @@ if _IN_GFE:
 
             testCase = varDict.get(TEST_CASE_LABEL, "No") == "Yes"
 
-            pils = list(varDict.get("Bulletins to process:") or [])
-            # Intersect with the basin row.  Unchecking a basin is the quick
-            # way to ignore a whole ocean; unchecking a slot is the way to
-            # ignore one storm within one.
-            wantBasins = set(varDict.get("Basins to process:") or
-                             [label for label, _ in BASINS])
-            pils = [p for p in pils if PIL_BASIN.get(p) in wantBasins]
+            # One basin per run.  An unrecognised or missing value falls
+            # back to the default rather than silently reading nothing.
+            basin = varDict.get("Basin:") or DEFAULT_BASIN
+            pils = list(BASIN_PILS.get(basin, BASIN_PILS[DEFAULT_BASIN]))
 
-            # Test case mode uses its own bundled storm, not any selected
-            # PIL, so the "no bulletins selected" guard does not apply to it
-            # (nor does the "Bulletins to process:" checklist otherwise
-            # matter - it is simply ignored below).
+            # Test case mode uses its own bundled storm, not textdb, so the
+            # basin radio does not apply to it and the empty guard below is
+            # skipped.  With a radio the list can only be empty if BASINS
+            # itself is, which would be a code error rather than a choice,
+            # but the guard is kept: a silent no-op run is worse than a
+            # message saying nothing was selected.
             if not pils and not testCase:
                 self.statusBarMsg("No bulletins selected.", "S")
                 return

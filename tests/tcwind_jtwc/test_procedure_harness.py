@@ -258,29 +258,53 @@ if not tc._IN_GFE:
 # Grid / fixture plumbing shared by both cases.
 # ---------------------------------------------------------------------------
 
-def _mesh(n=120):
-    """15-35N, 120-140E - comfortably covers both fixtures' tracks."""
-    lats = np.linspace(15.0, 35.0, n, dtype=np.float32)
-    lons = np.linspace(120.0, 140.0, n, dtype=np.float32)
+def _mesh(n=120, basin="West Pac"):
+    """A grid domain wide enough for the basin's fixture tracks.
+
+    West Pac is 15-35N, 120-140E - the original domain, unchanged, so every
+    pre-existing case grids exactly where it always did. Atlantic covers the
+    LEE fixture's 22-34N, 62-67W track. An Atlantic storm run on the West
+    Pac mesh lands entirely off-grid and writes nothing, which reads as a
+    pass rather than the miss it is.
+    """
+    if basin == "Atlantic":
+        lats = np.linspace(15.0, 40.0, n, dtype=np.float32)
+        lons = np.linspace(-75.0, -50.0, n, dtype=np.float32)
+    else:
+        lats = np.linspace(15.0, 35.0, n, dtype=np.float32)
+        lons = np.linspace(120.0, 140.0, n, dtype=np.float32)
     lonGrid, latGrid = np.meshgrid(lons, lats)
     return latGrid.astype(np.float32), lonGrid.astype(np.float32)
 
 
 def _load_fixture(name):
-    path = os.path.join(FIXTURES, name)
-    with open(path) as f:
-        return f.read()
+    """Find a fixture in the repo layout or the exported bundle's flat one.
+
+    In the repo, TCM products live in fixtures/tcm/ so the WTPN-only globs
+    elsewhere never pick them up; the AWIPS bundle copies every fixture flat
+    into selfcheck/fixtures/. Trying both keeps one harness working in both.
+    """
+    for path in (os.path.join(FIXTURES, name),
+                 os.path.join(FIXTURES, "tcm", name)):
+        if os.path.exists(path):
+            with open(path) as f:
+                return f.read()
+    raise IOError("fixture not found in either layout: %s" % name)
 
 
-def _run(pil, fixture_name, inv_stop_hours):
+def _run(pil, fixture_name, inv_stop_hours, basin="West Pac"):
     """Parse `fixture_name`, run Procedure.execute() against it under
     `pil`, with a pre-existing Fcst Wind inventory of 3-hourly blocks
     running from the bulletin's analysis time out to `inv_stop_hours`
     hours after it (None = cover the whole bulletin). Returns
     (proc, taus, header).
+
+    parseBulletin(), not parseJTWC(): the procedure dispatches on the text
+    rather than the PIL, so the harness exercises the same path or it only
+    ever proves the JTWC half works.
     """
     text = _load_fixture(fixture_name)
-    taus, header = tc.parseJTWC(text)
+    taus, header, _kind = tc.parseBulletin(text)
 
     analysisEpoch = taus[0].epoch
     lastEpoch = taus[-1].epoch
@@ -291,7 +315,7 @@ def _run(pil, fixture_name, inv_stop_hours):
     else:
         invEnd = analysisEpoch + inv_stop_hours * 3600 + 3 * 3600
 
-    latGrid, lonGrid = _mesh()
+    latGrid, lonGrid = _mesh(basin=basin)
 
     proc = tc.Procedure(dbss=None)
     proc.configure(
@@ -303,7 +327,7 @@ def _run(pil, fixture_name, inv_stop_hours):
         lon=lonGrid)
 
     varDict = {
-        "Bulletins to process:": [pil],
+        "Basin:": basin,
         "Write to:": "Fcst Wind",
         "Run over selected time range only?": "No",
         "I understand this tool is experimental and I have reviewed "
@@ -364,7 +388,7 @@ def _run_test_case(write_to, ack="No", now_epoch=None):
 
     varDict = {
         tc.TEST_CASE_LABEL: "Yes",
-        "Bulletins to process:": [],
+        "Basin:": "West Pac",   # ignored: the test case never reads textdb
         "Write to:": write_to,
         "Run over selected time range only?": "No",
         "I understand this tool is experimental and I have reviewed "
@@ -502,7 +526,7 @@ def case_mixed_cadence_background_still_writes_3_hourly():
         inv_blocks=invBlocks)
 
     varDict = {
-        "Bulletins to process:": ["NFDTCPWP1"],
+        "Basin:": "West Pac",
         "Write to:": "Fcst Wind",
         "Run over selected time range only?": "No",
         "I understand this tool is experimental and I have reviewed "
@@ -580,7 +604,7 @@ def case_selected_time_range_only_respects_bounds():
         AbsTime.AbsTime(selStart), AbsTime.AbsTime(selEnd))
 
     varDict = {
-        "Bulletins to process:": ["NFDTCPWP1"],
+        "Basin:": "West Pac",
         "Write to:": "Fcst Wind",
         "Run over selected time range only?": "Yes",
         "I understand this tool is experimental and I have reviewed "
@@ -635,6 +659,53 @@ def case_saudel():
 
     if not proc.messages:
         fails.append("no status message was ever posted")
+
+    return fails, proc
+
+
+def case_lee_atlantic_tcm():
+    """An NHC Atlantic TCM, end to end: parse, fit, grid, write.
+
+    compare_py_js.py already holds the parser to the JavaScript and
+    test_parser_golden.py to a snapshot. Neither shows that a TCM survives
+    the REST of the procedure - the basin radio, the vortex fit, the insert
+    and the grid writing - on a basin whose longitudes are negative and
+    whose forecast hours are not JTWC's neat multiples of 12 (NHC anchors to
+    00/12Z synoptic times, so a 15Z advisory runs 0/9/21/33...). HURRICANE
+    LEE is strong and well sampled, with radii at all three thresholds, so
+    grids are expected here - not merely the absence of a crash.
+    """
+    fails = []
+    try:
+        proc, taus, header = _run(
+            "MIATCMAT3", "real_2023-09-10_wtnt23_lee.txt",
+            inv_stop_hours=None, basin="Atlantic")
+    except Exception as exc:
+        fails.append("execute() raised %r" % (exc,))
+        return fails, None
+
+    if header.get("stormName") != "LEE":
+        fails.append("stormName was %r, expected 'LEE'"
+                     % header.get("stormName"))
+    if header.get("basin") != "AT":
+        fails.append("header basin was %r, expected 'AT'"
+                     % header.get("basin"))
+    if not proc.created:
+        fails.append("no grids written for a 105 kt hurricane reporting "
+                     "radii at all three thresholds")
+
+    # The written peak has to be in the bulletin's league. Far too low means
+    # the storm missed the grid entirely; higher than the bulletin means the
+    # vortex overshot.
+    peak = _peak_written_kt(proc)
+    bulletinMax = max(t.vmax for t in taus)
+    if peak < 0.5 * bulletinMax:
+        fails.append("peak written %.0f kt is under half the bulletin's "
+                     "%.0f kt - is the storm on the grid at all?"
+                     % (peak, bulletinMax))
+    if peak > bulletinMax + 5.0:
+        fails.append("peak written %.0f kt exceeds the bulletin's %.0f kt"
+                     % (peak, bulletinMax))
 
     return fails, proc
 
@@ -751,6 +822,7 @@ def main():
         ("selected_time_range_only_respects_bounds",
          case_selected_time_range_only_respects_bounds),
         ("saudel_weak_no_radii_runs_clean", case_saudel),
+        ("lee_atlantic_tcm_end_to_end", case_lee_atlantic_tcm),
         ("test_case_forces_preview_despite_fcst_wind_and_ack",
          case_test_case_forces_preview_despite_fcst_wind_and_ack),
         ("test_case_preview_default", case_test_case_preview_default),

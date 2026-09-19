@@ -14,6 +14,7 @@ fixtures, and a driver shell script) and an AWIPS_TEST.md walkthrough, into:
             fixtures/
                 real_2026-09-02_wtpn31_krovanh.txt
                 real_2026-09-02_wtpn32_saudel.txt
+                real_2023-09-10_wtnt23_lee.txt
 
 ...and zips that directory to dist/TCWind_JTWC_<VERSION>.zip.
 
@@ -44,9 +45,17 @@ HARNESS_SRC = os.path.join(
 FIXTURES_SRC_DIR = os.path.join(REPO_ROOT, "tests", "tcwind_jtwc", "fixtures")
 DIST_DIR = os.path.join(REPO_ROOT, "dist")
 
+# (repo sub-directory, filename). TCM products live in fixtures/tcm/ in the
+# repo; the bundle flattens everything into selfcheck/fixtures/, which the
+# harness's fixture loader handles by trying both layouts.
+#
+# The Atlantic fixture is here because the self-check is what a forecaster
+# runs on the AWIPS host to decide the install is sound, and without it the
+# check would cover only the JTWC half of a tool that now reads four basins.
 REAL_FIXTURES = [
-    "real_2026-09-02_wtpn31_krovanh.txt",
-    "real_2026-09-02_wtpn32_saudel.txt",
+    ("", "real_2026-09-02_wtpn31_krovanh.txt"),
+    ("", "real_2026-09-02_wtpn32_saudel.txt"),
+    ("tcm", "real_2023-09-10_wtnt23_lee.txt"),
 ]
 
 VERSION_RE = re.compile(r'^VERSION\s*=\s*"([^"]+)"', re.MULTILINE)
@@ -100,13 +109,16 @@ else
 fi
 
 echo ""
-echo "[2/3] python TCWind_JTWC.py selfcheck/fixtures/real_2026-09-02_wtpn31_krovanh.txt"
-if "$PY" TCWind_JTWC.py selfcheck/fixtures/real_2026-09-02_wtpn31_krovanh.txt; then
-    echo "  PASS: standalone parse+fit printout ran cleanly"
-else
-    echo "  FAIL: standalone parse+fit on the KROVANH fixture"
-    FAILED=1
-fi
+echo "[2/3] standalone parse+fit, one product of each kind"
+for FIX in real_2026-09-02_wtpn31_krovanh.txt real_2023-09-10_wtnt23_lee.txt; do
+    echo "  --- selfcheck/fixtures/$FIX"
+    if "$PY" TCWind_JTWC.py "selfcheck/fixtures/$FIX"; then
+        echo "  PASS: $FIX"
+    else
+        echo "  FAIL: standalone parse+fit on $FIX"
+        FAILED=1
+    fi
+done
 
 echo ""
 echo "[3/3] python selfcheck/test_procedure_harness.py"
@@ -236,14 +248,20 @@ testing here is done.
 
 ## Step 2.5: run the built-in test case (optional, but recommended first)
 
+The **Basin:** radio picks one ocean per run - Atlantic, East Pac, West Pac
+or Central Pac - and all five storm slots in it are read. Atlantic and East
+Pac come from NHC, Central Pac from CPHC, West Pac from JTWC; the tool works
+out which product format it is holding from the text itself, not from the
+bin it arrived in.
+
 Before ever touching a real bulletin, confirm the install works end to end
 using the procedure's own bundled test storm — no live storm, no network,
 and no dependence on what JTWC has (or has not) issued today.
 
 From the **Populate** menu, run **TCWind_JTWC**. In the dialog, set
 **Run test case (no live storm needed):** to **Yes**, and leave everything
-else at its default (the **Bulletins to process:** checklist is ignored in
-this mode). Run it.
+else at its default (the **Basin:** radio is ignored in this mode - the test
+case uses its own bundled storm, never the text database). Run it.
 
 **What the status bar should say**, roughly:
 
@@ -397,9 +415,9 @@ def build_bundle():
     shutil.copyfile(
         HARNESS_SRC, os.path.join(selfcheck_dir, "test_procedure_harness.py"))
 
-    # selfcheck/fixtures/, the two real bulletins only.
-    for name in REAL_FIXTURES:
-        src = os.path.join(FIXTURES_SRC_DIR, name)
+    # selfcheck/fixtures/, the real bulletins only, flattened.
+    for subdir, name in REAL_FIXTURES:
+        src = os.path.join(FIXTURES_SRC_DIR, subdir, name)
         if not os.path.isfile(src):
             raise SystemExit("error: fixture not found at %s" % src)
         shutil.copyfile(src, os.path.join(fixtures_dir, name))
