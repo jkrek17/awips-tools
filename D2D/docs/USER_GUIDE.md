@@ -258,14 +258,19 @@ against 0, warm if greater than or equal to zero and cold if less
 than zero. There is no neutral band here (compare HCPSidx below, which
 keeps one).
 
+The colors follow the transition path so the progression reads at a
+glance: red (0), orange (2), green (3), blue (4), indigo (5). Magenta
+(1) marks the symmetric shallow warm core, a warm seclusion or a
+subtropical storm, off that path; gray (6) is the rare shallow cold core.
+
 | Code | Color | Name | B | lower VT | upper VT | Typical system |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | 0 | red | symmetric deep warm core | <= 10 | warm | warm | hurricane, typhoon |
-| 1 | orange | symmetric shallow warm core | <= 10 | warm | cold | subtropical storm, or warm seclusion after transition |
-| 2 | magenta | frontal deep warm core | > 10 | warm | warm | hurricane meeting a trough, transition beginning |
-| 3 | yellow | frontal shallow warm core | > 10 | warm | cold | transition under way |
+| 1 | magenta | symmetric shallow warm core | <= 10 | warm | cold | subtropical storm, or warm seclusion after transition |
+| 2 | orange | frontal deep warm core | > 10 | warm | warm | hurricane meeting a trough, transition beginning |
+| 3 | green | frontal shallow warm core | > 10 | warm | cold | transition under way |
 | 4 | blue | frontal cold core | > 10 | cold | cold (code 6 takes lower cold, upper warm first) | extratropical low, transition complete |
-| 5 | violet | symmetric cold core | <= 10 | cold | cold (code 6 takes lower cold, upper warm first) | occluded or cutoff cold low |
+| 5 | indigo | symmetric cold core | <= 10 | cold | cold (code 6 takes lower cold, upper warm first) | occluded or cutoff cold low |
 | 6 | gray | shallow cold core (lower cold, upper warm) | any | cold | warm | perturbation peaking at mid-levels; rarely occupied |
 | blank | | not a closed low, or B undefined | | | | no closed low, or steering below 2 m/s |
 

@@ -378,20 +378,22 @@
     against 10&nbsp;m and both thermal wind terms against 0, and no
     neutral band on any of the three. The joint space has eight cells;
     the two cells with a cold lower and warm upper core are merged into
-    one code regardless of <i>B</i>, giving seven classes (Figure 6):
+    one code regardless of <i>B</i>, giving seven classes (Figure 6). The
+    colors follow the transition path, red, orange, green, blue, indigo,
+    with magenta for the symmetric shallow warm core off that path:
   </p>
   <table>
     <caption><code>HCPSclass</code>: the seven classes formed from the quadrants of Hart's two diagrams. A term of exactly zero counts as warm; <i>B</i> of exactly 10&nbsp;m counts as symmetric.</caption>
-    <thead><tr><th>Code</th><th>Name</th><th><i>B</i></th><th>&minus;V<sub>T</sub><sup>L</sup></th><th>&minus;V<sub>T</sub><sup>U</sup></th><th>Typical system</th></tr></thead>
+    <thead><tr><th>Code</th><th>Color</th><th>Name</th><th><i>B</i></th><th>&minus;V<sub>T</sub><sup>L</sup></th><th>&minus;V<sub>T</sub><sup>U</sup></th><th>Typical system</th></tr></thead>
     <tbody>
-      <tr><td>0</td><td>symmetric deep warm core</td><td>&le; 10</td><td>warm</td><td>warm</td><td>hurricane, typhoon</td></tr>
-      <tr><td>1</td><td>symmetric shallow warm core</td><td>&le; 10</td><td>warm</td><td>cold</td><td>subtropical storm, or warm seclusion once <i>B</i> falls</td></tr>
-      <tr><td>2</td><td>frontal deep warm core</td><td>&gt; 10</td><td>warm</td><td>warm</td><td>hurricane meeting a trough, transition beginning</td></tr>
-      <tr><td>3</td><td>frontal shallow warm core</td><td>&gt; 10</td><td>warm</td><td>cold</td><td>transition under way</td></tr>
-      <tr><td>4</td><td>frontal cold core</td><td>&gt; 10</td><td>cold</td><td>cold</td><td>extratropical low, transition complete</td></tr>
-      <tr><td>5</td><td>symmetric cold core</td><td>&le; 10</td><td>cold</td><td>cold</td><td>occluded or cutoff cold low</td></tr>
-      <tr><td>6</td><td>shallow cold core (lower cold, upper warm)</td><td>any</td><td>cold</td><td>warm</td><td>perturbation peaking at mid-levels</td></tr>
-      <tr><td>blank</td><td colspan="4">no closed low, or <i>B</i> undefined (window-mean steering below 2&nbsp;m/s)</td></tr>
+      <tr><td>0</td><td>red</td><td>symmetric deep warm core</td><td>&le; 10</td><td>warm</td><td>warm</td><td>hurricane, typhoon</td></tr>
+      <tr><td>1</td><td>magenta</td><td>symmetric shallow warm core</td><td>&le; 10</td><td>warm</td><td>cold</td><td>subtropical storm, or warm seclusion once <i>B</i> falls</td></tr>
+      <tr><td>2</td><td>orange</td><td>frontal deep warm core</td><td>&gt; 10</td><td>warm</td><td>warm</td><td>hurricane meeting a trough, transition beginning</td></tr>
+      <tr><td>3</td><td>green</td><td>frontal shallow warm core</td><td>&gt; 10</td><td>warm</td><td>cold</td><td>transition under way</td></tr>
+      <tr><td>4</td><td>blue</td><td>frontal cold core</td><td>&gt; 10</td><td>cold</td><td>cold</td><td>extratropical low, transition complete</td></tr>
+      <tr><td>5</td><td>indigo</td><td>symmetric cold core</td><td>&le; 10</td><td>cold</td><td>cold</td><td>occluded or cutoff cold low</td></tr>
+      <tr><td>6</td><td>gray</td><td>shallow cold core (lower cold, upper warm)</td><td>any</td><td>cold</td><td>warm</td><td>perturbation peaking at mid-levels</td></tr>
+      <tr><td>blank</td><td colspan="5">no closed low, or <i>B</i> undefined (window-mean steering below 2&nbsp;m/s)</td></tr>
     </tbody>
   </table>
   <p>
