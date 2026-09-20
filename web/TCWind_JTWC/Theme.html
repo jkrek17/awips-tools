@@ -1,0 +1,173 @@
+<!--
+  Theme.html - the single source of truth for the design system.
+
+  Included by Index.html, Archive.html and Findings.html with
+
+      <?!= HtmlService.createHtmlOutputFromFile('Theme').getContent(); ?>
+
+  placed inside <head>, BEFORE the page's own <style>, so a page can still
+  override a token locally if it genuinely needs to.
+
+  Why this file exists: the three pages were built independently and drifted
+  into two different palettes with two different token vocabularies - one
+  calling muted text --muted and the other --text-2, with different hex values
+  for the same role. That is the same failure this project has now hit three
+  times (a second copy of resolveRmax(), a second copy of parseJTWC(), a second
+  copy of the r34 calculation), and the fix is the same each time: one copy,
+  included, not duplicated.
+
+  Rules for anything using these tokens:
+   * Every colour is defined here on bare :root first.  Dark only REDEFINES
+     the same names.  Nothing may exist only inside a media query, or the page
+     renders one theme's text on the other theme's ground in the un-stamped
+     "system" state.
+   * Text must clear 4.5:1 against the surface behind it.  The previous build
+     shipped its headline statistics at 2.56:1.
+   * Nothing is distinguished by hue alone - rings and series need a dash
+     pattern, a marker shape, or a direct label as well.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root {
+  color-scheme: light dark;
+
+  /* --- surfaces and text ------------------------------------------------ */
+  --bg:#eef1f6; --surface:#ffffff; --panel:#f7f9fc; --sunken:#e7ecf3;
+  --text:#0f151d; --muted:#4a5666;
+  --border:#ccd4e0; --border-strong:#9fadbf;
+
+  /* --- accent and status ------------------------------------------------ */
+  --accent:#12508f; --accent-soft:#e6eefa;
+  --ok:#12633a; --warn:#8a5200; --bad:#a4132a;
+  --ok-soft:#e2f2e9; --warn-soft:#faf0dc; --bad-soft:#fbe6ea;
+
+  /* --- provenance ------------------------------------------------------
+     The distinction this whole tool turns on: what the model produced, what
+     the bulletin or best track REPORTED, and what was independently OBSERVED.
+     A reader must never have to guess which of the three a mark is. Always
+     pair these with a dash pattern or a label - never hue alone. */
+  --ink-model:#12508f;   /* modelled field, fitted profile        (solid)   */
+  --ink-bt:#8a5200;      /* reported radii from bulletin / best track (dash) */
+  --ink-obs:#2f3a45;     /* independently observed: RMW, ROCI     (dotted)  */
+
+  /* --- map ink ---------------------------------------------------------- */
+  --ink:#0b1220; --ink-halo:#ffffff;
+
+  /* --- profile-chart quadrant hues -------------------------------------- */
+  --q-ne:#004c36; --q-se:#5c6000; --q-sw:#a150d9; --q-nw:#f85e2d;
+
+  /* --- wind-field ramp --------------------------------------------------
+     Plasma: perceptually uniform, monotonic in lightness, and readable to
+     every common colour-vision type. Shared by both themes because it sits
+     over map tiles, not over the page background.
+
+     --f0 (10-20 kt) is the one deliberate exception to "monotonic in
+     lightness up the ramp": it is a pale tint of --f1's own hue rather than
+     a darker step below it. A one-sided storm's weak side is 10-20 kt, not
+     0 kt, and drawing nothing there reads as "no wind" instead of "weak
+     wind" - the failure this band exists to fix. Going darker to continue
+     plasma's math would make the weakest band look the most solid of all
+     against OSM's own dark-grey roads and labels; pale reads as "weak" the
+     way it does on every other met wind/precip scale, and it stays far
+     enough from --f1 in lightness that the two are never mistaken for one
+     another. */
+  --f0:#9e9ccf;
+  --f1:#0d0887; --f2:#6a00a8; --f3:#b12a90;
+  --f4:#e16462; --f5:#fca636; --f6:#f0f921;
+
+  --banner-bg:#7a1020; --banner-fg:#ffffff;
+
+  /* --- chart furniture -------------------------------------------------- */
+  --chart-grid:#c2ccd6; --chart-axis:#4a5765;
+
+  /* --- shape ------------------------------------------------------------ */
+  --r-sm:5px; --r-md:8px;
+  --shadow:0 1px 2px rgba(15,23,42,.10), 0 2px 8px rgba(15,23,42,.06);
+  --tile-filter:none;
+
+  /* --- type -------------------------------------------------------------
+     IBM Plex: drawn for instrumentation and technical documentation, which is
+     what this is. Its figures are unambiguous at the sizes a forecaster reads
+     mid-shift - 1/l/I and 0/O stay distinct, and the mono is a true companion
+     rather than a borrowed face. The fallback stack is deliberately complete:
+     an AWIPS workstation may not reach fonts.googleapis.com, and the page has
+     to hold up when it does not. */
+  --font:"IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI",
+         system-ui, sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, "SF Mono", "Cascadia Mono", Menlo,
+         Consolas, monospace;
+
+  --t-xs:11px; --t-sm:12.5px; --t-md:14px; --t-lg:16px;
+  --t-xl:20px; --t-2xl:26px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#0c1016; --surface:#151b24; --panel:#1b222c; --sunken:#10161e;
+    --text:#e9eef6; --muted:#a8b6c8;
+    --border:#2b3644; --border-strong:#46566a;
+    --accent:#7ab6f5; --accent-soft:#152437;
+    --ok:#5fd39a; --warn:#f2b45a; --bad:#ff8f9e;
+    --ok-soft:#12281e; --warn-soft:#2b2110; --bad-soft:#2e1419;
+    --ink-model:#7ab6f5; --ink-bt:#f2b45a; --ink-obs:#c9d4e0;
+    --ink:#e9eef6; --ink-halo:#0b1220;
+    --q-ne:#4fd0a6; --q-se:#d8d24a; --q-sw:#cf9bf0; --q-nw:#ff9a70;
+    --border-strong:#46566a;
+    --chart-grid:#2b3644; --chart-axis:#a8b6c8;
+    --shadow:0 1px 2px rgba(0,0,0,.5), 0 2px 10px rgba(0,0,0,.35);
+    --tile-filter:brightness(.72) saturate(.85) contrast(1.05);
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#0c1016; --surface:#151b24; --panel:#1b222c; --sunken:#10161e;
+  --text:#e9eef6; --muted:#a8b6c8;
+  --border:#2b3644; --border-strong:#46566a;
+  --accent:#7ab6f5; --accent-soft:#152437;
+  --ok:#5fd39a; --warn:#f2b45a; --bad:#ff8f9e;
+  --ok-soft:#12281e; --warn-soft:#2b2110; --bad-soft:#2e1419;
+  --ink-model:#7ab6f5; --ink-bt:#f2b45a; --ink-obs:#c9d4e0;
+  --ink:#e9eef6; --ink-halo:#0b1220;
+  --q-ne:#4fd0a6; --q-se:#d8d24a; --q-sw:#cf9bf0; --q-nw:#ff9a70;
+  --chart-grid:#2b3644; --chart-axis:#a8b6c8;
+  --shadow:0 1px 2px rgba(0,0,0,.5), 0 2px 10px rgba(0,0,0,.35);
+  --tile-filter:brightness(.72) saturate(.85) contrast(1.05);
+}
+
+/* --- base typography ---------------------------------------------------
+   Figures line up in columns all over these pages - radii, knots, fit
+   residuals - so tabular numerals are the default, not an opt-in. */
+html { -webkit-text-size-adjust:100%; }
+body {
+  margin:0; background:var(--bg); color:var(--text);
+  font-family:var(--font); font-size:var(--t-md); line-height:1.5;
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  font-variant-numeric:tabular-nums; font-feature-settings:"tnum" 1;
+}
+code, kbd, samp, pre, .mono { font-family:var(--mono); }
+h1, h2, h3, h4 { font-weight:600; letter-spacing:-.011em; text-wrap:balance; }
+a { color:var(--accent); }
+:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
+/* Legacy aliases.  Archive.html was written against a second vocabulary
+   before this file existed; these keep it rendering while it uses the shared
+   VALUES, so the two palettes can no longer drift apart. Renaming its call
+   sites is follow-up work, not a reason to leave two palettes in the repo. */
+:root {
+  --surface-2:var(--sunken); --surface-3:var(--border);
+  --border-2:var(--border-strong);
+  --text-2:var(--muted);
+  --link:var(--accent); --focus:var(--accent);
+  --neg:var(--bad); --pos:var(--ok);
+  --warn-bg:var(--warn-soft); --warn-fg:var(--warn); --warn-border:var(--warn);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration:.001ms !important; animation-iteration-count:1 !important;
+    transition-duration:.001ms !important; scroll-behavior:auto !important;
+  }
+}
+</style>

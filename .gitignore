@@ -3,3 +3,11 @@ __pycache__/
 *.pyo
 *.pyd
 
+# Publish-tool endpoint config (token secret; never commit)
+tools/publish.local.json
+
+# Agent worktrees created for isolated subagent runs
+.claude/worktrees/
+
+# tools/export_awips.py output
+dist/

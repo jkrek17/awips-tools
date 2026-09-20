@@ -1,0 +1,101 @@
+/* Chart-specific styling for docs/assets/js/charts.js.
+   Base chart classes (.c-grid, .c-axis, .c-tick, .c-axis-title, .c-label,
+   .c-mean, .c-threshold, .c-bar, .c-hit, .chart-legend, .chart-empty,
+   .chart-footnote) live in app.css and are not touched here - this file only
+   adds new classes charts.js uses for hover feedback and direct labels, plus
+   a couple of additive rules on top of the existing ones. Every colour comes
+   from the shared custom properties; the value after the comma in var() is a
+   fallback only, kept in sync with app.css's light values. */
+
+/* ------------------------------------------------------------- empty state
+   .chart-empty already gets its padding/font/colour from app.css; this only
+   adds the box treatment so a "no events match" result reads as deliberate,
+   at the same footprint the live chart would have taken. */
+.chart-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--border-strong, #d8d6cf);
+  border-radius: var(--radius, 6px);
+  background: var(--surface-sunk, #f2f2ee);
+}
+.chart-empty p { margin: 0; max-width: 32ch; }
+.chart-empty p::before {
+  content: '';
+  display: block;
+  width: 26px;
+  height: 26px;
+  margin: 0 auto 10px;
+  border: 2px dashed var(--ink-muted, #898781);
+  border-radius: 50%;
+  opacity: .55;
+}
+
+/* --------------------------------------------------------- direct labels
+   Values written straight onto the mark - used sparingly (see charts.js:
+   column totals when there's room, histogram bars only when there are few
+   or it's the peak, the deepest fix on a trace). */
+.c-value {
+  fill: var(--ink-2, #52514e);
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------------- crosshair
+   A guide line that slides to the hovered column/bin/fix, hidden until then. */
+.c-crosshair {
+  stroke: var(--ink-muted, #898781);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: 0;
+  pointer-events: none;
+}
+.c-crosshair.is-visible { opacity: .55; }
+
+/* Scatter hover drops a dashed line to each axis so an overplotted point's
+   exact value can be read off without guessing between gridlines. */
+.c-guide {
+  stroke: var(--ink-muted, #898781);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+  opacity: 0;
+  pointer-events: none;
+}
+.c-guide.is-visible { opacity: .6; }
+
+/* A meaningful zero on a signed histogram domain (deepening vs. filling)
+   gets its own quiet marker, distinct from the regular grid. */
+.c-zero {
+  stroke: var(--ink-muted, #898781);
+  stroke-width: 1;
+  stroke-dasharray: 1 2;
+  opacity: .8;
+}
+
+/* The scatter's median reference - explicitly labelled as a median, never a
+   fitted trend. */
+.c-median {
+  stroke: var(--ink-2, #52514e);
+  stroke-width: 1;
+  stroke-dasharray: 5 3;
+  opacity: .5;
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------------ scatter dots */
+.c-dot { opacity: 1; }
+.c-dot-hit { fill: transparent; pointer-events: all; }
+svg.is-hovering .c-dot { opacity: .3; }
+svg.is-hovering .c-dot.is-hover { opacity: 1; }
+.c-dot.is-hover { stroke-width: 1.4; }
+
+/* ---------------------------------------------------- hover motion, guarded
+   Bars/points already snap to their dimmed/lit state instantly; the only
+   things that would otherwise animate are the crosshair/guide fade and the
+   dim/highlight opacity swap, and both are skipped under reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .c-crosshair, .c-guide { transition: opacity .12s ease-out; }
+  .c-dot, .c-bar { transition: opacity .12s ease-out, r .12s ease-out; }
+}

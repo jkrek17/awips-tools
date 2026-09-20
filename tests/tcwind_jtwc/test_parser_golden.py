@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Golden-snapshot regression test for parseJTWC() (Python side).
+"""Golden-snapshot regression test for the parsers (Python side).
 
-Runs the parser against every fixture in fixtures/ and diffs the result
-against the committed JSON in expected/. A fixture with no matching
+Runs parseJTWC() against every fixture in fixtures/ and parseTCM() against
+every fixture in fixtures/tcm/, and diffs each result against the committed
+JSON in expected/. A fixture with no matching
 expected/<name>.json is reported and skipped rather than failed, so a new
 fixture doesn't break the suite before its snapshot is reviewed and added
 (run with --write to generate/refresh one after eyeballing the diff).
@@ -18,13 +19,35 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIXTURES = sorted(glob.glob(os.path.join(HERE, "fixtures", "*.txt")))
+# TCM fixtures sit one level down so the flat glob above - which assumes a
+# JTWC WTPN warning - never picks them up. They need the other parser.
+TCM_FIXTURES = sorted(glob.glob(os.path.join(HERE, "fixtures", "tcm", "*.txt")))
 FLOAT_TOL = 1e-6
 
+# The wall clock every golden is evaluated against: 2026-08-24 22:00Z, an
+# hour after the WTPN35 Soulik fixture's own 242100 header time.
+#
+# This is not decoration. parseJTWC() falls back to the WMO header day plus
+# the CURRENT time when a warning's REMARKS block carries no DDMMMYY, so
+# real_2026-08-24_wtpn35_soulik_no_refdate re-dates itself as the calendar
+# moves: its golden was recorded in September against an August bulletin and
+# failed from the following month onward, reporting month 9 where the
+# snapshot said 8. A golden test that depends on the day it is run cannot
+# ever be green, and a permanently red test hides every real regression
+# behind it. Pinning the clock is the fix; the parser was doing what it was
+# asked.
+#
+# Fixtures that carry their own reference date - every other WTPN warning,
+# and every TCM, which always prints its issuance date - ignore this.
+GOLDEN_NOW = 1787598000.0
 
-def run_parse(fixture_path):
-    out = subprocess.run(
-        [sys.executable, os.path.join(HERE, "tools_py.py"), "parse", fixture_path],
-        capture_output=True, text=True, check=True)
+
+def run_parse(fixture_path, kind="jtwc"):
+    cmd = [sys.executable, os.path.join(HERE, "tools_py.py"),
+           "parsetcm" if kind == "tcm" else "parse", fixture_path]
+    if kind != "tcm":
+        cmd += ["--now", repr(GOLDEN_NOW)]
+    out = subprocess.run(cmd, capture_output=True, text=True, check=True)
     return json.loads(out.stdout)
 
 
@@ -63,10 +86,15 @@ def main():
     write = "--write" in sys.argv
     failed = 0
     skipped = 0
-    for fixture in FIXTURES:
+    # (fixture, kind) so both parsers are covered by one loop and one
+    # snapshot directory. TCM names are already distinct from WTPN ones, so
+    # expected/ needs no sub-directory of its own.
+    cases = ([(f, "jtwc") for f in FIXTURES] +
+             [(f, "tcm") for f in TCM_FIXTURES])
+    for fixture, kind in cases:
         name = os.path.splitext(os.path.basename(fixture))[0]
         expected_path = os.path.join(HERE, "expected", name + ".json")
-        got = run_parse(fixture)
+        got = run_parse(fixture, kind)
 
         if write or not os.path.exists(expected_path):
             with open(expected_path, "w") as f:
@@ -93,8 +121,8 @@ def main():
         else:
             print("PASS   %s" % name)
 
-    print("\n%d fixture(s), %d failed, %d newly written"
-          % (len(FIXTURES), failed, skipped))
+    print("\n%d fixture(s) (%d WTPN, %d TCM), %d failed, %d newly written"
+          % (len(cases), len(FIXTURES), len(TCM_FIXTURES), failed, skipped))
     sys.exit(1 if failed else 0)
 
 

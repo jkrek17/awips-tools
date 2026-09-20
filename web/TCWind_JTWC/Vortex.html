@@ -1,0 +1,1681 @@
+<!--
+  Vortex.html - shared client-side vortex + parser code for the TCWind_JTWC
+  web app.  This file is a single script block and nothing else.  Pages
+  include it with
+
+      <?!= HtmlService.createHtmlOutputFromFile('Vortex').getContent(); ?>
+
+  (<?!= rather than <?= because this is our own trusted markup, not user
+  data.)
+
+  It is the SINGLE JavaScript source of truth for the wind-field math.
+  Index.html, Archive.html and Findings.html must not carry their own
+  copies of anything defined here.  A third, divergent copy of
+  resolveRmax() living in Findings.html - with `<=` where the tool has `<`
+  - was a real shipped bug; do not reintroduce it in any form.
+
+  Ported line-for-line from GFE/procedures/TCWind_JTWC.py.  That file is the
+  reference implementation.  If the two disagree, the Python is right and
+  this file is wrong.  tests/tcwind_jtwc/compare_py_js.py drives both sides
+  on identical inputs and must stay green (0.5 kt magnitude, 1 nm radius,
+  1 deg direction).
+
+  Style: ES5, `var`/`function` only, no build step, no dependencies.  The
+  Apps Script HTML-service iframe is modern, but Vortex.html is also loaded
+  raw by the Node parity harness, and ES5 keeps both trivial.
+-->
+<script>
+// ===========================================================================
+// Tunables.  These MUST match the constants block in TCWind_JTWC.py.
+// ===========================================================================
+
+// --- GTCM/WTCM, all from the Gridded TCM Users Guide v1.9.1 ---------------
+var GTCM_ASYM_A            = 1.6;    // eq. (2): a = A * c**B, c in kt
+var GTCM_ASYM_B            = 0.63;
+var GTCM_QUAD_AVG_FACTOR   = 0.85;   // quadrant max -> quadrant average
+var GTCM_W_34              = 5.0;    // eq. (7) weights
+var GTCM_W_INNER           = 1.0;
+var GTCM_ASYM_MAX_DEV_KT   = 10.0;   // search radius; MAX_DEV alone no longer
+                                      // decides admissibility - MIN_CAP below
+                                      // now binds first, see its comment.
+// Cap on the FITTED asymmetry magnitude |(ax, ay)|:
+//   |(ax, ay)| <= max(1.5 * a, GTCM_ASYM_MIN_CAP_KT), a = motion-derived
+// first guess.  Unbound, a one-sided radii report pulls |(ax, ay)| toward
+// a + GTCM_ASYM_MAX_DEV_KT chasing the lopsided WIND error, dragging the
+// symmetric amplitude vs = Vmax - |(ax, ay)| down with it and starving the
+// weak side (a reported 000 nm quadrant means no gales there, not calm
+// air). The floor lets a slow/stationary storm (a near or at 0) still take
+// a modest asymmetry.  MUST match TCWind_JTWC.py.
+var GTCM_ASYM_MIN_CAP_KT   = 3.0;
+var GTCM_APPLY_INFLOW      = false;  // the guide has no inflow term
+// Admissible range for the size exponents.  eq. (6)'s own climatological
+// value spans about 0.37 to 0.95 across realistic Vmax/latitude, so this
+// brackets what the guide considers physical.  The former 0.05 floor admitted
+// a field that barely decays with radius.  MUST match TCWind_JTWC.py.
+var GTCM_X_MIN             = 0.20;
+var GTCM_X_MAX             = 1.20;
+var GTCM_MAX_ITER          = 220;
+var GTCM_ASYM_STEPS        = 9;
+
+// Probe grid used to recover the modelled 34 kt radius per azimuth.  This
+// mirrors `probe = np.linspace(1.0, 900.0, 900)` in _buildVortexGTCM(),
+// which is exactly the integers 1..900 nm.
+var GTCM_R34_PROBE_MAX_NM  = 900;
+// Number of azimuth bins that radius is solved on before being linearly
+// interpolated (wrapping at 360) onto whatever azimuth is actually asked
+// for.  MUST match GTCM_R34_AZ_BINS in TCWind_JTWC.py - see its comment for
+// why this table exists and why 1 degree bins are fine grained enough.
+var GTCM_R34_AZ_BINS       = 360;
+
+// --- shared with the retired per-quadrant construction --------------------
+var MOTION_ASYMMETRY_FRACTION = 0.5;
+var INFLOW_ANGLE_DEG          = 22.0;
+var RMAX_OVERRIDE_NM          = 0.0;
+var OUTER_DECAY_FACTOR        = 1.0;
+var MIN_OUTER_DECAY_NM        = 30.0;
+var NORMALIZE_CORE_PEAK       = true;
+var PEAK_NORMALIZE_MAX_FACTOR = 2.0;
+var MAX_INSERT_RADIUS_FACTOR  = 5.0;
+
+var KT2MS = 0.514444;
+var KM2NM = 1 / 1.852;
+var EARTH_R_NM = 3440.065;
+
+var QUADS = ['NE', 'SE', 'SW', 'NW'];
+var QUAD_AZ = { NE: 45, SE: 135, SW: 225, NW: 315 };
+// Compass quadrant BOUNDARIES (not centres), for drawing the literal
+// reported-radii polygon.  Everything else keys off QUAD_AZ.
+var QUAD_BOUNDS = { NE: [0, 90], SE: [90, 180], SW: [180, 270], NW: [270, 360] };
+
+var QUAD_WORD = {
+  NORTHEAST: 'NE', SOUTHEAST: 'SE', SOUTHWEST: 'SW', NORTHWEST: 'NW'
+};
+var MONTHS = {
+  JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, JUN: 6,
+  JUL: 7, AUG: 8, SEP: 9, OCT: 10, NOV: 11, DEC: 12
+};
+
+var CONF_TROPICAL    = 1.00;
+var CONF_BECOMING    = 0.60;
+var CONF_SUBTROPICAL = 0.25;
+
+var DEG2RAD = Math.PI / 180;
+var RAD2DEG = 180 / Math.PI;
+
+
+// ===========================================================================
+// Small helpers where Python and JavaScript genuinely differ
+// ===========================================================================
+
+/** Python `d.get(k, dflt)`.  Plain `obj[k]` walks the prototype chain, so a
+ *  key like "constructor" or "toString" comes back as a truthy *function*
+ *  instead of the default, and that value then propagates silently into
+ *  NaN.  Every dictionary lookup driven by parsed bulletin text goes
+ *  through here. */
+function dictGet(obj, key, dflt) {
+  if (obj && Object.prototype.hasOwnProperty.call(obj, key)) return obj[key];
+  return dflt;
+}
+
+/** Python `k in d`. */
+function dictHas(obj, key) {
+  return !!obj && Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+/** Python `not d` for a dict: true only when it has no keys. */
+function dictEmpty(obj) {
+  if (!obj) return true;
+  for (var k in obj) {
+    if (Object.prototype.hasOwnProperty.call(obj, k)) return false;
+  }
+  return true;
+}
+
+/** Python `x % 360` for floats: always in [0, 360).  JavaScript's `%` keeps
+ *  the sign of the dividend, so a bare `x % 360` is negative for negative x
+ *  and every bearing west of north comes out wrong. */
+function mod360(x) {
+  var m = x % 360;
+  return m < 0 ? m + 360 : m;
+}
+
+function clamp(x, lo, hi) {
+  return x < lo ? lo : (x > hi ? hi : x);
+}
+
+/** numpy's pairwise summation, so `npSum` rounds the way `np.sum` does.
+ *  numpy sums 8 running accumulators and combines them as a binary tree;
+ *  a naive left-to-right loop rounds differently in the last bit or two,
+ *  and the GTCM fit is an iterative optimiser whose branch decisions are
+ *  exact float comparisons.  Only the n < 8 and n <= 128 branches are
+ *  reproduced: the GTCM error function sums at most 12 terms (3 thresholds
+ *  x 4 quadrants). */
+function npSum(a) {
+  var n = a.length, i, res;
+  if (n === 0) return 0.0;
+  if (n < 8) {
+    res = 0.0;
+    for (i = 0; i < n; i++) res += a[i];
+    return res;
+  }
+  var r0 = a[0], r1 = a[1], r2 = a[2], r3 = a[3];
+  var r4 = a[4], r5 = a[5], r6 = a[6], r7 = a[7];
+  var lim = n - (n % 8);
+  for (i = 8; i < lim; i += 8) {
+    r0 += a[i];     r1 += a[i + 1]; r2 += a[i + 2]; r3 += a[i + 3];
+    r4 += a[i + 4]; r5 += a[i + 5]; r6 += a[i + 6]; r7 += a[i + 7];
+  }
+  res = ((r0 + r1) + (r2 + r3)) + ((r4 + r5) + (r6 + r7));
+  for (; i < n; i++) res += a[i];
+  return res;
+}
+
+/** numpy's `np.median` for a small 1-D array: sort, then the middle value,
+ *  or the mean of the two middle values for an even count. */
+function npMedian(a) {
+  var s = a.slice().sort(function (x, y) { return x - y; });
+  var n = s.length;
+  if (n === 0) return NaN;
+  var h = n >> 1;
+  return (n % 2) ? s[h] : (s[h - 1] + s[h]) / 2.0;
+}
+
+/** numpy's `np.linspace(start, stop, num)`, endpoint included. */
+function npLinspace(start, stop, num) {
+  var out = new Array(num);
+  if (num === 1) { out[0] = start; return out; }
+  var step = (stop - start) / (num - 1);
+  for (var i = 0; i < num; i++) out[i] = start + i * step;
+  out[num - 1] = stop;       // numpy pins the endpoint exactly
+  return out;
+}
+
+
+// ===========================================================================
+// Geometry
+// ===========================================================================
+
+/** Great-circle distance (nm) and bearing (deg true) from a centre.
+ *  Port of _distBearingGrids(); returns [distNm, bearingDeg]. */
+function distBearing(lat, lon, clat, clon) {
+  var lat1 = clat * DEG2RAD;
+  var lon1 = clon * DEG2RAD;
+  var lat2 = lat * DEG2RAD;
+  // Python: np.radians(((lonGrid + 180.0) % 360.0) - 180.0).  Python's %
+  // is always non-negative; JavaScript's is not, hence mod360().
+  var lon2 = (mod360(lon + 180.0) - 180.0) * DEG2RAD;
+  var dlon = lon2 - lon1;
+
+  var sinLat1 = Math.sin(lat1), cosLat1 = Math.cos(lat1);
+  var sinLat2 = Math.sin(lat2), cosLat2 = Math.cos(lat2);
+
+  var s1 = Math.sin((lat2 - lat1) / 2.0);
+  var s2 = Math.sin(dlon / 2.0);
+  var a = s1 * s1 + cosLat1 * cosLat2 * s2 * s2;
+  var dist = 2.0 * EARTH_R_NM * Math.asin(Math.sqrt(clamp(a, 0.0, 1.0)));
+
+  var y = Math.sin(dlon) * cosLat2;
+  var x = cosLat1 * sinLat2 - sinLat1 * cosLat2 * Math.cos(dlon);
+  var brg = mod360(Math.atan2(y, x) * RAD2DEG);
+  return [dist, brg];
+}
+
+/** Point at a bearing/distance from a centre.  Inverse of distBearing();
+ *  used for drawing and for generating parity sample points. */
+function destPoint(clat, clon, brgDeg, distNm) {
+  var d = distNm / EARTH_R_NM, b = brgDeg * DEG2RAD;
+  var l1 = clat * DEG2RAD, o1 = clon * DEG2RAD;
+  var l2 = Math.asin(Math.sin(l1) * Math.cos(d) +
+                     Math.cos(l1) * Math.sin(d) * Math.cos(b));
+  var o2 = o1 + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(l1),
+                           Math.cos(d) - Math.sin(l1) * Math.sin(l2));
+  return [l2 * RAD2DEG, (((o2 * RAD2DEG) + 540) % 360) - 180];
+}
+
+
+// ===========================================================================
+// Rmax
+// ===========================================================================
+
+/** Willoughby-form Rmax regression, in nm.  Same functional form as
+ *  Willoughby et al. (2006) but refit against 13,834 JTWC WestPac
+ *  best-track records (2005-2024, IBTrACS agency jtwc_wp).  MUST match
+ *  willoughbyRmax() in TCWind_JTWC.py. */
+function willoughbyRmax(vmaxKt, latDeg) {
+  var vms = vmaxKt * KT2MS;
+  return 98.392 * Math.exp(-0.025088 * vms + 0.003021 * Math.abs(latDeg)) * KM2NM;
+}
+
+/** Rmax estimate, clamped so it stays inside the highest reported ring.
+ *
+ *  THE ONLY COPY OF THIS FUNCTION IN THE CLIENT CODE.  Note `vmax < thr`,
+ *  strictly less than: a storm whose peak exactly equals a threshold (a
+ *  50 kt storm reporting R50 - common, JTWC rounds Vmax to 5 kt bins) does
+ *  reach that threshold, so its ring is real information and must clamp
+ *  Rmax.  Only a *stale* ring, already below the storm's current
+ *  intensity, is skipped.  A `<=` here silently widens Rmax on exactly the
+ *  storms where the reported ring matters most. */
+function resolveRmax(snap, overrideNm) {
+  var rmax = (overrideNm && overrideNm > 0)
+    ? Number(overrideNm)
+    : willoughbyRmax(snap.vmax, snap.lat);
+
+  var radii = snap.radii || {};
+  var thrs = [64, 50, 34];
+  for (var i = 0; i < thrs.length; i++) {
+    var thr = thrs[i];
+    if (!dictHas(radii, thr)) continue;
+    if (snap.vmax < thr) continue;
+    var quad = radii[thr];
+    var nz = [];
+    for (var k in quad) {
+      if (!Object.prototype.hasOwnProperty.call(quad, k)) continue;
+      var v = Number(quad[k]);
+      if (v > 0.0) nz.push(v);
+    }
+    if (nz.length) {
+      rmax = Math.min(rmax, 0.7 * Math.min.apply(null, nz));
+    }
+    break;
+  }
+  return Math.max(rmax, 3.0);
+}
+
+
+// ===========================================================================
+// GTCM / WTCM vortex - Gridded TCM Users Guide v1.9.1 (Santos & DeMaria)
+// ===========================================================================
+
+/** Climatological RMW in nm.  Users Guide eq. (5). */
+function gtcmClimoRmax(vmax, lat) {
+  return Math.exp(3.7450 - 0.01338 * Number(vmax) + 0.01908 * Math.abs(Number(lat)));
+}
+
+/** Climatological size parameter, non-dimensional.  Users Guide eq. (6). */
+function gtcmClimoX(vmax, lat) {
+  return 0.1989 + 0.00475 * Number(vmax) + 0.00142 * Math.abs(Number(lat));
+}
+
+/** Schwerdt (1979) asymmetry magnitude in kt.  Users Guide eq. (2). */
+function gtcmAsymmetry(motionSpd) {
+  if (!motionSpd || motionSpd <= 0) return 0.0;
+  return GTCM_ASYM_A * Math.pow(Number(motionSpd), GTCM_ASYM_B);
+}
+
+/** Symmetric modified Rankine tangential wind.  Users Guide eq. (3).
+ *
+ *      V = (Vm-a)(r/rm)            r  < rm
+ *          (Vm-a)(rm/r)**x1        rm <= r < ri
+ *          A(Vm-a)(rm/r)**x2       ri <= r    A = (ri/rm)**x1 (rm/ri)**x2
+ *
+ *  The comparisons are strictly `<` on both sides, matching the nested
+ *  np.where() in _gtcmProfile().  At r == rm the two branches agree, so the
+ *  choice there is cosmetic; at r == ri they do too, because A is chosen to
+ *  make them (see below).
+ *
+ *  A exists solely to make V continuous across ri.  Continuity requires
+ *  A = (rm/ri)**(x1-x2); the Users Guide PRINTS
+ *  A = (ri/rm)**x1 * (rm/ri)**x2, which is (rm/ri)**(x2-x1) - the
+ *  reciprocal, and does not satisfy that except when x1 == x2.  It is a
+ *  typo, or a superscript mangled in the PDF.  This port uses the corrected
+ *  expression, matching TCWind_JTWC.py's _gtcmProfile() (see its comment for
+ *  the full derivation and what transcribing the guide's printed formula
+ *  literally did to the field). Fix BOTH files in the same change if this
+ *  ever needs revisiting, or parity breaks and the GFE grid and the web
+ *  preview stop showing the same field.
+ *
+ *  `a` must be the magnitude of the (ax, ay) asymmetry vector actually
+ *  applied by gtcmUV(), not necessarily the Schwerdt estimate fitGTCM()
+ *  also computes under the same name - see TCWind_JTWC.py's _gtcmProfile()
+ *  docstring for the full reasoning. Every caller building the GTCM field or
+ *  its r34 table must pass amag = Math.sqrt(ax*ax + ay*ay); only
+ *  fitGTCM()'s own rm/x1/x2-sizing steps, which hold (ax, ay) at the first
+ *  guess, may pass the plain Schwerdt value. */
+function gtcmProfile(r, vmax, a, rm, ri, x1, x2) {
+  var vs = Math.max(Number(vmax) - Number(a), 0.0);
+  rm = Math.max(Number(rm), 1e-3);
+  ri = Math.max(Number(ri), rm * 1.0001);
+  var safe = Math.max(Number(r), 1e-6);
+  if (safe < rm) return vs * (safe / rm);
+  if (safe < ri) return vs * Math.pow(rm / safe, x1);
+  // A makes V continuous across ri: (rm/ri)^x1 == A*(rm/ri)^x2, so
+  // A = (rm/ri)^(x1-x2).  The Users Guide prints a different expression that
+  // is only continuous when x1 == x2; see the matching comment in
+  // TCWind_JTWC.py's _gtcmProfile().
+  var A = Math.pow(rm / ri, x1 - x2);
+  return A * vs * Math.pow(rm / safe, x2);
+}
+
+/** 2-D wind from tangential wind plus asymmetry.  Users Guide eq. (8)/(9).
+ *  Returns [u, v] (eastward, northward), mirroring the Python tuple.
+ *
+ *  The guide writes u = ax - V sin(theta), v = ay + V cos(theta) with theta
+ *  counterclockwise from east.  Azimuth here is a compass bearing from the
+ *  centre and theta = 90 - bearing, so sin(theta) -> cos(bearing) and
+ *  cos(theta) -> sin(bearing).
+ *
+ *  The guide is NHC's, so it only describes the northern hemisphere.  JTWC
+ *  warns on southern-hemisphere basins, where the tangential flow reverses;
+ *  `sign` handles that.  The asymmetry vector is NOT reversed - it still
+ *  points with the motion. */
+function gtcmUV(V, azDeg, ax, ay, lat) {
+  var azr = Number(azDeg) * DEG2RAD;
+  var sign = (lat >= 0) ? 1.0 : -1.0;
+  return [ax - sign * V * Math.cos(azr),
+          ay + sign * V * Math.sin(azr)];
+}
+
+/** Fit points: [radiusNm, bearingDeg, thresholdKt, weight].
+ *
+ *  Reported radii are the MAXIMUM extent in the quadrant; the vortex is fit
+ *  to the quadrant AVERAGE, so each radius is scaled by
+ *  GTCM_QUAD_AVG_FACTOR first.  Weights follow eq. (7): five on the 34 kt
+ *  points, one elsewhere.  A quadrant reporting 000 NM contributes no
+ *  target at all - it is not a zero-radius constraint. */
+function gtcmTargets(snap) {
+  var out = [];
+  var radii = snap.radii || {};
+  var thrs = [64, 50, 34];
+  for (var i = 0; i < thrs.length; i++) {
+    var thr = thrs[i];
+    var quad = dictGet(radii, thr, null);
+    if (dictEmpty(quad) || snap.vmax < thr) continue;
+    for (var j = 0; j < QUADS.length; j++) {
+      var q = QUADS[j];
+      var rep = Number(dictGet(quad, q, 0.0));
+      if (rep && rep > 0.0) {
+        out.push([rep * GTCM_QUAD_AVG_FACTOR, QUAD_AZ[q], thr,
+                  (thr === 34) ? GTCM_W_34 : GTCM_W_INNER]);
+      }
+    }
+  }
+  return out;
+}
+
+/** Small Nelder-Mead, so the fit needs no external solver.  Port of
+ *  _nelderMead().  Returns [bestPoint, bestValue].
+ *
+ *  The index sort must be STABLE and ascending to match Python's sorted():
+ *  ties keep their previous order, and a different tie order sends the
+ *  simplex down a different path.  Array.prototype.sort has been required
+ *  to be stable since ES2019. */
+function nelderMead(fn, guess, step, maxIter) {
+  var n = guess.length, i, j;
+  var simplex = [guess.slice()];
+  for (i = 0; i < n; i++) {
+    var pt = guess.slice();
+    pt[i] += step[i];
+    simplex.push(pt);
+  }
+  var vals = [];
+  for (i = 0; i <= n; i++) vals.push(fn(simplex[i]));
+
+  for (var it = 0; it < maxIter; it++) {
+    var order = [];
+    for (i = 0; i <= n; i++) order.push(i);
+    order.sort(function (p, q) { return vals[p] - vals[q]; });
+    var ns = [], nv = [];
+    for (i = 0; i <= n; i++) { ns.push(simplex[order[i]]); nv.push(vals[order[i]]); }
+    simplex = ns; vals = nv;
+
+    if (Math.abs(vals[n] - vals[0]) <= 1e-9 * (Math.abs(vals[0]) + 1e-9)) break;
+
+    var centroid = [];
+    for (i = 0; i < n; i++) {
+      var s = 0.0;
+      for (j = 0; j < n; j++) s += simplex[j][i];   // simplex[:-1], in order
+      centroid.push(s / n);
+    }
+    var refl = [];
+    for (i = 0; i < n; i++) refl.push(centroid[i] + (centroid[i] - simplex[n][i]));
+    var fr = fn(refl);
+
+    if (fr < vals[0]) {
+      var exp = [];
+      for (i = 0; i < n; i++) exp.push(centroid[i] + 2.0 * (centroid[i] - simplex[n][i]));
+      var fe = fn(exp);
+      if (fe < fr) { simplex[n] = exp;  vals[n] = fe; }
+      else         { simplex[n] = refl; vals[n] = fr; }
+    } else if (fr < vals[n - 1]) {
+      simplex[n] = refl; vals[n] = fr;
+    } else {
+      var con = [];
+      for (i = 0; i < n; i++) con.push(centroid[i] + 0.5 * (simplex[n][i] - centroid[i]));
+      var fc = fn(con);
+      if (fc < vals[n]) {
+        simplex[n] = con; vals[n] = fc;
+      } else {
+        for (i = 1; i <= n; i++) {
+          var shrunk = [];
+          for (j = 0; j < n; j++) {
+            shrunk.push(simplex[0][j] + 0.5 * (simplex[i][j] - simplex[0][j]));
+          }
+          simplex[i] = shrunk;
+          vals[i] = fn(shrunk);
+        }
+      }
+    }
+  }
+
+  var best = 0;
+  for (i = 1; i <= n; i++) if (vals[i] < vals[best]) best = i;
+  return [simplex[best], vals[best]];
+}
+
+/** Fit the GTCM vortex to one storm-time.  Port of fitGTCM().
+ *
+ *  Returns {rm, ri, x1, x2, ax, ay, a, n, freeParams, rms, rmSource}.
+ *  Users Guide steps 2b-3: climatological first guess from (5)/(6); ri at
+ *  the median reported radius; (rm, x1, x2) by weighted least squares on
+ *  WIND error (7); then ax/ay released within GTCM_ASYM_MAX_DEV_KT of that
+ *  first guess, size parameters held fixed, but only among candidates whose
+ *  magnitude |(ax, ay)| does not exceed max(1.5 * a, GTCM_ASYM_MIN_CAP_KT) -
+ *  see that constant's comment.  The magnitude cap binds first whenever it
+ *  is tighter than the deviation radius, which for anything but a
+ *  fast-moving storm it is.
+ *
+ *  The fit deliberately does NOT pass through the reported radii.  The
+ *  guide minimises wind error, not radius error, because forcing the radii
+ *  produces unrealistic structure.
+ *
+ *  rmSource is 'fit' unless the target set contains no 50/64 kt radii, in
+ *  which case it is 'climatology': a bulletin reporting ONLY 34 kt
+ *  quadrants carries no information at all about core size, so rm is
+ *  pinned to willoughbyRmax(vmax, lat) instead of being searched, and only
+ *  the shared decay exponent is fit.  If even that pinned-rm profile
+ *  cannot reach 34 kt at any target, the exponent clamps at GTCM_X_MIN
+ *  rather than letting rm move to compensate - see TCWind_JTWC.py's
+ *  fitGTCM() docstring, which this mirrors. */
+function fitGTCM(snap) {
+  var vmax = Number(snap.vmax);
+  var lat = Number(snap.lat);
+  var a = gtcmAsymmetry(snap.motionSpd);
+  var motionDir = (snap.motionDir === null || snap.motionDir === undefined)
+    ? 0.0 : Number(snap.motionDir);
+  var mr = motionDir * DEG2RAD;
+  var ax0 = a * Math.sin(mr);      // eq. (1)
+  var ay0 = a * Math.cos(mr);
+
+  var rmc = gtcmClimoRmax(vmax, lat);
+  var xc = gtcmClimoX(vmax, lat);
+
+  var targets = gtcmTargets(snap);
+  if (!targets.length) {
+    // No radii anywhere: climatology is all there is.  Guide step 2c. (rmc
+    // is the guide's own eq. (5) climatology, not willoughbyRmax() - see
+    // TCWind_JTWC.py's fitGTCM() docstring.)
+    return { rm: rmc, ri: rmc * 3.0, x1: xc, x2: xc,
+             ax: ax0, ay: ay0, a: a, n: 0, freeParams: 0, rms: NaN,
+             rmSource: 'climatology' };
+  }
+
+  var nT = targets.length;
+  var rr = new Array(nT), az = new Array(nT), vt = new Array(nT), wt = new Array(nT);
+  for (var i = 0; i < nT; i++) {
+    rr[i] = targets[i][0]; az[i] = targets[i][1];
+    vt[i] = targets[i][2]; wt[i] = targets[i][3];
+  }
+  var ri = npMedian(rr);
+  var terms = new Array(nT);
+
+  function err(rm, x1, x2, ax, ay) {
+    // amag, not the closed-over `a`: see gtcmProfile()'s docstring. During
+    // the rm/x1/x2-sizing steps ax===ax0, ay===ay0 always, so amag===a there
+    // by construction (no behaviour change); step 3 below is the one place
+    // ax/ay actually move, and the core's amplitude must track whatever it
+    // is testing rather than stay pinned to the first guess it may be
+    // moving away from. Mirrors TCWind_JTWC.py's fitGTCM().
+    var amag = Math.sqrt(ax * ax + ay * ay);
+    for (var k = 0; k < nT; k++) {
+      var V = gtcmProfile(rr[k], vmax, amag, rm, ri, x1, x2);
+      var uv = gtcmUV(V, az[k], ax, ay, lat);
+      var d = Math.sqrt(uv[0] * uv[0] + uv[1] * uv[1]) - vt[k];
+      terms[k] = wt[k] * (d * d);
+    }
+    return npSum(terms);
+  }
+
+  // A bulletin reporting ONLY 34 kt radii carries no information at all
+  // about core size, so rm is pinned to climatology rather than searched,
+  // whatever nT is - checked before the nfit-based identifiability logic
+  // below because it changes which parameter is free even in cases nT
+  // alone would otherwise hand rm to the optimiser (up to 4 quadrants can
+  // all be 34 kt only). Mirrors fitGTCM() in TCWind_JTWC.py.
+  var hasHigherTargets = false;
+  for (var hti = 0; hti < nT; hti++) {
+    if (vt[hti] > 34.0) { hasHigherTargets = true; break; }
+  }
+
+  var rm, x1, x2, freeParams, rmSource, sizeRes;
+  if (!hasHigherTargets) {
+    rmSource = 'climatology';
+    rm = willoughbyRmax(vmax, lat);
+    freeParams = 1;             // the shared decay exponent only
+
+    sizeRes = nelderMead(function (p) {
+      var x_ = p[0];
+      if (!(x_ >= GTCM_X_MIN && x_ <= GTCM_X_MAX)) return 1e12;
+      return err(rm, x_, x_, ax0, ay0);
+    }, [xc], [0.12], GTCM_MAX_ITER);
+    // If even the pinned-rm profile cannot reach 34 kt, the optimum lies
+    // below GTCM_X_MIN and the bound clamps it there rather than letting rm
+    // drift outward to compensate - the miss is real and is left for the
+    // modelled-radius / never-reached accounting to record.
+    x1 = x2 = sizeRes[0][0];
+  } else {
+    rmSource = 'fit';
+
+    // Only estimate what the reported radii can identify.  rm, x1 and x2
+    // are three free parameters; two nonzero radii constrain two numbers,
+    // and fitting all three to two targets leaves a manifold of exact
+    // solutions - every one scoring RMS 0 - with the optimiser landing
+    // anywhere on it.  On live TS 22W (KROVANH) that produced rm 7.8 nm
+    // with x1 = x2 = 0.05: a field that barely decays with radius, drawn
+    // as a flat sheet the asymmetry cut into a one-sided wedge.  Mirrors
+    // fitGTCM() in TCWind_JTWC.py.
+    var nfit = nT;
+    freeParams = nfit >= 5 ? 3 : (nfit >= 3 ? 2 : 1);
+
+    // rm stays near climatology when the radii cannot pin it: the guide
+    // treats the climatological value as a first guess "adjusted to better
+    // fit" the radii.  Unbounded, a thin fit walks rm outward chasing a
+    // threshold the symmetric vortex (peaking at Vm - a) may never reach.
+    var rmLo, rmHi;
+    if (freeParams === 3) { rmLo = 2.0; rmHi = 150.0; }
+    else if (freeParams === 2) { rmLo = 0.4 * rmc; rmHi = 2.5 * rmc; }
+    else { rmLo = 0.5 * rmc; rmHi = 2.0 * rmc; }
+
+    if (freeParams === 3) {
+      sizeRes = nelderMead(function (p) {
+        var a_ = p[0], b_ = p[1], c_ = p[2];
+        if (a_ < rmLo || a_ > rmHi ||
+            !(b_ >= GTCM_X_MIN && b_ <= GTCM_X_MAX) ||
+            !(c_ >= GTCM_X_MIN && c_ <= GTCM_X_MAX)) return 1e12;
+        return err(a_, b_, c_, ax0, ay0);
+      }, [rmc, xc, xc], [Math.max(rmc * 0.35, 4.0), 0.12, 0.12], GTCM_MAX_ITER);
+      rm = sizeRes[0][0]; x1 = sizeRes[0][1]; x2 = sizeRes[0][2];
+    } else if (freeParams === 2) {
+      sizeRes = nelderMead(function (p) {
+        var a_ = p[0], b_ = p[1];
+        if (a_ < rmLo || a_ > rmHi ||
+            !(b_ >= GTCM_X_MIN && b_ <= GTCM_X_MAX)) return 1e12;
+        return err(a_, b_, b_, ax0, ay0);
+      }, [rmc, xc], [Math.max(rmc * 0.35, 4.0), 0.12], GTCM_MAX_ITER);
+      rm = sizeRes[0][0]; x1 = x2 = sizeRes[0][1];
+    } else {
+      sizeRes = nelderMead(function (p) {
+        var a_ = p[0];
+        if (a_ < rmLo || a_ > rmHi) return 1e12;
+        return err(a_, xc, xc, ax0, ay0);
+      }, [rmc], [Math.max(rmc * 0.35, 4.0)], GTCM_MAX_ITER);
+      rm = sizeRes[0][0]; x1 = x2 = xc;
+    }
+  }
+
+  // Step 3: release the asymmetry, size parameters fixed.  Candidates are
+  // bounded two ways: the GTCM_ASYM_MAX_DEV_KT deviation disk around the
+  // motion-derived first guess (ax0, ay0), as before, AND - new - the
+  // GTCM_ASYM_MIN_CAP_KT-floored magnitude cap around the ORIGIN.  The
+  // magnitude cap is what stops a one-sided radii report from starving the
+  // weak side; see its comment.  asymCap >= a always (1.5x with a floor),
+  // so (ax0, ay0) itself - magnitude exactly a - is always admissible, and
+  // the floor means the cap is never zero even when a is (a stationary
+  // storm can still pick up a modest asymmetry from the search below, so
+  // this no longer needs an `if (a > 0.0)` guard). Mirrors TCWind_JTWC.py.
+  var asymCap = Math.max(1.5 * a, GTCM_ASYM_MIN_CAP_KT);
+  var asymCap2 = asymCap * asymCap;
+  var bestE = err(rm, x1, x2, ax0, ay0);
+  var bestAx = ax0, bestAy = ay0;
+  var grid = npLinspace(-GTCM_ASYM_MAX_DEV_KT, GTCM_ASYM_MAX_DEV_KT,
+                        GTCM_ASYM_STEPS);
+  for (var gi = 0; gi < grid.length; gi++) {
+    for (var gj = 0; gj < grid.length; gj++) {
+      var axc = ax0 + grid[gi], ayc = ay0 + grid[gj];
+      if (axc * axc + ayc * ayc > asymCap2) continue;  // magnitude cap rejects
+      var e = err(rm, x1, x2, axc, ayc);
+      if (e < bestE) { bestE = e; bestAx = axc; bestAy = ayc; }
+    }
+  }
+  var asymObj = function (p) {
+    var dx = p[0] - ax0, dy = p[1] - ay0;
+    if (dx * dx + dy * dy > GTCM_ASYM_MAX_DEV_KT * GTCM_ASYM_MAX_DEV_KT) return 1e12;
+    if (p[0] * p[0] + p[1] * p[1] > asymCap2) return 1e12;
+    return err(rm, x1, x2, p[0], p[1]);
+  };
+  var asymRes = nelderMead(asymObj, [bestAx, bestAy], [2.0, 2.0], 80);
+  if (asymRes[1] < bestE) {
+    bestE = asymRes[1]; bestAx = asymRes[0][0]; bestAy = asymRes[0][1];
+  }
+
+  return { rm: rm, ri: ri, x1: x1, x2: x2, ax: bestAx, ay: bestAy,
+           a: a, n: nT, freeParams: freeParams, rmSource: rmSource,
+           rms: Math.sqrt(bestE / npSum(wt)) };
+}
+
+/** The GTCM wind field for one storm-time.  Port of _buildVortexGTCM().
+ *
+ *  Returns an object with
+ *      magAt(lat, lon)  -> wind speed, kt
+ *      dirAt(lat, lon)  -> meteorological direction the wind is FROM, deg
+ *      at(lat, lon)     -> {mag, dir, r, r34, az}
+ *      r34At(azDeg)     -> modelled 34 kt radius on that bearing, nm
+ *      fit              -> the fit actually used (snap.fit if the caller set
+ *                          one - e.g. interpolateTrack()'s blended fit -
+ *                          otherwise fitGTCM(snap) computed here)
+ *
+ *  Two deliberate departures from the guide, documented rather than
+ *  silent, and both must be disclosed in the UI:
+ *
+ *   * The guide's grids are missing outside the 34 kt radii and NHC leaves
+ *     the blend to the receiving office.  This tool inserts into a
+ *     background instead, so the profile is tapered exponentially beyond
+ *     the modelled 34 kt radius.  A bare Rankine tail decays far too slowly
+ *     to terminate on its own.
+ *   * Step 4's boundary-layer / land-roughness reduction is NOT
+ *     implemented.  It needs the USGS land-surface database.  The field is
+ *     therefore marine-exposure everywhere and will be too strong over land.
+ *
+ *  Peak-core normalisation (NORMALIZE_CORE_PEAK) is NOT applied here.  It
+ *  is a property of the raster it is measured on - it rescales relative to
+ *  the strongest *sampled* cell - so it belongs to whatever draws the
+ *  field, not to the point-wise model.  This is the raw field, which is the
+ *  part that has to agree between the two ports. */
+function vortexFieldGTCM(snap) {
+  var fit = snap.fit || fitGTCM(snap);
+  var vmax = Number(snap.vmax);
+  var lat = Number(snap.lat);
+  var clat = Number(snap.lat), clon = Number(snap.lon);
+
+  // Magnitude of the asymmetry vector actually applied, not the Schwerdt
+  // first guess fit.a - see gtcmProfile()'s docstring.  This is what makes
+  // the analytic field's peak over azimuth hit Vmax exactly at r = rm,
+  // whatever fitGTCM()'s step 3 did to (ax, ay).  Mirrors
+  // _buildVortexGTCM()'s `amag` exactly.
+  var amag = Math.sqrt(fit.ax * fit.ax + fit.ay * fit.ay);
+
+  // probe = np.linspace(1.0, 900.0, 900)  ->  exactly 1, 2, ... 900 nm.
+  var nProbe = GTCM_R34_PROBE_MAX_NM;
+  var prof = new Array(nProbe);
+  for (var i = 0; i < nProbe; i++) {
+    prof[i] = gtcmProfile(i + 1, vmax, amag, fit.rm, fit.ri, fit.x1, fit.x2);
+  }
+  var sign = (lat >= 0) ? 1.0 : -1.0;
+
+  /** Modelled 34 kt radius per azimuth, for the insert footprint and taper.
+   *  This depends on azimuth ALONE - fit/amag are the same everywhere for
+   *  one snapshot - so it is solved once on a fixed table of
+   *  GTCM_R34_AZ_BINS azimuths and linearly interpolated (wrapping at 360)
+   *  onto whatever azimuth is asked for, exactly mirroring
+   *  _buildVortexGTCM()'s azimuth table in TCWind_JTWC.py (see
+   *  GTCM_R34_AZ_BINS's comment there). Both ports must do the same
+   *  approximation, not merely agree to within tolerance, so this is a
+   *  literal port of that loop rather than the previous bespoke
+   *  binary-search shortcut - which was exact per point but is no longer
+   *  what the reference implementation does. */
+  var nBins = GTCM_R34_AZ_BINS;
+  var azStep = 360.0 / nBins;
+  var r34Table = new Array(nBins);
+  for (var b = 0; b < nBins; b++) {
+    var azr = (b * azStep) * DEG2RAD;
+    var cosA = Math.cos(azr), sinA = Math.sin(azr);
+    // The OUTERMOST probe index still at or above 34 kt, not the first
+    // crossing: the profile is also below 34 kt inside the eye, and taking
+    // that would collapse the footprint onto the centre and taper the
+    // entire field away. Mirrors the boolean-mask scan in
+    // _buildVortexGTCM() (np.argmax on the reversed above-threshold mask).
+    // maxVal/maxK track the profile's own peak on this azimuth as a side
+    // effect of the same scan.  Only the not-found branch below actually
+    // uses them, and that is exactly the case where this loop never hits
+    // the `found` break and visits every sample anyway, so tracking the
+    // peak costs nothing extra there.
+    var found = -1;
+    var maxVal = -1, maxK = 0;
+    for (var k = nProbe - 1; k >= 0; k--) {
+      var uk = fit.ax - sign * prof[k] * cosA;
+      var vk = fit.ay + sign * prof[k] * sinA;
+      var mk = Math.sqrt(uk * uk + vk * vk);
+      if (mk > maxVal) { maxVal = mk; maxK = k; }
+      if (mk >= 34.0) { found = k; break; }
+    }
+    if (found < 0) {
+      // Never reaches 34 kt on this azimuth: anchor on the LOCATION OF THE
+      // PROFILE'S OWN PEAK, not a fixed 3*rm. Mirrors _buildVortexGTCM()'s
+      // peakR fallback - see its comment for why: r34's exact-crossing
+      // branch approaches the peak's own radius as the peak approaches 34
+      // kt from above (right at the threshold, the outermost >=34 kt point
+      // IS the peak), so this is that branch's own limit, and using it
+      // here keeps r34(az) continuous across the found/not-found boundary
+      // instead of stepping between two radii that can differ by 100+ nm -
+      // which is what caused a real slope break in the wind field wherever
+      // that boundary landed, most often right at a quadrant bisector
+      // (azimuthalKinkKtPerDeg's fixed sample points), because the 34 kt
+      // targets driving the fit (gtcmTargets(), weighted 5x) sit exactly
+      // there.  probe[k] = k + 1 nm (probe starts at 1.0, step 1.0).
+      r34Table[b] = maxK + 1;
+      continue;
+    }
+    // Interpolate the crossing rather than snapping to the probe grid, for
+    // the same reason _buildVortexGTCM() does: prof[found] is the last
+    // sample still AT or ABOVE 34 kt, so the field there is >= 34 while the
+    // taper below restarts at exactly 34 - solving for the exact radius
+    // where the field equals 34 makes the boundary continuous.
+    var nxt = Math.min(found + 1, nProbe - 1);
+    var uHi = fit.ax - sign * prof[found] * cosA, vHi = fit.ay + sign * prof[found] * sinA;
+    var uLo = fit.ax - sign * prof[nxt] * cosA,   vLo = fit.ay + sign * prof[nxt] * sinA;
+    var vHiMag = Math.sqrt(uHi * uHi + vHi * vHi);
+    var vLoMag = Math.sqrt(uLo * uLo + vLo * vLo);
+    var span = vHiMag - vLoMag;
+    var frac = span > 1e-9 ? (vHiMag - 34.0) / span : 0.0;
+    if (frac < 0) frac = 0; else if (frac > 1) frac = 1;
+    // probe[k] = k + 1 nm (probe starts at 1.0, step 1.0).
+    r34Table[b] = (found + 1) + frac * ((nxt + 1) - (found + 1));
+  }
+
+  /** r34Table linearly interpolated onto an arbitrary azimuth, wrapping the
+   *  360/0 seam - the JS equivalent of np.interp() against the table
+   *  extended by one wrap point in _buildVortexGTCM(). */
+  function r34At(azDeg) {
+    var az = mod360(azDeg);
+    var pos = az / azStep;
+    var i0 = Math.floor(pos);
+    if (i0 >= nBins) i0 = nBins - 1;
+    var i1 = (i0 + 1) % nBins;
+    var frac = pos - i0;
+    var v = r34Table[i0] + frac * (r34Table[i1] - r34Table[i0]);
+    // Python casts the r34 grid to float32 (real AWIPS grid precision), so
+    // fround here too rather than leave a systematic sub-nm offset between
+    // the two ports.
+    return Math.fround(v);
+  }
+
+  function at(plat, plon) {
+    var db = distBearing(plat, plon, clat, clon);
+    var r = db[0], az = db[1];
+
+    var V = gtcmProfile(r, vmax, amag, fit.rm, fit.ri, fit.x1, fit.x2);
+    var uv = gtcmUV(V, az, fit.ax, fit.ay, lat);
+    var u = uv[0], v = uv[1];
+    var mag = Math.sqrt(u * u + v * v);
+
+    var r34 = r34At(az);
+    var decayL = Math.max(r34 * OUTER_DECAY_FACTOR, MIN_OUTER_DECAY_NM);
+    // `r > r34`, matching Python.  r34 is now the interpolated radius where
+    // the field equals 34, so the vortex and the taper agree there to within
+    // rounding and either comparison gives the same answer; the strict form
+    // is kept only so the two ports stay bit-comparable.
+    if (r > r34) {
+      // Anchor on the field's own value at r34, not a constant 34.  They are
+      // the same wherever the field actually reaches 34 kt, since that is how
+      // r34 is solved; where it never does, r34 falls back to 3*rm and a
+      // constant 34 made the field step UP there.  Mirrors _buildVortexGTCM().
+      var Va = gtcmProfile(r34, vmax, amag, fit.rm, fit.ri, fit.x1, fit.x2);
+      var uva = gtcmUV(Va, az, fit.ax, fit.ay, lat);
+      var anchorV = Math.sqrt(uva[0] * uva[0] + uva[1] * uva[1]);
+      mag = anchorV * Math.exp(-(r - r34) / decayL);
+    }
+
+    if (GTCM_APPLY_INFLOW) {
+      var metFrom = mod360(az + sign * (90.0 - INFLOW_ANGLE_DEG));
+      var rad = metFrom * DEG2RAD;
+      u = -mag * Math.sin(rad);
+      v = -mag * Math.cos(rad);
+    } else {
+      var base = Math.max(Math.sqrt(u * u + v * v), 1e-6);
+      var scale = (mag > 0) ? (mag / base) : 0.0;
+      u = u * scale;
+      v = v * scale;
+    }
+
+    var dir = mod360(Math.atan2(-u, -v) * RAD2DEG);
+    return { mag: mag, dir: dir, r: r, r34: r34, az: az, u: u, v: v };
+  }
+
+  return {
+    fit: fit,
+    r34At: r34At,
+    at: at,
+    magAt: function (plat, plon) { return at(plat, plon).mag; },
+    dirAt: function (plat, plon) { return at(plat, plon).dir; }
+  };
+}
+
+
+// ===========================================================================
+// Track interpolation
+// ===========================================================================
+
+/** GTCM fit for one tau's own reported radii, lazily computed and cached on
+ *  the tau object (tau.fit).  Port of _fitTau().
+ *
+ *  interpolateTrack() used to fit the LINEARLY INTERPOLATED radii at the
+ *  requested epoch instead of this.  That manufactures targets nobody
+ *  reported: a threshold missing at one tau interpolates from zero, so a
+ *  64-kt ring that has not appeared yet shows up a few nm wide midway to the
+ *  tau where it does, and the shared (rm, x1, x2) fit swings to chase it.
+ *  fitGTCM() needs nothing a tau doesn't already carry (vmax, lat, motion,
+ *  radii - the same fields interpolateTrack() puts on its snapshot), so
+ *  each tau is fit exactly once, from what JTWC actually reported at that
+ *  tau, and interpolateTrack() blends the two RESULTS instead of blending
+ *  their inputs and re-fitting.  See TCWind_JTWC.py's _fitTau() docstring
+ *  for the full reasoning and the case this fixes. */
+function fitTauCached(tau) {
+  if (!tau.fit) tau.fit = fitGTCM(tau);
+  return tau.fit;
+}
+
+// Fit fields interpolateTrack() blends linearly between two taus. n, rms,
+// freeParams and rmSource describe how well-constrained a fit is, not a
+// field parameter, so those are carried from the nearer tau instead (see
+// interpolateTrack()).
+var GTCM_FIT_BLEND_KEYS = ['rm', 'ri', 'x1', 'x2', 'ax', 'ay', 'a'];
+
+/** Linear interpolation of the storm state to an arbitrary valid time.
+ *  Port of interpolateTrack().  Also sets .fit (see fitTauCached()) and
+ *  .fitInterpolated on the returned snapshot - vortexFieldGTCM() uses .fit
+ *  directly when present rather than calling fitGTCM() again. */
+function interpolateTrack(taus, epoch) {
+  var lo = taus[0], hi = taus[0], f = 0;
+  if (epoch <= taus[0].epoch) {
+    lo = hi = taus[0];
+  } else if (epoch >= taus[taus.length - 1].epoch) {
+    lo = hi = taus[taus.length - 1];
+  } else {
+    for (var i = 0; i < taus.length - 1; i++) {
+      if (taus[i].epoch <= epoch && epoch <= taus[i + 1].epoch) {
+        lo = taus[i]; hi = taus[i + 1];
+        var span = hi.epoch - lo.epoch;
+        f = span > 0 ? (epoch - lo.epoch) / span : 0;
+        break;
+      }
+    }
+  }
+
+  var dlon = hi.lon - lo.lon;
+  if (dlon > 180) dlon -= 360; else if (dlon < -180) dlon += 360;
+
+  var s = {
+    epoch: epoch,
+    lat: lo.lat + f * (hi.lat - lo.lat),
+    lon: mod360(lo.lon + f * dlon + 180) - 180,
+    vmax: lo.vmax + f * (hi.vmax - lo.vmax),
+    conf: lo.conf + f * (hi.conf - lo.conf),
+    motionDir: lo.motionDir,
+    motionSpd: lo.motionSpd + f * (hi.motionSpd - lo.motionSpd),
+    // Best-track ground truth, present only on archive records.
+    rmw: (lo.rmw != null && hi.rmw != null) ? lo.rmw + f * (hi.rmw - lo.rmw)
+       : (f < 0.5 ? lo.rmw : hi.rmw),
+    roci: (lo.roci != null && hi.roci != null) ? lo.roci + f * (hi.roci - lo.roci)
+        : (f < 0.5 ? lo.roci : hi.roci),
+    radii: {}
+  };
+
+  // A threshold missing at one end interpolates from zero, so a 64 kt ring
+  // that first appears at 24h grows in rather than popping.
+  var thrs = [64, 50, 34];
+  for (var t = 0; t < thrs.length; t++) {
+    var thr = thrs[t];
+    var a = dictGet(lo.radii || {}, thr, null) || { NE: 0, SE: 0, SW: 0, NW: 0 };
+    var b = dictGet(hi.radii || {}, thr, null) || { NE: 0, SE: 0, SW: 0, NW: 0 };
+    var vals = {}, any = false;
+    for (var q = 0; q < QUADS.length; q++) {
+      var qq = QUADS[q];
+      vals[qq] = Number(dictGet(a, qq, 0)) + f * (Number(dictGet(b, qq, 0)) -
+                                                  Number(dictGet(a, qq, 0)));
+      if (vals[qq] > 0) any = true;
+    }
+    if (any) s.radii[thr] = vals;
+  }
+
+  // The vortex FIELD comes from interpolating each tau's OWN fit (each fit
+  // exactly once, from that tau's own reported radii, and cached), not from
+  // re-fitting the interpolated (and partly synthetic) radii above - see
+  // fitTauCached()'s docstring.
+  var loFit = fitTauCached(lo);
+  if (hi === lo) {
+    s.fit = {};
+    for (var lk in loFit) if (loFit.hasOwnProperty(lk)) s.fit[lk] = loFit[lk];
+    s.fitInterpolated = false;
+  } else {
+    var hiFit = fitTauCached(hi);
+    var blended = {};
+    for (var bi = 0; bi < GTCM_FIT_BLEND_KEYS.length; bi++) {
+      var bk = GTCM_FIT_BLEND_KEYS[bi];
+      blended[bk] = loFit[bk] + f * (hiFit[bk] - loFit[bk]);
+    }
+    var nearer = (f >= 0.5) ? hiFit : loFit;
+    blended.n = nearer.n;
+    blended.rms = nearer.rms;
+    blended.freeParams = nearer.freeParams;
+    // rmSource is categorical (climatology/fit), not a number to blend - rm
+    // itself interpolates linearly either way (GTCM_FIT_BLEND_KEYS above),
+    // so this only labels which one the blended rm is nearer to.
+    blended.rmSource = nearer.rmSource;
+    s.fit = blended;
+    s.fitInterpolated = true;
+  }
+  return s;
+}
+
+
+// ===========================================================================
+// JTWC warning parser - port of parseJTWC() in TCWind_JTWC.py
+// ===========================================================================
+//
+// Every regex below is declared once, WITHOUT the /g flag.  A /g RegExp
+// carries lastIndex across calls, so re-using one across bulletin lines
+// silently skips matches on every other line.  If you ever add /g here,
+// reset .lastIndex before each use - or better, don't.
+//
+// Every `\s+` is a real `\s+`, matching the Python.  A literal space in
+// place of one of these is the classic port bug: bulletins are word-wrapped
+// at ~72 columns and are full of runs of spaces and mid-phrase line breaks.
+
+var RE_REFDATE  = /\b(\d{2})([A-Z]{3})(\d{2})\b/;
+// WMO abbreviated header line ("WTPN35 PGTW 242100"): T1T2A1A2ii, an
+// originating station, then a DDHHMM group. Used only by parseJTWC()'s
+// no-DDMMMYY fallback (see its own comment) - gives the reference DAY
+// only, never month/year.
+var RE_WMO_HEADER = /^[A-Z]{4}\d{2}\s+[A-Z]{4}\s+(\d{2})(\d{2})(\d{2})\s*$/m;
+var RE_POSITION = /(\d{6})Z\s*---\s*(?:NEAR\s+)?(\d+(?:\.\d+)?)\s*([NS])\s+(\d+(?:\.\d+)?)\s*([EW])/;
+var RE_TAU      = /^\s*(\d+)\s+HRS,\s+VALID AT:/;
+var RE_WARNPOS  = /^\s*WARNING POSITION:/;
+var RE_WINDS    = /MAX SUSTAINED WINDS\s*-\s*(\d+)\s*KT(?:\s*,\s*GUSTS\s*(\d+)\s*KT)?/;
+var RE_RAD_START = /RADIUS OF\s+(\d+)\s*KT WINDS\s*-\s*(\d+)\s*NM\s+(\w+)\s+QUADRANT/;
+var RE_RAD_CONT = /^\s*(\d+)\s*NM\s+(\w+)\s+QUADRANT/;
+var RE_VECTOR   = /VECTOR TO\s+(\d+)\s*HR POSIT:\s*(\d+)\s*DEG\/\s*(\d+)\s*KTS/;
+var RE_MOVEMENT = /MOVEMENT PAST SIX HOURS\s*-\s*(\d+)\s*DEGREES AT\s*(\d+)\s*KTS/;
+var RE_REMARKS  = /^\s*REMARKS:/;
+var RE_STORM    = /(SUPER TYPHOON|TYPHOON|TROPICAL STORM|TROPICAL DEPRESSION|SUBTROPICAL STORM|SUBTROPICAL DEPRESSION)\s+(\d{1,2}[A-Z])\s*(?:\(([^)]+)\))?/;
+var RE_WARNNR   = /WARNING\s+NR\s+(\d+)/;
+// `[\s\S]*?` is Python's re.DOTALL `.*?`: "MINIMUM CENTRAL PRESSURE" does
+// land split across a line break in real bulletins.
+var RE_PRESSURE = /MINIMUM\s+CENTRAL\s+PRESSURE[\s\S]*?(\d+)\s*MB/;
+var RE_TRANSITION = /^\s*(SUB|EXTRA)TROPICAL\s*$/;
+
+/** Resolve a DDHHMM group against the bulletin's reference date.
+ *  Port of _dtg_to_epoch().
+ *
+ *  parseInt with an explicit radix 10 on every field: "08" and "09" are
+ *  legal decimal here and must not be read as octal by any engine, and a
+ *  bare Number("") would be 0 where Python's int("") raises.  The regex
+ *  guarantees six digits, so no empty group can reach this.
+ *
+ *  Date.UTC takes a 0-INDEXED month; calendar.timegm() does not.  Hence
+ *  `month - 1`.  Getting that wrong shifts every valid time by a month and
+ *  still produces a plausible-looking timeline. */
+function dtgToEpoch(ddhhmm, refDay, refMonth, refYear) {
+  var dd = parseInt(ddhhmm.substring(0, 2), 10);
+  var hh = parseInt(ddhhmm.substring(2, 4), 10);
+  var mm = parseInt(ddhhmm.substring(4, 6), 10);
+
+  var month = refMonth, year = refYear;
+  if (dd < refDay && (refDay - dd) > 15) {
+    month += 1;
+    if (month > 12) { month = 1; year += 1; }
+  } else if (dd > refDay && (dd - refDay) > 15) {
+    month -= 1;
+    if (month < 1) { month = 12; year -= 1; }
+  }
+  return Date.UTC(year, month - 1, dd, hh, mm, 0) / 1000;
+}
+
+function emptyQuads() {
+  return { NE: 0.0, SE: 0.0, SW: 0.0, NW: 0.0 };
+}
+
+/** Great-circle heading (deg) and speed (kt) between two tau positions.
+ *  Port of _bearing_speed(); returns [bearingDeg, speedKt]. */
+function bearingSpeed(t1, t2) {
+  var lat1 = t1.lat * DEG2RAD, lon1 = t1.lon * DEG2RAD;
+  var lat2 = t2.lat * DEG2RAD, lon2 = t2.lon * DEG2RAD;
+  var dlon = lon2 - lon1;
+  var y = Math.sin(dlon) * Math.cos(lat2);
+  var x = Math.cos(lat1) * Math.sin(lat2) -
+          Math.sin(lat1) * Math.cos(lat2) * Math.cos(dlon);
+  var brg = mod360(Math.atan2(y, x) * RAD2DEG);
+
+  var s1 = Math.sin((lat2 - lat1) / 2.0), s2 = Math.sin(dlon / 2.0);
+  var a = s1 * s1 + Math.cos(lat1) * Math.cos(lat2) * s2 * s2;
+  var dist = 2.0 * EARTH_R_NM * Math.asin(Math.sqrt(clamp(a, 0.0, 1.0)));
+  var dt = Math.max(t2.epoch - t1.epoch, 1) / 3600.0;
+  return [brg, dist / dt];
+}
+
+/** Parse a WTPN warning into a time-ordered list of tau objects.
+ *  `nowSecs` is unix seconds for "now"; only consulted by the no-DDMMMYY
+ *  fallback below (real wall clock when omitted - callers pass it only to
+ *  pin the fallback for a deterministic test). It plays no part at all
+ *  when the bulletin carries a normal DDMMMYY reference date. Port of
+ *  parseJTWC() in TCWind_JTWC.py.
+ *  Returns {taus, header, text}. */
+function parseJTWC(text, nowSecs) {
+  var lines;
+  if (Object.prototype.toString.call(text) === '[object Array]') {
+    lines = text.slice();
+    text = lines.join('\n');
+  } else {
+    // Python splits on "\n" only, leaving a trailing "\r" on CRLF input.
+    // Every pattern that could see one ends in `\s*$` or is unanchored, so
+    // stripping it here changes no result and makes CRLF bulletins behave.
+    lines = String(text).split(/\r?\n/);
+  }
+
+  // Reference date lives in the remarks block ("27AUG26."), on every
+  // fixture seen until today. Real, live counter-example: a JTWC bulletin
+  // (WTPN35 PGTW, SOULIK, extratropical transition) whose REMARKS opens
+  // straight into the synopsis with no DDMMMYY token anywhere - confirmed
+  // by inspecting the real product text, not assumed.
+  var refDay = null, refMonth = null, refYear = null;
+  for (var i = 0; i < lines.length; i++) {
+    var md = RE_REFDATE.exec(lines[i]);
+    if (md && dictHas(MONTHS, md[2])) {
+      refDay = parseInt(md[1], 10);
+      refMonth = MONTHS[md[2]];
+      refYear = 2000 + parseInt(md[3], 10);
+      break;
+    }
+  }
+
+  if (refDay === null) {
+    // Fallback: no DDMMMYY anywhere in the bulletin. The WMO abbreviated
+    // header line ("WTPN35 PGTW 242100") gives the reference DAY directly
+    // (24) but not month/year, so resolve those by combining that day
+    // with wall-clock "now" through the exact same rollover rule
+    // dtgToEpoch() already uses for every DTG in the bulletin against its
+    // own reference day - seeded from "now" instead of a remarks-derived
+    // date. A day far from today's rolls to the adjacent month/year,
+    // precisely as any other far-from-reference DTG already does.
+    var mh = RE_WMO_HEADER.exec(lines.join('\n'));
+    if (mh === null) {
+      throw new Error('Could not find a DDMMMYY reference date in the ' +
+                      'bulletin remarks, and no WMO header DDHHMM group ' +
+                      'to fall back to; cannot resolve DTGs.');
+    }
+    if (nowSecs === undefined || nowSecs === null) nowSecs = Date.now() / 1000;
+    var now = new Date(nowSecs * 1000);
+    var fallbackEpoch = dtgToEpoch(mh[1] + mh[2] + mh[3],
+                                    now.getUTCDate(), now.getUTCMonth() + 1,
+                                    now.getUTCFullYear());
+    var resolved = new Date(fallbackEpoch * 1000);
+    refDay = resolved.getUTCDate();
+    refMonth = resolved.getUTCMonth() + 1;
+    refYear = resolved.getUTCFullYear();
+  }
+
+  var taus = [];
+  var cur = null;
+  var curThreshold = null;
+  var inRemarks = false;
+
+  for (var j = 0; j < lines.length; j++) {
+    var ln = lines[j];
+
+    if (RE_REMARKS.test(ln)) inRemarks = true;
+
+    if (!inRemarks) {
+      if (RE_WARNPOS.test(ln)) {
+        cur = newTau(0);
+        taus.push(cur);
+        curThreshold = null;
+        continue;
+      }
+      var mt = RE_TAU.exec(ln);
+      if (mt) {
+        cur = newTau(parseInt(mt[1], 10));
+        taus.push(cur);
+        curThreshold = null;
+        continue;
+      }
+    }
+
+    if (cur === null) continue;
+    if (inRemarks) continue;
+
+    var mp = RE_POSITION.exec(ln);
+    if (mp && cur.lat === null) {
+      cur.epoch = dtgToEpoch(mp[1], refDay, refMonth, refYear);
+      var la = parseFloat(mp[2]); if (mp[3] === 'S') la = -la;
+      var lo = parseFloat(mp[4]); if (mp[5] === 'W') lo = -lo;
+      cur.lat = la; cur.lon = lo;
+      continue;
+    }
+
+    var mw = RE_WINDS.exec(ln);
+    if (mw) {
+      cur.vmax = parseFloat(mw[1]);
+      if (mw[2]) cur.gust = parseFloat(mw[2]);
+      continue;
+    }
+
+    var mrs = RE_RAD_START.exec(ln);
+    if (mrs) {
+      curThreshold = parseInt(mrs[1], 10);
+      if (!dictHas(cur.radii, curThreshold)) cur.radii[curThreshold] = emptyQuads();
+      var q1 = dictGet(QUAD_WORD, mrs[3].toUpperCase(), null);
+      if (q1) cur.radii[curThreshold][q1] = parseFloat(mrs[2]);
+      continue;
+    }
+
+    var mrc = RE_RAD_CONT.exec(ln);
+    if (mrc && curThreshold !== null) {
+      var q2 = dictGet(QUAD_WORD, mrc[2].toUpperCase(), null);
+      if (q2) cur.radii[curThreshold][q2] = parseFloat(mrc[1]);
+      continue;
+    }
+
+    var mm2 = RE_MOVEMENT.exec(ln);
+    if (mm2) {
+      cur.motionDir = parseFloat(mm2[1]);
+      cur.motionSpd = parseFloat(mm2[2]);
+      continue;
+    }
+
+    var mv = RE_VECTOR.exec(ln);
+    if (mv) {
+      // "VECTOR TO 24 HR POSIT" appears in the 12 HR block and describes
+      // motion out of that block.
+      cur.motionDir = parseFloat(mv[2]);
+      cur.motionSpd = parseFloat(mv[3]);
+      continue;
+    }
+
+    if (ln.indexOf('BECOMING SUBTROPICAL') >= 0 ||
+        ln.indexOf('BECOMING EXTRATROPICAL') >= 0) {
+      cur.conf = CONF_BECOMING;
+    } else if (RE_TRANSITION.test(ln)) {
+      cur.conf = CONF_SUBTROPICAL;
+    }
+  }
+
+  // Drop anything incomplete, then order by valid time.
+  taus = taus.filter(function (t) {
+    return t.lat !== null && t.epoch !== null && t.vmax !== null;
+  });
+  taus.sort(function (a, b) { return a.epoch - b.epoch; });
+
+  // Once a system is flagged subtropical it stays that way downstream.
+  var worst = CONF_TROPICAL;
+  for (var k = 0; k < taus.length; k++) {
+    worst = Math.min(worst, taus[k].conf);
+    taus[k].conf = worst;
+  }
+
+  // Backfill motion where a block had no vector line.
+  for (var n = 0; n < taus.length; n++) {
+    if (taus[n].motionSpd === null) {
+      if (n + 1 < taus.length) {
+        var bs = bearingSpeed(taus[n], taus[n + 1]);
+        taus[n].motionDir = bs[0];
+        taus[n].motionSpd = bs[1];
+      } else if (n > 0) {
+        taus[n].motionDir = taus[n - 1].motionDir;
+        taus[n].motionSpd = taus[n - 1].motionSpd;
+      } else {
+        taus[n].motionDir = 0.0;
+        taus[n].motionSpd = 0.0;
+      }
+    }
+  }
+
+  var full = lines.join('\n');
+  var header = {
+    refDate: [refDay, refMonth, refYear],
+    systemType: null, stormId: null, stormName: null,
+    warningNumber: null, pressureMb: null
+  };
+
+  var ms = RE_STORM.exec(full);
+  if (ms) {
+    header.systemType = ms[1];
+    header.stormId = ms[2];
+    // Python's unmatched optional group is None, not "".
+    header.stormName = (ms[3] === undefined) ? null : ms[3];
+  }
+  var mn = RE_WARNNR.exec(full);
+  if (mn) header.warningNumber = parseInt(mn[1], 10);
+  var mpr = RE_PRESSURE.exec(full);
+  if (mpr) header.pressureMb = parseInt(mpr[1], 10);
+
+  return { header: header, taus: taus, text: text };
+}
+
+function newTau(tau) {
+  return { tau: tau, epoch: null, lat: null, lon: null, vmax: null,
+           gust: null, radii: {}, motionDir: null, motionSpd: null,
+           conf: CONF_TROPICAL, fit: null };
+}
+
+/** Short human label for a parsed system.  Port of describeStorm(). */
+function describeStorm(header) {
+  var bits = [];
+  if (header.systemType) bits.push(header.systemType);
+  if (header.stormId) bits.push(header.stormId);
+  if (header.stormName) bits.push('(' + header.stormName + ')');
+  var label = bits.length ? bits.join(' ') : 'unidentified system';
+  if (header.warningNumber !== null && header.warningNumber !== undefined) {
+    label += ' warning ' + header.warningNumber;
+  }
+  return label;
+}
+
+
+// ===========================================================================
+// NHC TCM (Forecast/Advisory) parser - Atlantic/East Pacific, no Python side
+// ===========================================================================
+//
+// This file had parseTCM() FIRST - the live web tool grew NHC support
+// before the GFE procedure did - and for a while there was no Python
+// reference for it at all.  That is no longer true: GFE/procedures/
+// TCWind_JTWC.py now carries parseTCM() and reads Atlantic, East Pacific
+// and Central Pacific TCM products alongside JTWC's WestPac warnings.  So
+// the usual tiebreak at the top of this file applies here in full - Python
+// wins, then Vortex.html, then Code.gs - and
+// tests/tcwind_jtwc/compare_py_js.py drives all three on the fixtures in
+// tests/tcwind_jtwc/fixtures/tcm/ to keep them from drifting.
+//
+// The TCM ("Forecast/Advisory") product is NHC's structural equivalent of
+// JTWC's WTPN warning - position/intensity/motion/quadrant wind radii per
+// forecast hour - but its own text format differs from WTPN in nine ways;
+// each is called out at the regex or code line that handles it:
+//
+//   1. Header block: WMO line, AWIPS id, a title line carrying the system
+//      type + name + advisory number, an office line carrying the ATCF
+//      basin+number+year, then an issuance line carrying the reference
+//      date directly (RE_TCM_ISSUE) - no REMARKS-hunting the way
+//      parseJTWC()'s RE_REFDATE needs.
+//   2. Current position: "<TYPE> CENTER LOCATED NEAR lat lon AT DD/HHMMZ"
+//      (RE_TCM_CURPOS) - DD/HHMMZ, not JTWC's concatenated DDHHMMZ - and
+//      the type word can be HURRICANE/TROPICAL STORM/TROPICAL DEPRESSION/
+//      POTENTIAL TROPICAL CYCLONE/SUBTROPICAL STORM/SUBTROPICAL DEPRESSION/
+//      POST-TROPICAL CYCLONE/REMNANTS OF: NHC's own vocabulary, not JTWC's
+//      SUPER TYPHOON/TYPHOON ladder.  TCM_TYPE_CONF maps it to the same
+//      CONF_TROPICAL/CONF_SUBTROPICAL/CONF_BECOMING ladder in spirit -
+//      REMNANTS OF and POST-TROPICAL CYCLONE both map to CONF_BECOMING:
+//      by definition no longer an organized tropical cyclone (confirmed
+//      against three real, live "REMNANTS OF <name> CENTER LOCATED
+//      NEAR ..." products, which carry no name on this line at all - the
+//      real name lives only on the title line, e.g. "REMNANTS OF BERTHA
+//      FORECAST/ADVISORY NUMBER  19", which RE_TCM_TITLE also lists
+//      REMNANTS OF for).
+//   3. Movement: "PRESENT MOVEMENT ... OR <deg> DEGREES AT <kt> KT"
+//      (RE_TCM_MOVEMENT) gives the current block's motion directly.
+//      Forecast/outlook blocks never repeat it, so the same
+//      bearingSpeed()-based backfill parseJTWC() uses is ported verbatim
+//      for those; RE_TCM_BACKFILL additionally recovers a same-6h-earlier
+//      position ("AT DD/HHMMZ CENTER WAS LOCATED NEAR ...") NHC prints
+//      specifically so the CURRENT block's motion can be backfilled too,
+//      when for some reason no PRESENT MOVEMENT line exists.
+//   4. Max wind: "MAX SUSTAINED WINDS <v> KT WITH GUSTS TO <g> KT" for the
+//      current position (RE_TCM_WINDS_CUR) vs "MAX WIND <v> KT...GUSTS
+//      <g> KT" for every FORECAST/OUTLOOK VALID block (RE_TCM_WINDS_FCST) -
+//      different wording, same two numbers.
+//   5. Wind radii: all four quadrants on ONE line, NE SE SW NW order, dot
+//      leaders, no "NM"/"QUADRANT" words ("64 KT....... 40NE  35SE  30SW
+//      40NW."). RE_TCM_RADII is anchored at the start of the line
+//      specifically so it can never match the seas-radii line right below
+//      it ("4 M SEAS....300NE ..."), which does not start with a bare
+//      "<n> KT". Quadrant tokens are then pulled out of the tail with a
+//      plain (non-/g) regex applied per matched token - see the loop below
+//      for why this file avoids a shared /g RegExp for that.  A quadrant
+//      absent from the line is left at 0, exactly parseJTWC()'s "a 000 NM
+//      quadrant contributes no fit target" convention (see gtcmTargets()) -
+//      there is no separate "not reported" state anywhere in this data
+//      model, on either parser's output.
+//   6. "AT DD/HHMMZ CENTER WAS LOCATED NEAR ..." (RE_TCM_BACKFILL) is an
+//      optional extra data point for backfilling the CURRENT block's
+//      motion, not a forecast tau of its own - it is matched and stashed
+//      in `priorPos` before the main "is this line a new block" checks,
+//      and never pushed onto `taus`.
+//   7. Each later block starts "FORECAST VALID DD/HHMMZ lat lon" (days
+//      1-3) or "OUTLOOK VALID DD/HHMMZ lat lon" (days 4-5) - RE_TCM_FCST
+//      treats both identically. Neither carries an explicit tau-hour
+//      label the way JTWC's "XX HRS, VALID AT:" does, so tau is computed
+//      from every block's own epoch once all of them are known, and is
+//      NOT set from block order (which is not guaranteed to be file
+//      order once free text is mixed in). RE_TCM_FCST also does not
+//      anchor at the line's end: a live product can append a status word
+//      directly onto the lon token with no space
+//      ("OUTLOOK VALID 07/1200Z 24.5N 147.6W...POST-TROPICAL" - confirmed
+//      against a real, live NHC product), and a terminal block can have a
+//      valid time with NO position at all
+//      ("OUTLOOK VALID 08/1200Z...DISSIPATED" - also confirmed live). The
+//      first case still parses (RE_TCM_FCST's optional trailing group
+//      captures the status word for a confidence downgrade; anything
+//      after the matched groups is simply not part of the match). The
+//      second case fails RE_TCM_FCST outright, because "\s+" between the
+//      DTG and the lat digits requires a space that is not there when no
+//      position follows - the block is silently skipped, exactly as it
+//      must be.
+//   8. Arbitrary free text between blocks (WINDS AND SEAS VARY GREATLY...,
+//      REPEAT...CENTER LOCATED..., EXTENDED OUTLOOK. NOTE...ERRORS...,
+//      REQUEST FOR 3 HOURLY SHIP REPORTS...) matches none of the regexes
+//      below and is silently skipped, the same tolerant line-scanner style
+//      parseJTWC() already uses.
+//   9. "$$" marks the end of meaningful content (forecaster sign-off
+//      follows) - RE_TCM_TERM stops the scan there outright, a hard stop,
+//      unlike parseJTWC()'s REMARKS: boundary (which still scans for the
+//      reference date past it) - the TCM's reference date is already read
+//      directly off the issuance line before the main scan even starts.
+//
+// ===========================================================================
+
+// /m: matched against the whole joined product (`full`), not line-by-line
+// like every other regex below, so `^` needs multiline mode to anchor at
+// the START OF THE TITLE LINE rather than only offset 0 of the string.
+// REMNANTS OF: a dissipating/dissipated system NHC keeps issuing an
+// advisory on with no organized center any more - the title line still
+// carries the real storm name right after this phrase ("REMNANTS OF
+// BERTHA FORECAST/ADVISORY NUMBER  19"), but the current-position line
+// does NOT repeat a name at all ("REMNANTS OF CENTER LOCATED NEAR ...") -
+// confirmed against three real, live NHC products. It is listed in both
+// RE_TCM_TITLE (where group 2 still captures the real name that follows
+// it) and RE_TCM_CURPOS (where there is no name to capture at all), and
+// mapped to CONF_BECOMING below: by definition no longer an organized
+// tropical cyclone, same spirit as POST-TROPICAL CYCLONE.
+var RE_TCM_TITLE    = /^\s*(HURRICANE|TROPICAL STORM|TROPICAL DEPRESSION|POTENTIAL TROPICAL CYCLONE|SUBTROPICAL STORM|SUBTROPICAL DEPRESSION|POST-TROPICAL CYCLONE|REMNANTS OF)\s+(.+?)\s+FORECAST\/ADVISORY NUMBER\s+(\d+)/m;
+var RE_TCM_ATCFID   = /\b(AL|EP|CP)(\d{2})(\d{4})\b/;
+var RE_TCM_ISSUE    = /(\d{3,4})\s+UTC\s+[A-Z]{3}\s+([A-Z]{3})\s+(\d{1,2})\s+(\d{4})/;
+var RE_TCM_CURPOS   = /^\s*(HURRICANE|TROPICAL STORM|TROPICAL DEPRESSION|POTENTIAL TROPICAL CYCLONE|SUBTROPICAL STORM|SUBTROPICAL DEPRESSION|POST-TROPICAL CYCLONE|REMNANTS OF)\s+CENTER LOCATED NEAR\s+(\d+(?:\.\d+)?)\s*([NS])\s+(\d+(?:\.\d+)?)\s*([EW])\s+AT\s+(\d{2})\/(\d{4})Z/;
+var RE_TCM_BACKFILL = /^\s*AT\s+(\d{2})\/(\d{4})Z\s+CENTER WAS LOCATED NEAR\s+(\d+(?:\.\d+)?)\s*([NS])\s+(\d+(?:\.\d+)?)\s*([EW])/;
+var RE_TCM_FCST      = /^\s*(FORECAST|OUTLOOK)\s+VALID\s+(\d{2})\/(\d{4})Z\s+(\d+(?:\.\d+)?)\s*([NS])\s+(\d+(?:\.\d+)?)\s*([EW])(?:\.\.\.([A-Z][A-Z\- ]*))?/;
+var RE_TCM_MOVEMENT = /PRESENT MOVEMENT.*?(\d+)\s*DEGREES AT\s+(\d+)\s*KT/;
+var RE_TCM_WINDS_CUR  = /MAX SUSTAINED WINDS\s+(\d+)\s*KT WITH GUSTS TO\s+(\d+)\s*KT/;
+var RE_TCM_WINDS_FCST = /MAX WIND\s+(\d+)\s*KT\.*\s*GUSTS\s+(\d+)\s*KT/;
+// Anchored start-to-(near-)end so this can never match the seas-radii line
+// right below it in a real product ("4 M SEAS....300NE ..."), which does
+// not start with a bare "<n> KT" - see structural difference 5 above.
+var RE_TCM_RADII    = /^\s*(\d+)\s*KT\.+\s*(.+?)\.?\s*$/;
+var RE_TCM_PRESSURE = /(?:ESTIMATED\s+)?MINIMUM\s+CENTRAL\s+PRESSURE\s+(\d+)\s*MB/;
+var RE_TCM_TERM     = /^\s*\$\$\s*$/;
+
+/** Confidence ladder for NHC's own system-type vocabulary, in the same
+ *  spirit as parseJTWC()'s SUPER TYPHOON/TYPHOON/TROPICAL STORM/TROPICAL
+ *  DEPRESSION ladder (see structural difference 2 above) but NOT the same
+ *  words: NHC never says SUPER TYPHOON or TYPHOON, and JTWC never says
+ *  POTENTIAL TROPICAL CYCLONE or POST-TROPICAL CYCLONE. */
+var TCM_TYPE_CONF = {
+  'HURRICANE': CONF_TROPICAL,
+  'TROPICAL STORM': CONF_TROPICAL,
+  'TROPICAL DEPRESSION': CONF_TROPICAL,
+  'POTENTIAL TROPICAL CYCLONE': CONF_TROPICAL,
+  'SUBTROPICAL STORM': CONF_SUBTROPICAL,
+  'SUBTROPICAL DEPRESSION': CONF_SUBTROPICAL,
+  'POST-TROPICAL CYCLONE': CONF_BECOMING,
+  'REMNANTS OF': CONF_BECOMING
+};
+
+/** Parse an NHC Atlantic/East Pacific TCM (Forecast/Advisory) bulletin into
+ *  the SAME {header, taus, text} shape parseJTWC() returns for a WTPN
+ *  warning, so every downstream consumer (interpolateTrack(), fitGTCM()/
+ *  fitTauCached(), vortexFieldGTCM(), all of Index.html's rendering) works
+ *  on either parser's output completely unmodified.  See the big comment
+ *  above for how each of the nine format differences from WTPN is handled.
+ *
+ *  Field-mapping notes - the TCM product's own vocabulary differs from
+ *  WTPN's, so these fields carry adapted meanings:
+ *   - header.systemType    the advisory's own type word (HURRICANE,
+ *                          TROPICAL STORM, ...) from the title line.
+ *   - header.stormId       ATCF basin+number (e.g. "AL13", "EP09"), from
+ *                          the office line's AL132023/EP092023-style id.
+ *                          JTWC's stormId is a basin-letter-suffixed
+ *                          number ("22W"); NHC's text never repeats a
+ *                          short id like that, so this is the nearest
+ *                          stable per-storm identifier the product
+ *                          actually carries.
+ *   - header.stormName     the name from the title line ("LEE"), same
+ *                          role as JTWC's stormName.
+ *   - header.warningNumber the "FORECAST/ADVISORY NUMBER", the same role
+ *                          as JTWC's "WARNING NR".
+ *   - header.pressureMb    from "(ESTIMATED )MINIMUM CENTRAL PRESSURE",
+ *                          same field as JTWC's.
+ *   - header.refDate       [day, month, year] read directly off the
+ *                          issuance line - NOT hunted for in a REMARKS
+ *                          block the way JTWC's is (see difference 1).
+ *   - header.basin         'AT' (from an AL- ATCF id) or 'EP', or the raw
+ *                          ATCF basin letters for anything else.
+ *                          Informational only - not part of parseJTWC()'s
+ *                          header shape, so callers that do not know
+ *                          about it can safely ignore it.
+ *
+ *  taus carry exactly the fields newTau() already defines. `tau` (the
+ *  forecast hour) has no printed label in a TCM product, so it is
+ *  computed as (blockEpoch - initialEpoch) / 3600 once every block's own
+ *  epoch is known (see difference 7). */
+function parseTCM(text) {
+  var lines;
+  if (Object.prototype.toString.call(text) === '[object Array]') {
+    lines = text.slice();
+    text = lines.join('\n');
+  } else {
+    lines = String(text).split(/\r?\n/);
+  }
+  var full = lines.join('\n');
+
+  var mi = RE_TCM_ISSUE.exec(full);
+  if (!mi || !dictHas(MONTHS, mi[2])) {
+    throw new Error('Could not find a "<time> UTC <dow> <mon> <day> <year>" ' +
+                    'issuance line in the bulletin; cannot resolve DTGs.');
+  }
+  var refDay = parseInt(mi[3], 10);
+  var refMonth = MONTHS[mi[2]];
+  var refYear = parseInt(mi[4], 10);
+
+  var taus = [];
+  var cur = null;
+  var curThreshold = null;
+  // The "AT DD/HHMMZ CENTER WAS LOCATED NEAR ..." backfill point (six hours
+  // before the current position) - difference 6 above.  Not a tau.
+  var priorPos = null;
+
+  for (var j = 0; j < lines.length; j++) {
+    var ln = lines[j];
+    if (RE_TCM_TERM.test(ln)) break;   // "$$" - hard stop, difference 9
+
+    var mc = RE_TCM_CURPOS.exec(ln);
+    if (mc) {
+      cur = newTau(0);   // real tau assigned once every block's epoch is known
+      cur.epoch = dtgToEpoch(mc[6] + mc[7], refDay, refMonth, refYear);
+      var cla = parseFloat(mc[2]); if (mc[3] === 'S') cla = -cla;
+      var clo = parseFloat(mc[4]); if (mc[5] === 'W') clo = -clo;
+      cur.lat = cla; cur.lon = clo;
+      if (dictHas(TCM_TYPE_CONF, mc[1])) cur.conf = TCM_TYPE_CONF[mc[1]];
+      taus.push(cur);
+      curThreshold = null;
+      continue;
+    }
+
+    var mf = RE_TCM_FCST.exec(ln);
+    if (mf) {
+      cur = newTau(0);
+      cur.epoch = dtgToEpoch(mf[2] + mf[3], refDay, refMonth, refYear);
+      var fla = parseFloat(mf[4]); if (mf[5] === 'S') fla = -fla;
+      var flo = parseFloat(mf[6]); if (mf[7] === 'W') flo = -flo;
+      cur.lat = fla; cur.lon = flo;
+      // Difference 7: a status word can ride directly on this line
+      // ("...POST-TROPICAL") with no line break.  Downgrade confidence the
+      // same way a JTWC "BECOMING EXTRATROPICAL" line does, but do not
+      // treat it as an error either way if it names something else.
+      if (mf[8]) {
+        var status = mf[8].toUpperCase();
+        if (status.indexOf('POST-TROPICAL') >= 0 || status.indexOf('EXTRATROPICAL') >= 0) {
+          cur.conf = CONF_BECOMING;
+        } else if (status.indexOf('SUBTROPICAL') >= 0) {
+          cur.conf = CONF_SUBTROPICAL;
+        }
+      }
+      taus.push(cur);
+      curThreshold = null;
+      continue;
+    }
+
+    var mb = RE_TCM_BACKFILL.exec(ln);
+    if (mb) {
+      var pla = parseFloat(mb[3]); if (mb[4] === 'S') pla = -pla;
+      var plo = parseFloat(mb[5]); if (mb[6] === 'W') plo = -plo;
+      priorPos = { lat: pla, lon: plo,
+                   epoch: dtgToEpoch(mb[1] + mb[2], refDay, refMonth, refYear) };
+      continue;
+    }
+
+    if (cur === null) continue;
+
+    var mw1 = RE_TCM_WINDS_CUR.exec(ln);
+    if (mw1) { cur.vmax = parseFloat(mw1[1]); cur.gust = parseFloat(mw1[2]); continue; }
+
+    var mw2 = RE_TCM_WINDS_FCST.exec(ln);
+    if (mw2) { cur.vmax = parseFloat(mw2[1]); cur.gust = parseFloat(mw2[2]); continue; }
+
+    var mr = RE_TCM_RADII.exec(ln);
+    if (mr) {
+      curThreshold = parseInt(mr[1], 10);
+      if (!dictHas(cur.radii, curThreshold)) cur.radii[curThreshold] = emptyQuads();
+      // Per-token, non-/g regex on purpose: see the file-level comment at
+      // the top of the JTWC parser section about why a shared /g RegExp is
+      // never reused across calls here.  An inline /g literal on
+      // String.match() is safe (a fresh RegExp per evaluation), the loop
+      // body's plain regex is safe (no /g at all); nothing here is a
+      // module-level /g RegExp that could carry lastIndex across lines.
+      var toks = mr[2].match(/\d+\s*(?:NE|SE|SW|NW)/g) || [];
+      for (var ti = 0; ti < toks.length; ti++) {
+        var tm = /(\d+)\s*(NE|SE|SW|NW)/.exec(toks[ti]);
+        if (tm) cur.radii[curThreshold][tm[2]] = parseFloat(tm[1]);
+      }
+      continue;
+    }
+
+    var mm = RE_TCM_MOVEMENT.exec(ln);
+    if (mm) { cur.motionDir = parseFloat(mm[1]); cur.motionSpd = parseFloat(mm[2]); continue; }
+
+    if (ln.indexOf('BECOMING SUBTROPICAL') >= 0 ||
+        ln.indexOf('BECOMING EXTRATROPICAL') >= 0) {
+      cur.conf = CONF_BECOMING;
+    } else if (RE_TRANSITION.test(ln)) {
+      cur.conf = CONF_SUBTROPICAL;
+    }
+  }
+
+  // Drop anything incomplete (e.g. a DISSIPATED block with a valid time
+  // and no position - difference 7), then order by valid time.
+  taus = taus.filter(function (t) {
+    return t.lat !== null && t.epoch !== null && t.vmax !== null;
+  });
+  taus.sort(function (a, b) { return a.epoch - b.epoch; });
+
+  if (!taus.length) {
+    throw new Error('No usable FORECAST/ADVISORY position blocks parsed ' +
+                    'from this bulletin.');
+  }
+
+  // tau has no printed label in this product (difference 7) - compute it
+  // from each block's own epoch now that every one is known and sorted.
+  var t0epoch = taus[0].epoch;
+  for (var ti2 = 0; ti2 < taus.length; ti2++) {
+    taus[ti2].tau = Math.round((taus[ti2].epoch - t0epoch) / 3600);
+  }
+
+  // Once a system is flagged sub/post-tropical it stays that way
+  // downstream, exactly like parseJTWC().
+  var worst = CONF_TROPICAL;
+  for (var k = 0; k < taus.length; k++) {
+    worst = Math.min(worst, taus[k].conf);
+    taus[k].conf = worst;
+  }
+
+  // Backfill the CURRENT block's motion from the six-hour-earlier position
+  // line, when there was no PRESENT MOVEMENT line to read it from directly
+  // (difference 3/6).
+  if (taus[0].motionSpd === null && priorPos !== null) {
+    var bsp = bearingSpeed(priorPos, taus[0]);
+    taus[0].motionDir = bsp[0];
+    taus[0].motionSpd = bsp[1];
+  }
+  // Backfill everything else the same way parseJTWC() does: forward from
+  // the next tau, or carry back from the previous one.
+  for (var n = 0; n < taus.length; n++) {
+    if (taus[n].motionSpd === null) {
+      if (n + 1 < taus.length) {
+        var bs = bearingSpeed(taus[n], taus[n + 1]);
+        taus[n].motionDir = bs[0];
+        taus[n].motionSpd = bs[1];
+      } else if (n > 0) {
+        taus[n].motionDir = taus[n - 1].motionDir;
+        taus[n].motionSpd = taus[n - 1].motionSpd;
+      } else {
+        taus[n].motionDir = 0.0;
+        taus[n].motionSpd = 0.0;
+      }
+    }
+  }
+
+  var header = {
+    refDate: [refDay, refMonth, refYear],
+    systemType: null, stormId: null, stormName: null,
+    warningNumber: null, pressureMb: null, basin: null
+  };
+
+  var mt = RE_TCM_TITLE.exec(full);
+  if (mt) {
+    header.systemType = mt[1];
+    header.stormName = mt[2].replace(/\s+$/, '');
+    header.warningNumber = parseInt(mt[3], 10);
+  }
+  var ma = RE_TCM_ATCFID.exec(full);
+  if (ma) {
+    header.stormId = ma[1] + ma[2];
+    header.basin = (ma[1] === 'AL') ? 'AT' : ma[1];
+  }
+  var mp = RE_TCM_PRESSURE.exec(full);
+  if (mp) header.pressureMb = parseInt(mp[1], 10);
+
+  return { header: header, taus: taus, text: text };
+}
+
+
+// ===========================================================================
+// Exports
+// ===========================================================================
+//
+// The seven names the build contract requires, plus the helpers the pages
+// need in order NOT to keep private copies.  Anything a page needs that is
+// not here should be added here, not re-implemented on the page.
+(function (root) {
+  if (!root) return;
+  var api = {
+    // --- contract surface ---
+    fitGTCM: fitGTCM,
+    gtcmProfile: gtcmProfile,
+    gtcmUV: gtcmUV,
+    gtcmClimoRmax: gtcmClimoRmax,
+    gtcmClimoX: gtcmClimoX,
+    vortexFieldGTCM: vortexFieldGTCM,
+    resolveRmax: resolveRmax,
+    parseJTWC: parseJTWC,
+    parseTCM: parseTCM,
+    // --- shared helpers ---
+    gtcmAsymmetry: gtcmAsymmetry,
+    gtcmTargets: gtcmTargets,
+    nelderMead: nelderMead,
+    willoughbyRmax: willoughbyRmax,
+    distBearing: distBearing,
+    destPoint: destPoint,
+    interpolateTrack: interpolateTrack,
+    describeStorm: describeStorm,
+    bearingSpeed: bearingSpeed,
+    dtgToEpoch: dtgToEpoch,
+    mod360: mod360,
+    QUADS: QUADS,
+    QUAD_AZ: QUAD_AZ,
+    QUAD_BOUNDS: QUAD_BOUNDS,
+    MONTHS: MONTHS,
+    CONF_TROPICAL: CONF_TROPICAL,
+    CONF_BECOMING: CONF_BECOMING,
+    CONF_SUBTROPICAL: CONF_SUBTROPICAL,
+    EARTH_R_NM: EARTH_R_NM
+  };
+  for (var k in api) {
+    if (Object.prototype.hasOwnProperty.call(api, k)) root[k] = api[k];
+  }
+  root.TCVortex = api;
+})(typeof window !== 'undefined' ? window
+   : (typeof globalThis !== 'undefined' ? globalThis : null));
+</script>

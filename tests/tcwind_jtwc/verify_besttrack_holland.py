@@ -1,6 +1,33 @@
 #!/usr/bin/env python3
-"""Cross-check the tool's radial wind profile against an independent
-parametric model - Holland (1980) - rather than only against itself.
+"""Cross-check the shape of the tool's radial wind profile against an
+independent published model - Holland (1980).
+
+STILL A LIVE CHECK, unlike its sibling verify_besttrack_* scripts.  It is not
+scoring the tool against nature: it anchors a second, independently designed
+parametric profile at the SAME points the tool has (Vmax/Rmax and one reported
+radius) and asks where the two shapes disagree.  Two models disagreeing is
+evidence about structural uncertainty, which is a claim the tool can actually
+support, and the region where they disagree most - just outside the core - is
+the region where being wrong matters most operationally.
+
+Reframed for GTCM.  When this was written, VORTEX_METHOD was "perquad", so
+"the tool's curve" below is the per-quadrant construction, and its exactly-
+correct-by-construction R50/R64 is what made the Holland comparison
+interesting.  The default is now "gtcm", which does not pass through the
+reported radii at all, so re-running this against the current default would
+answer a different (and still useful) question: how far one fitted symmetric
+Rankine vortex sits from one fitted Holland profile.  The numbers recorded in
+tests/tcwind_jtwc/README.md are the perquad ones.  This has NOT been re-run
+under GTCM here - it needs the WestPac IBTrACS CSV, which is not in this
+environment - so treat the recorded zone-divergence numbers as describing the
+superseded construction until someone with the CSV re-runs it.
+
+Note also that its Rmax anchor is best-track RMW, which the real-time tool
+never has; that makes it a controlled shape comparison, not a check of
+anything the tool does operationally.
+
+--- original description follows -------------------------------------------
+
 
 The tool's own R34/R50/R64 are not a fair thing to re-check against best
 track: the model is built to pass through those exact points, so it

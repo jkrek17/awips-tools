@@ -1,0 +1,378 @@
+# Publishes the HF extratropical low archive to GitHub Pages.
+#
+# configure-pages runs with enablement: true, so the first successful run turns
+# Pages on by itself. If your account or organization blocks Pages, that call
+# fails and you have to enable it by hand: Settings > Pages > Build and
+# deployment > Source = "GitHub Actions".
+#
+# The site data is regenerated from the CSVs in data/hf_lows/ on every run, so
+# the published page can never drift from the committed source data - even if
+# someone forgets to re-run the build script before committing.
+
+name: Deploy archive site to Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'flat/**'
+      - 'data/hf_lows/**'
+      - 'tools/build_hf_lows.py'
+      - '.github/workflows/pages.yml'
+  # Lets you publish a preview from a feature branch: Actions > this workflow >
+  # Run workflow > pick the branch.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Rebuild site data from the CSV archive
+        run: python3 tools/build_hf_lows.py
+
+      # Every build stamps a fresh "generated" time and a "build" provenance
+      # object (git commit/dirty flag, host) that is specific to *this* build,
+      # not to the data - so a plain git diff always reports a change even
+      # when nothing about the archive itself moved. Compare the payload with
+      # those two fields removed, which is the only comparison that says
+      # anything about the data.
+      - name: Warn if the committed data is stale
+        run: |
+          python3 - <<'PY'
+          import json, subprocess
+          fresh = json.load(open('docs/data/hf-lows.json'))
+          committed = json.loads(
+              subprocess.check_output(['git', 'show', 'HEAD:docs/data/hf-lows.json']))
+          for payload in (fresh, committed):
+              payload.pop('generated', None)
+              payload.pop('build', None)
+          if fresh != committed:
+              print('::warning::docs/data is out of date with data/hf_lows/. The '
+                    'published site uses the freshly built version; re-run '
+                    'tools/build_hf_lows.py and commit to keep them in step.')
+          else:
+              print('docs/data matches a fresh build of data/hf_lows/.')
+          PY
+
+      # The forecaster's downstream repo (ocean-weather-gov) runs this exact
+      # check - `npm install -g html-validate` then `html-validate` with no
+      # config file, i.e. the tool's defaults - over their copy of docs/
+      # (which they keep at www/htdocs). Run it here too, before the artifact
+      # is uploaded, so a page that would fail their CI fails ours first,
+      # where it's cheap, instead of blocking a merge request over there.
+      #
+      # Version: pinned rather than "latest" like they run. Their pipeline
+      # always installs whatever is newest, so pinning here means we can
+      # in theory diverge from them - a rule they'd catch and we wouldn't,
+      # or vice versa. But an unpinned `npm install -g html-validate` here
+      # means html-validate can ship a new/stricter default rule at any
+      # time and turn our build red with no change on our side, on a push
+      # we don't control the timing of. Pinning trades a little drift for
+      # reproducible, deliberate upgrades: bump the version below in its
+      # own commit when we choose to, and see the diff in review. Bump
+      # periodically to keep drift from their "latest" small.
+      - name: Validate published HTML (html-validate)
+        run: |
+          npm install -g html-validate@11.15.0
+          html-validate docs
+
+      - uses: actions/configure-pages@v5
+        with:
+          # Create the Pages site on the first run instead of requiring
+          # someone to flip the repository setting first.
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  # flat/ is a second, committed copy of docs/ (collapsed into one
+  # directory, with index.html's src=/href= rewritten to bare filenames)
+  # for the one NOAA web server whose upload UI can only take individual
+  # files, not a directory tree - see tools/publish.py --flat. It
+  # duplicates every file, so it can drift the moment someone edits
+  # docs/ (or flat/ itself) without regenerating the other, and a
+  # forecaster hand-copying flat/'s files to that server has no other
+  # warning that they are shipping something stale.
+  #
+  # This lives in its own job, separate from build/deploy, rather than
+  # as a step of build: build already succeeding is what lets deploy
+  # publish docs/ to Pages, and a stale flat/ must never hold that up -
+  # Pages serves docs/ straight from this checkout, so flat/ drifting
+  # does not touch the live site at all. But a step that only ever
+  # prints ::warning:: is easy to miss - nobody scrolls a green run - and
+  # the entire point of this check is to get a human's attention before
+  # they copy stale files to NOAA's production server by hand. A
+  # separate job can fail loudly (a red X on the commit and the run) to
+  # get that attention, while the deploy job below depends on build
+  # alone, so this job failing never gates the Pages publish.
+  #
+  # Compares the COMMITTED docs/ against the COMMITTED flat/, basename-
+  # for-basename - this job does not run "Rebuild site data", so unlike
+  # the check in build it is not comparing against a freshly-built
+  # docs/data. The three data files still carry a "generated"/"build"
+  # stamp that is stripped before comparing anyway: it costs nothing here
+  # and keeps this comparison correct on its own terms rather than
+  # relying on docs/ and flat/ having been captured in the same instant.
+  #
+  # Not every docs/ file is meant to reach flat/, though: tools/publish.py
+  # defines NOT_DEPLOYED, a set of docs-relative paths (currently just
+  # data/qc-report.txt) that `--deploy ... --flat` deliberately declines
+  # to copy. This check has to agree with publish.py about exactly that
+  # set, or it fails for a reason that has nothing to do with a stale
+  # flat/: a correctly-regenerated flat/ that is simply missing a file
+  # publish.py never intended to put there. The fix is not to hardcode
+  # that path here too - two copies of the same exclusion list will agree
+  # right up until someone updates one and forgets the other, which is
+  # exactly the class of bug this whole job exists to catch elsewhere.
+  # Instead the script below reads NOT_DEPLOYED directly out of
+  # tools/publish.py's source (see load_not_deployed() and its own
+  # comment for why that's done with `ast` rather than an import), so
+  # there is exactly one place - publish.py itself - that says which
+  # files skip the flat/ deploy, and this job can never drift from it.
+  flat-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Fail if flat/ is stale against docs/
+        run: |
+          python3 - <<'PY'
+          import ast, json, os, re, sys
+
+          DOCS_DIR, FLAT_DIR = 'docs', 'flat'
+          PUBLISH_PY = os.path.join('tools', 'publish.py')
+          # Written by `tools/publish.py --deploy ... --flat`, not site content.
+          MANIFEST_NAME = '.awips-publish-manifest.json'
+
+          def load_not_deployed():
+              # Read publish.py's NOT_DEPLOYED constant WITHOUT importing
+              # publish.py, by parsing its source with `ast` and pulling the
+              # literal value off the module-level assignment.
+              #
+              # The alternative - `sys.path.insert(0, 'tools'); import
+              # publish; publish.NOT_DEPLOYED` - was considered and rejected.
+              # publish.py is, as of this writing, import-safe (every
+              # top-level statement is a def/class/import/assignment/
+              # docstring, with the sole top-level `if` being the
+              # `__name__ == "__main__"` guard), and it transitively imports
+              # tools/build_hf_lows.py, which was checked the same way and is
+              # equally import-safe (stdlib-only imports, no top-level calls
+              # besides two harmless dict/os.path assignments, same
+              # `__main__` guard pattern). So importing would work today.
+              # But "importing publish.py is safe" is a property of publish.py
+              # and build_hf_lows.py's current contents, not a contract either
+              # file has signed - nothing stops a future commit from adding,
+              # say, a module-level argparse default that shells out, or an
+              # eager sanity check against the network fetch config described
+              # in publish.py's own docstring. This job's only interest in
+              # publish.py is one literal set of strings; running an entire
+              # second script (plus whatever it imports) to get it is far
+              # more access than the job needs, and it would silently regain
+              # that access the moment either file's import-safety regresses,
+              # with nothing here to notice. Parsing the AST executes no code
+              # from either file, so it stays correct regardless of what
+              # publish.py or build_hf_lows.py grow into later.
+              source = open(PUBLISH_PY, encoding='utf-8').read()
+              tree = ast.parse(source, filename=PUBLISH_PY)
+              for node in tree.body:
+                  if not isinstance(node, ast.Assign):
+                      continue
+                  if not any(isinstance(t, ast.Name) and t.id == 'NOT_DEPLOYED'
+                            for t in node.targets):
+                      continue
+                  try:
+                      value = ast.literal_eval(node.value)
+                  except (ValueError, SyntaxError):
+                      continue
+                  if isinstance(value, (set, frozenset)) and all(
+                          isinstance(v, str) for v in value):
+                      return set(value)
+              # Renamed, removed, or no longer a plain set-of-strings literal.
+              # Fail loudly rather than guess: silently falling back to an
+              # empty set would compare every docs/ file against flat/ again,
+              # reintroducing the exact false MISSING FROM FLAT failure this
+              # constant exists to prevent; silently skipping the check
+              # instead would hide real drift. Neither is an acceptable
+              # substitute for a human updating this script to match
+              # whatever publish.py changed to.
+              print(f'::error::flat-sync could not find a module-level '
+                    f"`NOT_DEPLOYED = {{...}}` set-of-strings constant in "
+                    f'{PUBLISH_PY}. This check skips exactly the docs/ files '
+                    f'publish.py declines to deploy to flat/, and it does '
+                    f'that by reading NOT_DEPLOYED out of publish.py so the '
+                    f'two can never disagree - if that constant was renamed, '
+                    f'removed, or changed shape, update the parsing in this '
+                    f'workflow step to match.')
+              sys.exit(1)
+
+          NOT_DEPLOYED = load_not_deployed()
+
+          def iter_docs_files():
+              for dirpath, _dirnames, filenames in os.walk(DOCS_DIR):
+                  for name in filenames:
+                      yield os.path.relpath(os.path.join(dirpath, name), DOCS_DIR)
+
+          def flatten_html(html):
+              # Same rewrite tools/publish.py --flat applies to index.html.
+              return re.sub(r'(src|href)="[^"]*/', r'\1="', html)
+
+          def strip_build_stamp(payload):
+              payload = dict(payload)
+              payload.pop('generated', None)
+              payload.pop('build', None)
+              return payload
+
+          def normalize_json_bytes(data):
+              return strip_build_stamp(json.loads(data))
+
+          def normalize_js_bytes(data):
+              m = re.search(r'window\.HF_DATA\s*=\s*(\{.*\});\s*\Z',
+                            data.decode('utf-8'), re.DOTALL)
+              if not m:
+                  raise ValueError('no window.HF_DATA assignment found')
+              return strip_build_stamp(json.loads(m.group(1)))
+
+          def normalize_qc_report_bytes(data):
+              return re.sub(r'^generated .*$', 'generated STRIPPED',
+                            data.decode('utf-8'), count=1, flags=re.MULTILINE)
+
+          # Files whose bytes carry a per-build stamp that must not count as drift.
+          STAMPED_COMPARATORS = {
+              'hf-lows.json': normalize_json_bytes,
+              'hf-lows.js': normalize_js_bytes,
+              'qc-report.txt': normalize_qc_report_bytes,
+          }
+
+          problems = []
+
+          by_base = {}
+          for rel in iter_docs_files():
+              by_base.setdefault(os.path.basename(rel), []).append(rel)
+
+          # publish.py --flat already refuses to build a flat tree when two docs/
+          # files share a basename; check independently rather than silently
+          # comparing against whichever one os.walk happened to see first.
+          collisions = {b: r for b, r in by_base.items() if len(r) > 1}
+          for base, rels in sorted(collisions.items()):
+              problems.append(
+                  f"AMBIGUOUS: docs/ has {len(rels)} files named '{base}' "
+                  f"({', '.join(sorted(rels))}) - flat/{base} can't be checked "
+                  f"against either one.")
+
+          # Basenames of the docs/ files publish.py's NOT_DEPLOYED keeps out
+          # of flat/ on purpose - matched by exact docs-relative path, not
+          # bare basename, so this can't misfire against some unrelated
+          # docs/ file that happens to share a name with an excluded one.
+          # Dropping these out of docs_basenames (rather than, say, out of
+          # by_base itself) removes them from both the "MISSING FROM FLAT"
+          # requirement and the byte-comparison loop below, while leaving
+          # them in by_base so a flat/<name> that still happens to exist -
+          # e.g. a copy left over from before it was added to NOT_DEPLOYED -
+          # keeps resolving to its real docs/ counterpart instead of
+          # tripping "MISSING FROM DOCS". In short: once publish.py excludes
+          # a file, this check stops caring whether flat/ has it, lacks it,
+          # or disagrees with it - publish.py isn't keeping it in sync
+          # either way, so flagging any of those as drift would be a false
+          # alarm, not a genuine mistake to catch.
+          excluded_bases = {
+              os.path.basename(rel) for rel in NOT_DEPLOYED
+              if rel in by_base.get(os.path.basename(rel), [])
+          }
+
+          docs_basenames = set(by_base) - set(collisions) - excluded_bases
+          flat_basenames = {n for n in os.listdir(FLAT_DIR)
+                            if os.path.isfile(os.path.join(FLAT_DIR, n))
+                            and n != MANIFEST_NAME}
+
+          for base in sorted(set(collisions) - flat_basenames):
+              problems.append(f"MISSING FROM FLAT: docs/ has '{base}' (ambiguous "
+                              f"source, see above) but flat/{base} does not exist.")
+          for base in sorted(docs_basenames - flat_basenames):
+              problems.append(f"MISSING FROM FLAT: docs/{by_base[base][0]} has no "
+                              f"flat/{base}.")
+          for base in sorted(flat_basenames - set(by_base)):
+              problems.append(f"MISSING FROM DOCS: flat/{base} has no corresponding "
+                              f"file anywhere under docs/.")
+
+          for base in sorted(docs_basenames & flat_basenames):
+              docs_rel = by_base[base][0]
+              docs_bytes = open(os.path.join(DOCS_DIR, docs_rel), 'rb').read()
+              flat_bytes = open(os.path.join(FLAT_DIR, base), 'rb').read()
+
+              if base == 'index.html' and docs_rel == 'index.html':
+                  expected = flatten_html(docs_bytes.decode('utf-8')).encode('utf-8')
+                  if expected != flat_bytes:
+                      problems.append(
+                          'DIFFERS: flat/index.html does not match docs/index.html '
+                          'with its src=/href= paths flattened to bare filenames.')
+                  continue
+
+              comparator = STAMPED_COMPARATORS.get(base)
+              if comparator is not None:
+                  try:
+                      if comparator(docs_bytes) != comparator(flat_bytes):
+                          problems.append(
+                              f"DIFFERS: flat/{base} does not match docs/{docs_rel} "
+                              f"(ignoring the generated timestamp/build stamp).")
+                  except (ValueError, json.JSONDecodeError) as exc:
+                      problems.append(
+                          f"DIFFERS: could not compare flat/{base} against "
+                          f"docs/{docs_rel}: {exc}")
+                  continue
+
+              if docs_bytes != flat_bytes:
+                  problems.append(
+                      f"DIFFERS: flat/{base} does not match docs/{docs_rel} "
+                      f"(byte-for-byte).")
+
+          if problems:
+              print(f'::error::flat/ is out of sync with docs/ in '
+                    f'{len(problems)} way(s):')
+              for p in problems:
+                  print('  - ' + p)
+              print()
+              print('flat/ is a committed, flattened copy of docs/ for the NOAA '
+                    'upload UI; it is not what Pages deploys, so this job failing '
+                    'does not block the docs/ deploy - but it is the signal that '
+                    'the next hand-copy to the NOAA server would ship stale files. '
+                    'Regenerate it from the repo root with:')
+              print('    python3 tools/publish.py --deploy flat --flat --yes')
+              print('(add --no-fetch first if you are building from CSVs already on '
+                    'disk, or drop --yes to be prompted instead), then commit the '
+                    'refreshed flat/ alongside docs/.')
+              sys.exit(1)
+          else:
+              print('flat/ matches a flattened copy of docs/ (ignoring per-build '
+                    'generated/commit stamps).')
+          PY
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

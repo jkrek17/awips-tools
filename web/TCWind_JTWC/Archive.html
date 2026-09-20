@@ -1,0 +1,2504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TC Wind (JTWC) - best-track archive</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<?!= HtmlService.createHtmlOutputFromFile('Theme').getContent(); ?>
+<style>
+/* ==========================================================================
+   Tokens.  Complete light palette on :root; dark redefines the SAME names.
+   No colour exists only inside a media query.
+
+   Measured contrast (WCAG 2.1, sRGB relative luminance), light theme:
+     --text     #101720 on --surface #ffffff  18.02:1
+     --text     #101720 on --bg      #f4f6f8  16.63:1
+     --text-2   #4a5765 on --surface          7.39:1
+     --text-2   #4a5765 on --surface-2        6.33:1
+     --link     #0b5c8f on --surface          7.14:1
+     --text-2   #4a5765 on --surface-3        5.81:1  (the page minimum)
+   Dark theme:
+     --text     #e9eff5 on --surface #151d25  14.69:1
+     --text-2   #a9b9c7 on --surface-2        7.45:1
+     --text-2   #a9b9c7 on --surface-3        6.41:1
+     --link     #7ccafa on --surface-2        8.33:1
+     --warn-fg  #ffe08a on --warn-bg          10.45:1
+   Nothing on this page is set in a colour below 4.5:1, statistics least
+   of all.  There is no "faint" token.
+
+   --ink-model / --ink-bt / --ink-obs are CHART SERIES colours, never text.
+   They are held apart on the luminance axis as well as by hue, so they stay
+   distinguishable under dichromacy.  Worst-case separation across all six
+   pairings (the three series plus --text), measured as the WCAG contrast
+   ratio between Vienot-Brettel simulated colours under protanopia,
+   deuteranopia and tritanopia: light 1.54:1, dark 1.42:1 (the previous build
+   scored 1.02-1.05 here).  Each series additionally carries a non-colour
+   channel - dash pattern in the legend, hatch in the histogram, marker shape
+   in the scatter - and a direct textual label, so colour is never the only
+   channel.  Each is at least 3:1 against its surface (light 7.27/3.40/11.59,
+   dark 3.11/5.41/9.99).
+   ========================================================================== */
+:root {
+  color-scheme: light dark;
+}
+
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+a { color: var(--link); }
+a:focus-visible, button:focus-visible, input:focus-visible,
+select:focus-visible, [tabindex]:focus-visible, li:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+button, input, select { font: inherit; color: inherit; }
+h1, h2, h3 { line-height: 1.25; margin: 0; }
+code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+}
+
+/* ---------- masthead ---------- */
+.masthead {
+  position: sticky; top: 0; z-index: 900;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+.mast-row {
+  display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: baseline;
+  padding: .55rem .9rem;
+}
+.mast-title { font-size: 1.05rem; font-weight: 700; letter-spacing: .01em; }
+.mast-sub { color: var(--text-2); font-size: .82rem; }
+.spacer { flex: 1 1 auto; }
+.navlinks { display: flex; gap: .1rem; flex-wrap: wrap; }
+.navlinks a, .navlinks span {
+  padding: .25rem .6rem; border-radius: 4px; text-decoration: none;
+  font-size: .85rem; font-weight: 600; border: 1px solid transparent;
+}
+.navlinks a { color: var(--link); }
+.navlinks a:hover { background: var(--surface-2); }
+.navlinks .here {
+  background: var(--surface-3); border-color: var(--border-2); color: var(--text);
+}
+.exp-strip {
+  background: var(--warn-bg); color: var(--warn-fg);
+  border-top: 2px solid var(--warn-border);
+  padding: .4rem .9rem; font-size: .82rem; font-weight: 700;
+  letter-spacing: .04em;
+}
+.exp-strip .rest { font-weight: 500; letter-spacing: 0; }
+
+/* ---------- provenance ---------- */
+.provenance {
+  margin: .8rem .9rem 0; padding: .7rem .85rem;
+  border: 1px solid var(--border); border-left: 5px solid var(--border-2);
+  background: var(--surface); border-radius: 4px; font-size: .88rem;
+  color: var(--text-2);
+}
+.provenance strong { color: var(--text); }
+
+/* ---------- layout ---------- */
+.wrap { padding: .9rem; display: grid; gap: .9rem; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 1100px) {
+  .wrap { grid-template-columns: 336px minmax(0, 1fr); align-items: start; }
+}
+/* A bare `1fr` grid track only shrinks to its content's min-content width,
+   and a <canvas> (a replaced element) contributes its width="" attribute to
+   that regardless of the width:100% CSS on #plan/#cbar/#tl - so on a narrow
+   phone the 720px-wide plan-view canvas was pushing the WHOLE page (finder
+   included) wider than the viewport. min-width:0 on every grid/flex item
+   between .wrap and those canvases lets width:100% actually take over. */
+.wrap > .card, .planwrap > div { min-width: 0; }
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 6px; box-shadow: var(--shadow);
+}
+.card > h2, .card > .card-h {
+  font-size: .8rem; text-transform: uppercase; letter-spacing: .07em;
+  padding: .55rem .75rem; margin: 0; border-bottom: 1px solid var(--border);
+  color: var(--text-2); font-weight: 700; background: var(--surface-2);
+  border-radius: 6px 6px 0 0;
+  display: flex; align-items: baseline; gap: .5rem;
+}
+.card-b { padding: .75rem; }
+
+/* ---------- finder ---------- */
+.finder { position: sticky; top: 92px; }
+@media (max-width: 1099px) { .finder { position: static; } }
+.field { margin-bottom: .65rem; }
+.field > label, .leg {
+  display: block; font-size: .75rem; font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--text-2); margin-bottom: .25rem;
+}
+input[type=text], input[type=search], select {
+  width: 100%; padding: .35rem .45rem; background: var(--surface);
+  border: 1px solid var(--border-2); border-radius: 4px;
+}
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; }
+fieldset { border: 0; padding: 0; margin: 0 0 .65rem; }
+.chips { display: flex; flex-wrap: wrap; gap: .3rem; }
+.chip {
+  display: inline-flex; align-items: center; gap: .3rem;
+  border: 1px solid var(--border-2); border-radius: 999px;
+  padding: .2rem .55rem; font-size: .8rem; cursor: pointer; background: var(--surface);
+}
+.chip input { margin: 0; }
+.chip:has(input:checked) { background: var(--surface-3); border-color: var(--text-2); font-weight: 600; }
+.matchline {
+  font-size: .85rem; padding: .4rem .5rem; background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 4px; margin-bottom: .5rem;
+}
+.matchline b { font-size: 1.05rem; }
+#stormList { list-style: none; margin: 0; padding: 0; max-height: 46vh; overflow-y: auto; }
+@media (min-width: 1100px) { #stormList { max-height: 52vh; } }
+#stormList li {
+  padding: .38rem .5rem; border-bottom: 1px solid var(--border);
+  cursor: pointer; display: grid; grid-template-columns: 1fr auto; gap: .1rem .5rem;
+  font-size: .86rem;
+}
+#stormList li:hover { background: var(--surface-2); }
+#stormList li[aria-selected=true] {
+  background: var(--surface-3);
+  box-shadow: inset 4px 0 0 var(--border-2);
+  font-weight: 600;
+}
+.li-name { font-weight: 600; }
+.li-meta { color: var(--text-2); font-size: .78rem; grid-column: 1 / -1; }
+.li-pk { color: var(--text-2); font-size: .8rem; white-space: nowrap; }
+
+/* ---------- tabs ---------- */
+.tabs { display: flex; gap: .25rem; padding: .5rem .5rem 0; border-bottom: 1px solid var(--border); background: var(--surface-2); border-radius: 6px 6px 0 0; }
+.tab {
+  border: 1px solid var(--border); border-bottom: 0; background: var(--surface-2);
+  padding: .4rem .8rem; border-radius: 5px 5px 0 0; cursor: pointer;
+  font-size: .87rem; font-weight: 600; color: var(--text-2);
+}
+.tab[aria-selected=true] { background: var(--surface); color: var(--text); position: relative; top: 1px; }
+
+/* ---------- generic bits ---------- */
+.kv { display: grid; grid-template-columns: auto 1fr; gap: .15rem .6rem; font-size: .87rem; }
+.kv dt { color: var(--text-2); }
+.kv dd { margin: 0; font-variant-numeric: tabular-nums; }
+.statgrid { display: grid; gap: .5rem; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); }
+.stat {
+  border: 1px solid var(--border); border-radius: 5px; padding: .4rem .5rem;
+  background: var(--surface-2);
+}
+.stat .lab { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: var(--text-2); font-weight: 700; }
+.stat .val { font-size: 1.15rem; font-weight: 700; }
+.stat .sub { font-size: .74rem; color: var(--text-2); }
+.scrollx { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .85rem; }
+th, td { padding: .28rem .45rem; text-align: right; border-bottom: 1px solid var(--border); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+thead th { background: var(--surface-2); font-size: .74rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); position: sticky; top: 0; }
+tbody tr:hover { background: var(--surface-2); }
+tfoot td { font-weight: 700; border-top: 2px solid var(--border-2); }
+caption { caption-side: top; text-align: left; font-size: .8rem; color: var(--text-2); padding: .3rem 0 .45rem; }
+.badge {
+  display: inline-block; border: 1px solid var(--border-2); border-radius: 3px;
+  padding: 0 .3rem; font-size: .74rem; font-weight: 700; letter-spacing: .03em;
+  background: var(--surface-2);
+}
+.note { font-size: .82rem; color: var(--text-2); }
+.note strong { color: var(--text); }
+.btn {
+  border: 1px solid var(--border-2); background: var(--surface-2); color: var(--text);
+  border-radius: 4px; padding: .3rem .65rem; cursor: pointer; font-size: .85rem; font-weight: 600;
+}
+.btn:hover { background: var(--surface-3); }
+.btn[disabled] { opacity: .55; cursor: not-allowed; }
+.btn-primary { background: var(--surface-3); border-color: var(--text-2); }
+.msg {
+  padding: .6rem .75rem; border-radius: 5px; font-size: .87rem;
+  border: 1px solid var(--warn-border); background: var(--warn-bg); color: var(--warn-fg);
+}
+.msg.plain { border-color: var(--border); background: var(--surface-2); color: var(--text-2); }
+.hide { display: none !important; }
+.verdict {
+  border: 1px solid var(--border-2); background: var(--surface-2); border-radius: 6px;
+  padding: .75rem .9rem; margin-bottom: .7rem; font-size: .93rem; line-height: 1.6;
+}
+.verdict h4 { margin: 0 0 .35rem; font-size: .8rem; text-transform: uppercase;
+  letter-spacing: .04em; color: var(--text-2); }
+.verdict b { color: var(--text); }
+
+/* ---------- plan view (fixed dark instrument panel, both themes) ---------- */
+.panel-dark {
+  background: #080d12; border: 1px solid var(--border-2); border-radius: 5px;
+  padding: .4rem;
+}
+#plan { width: 100%; height: auto; display: block; border-radius: 3px; }
+.planwrap { display: grid; gap: .6rem; grid-template-columns: 1fr; }
+@media (min-width: 900px)  { .planwrap { grid-template-columns: minmax(0, 1.45fr) minmax(270px, 0.8fr); } }
+@media (min-width: 1500px) { .planwrap { grid-template-columns: minmax(0, 1.7fr) minmax(300px, 0.7fr); } }
+.legend { display: grid; gap: .25rem; font-size: .81rem; }
+.legend .li { display: grid; grid-template-columns: 66px 1fr; gap: .45rem; align-items: center; }
+.legend .li svg + svg { margin-left: 3px; }
+.legend svg { display: block; }
+.cbar-wrap { margin-top: .35rem; }
+#cbar { width: 100%; height: 34px; display: block; }
+
+/* ---------- scrubber ---------- */
+.scrubbar { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+#scrub { flex: 1 1 220px; min-width: 160px; accent-color: var(--link); }
+.recstamp { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* ---------- map ---------- */
+#map { height: 300px; border-radius: 5px; border: 1px solid var(--border); background: var(--surface-2); }
+#map.tall { height: 340px; }
+.leaflet-container { font: inherit; background: var(--surface-2); }
+
+/* ---------- charts ---------- */
+.chartbox { border: 1px solid var(--border); border-radius: 5px; padding: .5rem; background: var(--surface); }
+.chartbox canvas { width: 100%; height: auto; display: block; }
+.chart-title { font-size: .8rem; font-weight: 700; margin-bottom: .3rem; }
+
+footer.pagefoot {
+  margin: 1.2rem .9rem 2rem; padding-top: .8rem;
+  border-top: 1px solid var(--border); font-size: .84rem; color: var(--text-2);
+}
+footer.pagefoot h3 { font-size: .82rem; text-transform: uppercase; letter-spacing: .06em; margin: .9rem 0 .3rem; color: var(--text); }
+footer.pagefoot ul { margin: .2rem 0; padding-left: 1.1rem; }
+footer.pagefoot li { margin: .2rem 0; }
+footer.pagefoot details { margin: .9rem 0 0; }
+footer.pagefoot summary {
+  font-size: .82rem; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--text); cursor: pointer; font-weight: 700;
+}
+footer.pagefoot summary:hover { color: var(--accent, var(--text)); }
+footer.pagefoot details p { margin: .3rem 0; }
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="mast-row">
+    <div>
+      <div class="mast-title">TC Wind (JTWC): best-track archive</div>
+      <div class="mast-sub">GTCM/WTCM wind field replayed against IBTrACS post-season best track</div>
+    </div>
+    <div class="spacer"></div>
+    <nav class="navlinks" aria-label="Pages">
+      <a href="<?= baseUrl ?>?page=live">Live tool</a>
+      <span class="here" aria-current="page">Archive</span>
+      <a href="<?= baseUrl ?>?page=findings">Findings</a>
+    </nav>
+  </div>
+  <div class="exp-strip" role="note">
+    EXPERIMENTAL &mdash; NOT OPERATIONALLY VETTED.
+    <span class="rest">Not a warning product. Do not use for operational decisions.</span>
+  </div>
+</header>
+
+<p class="provenance">
+  <strong>What this page is.</strong> Every storm here is <strong>post-season best-track
+  reanalysis</strong> from IBTrACS, not a live bulletin. The positions, intensities and wind
+  radii were assigned after the fact, with data the forecaster on shift did not have. When the
+  modelled field agrees with the plotted radii, that means <strong>consistency with an
+  after-the-fact analysis</strong>. It is <strong>not</strong> verification against observations,
+  and nothing on this page should be read as one. The radii themselves are analyst estimates with
+  their own substantial uncertainty.
+  <br>
+  <strong>What "agreement" is not.</strong> GTCM deliberately does not pass through the reported
+  radii. It fits one symmetric vortex plus a wavenumber-1 asymmetry by weighted least squares on
+  <em>wind</em> error, trading ring fidelity for a coherent field. A ring miss here is the model
+  working as designed, not a defect. Read the misses for size and structure, not as a score.
+</p>
+
+<div class="wrap">
+
+  <!-- =========================== FINDER =========================== -->
+  <section class="card finder" aria-labelledby="finder-h">
+    <h2 id="finder-h">Find a storm</h2>
+    <div class="card-b">
+      <div id="idxState" class="msg plain">Loading the archive index&hellip;</div>
+
+      <div id="finderControls" class="hide">
+        <div class="field">
+          <label for="q">Name or storm ID contains</label>
+          <input type="search" id="q" autocomplete="off" spellcheck="false" placeholder="e.g. IRMA, HAIYAN, 2017242">
+        </div>
+
+        <fieldset>
+          <span class="leg" id="basin-leg">Basin</span>
+          <div class="chips" role="group" aria-labelledby="basin-leg" id="basinChips"></div>
+        </fieldset>
+
+        <div class="field">
+          <label for="seasonMin">Season (UTC year of genesis)</label>
+          <div class="row2">
+            <select id="seasonMin" aria-label="Earliest season"></select>
+            <select id="seasonMax" aria-label="Latest season"></select>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="catMin">Peak intensity band</label>
+          <div class="row2">
+            <select id="catMin" aria-label="Minimum peak intensity band"></select>
+            <select id="catMax" aria-label="Maximum peak intensity band"></select>
+          </div>
+        </div>
+
+        <fieldset>
+          <span class="leg">Wind radii</span>
+          <div class="chips">
+            <label class="chip"><input type="checkbox" id="fRadii" checked> has reported radii</label>
+            <label class="chip"><input type="checkbox" id="fR64"> reaches 64 kt</label>
+          </div>
+        </fieldset>
+
+        <div class="field">
+          <label for="sortBy">Sort by</label>
+          <select id="sortBy">
+            <option value="season">Season, then name</option>
+            <option value="peak">Peak Vmax (strongest first)</option>
+            <option value="radii">Records with radii (most first)</option>
+            <option value="name">Name (A&ndash;Z)</option>
+          </select>
+        </div>
+
+        <p class="matchline" id="matchLine" role="status" aria-live="polite"></p>
+        <ul id="stormList" role="listbox" aria-label="Matching storms" tabindex="0"></ul>
+        <p class="note" style="margin:.5rem 0 0">
+          Arrow keys move through the list when it has focus; Enter or click loads a storm.
+          One storm is fetched per selection. The archive is never requested whole.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- =========================== MAIN =========================== -->
+  <section class="card" aria-labelledby="main-h">
+    <h2 id="main-h" class="visually-hidden">Storm detail and cohort comparison</h2>
+    <div class="tabs" role="tablist" aria-label="Archive views">
+      <button class="tab" id="tab-storm" role="tab" aria-selected="true" aria-controls="panel-storm">Single storm</button>
+      <button class="tab" id="tab-cohort" role="tab" aria-selected="false" aria-controls="panel-cohort">Compare across storms</button>
+    </div>
+
+    <!-- ---------- STORM PANEL ---------- -->
+    <div class="card-b" id="panel-storm" role="tabpanel" aria-labelledby="tab-storm">
+      <div id="stormState" class="msg plain">
+        Pick a storm from the list to load its best track and replay the GTCM field through it.
+      </div>
+
+      <div id="stormBody" class="hide">
+        <div style="display:flex;flex-wrap:wrap;gap:.4rem 1rem;align-items:baseline;margin-bottom:.5rem">
+          <h3 id="stormTitle" style="font-size:1.15rem"></h3>
+          <span id="stormBadges"></span>
+          <div class="spacer"></div>
+          <span class="note" id="stormSpan"></span>
+        </div>
+
+        <div class="verdict" id="stormVerdict">
+          <h4>How did the tool do on this storm?</h4>
+          <p id="stormVerdictText" style="margin:0"></p>
+        </div>
+
+        <div class="statgrid" id="stormStats" style="margin-bottom:.7rem"></div>
+
+        <div style="margin-bottom:.7rem">
+          <div id="map" role="img" aria-label="Storm track map"></div>
+          <div id="mapFallback" class="msg hide" style="margin-top:.4rem"></div>
+          <p class="note" style="margin:.35rem 0 0">
+            Track from best track. Marker shape encodes intensity band (circle = below 64 kt,
+            square = 64&ndash;95 kt, diamond = 96 kt and above); the selected time is the larger
+            outlined marker. Solid outer ring = modelled 34 kt footprint; dashed spokes and arcs =
+            the best-track 34 kt quadrant radii.
+          </p>
+        </div>
+
+        <div class="scrubbar" style="margin-bottom:.6rem">
+          <button class="btn" id="btnPrev" aria-label="Previous synoptic time">&#9664; Prev</button>
+          <input type="range" id="scrub" min="0" max="0" step="1" value="0"
+                 aria-label="Synoptic time through the storm">
+          <button class="btn" id="btnNext" aria-label="Next synoptic time">Next &#9654;</button>
+          <span class="recstamp" id="recStamp"></span>
+        </div>
+
+        <div class="planwrap">
+          <div>
+            <div class="panel-dark">
+              <canvas id="plan" width="720" height="720"
+                      role="img" aria-label="Storm-relative GTCM wind field"></canvas>
+              <div class="cbar-wrap"><canvas id="cbar" width="720" height="68"
+                      role="img" aria-label="Modelled wind speed colour scale, knots"></canvas></div>
+            </div>
+            <div class="scrubbar" style="margin-top:.45rem">
+              <label for="rangeSel" class="note">Half-width</label>
+              <select id="rangeSel" style="width:auto">
+                <option value="0">auto</option>
+                <option value="60">60 nm</option>
+                <option value="120">120 nm</option>
+                <option value="200">200 nm</option>
+                <option value="300">300 nm</option>
+                <option value="450">450 nm</option>
+              </select>
+              <label class="chip"><input type="checkbox" id="lyField" checked> field</label>
+              <label class="chip"><input type="checkbox" id="lyModel" checked> model rings</label>
+              <label class="chip"><input type="checkbox" id="lyBT" checked> best-track radii</label>
+              <label class="chip"><input type="checkbox" id="lySize" checked> RMW / ROCI / rm</label>
+            </div>
+            <p class="note" style="margin:.4rem 0 0">
+              Storm-relative plan view, north up, in nautical miles from the best-track centre.
+              Shading is the same GTCM field the GFE tool inserts, sampled point-by-point through
+              <code>vortexFieldGTCM()</code>, including the outer taper beyond the modelled
+              34 kt radius. It is drawn on a fixed dark ground in both themes so the overlay
+              colours stay calibrated.
+            </p>
+          </div>
+
+          <div>
+            <div class="legend" id="planLegend" style="margin-bottom:.6rem"></div>
+            <div id="fitWarn" class="msg hide" style="margin-bottom:.6rem"></div>
+
+            <div class="chartbox" style="margin-bottom:.6rem">
+              <div class="chart-title">Best track at this time: what a live bulletin never carries</div>
+              <dl class="kv" id="obsKv"></dl>
+            </div>
+
+            <div class="chartbox" style="margin-bottom:.6rem">
+              <div class="chart-title">GTCM fit at this time</div>
+              <dl class="kv" id="fitKv"></dl>
+            </div>
+          </div>
+        </div>
+
+        <div class="chartbox" style="margin-top:.7rem">
+          <div class="chart-title">Reported radii vs modelled radii, this time</div>
+          <div class="scrollx"><table id="quadTable">
+            <caption>
+              Radii in nautical miles on the quadrant bisectors (NE&nbsp;045, SE&nbsp;135,
+              SW&nbsp;225, NW&nbsp;315). <em>Fit target</em> is the reported quadrant maximum
+              scaled by 0.85 to a quadrant average. That scaled value, not the reported
+              one, is what GTCM actually minimises against.
+              &Delta; is modelled minus the column it sits under; positive means the model is
+              larger than the analysis. A 34 kt row marked <em>3&times;r&#8344; fallback</em> is one
+              where the modelled field never reaches 34 kt anywhere on that bearing; the tool
+              substitutes 3&times;r&#8344; so the outer taper has something to anchor to, and that
+              substitute is what is compared here.
+            </caption>
+          </table></div>
+        </div>
+
+        <div class="chartbox" style="margin-top:.7rem">
+          <div class="chart-title">Through the storm</div>
+          <canvas id="tl" width="1000" height="230" role="img"
+                  aria-label="Time series of intensity, observed RMW and fitted rm"></canvas>
+          <div id="tlLegend" class="legend" style="margin-top:.35rem"></div>
+          <div class="scrollx" style="margin-top:.6rem"><table id="stormSummary"></table></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------- COHORT PANEL ---------- -->
+    <div class="card-b hide" id="panel-cohort" role="tabpanel" aria-labelledby="tab-cohort">
+      <p class="note" style="margin-top:0">
+        This runs the same replay over every storm in the current filter, one
+        <code>getArchiveStorm()</code> call at a time, and pools the ring errors. It is the only
+        way to see whether a miss you are looking at is typical. Storms already loaded are reused;
+        nothing is re-fetched.
+      </p>
+      <div class="scrubbar" style="margin:.6rem 0">
+        <button class="btn btn-primary" id="cohortRun">Run over the filtered set</button>
+        <button class="btn" id="cohortStop" disabled>Stop</button>
+        <span id="cohortStatus" class="note" role="status" aria-live="polite"></span>
+      </div>
+      <div id="cohortMsg" class="msg plain">Not run yet.</div>
+
+      <div id="cohortOut" class="hide">
+        <fieldset style="margin:.7rem 0 .4rem">
+          <span class="leg">Restrict the pooled statistics to storm types (IBTrACS <code>nature</code>)</span>
+          <div class="chips" id="natChips"></div>
+        </fieldset>
+
+        <div class="statgrid" id="cohortStats" style="margin:.6rem 0"></div>
+
+        <div class="chartbox" style="margin-bottom:.7rem">
+          <div class="chart-title">Ring error by basin and threshold</div>
+          <div class="scrollx"><table id="cohortByBasin">
+            <caption>Modelled minus reported radius on each reported quadrant bisector, pooled.
+              <em>vs target</em> repeats the comparison against the 0.85-scaled quadrant average
+              GTCM actually fits. <em>unreached</em> counts quadrant points where the modelled
+              field never attains the threshold at any radius out to 900 nm. 34 kt is never
+              counted unreached; the tool substitutes 3&times;r&#8344; there instead, and
+              the tile above reports how often that happened.</caption>
+          </table></div>
+        </div>
+
+        <div class="chartbox" style="margin-bottom:.7rem">
+          <div class="chart-title">Ring error by storm type</div>
+          <div class="scrollx"><table id="cohortByNature">
+            <caption>IBTrACS <code>nature</code> at each record. ET (extratropical), SS
+              (subtropical) and MX (mixture) are the cases a symmetric Rankine vortex has least
+              business describing; they are broken out here rather than buried in the pool.</caption>
+          </table></div>
+        </div>
+
+        <div class="planwrap" style="grid-template-columns:1fr">
+          <div class="chartbox">
+            <div class="chart-title">Fitted r<sub>m</sub> against observed RMW</div>
+            <canvas id="scRm" width="880" height="440" role="img"
+                    aria-label="Scatter of fitted rm against best-track RMW"></canvas>
+            <p class="note" id="scRmNote" style="margin:.4rem 0 0"></p>
+          </div>
+        </div>
+
+        <div class="chartbox" style="margin-top:.7rem">
+          <div class="chart-title">Distribution of ring error (modelled &minus; reported)</div>
+          <canvas id="hist" width="880" height="300" role="img"
+                  aria-label="Histogram of ring radius error"></canvas>
+          <div id="histLegend" class="legend" style="margin-top:.35rem"></div>
+        </div>
+
+        <div class="chartbox" style="margin-top:.7rem">
+          <div class="chart-title">Per storm, worst mean absolute ring error first</div>
+          <div class="scrollx"><table id="cohortByStorm">
+            <caption>Click a row to open that storm in the single-storm view.</caption>
+          </table></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<footer class="pagefoot">
+  <details id="howToRead">
+    <summary>How to read this page</summary>
+  <ul>
+    <li><strong>Post-season, not live.</strong> The International Best Track Archive for Climate
+      Stewardship (IBTrACS) is a reanalysis, done after the season ends. Agreement here is
+      consistency with that after-the-fact analysis, not verification against observations.</li>
+    <li><strong>GTCM is not trying to hit the rings.</strong> It minimises weighted wind error
+      (weight 5 on the 34 kt points, 1 on 50 and 64 kt) against the reported radii scaled by 0.85
+      from quadrant maximum to quadrant average. Ring misses are expected: the tool trades them
+      for a field with no kinks at the quadrant boundaries.</li>
+    <li><strong>r<sub>m</sub> is not RMW.</strong> The fitted r<sub>m</sub> is the radius of maximum
+      symmetric tangential wind in the Rankine profile, chosen by least squares on wind error at
+      the reported radii, frequently with no 64 kt ring and sometimes with no radii at all.
+      The best-track RMW (radius of maximum wind) is an analyst's estimate of the radius of maximum
+      surface wind, from aircraft, scatterometer, radar or satellite. The two are related but
+      differently defined and differently measured. A difference between them is not by itself an
+      error in either, and this page never scores one against the other.</li>
+    <li><strong>Two documented departures from the Gridded TCM Users Guide v1.9.1</strong>, both
+      present in the field drawn here. First, the profile is tapered exponentially beyond the
+      modelled 34 kt radius so the GFE insert terminates; the guide leaves that outer blend to the
+      receiving office. Second, the guide's step 4 boundary-layer and land-roughness reduction is
+      <em>not</em> implemented, since it needs the USGS land-surface database. The field is
+      therefore marine exposure everywhere and will be too strong over land: watch the
+      distance-to-land figure when judging near-shore cases.</li>
+  </ul>
+  </details>
+
+  <details id="dataNotes">
+    <summary>Data</summary>
+  <ul>
+    <li>IBTrACS <code>USA_*</code> columns. North Atlantic and East Pacific are NHC values
+      (<code>hurdat_atl</code>, <code>hurdat_epa</code>), archive window <strong>2004&ndash;2024</strong>,
+      chosen because 64 kt radii are reported as zero everywhere before 2004. West Pacific is a
+      Joint Typhoon Warning Center (JTWC) sample (<code>jtwc_wp</code>) over
+      <strong>2005&ndash;2024</strong>; the one-year difference is real and not smoothed over
+      here.</li>
+    <li>The archive is a bounded sample, not the whole record: at most 120 NHC storms drawn with a
+      fixed seed and stratified across seasons and intensity, plus 100 West Pacific storms. It is
+      enough to characterise behaviour, not enough to be a climatology.</li>
+    <li>RMW and the radius of the outermost closed isobar (ROCI) are in nautical miles; distance to
+      land is IBTrACS' own field in kilometres and is shown converted. Times are UTC and carry an
+      explicit <code>Z</code>.</li>
+  </ul>
+  </details>
+
+  <div id="footerGlossary"></div>
+
+  <p style="margin-top:.9rem">
+    Server API used by this page: <code>getArchiveIndex()</code>, <code>getArchiveStorm(sid)</code>.
+    Wind-field mathematics is <code>Vortex.html</code>, the single client-side copy, ported from
+    <code>GFE/procedures/TCWind_JTWC.py</code>. Build <code><?= version ?></code>.
+  </p>
+</footer>
+
+<?!= HtmlService.createHtmlOutputFromFile('Vortex').getContent(); ?>
+
+<?!= HtmlService.createHtmlOutputFromFile('Help').getContent(); ?>
+
+<script>
+/* ==========================================================================
+   Archive.html - browser for the best-track archive.
+
+   Everything mathematical comes from Vortex.html via window.TCVortex.  This
+   file defines NO copy of fitGTCM, gtcmProfile, gtcmUV, resolveRmax,
+   parseJTWC or willoughbyRmax; it composes them.  The one genuinely new
+   computation here is modelRingRadius(), which asks "at what radius does the
+   modelled field last reach T knots on this bearing" for T = 50 and 64.
+   Vortex.html already answers that for T = 34 (r34At), and this code calls
+   r34At for the 34 kt case rather than re-deriving it, so the 34 kt numbers
+   on this page are the tool's own, bit for bit.
+
+   ES5 only, no build step.  All DOM work happens inside boot(), so the file
+   can be loaded head-first by a Node harness for checking the arithmetic.
+   ========================================================================== */
+(function (global) {
+'use strict';
+
+var V = global.TCVortex || global;      // Vortex.html exports
+var QUADS = ['NE', 'SE', 'SW', 'NW'];
+var QUAD_AZ = { NE: 45, SE: 135, SW: 225, NW: 315 };
+var THRS = [34, 50, 64];
+var QUAD_AVG = 0.85;                    // GTCM_QUAD_AVG_FACTOR, for display
+var PROBE_MAX = 900;                    // GTCM_R34_PROBE_MAX_NM
+var KM2NM = 1 / 1.852;
+
+// Fixed instrument-panel palette.  Not theme tokens: the plan view is drawn
+// on a constant dark ground in both themes so these stay calibrated.
+// Measured worst-case separation across the three overlay roles, under
+// normal vision and simulated protanopia/deuteranopia/tritanopia
+// (Vienot-Brettel LMS simulation, then WCAG contrast ratio of the simulated
+// pair): 1.63:1, worst-case CIEDE2000 dE 22.1.  Against the near-black halo
+// each is drawn on: model 10.85:1, best track 4.60:1, observed 19.51:1.
+// Colour encodes the THRESHOLD; line style encodes provenance (solid =
+// modelled, dashed = reported).  It used to be the other way round - one
+// colour for "model", another for "best track", with nine dash patterns
+// carrying 34/50/64 - which made the page's central question ("does the
+// modelled 34 kt radius match the reported one?") a comparison between two
+// differently-coloured curves picked out of nine near-identical dash styles.
+// Same colour, two styles, is the comparison the eye is actually good at.
+var THR_COLOR = { 34: '#5ec8e5', 50: '#ffd24d', 64: '#ff7ba8' };
+var C_MODEL = '#7ccafa';   // rm and other model-only marks
+var C_BT    = '#a86c00';   // legacy; retained for non-threshold marks
+var C_OBS   = '#ffffff';   // observed RMW / ROCI
+var C_HALO  = '#000814';
+var C_GRID  = '#5c7183';
+var C_GRIDT = '#c3d2de';
+
+// Sequential, luminance-ordered, single-family ramp: safe under every CVD
+// type by construction, and capped short of white so the white observed
+// circles remain the brightest thing on the panel.
+// Banded, not continuous, with edges exactly at 34/50/64 and each band
+// tinted toward that threshold's ring colour.  A smooth ramp gave no visual
+// landmark to compare a ring against; now the modelled ring should sit on a
+// band edge, and any daylight between it and the dashed reported ring is the
+// error, readable straight off the picture.
+var RAMP = [
+  [0,   [8, 13, 18]],   [15,  [15, 32, 41]],  [25,  [18, 50, 67]],
+  [34,  [29, 74, 95]],  [45,  [39, 96, 118]], [55,  [47, 119, 145]],
+  [70,  [75, 143, 168]],[90,  [106, 163, 184]],[120, [143, 176, 198]]
+];
+
+// ---------------------------------------------------------------------------
+// Small pure helpers
+// ---------------------------------------------------------------------------
+function num(x) { return (x === null || x === undefined || isNaN(x)) ? null : Number(x); }
+function f1(x) { return (x === null || x === undefined || isNaN(x)) ? '–' : Number(x).toFixed(1); }
+function f0(x) { return (x === null || x === undefined || isNaN(x)) ? '–' : Math.round(Number(x)).toString(); }
+function f2(x) { return (x === null || x === undefined || isNaN(x)) ? '–' : Number(x).toFixed(2); }
+function sgn(x, d) {
+  if (x === null || x === undefined || isNaN(x)) return '–';
+  var s = Number(x).toFixed(d === undefined ? 1 : d);
+  return (Number(x) > 0 ? '+' : '') + s;
+}
+function isoZ(iso) { return iso ? (String(iso).replace(' ', ' ') + 'Z') : '–'; }
+function pad2(n) { return (n < 10 ? '0' : '') + n; }
+function dtg(iso) {
+  // "2017-09-05 12:00:00" -> "05/1200Z Sep 2017"
+  var m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(String(iso || ''));
+  if (!m) return isoZ(iso);
+  var mon = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+m[2] - 1];
+  return m[3] + '/' + m[4] + m[5] + 'Z ' + mon + ' ' + m[1];
+}
+function mean(a) { if (!a.length) return null; var s = 0, i; for (i = 0; i < a.length; i++) s += a[i]; return s / a.length; }
+function median(a) {
+  if (!a.length) return null;
+  var b = a.slice().sort(function (x, y) { return x - y; });
+  var h = b.length >> 1;
+  return b.length % 2 ? b[h] : (b[h - 1] + b[h]) / 2;
+}
+function esc(s) {
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function mod360(x) { return ((x % 360) + 360) % 360; }
+
+var BASINS = { NA: 'North Atlantic', EP: 'East Pacific', WP: 'West Pacific' };
+var NATURES = {
+  TS: 'tropical', ET: 'extratropical transition', SS: 'subtropical',
+  MX: 'mixture', DS: 'disturbance', NR: 'not reported'
+};
+var BANDS = [
+  { key: 0, lo: 0,   hi: 33,   label: 'TD  <34 kt' },
+  { key: 1, lo: 34,  hi: 63,   label: 'TS  34-63 kt' },
+  { key: 2, lo: 64,  hi: 82,   label: 'Cat 1  64-82 kt' },
+  { key: 3, lo: 83,  hi: 95,   label: 'Cat 2  83-95 kt' },
+  { key: 4, lo: 96,  hi: 112,  label: 'Cat 3  96-112 kt' },
+  { key: 5, lo: 113, hi: 136,  label: 'Cat 4  113-136 kt' },
+  { key: 6, lo: 137, hi: 9999, label: 'Cat 5  137+ kt' }
+];
+function bandOf(v) {
+  for (var i = BANDS.length - 1; i >= 0; i--) if (v >= BANDS[i].lo) return BANDS[i].key;
+  return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Replay: one best-track record -> the field the tool would build from it
+// ---------------------------------------------------------------------------
+
+/** A best-track record in the shape Vortex.html's snap wants.  Identical
+ *  field names to the Python Snapshot, so this is a rename, not a model. */
+function snapOf(rec) {
+  return {
+    lat: Number(rec.lat), lon: Number(rec.lon), vmax: Number(rec.vmax),
+    radii: rec.radii || {},
+    motionDir: num(rec.motionDir) === null ? 0 : Number(rec.motionDir),
+    motionSpd: num(rec.motionSpd) === null ? 0 : Number(rec.motionSpd)
+  };
+}
+
+/** Symmetric profile sampled on the integers 1..900 nm - the same probe grid
+ *  _buildVortexGTCM() uses.  Built once per record and shared by every ring
+ *  search, because gtcmProfile() does not depend on azimuth. */
+function profileOf(snap, fit) {
+  // Magnitude of the asymmetry vector actually applied, not the Schwerdt
+  // first guess fit.a - see Vortex.html's gtcmProfile() docstring. Using
+  // fit.a here would silently undershoot every ring this page reports
+  // whenever fitGTCM()'s step 3 moved (ax, ay) away from that first guess.
+  var amag = Math.sqrt(fit.ax * fit.ax + fit.ay * fit.ay);
+  var p = new Array(PROBE_MAX), i;
+  for (i = 0; i < PROBE_MAX; i++) {
+    p[i] = V.gtcmProfile(i + 1, snap.vmax, amag, fit.rm, fit.ri, fit.x1, fit.x2);
+  }
+  return p;
+}
+
+/** Outermost whole-nm probe radius on `azDeg` at which the symmetric profile
+ *  plus asymmetry still reaches `thr` knots, or null if it never does.
+ *
+ *  OUTERMOST, not first: eq. (3) steps at r_i, so the profile is not
+ *  monotonic and a first crossing would sometimes land inside the eye.  This
+ *  is the same rule vortexFieldGTCM's r34At() applies, expressed for an
+ *  arbitrary threshold.  The outer taper cannot affect 50 or 64 kt - it caps
+ *  the field at 34 kt and only applies beyond the modelled 34 kt radius. */
+function scanRingRadius(prof, fit, lat, azDeg, thr) {
+  var i, uv;
+  for (i = PROBE_MAX - 1; i >= 0; i--) {
+    uv = V.gtcmUV(prof[i], azDeg, fit.ax, fit.ay, lat);
+    if (Math.sqrt(uv[0] * uv[0] + uv[1] * uv[1]) >= thr) return i + 1;
+  }
+  return null;
+}
+
+/** The radius the TOOL uses for `thr` on this bearing.
+ *
+ *  For 34 kt this delegates to the field's own r34At(), so the 34 kt figures
+ *  on this page are exactly the tool's - including its float32 cast and its
+ *  fallback.  That fallback matters and is not hidden: when the modelled
+ *  field never reaches 34 kt anywhere on a bearing, r34At() returns 3*rm
+ *  rather than nothing, because the taper has to be anchored somewhere.  So
+ *  a 34 kt point is never reported "unreached"; instead analyseRecord() flags
+ *  it, and the tables say so. */
+function modelRingRadius(field, prof, snap, azDeg, thr) {
+  if (thr === 34) {
+    var r34 = field.r34At(azDeg);
+    return (r34 && r34 > 0) ? r34 : null;
+  }
+  return scanRingRadius(prof, field.fit, snap.lat, azDeg, thr);
+}
+
+/** Replay one record.  Returns the fit, the field, and one row per reported
+ *  quadrant radius comparing reported / 0.85-scaled target / modelled. */
+function analyseRecord(rec) {
+  var snap = snapOf(rec);
+  var field = V.vortexFieldGTCM(snap);
+  var fit = field.fit;
+  var prof = profileOf(snap, fit);
+  var rings = [], t, q, thr, quad, rep, az, mod;
+
+  for (t = 0; t < THRS.length; t++) {
+    thr = THRS[t];
+    quad = rec.radii ? rec.radii[thr] : null;
+    // snap.vmax < thr is exactly the test gtcmTargets() applies, so a ring
+    // the fit ignored is also excluded from the scoring.  Strictly less
+    // than: a 50 kt storm reporting R50 does reach 50 kt.
+    if (!quad || snap.vmax < thr) continue;
+    for (q = 0; q < QUADS.length; q++) {
+      rep = num(quad[QUADS[q]]);
+      if (rep === null || rep <= 0) continue;   // 000 NM is "no ring", not zero
+      az = QUAD_AZ[QUADS[q]];
+      mod = modelRingRadius(field, prof, snap, az, thr);
+      // A 34 kt radius that came from r34At()'s 3*rm fallback rather than a
+      // real crossing is still the number the tool uses, so it is still the
+      // number compared - but it is a different kind of number, and every
+      // table that shows it says so.
+      var fb = (thr === 34 && mod !== null &&
+                scanRingRadius(prof, fit, snap.lat, az, 34) === null);
+      rings.push({
+        thr: thr, quad: QUADS[q], az: az, fallback: fb,
+        reported: rep, target: rep * QUAD_AVG, model: mod,
+        errRep: mod === null ? null : mod - rep,
+        errTgt: mod === null ? null : mod - rep * QUAD_AVG
+      });
+    }
+  }
+
+  return {
+    rec: rec, snap: snap, field: field, fit: fit, prof: prof, rings: rings,
+    nature: (rec.nature || 'NR').toUpperCase(),
+    rmw: num(rec.rmw), roci: num(rec.roci), pres: num(rec.pres),
+    dist2landKm: num(rec.dist2land)
+  };
+}
+
+/** Pool ring errors over a list of analyses.  `filter` optionally keeps only
+ *  certain natures.  Returns the same shape at every level so the tables can
+ *  share one renderer. */
+function emptyAcc() {
+  return { n: 0, sumRep: 0, sumAbsRep: 0, sumSqRep: 0,
+           sumTgt: 0, sumAbsTgt: 0, unreached: 0, fallback: 0, n34: 0, absList: [] };
+}
+function pushAcc(a, ring) {
+  a.n++;
+  if (ring.thr === 34) a.n34++;
+  if (ring.fallback) a.fallback++;
+  if (ring.model === null) { a.unreached++; return; }
+  a.sumRep += ring.errRep; a.sumAbsRep += Math.abs(ring.errRep);
+  a.sumSqRep += ring.errRep * ring.errRep;
+  a.sumTgt += ring.errTgt; a.sumAbsTgt += Math.abs(ring.errTgt);
+  a.absList.push(Math.abs(ring.errRep));
+}
+function statsOf(a) {
+  var k = a.n - a.unreached;
+  return {
+    n: a.n, reached: k, unreached: a.unreached,
+    unreachedPct: a.n ? (100 * a.unreached / a.n) : null,
+    fallback: a.fallback, n34: a.n34,
+    fallbackPct: a.n34 ? (100 * a.fallback / a.n34) : null,
+    bias: k ? a.sumRep / k : null,
+    mae: k ? a.sumAbsRep / k : null,
+    rmse: k ? Math.sqrt(a.sumSqRep / k) : null,
+    biasTgt: k ? a.sumTgt / k : null,
+    maeTgt: k ? a.sumAbsTgt / k : null,
+    p90: k ? percentile(a.absList, 90) : null
+  };
+}
+function percentile(arr, p) {
+  if (!arr.length) return null;
+  var b = arr.slice().sort(function (x, y) { return x - y; });
+  var idx = (p / 100) * (b.length - 1);
+  var lo = Math.floor(idx), hi = Math.ceil(idx);
+  if (lo === hi) return b[lo];
+  return b[lo] + (b[hi] - b[lo]) * (idx - lo);
+}
+
+function summarise(analyses, natureFilter) {
+  var all = emptyAcc(), byThr = {}, byNat = {}, byBasin = {};
+  var rmPairs = [], rmsList = [], t;
+  for (t = 0; t < THRS.length; t++) byThr[THRS[t]] = emptyAcc();
+
+  for (var i = 0; i < analyses.length; i++) {
+    var an = analyses[i];
+    if (natureFilter && !natureFilter[an.nature]) continue;
+    var b = an.basin || '?';
+    if (!byBasin[b]) byBasin[b] = { all: emptyAcc(), byThr: {} };
+    if (!byNat[an.nature]) byNat[an.nature] = emptyAcc();
+    for (t = 0; t < THRS.length; t++) {
+      if (!byBasin[b].byThr[THRS[t]]) byBasin[b].byThr[THRS[t]] = emptyAcc();
+    }
+    for (var r = 0; r < an.rings.length; r++) {
+      var ring = an.rings[r];
+      pushAcc(all, ring);
+      pushAcc(byThr[ring.thr], ring);
+      pushAcc(byNat[an.nature], ring);
+      pushAcc(byBasin[b].all, ring);
+      pushAcc(byBasin[b].byThr[ring.thr], ring);
+    }
+    if (an.fit && an.fit.n > 0 && !isNaN(an.fit.rms)) rmsList.push(an.fit.rms);
+    if (an.rmw !== null && an.rmw > 0 && an.fit) {
+      rmPairs.push({ rmw: an.rmw, rm: an.fit.rm, vmax: an.snap.vmax,
+                     nature: an.nature, basin: b, iso: an.rec.iso, sid: an.sid });
+    }
+  }
+
+  var out = { all: statsOf(all), byThr: {}, byNat: {}, byBasin: {},
+              rmPairs: rmPairs, rmsList: rmsList };
+  for (t = 0; t < THRS.length; t++) out.byThr[THRS[t]] = statsOf(byThr[THRS[t]]);
+  for (var k in byNat) if (byNat.hasOwnProperty(k)) out.byNat[k] = statsOf(byNat[k]);
+  for (var bk in byBasin) if (byBasin.hasOwnProperty(bk)) {
+    out.byBasin[bk] = { all: statsOf(byBasin[bk].all), byThr: {} };
+    for (t = 0; t < THRS.length; t++) {
+      out.byBasin[bk].byThr[THRS[t]] = statsOf(byBasin[bk].byThr[THRS[t]]);
+    }
+  }
+  return out;
+}
+
+/** Pearson correlation, for the rm-vs-RMW panel.  Reported with an explicit
+ *  warning that correlation between two differently-defined quantities is a
+ *  description, not a validation. */
+function pearson(xs, ys) {
+  var n = xs.length;
+  if (n < 3) return null;
+  var mx = mean(xs), my = mean(ys), sxy = 0, sxx = 0, syy = 0, i, dx, dy;
+  for (i = 0; i < n; i++) {
+    dx = xs[i] - mx; dy = ys[i] - my;
+    sxy += dx * dy; sxx += dx * dx; syy += dy * dy;
+  }
+  if (sxx <= 0 || syy <= 0) return null;
+  return sxy / Math.sqrt(sxx * syy);
+}
+
+// Expose the DOM-free arithmetic so a Node harness can drive it on the real
+// JSON without a browser.  Nothing here shadows a Vortex.html export.
+global.ArchiveCore = {
+  snapOf: snapOf, profileOf: profileOf, modelRingRadius: modelRingRadius,
+  analyseRecord: analyseRecord, summarise: summarise, statsOf: statsOf,
+  percentile: percentile, pearson: pearson, bandOf: bandOf, median: median
+};
+
+// ===========================================================================
+// Everything below touches the DOM.
+// ===========================================================================
+if (typeof document === 'undefined') return;
+
+var S = {
+  index: null, filtered: [], sel: null, storm: null, analyses: null,
+  i: 0, cache: {}, cohort: null, cohortBusy: false, cohortAbort: false,
+  natureFilter: null, map: null, mapLayers: null, mapOk: false
+};
+var $ = function (id) { return document.getElementById(id); };
+
+// ---------------------------------------------------------------------------
+// Server access.  Only getArchiveIndex() and getArchiveStorm(sid) are used;
+// both exist in Code.gs.  Every call has a loading, empty and failure state.
+// ---------------------------------------------------------------------------
+function serverReady() {
+  return typeof google !== 'undefined' && google.script && google.script.run;
+}
+function callServer(fn, arg, onOk, onErr) {
+  if (!serverReady()) {
+    onErr(new Error('This page must be served by the Apps Script web app; ' +
+      'google.script.run is not available here. Open it through the /exec URL.'));
+    return;
+  }
+  var runner = google.script.run
+    .withSuccessHandler(onOk)
+    .withFailureHandler(function (e) { onErr(e || new Error('Unknown server error')); });
+  if (arg === undefined) runner[fn](); else runner[fn](arg);
+}
+
+function loadIndex() {
+  var box = $('idxState');
+  box.className = 'msg plain';
+  box.textContent = 'Loading the archive index…';
+  callServer('getArchiveIndex', undefined, function (idx) {
+    if (!idx || !idx.length) {
+      box.className = 'msg';
+      box.textContent = 'The archive index came back empty. BestTrackData.gs is generated by ' +
+        'tests/tcwind_jtwc/prep_besttrack_data.py. Regenerate it, clasp push, and cut a new ' +
+        'deployment.';
+      return;
+    }
+    S.index = idx;
+    box.classList.add('hide');
+    $('finderControls').classList.remove('hide');
+    buildFinder();
+    applyFilters();
+  }, function (err) {
+    box.className = 'msg';
+    box.textContent = 'Could not load the archive index: ' + (err && err.message ? err.message : err) +
+      '. The storm list and every view below depend on it. Reload the page; if it persists, ' +
+      'check that BestTrackData.gs is in the deployment.';
+  });
+}
+
+function loadStorm(sid, then) {
+  if (S.cache[sid]) { then(S.cache[sid]); return; }
+  callServer('getArchiveStorm', sid, function (recs) {
+    if (!recs || !recs.length) { then(null); return; }
+    S.cache[sid] = recs;
+    then(recs);
+  }, function (err) { then(undefined, err); });
+}
+
+// ---------------------------------------------------------------------------
+// Finder
+// ---------------------------------------------------------------------------
+function buildFinder() {
+  var seasons = {}, basins = {}, i;
+  for (i = 0; i < S.index.length; i++) {
+    seasons[S.index[i].season] = 1;
+    basins[S.index[i].basin] = (basins[S.index[i].basin] || 0) + 1;
+  }
+  var ss = Object.keys(seasons).map(Number).sort(function (a, b) { return a - b; });
+
+  var chips = '';
+  for (var b in basins) if (basins.hasOwnProperty(b)) {
+    chips += '<label class="chip"><input type="checkbox" class="fbasin" value="' + esc(b) +
+      '" checked> ' + esc(b) + ' - ' + esc(BASINS[b] || b) + ' (' + basins[b] + ')</label>';
+  }
+  $('basinChips').innerHTML = chips;
+
+  var o1 = '', o2 = '';
+  for (i = 0; i < ss.length; i++) {
+    o1 += '<option value="' + ss[i] + '">' + ss[i] + '</option>';
+    o2 += '<option value="' + ss[i] + '"' + (i === ss.length - 1 ? ' selected' : '') + '>' + ss[i] + '</option>';
+  }
+  $('seasonMin').innerHTML = o1;
+  $('seasonMax').innerHTML = o2;
+
+  var c1 = '', c2 = '';
+  for (i = 0; i < BANDS.length; i++) {
+    c1 += '<option value="' + BANDS[i].key + '">' + esc(BANDS[i].label) + '</option>';
+    c2 += '<option value="' + BANDS[i].key + '"' + (i === BANDS.length - 1 ? ' selected' : '') +
+      '>' + esc(BANDS[i].label) + '</option>';
+  }
+  $('catMin').innerHTML = c1;
+  $('catMax').innerHTML = c2;
+
+  var ids = ['q', 'seasonMin', 'seasonMax', 'catMin', 'catMax', 'fRadii', 'fR64', 'sortBy'];
+  for (i = 0; i < ids.length; i++) {
+    $(ids[i]).addEventListener('input', applyFilters);
+    $(ids[i]).addEventListener('change', applyFilters);
+  }
+  $('basinChips').addEventListener('change', applyFilters);
+}
+
+function applyFilters() {
+  if (!S.index) return;
+  var q = ($('q').value || '').trim().toUpperCase();
+  var smin = +$('seasonMin').value, smax = +$('seasonMax').value;
+  if (smin > smax) { var t = smin; smin = smax; smax = t; }
+  var cmin = +$('catMin').value, cmax = +$('catMax').value;
+  if (cmin > cmax) { var c = cmin; cmin = cmax; cmax = c; }
+  var wantRadii = $('fRadii').checked, want64 = $('fR64').checked;
+
+  var chosen = {}, boxes = document.querySelectorAll('.fbasin'), i;
+  for (i = 0; i < boxes.length; i++) if (boxes[i].checked) chosen[boxes[i].value] = 1;
+
+  var out = [];
+  for (i = 0; i < S.index.length; i++) {
+    var s = S.index[i];
+    if (!chosen[s.basin]) continue;
+    if (s.season < smin || s.season > smax) continue;
+    var band = bandOf(s.peakVmax);
+    if (band < cmin || band > cmax) continue;
+    if (wantRadii && !(s.radiiRecords > 0)) continue;
+    if (want64 && !(s.peakVmax >= 64)) continue;
+    if (q && (String(s.name).toUpperCase().indexOf(q) < 0 &&
+              String(s.sid).toUpperCase().indexOf(q) < 0)) continue;
+    out.push(s);
+  }
+
+  var sort = $('sortBy').value;
+  out.sort(function (a, b) {
+    if (sort === 'peak') return b.peakVmax - a.peakVmax || a.name.localeCompare(b.name);
+    if (sort === 'radii') return b.radiiRecords - a.radiiRecords || b.peakVmax - a.peakVmax;
+    if (sort === 'name') return a.name.localeCompare(b.name) || a.season - b.season;
+    return a.season - b.season || a.name.localeCompare(b.name);
+  });
+
+  S.filtered = out;
+  renderMatchLine();
+  renderList();
+}
+
+function renderMatchLine() {
+  var n = S.filtered.length, tot = S.index.length, i;
+  var recs = 0, withRadii = 0;
+  for (i = 0; i < S.filtered.length; i++) {
+    recs += S.filtered[i].n; withRadii += S.filtered[i].radiiRecords;
+  }
+  $('matchLine').innerHTML =
+    '<b>' + n + '</b> of ' + tot + ' storms match: ' + recs.toLocaleString() +
+    ' synoptic times, ' + withRadii.toLocaleString() + ' of them with reported wind radii.';
+}
+
+function renderList() {
+  var html = '', i;
+  if (!S.filtered.length) {
+    $('stormList').innerHTML =
+      '<li aria-disabled="true" style="cursor:default"><span class="li-name">No storms match</span>' +
+      '<span class="li-meta">Widen the season range or the intensity band, or clear the name filter.</span></li>';
+    return;
+  }
+  for (i = 0; i < S.filtered.length; i++) {
+    var s = S.filtered[i];
+    html += '<li role="option" data-sid="' + esc(s.sid) + '" id="opt-' + esc(s.sid) + '" aria-selected="' +
+      (s.sid === S.sel ? 'true' : 'false') + '">' +
+      '<span class="li-name">' + esc(s.name || '(unnamed)') + '</span>' +
+      '<span class="li-pk">' + f0(s.peakVmax) + ' kt</span>' +
+      '<span class="li-meta">' + esc(s.basin) + ' · ' + s.season + ' · ' +
+      s.n + ' times, ' + s.radiiRecords + ' with radii · ' + esc(s.sid) + '</span></li>';
+  }
+  $('stormList').innerHTML = html;
+}
+
+function listIndexOfSel() {
+  for (var i = 0; i < S.filtered.length; i++) if (S.filtered[i].sid === S.sel) return i;
+  return -1;
+}
+
+// ---------------------------------------------------------------------------
+// Selecting and replaying a storm
+// ---------------------------------------------------------------------------
+function selectStorm(sid) {
+  S.sel = sid;
+  renderList();
+  var el = $('opt-' + sid);
+  if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
+
+  var st = $('stormState');
+  st.classList.remove('hide');
+  st.className = 'msg plain';
+  st.textContent = 'Loading ' + sid + '…';
+  $('stormBody').classList.add('hide');
+
+  loadStorm(sid, function (recs, err) {
+    if (err) {
+      st.className = 'msg';
+      st.textContent = 'Could not load storm ' + sid + ': ' +
+        (err && err.message ? err.message : err) +
+        '. Pick another storm, or reload the page if this repeats.';
+      return;
+    }
+    if (!recs) {
+      st.className = 'msg';
+      st.textContent = 'The server has no records for ' + sid +
+        '. The index and the storm table may be out of step; regenerate BestTrackData.gs.';
+      return;
+    }
+    S.storm = recs;
+    S.analyses = [];
+    for (var i = 0; i < recs.length; i++) {
+      var an = analyseRecord(recs[i]);
+      an.sid = sid;
+      an.basin = metaOf(sid).basin;
+      S.analyses.push(an);
+    }
+    // Open at the strongest time that actually has reported radii - the most
+    // informative record, rather than the meaningless first one.
+    var best = 0, bestScore = -1;
+    for (i = 0; i < S.analyses.length; i++) {
+      var sc = (S.analyses[i].rings.length ? 1000 : 0) + recs[i].vmax;
+      if (sc > bestScore) { bestScore = sc; best = i; }
+    }
+    S.i = best;
+    st.classList.add('hide');
+    $('stormBody').classList.remove('hide');
+    renderStormHeader();
+    setupScrub();
+    buildMap();
+    renderRecord();
+    renderStormSummary();
+  });
+}
+
+function metaOf(sid) {
+  for (var i = 0; i < S.index.length; i++) if (S.index[i].sid === sid) return S.index[i];
+  return { sid: sid, basin: '?', name: sid, season: '?', agency: '?' };
+}
+
+/**
+ * Plain-language "How did the tool do on this storm?" verdict, built ONLY
+ * from numbers renderStormHeader() already computes (sum from summarise(),
+ * nRings/nUnreached, and the fitted rm / observed RMW lists) - no separate
+ * calculation, so this can never disagree with the numeric stat tiles right
+ * below it.
+ */
+function renderStormVerdict_(sum, nRings, nUnreached, rms, rmws) {
+  var el = $('stormVerdictText');
+  var parts = [];
+
+  var bias = sum.all.bias;
+  if (bias === null) {
+    parts.push('No reported radii were available at any synoptic time for ' +
+      'this storm, so there is nothing to compare the modelled field ' +
+      'against here.');
+  } else if (Math.abs(bias) < 0.5) {
+    parts.push('On average, the modelled 34/50/64 kt boundaries sit almost ' +
+      'exactly on the analysed ones.');
+  } else {
+    parts.push('On average, the modelled 34/50/64 kt boundaries sit ' +
+      f1(Math.abs(bias)) + ' nm ' + (bias < 0 ? 'inside' : 'outside') +
+      ' the analysed ones.');
+  }
+
+  var rmMed = median(rms), rmwMed = median(rmws);
+  if (rmMed !== null && rmwMed !== null) {
+    var d = rmMed - rmwMed;
+    var sizeWord = Math.abs(d) < 3 ? 'about the same size as'
+      : (d < 0 ? 'smaller than' : 'larger than');
+    parts.push('The tool’s fitted core (median r<sub>m</sub> ' + f1(rmMed) +
+      ' nm) runs ' + sizeWord + ' the best track’s observed radius of ' +
+      'maximum wind (median RMW ' + f1(rmwMed) + ' nm).');
+  } else {
+    parts.push('This storm has no usable rm/RMW pairs to compare core size.');
+  }
+
+  if (nRings > 0) {
+    parts.push(nUnreached + ' of ' + nRings + ' reported ring points (' +
+      Math.round(100 * nUnreached / nRings) + '%) were never reached by the ' +
+      'modelled field' +
+      (nUnreached ? ', typically far out where the wind has already ' +
+        'tapered below that threshold.' : '.'));
+  }
+
+  el.innerHTML = parts.join(' ');
+}
+
+function renderStormHeader() {
+  var m = metaOf(S.sel);
+  $('stormTitle').textContent = (m.name || '(unnamed)') + ' (' + m.season + ')';
+  $('stormBadges').innerHTML =
+    '<span class="badge">' + esc(m.basin) + ' ' + esc(BASINS[m.basin] || '') + '</span> ' +
+    '<span class="badge">' + esc(m.agency) + '</span> ' +
+    '<span class="badge">' + esc(m.sid) + '</span>';
+  $('stormSpan').textContent = isoZ(m.startIso) + '  →  ' + isoZ(m.endIso);
+
+  var nRings = 0, nUnreached = 0, i, r;
+  for (i = 0; i < S.analyses.length; i++) {
+    for (r = 0; r < S.analyses[i].rings.length; r++) {
+      nRings++;
+      if (S.analyses[i].rings[r].model === null) nUnreached++;
+    }
+  }
+  var sum = summarise(S.analyses, null);
+  var rmws = [], rms = [];
+  for (i = 0; i < S.analyses.length; i++) {
+    if (S.analyses[i].rmw !== null && S.analyses[i].rmw > 0) rmws.push(S.analyses[i].rmw);
+    if (S.analyses[i].fit && S.analyses[i].fit.n > 0) rms.push(S.analyses[i].fit.rm);
+  }
+
+  renderStormVerdict_(sum, nRings, nUnreached, rms, rmws);
+
+  $('stormStats').innerHTML =
+    stat('Synoptic times', S.storm.length, 'best track, 6-hourly') +
+    stat('Peak Vmax', f0(m.peakVmax) + ' kt', 'best track') +
+    stat('Ring points', nRings, nUnreached + ' never reached by the field') +
+    stat('Ring MAE', f1(sum.all.mae) + ' nm', 'vs reported; ' + f1(sum.all.maeTgt) + ' nm vs 0.85 target') +
+    stat('Ring bias', sgn(sum.all.bias) + ' nm', 'modelled minus reported') +
+    stat('Median rₘ', f1(median(rms)) + ' nm', 'observed RMW median ' + f1(median(rmws)) + ' nm');
+}
+function stat(lab, val, sub) {
+  return '<div class="stat"><div class="lab">' + esc(lab) + '</div><div class="val">' +
+    esc(val) + '</div><div class="sub">' + esc(sub) + '</div></div>';
+}
+
+function setupScrub() {
+  var sc = $('scrub');
+  sc.min = 0; sc.max = String(S.storm.length - 1); sc.value = String(S.i);
+}
+
+// ---------------------------------------------------------------------------
+// Record view
+// ---------------------------------------------------------------------------
+function renderRecord() {
+  var an = S.analyses[S.i], rec = an.rec;
+  $('scrub').value = String(S.i);
+  $('recStamp').textContent = dtg(rec.iso) + '  ·  ' + (S.i + 1) + ' of ' + S.storm.length +
+    '  ·  ' + f0(rec.vmax) + ' kt';
+
+  // --- honesty about what the fit had to work with -------------------------
+  var fw = $('fitWarn');
+  if (an.fit.n === 0) {
+    fw.className = 'msg';
+    fw.innerHTML = '<strong>No reported wind radii at this time.</strong> With nothing to fit, ' +
+      'GTCM falls back entirely to the climatological size relations (Users Guide eq. 5 and 6) ' +
+      'and the field below is climatology scaled to Vmax, not an analysis of this storm. There is ' +
+      'no ring comparison to make.';
+    fw.classList.remove('hide');
+  } else if (an.rings.length && an.fit.n < 4) {
+    fw.className = 'msg';
+    fw.innerHTML = '<strong>Thin constraint:</strong> the fit had only ' + an.fit.n +
+      ' target point' + (an.fit.n === 1 ? '' : 's') + ' (five free parameters). Treat the size ' +
+      'parameters as weakly determined.';
+    fw.classList.remove('hide');
+  } else {
+    fw.classList.add('hide');
+  }
+
+  renderObs(an);
+  renderFit(an);
+  renderQuadTable(an);
+  drawPlan(an);
+  drawTimeline();
+  updateMapForRecord(an);
+}
+
+function renderObs(an) {
+  var rec = an.rec, natWord = NATURES[an.nature] || 'unknown';
+  var d2l = an.dist2landKm;
+  var landTxt = d2l === null ? '–'
+    : (f0(d2l) + ' km / ' + f0(d2l * KM2NM) + ' nm' + (d2l <= 0 ? ' (centre over land)' : ''));
+  var html = '';
+  html += kv('Valid time', dtg(rec.iso) + '  (' + isoZ(rec.iso) + ')');
+  html += kv('Centre', f1(Math.abs(rec.lat)) + '° ' + (rec.lat >= 0 ? 'N' : 'S') +
+             ', ' + f1(Math.abs(rec.lon)) + '° ' + (rec.lon >= 0 ? 'E' : 'W'));
+  html += kv('Vmax', f0(rec.vmax) + ' kt' + (an.pres !== null ? '   /   ' + f0(an.pres) + ' hPa' : ''));
+  html += kv('Motion', f0(rec.motionDir) + '° at ' + f1(rec.motionSpd) + ' kt');
+  html += kv('Nature', '<span class="badge">' + esc(an.nature) + '</span> ' + esc(natWord));
+  html += kv('RMW (observed)', an.rmw === null ? '– not analysed' : f0(an.rmw) + ' nm');
+  html += kv('ROCI (observed)', an.roci === null ? '– not analysed' : f0(an.roci) + ' nm');
+  html += kv('Distance to land', landTxt);
+  $('obsKv').innerHTML = html;
+}
+function kv(k, v) { return '<dt>' + esc(k) + '</dt><dd>' + v + '</dd>'; }
+
+function renderFit(an) {
+  var f = an.fit;
+  var html = '';
+  html += kv(f.rmSource === 'climatology' ? 'rₘ (climatology)' : 'rₘ (fitted)', f1(f.rm) + ' nm' +
+    (an.rmw !== null && an.rmw > 0
+      ? '  <span class="note">(RMW ' + f0(an.rmw) + ' nm; ' + sgn(f.rm - an.rmw) + ' nm)</span>'
+      : ''));
+  html += kv('rᵢ (transition)', f1(f.ri) + ' nm');
+  html += kv('x₁ / x₂', f2(f.x1) + ' / ' + f2(f.x2));
+  html += kv('Asymmetry a', f2(f.a) + ' kt  <span class="note">(aₓ ' + f2(f.ax) +
+             ', aᵧ ' + f2(f.ay) + ')</span>');
+  html += kv('Fit targets', f.n + (f.n === 0 ? '  (climatology only)' : ' quadrant points'));
+  html += kv('Fit RMS', isNaN(f.rms) ? '–' : f1(f.rms) + ' kt  <span class="note">weighted, on wind</span>');
+  html += kv('Climatology', 'rₘ ' + f1(V.gtcmClimoRmax(an.snap.vmax, an.snap.lat)) +
+             ' nm, x ' + f2(V.gtcmClimoX(an.snap.vmax, an.snap.lat)));
+  $('fitKv').innerHTML = html;
+}
+
+function renderQuadTable(an) {
+  var t = $('quadTable');
+  if (!an.rings.length) {
+    t.innerHTML = '<caption>No reported wind radii at this synoptic time, so there is nothing ' +
+      'to compare. The field alongside is climatological.</caption>';
+    return;
+  }
+  var head = '<thead><tr><th>Threshold</th><th>Quadrant</th><th>Bearing</th>' +
+    '<th>Reported</th><th>Fit target (×0.85)</th><th>Modelled</th>' +
+    '<th>&Delta; vs reported</th><th>&Delta; vs target</th></tr></thead><tbody>';
+  var rows = '';
+  for (var i = 0; i < an.rings.length; i++) {
+    var r = an.rings[i];
+    rows += '<tr><td>' + r.thr + ' kt</td><td>' + r.quad + '</td><td>' + f0(r.az) + '°</td>' +
+      '<td>' + f0(r.reported) + '</td><td>' + f0(r.target) + '</td>' +
+      '<td>' + (r.model === null ? 'never reached'
+                 : (f0(r.model) + (r.fallback ? ' <span class="badge">3&times;r&#8344; fallback</span>' : ''))) + '</td>' +
+      '<td>' + (r.model === null ? '–' : sgn(r.errRep, 0)) + '</td>' +
+      '<td>' + (r.model === null ? '–' : sgn(r.errTgt, 0)) + '</td></tr>';
+  }
+  // pooled row for this time
+  var acc = emptyAcc();
+  for (i = 0; i < an.rings.length; i++) pushAcc(acc, an.rings[i]);
+  var st = statsOf(acc);
+  var foot = '</tbody><tfoot><tr><td colspan="6">This time, ' + st.n + ' ring points' +
+    (st.unreached ? ' (' + st.unreached + ' never reached)' : '') + ': mean absolute error</td>' +
+    '<td>' + f1(st.mae) + '</td><td>' + f1(st.maeTgt) + '</td></tr>' +
+    '<tr><td colspan="6">bias (modelled &minus; column)</td><td>' + sgn(st.bias) +
+    '</td><td>' + sgn(st.biasTgt) + '</td></tr></tfoot>';
+  var cap = t.querySelector('caption');
+  t.innerHTML = (cap ? cap.outerHTML : '') + head + rows + foot;
+}
+
+// ---------------------------------------------------------------------------
+// Plan view
+// ---------------------------------------------------------------------------
+// Discrete bands with hard edges at 34/50/64, each tinted toward that
+// threshold's ring colour, so the modelled ring lands on a visible boundary.
+var FIELD_BANDS = [
+  [34,  [14,  21,  25]],    // below gale - near-neutral, stays quiet
+  [50,  [20,  56,  71]],    // 34-50, toward the 34 kt cyan
+  [64,  [72,  62,  30]],    // 50-64, toward the 50 kt amber
+  [999, [79,  36,  52]]     // 64+,   toward the 64 kt pink
+];
+function rampColor(v) {
+  for (var b = 0; b < FIELD_BANDS.length; b++) {
+    if (v < FIELD_BANDS[b][0]) return FIELD_BANDS[b][1];
+  }
+  return FIELD_BANDS[FIELD_BANDS.length - 1][1];
+}
+
+function rampColorSmooth(v) {
+  var i;
+  if (v <= RAMP[0][0]) return RAMP[0][1];
+  for (i = 1; i < RAMP.length; i++) {
+    if (v <= RAMP[i][0]) {
+      var a = RAMP[i - 1], b = RAMP[i];
+      var f = (v - a[0]) / (b[0] - a[0]);
+      return [Math.round(a[1][0] + f * (b[1][0] - a[1][0])),
+              Math.round(a[1][1] + f * (b[1][1] - a[1][1])),
+              Math.round(a[1][2] + f * (b[1][2] - a[1][2]))];
+    }
+  }
+  return RAMP[RAMP.length - 1][1];
+}
+
+function autoHalfWidth(an) {
+  var m = Math.max(60, an.fit.rm * 4);
+  var i, r;
+  for (i = 0; i < an.rings.length; i++) {
+    r = an.rings[i];
+    m = Math.max(m, r.reported * 1.35);
+    if (r.model !== null) m = Math.max(m, r.model * 1.2);
+  }
+  if (an.roci) m = Math.max(m, an.roci * 1.15);
+  // round up to a readable ring spacing
+  var steps = [60, 90, 120, 150, 200, 250, 300, 400, 500, 650, 800];
+  for (i = 0; i < steps.length; i++) if (m <= steps[i]) return steps[i];
+  return 900;
+}
+
+/** Draw a stroked path twice: a wide near-black halo, then the colour.  This
+ *  is what keeps every overlay legible over both ends of the field ramp
+ *  without relying on the ramp value. */
+function strokeHalo(ctx, drawFn, color, width, dash) {
+  ctx.save();
+  ctx.setLineDash(dash || []);
+  ctx.lineCap = 'butt';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = C_HALO; ctx.lineWidth = width + 3;
+  drawFn();
+  ctx.strokeStyle = color; ctx.lineWidth = width;
+  drawFn();
+  ctx.restore();
+}
+function labelHalo(ctx, text, x, y, color, align, font) {
+  ctx.save();
+  ctx.font = font || 'bold 12px system-ui, sans-serif';
+  ctx.textAlign = align || 'left';
+  ctx.textBaseline = 'middle';
+  ctx.lineWidth = 3.5; ctx.lineJoin = 'round';
+  ctx.strokeStyle = C_HALO; ctx.strokeText(text, x, y);
+  ctx.fillStyle = color; ctx.fillText(text, x, y);
+  ctx.restore();
+}
+
+function drawPlan(an) {
+  var cv = $('plan'), ctx = cv.getContext('2d');
+  var W = cv.width, H = cv.height, cx = W / 2, cy = H / 2;
+  var half = +$('rangeSel').value || autoHalfWidth(an);
+  var scale = (W / 2) / half;                       // px per nm
+  var field = an.field;
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#0b1016';
+  ctx.fillRect(0, 0, W, H);
+
+  // ---- field raster -------------------------------------------------------
+  if ($('lyField').checked) {
+    var Sn = 180;                                    // samples across
+    var off = document.createElement('canvas');
+    off.width = Sn; off.height = Sn;
+    var octx = off.getContext('2d');
+    var img = octx.createImageData(Sn, Sn);
+    var d = img.data, px, py, dx, dy, r, az, p, mag, col, k = 0;
+    var step = (2 * half) / Sn;
+    for (py = 0; py < Sn; py++) {
+      dy = half - (py + 0.5) * step;
+      for (px = 0; px < Sn; px++) {
+        dx = -half + (px + 0.5) * step;
+        r = Math.sqrt(dx * dx + dy * dy);
+        az = mod360(Math.atan2(dx, dy) * 180 / Math.PI);
+        // destPoint/at() is exactly how the live tool samples a map pixel:
+        // convert the offset to a real position, then ask the field.
+        p = V.destPoint(an.snap.lat, an.snap.lon, az, r);
+        mag = field.at(p[0], p[1]).mag;
+        col = rampColor(mag);
+        d[k++] = col[0]; d[k++] = col[1]; d[k++] = col[2]; d[k++] = 255;
+      }
+    }
+    octx.putImageData(img, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(off, 0, 0, W, H);
+  }
+
+  // ---- range rings and cardinal ticks ------------------------------------
+  var ringStep = half <= 120 ? 30 : (half <= 300 ? 60 : 120);
+  ctx.save();
+  ctx.strokeStyle = C_GRID; ctx.lineWidth = 1; ctx.setLineDash([3, 5]);
+  for (var rr = ringStep; rr <= half + 1; rr += ringStep) {
+    ctx.beginPath(); ctx.arc(cx, cy, rr * scale, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(cx, 0); ctx.lineTo(cx, H); ctx.moveTo(0, cy); ctx.lineTo(W, cy);
+  ctx.stroke();
+  ctx.restore();
+  for (rr = ringStep; rr <= half + 1; rr += ringStep) {
+    labelHalo(ctx, rr + ' nm', cx + 4, cy - rr * scale, C_GRIDT, 'left', '11px system-ui, sans-serif');
+  }
+  labelHalo(ctx, 'N', cx, 12, C_GRIDT, 'center');
+  labelHalo(ctx, 'E', W - 12, cy, C_GRIDT, 'center');
+  labelHalo(ctx, 'S', cx, H - 12, C_GRIDT, 'center');
+  labelHalo(ctx, 'W', 12, cy, C_GRIDT, 'center');
+
+  function xy(azDeg, distNm) {
+    var a = azDeg * Math.PI / 180;
+    return [cx + Math.sin(a) * distNm * scale, cy - Math.cos(a) * distNm * scale];
+  }
+
+  // ---- modelled rings -----------------------------------------------------
+  // dash pattern carries the threshold, not colour: 34 solid, 50 long dash,
+  // 64 short dash, each with a direct inline label.
+  var MODEL_DASH = { 34: [], 50: [], 64: [] };   // solid = modelled
+  if ($('lyModel').checked) {
+    for (var ti = 0; ti < THRS.length; ti++) {
+      var thr = THRS[ti];
+      if (an.snap.vmax < thr) continue;
+      var pts = [], a2, rad, ok = false;
+      for (a2 = 0; a2 < 360; a2 += 2) {
+        rad = modelRingRadius(an.field, an.prof, an.snap, a2, thr);
+        if (rad === null) { pts.push(null); continue; }
+        ok = true;
+        pts.push(xy(a2, rad));
+      }
+      if (!ok) continue;
+      strokeHalo(ctx, function () {
+        ctx.beginPath();
+        var started = false;
+        for (var q = 0; q < pts.length; q++) {
+          if (!pts[q]) { started = false; continue; }
+          if (!started) { ctx.moveTo(pts[q][0], pts[q][1]); started = true; }
+          else ctx.lineTo(pts[q][0], pts[q][1]);
+        }
+        ctx.closePath();
+        ctx.stroke();
+      }, THR_COLOR[thr] || C_MODEL, 2.4, MODEL_DASH[thr]);
+      // label on the NNE bearing where it is least likely to collide
+      var lr = modelRingRadius(an.field, an.prof, an.snap, 20, thr);
+      if (lr !== null && lr * scale < W / 2 - 30) {
+        var lp = xy(20, lr);
+        labelHalo(ctx, thr + ' model', lp[0] + 5, lp[1] - 8, THR_COLOR[thr] || C_MODEL, 'left');
+      }
+    }
+  }
+
+  // ---- best-track reported radii -----------------------------------------
+  // literal quadrant arcs, each spanning its compass quadrant, plus the
+  // radial spokes so an arc that is much larger or smaller than its
+  // neighbour is unmistakable.
+  var BT_DASH = { 34: [8, 5], 50: [8, 5], 64: [8, 5] };  // dashed = reported
+  if ($('lyBT').checked && an.rings.length) {
+    for (var t2 = 0; t2 < THRS.length; t2++) {
+      var th = THRS[t2];
+      var byQ = {};
+      for (var ri = 0; ri < an.rings.length; ri++) {
+        if (an.rings[ri].thr === th) byQ[an.rings[ri].quad] = an.rings[ri].reported;
+      }
+      var any = false;
+      for (var qq in byQ) if (byQ.hasOwnProperty(qq)) any = true;
+      if (!any) continue;
+      for (var qi = 0; qi < QUADS.length; qi++) {
+        var Q = QUADS[qi], rQ = byQ[Q];
+        if (!rQ) continue;
+        var a0 = QUAD_AZ[Q] - 45, a1 = QUAD_AZ[Q] + 45;
+        (function (a0, a1, rQ) {
+          strokeHalo(ctx, function () {
+            ctx.beginPath();
+            var first = true;
+            for (var aa = a0; aa <= a1 + 0.01; aa += 2) {
+              var pp = xy(aa, rQ);
+              if (first) { ctx.moveTo(pp[0], pp[1]); first = false; } else ctx.lineTo(pp[0], pp[1]);
+            }
+            ctx.stroke();
+          }, THR_COLOR[th] || C_BT, 2.6, BT_DASH[th]);
+          strokeHalo(ctx, function () {
+            ctx.beginPath();
+            var s0 = xy(a0, rQ * 0.9), e0 = xy(a0, rQ);
+            ctx.moveTo(s0[0], s0[1]); ctx.lineTo(e0[0], e0[1]);
+            var s1 = xy(a1, rQ * 0.9), e1 = xy(a1, rQ);
+            ctx.moveTo(s1[0], s1[1]); ctx.lineTo(e1[0], e1[1]);
+            ctx.stroke();
+          }, THR_COLOR[th] || C_BT, 1.6, []);
+        })(a0, a1, rQ);
+        // value label at the bisector
+        var bp = xy(QUAD_AZ[Q], rQ);
+        labelHalo(ctx, th + ':' + f0(rQ), bp[0], bp[1] + (QUAD_AZ[Q] < 180 ? -10 : 12),
+                  THR_COLOR[th] || C_BT,
+                  'center', 'bold 11px system-ui, sans-serif');
+      }
+    }
+  }
+
+  // ---- observed size circles + fitted rm ---------------------------------
+  if ($('lySize').checked) {
+    var circle = function (radNm, color, width, dash, label) {
+      if (!radNm || radNm <= 0) return;
+      if (radNm * scale > W * 0.72) return;   // off panel: skip, do not clip silently
+      strokeHalo(ctx, function () {
+        ctx.beginPath(); ctx.arc(cx, cy, radNm * scale, 0, Math.PI * 2); ctx.stroke();
+      }, color, width, dash);
+      labelHalo(ctx, label, cx + 6, cy + radNm * scale + 9, color, 'left',
+                'bold 11px system-ui, sans-serif');
+    };
+    circle(an.fit.rm, C_MODEL, 1.8, [2, 3], 'rₘ fit ' + f0(an.fit.rm) + ' nm');
+    if (an.rmw) circle(an.rmw, C_OBS, 1.8, [6, 4], 'RMW obs ' + f0(an.rmw) + ' nm');
+    if (an.roci) circle(an.roci, C_OBS, 1.4, [14, 4, 2, 4], 'ROCI obs ' + f0(an.roci) + ' nm');
+  }
+
+  // ---- centre + motion ----------------------------------------------------
+  strokeHalo(ctx, function () {
+    ctx.beginPath(); ctx.moveTo(cx - 7, cy); ctx.lineTo(cx + 7, cy);
+    ctx.moveTo(cx, cy - 7); ctx.lineTo(cx, cy + 7); ctx.stroke();
+  }, C_OBS, 2, []);
+  if (an.snap.motionSpd > 0) {
+    var mlen = Math.min(W * 0.16, 70);
+    var me = xy(an.snap.motionDir, (mlen / scale));
+    strokeHalo(ctx, function () {
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(me[0], me[1]); ctx.stroke();
+    }, C_OBS, 2.4, []);
+    labelHalo(ctx, f0(an.snap.motionDir) + '° / ' + f1(an.snap.motionSpd) + ' kt',
+              me[0] + 5, me[1], C_OBS, 'left', 'bold 11px system-ui, sans-serif');
+  }
+
+  drawColorBar();
+  renderPlanLegend(an, half);
+  cv.setAttribute('aria-label',
+    'Storm-relative GTCM wind field for ' + dtg(an.rec.iso) + ', half-width ' + half +
+    ' nautical miles. Values are given numerically in the tables below this figure.');
+}
+
+function drawColorBar() {
+  var cv = $('cbar'), ctx = cv.getContext('2d');
+  var W = cv.width, H = cv.height, barH = 20, x;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#0b1016'; ctx.fillRect(0, 0, W, H);
+  var maxV = 130;
+  for (x = 0; x < W; x++) {
+    var v = (x / (W - 1)) * maxV;
+    var c = rampColor(v);
+    ctx.fillStyle = 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
+    ctx.fillRect(x, 4, 1, barH);
+  }
+  ctx.strokeStyle = C_GRID; ctx.lineWidth = 1; ctx.strokeRect(0.5, 4.5, W - 1, barH);
+  var ticks = [0, 20, 34, 50, 64, 80, 100, 120];
+  for (var i = 0; i < ticks.length; i++) {
+    var tx = (ticks[i] / maxV) * (W - 1);
+    ctx.strokeStyle = C_GRIDT; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(tx, 4); ctx.lineTo(tx, 4 + barH + 4); ctx.stroke();
+    labelHalo(ctx, String(ticks[i]), Math.min(Math.max(tx, 8), W - 8), 4 + barH + 14,
+              C_GRIDT, 'center', 'bold 11px system-ui, sans-serif');
+  }
+  labelHalo(ctx, 'modelled wind speed, kt', W - 4, 12, C_GRIDT, 'right', 'bold 11px system-ui, sans-serif');
+}
+
+/** Legend swatch.  `bg` is only supplied for the plan-view legend, whose
+ *  colours are calibrated against the fixed dark instrument ground; the
+ *  chart legends leave it transparent so they sit on the theme surface. */
+function swatch(color, dash, label, extra, bg) {
+  var d = dash && dash.length ? ' stroke-dasharray="' + dash.join(',') + '"' : '';
+  var rect = bg ? '<rect x="0" y="0" width="46" height="14" fill="' + bg + '"></rect>' : '';
+  return '<div class="li"><svg width="46" height="14" viewBox="0 0 46 14" aria-hidden="true">' +
+    rect +
+    '<line x1="2" y1="7" x2="44" y2="7" stroke="' + color + '" stroke-width="2.4"' + d + '></line>' +
+    '</svg><div>' + label + (extra ? ' <span class="note">' + extra + '</span>' : '') + '</div></div>';
+}
+
+function swatchSvg(color, dash, bg) {
+  return '<svg width="30" height="12" viewBox="0 0 30 12" aria-hidden="true">' +
+         '<rect width="30" height="12" fill="' + bg + '"/>' +
+         '<line x1="1" y1="6" x2="29" y2="6" stroke="' + color + '" stroke-width="2.4"' +
+         (dash && dash.length ? ' stroke-dasharray="' + dash.join(',') + '"' : '') +
+         '/></svg>';
+}
+
+function renderPlanLegend(an, half) {
+  var h = '', BG = '#0b1016';
+  h += '<div class="note" style="margin-bottom:.3rem"><strong>Half-width ' + half +
+       ' nm</strong>; range rings every ' + (half <= 120 ? 30 : (half <= 300 ? 60 : 120)) +
+       ' nm. <strong>Colour is the wind speed; line style is where it came from</strong> ' +
+       ': solid is the GTCM model, dashed is the best-track report. ' +
+       'The gap between a solid and a dashed curve of the same colour is the error.</div>';
+  var THRS_L = [34, 50, 64];
+  for (var i = 0; i < THRS_L.length; i++) {
+    var t = THRS_L[i], c = THR_COLOR[t];
+    h += '<div class="li"><span>' + swatchSvg(c, [], BG) + swatchSvg(c, [8, 5], BG) +
+         '</span><span><strong>' + t + ' kt</strong>: modelled (solid) vs reported (dashed)</span></div>';
+  }
+  h += swatch(C_MODEL, [2, 3], 'r\u2098 \u2014 fitted radius of maximum wind', '', BG);
+  h += swatch(C_OBS, [6, 4], 'RMW / ROCI \u2014 observed, from best track', '', BG);
+  return h;
+}
+
+
+// ---------------------------------------------------------------------------
+// Timeline strip
+// ---------------------------------------------------------------------------
+function themeColors() {
+  var cs = getComputedStyle(document.documentElement);
+  return {
+    grid: (cs.getPropertyValue('--chart-grid') || '#c2ccd6').trim(),
+    axis: (cs.getPropertyValue('--chart-axis') || '#4a5765').trim(),
+    text: (cs.getPropertyValue('--text') || '#101720').trim(),
+    model: (cs.getPropertyValue('--ink-model') || '#0a5b8c').trim(),
+    bt: (cs.getPropertyValue('--ink-bt') || '#c07d00').trim(),
+    obs: (cs.getPropertyValue('--ink-obs') || '#2f3a45').trim(),
+    surface: (cs.getPropertyValue('--surface') || '#ffffff').trim()
+  };
+}
+
+function drawTimeline() {
+  var cv = $('tl'), ctx = cv.getContext('2d');
+  var W = cv.width, H = cv.height, L = 52, R = 52, T = 16, B = 34;
+  var C = themeColors();
+  var n = S.analyses.length, i;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = C.surface; ctx.fillRect(0, 0, W, H);
+  if (n < 2) return;
+
+  var vmaxs = [], sizes = [];
+  for (i = 0; i < n; i++) {
+    vmaxs.push(S.analyses[i].snap.vmax);
+    sizes.push(S.analyses[i].fit.rm);
+    if (S.analyses[i].rmw) sizes.push(S.analyses[i].rmw);
+  }
+  var vMax = Math.max(40, Math.ceil(Math.max.apply(null, vmaxs) / 20) * 20 + 10);
+  var sMax = Math.max(30, Math.ceil(Math.max.apply(null, sizes) / 20) * 20 + 10);
+
+  function X(i) { return L + (i / (n - 1)) * (W - L - R); }
+  function Yv(v) { return T + (1 - v / vMax) * (H - T - B); }
+  function Ys(s) { return T + (1 - s / sMax) * (H - T - B); }
+
+  // grid + axes
+  ctx.strokeStyle = C.grid; ctx.lineWidth = 1;
+  ctx.fillStyle = C.axis; ctx.font = '11px system-ui, sans-serif';
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (var g = 0; g <= vMax; g += (vMax > 100 ? 40 : 20)) {
+    var y = Yv(g);
+    ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(W - R, y); ctx.stroke();
+    ctx.fillText(g + ' kt', L - 6, y);
+  }
+  ctx.textAlign = 'left';
+  for (g = 0; g <= sMax; g += (sMax > 150 ? 60 : 30)) {
+    ctx.fillText(g + ' nm', W - R + 6, Ys(g));
+  }
+
+  // 64/50/34 kt reference lines, labelled
+  var refs = [34, 50, 64];
+  ctx.setLineDash([2, 4]);
+  for (i = 0; i < refs.length; i++) {
+    if (refs[i] > vMax) continue;
+    ctx.strokeStyle = C.grid;
+    ctx.beginPath(); ctx.moveTo(L, Yv(refs[i])); ctx.lineTo(W - R, Yv(refs[i])); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+
+  function series(get, color, width, dash, marker) {
+    ctx.save();
+    ctx.setLineDash(dash || []);
+    ctx.strokeStyle = color; ctx.lineWidth = width; ctx.beginPath();
+    var started = false;
+    for (var j = 0; j < n; j++) {
+      var v = get(S.analyses[j]);
+      if (v === null || v === undefined || isNaN(v)) { started = false; continue; }
+      var pt = marker === 'size' ? Ys(v) : Yv(v);
+      if (!started) { ctx.moveTo(X(j), pt); started = true; } else ctx.lineTo(X(j), pt);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+  series(function (a) { return a.snap.vmax; }, C.text, 2.2, [], 'v');
+  series(function (a) { return a.fit.rm; }, C.model, 2.0, [7, 4], 'size');
+  series(function (a) { return a.rmw; }, C.obs, 2.0, [2, 3], 'size');
+
+  // markers for records that carry reported radii (a second channel: shape)
+  ctx.fillStyle = C.bt;
+  for (i = 0; i < n; i++) {
+    if (!S.analyses[i].rings.length) continue;
+    ctx.beginPath(); ctx.arc(X(i), H - B + 10, 2.6, 0, Math.PI * 2); ctx.fill();
+  }
+  // nature ticks
+  ctx.font = 'bold 9px system-ui, sans-serif';
+  ctx.textAlign = 'center'; ctx.fillStyle = C.axis;
+  var lastNat = null;
+  for (i = 0; i < n; i++) {
+    var nat = S.analyses[i].nature;
+    if (nat !== lastNat) {
+      ctx.fillText(nat, X(i), H - 8);
+      lastNat = nat;
+    }
+  }
+
+  // selected time
+  ctx.strokeStyle = C.text; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(X(S.i), T); ctx.lineTo(X(S.i), H - B); ctx.stroke();
+  ctx.fillStyle = C.text; ctx.font = 'bold 11px system-ui, sans-serif';
+  ctx.textAlign = X(S.i) > W / 2 ? 'right' : 'left';
+  ctx.fillText(dtg(S.analyses[S.i].rec.iso), X(S.i) + (X(S.i) > W / 2 ? -5 : 5), T + 6);
+
+  $('tlLegend').innerHTML =
+    swatch(C.text, [], 'Vmax, kt (left axis)') +
+    swatch(C.model, [7, 4], 'rₘ fitted, nm (right axis)') +
+    swatch(C.obs, [2, 3], 'RMW observed, nm (right axis)') +
+    '<div class="note">Dots along the bottom mark times that carry reported wind radii; the ' +
+    'letters are the IBTrACS nature flag where it changes. The vertical rule is the selected time.</div>';
+}
+
+function renderStormSummary() {
+  var sum = summarise(S.analyses, null);
+  var rows = '', t;
+  rows += '<caption>Pooled over this storm only. Positive bias means the modelled radius is ' +
+    'larger than the analysis.</caption>' +
+    '<thead><tr><th>Threshold</th><th>Ring pts</th><th>Never reached</th>' +
+    '<th>Bias vs reported</th><th>MAE vs reported</th><th>RMSE</th><th>P90 |err|</th>' +
+    '<th>Bias vs target</th><th>MAE vs target</th></tr></thead><tbody>';
+  for (t = 0; t < THRS.length; t++) {
+    var st = sum.byThr[THRS[t]];
+    if (!st.n) continue;
+    rows += '<tr><td>' + THRS[t] + ' kt</td><td>' + st.n + '</td><td>' + st.unreached + '</td>' +
+      '<td>' + sgn(st.bias) + '</td><td>' + f1(st.mae) + '</td><td>' + f1(st.rmse) + '</td>' +
+      '<td>' + f1(st.p90) + '</td><td>' + sgn(st.biasTgt) + '</td><td>' + f1(st.maeTgt) + '</td></tr>';
+  }
+  var a = sum.all;
+  rows += '</tbody><tfoot><tr><td>all</td><td>' + a.n + '</td><td>' + a.unreached + '</td>' +
+    '<td>' + sgn(a.bias) + '</td><td>' + f1(a.mae) + '</td><td>' + f1(a.rmse) + '</td>' +
+    '<td>' + f1(a.p90) + '</td><td>' + sgn(a.biasTgt) + '</td><td>' + f1(a.maeTgt) + '</td></tr></tfoot>';
+  if (a.n34) {
+    rows = rows.replace('</caption>',
+      ' Of the ' + a.n34 + ' 34 kt ring points, <strong>' + a.fallback + '</strong> (' +
+      f1(a.fallbackPct) + '%) took the tool\'s 3×rₘ fallback because the modelled field never ' +
+      'reached 34 kt on that bearing; those rows compare a taper anchor against a reported ' +
+      'radius, which is a weaker statement than the rest of the column.</caption>');
+  }
+  $('stormSummary').innerHTML = rows;
+}
+
+// ---------------------------------------------------------------------------
+// Map
+// ---------------------------------------------------------------------------
+function buildMap() {
+  if (typeof L === 'undefined') {
+    if (!S.mapWarned) {
+      S.mapWarned = true;
+      $('map').classList.add('hide');
+      var fb = $('mapFallback');
+      fb.classList.remove('hide');
+      fb.textContent = 'The Leaflet map library did not load from the CDN, so the geographic ' +
+        'track is unavailable. Everything else on this page (the storm-relative plan view, ' +
+        'the radii tables and the cohort statistics) is computed locally and is unaffected. ' +
+        'Positions are listed in the record panel.';
+    }
+    return;
+  }
+  if (!S.map) {
+    S.map = L.map('map', { worldCopyJump: true, scrollWheelZoom: false });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 10, attribution: '&copy; OpenStreetMap'
+    }).addTo(S.map);
+    S.mapLayers = L.layerGroup().addTo(S.map);
+    S.mapDyn = L.layerGroup().addTo(S.map);
+  }
+  S.mapLayers.clearLayers();
+  S.mapOk = true;
+
+  var C = themeColors();
+  var pts = [], i;
+  for (i = 0; i < S.storm.length; i++) pts.push([S.storm[i].lat, S.storm[i].lon]);
+  L.polyline(pts, { color: C.axis, weight: 3, opacity: 0.95 }).addTo(S.mapLayers);
+  L.polyline(pts, { color: C.surface, weight: 1, opacity: 0.9, dashArray: '4,6' }).addTo(S.mapLayers);
+
+  for (i = 0; i < S.storm.length; i++) {
+    var v = S.storm[i].vmax;
+    // shape, not colour, carries intensity band
+    var mk;
+    if (v >= 96) {
+      mk = L.marker([S.storm[i].lat, S.storm[i].lon], {
+        icon: L.divIcon({ className: '', iconSize: [11, 11], html:
+          '<div style="width:9px;height:9px;background:' + C.text + ';transform:rotate(45deg);' +
+          'border:1px solid ' + C.surface + '"></div>' })
+      });
+    } else if (v >= 64) {
+      mk = L.marker([S.storm[i].lat, S.storm[i].lon], {
+        icon: L.divIcon({ className: '', iconSize: [10, 10], html:
+          '<div style="width:8px;height:8px;background:' + C.text + ';border:1px solid ' + C.surface + '"></div>' })
+      });
+    } else {
+      mk = L.circleMarker([S.storm[i].lat, S.storm[i].lon], {
+        radius: 3.4, color: C.surface, weight: 1, fillColor: C.text, fillOpacity: 1
+      });
+    }
+    (function (idx) {
+      mk.on('click', function () { S.i = idx; renderRecord(); });
+      mk.bindTooltip(dtg(S.storm[idx].iso) + ' · ' + f0(S.storm[idx].vmax) + ' kt · ' +
+                     esc(S.storm[idx].nature || 'NR'));
+    })(i);
+    mk.addTo(S.mapLayers);
+  }
+  S.map.fitBounds(L.latLngBounds(pts).pad(0.25));
+}
+
+function updateMapForRecord(an) {
+  if (!S.mapOk || !S.mapDyn) return;
+  var C = themeColors();
+  S.mapDyn.clearLayers();
+  var lat = an.snap.lat, lon = an.snap.lon;
+
+  L.circleMarker([lat, lon], {
+    radius: 8, color: C.text, weight: 3, fillColor: C.surface, fillOpacity: 0.9
+  }).addTo(S.mapDyn).bindTooltip('selected: ' + dtg(an.rec.iso));
+
+  // modelled 34 kt footprint
+  var ring = [], a;
+  for (a = 0; a < 360; a += 5) {
+    var rr = an.field.r34At(a);
+    if (!rr || rr <= 0) { ring = null; break; }
+    ring.push(V.destPoint(lat, lon, a, rr));
+  }
+  if (ring && ring.length) {
+    L.polygon(ring, { color: THR_COLOR[34], weight: 3, fill: false, dashArray: null })
+      .addTo(S.mapDyn).bindTooltip('GTCM modelled 34 kt footprint (solid)');
+  }
+
+  // reported 34 kt quadrant polygon
+  var q34 = an.rec.radii ? an.rec.radii[34] : null;
+  if (q34) {
+    var poly = [];
+    for (var qi = 0; qi < QUADS.length; qi++) {
+      var Q = QUADS[qi], r = num(q34[Q]);
+      if (!r || r <= 0) continue;
+      for (var aa = QUAD_AZ[Q] - 45; aa <= QUAD_AZ[Q] + 45; aa += 5) {
+        poly.push(V.destPoint(lat, lon, mod360(aa), r));
+      }
+    }
+    if (poly.length > 3) {
+      L.polygon(poly, { color: THR_COLOR[34], weight: 3, dashArray: '8,5', fill: false })
+        .addTo(S.mapDyn).bindTooltip('Best-track reported 34 kt radii (dashed)');
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Cohort
+// ---------------------------------------------------------------------------
+function cohortRun() {
+  if (S.cohortBusy) return;
+  var list = S.filtered.slice();
+  if (!list.length) {
+    $('cohortMsg').className = 'msg';
+    $('cohortMsg').textContent = 'No storms match the current filter, so there is nothing to pool.';
+    $('cohortOut').classList.add('hide');
+    return;
+  }
+  S.cohortBusy = true; S.cohortAbort = false;
+  $('cohortRun').disabled = true;
+  $('cohortStop').disabled = false;
+  $('cohortMsg').className = 'msg plain';
+  $('cohortMsg').textContent = 'Fetching one storm at a time. Already-loaded storms are reused.';
+
+  var analyses = [], per = [], i = 0, failed = 0, firstErr = null;
+
+  function step() {
+    if (S.cohortAbort || i >= list.length) { finish(); return; }
+    var meta = list[i];
+    $('cohortStatus').textContent = 'storm ' + (i + 1) + ' of ' + list.length + ': ' +
+      meta.name + ' (' + meta.season + ')';
+    loadStorm(meta.sid, function (recs, err) {
+      if (err) { failed++; if (!firstErr) firstErr = err; }
+      if (recs && recs.length) {
+        var acc = emptyAcc(), rmsL = [];
+        for (var k = 0; k < recs.length; k++) {
+          var an = analyseRecord(recs[k]);
+          an.sid = meta.sid; an.basin = meta.basin; an.name = meta.name; an.season = meta.season;
+          analyses.push(an);
+          for (var r = 0; r < an.rings.length; r++) pushAcc(acc, an.rings[r]);
+          if (an.fit.n > 0 && !isNaN(an.fit.rms)) rmsL.push(an.fit.rms);
+        }
+        var st = statsOf(acc);
+        per.push({ sid: meta.sid, name: meta.name, season: meta.season, basin: meta.basin,
+                   peak: meta.peakVmax, st: st, medRms: median(rmsL) });
+      }
+      i++;
+      // yield to the event loop so the progress line paints and Stop works
+      setTimeout(step, 0);
+    });
+  }
+
+  function finish() {
+    S.cohortBusy = false;
+    $('cohortRun').disabled = false;
+    $('cohortStop').disabled = true;
+    if (!analyses.length) {
+      $('cohortMsg').className = 'msg';
+      $('cohortMsg').textContent = 'No storm records could be loaded' +
+        (firstErr ? ': ' + (firstErr.message || firstErr) : '.') +
+        ' Nothing to pool. Check the deployment and try again.';
+      $('cohortOut').classList.add('hide');
+      return;
+    }
+    S.cohort = { analyses: analyses, per: per, nStorms: per.length,
+                 requested: list.length, failed: failed, aborted: S.cohortAbort };
+    $('cohortStatus').textContent = '';
+    $('cohortMsg').className = 'msg plain';
+    $('cohortMsg').innerHTML =
+      'Pooled <strong>' + per.length + '</strong> storms and <strong>' + analyses.length +
+      '</strong> synoptic times' +
+      (S.cohortAbort ? ' <strong>(stopped early: this is a partial set)</strong>' : '') +
+      (failed ? ' <strong>(' + failed + ' storm(s) failed to load and are missing)</strong>' : '') +
+      '. These are the same replays the single-storm view shows, pooled.';
+    buildNatureChips();
+    renderCohort();
+    $('cohortOut').classList.remove('hide');
+  }
+
+  step();
+}
+
+function buildNatureChips() {
+  var seen = {}, i;
+  for (i = 0; i < S.cohort.analyses.length; i++) {
+    var nat = S.cohort.analyses[i].nature;
+    seen[nat] = (seen[nat] || 0) + 1;
+  }
+  var order = ['TS', 'ET', 'SS', 'MX', 'DS', 'NR'], html = '';
+  for (i = 0; i < order.length; i++) {
+    if (!seen[order[i]]) continue;
+    html += '<label class="chip"><input type="checkbox" class="fnat" value="' + order[i] +
+      '" checked> ' + order[i] + ' - ' + esc(NATURES[order[i]] || '') +
+      ' (' + seen[order[i]] + ')</label>';
+  }
+  for (var k in seen) if (seen.hasOwnProperty(k) && order.indexOf(k) < 0) {
+    html += '<label class="chip"><input type="checkbox" class="fnat" value="' + esc(k) +
+      '" checked> ' + esc(k) + ' (' + seen[k] + ')</label>';
+  }
+  $('natChips').innerHTML = html;
+  $('natChips').onchange = renderCohort;
+}
+
+function currentNatureFilter() {
+  var boxes = document.querySelectorAll('.fnat');
+  if (!boxes.length) return null;
+  var f = {}, any = false;
+  for (var i = 0; i < boxes.length; i++) if (boxes[i].checked) { f[boxes[i].value] = 1; any = true; }
+  return any ? f : { __none__: 1 };
+}
+
+function renderCohort() {
+  if (!S.cohort) return;
+  var nf = currentNatureFilter();
+  var sum = summarise(S.cohort.analyses, nf);
+
+  if (!sum.all.n) {
+    $('cohortStats').innerHTML = '';
+    $('cohortByBasin').innerHTML = '<caption>No ring points remain under the selected storm types.</caption>';
+    $('cohortByNature').innerHTML = '';
+    $('cohortByStorm').innerHTML = '';
+    clearCanvas('scRm'); clearCanvas('hist');
+    $('scRmNote').textContent = '';
+    return;
+  }
+
+  var rmsMed = median(sum.rmsList);
+  $('cohortStats').innerHTML =
+    stat('Storms', S.cohort.nStorms, 'of ' + S.cohort.requested + ' in the filter') +
+    stat('Ring points', sum.all.n, sum.all.unreached + ' never reached (' + f1(sum.all.unreachedPct) + '%)') +
+    stat('Bias', sgn(sum.all.bias) + ' nm', 'modelled minus reported') +
+    stat('MAE', f1(sum.all.mae) + ' nm', 'vs reported radii') +
+    stat('MAE vs target', f1(sum.all.maeTgt) + ' nm', 'vs the 0.85-scaled fit target') +
+    stat('P90 |error|', f1(sum.all.p90) + ' nm', 'nine in ten ring points inside this') +
+    stat('34 kt fallback', sum.all.n34 ? (f1(sum.all.fallbackPct) + '%') : 'n/a',
+         sum.all.n34 ? (sum.all.fallback + ' of ' + sum.all.n34 +
+           ' 34 kt points used 3×rₘ, not a real crossing')
+                     : 'no 34 kt ring points in this selection') +
+    stat('Median fit RMS', f1(rmsMed) + ' kt', 'weighted wind error at the fit points');
+
+  // by basin x threshold
+  var h = '<thead><tr><th>Basin</th><th>Threshold</th><th>Ring pts</th><th>Unreached</th>' +
+    '<th>Bias</th><th>MAE</th><th>RMSE</th><th>P90</th><th>Bias vs target</th><th>MAE vs target</th>' +
+    '</tr></thead><tbody>';
+  var bk, t;
+  var basinKeys = [];
+  for (bk in sum.byBasin) if (sum.byBasin.hasOwnProperty(bk)) basinKeys.push(bk);
+  basinKeys.sort();
+  for (var bi = 0; bi < basinKeys.length; bi++) {
+    bk = basinKeys[bi];
+    for (t = 0; t < THRS.length; t++) {
+      var st = sum.byBasin[bk].byThr[THRS[t]];
+      if (!st.n) continue;
+      h += '<tr><td>' + esc(bk) + '</td><td>' + THRS[t] + ' kt</td>' + statCells(st) + '</tr>';
+    }
+    h += '<tr><td>' + esc(bk) + '</td><td><em>all</em></td>' + statCells(sum.byBasin[bk].all) + '</tr>';
+  }
+  h += '</tbody><tfoot><tr><td>all basins</td><td>all</td>' + statCells(sum.all) + '</tr></tfoot>';
+  var cap = $('cohortByBasin').querySelector('caption');
+  $('cohortByBasin').innerHTML = (cap ? cap.outerHTML : '') + h;
+
+  // by nature
+  var order = ['TS', 'ET', 'SS', 'MX', 'DS', 'NR'], nh =
+    '<thead><tr><th>Nature</th><th>Meaning</th><th>Ring pts</th><th>Unreached</th><th>Bias</th>' +
+    '<th>MAE</th><th>RMSE</th><th>P90</th><th>Bias vs target</th><th>MAE vs target</th></tr></thead><tbody>';
+  var natKeys = [];
+  for (var nk in sum.byNat) if (sum.byNat.hasOwnProperty(nk)) natKeys.push(nk);
+  natKeys.sort(function (a, b) {
+    var ia = order.indexOf(a), ib = order.indexOf(b);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+  });
+  for (var ni = 0; ni < natKeys.length; ni++) {
+    var st2 = sum.byNat[natKeys[ni]];
+    if (!st2.n) continue;
+    nh += '<tr><td><span class="badge">' + esc(natKeys[ni]) + '</span></td><td style="text-align:left">' +
+      esc(NATURES[natKeys[ni]] || 'unknown') + '</td>' + statCells(st2) + '</tr>';
+  }
+  nh += '</tbody>';
+  var cap2 = $('cohortByNature').querySelector('caption');
+  $('cohortByNature').innerHTML = (cap2 ? cap2.outerHTML : '') + nh;
+
+  // per storm
+  var per = S.cohort.per.slice().filter(function (p) { return p.st.n > 0; });
+  per.sort(function (a, b) { return (b.st.mae || 0) - (a.st.mae || 0); });
+  var ph = '<thead><tr><th>Storm</th><th>Season</th><th>Basin</th><th>Peak</th><th>Ring pts</th>' +
+    '<th>Unreached</th><th>Bias</th><th>MAE</th><th>Median fit RMS</th></tr></thead><tbody>';
+  for (var pi = 0; pi < per.length; pi++) {
+    var p = per[pi];
+    ph += '<tr class="stormrow" data-sid="' + esc(p.sid) + '" tabindex="0"><td>' + esc(p.name) +
+      '</td><td>' + p.season + '</td><td>' + esc(p.basin) + '</td><td>' + f0(p.peak) + ' kt</td>' +
+      '<td>' + p.st.n + '</td><td>' + p.st.unreached + '</td><td>' + sgn(p.st.bias) + '</td>' +
+      '<td>' + f1(p.st.mae) + '</td><td>' + f1(p.medRms) + ' kt</td></tr>';
+  }
+  ph += '</tbody>';
+  var cap3 = $('cohortByStorm').querySelector('caption');
+  $('cohortByStorm').innerHTML = (cap3 ? cap3.outerHTML : '') + ph;
+
+  drawScatterRm(sum);
+  drawHist(sum);
+}
+
+function statCells(st) {
+  return '<td>' + st.n + '</td><td>' + st.unreached +
+    (st.n ? ' (' + f1(st.unreachedPct) + '%)' : '') + '</td>' +
+    '<td>' + sgn(st.bias) + '</td><td>' + f1(st.mae) + '</td><td>' + f1(st.rmse) + '</td>' +
+    '<td>' + f1(st.p90) + '</td><td>' + sgn(st.biasTgt) + '</td><td>' + f1(st.maeTgt) + '</td>';
+}
+
+function clearCanvas(id) {
+  var cv = $(id), ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.fillStyle = themeColors().surface;
+  ctx.fillRect(0, 0, cv.width, cv.height);
+}
+
+function drawScatterRm(sum) {
+  var cv = $('scRm'), ctx = cv.getContext('2d');
+  var W = cv.width, H = cv.height, L = 60, R = 18, T = 18, B = 46;
+  var C = themeColors();
+  clearCanvas('scRm');
+  var pairs = sum.rmPairs;
+  if (pairs.length < 2) {
+    ctx.fillStyle = C.text; ctx.font = '13px system-ui, sans-serif'; ctx.textAlign = 'left';
+    ctx.fillText('Not enough records carry an analysed RMW in this selection.', L, H / 2);
+    $('scRmNote').textContent = '';
+    return;
+  }
+  var maxV = 10, i;
+  for (i = 0; i < pairs.length; i++) maxV = Math.max(maxV, pairs[i].rmw, pairs[i].rm);
+  maxV = Math.ceil(maxV / 20) * 20;
+
+  function X(v) { return L + (v / maxV) * (W - L - R); }
+  function Y(v) { return H - B - (v / maxV) * (H - T - B); }
+
+  ctx.strokeStyle = C.grid; ctx.lineWidth = 1;
+  ctx.fillStyle = C.axis; ctx.font = '11px system-ui, sans-serif';
+  var stepG = maxV > 120 ? 40 : 20;
+  for (var g = 0; g <= maxV; g += stepG) {
+    ctx.beginPath(); ctx.moveTo(X(g), T); ctx.lineTo(X(g), H - B); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(L, Y(g)); ctx.lineTo(W - R, Y(g)); ctx.stroke();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.fillText(String(g), X(g), H - B + 5);
+    ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(g), L - 6, Y(g));
+  }
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillStyle = C.text; ctx.font = 'bold 12px system-ui, sans-serif';
+  ctx.fillText('best-track RMW, nm (observed)', L + (W - L - R) / 2, H - 18);
+  ctx.save();
+  ctx.translate(16, T + (H - T - B) / 2); ctx.rotate(-Math.PI / 2);
+  ctx.textBaseline = 'middle';
+  ctx.fillText('fitted rₘ, nm (GTCM)', 0, 0);
+  ctx.restore();
+
+  // 1:1 line, labelled
+  ctx.save();
+  ctx.setLineDash([6, 5]); ctx.strokeStyle = C.axis; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.moveTo(X(0), Y(0)); ctx.lineTo(X(maxV), Y(maxV)); ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle = C.axis; ctx.font = 'bold 11px system-ui, sans-serif';
+  ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+  ctx.fillText('1:1 (equal, not expected)', X(maxV) - 4, Y(maxV) + 22);
+
+  // points: shape distinguishes tropical from ET/SS/MX, not colour alone
+  var xs = [], ys = [];
+  for (i = 0; i < pairs.length; i++) {
+    var p = pairs[i], x = X(p.rmw), y = Y(p.rm);
+    xs.push(p.rmw); ys.push(p.rm);
+    var trop = (p.nature === 'TS');
+    ctx.beginPath();
+    if (trop) {
+      ctx.arc(x, y, 2.6, 0, Math.PI * 2);
+      ctx.fillStyle = C.model; ctx.globalAlpha = 0.55; ctx.fill(); ctx.globalAlpha = 1;
+    } else {
+      ctx.moveTo(x, y - 3.4); ctx.lineTo(x + 3.4, y); ctx.lineTo(x, y + 3.4); ctx.lineTo(x - 3.4, y);
+      ctx.closePath();
+      ctx.strokeStyle = C.bt; ctx.lineWidth = 1.6; ctx.stroke();
+    }
+  }
+
+  var r = pearson(xs, ys);
+  var diffs = [], abs = [];
+  for (i = 0; i < pairs.length; i++) { diffs.push(pairs[i].rm - pairs[i].rmw); abs.push(Math.abs(pairs[i].rm - pairs[i].rmw)); }
+  $('scRmNote').innerHTML =
+    '<strong>' + pairs.length + '</strong> records with an analysed RMW. Median rₘ ' +
+    f1(median(ys)) + ' nm, median RMW ' + f1(median(xs)) + ' nm; median difference ' +
+    sgn(median(diffs)) + ' nm, mean |difference| ' + f1(mean(abs)) + ' nm, Pearson r ' +
+    (r === null ? '–' : f2(r)) + '. Filled circles are tropical (nature TS); open diamonds ' +
+    'are ET, SS, MX or DS. <strong>The 1:1 line is a reference, not a target</strong>. ' +
+    'rₘ and RMW are different quantities, differently measured, and are not expected to be ' +
+    'equal. What is worth reading here is whether they track each other and where they diverge.';
+}
+
+function drawHist(sum) {
+  var cv = $('hist'), ctx = cv.getContext('2d');
+  var W = cv.width, H = cv.height, L = 52, R = 18, T = 16, B = 44;
+  var C = themeColors();
+  clearCanvas('hist');
+
+  // Rebuild the error list per threshold from the pooled analyses so the
+  // three thresholds can be shown side by side.
+  var nf = currentNatureFilter();
+  var series = { 34: [], 50: [], 64: [] }, i, r;
+  for (i = 0; i < S.cohort.analyses.length; i++) {
+    var an = S.cohort.analyses[i];
+    if (nf && !nf[an.nature]) continue;
+    for (r = 0; r < an.rings.length; r++) {
+      if (an.rings[r].model === null) continue;
+      series[an.rings[r].thr].push(an.rings[r].errRep);
+    }
+  }
+  var BIN = 10, LO = -100, HI = 100, nb = (HI - LO) / BIN;
+  var counts = { 34: [], 50: [], 64: [] }, k, tk;
+  for (tk = 0; tk < THRS.length; tk++) {
+    counts[THRS[tk]] = [];
+    for (k = 0; k < nb; k++) counts[THRS[tk]].push(0);
+    for (i = 0; i < series[THRS[tk]].length; i++) {
+      var b = Math.floor((Math.max(LO, Math.min(HI - 0.001, series[THRS[tk]][i])) - LO) / BIN);
+      counts[THRS[tk]][b]++;
+    }
+  }
+  var maxC = 1;
+  for (tk = 0; tk < THRS.length; tk++) for (k = 0; k < nb; k++) maxC = Math.max(maxC, counts[THRS[tk]][k]);
+
+  function X(v) { return L + ((v - LO) / (HI - LO)) * (W - L - R); }
+  function Y(c) { return H - B - (c / maxC) * (H - T - B); }
+
+  ctx.strokeStyle = C.grid; ctx.lineWidth = 1;
+  ctx.fillStyle = C.axis; ctx.font = '11px system-ui, sans-serif';
+  for (var g = LO; g <= HI; g += 25) {
+    ctx.beginPath(); ctx.moveTo(X(g), T); ctx.lineTo(X(g), H - B); ctx.stroke();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.fillText((g > 0 ? '+' : '') + g, X(g), H - B + 5);
+  }
+  var cstep = Math.max(1, Math.ceil(maxC / 5));
+  for (var cg = 0; cg <= maxC; cg += cstep) {
+    ctx.beginPath(); ctx.moveTo(L, Y(cg)); ctx.lineTo(W - R, Y(cg)); ctx.stroke();
+    ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(cg), L - 6, Y(cg));
+  }
+  // zero line, emphasised and labelled
+  ctx.strokeStyle = C.text; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(X(0), T); ctx.lineTo(X(0), H - B); ctx.stroke();
+  ctx.fillStyle = C.text; ctx.font = 'bold 11px system-ui, sans-serif';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  ctx.fillText('0 = modelled equals reported', X(0) + 5, T + 2);
+  ctx.font = 'bold 12px system-ui, sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('modelled minus reported radius, nm (clipped at ±100)',
+               L + (W - L - R) / 2, H - 18);
+
+  // three thresholds: colour AND hatch AND offset, plus a labelled legend
+  var styles = { 34: { c: C.model, hatch: 'solid' },
+                 50: { c: C.bt, hatch: 'diag' },
+                 64: { c: C.obs, hatch: 'cross' } };
+  var bw = (W - L - R) / nb;
+  for (tk = 0; tk < THRS.length; tk++) {
+    var th = THRS[tk], sty = styles[th], off = tk * (bw / 3.2);
+    ctx.strokeStyle = sty.c; ctx.fillStyle = sty.c; ctx.lineWidth = 1.2;
+    for (k = 0; k < nb; k++) {
+      var cnt = counts[th][k];
+      if (!cnt) continue;
+      var x0 = L + k * bw + off, wdt = bw / 3.4, y0 = Y(cnt), hgt = (H - B) - y0;
+      ctx.globalAlpha = 0.32; ctx.fillRect(x0, y0, wdt, hgt); ctx.globalAlpha = 1;
+      ctx.strokeRect(x0 + 0.5, y0 + 0.5, wdt - 1, hgt - 1);
+      if (sty.hatch === 'diag' || sty.hatch === 'cross') {
+        ctx.save(); ctx.beginPath(); ctx.rect(x0, y0, wdt, hgt); ctx.clip();
+        for (var hy = y0 - wdt; hy < y0 + hgt + wdt; hy += 5) {
+          ctx.beginPath(); ctx.moveTo(x0, hy); ctx.lineTo(x0 + wdt, hy - wdt); ctx.stroke();
+          if (sty.hatch === 'cross') { ctx.beginPath(); ctx.moveTo(x0, hy - wdt); ctx.lineTo(x0 + wdt, hy); ctx.stroke(); }
+        }
+        ctx.restore();
+      }
+    }
+  }
+
+  var leg = '';
+  for (tk = 0; tk < THRS.length; tk++) {
+    var th2 = THRS[tk], arr = series[th2];
+    var med = median(arr), mn = mean(arr);
+    leg += swatch(styles[th2].c, tk === 0 ? [] : (tk === 1 ? [5, 4] : [2, 3]),
+      '<strong>' + th2 + ' kt</strong>: ' + arr.length + ' ring points',
+      'median ' + sgn(med) + ' nm, mean ' + sgn(mn) + ' nm' +
+      (tk === 0 ? ' (solid bars)' : tk === 1 ? ' (diagonal hatch)' : ' (cross hatch)'));
+  }
+  leg += '<div class="note">A bar right of zero is a modelled radius larger than the analysed one. ' +
+    'Bars are offset within each 10 nm bin so all three thresholds stay readable; the hatch, not ' +
+    'the colour, tells them apart.</div>';
+  $('histLegend').innerHTML = leg;
+}
+
+// ---------------------------------------------------------------------------
+// Wiring
+// ---------------------------------------------------------------------------
+function setTab(which) {
+  var storm = which === 'storm';
+  $('tab-storm').setAttribute('aria-selected', storm ? 'true' : 'false');
+  $('tab-cohort').setAttribute('aria-selected', storm ? 'false' : 'true');
+  $('panel-storm').classList.toggle('hide', !storm);
+  $('panel-cohort').classList.toggle('hide', storm);
+  if (storm && S.analyses && S.map && S.map.invalidateSize) S.map.invalidateSize();
+}
+
+function stepRecord(d) {
+  if (!S.analyses) return;
+  var n = S.analyses.length;
+  S.i = Math.max(0, Math.min(n - 1, S.i + d));
+  renderRecord();
+}
+
+function boot() {
+  $('tab-storm').addEventListener('click', function () { setTab('storm'); });
+  $('tab-cohort').addEventListener('click', function () { setTab('cohort'); });
+
+  $('stormList').addEventListener('click', function (e) {
+    var li = e.target;
+    while (li && li.tagName !== 'LI') li = li.parentNode;
+    if (li && li.getAttribute('data-sid')) selectStorm(li.getAttribute('data-sid'));
+  });
+  $('stormList').addEventListener('keydown', function (e) {
+    var idx = listIndexOfSel();
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      var next = idx < 0 ? 0 : idx + (e.key === 'ArrowDown' ? 1 : -1);
+      next = Math.max(0, Math.min(S.filtered.length - 1, next));
+      if (S.filtered[next]) selectStorm(S.filtered[next].sid);
+    } else if (e.key === 'Home' && S.filtered.length) {
+      e.preventDefault(); selectStorm(S.filtered[0].sid);
+    } else if (e.key === 'End' && S.filtered.length) {
+      e.preventDefault(); selectStorm(S.filtered[S.filtered.length - 1].sid);
+    } else if ((e.key === 'Enter' || e.key === ' ') && idx >= 0) {
+      e.preventDefault(); selectStorm(S.filtered[idx].sid);
+    }
+  });
+
+  $('scrub').addEventListener('input', function () {
+    S.i = +this.value;
+    if (S.analyses) renderRecord();
+  });
+  $('btnPrev').addEventListener('click', function () { stepRecord(-1); });
+  $('btnNext').addEventListener('click', function () { stepRecord(1); });
+
+  var ids = ['rangeSel', 'lyField', 'lyModel', 'lyBT', 'lySize'];
+  for (var i = 0; i < ids.length; i++) {
+    $(ids[i]).addEventListener('change', function () { if (S.analyses) drawPlan(S.analyses[S.i]); });
+  }
+
+  // Global arrow stepping through the timeline when focus is not in a control.
+  document.addEventListener('keydown', function (e) {
+    var tag = (e.target && e.target.tagName) || '';
+    // The tab strip owns its own left/right, per the ARIA tabs pattern.
+    if (e.target && e.target.getAttribute && e.target.getAttribute('role') === 'tab') {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        var toStorm = e.target.id === 'tab-cohort';
+        setTab(toStorm ? 'storm' : 'cohort');
+        $(toStorm ? 'tab-storm' : 'tab-cohort').focus();
+      }
+      return;
+    }
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || tag === 'UL') return;
+    if ($('panel-storm').classList.contains('hide')) return;
+    if (e.key === 'ArrowRight') { e.preventDefault(); stepRecord(1); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); stepRecord(-1); }
+    else if (e.key === 'Home' && S.analyses) { e.preventDefault(); S.i = 0; renderRecord(); }
+    else if (e.key === 'End' && S.analyses) { e.preventDefault(); S.i = S.analyses.length - 1; renderRecord(); }
+  });
+
+  $('cohortRun').addEventListener('click', cohortRun);
+  $('cohortStop').addEventListener('click', function () {
+    S.cohortAbort = true;
+    $('cohortStatus').textContent = 'stopping after the current storm…';
+  });
+  $('cohortByStorm').addEventListener('click', function (e) {
+    var tr = e.target;
+    while (tr && tr.tagName !== 'TR') tr = tr.parentNode;
+    if (tr && tr.getAttribute('data-sid')) { setTab('storm'); selectStorm(tr.getAttribute('data-sid')); }
+  });
+  $('cohortByStorm').addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    var tr = e.target;
+    while (tr && tr.tagName !== 'TR') tr = tr.parentNode;
+    if (tr && tr.getAttribute('data-sid')) {
+      e.preventDefault(); setTab('storm'); selectStorm(tr.getAttribute('data-sid'));
+    }
+  });
+
+  // Repaint the theme-aware canvases when the OS theme flips.
+  if (window.matchMedia) {
+    var mq = window.matchMedia('(prefers-color-scheme: dark)');
+    var onFlip = function () {
+      if (S.analyses) { drawTimeline(); }
+      if (S.cohort) { renderCohort(); }
+      if (S.mapOk && S.storm) { buildMap(); updateMapForRecord(S.analyses[S.i]); }
+    };
+    if (mq.addEventListener) mq.addEventListener('change', onFlip);
+    else if (mq.addListener) mq.addListener(onFlip);
+  }
+
+  if (!V || typeof V.vortexFieldGTCM !== 'function') {
+    $('idxState').className = 'msg';
+    $('idxState').textContent = 'Vortex.html did not load, so no wind field can be computed. ' +
+      'The Apps Script project is missing the Vortex file or it failed to evaluate.';
+    return;
+  }
+
+  // Glossary (Help.html, one copy of everything - see README.md). Only run
+  // over STATIC prose (the "How to read this page" / "Data" details): any
+  // container this page's own code overwrites with innerHTML/textContent on
+  // every redraw would just have its wrapped terms discarded.
+  if (window.TCGlossary) {
+    ['howToRead', 'dataNotes'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) TCGlossary.linkify(el);
+    });
+    var slot = document.getElementById('footerGlossary');
+    if (slot) slot.appendChild(TCGlossary.buildDetailsEl());
+  }
+
+  loadIndex();
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', boot);
+} else {
+  boot();
+}
+
+})(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));
+</script>
+</body>
+</html>

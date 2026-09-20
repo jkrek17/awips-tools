@@ -1,5 +1,44 @@
 #!/usr/bin/env python3
-"""Verify the tool's Rmax estimate against real JTWC best-track data.
+"""SUPERSEDED CONFIGURATION - kept for provenance, not as a current check.
+
+    Nothing in this script describes the wind field TCWind_JTWC.py builds
+    today.  Read the next four paragraphs before quoting a number out of it.
+
+VORTEX_METHOD is now "gtcm".  On that path the radius of maximum wind is not
+an input at all: fitGTCM() FITS it (the `rm` it returns) by weighted least
+squares on wind error, from a climatological first guess given by Gridded TCM
+Users Guide eq. (5), rmw = exp(3.7450 - 0.01338*Vmax + 0.01908*|lat|).
+willoughbyRmax() and resolveRmax() play no part in it - _buildVortexGTCM()
+takes an `rmax_nm` argument and never reads it.  They still drive the legacy
+"perquad" construction, which is still selectable and still exercised by
+compare_vortex_methods.py, so they are not dead code; they are just not what
+the shipped default uses.
+
+The framing is also wrong, not only the configuration.  This script scores the
+tool's Rmax against JTWC's post-season best-track RMW as though the tool were
+a forecast competing with nature.  It is not.  Its job is to render a
+physically plausible wind field consistent with what one bulletin says, and
+under GTCM the internal Rmax is a fitted parameter of that rendering - a
+quantity that has no obligation to match a post-season analysis, and is not
+independently observable in real time either way.
+
+Kept rather than deleted for one concrete reason: willoughbyRmax()'s docstring
+in GFE/procedures/TCWind_JTWC.py cites this file BY NAME as the validation
+behind the three regression coefficients still compiled into that function,
+and so does web/TCWind_JTWC/Index.html.  Deleting it would leave the shipped
+source citing a file that does not exist and those coefficients unauditable.
+
+It also cannot be re-run here: it needs the WestPac IBTrACS CSV, which is not
+in this environment.  The numbers it printed are in git history and in
+tests/tcwind_jtwc/README.md.
+
+What replaced it: tests/tcwind_jtwc/verify_gtcm.py, which measures ring fit,
+field difference, GTCM fit quality and - the point of the switch - the
+COHERENCE of the field, and writes tests/tcwind_jtwc/data/gtcm_findings.json.
+
+--- original header follows ------------------------------------------------
+
+Verify the tool's Rmax estimate against real JTWC best-track data.
 
 TCWind_JTWC.py never gets an observed Rmax from a real-time warning -
 JTWC doesn't report one operationally. The tool falls back to the
@@ -40,12 +79,18 @@ import urllib.request
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..",
                                  "GFE", "procedures"))
 import TCWind_JTWC as tc
-from besttrack_common import MIN_SEASON
+from besttrack_common import MIN_SEASON, cache_path
 
 IBTRACS_URL = ("https://www.ncei.noaa.gov/data/international-best-track-"
                "archive-for-climate-stewardship-ibtracs/v04r01/access/csv/"
                "ibtracs.WP.list.v04r01.csv")
-CACHE = "/tmp/claude-0/-home-user-awips-tools/738f763c-b8e3-58a4-9745-13d9f53ffc1b/scratchpad/ibtracs_wp_full.csv"
+# Was a hardcoded absolute path into one prior review session's scratch
+# directory - dead the moment that directory did, and unreachable from any
+# other environment. Now resolved the same way every OTHER script in this
+# suite resolves its IBTrACS path (besttrack_common.cache_path(): env
+# IBTRACS_WP, then IBTRACS_DIR, then tests/tcwind_jtwc/data/ibtracs/), still
+# overridable by argv[1] as before.
+CACHE = cache_path("WP")
 
 QUADS = ["NE", "SE", "SW", "NW"]
 
