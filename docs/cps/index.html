@@ -40,14 +40,17 @@
       restricts classification to closed lows about 5&nbsp;hPa deep. One
       categorical field assigns each detected low to one of seven classes
       formed from the quadrants of Hart's two diagrams. A global 0.25&deg;
-      grid takes about 2.6&nbsp;s per forecast hour. On GFS forecasts, the
-      hour at which a typhoon lost its deep warm core matched the
-      storm-centered diagnosis on the Florida State University cyclone
-      phase page. The asymmetry parameter uses the window-mean deep-layer wind as a
-      motion proxy and a first-order thickness-gradient approximation, and
-      is not yet validated. The standard-level bands and the square window
-      differ systematically from Hart's definitions, and the size of those
-      differences on real storms has not been measured.
+      grid takes about 2.6&nbsp;s per forecast hour. On GFS forecasts the
+      class followed a typhoon through its full transition on the path
+      the Florida State University phase diagrams traced for the same
+      run. On a synthetic life cycle evaluated with Hart's method and
+      with the gridded method, both assign the same class sequence, the
+      gridded onset and completion one to two frames later. The square
+      window reads about 12% high for compact storms, the 925 to
+      700&nbsp;hPa band reads a warm seclusion two to three times higher
+      than Hart's layer, and the asymmetry parameter reads a storm-scale
+      asymmetry at about 60% of Hart's value while reading a uniform
+      environmental gradient exactly.
     </p>
   </div>
 
@@ -123,7 +126,7 @@
       <em>synthetic</em> single-point cross-sections built for this figure
       alone (not the two-vortex domain of Figures 4, 5 and 7) and computed with
       <code>cps.hart</code>, the storm-centered reference implementation
-      (Section 7), rather than the operational <code>cps_HartCPS.py</code>
+      (Section 8), rather than the operational <code>cps_HartCPS.py</code>
       that Figures 4 to 8 use. At each pressure <i>p</i> the
       height perturbation is a Gaussian depression of 150&nbsp;km e-folding
       radius, amplitude <i>A</i>(<i>p</i>) linear in ln(<i>p</i>) from
@@ -501,10 +504,11 @@
     <li>Hart regresses over 900 to 600&nbsp;hPa and 600 to 300&nbsp;hPa
       at 50&nbsp;hPa spacing; this package uses 925, 850, 700&nbsp;hPa and
       500, 400, 300&nbsp;hPa. The lower band lies entirely below Hart's
-      layer, so its magnitude can differ from his by tens of percent
-      depending on the vertical profile of the core anomaly; the size of
-      the difference on real storms has not been measured (Section 6).
-      Signs and zero crossings carry over.</li>
+      layer, so its magnitude differs from his by an amount that depends
+      on the vertical profile of the core anomaly: near zero for a
+      profile linear in ln&nbsp;<i>p</i>, and two to three times Hart's
+      value for a shallow warm seclusion (Section 5, Figure 12). Signs
+      and zero crossings carry over.</li>
     <li>Hart's <i>B</i> uses the tracker's storm motion and true
       half-circle means; this package uses the window-mean deep-layer
       wind as a motion proxy and a first-order gradient approximation
@@ -989,7 +993,37 @@
       between the gradient and the motion.</figcaption>
   </figure>
 
-  <h2 id="availability">7. Availability</h2>
+  <h2 id="summary">7. Summary of findings</h2>
+  <ol>
+    <li>Hart's three phase-space parameters can be computed at every grid
+      point from standard-level height fields inside AWIPS, with no
+      tracker, in about 2.6&nbsp;s per forecast hour on a global
+      0.25&deg; grid.</li>
+    <li>On real GFS forecasts the gridded class followed a typhoon through
+      the full transition, deep warm core to cold core to warm seclusion,
+      and the loss of the deep warm core came at the hour the Florida
+      State phase diagrams showed for the same run.</li>
+    <li>On a synthetic life cycle evaluated both ways, Hart's method and
+      the gridded method assign the same sequence of classes, with the
+      gridded onset and completion one to two frames later.</li>
+    <li>The thermal wind terms agree with Hart's in sign and timing but
+      not in magnitude. The square window reads about 12% high for
+      compact storms, and the 925 to 700&nbsp;hPa band reads a warm
+      seclusion two to three times higher than Hart's 900 to
+      600&nbsp;hPa band.</li>
+    <li>Parameter <i>B</i> reads a broad environmental gradient exactly
+      and a storm-scale asymmetry at about 60% of Hart's value, which
+      delays onset by one to two frames. Computing the semicircle means
+      directly is the planned fix.</li>
+    <li>The environment's height gradient lowers both thermal wind terms
+      as a storm enters a baroclinic zone. That is the transition signal
+      by design, and it is shared with Hart's method.</li>
+    <li>Class flicker on the strict thresholds, the closed-low detector's
+      depth floor of about 5&nbsp;hPa, and the absence of Hart's 24&nbsp;h
+      running mean are the remaining operational limitations.</li>
+  </ol>
+
+  <h2 id="availability">8. Availability</h2>
   <p>
     The package lives at <code>D2D/</code> in the repository linked at the
     top of this page: derived-parameter Python and XML under
