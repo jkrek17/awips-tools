@@ -217,7 +217,7 @@
     14&nbsp;m per degree at 300&nbsp;hPa, lowers the upper term to
     +70&nbsp;m when the gradient runs along a grid axis and to
     &minus;4&nbsp;m at 45&deg; to it; at twice that gradient the upper
-    term reads &minus;85 and &minus;193&nbsp;m (Figure 13a). The
+    term reads &minus;85 and &minus;193&nbsp;m (Figure 14a). The
     environmental response is by design: the phase space describes the
     cyclone together with the baroclinic zone it has entered, and the
     fall of the upper term as a storm meets a trough is the transition
@@ -722,7 +722,7 @@
       <strong>(b)</strong>&nbsp;30&nbsp;h of the 2026 September 19
       1800&nbsp;UTC run; <strong>(c)</strong> to <strong>(f)</strong>
       96, 114, 126 and 144&nbsp;h of the 1200&nbsp;UTC run. The class
-      colors follow Table 2: 0 red, 1 magenta, 2 yellow, 3 green, 4 blue.
+      colors follow the class table of Section 2: 0 red, 1 magenta, 2 yellow, 3 green, 4 blue.
       The readout at the center of each block is the sampled class and
       position; the storm reaches 946&nbsp;hPa at 57.8&deg;N by
       144&nbsp;h.</figcaption>
@@ -743,11 +743,83 @@
       the storm are both visible.</figcaption>
   </figure>
 
+  <p>
+    Real cases cannot separate the effect of the gridded reformulation
+    from the difference between the models and analyses behind this
+    package and the Florida State page, so the two methods were also
+    run side by side on one synthetic life cycle where every field is
+    known (Figure 11; <code>docs/cps/figures/lifecycle_comparison.py</code>).
+    A vortex on a 0.25&deg; grid is carried 168&nbsp;h from 22&deg;N
+    150&deg;E to 52&deg;N 175&deg;E, its height-perturbation profile
+    blending from the deep warm core through the transition profile to
+    the deep cold core and then to the seclusion profile of Figure 12,
+    its e-folding scale growing from 150 to 350&nbsp;km, its speed rising
+    from 4 to 16&nbsp;m/s as it recurves into a baroclinic zone whose
+    meridional height gradient grows with height, and with a
+    motion-relative thermal asymmetry, warm to the right of the track,
+    that grows from 24&nbsp;h, peaks from 72 to 108&nbsp;h and is gone
+    by 144&nbsp;h as the seclusion wraps the warm air into the core.
+    Hart's parameters are evaluated at the center with
+    <code>cps.hart</code>: a 500&nbsp;km circle, 50&nbsp;hPa levels from
+    900 to 600 and 600 to 300&nbsp;hPa, and <i>B</i> from the
+    motion-relative semicircle means, with the motion from the track.
+    The gridded parameters come from the operational functions on the
+    standard levels, with the deep-layer wind set equal to the track
+    motion so both methods see the same motion vector. Both trace the
+    same path through the seven classes, 0, 2, 3, 4, 5 and 1, with the
+    gridded transitions 6 to 12&nbsp;h behind Hart's: onset at 54&nbsp;h
+    against 42, completion at 114&nbsp;h against 108, and <i>B</i> back
+    under 10&nbsp;m at 138&nbsp;h for both. In the deep warm core phase
+    the gridded lower term runs 12% above Hart's, the square-window
+    excess for a 150 to 200&nbsp;km vortex (Section 2). The upper term
+    agrees to 15&nbsp;m root mean square over the life cycle and the
+    lower term to 49&nbsp;m, the latter dominated by the seclusion phase,
+    where the gridded lower term recovers to +109&nbsp;m against Hart's
+    +41&nbsp;m, the band effect of Figure 12 and the same direction as
+    the real seclusion of the previous paragraph. The one substantive
+    disagreement is the size of <i>B</i>: Hart's peaks at 40&nbsp;m and
+    the gridded value at 24&nbsp;m. Evaluating Hart's semicircle
+    difference on the package's 925 to 700&nbsp;hPa layer with the
+    &lambda; scaling returns 39.8&nbsp;m, so the layer choice accounts
+    for none of the gap; the whole of it is the window-mean thickness
+    gradient standing in for the semicircle means. The two are equal by
+    construction for a gradient that is uniform across the window, and
+    they diverge for an asymmetry confined to the storm scale, here
+    400&nbsp;km, whose gradient reverses inside the window. HB therefore
+    reads the environment's asymmetry at full strength and a
+    storm-attached asymmetry at about 60%, which delays onset by two
+    frames in this case and is the first item of Section 6.
+  </p>
+  <figure id="fig11">
+    <img src="figures/figD_lifecycle.png"
+         alt="Three panels comparing Hart's method and the gridded method on one synthetic life cycle. Left: B against the lower thermal wind, two loops colored light to dark by hour, Hart's in gray reaching 40 meters and the gridded in red reaching 24 meters, both starting in the symmetric warm quadrant, crossing into frontal warm, then frontal cold, and returning through symmetric cold to symmetric warm. Center: upper against lower thermal wind, both trajectories running from deep warm to shallow warm to deep cold and back to shallow warm. Right: time series of B and the two thermal wind terms for both methods, with two class strips along the top showing the sequence 0, 2, 3, 4, 5, 1 for each, Hart's transitions leading by one or two frames.">
+    <figcaption><strong>Figure 11.</strong> One <em>synthetic</em>
+      transition life cycle (0 to 168&nbsp;h, 6&nbsp;h frames) evaluated
+      with Hart's method (<code>cps.hart</code>, circular 500&nbsp;km
+      window, 50&nbsp;hPa levels, semicircle <i>B</i>; gray, dashed in
+      panel c) and with the operational gridded functions
+      (<code>cps_HartCPS</code>, square window, standard levels,
+      window-mean-gradient <i>B</i>; red, solid), both at the storm
+      center and driven by the same motion vector. <strong>(a)</strong>
+      <i>B</i> against &minus;V<sub>T</sub><sup>L</sup>, markers light to
+      dark by hour, with the <i>B</i> = 10&nbsp;m and
+      &minus;V<sub>T</sub><sup>L</sup> = 0 lines. <strong>(b)</strong>
+      &minus;V<sub>T</sub><sup>U</sup> against &minus;V<sub>T</sub><sup>L</sup>.
+      <strong>(c)</strong> The three parameters against forecast hour,
+      with the class each method assigns under the rules of the class
+      table of Section 2 as a strip along the top (gridded above Hart;
+      colors as in that table).
+      Both methods walk 0, 2, 3, 4, 5, 1; the gridded onset (54&nbsp;h) and
+      completion (114&nbsp;h) trail Hart's (42 and 108&nbsp;h), and the
+      gridded <i>B</i> peak is 60% of Hart's because the asymmetry is
+      confined to the storm scale (text).</figcaption>
+  </figure>
+
   <h2 id="limitations">6. Limitations and future work</h2>
   <ul>
     <li>The lower band, 925 to 700&nbsp;hPa, lies entirely below Hart's
       900 to 600&nbsp;hPa layer, and the upper band omits 600 to
-      500&nbsp;hPa. Figure 11 fits Hart's band and two standard-level
+      500&nbsp;hPa. Figure 12 fits Hart's band and two standard-level
       alternatives to five prescribed height-perturbation profiles. For
       a profile linear in ln&nbsp;<i>p</i> all bands agree. For a shallow
       warm core with cold air above, the seclusion and transition
@@ -778,8 +850,17 @@
       no projected grid has been tested.</li>
     <li>Parameter B is computed to first order from the window-mean
       thickness gradient across a motion proxy, the window-mean deep-layer
-      wind, scaled from the 925 to 700&nbsp;hPa layer. It omits nonlinear
-      thickness structure, sets to missing for a stationary or
+      wind, scaled from the 925 to 700&nbsp;hPa layer. It equals Hart's
+      semicircle difference for a gradient uniform across the window and
+      under-reads an asymmetry confined to the storm scale: 60% of
+      Hart's value for a 400&nbsp;km dipole in the synthetic life cycle
+      of Figure 11, which delayed onset by two 6&nbsp;h frames. The
+      remedy is to compute the semicircle means themselves, for a small
+      set of motion directions, by convolution with half-window masks
+      and interpolate to the local steering direction; at sixteen
+      directions the cost is a few tenths of a second per frame with a
+      transform-based convolution, and it is the intended next revision
+      of HB. HB also sets to missing for a stationary or
       steering-opposed system, and is the environment's gradient rather
       than a storm property away from a low center. HCPSclass inherits
       these limits for its frontal/symmetric split. Neither HB nor the
@@ -788,7 +869,7 @@
       finite-differenced model centers is the intended test.</li>
     <li>The closed-low detector measures relief between a center and the
       300 to 500&nbsp;km ring, so its floor rises with the breadth of the
-      low: on synthetic Gaussian lows (Figure 12) a 50&nbsp;m central
+      low: on synthetic Gaussian lows (Figure 13) a 50&nbsp;m central
       depth is detected out to a 300&nbsp;km e-folding scale, 80&nbsp;m
       out to 500&nbsp;km, 100&nbsp;m out to 600&nbsp;km, and an
       800&nbsp;km scale low is missed even at 120&nbsp;m, so the
@@ -825,10 +906,10 @@
       timing across the local inventory are the next steps.</li>
   </ul>
 
-  <figure id="fig11">
+  <figure id="fig12">
     <img src="figures/figA_band_comparison.png"
          alt="Three-panel synthetic band test. Left: five prescribed height-perturbation profiles against pressure on a log axis, with Hart's 900 to 600 hectopascal lower band shaded. Center: bar chart of the lower thermal wind each band returns for each profile, Hart's band in gray, the 925 to 700 band in red, a 925 to 500 band in blue and an 850 to 500 band in green. Right: bar chart of the rescaled layer thickness gradient, a proxy for parameter B, for three baroclinic-zone profiles and the same four layers.">
-    <figcaption><strong>Figure 11.</strong> Synthetic test of the lower
+    <figcaption><strong>Figure 12.</strong> Synthetic test of the lower
       band, computed by <code>docs/cps/figures/band_comparison.py</code>.
       <strong>(a)</strong> Five prescribed height-perturbation profiles
       &Delta;<i>Z</i>(<i>p</i>) at 50&nbsp;hPa spacing: a mature deep warm
@@ -847,10 +928,10 @@
       the uniform case.</figcaption>
   </figure>
 
-  <figure id="fig12" class="half">
+  <figure id="fig13" class="half">
     <img src="figures/figB_detector.png"
          alt="Grid of central depth from 20 to 120 meters against e-folding scale from 100 to 800 kilometers, dark cells where the closed-low detector accepts a synthetic Gaussian low at its center: nothing at 40 meters or less, 50 meters accepted out to 300 kilometers, 80 meters out to 500, 100 meters out to 600, and nothing at 800 kilometers.">
-    <figcaption><strong>Figure 12.</strong> Closed-low detector
+    <figcaption><strong>Figure 13.</strong> Closed-low detector
       sensitivity on synthetic Gaussian lows in 1000&nbsp;hPa height on a
       0.25&deg; grid (<code>docs/cps/figures/experiments.py</code>): dark
       cells are detected at the center. The 40&nbsp;m ring test admits a
@@ -860,12 +941,12 @@
 
   <p>
     Four candidate extensions were tested on synthetic fields with the
-    operational code (Figure 13), as parallel products that would leave
+    operational code (Figure 14), as parallel products that would leave
     Hart's parameters as the reference. <strong>Storm-only core.</strong>
     Subtracting the domain background plane from each level before the
     range is taken returns the isolated-vortex terms exactly for every
     gradient tested, where the unmodified terms fall to zero or below in
-    a moderate baroclinic zone (Figure 13a). This is not an improvement
+    a moderate baroclinic zone (Figure 14a). This is not an improvement
     to the phase space, which is meant to respond to the environment;
     it answers a different question, whether an intact warm core still
     sits under the trough while the phase reads cold, which bears on how
@@ -874,13 +955,13 @@
     <strong>Storm-scaled radius.</strong> At a fixed 500&nbsp;km half-width
     the lower term falls to 77% of its true value for a vortex of
     600&nbsp;km e-folding scale; a half-width of 2.5 times the scale
-    holds 100% across all sizes tested (Figure 13b), at the cost of
+    holds 100% across all sizes tested (Figure 14b), at the cost of
     admitting more environment for large storms. <strong>Vector
     asymmetry.</strong> <i>B</i> is the cross-track projection of the
     thickness gradient. For a 40&nbsp;m per 1000&nbsp;km gradient, worth
     25&nbsp;m in Hart's units, <i>B</i> is 0 when the storm moves straight
     toward colder air and passes 10&nbsp;m only once the motion is
-    24&deg; off the gradient (Figure 13c); the full gradient magnitude
+    24&deg; off the gradient (Figure 14c); the full gradient magnitude
     and its fore-aft component are available at no cost and would flag
     a head-on approach that <i>B</i> reads as symmetric. <strong>Warm-core
     top.</strong> Layer-by-layer slopes on the seven standard levels place
@@ -891,10 +972,10 @@
     the fraction of members past each threshold by forecast hour, uses
     the method unchanged and needs only ensemble input.
   </p>
-  <figure id="fig13">
+  <figure id="fig14">
     <img src="figures/figC_extensions.png"
          alt="Three panels. Left: lower and upper thermal wind at the center of a synthetic deep warm core against background height gradient strength, for the gradient along a grid axis and at 45 degrees, both falling steeply, with the values after background plane removal flat at the true value. Center: lower term as a fraction of its true value against vortex scale for window half-widths of 300, 500 and 700 kilometers, falling with scale, and for a half-width of 2.5 times the scale, flat at one. Right: Hart's B and the fore-aft component against the angle between the thickness gradient and the motion, B rising from zero to the full magnitude and the fore-aft component falling, with the 10 meter threshold marked.">
-    <figcaption><strong>Figure 13.</strong> Synthetic tests of three
+    <figcaption><strong>Figure 14.</strong> Synthetic tests of three
       candidate extensions (<code>docs/cps/figures/experiments_extensions.py</code>).
       <strong>(a)</strong> Terms at the center of a deep warm core (true
       value 191&nbsp;m, black line) on a background height gradient that
@@ -951,7 +1032,8 @@
   <footer>
     All figures except Figures 9 and 10 are synthetic and are regenerated by
     <code>docs/cps/figures/make_figures.py</code>, except Figures 11 to
-    13, which <code>band_comparison.py</code>, <code>experiments.py</code>
+    14, which <code>lifecycle_comparison.py</code>,
+    <code>band_comparison.py</code>, <code>experiments.py</code>
     and <code>experiments_extensions.py</code> in the same directory
     produce; each
     caption states which implementation produced it. Figures 9 and 10

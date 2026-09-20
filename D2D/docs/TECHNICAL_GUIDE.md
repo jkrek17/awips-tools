@@ -301,7 +301,10 @@ varying thickness field, that right-minus-left difference equals
 projected onto the right-hand normal of the storm's motion. This is
 exact for a linear field and only first-order for a genuinely
 nonlinear one (a warm-seclusion tongue folding into one side of the
-circle is the case that loses the most). Because a symmetric vortex's
+circle is the case that loses the most). Measured on a synthetic
+storm-scale dipole (400 km) it returns about 60 percent of Hart's
+semicircle difference, with the layer choice contributing nothing to
+the gap (section 2.8). Because a symmetric vortex's
 thickness gradient integrates to zero over the window under this
 first-order method, `HB` at a symmetric low is entirely the
 environment and the motion, not the storm.
@@ -369,8 +372,12 @@ worth keeping straight when comparing the two:
    means; this package uses the deep-layer (850-300 hPa) mean wind,
    area-averaged over the 500 km window before its direction is taken,
    as a motion proxy, and a first-order gradient approximation scaled
-   from the 925-700 hPa layer (section 2.7). It is unreliable for a
-   stationary (steering under 2 m/s) or steering-opposed storm.
+   from the 925-700 hPa layer (section 2.7). The approximation equals
+   Hart's semicircle difference for a gradient uniform across the
+   window and under-reads an asymmetry confined to the storm scale
+   (about 60 percent of Hart's value for a 400 km dipole; see the
+   life-cycle comparison below). It is unreliable for a stationary
+   (steering under 2 m/s) or steering-opposed storm.
 6. Hart's diagrams are drawn for the cyclones a tracker identifies;
    this package classifies any closed low that clears its depth test
    (about 5 hPa for a compact low, more for a broad flat one; 2.5) on
@@ -385,6 +392,30 @@ worth keeping straight when comparing the two:
    this package evaluates every grid point, so it masks below-ground
    levels explicitly (section 2.4) and blanks over ice sheets and high
    terrain.
+
+**Synthetic life-cycle comparison.** `docs/cps/figures/lifecycle_comparison.py`
+runs both methods on one synthetic transition (0 to 168 h, 6 h frames,
+0.25 degree grid): a vortex carried from 22N 150E to 52N 175E whose
+perturbation profile blends deep warm core, transition, deep cold core
+and seclusion, with the scale growing 150 to 350 km, the speed 4 to
+16 m/s, a baroclinic zone whose gradient grows with height, and a
+motion-relative thermal asymmetry (warm to the right) that grows from
+24 h, peaks 72 to 108 h and is gone by 144 h. Hart's method is
+`cps/hart.py` (500 km circle, 50 hPa levels, semicircle B, motion from
+the track); the gridded method is this module on the standard levels
+with the deep-layer wind set equal to the track motion. Results: both
+walk classes 0, 2, 3, 4, 5, 1; gridded onset 54 h against Hart's 42 h,
+completion 114 h against 108 h, B back under 10 m at 138 h for both;
+the gridded lower term is 12 percent above Hart's in the deep warm
+core phase (square window, 150 to 200 km vortex) and 109 m against
+41 m at the seclusion (band effect, section 2.3); rms differences over
+the life cycle are 15 m (upper term), 49 m (lower term) and 10 m (B).
+Hart's B peaks at 40 m and the gridded at 24 m; Hart's semicircle
+difference evaluated on the 925-700 hPa layer with lambda gives
+39.8 m, so the gap is entirely the window-mean gradient approximation
+on an asymmetry that reverses inside the window, not the layer. The
+intended remedy is true semicircle means for a set of motion
+directions by convolution (section 7).
 
 ---
 
@@ -683,7 +714,14 @@ as a reason to change it.
   inherits that unreliability wherever B is unreliable or blank; the
   linear approximation also loses genuinely
   nonlinear thickness structure inside the window (e.g. a
-  warm-seclusion tongue) to first order.
+  warm-seclusion tongue) to first order: about 40 percent of a
+  storm-scale asymmetry in the synthetic life cycle of section 2.8,
+  which delayed onset there by two 6 h frames. The intended remedy is
+  to compute the semicircle means directly for a set of motion
+  directions (sixteen half-window masks applied by transform-based
+  convolution, then interpolated to the local steering direction),
+  which restores Hart's definition at a cost of a few tenths of a
+  second per frame.
 - `HCPSclass` flickers between adjacent codes when a storm sits on one
   of Hart's strict lines (B at 10 m, or a thermal wind term at 0) from
   one frame to the next, because the field has no neutral band by

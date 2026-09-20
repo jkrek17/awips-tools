@@ -502,8 +502,12 @@ scatterometer data, never as a stand-in for any of those.
   low, HB is just the ambient thickness gradient across the flow at
   that point and says nothing about a storm; under this package's
   first-order method a symmetric vortex contributes nothing to B at
-  all, so a large |HB| of either sign, on or off a low, is a cue to
-  check the thickness field, not a finding on its own.
+  all, and an asymmetry confined to the storm itself reads at about
+  60 percent of Hart's value (a synthetic test; the environment's
+  gradient reads in full), so expect HB to cross 10 m a frame or two
+  later than Hart's diagram would. A large |HB| of either sign, on
+  or off a low, is a cue to check the thickness field, not a finding
+  on its own.
 - **Blank over high terrain, and near it too.** Greenland, the
   Rockies, and other high ground are blank because the lower levels
   are below the surface there. Within a few hundred kilometers of

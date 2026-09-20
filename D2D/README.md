@@ -138,6 +138,19 @@ colder air across a 25 m gradient and passes 10 m only 24 degrees off
 it; and the seven standard levels place the warm-core top at 700 hPa
 for the seclusion and transition profiles.
 
+`docs/cps/figures/lifecycle_comparison.py` runs Hart's method
+(`cps/hart.py`: 500 km circle, 50 hPa levels, semicircle B) and this
+module side by side on one synthetic 168 h transition with the same
+motion vector. Both walk classes 0, 2, 3, 4, 5, 1; the gridded onset
+and completion trail Hart's by 12 and 6 h; the gridded lower term runs
+12 percent high in the deep warm core (square window) and 109 m
+against 41 m at the seclusion (band); Hart's B peaks at 40 m and the
+gridded at 24 m, a gap the window-mean gradient approximation accounts
+for entirely (Hart's semicircle difference on the 925-700 hPa layer
+with lambda gives 39.8 m), so HB under-reads storm-scale asymmetry
+while reading a uniform environmental gradient exactly. See the
+technical guide, section 2.8.
+
 ## Closed-low mask
 
 HCPSclass and HCPSidx are blanked (NaN) outside of `cps_HartCPS.
