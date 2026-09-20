@@ -590,8 +590,26 @@ or representative sample. Add to this table as cases accumulate.
 | 2026-09-17 | GFS 2026-09-17 12Z, valid 2026-09-21 18Z | Typhoon Dujuan, loss of deep warm core | not recorded | not recorded | leaves the deep warm core classes (0 or 2) at this valid time | not recorded |
 | 2026-09-17 | GFS 12Z | Deep extratropical low, North Atlantic | not recorded, to be re-sampled | not recorded, to be re-sampled | a cold-core class (underlying values not recorded) | not recorded, to be re-sampled |
 | 2026-09-19 | GFS 12Z, 12 to 144 h | Western Pacific typhoon through transition to a 946 hPa Bering Sea low (class only; terms and B to be sampled) | | | 0 at 12 h (29.7N 137.7E); 2 at 30 h (32.2N 137.0E); 4 at 96 h (45.3N 168.4E, 981 hPa); 3 at 114 h (53.8N 179.6E, 964 hPa); 0 at 126 h (56.4N 174.3W, 946 hPa); 1 at 144 h (57.8N 179.5E, 946 hPa) | |
+| 2026-09-20 | GFS 06Z, 0 h | Typhoon, 29.5N 138.0E, 975 hPa | 128 | 176 | 0 (HB 5.9) | 2.66 |
+| 2026-09-20 | GFS 06Z, 24 h | same storm, 33.1N 139.2E | 107 | 147 | 2 (HB 13.1) | 2.48 |
+| 2026-09-20 | GFS 06Z, 48 h | same storm, 38.2N 148.5E, 976 hPa | 114 | -102 | 3 (HB 36.0) | 0.87 |
+| 2026-09-20 | GFS 06Z, 72 h | same storm, 41.3N 163.7E, 992 hPa | 22 | -284 | 3 (HB 45.9) | -0.56 |
+| 2026-09-20 | GFS 06Z, 96 h | same storm, 55.2N 171.9W, 976 hPa | 241 | -295 | 1 (HB 0.5) | 0.97 |
+| 2026-09-20 | GFS 06Z, 120 h | same storm, 56.0N 165.2W, 971 hPa | -33 | 3 | 6 (HB 20.1); HVTU is +3 m, a threshold artifact, effectively class 4 | -0.61 |
 
-Notes: the 2026-09-19 case is the first full Evans and Hart life
+Notes: the 2026-09-20 06Z rows are the same storm in the next cycle
+with all four products sampled at one point per frame. Onset falls
+between 0 and 24 h (B crosses 10 m with both cores warm), the upper
+core is lost between 24 and 48 h, the lower core erodes to +22 m by 72 h
+with B at 46 m, and the seclusion forms by 96 h (lower term back to
++241 m, upper still -295 m, B 0.5 m, class 1). The cold-phase upper
+term (-284 to -295 m) matches the FSU diagram's -300 m; the seclusion
+lower term (+241 m) is about twice the FSU value, which is the expected
+direction for the 925-700 band and the square window on a broad low.
+The index equals its definition at every sampled point (for example
+2 tanh(0.22) + tanh(-2.84) = -0.56 at 72 h). The 120 h class 6 has
+HVTU = +3 m, zero for practical purposes: a threshold artifact, read as
+class 4. The 2026-09-19 case is the first full Evans and Hart life
 cycle recorded with this package: onset before 30 h, completion before
 96 h, then a warm seclusion during rapid deepening (4 to 3 to 1, with a
 single 6 h frame of 0 at peak intensity). The 0 at 126 h means the upper
