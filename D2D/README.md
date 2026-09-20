@@ -121,6 +121,20 @@ with the operational code on synthetic fields:
    flicker when a thermal wind term is within about 15 m of zero or B
    within about 1 m of 10 m.
 
+`docs/cps/figures/experiments_extensions.py` tests four candidate
+extensions (see the technical guide, "Candidate extensions"): background
+plane removal restores the isolated-vortex terms exactly where the
+unmodified terms of a deep warm core fall to zero or below in a
+moderate baroclinic zone (upper term +191 m to +70 m along a grid axis
+and to about 0 at 45 degrees for a 5 m per degree gradient growing
+with height; -85 and -193 m at 10 m per degree); a window half-width of
+2.5 times the vortex scale holds the lower term at 100 percent of its
+true value where the fixed 500 km half-width falls to 77 percent at
+600 km scale; Hart's B reads 0 for a storm moving straight toward
+colder air across a 25 m gradient and passes 10 m only 24 degrees off
+it; and the seven standard levels place the warm-core top at 700 hPa
+for the seclusion and transition profiles.
+
 ## Closed-low mask
 
 HCPSclass and HCPSidx are blanked (NaN) outside of `cps_HartCPS.

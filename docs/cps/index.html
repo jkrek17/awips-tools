@@ -208,11 +208,23 @@
     gradient the square sees a larger range than the circle by a factor
     |cos&nbsp;&theta;| + |sin&nbsp;&theta;|, where &theta; is the angle
     between the gradient and the grid axes: no excess for an axis-aligned
-    gradient, 41% at 45&deg;, 27% averaged over direction. Since the
-    gradient contribution grows with height in a baroclinic environment,
-    the square window carries a small, direction-dependent cold bias
-    relative to Hart's circle. Figure 4b shows the geometry: the window
-    maximum sits at a corner. The thermal wind for a layer is the
+    gradient, 41% at 45&deg;, 27% averaged over direction. The
+    environmental gradient is not a small contribution. It enters Hart's
+    circle as well, by definition, and because it grows with height in a
+    baroclinic zone it lowers both terms of any storm embedded in one:
+    on a synthetic deep warm core (true terms +191&nbsp;m) a background
+    gradient of 5&nbsp;m per degree at 1000&nbsp;hPa, growing to
+    14&nbsp;m per degree at 300&nbsp;hPa, lowers the upper term to
+    +70&nbsp;m when the gradient runs along a grid axis and to
+    &minus;4&nbsp;m at 45&deg; to it; at twice that gradient the upper
+    term reads &minus;85 and &minus;193&nbsp;m (Figure 12a). Part of the
+    upper warm core loss read during a transition is therefore the
+    environment the storm has entered, in Hart's formulation and in
+    this one, and the square adds a direction-dependent share on top.
+    Subtracting the background plane before taking the range restores
+    the isolated value exactly in the synthetic case (Section 6).
+    Figure 4b shows the geometry: the window maximum sits at a
+    corner. The thermal wind for a layer is the
     least-squares slope of &Delta;Z against ln(<em>p</em>) over that
     layer's levels:
   </p>
@@ -479,8 +491,11 @@
       500&nbsp;km half-width, retained for speed (Section 6). The square
       inflates &Delta;<i>Z</i> for anomalies broader than about
       250&nbsp;km and adds a direction-dependent share of any background
-      gradient, both quantified in Section 2; signs and zero crossings are
-      preserved, magnitudes are not.</li>
+      gradient on top of the share Hart's circle already carries, both
+      quantified in Section 2; signs and zero crossings are preserved
+      for an isolated storm, magnitudes are not, and in a strong
+      baroclinic zone the environment can move the upper term across
+      zero in either formulation.</li>
     <li>Hart regresses over 900 to 600&nbsp;hPa and 600 to 300&nbsp;hPa
       at 50&nbsp;hPa spacing; this package uses 925, 850, 700&nbsp;hPa and
       500, 400, 300&nbsp;hPa. The lower band lies entirely below Hart's
@@ -821,6 +836,54 @@
       100&nbsp;m for lows of 500 to 600&nbsp;km e-folding scale.</figcaption>
   </figure>
 
+  <p>
+    Four candidate extensions were tested on synthetic fields with the
+    operational code (Figure 12), as parallel products that would leave
+    Hart's parameters as the reference. <strong>Background removal.</strong>
+    Subtracting the domain background plane from each level before the
+    range is taken returns the isolated-vortex terms exactly for every
+    gradient tested, where the unmodified terms fall to zero or below in
+    a moderate baroclinic zone (Figure 12a). This changes what the
+    parameter measures, from the storm plus its environment to the
+    storm's own perturbation, and Hart's thresholds were set on the
+    former, so it is a companion field rather than a replacement.
+    <strong>Storm-scaled radius.</strong> At a fixed 500&nbsp;km half-width
+    the lower term falls to 77% of its true value for a vortex of
+    600&nbsp;km e-folding scale; a half-width of 2.5 times the scale
+    holds 100% across all sizes tested (Figure 12b), at the cost of
+    admitting more environment for large storms. <strong>Vector
+    asymmetry.</strong> <i>B</i> is the cross-track projection of the
+    thickness gradient. For a 40&nbsp;m per 1000&nbsp;km gradient, worth
+    25&nbsp;m in Hart's units, <i>B</i> is 0 when the storm moves straight
+    toward colder air and passes 10&nbsp;m only once the motion is
+    24&deg; off the gradient (Figure 12c); the full gradient magnitude
+    and its fore-aft component are available at no cost and would flag
+    a head-on approach that <i>B</i> reads as symmetric. <strong>Warm-core
+    top.</strong> Layer-by-layer slopes on the seven standard levels place
+    the top of the warm core at 700&nbsp;hPa for the seclusion and
+    transition profiles and above 300&nbsp;hPa for the deep warm cores, a
+    continuous version of the deep versus shallow split; the standard
+    levels resolve it only to the nearest layer. The ensemble extension,
+    the fraction of members past each threshold by forecast hour, uses
+    the method unchanged and needs only ensemble input.
+  </p>
+  <figure id="fig12">
+    <img src="figures/figC_extensions.png"
+         alt="Three panels. Left: lower and upper thermal wind at the center of a synthetic deep warm core against background height gradient strength, for the gradient along a grid axis and at 45 degrees, both falling steeply, with the values after background plane removal flat at the true value. Center: lower term as a fraction of its true value against vortex scale for window half-widths of 300, 500 and 700 kilometers, falling with scale, and for a half-width of 2.5 times the scale, flat at one. Right: Hart's B and the fore-aft component against the angle between the thickness gradient and the motion, B rising from zero to the full magnitude and the fore-aft component falling, with the 10 meter threshold marked.">
+    <figcaption><strong>Figure 12.</strong> Synthetic tests of three
+      candidate extensions (<code>docs/cps/figures/experiments_extensions.py</code>).
+      <strong>(a)</strong> Terms at the center of a deep warm core (true
+      value 191&nbsp;m, black line) on a background height gradient that
+      grows with height, for the gradient along a grid axis (solid) and
+      at 45&deg; (dashed), and after subtraction of the background plane
+      (triangles). <strong>(b)</strong> Lower term as a fraction of its
+      true value against vortex e-folding scale, for fixed window
+      half-widths and for a half-width of 2.5 times the scale.
+      <strong>(c)</strong> Hart's <i>B</i> and the fore-aft component of the
+      same 40&nbsp;m per 1000&nbsp;km thickness gradient against the angle
+      between the gradient and the motion.</figcaption>
+  </figure>
+
   <h2 id="availability">7. Availability</h2>
   <p>
     The package lives at <code>D2D/</code> in the repository linked at the
@@ -863,9 +926,10 @@
 
   <footer>
     All figures except Figure 9 are synthetic and are regenerated by
-    <code>docs/cps/figures/make_figures.py</code>, except Figures 10 and
-    11, which <code>band_comparison.py</code> and
-    <code>experiments.py</code> in the same directory produce; each
+    <code>docs/cps/figures/make_figures.py</code>, except Figures 10 to
+    12, which <code>band_comparison.py</code>, <code>experiments.py</code>
+    and <code>experiments_extensions.py</code> in the same directory
+    produce; each
     caption states which implementation produced it. Figure 9 is a
     photograph.
   </footer>

@@ -76,12 +76,24 @@ difference from a circle is small; the test suite checks agreement with
 the circular point implementation in `cps/hart.py` to within 2 percent
 on an isolated synthetic vortex. On a background height gradient the
 square sees up to 41 percent more of the gradient's contribution to
-dZ than the circle does, and because that contribution grows with
-height in a baroclinic environment, the square window carries a small
-cold bias relative to Hart's circle. This is the main methodological
-difference from Hart, kept because the square supports the fast
+dZ than the circle does. The environmental gradient itself is not a
+small contribution: it enters Hart's circle as well, and because it
+grows with height in a baroclinic zone it lowers both terms of any
+storm embedded in one. On a synthetic deep warm core (true terms
+191 m) a background gradient of 5 m per degree at 1000 hPa growing to
+14 m per degree at 300 hPa lowers the upper term to 70 m along a grid
+axis and to about 0 at 45 degrees; at twice that gradient the upper
+term is -85 and -193 m (`docs/cps/figures/experiments_extensions.py`).
+Part of the upper warm core loss read during a transition is therefore
+the environment the storm has entered, in Hart's formulation and in
+this one, and the square adds a direction-dependent share on top.
+Subtracting the background plane before taking the range restores the
+isolated value exactly in the synthetic case; that is a candidate
+companion product, not a replacement, because Hart's thresholds were
+set with the environment included. The square is the main
+methodological difference from Hart, kept because it supports the fast
 separable sliding-extrema filter in section 3.1; a circular filter
-would cost several times more per frame for a bias this small on an
+would cost several times more per frame for the extra share on an
 isolated vortex. See section 7 for the full trade-off.
 
 On a global lat/lon grid, `window_extreme_2d` and `window_sum_2d` wrap
@@ -344,8 +356,10 @@ worth keeping straight when comparing the two:
    square 1000 km across, kept
    deliberately for speed (section 7). On a strong background gradient
    the square overstates the height range by up to 41 percent of the
-   gradient's own contribution, which carries a small cold bias
-   relative to Hart's circle.
+   gradient's own contribution, on top of the share Hart's circle
+   carries by definition; in a strong baroclinic zone the environment
+   can move the upper term across zero in either formulation
+   (section 2.2).
 4. Hart regresses over 900-600 hPa and 600-300 hPa at 50 hPa spacing;
    this package uses 925, 850, 700 hPa and 500, 400, 300 hPa.
    Magnitudes come out near Hart's but not equal; sign, the zero
@@ -608,6 +622,34 @@ so the files import exactly as CAVE imports them.
 
 ---
 
+## 6a. Candidate extensions tested on synthetic fields
+
+`docs/cps/figures/experiments_extensions.py` tests four extensions as
+parallel products that would leave Hart's parameters as the reference:
+
+- Background removal: subtracting the domain background plane from each
+  level before the range is taken returns the isolated-vortex terms
+  exactly for every gradient tested, where the unmodified terms fall to
+  zero or below in a moderate baroclinic zone. It changes the meaning of
+  the parameter (storm alone rather than storm plus environment), so it
+  belongs beside HVTL and HVTU, not in place of them.
+- Storm-scaled radius: at a fixed 500 km half-width the lower term
+  falls to 77 percent of its true value for a 600 km e-folding scale
+  vortex; a half-width of 2.5 times the scale holds 100 percent across
+  all sizes tested, at the cost of admitting more environment.
+- Vector asymmetry: B is the cross-track projection of the thickness
+  gradient. For a 40 m per 1000 km gradient (25 m in Hart's units) B is
+  0 when the storm moves straight toward colder air and passes 10 m only
+  once the motion is 24 degrees off the gradient; the full magnitude and
+  the fore-aft component come free from the same gradient.
+- Warm-core top: layer-by-layer slopes on the seven standard levels put
+  the top of the warm core at 700 hPa for the seclusion and transition
+  profiles and above 300 hPa for deep warm cores, resolved only to the
+  nearest standard layer.
+
+The ensemble extension (fraction of GEFS members past each threshold by
+forecast hour) uses the method unchanged and needs only ensemble input.
+
 ## 7. Known limitations and future work
 
 **The square analysis window (2026-09-18).** HVTL, HVTU, and HB use
@@ -615,8 +657,8 @@ the square 500 km window rather than Hart's circle because a square
 sliding max/min is separable and runs in a handful of passes per level
 (section 3.1); a circular filter would cost several times more per
 frame at the grid sizes and frame counts this package targets. The
-trade-off is a small cold bias on a strong background gradient
-(section 2.2). Revisiting the choice would mean re-measuring that cost
+trade-off is the direction-dependent extra share of the background
+gradient (section 2.2). Revisiting the choice would mean re-measuring that cost
 and that bias together on real cases, not treating either number alone
 as a reason to change it.
 

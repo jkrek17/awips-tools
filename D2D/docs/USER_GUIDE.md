@@ -478,8 +478,15 @@ scatterometer data, never as a stand-in for any of those.
   fast enough to compute at every grid point on every frame; a
   circular filter would cost several times more per frame for a bias
   this package's tests found small on an isolated storm. The trade-off
-  is a small cold bias on a strong background gradient, documented
-  here and in the Technical Guide rather than hidden in the numbers.
+  is an extra, direction-dependent share of the background gradient.
+  Be aware that the background gradient itself, which Hart's method
+  also includes, lowers both terms for any storm in a baroclinic zone:
+  in a synthetic test a moderate jet-entrance environment took a deep
+  warm core's upper term from +191 m to about zero. Some of the upper
+  warm core loss you see as a typhoon enters the westerlies is the
+  environment, not only the storm; that is how Hart's diagnostic
+  behaves too, and it is why his transition thresholds were set with
+  the environment included.
 - **HB depends on the steering flow, not the storm's real motion.**
   HB and HCPSclass stand in the deep-layer wind (850, 700, 500, and
   300 hPa), averaged over the 500 km window before its direction is
