@@ -125,16 +125,20 @@ for every model.
 
 **[Slide 9, validation] 5:49**
 
-Three checks so far, all GFS cases from one model cycle: a smoke test,
-not a calibration. A typhoon at 984 millibars read 120 and 180 meters,
-a deep warm core; our bands differ from Hart's, so we don't compare
-that magnitude to his published values. For Typhoon Dujuan, the 2026
-September 17, 1200 UTC GFS run valid 21 September 1800 UTC: the hour
-the class left its deep warm core state matched the hour FSU's page
-showed deep to shallow warm core, within one 6 hour frame. A deep
-North Atlantic low in the same cycle classified cold core; its values
-weren't recorded, so that case needs re-sampling. Greenland and the
-Rockies come out blank rather than contaminated. Compute cost is
+The headline case is one typhoon carried through the whole life cycle
+in the 20 September 0600 UTC GFS, with all four products sampled at the
+center each day. Deep warm core at 0 hours: lower term 128, upper 176,
+B 6 meters. By 24 hours B is 13, past onset, both cores still warm. By
+48 hours the upper core is gone, minus 102. By 72 hours the lower core
+is down to 22 with B at 46. Then the seclusion: at 96 hours the lower
+term is back to 241 with the upper still at minus 295 and B down to
+half a meter, symmetric shallow warm core, class 1, at 976 millibars.
+Hart's own diagrams for this storm trace the same path, and the
+cold-phase upper term, minus 290, matches his minus 300. The
+seclusion's lower term is about twice his, in the direction our bands
+and window predict. One frame at 120 hours reads class 6 with an upper
+term of plus 3 meters, which is zero for practical purposes: a
+threshold artifact, and the honest reading is class 4. Compute cost is
 about 2.6 seconds per forecast hour on the full global grid, the
 median of four runs, ranging 2.4 to 3.0 seconds.
 
