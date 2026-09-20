@@ -68,6 +68,25 @@ A future GFS-only, Hart-exact definition using the true 900-600/
 executeBand7` and needs only a new XML definition, no Python change
 -- see "Adding a GFS-only seven-level definition" below.
 
+### Band experiment (2026-09-20)
+
+`docs/cps/figures/band_comparison.py` fits Hart's 900-600 hPa band
+(seven levels at 50 hPa), the package's 925/850/700 band and a
+proposed 925/850/700/500 band to five prescribed height-perturbation
+profiles. For profiles that are linear in ln p all three agree. For a
+shallow warm core (warm below 700 hPa, cold above, the seclusion
+profile) Hart's band gives +79 m, 925/850/700 gives +139 m and
+925/850/700/500 gives +11 m; for a transitioning profile the three
+give +181, +241 and +57 m. The deeper band dilutes a shallow warm core
+far more than Hart's does, so the seclusion signal would nearly vanish;
+the current band overstates it. The mean of the 925/850/700 and
+850/700/500 slopes tracks Hart's band best of the simple estimators
+tried (rms 25 m across the five profiles against 44 m for the current
+band and 66 m for the proposed one) and is exact for the deep cold
+profile. The conclusion is to keep 925/850/700 rather than move to
+925/850/700/500, and to test the two-slope average against Hart's own
+levels on real GFS data before adopting it.
+
 ## Closed-low mask
 
 HCPSclass and HCPSidx are blanked (NaN) outside of `cps_HartCPS.
