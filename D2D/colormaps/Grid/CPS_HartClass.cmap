@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  HartClass: 7 entry categorical colormap for HCPSclass (the joint Hart
+  CPS class, see D2D/README.md and cps_HartCPS.hart_class). Pair this with a
+  styleRule range of -0.5 to 6.5 so each integer code below lands in the
+  middle of one color bin instead of on a boundary between two:
+
+    code 0  symmetric deep warm core                    red      (0.85, 0.15, 0.15, 1.0)
+    code 1  symmetric shallow warm core                 magenta  (0.80, 0.20, 0.75, 1.0)
+    code 2  frontal deep warm core                      yellow   (0.98, 0.85, 0.10, 1.0)
+    code 3  frontal shallow warm core                   green    (0.20, 0.68, 0.25, 1.0)
+    code 4  frontal cold core                           blue     (0.15, 0.50, 0.90, 1.0)
+    code 5  symmetric cold core                         indigo   (0.35, 0.22, 0.72, 1.0)
+    code 6  shallow cold core (lower cold, upper warm)  gray     (0.72, 0.72, 0.70, 1.0)
+
+  The hues form three groups so the Evans and Hart (2003) onset and
+  completion read as abrupt color shifts: reds for a symmetric warm core
+  (0 red, 1 magenta), yellow and green for a storm in transition (2
+  yellow after onset, 3 green after the upper warm core is lost), blues
+  for a cold core (4 blue after completion, 5 indigo once symmetric).
+  Code 6 is neutral gray.
+
+  File format: a root <colorMap> element containing an ordered list of
+  <color r="" g="" b="" a=""/> entries, each component a float from
+  0.0 to 1.0, in code order (this file's first <color> is code 0, and
+  so on). VERIFY the element/attribute names against your site's actual
+  .cmap schema.
+-->
+<colorMap>
+        <color r="0.85" g="0.15" b="0.15" a="1.0"/>
+        <color r="0.80" g="0.20" b="0.75" a="1.0"/>
+        <color r="0.98" g="0.85" b="0.10" a="1.0"/>
+        <color r="0.20" g="0.68" b="0.25" a="1.0"/>
+        <color r="0.15" g="0.50" b="0.90" a="1.0"/>
+        <color r="0.35" g="0.22" b="0.72" a="1.0"/>
+        <color r="0.72" g="0.72" b="0.70" a="1.0"/>
+</colorMap>
