@@ -16,8 +16,8 @@
 
   <p class="byline">Jason Krekeler, NOAA/NWS Ocean Prediction Center &middot; 2026-09-18</p>
   <p class="meta">Code:
-    <a href="https://github.com/jkrek17/awips-tools/tree/claude/cyclone-phase-space-modern-9yw344/D2D">github.com/jkrek17/awips-tools</a>
-    (branch <code>claude/cyclone-phase-space-modern-9yw344</code>, directory <code>D2D/</code>)
+    <a href="https://github.com/jkrek17/awips-tools/tree/main/D2D">github.com/jkrek17/awips-tools</a>
+    (directory <code>D2D/</code>)
   </p>
 
   <div class="abstract">
@@ -51,6 +51,48 @@
       than Hart's layer, and the asymmetry parameter reads a storm-scale
       asymmetry at about 60% of Hart's value while reading a uniform
       environmental gradient exactly.
+    </p>
+  </div>
+
+  <div class="abstract forecasters">
+    <h2>Executive summary for forecasters</h2>
+    <p>
+      <strong>What it is.</strong> Five new D2D fields that tell you what
+      kind of cyclone a model is forecasting, not just where it is or how
+      deep. They work on every model in the inventory, on every frame,
+      with no tracker and no advisory. The science is Hart's cyclone
+      phase space, the same diagnostic behind the Florida State
+      University phase diagrams, computed on the model grid instead of
+      along a storm track.
+    </p>
+    <p>
+      <strong>What to load.</strong> Start with <em>Hart CPS Class</em>
+      over MSLP and 1000 to 500&nbsp;hPa thickness. It draws one colored
+      block over each closed low. Reds mean a symmetric warm core, a
+      hurricane or typhoon structure. Yellow and green mean the storm
+      has become frontal and is transitioning. Blues mean a cold core,
+      an ordinary extratropical low. Magenta means a warm seclusion: a
+      warm core has re-formed inside a mature extratropical low, which
+      is often when the winds peak. The other four fields are the
+      numbers behind that block: the lower and upper warm-core strength,
+      the frontal asymmetry <i>B</i>, and a single index from +3
+      (hurricane) to &minus;3 (deep cold low).
+    </p>
+    <p>
+      <strong>How to use it.</strong> Step through the frames. Onset of
+      transition is the hour the block turns yellow or green; completion
+      is the hour it turns blue. Load a second model beside the first and
+      compare those hours; where they disagree is your transition
+      uncertainty. Expect the transition to read one or two frames
+      later than the Florida State page would show, and expect the block
+      to flicker between neighboring colors when a storm sits on a
+      boundary.
+    </p>
+    <p>
+      <strong>What it is not.</strong> It is not an intensity or wind
+      forecast, and it will not classify open troughs, weak lows under
+      about 5&nbsp;hPa deep, or anything over high terrain. Read it
+      alongside the wind and pressure fields, not instead of them.
     </p>
   </div>
 
