@@ -84,13 +84,14 @@ storm embedded in one. On a synthetic deep warm core (true terms
 14 m per degree at 300 hPa lowers the upper term to 70 m along a grid
 axis and to about 0 at 45 degrees; at twice that gradient the upper
 term is -85 and -193 m (`docs/cps/figures/experiments_extensions.py`).
-Part of the upper warm core loss read during a transition is therefore
-the environment the storm has entered, in Hart's formulation and in
-this one, and the square adds a direction-dependent share on top.
-Subtracting the background plane before taking the range restores the
-isolated value exactly in the synthetic case; that is a candidate
-companion product, not a replacement, because Hart's thresholds were
-set with the environment included. The square is the main
+That response is by design: the phase space describes the cyclone
+together with the baroclinic zone it has entered, and the fall of the
+upper term as a storm meets a trough is the transition signal itself,
+in Hart's formulation and in this one. The synthetic case only shows
+how early the signal appears, since the storm's own core never
+changed. The square adds a direction-dependent share on top of
+Hart's, and that share is the only part that is a bias relative to
+his circle. The square is the main
 methodological difference from Hart, kept because it supports the fast
 separable sliding-extrema filter in section 3.1; a circular filter
 would cost several times more per frame for the extra share on an
@@ -627,12 +628,16 @@ so the files import exactly as CAVE imports them.
 `docs/cps/figures/experiments_extensions.py` tests four extensions as
 parallel products that would leave Hart's parameters as the reference:
 
-- Background removal: subtracting the domain background plane from each
+- Storm-only core: subtracting the domain background plane from each
   level before the range is taken returns the isolated-vortex terms
   exactly for every gradient tested, where the unmodified terms fall to
-  zero or below in a moderate baroclinic zone. It changes the meaning of
-  the parameter (storm alone rather than storm plus environment), so it
-  belongs beside HVTL and HVTU, not in place of them.
+  zero or below in a moderate baroclinic zone. This is not an
+  improvement to the phase space, which is meant to respond to the
+  environment. It answers a different question, whether an intact warm
+  core still sits under the trough while the phase reads cold, which
+  bears on how long hurricane-force core winds persist. It would be a
+  separate wind-structure diagnostic, never shown in place of HVTL and
+  HVTU.
 - Storm-scaled radius: at a fixed 500 km half-width the lower term
   falls to 77 percent of its true value for a 600 km e-folding scale
   vortex; a half-width of 2.5 times the scale holds 100 percent across
