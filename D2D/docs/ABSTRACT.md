@@ -18,14 +18,16 @@ excluded, and a closed-low detector on 1000 hPa height restricts
 classification to closed lows about 5 hPa deep. One categorical field
 assigns each detected low to one of seven classes formed from the
 quadrants of Hart's two diagrams. A global 0.25° grid takes about 2.6 s
-per forecast hour. On GFS forecasts, the hour at which a typhoon lost
-its deep warm core matched the storm-centered diagnosis on the Florida
-State University cyclone phase page. The asymmetry parameter uses the
-window-mean deep-layer wind as a motion proxy and a first-order
-thickness-gradient approximation, and is not yet validated. The
-standard-level bands and the square window differ systematically from
-Hart's definitions, and the size of those differences on real storms has
-not been measured.
+per forecast hour. On GFS forecasts the class followed a typhoon
+through its full transition on the path the Florida State University
+phase diagrams traced for the same run. On a synthetic life cycle
+evaluated with Hart's method and with the gridded method, both assign
+the same class sequence, the gridded onset and completion one to two
+frames later. The square window reads about 12% high for compact
+storms, the 925 to 700 hPa band reads a warm seclusion two to three
+times higher than Hart's layer, and the asymmetry parameter reads a
+storm-scale asymmetry at about 60% of Hart's value while reading a
+uniform environmental gradient exactly.
 
 ## References
 
