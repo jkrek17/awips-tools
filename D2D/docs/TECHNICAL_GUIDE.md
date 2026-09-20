@@ -127,7 +127,11 @@ near zero (+11 m against Hart's +79 m for the seclusion profile), so
 the deeper band was rejected. The mean of the 925/850/700 and
 850/700/500 slopes tracked Hart's band best of the simple estimators
 (rms 25 m against 44 m for the band in use) and is a candidate for a
-later revision once tested on real data.
+later revision once tested on real data. A morphing-profile test puts
+completion about 3 h late on a 48 h transition for the band in use,
+against about 6 h early for the deeper band; the upper crossing is
+within a frame of Hart's (`docs/cps/figures/experiments.py`, README
+"Band experiment").
 
 ### 2.4 Below-ground masking
 
@@ -201,6 +205,15 @@ overlapping 500 km windows and can share detections, and the `blobKm`
 dilation (200 km) can then merge their two blobs into one on the
 display. There is no per-low separation logic; check MSLP for a second
 low inside a blob's footprint before treating it as a single system.
+
+Detector sensitivity (synthetic, `docs/cps/figures/experiments.py`):
+with the shipped 40 m ring test a 40 m deep low is never detected; 50 m
+is detected out to a 300 km e-folding scale, 80 m out to 500 km, 100 m
+out to 600 km, and an 800 km scale low is missed even at 120 m. The
+effective floor is therefore about 6 hPa for a compact low and 10 to
+12 hPa for a broad one. An open trough with a 40 m per 1000 km
+cross-trough gradient produces no detection; a flat-centered 80 m low
+and an elongated 700 by 150 km low are both detected.
 
 ### 2.6 Joint classification
 
@@ -612,7 +625,10 @@ as a reason to change it.
 - Parameter B (`HB`, and `HCPSclass`, which depends on it for its
   frontal/symmetric split) uses the deep-layer steering wind
   (850/700/500/300 hPa mean, area-averaged over the 500 km window
-  before its direction is taken) as its motion proxy, and a
+  before its direction is taken; the area mean of the geostrophic wind
+  depends only on the height on the window boundary, so any vortex
+  contained in the window cancels, symmetric or not) as its motion
+  proxy, and a
   linear-gradient approximation for the right-minus-left half-window
   mean. Both are awaiting validation: the steering proxy is unreliable
   for a storm moving against its own steering flow or for a nearly

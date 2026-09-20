@@ -326,6 +326,10 @@ page for a shallow warm core (a seclusion or a storm in transition),
 because the 925 to 700 hPa band sits lower than Hart's 900 to 600 hPa
 layer; a synthetic test put the overstatement at 60 to 80 m for those
 profiles and showed that a deeper band would lose the signal instead.
+With about 5 m of height noise the terms at a center scatter by about
+15 m (HVTL) and 9 m (HVTU) and B by under 1 m, so expect the class to
+flicker when a term is within about 15 m of zero or B within a meter
+of 10 m; the continuous fields show the trend through such a stretch.
 
 The raw HVTL, HVTU, and HB images paint a square about 1000 km across
 around each low; that is the shape of the 500 km window, not a
@@ -401,11 +405,13 @@ comparison easier to eyeball, but is the summary, not the source).
 Compare the hour each model's HB first crosses 10 m (onset) and the
 hour each model's HVTL first crosses 0 (completion); where they
 disagree is the transition uncertainty, and that is usually the wind
-forecast uncertainty as well. Never compare the magnitude of HB or
-HVTL between two models, even the same model at two resolutions: a
-coarser grid's window sees less of any local gradient and reads a
-smaller value, so a magnitude difference can be entirely the grid
-spacing. Compare crossing hours and trends only.
+forecast uncertainty as well. Compare crossing hours and trends rather
+than magnitudes between models: a synthetic test found grid spacing
+itself changes the terms by under 2 percent between 0.25 and 1 degree
+for storm-scale features, so a magnitude difference between models is
+mostly a real difference in the forecast structure, but the bands and
+window make every magnitude an approximation of Hart's, and the
+crossings are what the classification rests on.
 
 **Weak-low fallback.** If a system is too weak to clear the closed-low
 test, HCPSclass and HCPSidx are blank there, but HVTL and HVTU still

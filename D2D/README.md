@@ -87,6 +87,40 @@ profile. The conclusion is to keep 925/850/700 rather than move to
 925/850/700/500, and to test the two-slope average against Hart's own
 levels on real GFS data before adopting it.
 
+`docs/cps/figures/experiments.py` runs five further sensitivity tests
+with the operational code on synthetic fields:
+
+1. Timing. Morphing a profile from deep warm core through the
+   transition shape to deep cold core, completion (lower term crossing
+   zero) falls at progress 0.71 on Hart's band, 0.77 on 925/850/700,
+   0.59 on 925/850/700/500 and 0.67 on the two-slope mean; the upper
+   crossing is 0.17 on Hart's 600-300 and 0.15 on 500/400/300. The band
+   in use calls completion slightly late (about 3 h on a 48 h
+   transition); the deeper band would call it about 6 h early.
+2. Closed-low detector. At the shipped 40 m ring test a low of 40 m
+   central depth is never detected; 50 m is detected out to a 300 km
+   e-folding scale, 80 m out to 500 km, 100 m out to 600 km, and an
+   800 km scale low is missed even at 120 m. The effective floor is
+   therefore about 6 hPa for a compact low and 10 to 12 hPa for a broad
+   one. An open trough with a 40 m per 1000 km cross-trough gradient
+   produces no detection; a flat-centered 80 m low and an elongated
+   700 by 150 km low are both detected (figure figB_detector.png).
+3. Resolution. The same vortex on 0.25, 0.5 and 1.0 degree grids gives
+   the same lower term to 0.1 m at 150 km scale and within 1.4 percent
+   at 400 km scale.
+4. Steering. With 20 and 40 percent wavenumber-one asymmetry in the
+   vortex, the window-averaged proxy still returns the imposed 8 m/s
+   westerly exactly at the center, while the pointwise wind one degree
+   away reads 44 to 55 m/s. The area mean of the geostrophic wind over
+   a window depends only on the height on the window boundary, so any
+   vortex whose perturbation vanishes at the boundary contributes
+   nothing, symmetric or not.
+5. Noise. With 5 m of uncorrelated height noise on every level, the
+   terms at a storm center scatter with standard deviations of 15 m
+   (HVTL), 9 m (HVTU) and 0.6 m (HB) over 60 realizations. A class can
+   flicker when a thermal wind term is within about 15 m of zero or B
+   within about 1 m of 10 m.
+
 ## Closed-low mask
 
 HCPSclass and HCPSidx are blanked (NaN) outside of `cps_HartCPS.

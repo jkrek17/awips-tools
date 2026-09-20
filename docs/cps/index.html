@@ -328,9 +328,14 @@
     proxy, the angle brackets a mean over the 500&nbsp;km window, and
     &lambda; the layer-scaling factor below. The motion proxy is the
     deep-layer mean wind (850, 700, 500 and 300&nbsp;hPa) averaged over the
-    same window: a symmetric vortex contributes no net wind to that
-    average, so what remains is the environmental flow that carries the
-    storm, the usual deep-layer-mean steering estimate. Below a window-mean
+    same window. The area mean of the geostrophic wind over a window
+    depends only on the height along the window's boundary, so any
+    vortex whose perturbation vanishes at the boundary contributes
+    nothing to the average, symmetric or not; what remains is the
+    environmental flow that carries the storm, the usual deep-layer-mean
+    steering estimate. On a synthetic vortex with 40% wavenumber-one
+    asymmetry in an 8&nbsp;m/s westerly the proxy returns 8.0&nbsp;m/s
+    from 270&deg; at the center. Below a window-mean
     speed of 2&nbsp;m/s the heading is undefined and <i>B</i> is set to
     missing. The factor 8<i>R</i>/3&pi; is exact for a linear field: the
     centroid of a half disk of radius <i>R</i> lies 4<i>R</i>/3&pi; from
@@ -722,12 +727,18 @@
       derived-parameter definition, so it is available only to the GFS
       and only by direct call; a comparison on GFS native levels over a
       set of storms remains the measurement that would convert the band
-      difference into a known bias.</li>
+      difference into a known bias. Morphing a profile from deep warm
+      through the transition shape to deep cold core, completion falls
+      at progress 0.71 on Hart's band and 0.77 on the band in use, about
+      3&nbsp;h late on a 48&nbsp;h transition, against 0.59 on the
+      925 to 500&nbsp;hPa band; the upper crossing is within a frame of
+      Hart's.</li>
     <li>The square window inflates &Delta;<i>Z</i> for anomalies broader
       than about 250&nbsp;km and adds a direction-dependent share of the
-      background gradient (Section 2). The sensitivity of the products
-      to window size, band definition and grid resolution has not been
-      mapped, and no projected grid has been tested.</li>
+      background gradient (Section 2). Grid resolution alone changes the
+      terms by under 2% between 0.25&deg; and 1&deg; for storm-scale
+      features. The sensitivity to window size has not been mapped, and
+      no projected grid has been tested.</li>
     <li>Parameter B is computed to first order from the window-mean
       thickness gradient across a motion proxy, the window-mean deep-layer
       wind, scaled from the 925 to 700&nbsp;hPa layer. It omits nonlinear
@@ -739,15 +750,25 @@
       comparison against storm-centered <i>B</i> computed from
       finite-differenced model centers is the intended test.</li>
     <li>The closed-low detector measures relief between a center and the
-      300 to 500&nbsp;km ring, so broad lows can go undetected and an
-      elongated trough with a strong cross-trough gradient can be
-      accepted; its behavior on such cases has not been tested.</li>
+      300 to 500&nbsp;km ring, so its floor rises with the breadth of the
+      low: on synthetic Gaussian lows (Figure 11) a 50&nbsp;m central
+      depth is detected out to a 300&nbsp;km e-folding scale, 80&nbsp;m
+      out to 500&nbsp;km, 100&nbsp;m out to 600&nbsp;km, and an
+      800&nbsp;km scale low is missed even at 120&nbsp;m, so the
+      effective floor is about 6&nbsp;hPa for a compact low and 10 to
+      12&nbsp;hPa for a broad one. An open trough with a 40&nbsp;m per
+      1000&nbsp;km cross-trough gradient produces no detection, and a
+      flat-centered 80&nbsp;m low and an elongated 700 by 150&nbsp;km low
+      are both detected.</li>
     <li>HCPSclass alternates between adjacent codes from frame to frame
       when a storm sits on one of Hart's thresholds. This follows from
       the absence of a neutral band and from the absence of temporal
       smoothing; the continuous fields resolve the trend through such an
-      interval, and no estimate of the frame-to-frame noise of HB and
-      HVTL at a fixed center has yet been made.</li>
+      interval. With 5&nbsp;m of uncorrelated height noise on every
+      level, the terms at a synthetic center scatter with standard
+      deviations of 15&nbsp;m (lower), 9&nbsp;m (upper) and 0.6&nbsp;m
+      (<i>B</i>), which sets the width of the flicker zone around each
+      threshold.</li>
     <li>The below-ground rule treats a level as valid wherever the
       surface pressure is at or above the smaller of that level and
       900&nbsp;hPa, so extrapolated heights enter the window over low
@@ -787,6 +808,17 @@
       to which <i>B</i> is proportional, for a uniform, a surface-based
       and a mid-level-maximum baroclinic zone; the layers agree only for
       the uniform case.</figcaption>
+  </figure>
+
+  <figure id="fig11" class="half">
+    <img src="figures/figB_detector.png"
+         alt="Grid of central depth from 20 to 120 meters against e-folding scale from 100 to 800 kilometers, dark cells where the closed-low detector accepts a synthetic Gaussian low at its center: nothing at 40 meters or less, 50 meters accepted out to 300 kilometers, 80 meters out to 500, 100 meters out to 600, and nothing at 800 kilometers.">
+    <figcaption><strong>Figure 11.</strong> Closed-low detector
+      sensitivity on synthetic Gaussian lows in 1000&nbsp;hPa height on a
+      0.25&deg; grid (<code>docs/cps/figures/experiments.py</code>): dark
+      cells are detected at the center. The 40&nbsp;m ring test admits a
+      compact low of about 50&nbsp;m (6&nbsp;hPa) and needs 80 to
+      100&nbsp;m for lows of 500 to 600&nbsp;km e-folding scale.</figcaption>
   </figure>
 
   <h2 id="availability">7. Availability</h2>
@@ -831,8 +863,9 @@
 
   <footer>
     All figures except Figure 9 are synthetic and are regenerated by
-    <code>docs/cps/figures/make_figures.py</code>, except Figure 10, which
-    <code>band_comparison.py</code> in the same directory produces; each
+    <code>docs/cps/figures/make_figures.py</code>, except Figures 10 and
+    11, which <code>band_comparison.py</code> and
+    <code>experiments.py</code> in the same directory produce; each
     caption states which implementation produced it. Figure 9 is a
     photograph.
   </footer>
