@@ -118,6 +118,17 @@ the zero threshold and transition timing carry over, and the Dujuan
 case confirmed the timing matches within one 6 h frame. A GFS-only definition on
 Hart's exact levels can be added with `executeBand7` (section 4.4).
 
+A synthetic test (`docs/cps/figures/band_comparison.py`, README
+"Band experiment") fitted Hart's band and two alternatives to five
+prescribed profiles. For a shallow warm core with cold air above, the
+seclusion and transition profiles, 925/850/700 overstates Hart's value
+by 60 to 80 m while a 925/850/700/500 band dilutes the same signal to
+near zero (+11 m against Hart's +79 m for the seclusion profile), so
+the deeper band was rejected. The mean of the 925/850/700 and
+850/700/500 slopes tracked Hart's band best of the simple estimators
+(rms 25 m against 44 m for the band in use) and is a candidate for a
+later revision once tested on real data.
+
 ### 2.4 Below-ground masking
 
 Each height level is compared against surface pressure before any

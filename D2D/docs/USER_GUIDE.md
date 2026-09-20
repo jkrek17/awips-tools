@@ -321,7 +321,11 @@ These are Hart's own quantities in his units. Typical values:
 Zero is the warm versus cold boundary, exactly as on the FSU diagram.
 Values are close to but not identical to the FSU page for the same
 storm, because the FSU page uses 50 hPa levels and these use standard
-levels only.
+levels only. In practice the lower term reads higher than the FSU
+page for a shallow warm core (a seclusion or a storm in transition),
+because the 925 to 700 hPa band sits lower than Hart's 900 to 600 hPa
+layer; a synthetic test put the overstatement at 60 to 80 m for those
+profiles and showed that a deeper band would lose the signal instead.
 
 The raw HVTL, HVTU, and HB images paint a square about 1000 km across
 around each low; that is the shape of the 500 km window, not a

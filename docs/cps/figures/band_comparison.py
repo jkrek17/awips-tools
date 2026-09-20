@@ -162,7 +162,7 @@ def main():
     ax.set_title("(c) B proxy by layer", loc="left", fontsize=10)
     ax.legend(fontsize=7)
     fig.tight_layout()
-    fig.savefig(HERE / "figA_band_comparison.png", dpi=200)
+    fig.savefig(HERE / "figA_band_comparison.png", dpi=300)
     print("\nwrote", HERE / "figA_band_comparison.png")
 
 
