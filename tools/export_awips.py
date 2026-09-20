@@ -7,6 +7,7 @@ fixtures, and a driver shell script) and an AWIPS_TEST.md walkthrough, into:
 
     dist/TCWind_JTWC_<VERSION>/
         TCWind_JTWC.py
+        TCWind_JTWC_TECHNICAL.md
         AWIPS_TEST.md
         selfcheck/
             run_selfcheck.sh
@@ -40,6 +41,10 @@ import zipfile
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROC_SRC = os.path.join(REPO_ROOT, "GFE", "procedures", "TCWind_JTWC.py")
+# The reasoning the procedure's "# [doc N]" markers point at. Shipping the
+# code without it would leave 62 dangling references on the AWIPS host.
+TECHDOC_SRC = os.path.join(
+    REPO_ROOT, "GFE", "procedures", "TCWind_JTWC_TECHNICAL.md")
 HARNESS_SRC = os.path.join(
     REPO_ROOT, "tests", "tcwind_jtwc", "test_procedure_harness.py")
 FIXTURES_SRC_DIR = os.path.join(REPO_ROOT, "tests", "tcwind_jtwc", "fixtures")
@@ -408,6 +413,12 @@ def build_bundle():
 
     # TCWind_JTWC.py, verbatim.
     shutil.copyfile(PROC_SRC, os.path.join(bundle_dir, "TCWind_JTWC.py"))
+
+    # TCWind_JTWC_TECHNICAL.md, verbatim.
+    if not os.path.isfile(TECHDOC_SRC):
+        raise SystemExit("error: technical doc not found at %s" % TECHDOC_SRC)
+    shutil.copyfile(
+        TECHDOC_SRC, os.path.join(bundle_dir, "TCWind_JTWC_TECHNICAL.md"))
 
     # selfcheck/test_procedure_harness.py, verbatim (its own repo/bundle
     # fallback logic finds TCWind_JTWC.py and the fixtures in either
