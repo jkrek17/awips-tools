@@ -165,7 +165,7 @@ jobs:
           # Written by `tools/publish.py --deploy ... --flat`, not site content.
           MANIFEST_NAME = '.awips-publish-manifest.json'
 
-          def load_not_deployed():
+          def load_set_constant(name):
               # Read publish.py's NOT_DEPLOYED constant WITHOUT importing
               # publish.py, by parsing its source with `ast` and pulling the
               # literal value off the module-level assignment.
@@ -198,7 +198,7 @@ jobs:
               for node in tree.body:
                   if not isinstance(node, ast.Assign):
                       continue
-                  if not any(isinstance(t, ast.Name) and t.id == 'NOT_DEPLOYED'
+                  if not any(isinstance(t, ast.Name) and t.id == name
                             for t in node.targets):
                       continue
                   try:
@@ -217,19 +217,28 @@ jobs:
               # substitute for a human updating this script to match
               # whatever publish.py changed to.
               print(f'::error::flat-sync could not find a module-level '
-                    f"`NOT_DEPLOYED = {{...}}` set-of-strings constant in "
+                    f"`{name} = {{...}}` set-of-strings constant in "
                     f'{PUBLISH_PY}. This check skips exactly the docs/ files '
-                    f'publish.py declines to deploy to flat/, and it does '
-                    f'that by reading NOT_DEPLOYED out of publish.py so the '
-                    f'two can never disagree - if that constant was renamed, '
+                    f'and subtrees publish.py declines to deploy to flat/, '
+                    f'and it does that by reading NOT_DEPLOYED and '
+                    f'NOT_DEPLOYED_DIRS out of publish.py so the two can '
+                    f'never disagree - if that constant was renamed, '
                     f'removed, or changed shape, update the parsing in this '
                     f'workflow step to match.')
               sys.exit(1)
 
-          NOT_DEPLOYED = load_not_deployed()
+          NOT_DEPLOYED = load_set_constant('NOT_DEPLOYED')
+          # Top-level docs/ subtrees that Pages serves but --flat never
+          # copies (e.g. docs/cps/, the cyclone phase space article, whose
+          # own index.html would collide with the archive's). Skipped here
+          # for the same reason NOT_DEPLOYED is: publish.py is not keeping
+          # them in flat/, so their absence there is not drift.
+          NOT_DEPLOYED_DIRS = load_set_constant('NOT_DEPLOYED_DIRS')
 
           def iter_docs_files():
-              for dirpath, _dirnames, filenames in os.walk(DOCS_DIR):
+              for dirpath, dirnames, filenames in os.walk(DOCS_DIR):
+                  if os.path.relpath(dirpath, DOCS_DIR) == '.':
+                      dirnames[:] = [d for d in dirnames if d not in NOT_DEPLOYED_DIRS]
                   for name in filenames:
                       yield os.path.relpath(os.path.join(dirpath, name), DOCS_DIR)
 

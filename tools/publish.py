@@ -516,9 +516,20 @@ def validate_deploy_target(target: str) -> str:
 # than trusted to stay out of some downstream list forever.
 NOT_DEPLOYED = {"data/qc-report.txt"}
 
+# Whole docs/ subtrees that are GitHub Pages content but not part of the
+# archive site: they are served by Pages straight from docs/, but they never
+# go to the NOAA web server with --deploy and never into a --flat build
+# (docs/cps/index.html would collide with the archive's index.html there).
+# Read by the workflow's flat-sync job the same way NOT_DEPLOYED is, so the
+# two can never disagree about what --flat leaves out.
+NOT_DEPLOYED_DIRS = {"cps"}
+
 
 def iter_site_files():
-    for dirpath, _dirnames, filenames in os.walk(DOCS_DIR):
+    for dirpath, dirnames, filenames in os.walk(DOCS_DIR):
+        rel_dir = os.path.relpath(dirpath, DOCS_DIR)
+        if rel_dir == ".":
+            dirnames[:] = [d for d in dirnames if d not in NOT_DEPLOYED_DIRS]
         for name in filenames:
             full = os.path.join(dirpath, name)
             rel = os.path.relpath(full, DOCS_DIR)
