@@ -30,7 +30,7 @@ MAP_Y0, MAP_Y1 = 118, 1045
 LIFECYCLE = [
     ("img14.png", 406, 922, "(a) 19/18Z run, 12 h: valid 20 Sep 06Z, class 0"),
     ("img10.png", 406, 875, "(b) 19/18Z run, 30 h: valid 21 Sep 00Z, class 2"),
-    ("img08.png", 1029, 381, "(c) 19/12Z run, 96 h: valid 23 Sep 12Z, class 4"),
+    ("img08.png", 875, 610, "(c) 19/12Z run, 96 h: valid 23 Sep 12Z, class 4"),
     ("img09.png", 1062, 422, "(d) 19/12Z run, 114 h: valid 24 Sep 06Z, class 3"),
     ("img07.png", 1125, 328, "(e) 19/12Z run, 126 h: valid 24 Sep 18Z, class 0"),
     ("img06.png", 1031, 328, "(f) 19/12Z run, 144 h: valid 25 Sep 12Z, class 1"),
