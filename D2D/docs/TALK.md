@@ -110,8 +110,9 @@ symmetric cold core, right where the surface low sits.
 **[Slide 8, on shift] 5:02**
 
 This is the operational display: four fields, HVTL, HVTU, the joint
-class, and the index. The photograph shows the two thermal wind
-panels, HVTL and HVTU, on a typhoon forecast. The class reads at the
+class, and the index. The capture is the 48 hour frame of the 20
+September run, the storm east of Japan at 976 millibars, class 3,
+with B at 36, the lower term at 114 and the upper at minus 102. The class reads at the
 storm's center, one number for one of seven classes built from Hart's
 two diagrams: symmetric or frontal, deep or shallow warm core, cold
 core, or shallow cold core, lower cold and upper warm, a rare state.

@@ -217,7 +217,7 @@
     14&nbsp;m per degree at 300&nbsp;hPa, lowers the upper term to
     +70&nbsp;m when the gradient runs along a grid axis and to
     &minus;4&nbsp;m at 45&deg; to it; at twice that gradient the upper
-    term reads &minus;85 and &minus;193&nbsp;m (Figure 12a). Part of the
+    term reads &minus;85 and &minus;193&nbsp;m (Figure 13a). Part of the
     upper warm core loss read during a transition is therefore the
     environment the storm has entered, in Hart's formulation and in
     this one, and the square adds a direction-dependent share on top.
@@ -668,10 +668,11 @@
     validated. A deep extratropical low over the North Atlantic in the
     same cycle classified in a cold-core class with both thermal wind
     terms negative; its values were not recorded and the case is to be
-    re-sampled. A later GFS run (2026 September 19 1200 UTC) carried a
-    western Pacific typhoon through the whole life cycle in one forecast:
-    class 0 at 12&nbsp;h, 2 by 30&nbsp;h (onset passed), 4 by 96&nbsp;h at
-    981&nbsp;hPa (completion passed), then 3 at 114&nbsp;h as the storm
+    re-sampled. The GFS runs of 2026 September 19 carried a
+    western Pacific typhoon through the whole life cycle (Figure 9):
+    class 0 at 12&nbsp;h and 2 by 30&nbsp;h (onset passed) in the
+    1800&nbsp;UTC run, then in the 1200&nbsp;UTC run 4 by 96&nbsp;h at
+    981&nbsp;hPa (completion passed), 3 at 114&nbsp;h as the storm
     deepened to 964&nbsp;hPa over the Bering Sea, a single frame of 0 at
     126&nbsp;h at 946&nbsp;hPa, and 1 at 144&nbsp;h: the warm seclusion
     path of Section 2, with the lower core re-forming during rapid
@@ -689,7 +690,7 @@
     page's upper term at peak identifies the single frame of class 0 as a
     marginal upper term rather than a deep warm core. The next cycle
     (2026 September 20 0600 UTC) was sampled with all four products at
-    one point per frame: HVTL/HVTU/HB of +128/+176/6&nbsp;m at 0&nbsp;h
+    one point per frame (Figure 10 shows the 48&nbsp;h frame): HVTL/HVTU/HB of +128/+176/6&nbsp;m at 0&nbsp;h
     (class 0), +107/+147/13&nbsp;m at 24&nbsp;h (class 2, onset passed),
     +114/&minus;102/36&nbsp;m at 48&nbsp;h (class 3), +22/&minus;284/46&nbsp;m
     at 72&nbsp;h (class 3), +241/&minus;295/0.5&nbsp;m at 96&nbsp;h at
@@ -706,26 +707,45 @@
     applied, Greenland and the
     high terrain of western North America carry no classification,
     rather than one contaminated by extrapolated sub-surface heights.
-    Figure 9 shows the two thermal wind fields as they appear in CAVE.
   </p>
-  <figure id="fig6">
-    <img src="figures/fig6_cave_typhoon.jpg"
-         alt="Photograph of two panels of an operational AWIPS CAVE display for a typhoon over the western Pacific: left the lower thermal wind field HVTL, right the upper thermal wind field HVTU, each with MSLP contours, 1000 to 500 hPa thickness contours and a Pacific basemap.">
-    <figcaption><strong>Figure 9.</strong> Photograph of the operational
-      CAVE display, cropped to the two thermal wind panels: HVTL (left)
-      and HVTU (right) on the 72&nbsp;h GFS forecast of the typhoon
-      discussed above, with MSLP and 1000 to 500&nbsp;hPa thickness
-      contours. Photographed from the monitor, cropped and resized; no
-      data or colors were changed. The colormap ranges are the ones set
-      on the workstation at the time and differ from the shipped
-      diverging map.</figcaption>
+  <figure id="fig9">
+    <img src="figures/fig9_cave_lifecycle.jpg"
+         alt="Six cropped screen captures of the AWIPS CAVE display, each centered on the same western Pacific typhoon with MSLP contours, wind barbs and the HCPSclass field drawn as a colored block over the closed low: red for class 0 at 12 hours, yellow for class 2 at 30 hours, blue with green edges for class 4 at 96 hours, green with a blue flank for class 3 at 114 hours, red with a magenta corner for class 0 at 126 hours, and magenta for class 1 at 144 hours over the Bering Sea.">
+    <figcaption><strong>Figure 9.</strong> The HCPSclass field on the
+      operational CAVE display through one typhoon's life cycle, cropped
+      from full-screen captures (<code>docs/cps/figures/make_cave_figures.py</code>;
+      nothing altered beyond cropping and the panel labels). GFS
+      0.25&deg;, with MSLP (yellow), 1000 to 500&nbsp;hPa thickness (red)
+      and surface wind barbs. <strong>(a)</strong>&nbsp;12&nbsp;h and
+      <strong>(b)</strong>&nbsp;30&nbsp;h of the 2026 September 19
+      1800&nbsp;UTC run; <strong>(c)</strong> to <strong>(f)</strong>
+      96, 114, 126 and 144&nbsp;h of the 1200&nbsp;UTC run. The class
+      colors follow Table 2: 0 red, 1 magenta, 2 yellow, 3 green, 4 blue.
+      The readout at the center of each block is the sampled class and
+      position; the storm reaches 946&nbsp;hPa at 57.8&deg;N by
+      144&nbsp;h.</figcaption>
+  </figure>
+
+  <figure id="fig10">
+    <img src="figures/fig10_cave_4panel.jpg"
+         alt="Four-panel screen capture of the AWIPS CAVE display at the 48 hour frame of the 20 September 0600 UTC GFS run, centered on a typhoon east of Japan at 976 hPa. Top left: the HCPSclass field, a green block over the storm reading 3. Top right: parameter B, a red to green shaded field reading 36. Bottom left: the lower and upper thermal wind fields, a bright square around the storm reading 114 and minus 102. Bottom right: the phase index, reading 0.87.">
+    <figcaption><strong>Figure 10.</strong> The four-panel CAVE
+      procedure at 48&nbsp;h of the 2026 September 20 0600&nbsp;UTC GFS
+      run, cropped from a full-screen capture. Top left HCPSclass
+      (3, frontal shallow warm core); top right HB (36&nbsp;m); bottom left
+      HVTL and HVTU overlaid (+114 and &minus;102&nbsp;m); bottom right
+      HCPSidx (0.87), all sampled at the 976&nbsp;hPa center at
+      38.2&deg;N 148.5&deg;E. The color bar ranges are the ones set on the
+      workstation. The square footprint of the thermal wind fields
+      (Section 2) and the closed-low mask restricting every product to
+      the storm are both visible.</figcaption>
   </figure>
 
   <h2 id="limitations">6. Limitations and future work</h2>
   <ul>
     <li>The lower band, 925 to 700&nbsp;hPa, lies entirely below Hart's
       900 to 600&nbsp;hPa layer, and the upper band omits 600 to
-      500&nbsp;hPa. Figure 10 fits Hart's band and two standard-level
+      500&nbsp;hPa. Figure 11 fits Hart's band and two standard-level
       alternatives to five prescribed height-perturbation profiles. For
       a profile linear in ln&nbsp;<i>p</i> all bands agree. For a shallow
       warm core with cold air above, the seclusion and transition
@@ -766,7 +786,7 @@
       finite-differenced model centers is the intended test.</li>
     <li>The closed-low detector measures relief between a center and the
       300 to 500&nbsp;km ring, so its floor rises with the breadth of the
-      low: on synthetic Gaussian lows (Figure 11) a 50&nbsp;m central
+      low: on synthetic Gaussian lows (Figure 12) a 50&nbsp;m central
       depth is detected out to a 300&nbsp;km e-folding scale, 80&nbsp;m
       out to 500&nbsp;km, 100&nbsp;m out to 600&nbsp;km, and an
       800&nbsp;km scale low is missed even at 120&nbsp;m, so the
@@ -803,10 +823,10 @@
       timing across the local inventory are the next steps.</li>
   </ul>
 
-  <figure id="fig10">
+  <figure id="fig11">
     <img src="figures/figA_band_comparison.png"
          alt="Three-panel synthetic band test. Left: five prescribed height-perturbation profiles against pressure on a log axis, with Hart's 900 to 600 hectopascal lower band shaded. Center: bar chart of the lower thermal wind each band returns for each profile, Hart's band in gray, the 925 to 700 band in red, a 925 to 500 band in blue and an 850 to 500 band in green. Right: bar chart of the rescaled layer thickness gradient, a proxy for parameter B, for three baroclinic-zone profiles and the same four layers.">
-    <figcaption><strong>Figure 10.</strong> Synthetic test of the lower
+    <figcaption><strong>Figure 11.</strong> Synthetic test of the lower
       band, computed by <code>docs/cps/figures/band_comparison.py</code>.
       <strong>(a)</strong> Five prescribed height-perturbation profiles
       &Delta;<i>Z</i>(<i>p</i>) at 50&nbsp;hPa spacing: a mature deep warm
@@ -825,10 +845,10 @@
       the uniform case.</figcaption>
   </figure>
 
-  <figure id="fig11" class="half">
+  <figure id="fig12" class="half">
     <img src="figures/figB_detector.png"
          alt="Grid of central depth from 20 to 120 meters against e-folding scale from 100 to 800 kilometers, dark cells where the closed-low detector accepts a synthetic Gaussian low at its center: nothing at 40 meters or less, 50 meters accepted out to 300 kilometers, 80 meters out to 500, 100 meters out to 600, and nothing at 800 kilometers.">
-    <figcaption><strong>Figure 11.</strong> Closed-low detector
+    <figcaption><strong>Figure 12.</strong> Closed-low detector
       sensitivity on synthetic Gaussian lows in 1000&nbsp;hPa height on a
       0.25&deg; grid (<code>docs/cps/figures/experiments.py</code>): dark
       cells are detected at the center. The 40&nbsp;m ring test admits a
@@ -838,25 +858,25 @@
 
   <p>
     Four candidate extensions were tested on synthetic fields with the
-    operational code (Figure 12), as parallel products that would leave
+    operational code (Figure 13), as parallel products that would leave
     Hart's parameters as the reference. <strong>Background removal.</strong>
     Subtracting the domain background plane from each level before the
     range is taken returns the isolated-vortex terms exactly for every
     gradient tested, where the unmodified terms fall to zero or below in
-    a moderate baroclinic zone (Figure 12a). This changes what the
+    a moderate baroclinic zone (Figure 13a). This changes what the
     parameter measures, from the storm plus its environment to the
     storm's own perturbation, and Hart's thresholds were set on the
     former, so it is a companion field rather than a replacement.
     <strong>Storm-scaled radius.</strong> At a fixed 500&nbsp;km half-width
     the lower term falls to 77% of its true value for a vortex of
     600&nbsp;km e-folding scale; a half-width of 2.5 times the scale
-    holds 100% across all sizes tested (Figure 12b), at the cost of
+    holds 100% across all sizes tested (Figure 13b), at the cost of
     admitting more environment for large storms. <strong>Vector
     asymmetry.</strong> <i>B</i> is the cross-track projection of the
     thickness gradient. For a 40&nbsp;m per 1000&nbsp;km gradient, worth
     25&nbsp;m in Hart's units, <i>B</i> is 0 when the storm moves straight
     toward colder air and passes 10&nbsp;m only once the motion is
-    24&deg; off the gradient (Figure 12c); the full gradient magnitude
+    24&deg; off the gradient (Figure 13c); the full gradient magnitude
     and its fore-aft component are available at no cost and would flag
     a head-on approach that <i>B</i> reads as symmetric. <strong>Warm-core
     top.</strong> Layer-by-layer slopes on the seven standard levels place
@@ -867,10 +887,10 @@
     the fraction of members past each threshold by forecast hour, uses
     the method unchanged and needs only ensemble input.
   </p>
-  <figure id="fig12">
+  <figure id="fig13">
     <img src="figures/figC_extensions.png"
          alt="Three panels. Left: lower and upper thermal wind at the center of a synthetic deep warm core against background height gradient strength, for the gradient along a grid axis and at 45 degrees, both falling steeply, with the values after background plane removal flat at the true value. Center: lower term as a fraction of its true value against vortex scale for window half-widths of 300, 500 and 700 kilometers, falling with scale, and for a half-width of 2.5 times the scale, flat at one. Right: Hart's B and the fore-aft component against the angle between the thickness gradient and the motion, B rising from zero to the full magnitude and the fore-aft component falling, with the 10 meter threshold marked.">
-    <figcaption><strong>Figure 12.</strong> Synthetic tests of three
+    <figcaption><strong>Figure 13.</strong> Synthetic tests of three
       candidate extensions (<code>docs/cps/figures/experiments_extensions.py</code>).
       <strong>(a)</strong> Terms at the center of a deep warm core (true
       value 191&nbsp;m, black line) on a background height gradient that
@@ -925,13 +945,14 @@
   </ul>
 
   <footer>
-    All figures except Figure 9 are synthetic and are regenerated by
-    <code>docs/cps/figures/make_figures.py</code>, except Figures 10 to
-    12, which <code>band_comparison.py</code>, <code>experiments.py</code>
+    All figures except Figures 9 and 10 are synthetic and are regenerated by
+    <code>docs/cps/figures/make_figures.py</code>, except Figures 11 to
+    13, which <code>band_comparison.py</code>, <code>experiments.py</code>
     and <code>experiments_extensions.py</code> in the same directory
     produce; each
-    caption states which implementation produced it. Figure 9 is a
-    photograph.
+    caption states which implementation produced it. Figures 9 and 10
+    are screen captures of the operational display, cropped by
+    <code>make_cave_figures.py</code>.
   </footer>
 
 </div>

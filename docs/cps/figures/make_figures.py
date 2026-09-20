@@ -2,9 +2,9 @@
 """
 make_figures.py -- regenerates every figure on the GitHub Pages article
 (../index.html) from the package's own operational code
-(D2D/derivedParameters/functions/cps_HartCPS.py), run on synthetic fields,
-plus one photograph of the real CAVE display that is cropped/resized only
-(fig6).
+(D2D/derivedParameters/functions/cps_HartCPS.py), run on synthetic fields.
+The two CAVE screen-capture figures (fig9_cave_lifecycle.jpg and
+fig10_cave_4panel.jpg) are cropped by make_cave_figures.py instead.
 
 Run from the repository root:
 
@@ -12,7 +12,7 @@ Run from the repository root:
 
 Outputs land next to this script, in docs/cps/figures/:
     fig2_method.png         fig3_gridded.png       fig4_tilt.png
-    fig5_performance.png    fig6_cave_typhoon.jpg  fig7_parameter_b.png
+    fig5_performance.png    fig7_parameter_b.png
     fig8_thermal_wind_concept.png  fig9_b_concept.png
     fig10_two_diagrams.png
 
@@ -159,7 +159,6 @@ import cps.hart as hart  # noqa: E402
 import synthetic as cps_synthetic  # noqa: E402  (tests/cps/synthetic.py)
 
 OUT_DIR = HERE
-UPLOAD_PHOTO = Path("/root/.claude/uploads/3a4711f2-52b1-52e4-8d45-df8bae2bffec/2bca2450-image.jpg")
 
 # ---------------------------------------------------------------------------
 # Palette (fixed, per the article's style rules)
@@ -1027,38 +1026,6 @@ def make_fig5():
     }
     print(f"Figure 5 summary (median [min, max], s, first run of five discarded): {report}")
     return report
-
-
-# ===========================================================================
-# Figure 6: CAVE photograph -- crop / resize only, no synthetic content
-# ===========================================================================
-
-
-def make_fig6():
-    try:
-        from PIL import Image
-    except ImportError:
-        print("Pillow not available; skipping fig6_cave_typhoon.jpg")
-        return
-
-    if not UPLOAD_PHOTO.exists():
-        print(f"Photo not found at {UPLOAD_PHOTO}; skipping fig6_cave_typhoon.jpg")
-        return
-
-    im = Image.open(UPLOAD_PHOTO)
-    w, h = im.size
-    # Top two panels only (lower and upper thermal wind) -- the bottom
-    # row (Hart CPS core class/index, the earlier five-code product; see
-    # REVIEW_PANEL.md item 14) is dropped entirely, and the crop ends
-    # well above the bottom row's own color bar, so neither it nor the
-    # desktop task bar at the very bottom of the photo is included.
-    box = (int(0.03 * w), int(0.21 * h), int(0.95 * w), int(0.571 * h))
-    cropped = im.crop(box)
-    new_w = 1600
-    new_h = int(round(cropped.size[1] * new_w / cropped.size[0]))
-    resized = cropped.resize((new_w, new_h), Image.LANCZOS)
-    resized.convert("RGB").save(OUT_DIR / "fig6_cave_typhoon.jpg", "JPEG", quality=85)
-    print(f"fig6_cave_typhoon.jpg written, {new_w}x{new_h}, cropped from box {box} of {w}x{h}")
 
 
 # ===========================================================================
@@ -2176,9 +2143,6 @@ def main():
     print("Building Figure 5 (performance) ...")
     timings = make_fig5()
     print("Figure 5 timings (s):", timings)
-
-    print("Building Figure 6 (CAVE photograph, crop/resize only) ...")
-    make_fig6()
 
     print("Building Figure 7 (parameter B and the ET stage) ...")
     fig7_values = make_fig7(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m)

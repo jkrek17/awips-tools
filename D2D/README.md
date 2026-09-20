@@ -656,7 +656,7 @@ or representative sample. Add to this table as cases accumulate.
 | 2026-09-17 | GFS 2026-09-17 12Z, 72 h | Typhoon, 31N 139E, 984 mb | 120 | 180 | deep warm core (0 or 2; B not sampled) | 2.5 (sampled near, not at, the point where HVTL/HVTU were read; see notes) |
 | 2026-09-17 | GFS 2026-09-17 12Z, valid 2026-09-21 18Z | Typhoon Dujuan, loss of deep warm core | not recorded | not recorded | leaves the deep warm core classes (0 or 2) at this valid time | not recorded |
 | 2026-09-17 | GFS 12Z | Deep extratropical low, North Atlantic | not recorded, to be re-sampled | not recorded, to be re-sampled | a cold-core class (underlying values not recorded) | not recorded, to be re-sampled |
-| 2026-09-19 | GFS 12Z, 12 to 144 h | Western Pacific typhoon through transition to a 946 hPa Bering Sea low (class only; terms and B to be sampled) | | | 0 at 12 h (29.7N 137.7E); 2 at 30 h (32.2N 137.0E); 4 at 96 h (45.3N 168.4E, 981 hPa); 3 at 114 h (53.8N 179.6E, 964 hPa); 0 at 126 h (56.4N 174.3W, 946 hPa); 1 at 144 h (57.8N 179.5E, 946 hPa) | |
+| 2026-09-19 | GFS 18Z (12 and 30 h) and 12Z (96 to 144 h) | Western Pacific typhoon through transition to a 946 hPa Bering Sea low (class only; terms and B to be sampled; article Figure 9) | | | 0 at 12 h (29.7N 137.7E); 2 at 30 h (32.2N 137.0E); 4 at 96 h (45.3N 168.4E, 981 hPa); 3 at 114 h (53.8N 179.6E, 964 hPa); 0 at 126 h (56.4N 174.3W, 946 hPa); 1 at 144 h (57.8N 179.5E, 946 hPa) | |
 | 2026-09-20 | GFS 06Z, 0 h | Typhoon, 29.5N 138.0E, 975 hPa | 128 | 176 | 0 (HB 5.9) | 2.66 |
 | 2026-09-20 | GFS 06Z, 24 h | same storm, 33.1N 139.2E | 107 | 147 | 2 (HB 13.1) | 2.48 |
 | 2026-09-20 | GFS 06Z, 48 h | same storm, 38.2N 148.5E, 976 hPa | 114 | -102 | 3 (HB 36.0) | 0.87 |
