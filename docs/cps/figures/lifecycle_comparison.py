@@ -316,21 +316,120 @@ def build_heights(t, clat, clon, lat2d, lon2d, heading_deg, speed_ms, levels):
     }
 
 
-# --------------------------------------------------------------- main
-def main():
-    hours = np.arange(0.0, 168.0 + 1e-9, 6.0)
-    n = len(hours)
+# ------------------------------------------------------- shared setup
+# These four are the single source of truth for the grid, the track, and the two
+# methods, so `lifecycle_storyboard.py` (and anything else) gets bit-identical
+# numbers to this script's own printed table, not a second, drifting copy of the
+# same logic.
+
+GRID_DLAT = 0.25
+GRID_KWARGS = dict(lat0=15.0, lat1=60.0, lon0=140.0, lon1=190.0)
+
+
+def build_grid():
+    """(lat_vals, lon_vals, lat2d, lon2d, dx, dy) for this life cycle's regional
+    0.25 deg grid -- see the module docstring for why this domain (not
+    experiments.make_grid's own default) is wide enough that the 500 km
+    analysis window never touches the edge.
+    """
+    return make_grid(GRID_DLAT, **GRID_KWARGS)
+
+
+def env_fields(lat2d):
+    """(psfc, coriolis): uniform open-ocean surface pressure (1013 hPa, so
+    mask_below_ground never trips) and uniform Northern Hemisphere coriolis
+    sign (the storm stays north of the equator throughout).
+    """
+    return np.full(lat2d.shape, 1013.0), np.full(lat2d.shape, 1.0)
+
+
+def make_hours():
+    """The 29 output frames: 0 to 168 h, 6 h steps."""
+    return np.arange(0.0, 168.0 + 1e-9, 6.0)
+
+
+def build_track_and_motion(hours):
+    """(lats, lons, headings, speeds) for the full track: build_track's
+    integrated positions, then cps.track_motion's own finite-difference
+    heading/speed at each of those same points -- the one motion both
+    methods are handed.
+    """
     lats, lons = build_track(hours)
     headings, speeds = ch.track_motion(lats, lons, hours * 3600.0)
-    u_mot = speeds * np.sin(np.radians(headings))
-    v_mot = speeds * np.cos(np.radians(headings))
+    return lats, lons, headings, speeds
+
+
+def compute_frame(t, clat, clon, heading_deg, speed_ms, lat2d, lon2d, lat_vals, lon_vals, dx, dy, psfc, coriolis,
+                   return_fields=False):
+    """Both methods' B/VTL/VTU/class at one frame: the storm-centered Hart
+    scalars (circular window, `cps.hart`) and the gridded fields sampled at
+    the grid point nearest (clat, clon) (square window, `cps_HartCPS`).
+
+    Returns a dict with the eight scalars (`VTL_hart`, `VTU_hart`, `B_hart`,
+    `CLS_hart`, `VTL_grid`, `VTU_grid`, `B_grid`, `CLS_grid`) plus `ci`/`cj`
+    (the sampled grid indices). With `return_fields=True` it also includes
+    the full 2D fields a map needs: `z` (level -> height array, for every
+    level in `NEEDED_LEVELS`), `vtl_full`, `vtu_full`, `b_full`, `cls_full`,
+    `u_arr`, `v_arr` (the gridded module's own outputs before sampling).
+    """
+    z = build_heights(t, clat, clon, lat2d, lon2d, heading_deg, speed_ms, NEEDED_LEVELS)
+
+    # -- Hart: circular window, storm-centered, 50 hPa levels
+    z_stack = np.stack([z[p] for p in P50], axis=0)
+    tw = ch.thermal_wind(P50.tolist(), z_stack, lat2d, lon2d, clat, clon, radius_km=RADIUS_KM)
+    vtl_hart = tw["VTL"]
+    vtu_hart = tw["VTU"]
+    b_hart = ch.parameter_b(z[900], z[600], lat2d, lon2d, clat, clon, heading_deg=heading_deg, radius_km=RADIUS_KM)
+    # Hart's own class: the same seven-code rule cps_HartCPS.hart_class applies to the
+    # gridded fields, applied here to Hart's three storm-centered scalars for this one
+    # frame (1-element arrays in, `mask=True` since there is no closed-low mask concept
+    # for a storm-centered point, only for a gridded field).
+    cls_hart = hc.hart_class(
+        np.array([b_hart]), np.array([vtl_hart]), np.array([vtu_hart]), np.array([True]), hc.B_THRESHOLD_M,
+    )[0]
+
+    # -- gridded: square window, pointwise, standard levels
+    u_arr = np.full(lat2d.shape, speed_ms * np.sin(np.radians(heading_deg)))
+    v_arr = np.full(lat2d.shape, speed_ms * np.cos(np.radians(heading_deg)))
+    vtl_full = hc.executeBand3(z[925], z[850], z[700], psfc, dx, dy, RADIUS_KM, 925.0, 850.0, 700.0)
+    vtu_full = hc.executeBand3(z[500], z[400], z[300], psfc, dx, dy, RADIUS_KM, 500.0, 400.0, 300.0)
+    b_full = hc.executeB(
+        z[925], z[700],
+        u_arr, v_arr, u_arr, v_arr, u_arr, v_arr, u_arr, v_arr,
+        psfc, coriolis, dx, dy, radiusKm=RADIUS_KM, layerScale=hc.HART_B_LAYER_SCALE,
+    )
+    cls_full = hc.executeHartClass(
+        z[1000], z[925], z[850], z[700], z[500], z[400], z[300],
+        u_arr, v_arr, u_arr, v_arr, u_arr, v_arr, u_arr, v_arr,
+        psfc, coriolis, dx, dy, radiusKm=RADIUS_KM,
+    )
+
+    ci = int(np.argmin(np.abs(lat_vals - clat)))
+    cj = int(np.argmin(np.abs(lon_vals - clon)))
+
+    result = dict(
+        VTL_hart=float(vtl_hart), VTU_hart=float(vtu_hart), B_hart=float(b_hart), CLS_hart=float(cls_hart),
+        VTL_grid=float(vtl_full[ci, cj]), VTU_grid=float(vtu_full[ci, cj]), B_grid=float(b_full[ci, cj]),
+        CLS_grid=float(cls_full[ci, cj]), ci=ci, cj=cj,
+    )
+    if return_fields:
+        result.update(z=z, vtl_full=vtl_full, vtu_full=vtu_full, b_full=b_full, cls_full=cls_full,
+                       u_arr=u_arr, v_arr=v_arr)
+    return result
+
+
+# --------------------------------------------------------------- main
+def main():
+    hours = make_hours()
+    n = len(hours)
+    lats, lons, headings, speeds = build_track_and_motion(hours)
 
     print(f"Track: {n} frames, 0 to 168 h, 6 h steps")
     print(f"  start {lats[0]:.2f}N {lons[0]:.2f}E, end {lats[-1]:.2f}N {lons[-1]:.2f}E "
           f"(target: 22N 150E to near 52N 175E)")
     print(f"  lat range {lats.min():.2f} to {lats.max():.2f}, lon range {lons.min():.2f} to {lons.max():.2f}")
 
-    lat_vals, lon_vals, lat2d, lon2d, dx, dy = make_grid(0.25, lat0=15.0, lat1=60.0, lon0=140.0, lon1=190.0)
+    lat_vals, lon_vals, lat2d, lon2d, dx, dy = build_grid()
     margin_lat = min(lats.min() - lat_vals.min(), lat_vals.max() - lats.max())
     margin_lon = min(lons.min() - lon_vals.min(), lon_vals.max() - lons.max())
     print(f"  grid: {lat2d.shape[0]} x {lat2d.shape[1]} at 0.25 deg, "
@@ -338,8 +437,7 @@ def main():
     print(f"  smallest margin between track and grid edge: {min(margin_lat, margin_lon) * 111.0:.0f} km "
           f"(need > {RADIUS_KM:.0f} km for the 500 km window to never touch the edge)")
 
-    psfc = np.full(lat2d.shape, 1013.0)
-    coriolis = np.full(lat2d.shape, 1.0)  # storm stays in the Northern Hemisphere throughout
+    psfc, coriolis = env_fields(lat2d)
 
     B_hart = np.full(n, np.nan)
     VTL_hart = np.full(n, np.nan)
@@ -353,45 +451,10 @@ def main():
     for i, t in enumerate(hours):
         clat, clon = float(lats[i]), float(lons[i])
         # x_R = 0 at the center, so the dipole leaves the center-point VTL/VTU unchanged.
-        z = build_heights(t, clat, clon, lat2d, lon2d, headings[i], speeds[i], NEEDED_LEVELS)
-
-        # -- Hart: circular window, storm-centered, 50 hPa levels
-        z_stack = np.stack([z[p] for p in P50], axis=0)
-        tw = ch.thermal_wind(P50.tolist(), z_stack, lat2d, lon2d, clat, clon, radius_km=RADIUS_KM)
-        VTL_hart[i] = tw["VTL"]
-        VTU_hart[i] = tw["VTU"]
-        B_hart[i] = ch.parameter_b(z[900], z[600], lat2d, lon2d, clat, clon, heading_deg=headings[i], radius_km=RADIUS_KM)
-        # Hart's own class: the same seven-code rule cps_HartCPS.hart_class applies to the
-        # gridded fields, applied here to Hart's three storm-centered scalars for this one
-        # frame (1-element arrays in, `mask=True` since there is no closed-low mask concept
-        # for a storm-centered point, only for a gridded field).
-        CLS_hart[i] = hc.hart_class(
-            np.array([B_hart[i]]), np.array([VTL_hart[i]]), np.array([VTU_hart[i]]), np.array([True]),
-            hc.B_THRESHOLD_M,
-        )[0]
-
-        # -- gridded: square window, pointwise, standard levels
-        u_arr = np.full(lat2d.shape, u_mot[i])
-        v_arr = np.full(lat2d.shape, v_mot[i])
-        vtl_full = hc.executeBand3(z[925], z[850], z[700], psfc, dx, dy, RADIUS_KM, 925.0, 850.0, 700.0)
-        vtu_full = hc.executeBand3(z[500], z[400], z[300], psfc, dx, dy, RADIUS_KM, 500.0, 400.0, 300.0)
-        b_full = hc.executeB(
-            z[925], z[700],
-            u_arr, v_arr, u_arr, v_arr, u_arr, v_arr, u_arr, v_arr,
-            psfc, coriolis, dx, dy, radiusKm=RADIUS_KM, layerScale=hc.HART_B_LAYER_SCALE,
-        )
-        cls_full = hc.executeHartClass(
-            z[1000], z[925], z[850], z[700], z[500], z[400], z[300],
-            u_arr, v_arr, u_arr, v_arr, u_arr, v_arr, u_arr, v_arr,
-            psfc, coriolis, dx, dy, radiusKm=RADIUS_KM,
-        )
-
-        ci = int(np.argmin(np.abs(lat_vals - clat)))
-        cj = int(np.argmin(np.abs(lon_vals - clon)))
-        VTL_grid[i] = vtl_full[ci, cj]
-        VTU_grid[i] = vtu_full[ci, cj]
-        B_grid[i] = b_full[ci, cj]
-        CLS_grid[i] = cls_full[ci, cj]
+        r = compute_frame(t, clat, clon, headings[i], speeds[i], lat2d, lon2d, lat_vals, lon_vals, dx, dy,
+                           psfc, coriolis)
+        VTL_hart[i], VTU_hart[i], B_hart[i], CLS_hart[i] = r["VTL_hart"], r["VTU_hart"], r["B_hart"], r["CLS_hart"]
+        VTL_grid[i], VTU_grid[i], B_grid[i], CLS_grid[i] = r["VTL_grid"], r["VTU_grid"], r["B_grid"], r["CLS_grid"]
 
     # ---------------------------------------------------------- table
     print()
@@ -504,20 +567,24 @@ def main():
 
 
 # ------------------------------------------------------------- figure
+def pad_limits(ax, frac=0.22):
+    """Expand xlim/ylim by frac of the data range, so corner labels
+    placed in axes-fraction coordinates land in blank space instead
+    of on top of the data itself. Module level (not a make_figure closure)
+    so lifecycle_storyboard.py can reproduce figD's own B-vs-VTL/VTU axis
+    limits exactly, from the same data, instead of guessing at them.
+    """
+    x0, x1 = ax.get_xlim()
+    y0, y1 = ax.get_ylim()
+    dx, dy = x1 - x0, y1 - y0
+    ax.set_xlim(x0 - frac * dx, x1 + frac * dx)
+    ax.set_ylim(y0 - frac * dy, y1 + frac * dy)
+
+
 def make_figure(hours, lats, lons, B_hart, VTL_hart, VTU_hart, B_grid, VTL_grid, VTU_grid, CLS_grid, CLS_hart,
                  onset_hart, onset_grid, completion_hart, completion_grid):
     cmap_hart = LinearSegmentedColormap.from_list("hart_gray", ["#c9c9c9", "#000000"])
     cmap_grid = LinearSegmentedColormap.from_list("grid_red", ["#fbdede", RED])
-
-    def pad_limits(ax, frac=0.22):
-        """Expand xlim/ylim by frac of the data range, so corner labels
-        placed in axes-fraction coordinates land in blank space instead
-        of on top of the data itself."""
-        x0, x1 = ax.get_xlim()
-        y0, y1 = ax.get_ylim()
-        dx, dy = x1 - x0, y1 - y0
-        ax.set_xlim(x0 - frac * dx, x1 + frac * dx)
-        ax.set_ylim(y0 - frac * dy, y1 + frac * dy)
 
     fig, axes = plt.subplots(1, 3, figsize=(12.5, 4.0))
 
