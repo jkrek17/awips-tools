@@ -57,7 +57,7 @@ def load(path=None):
         for k in ("lat", "lon", "p_centre", "p_env", "depth", "fit_depth",
                   "scale_km", "fit_rms", "grad_hpa_per_100km", "vg_kt",
                   "vgeo_kt", "max_step_km", "tend12", "tend24"):
-            if k in r:
+            if k in r and not isinstance(r[k], float):
                 r[k] = float(r[k]) if r[k] != "" else float("nan")
         r["label"] = int(r["label"])
         r["season"] = int(r["season"])
@@ -212,11 +212,54 @@ def run(rows, seasons, label):
     tendency_ladder(sets)
 
 
+def structure_ladder(sets):
+    """On strata matched by TENDENCY: does structure add anything?
+
+    Here the maturity confound is held fixed by the matching, so depth,
+    scale and gradient vary inside a stratum for reasons other than how far
+    along the low is. A positive coefficient on depth or on gradient now
+    means what it says.
+    """
+    print("\n  STRUCTURE LADDER  (strata matched on 12 h tendency)")
+    ll0 = report_fit("depth only", sets, ["depth"])
+    report_fit("scale only", sets, ["scale_km"])
+    report_fit("gradient only (depth/scale)", sets, ["grad_hpa_per_100km"])
+    report_fit("gradient wind only", sets, ["vg_kt"])
+    report_fit("depth + scale", sets, ["depth", "scale_km"], ll0)
+    resid = [c["tend12"] - np.mean([m["tend12"] for m in [c] + cs])
+             for c, cs in sets]
+    print(f"      (residual tendency spread inside strata: "
+          f"{np.std(resid):.2f} hPa/12 h -- the matching tolerance is 3.0)")
+
+
+def run_by_tendency(path, seasons, label):
+    rows = load(path)
+    sets = strata(rows, seasons)
+    if not sets:
+        print(f"  no usable strata in {label}")
+        return
+    nctrl = sum(len(c) for _, c in sets)
+    print(f"\n{'=' * 70}\n{label}: {len(sets)} strata, {len(sets)} cases, "
+          f"{nctrl} controls\n{'=' * 70}")
+    descriptive(sets, "Medians")
+    structure_ladder(sets)
+
+
 if __name__ == "__main__":
-    rows = load()
-    run(rows, EXPLORE_SEASONS, "EXPLORATION seasons 2020, 2022, 2024")
-    if "--confirm" in sys.argv:
-        run(rows, CONFIRM_SEASONS, "CONFIRMATION seasons 2021, 2023, 2025")
+    if "--by-tendency" in sys.argv:
+        path = HERE / "data" / "matched_by_tend.csv"
+        run_by_tendency(path, EXPLORE_SEASONS,
+                        "TENDENCY-MATCHED, exploration seasons 2020, 2022, 2024")
+        if "--confirm" in sys.argv:
+            run_by_tendency(path, CONFIRM_SEASONS,
+                            "TENDENCY-MATCHED, confirmation seasons 2021, 2023, 2025")
+        else:
+            print("\n(confirmation seasons withheld)")
     else:
-        print("\n(confirmation seasons withheld; rerun with --confirm once the "
-              "exploration result is written down)")
+        rows = load()
+        run(rows, EXPLORE_SEASONS, "EXPLORATION seasons 2020, 2022, 2024")
+        if "--confirm" in sys.argv:
+            run(rows, CONFIRM_SEASONS, "CONFIRMATION seasons 2021, 2023, 2025")
+        else:
+            print("\n(confirmation seasons withheld; rerun with --confirm once the "
+                  "exploration result is written down)")

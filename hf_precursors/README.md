@@ -202,3 +202,55 @@ fit are rerun.
   which biases against finding the effect.
 - The cyclone phase space fields are not in this table yet. Whether they add
   anything over tendency is untested.
+
+## The inverted design, and why its result is withdrawn
+
+Matching on tendency instead of depth gave a strong and internally
+consistent answer: 88 strata, and at matched deepening rate the
+hurricane-force case was the broader (OR 1.003 per km, z +2.8), shallower
+(OR 0.922 per hPa, z -3.4), weaker-gradient (z -3.8) low, with the gradient
+wind the single strongest term at z -4.4. The matching worked -- residual
+tendency spread inside strata was 0.83 hPa/12 h against a 3.0 tolerance --
+and the result is the opposite of the compactness hypothesis.
+
+**It is an artifact, and so is the depth-matched result before it.**
+
+Cases and controls were not measured the same way. A control is described
+exactly where it was detected. A case is described after four backward
+tracking steps, each searching a fixed 550 km radius around the previous
+position. 550 km in 6 h is 48 kt of storm motion, more than most of these
+systems manage, so the search routinely reached past the storm and took
+whatever deeper minimum lay inside it: **147 of 190 cases came back with a
+step pinned at the radius limit**, median 531 km against a 550 km cap, while
+every control had a tracked distance of exactly zero.
+
+Every bit of tracker degradation therefore landed on the cases and none on
+the controls. That alone makes cases look systematically weaker than the
+lows they are matched to, which is exactly what both analyses reported, in
+both directions of matching. The finding was in the measurement, not the
+atmosphere.
+
+### The corrected tracker
+
+`tracker.py` replaces it with a motion first guess -- extrapolate the
+previous displacement and search 250 km around where the low should be,
+rather than 550 km around where it was -- and, more importantly, a check
+that it followed the same low: track back, track forward again, and see
+whether you return to where you started.
+
+On 25 cases the round trip misses by a median of 61 km, and 76% return
+within 200 km. The remaining 24% are tracks that changed low, and they can
+now be dropped as unverifiable instead of being carried into the table as a
+weak low that was never the storm.
+
+### What this means for the result
+
+There is no result. Both answers above are withdrawn, and the hypothesis is
+where it was after Phase 0.5: untested. What has been established is the
+machinery and one hard lesson -- in a case-control design the two arms must
+be *measured* the same way, not just matched the same way, and a tracker
+that silently returns something is more dangerous than one that fails.
+
+Redoing it means re-extracting the cases through the verified tracker,
+dropping those that fail the round trip, and rerunning both matchings. The
+control pool and its tendencies stand; only the case arm was corrupted.

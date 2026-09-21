@@ -55,30 +55,54 @@ def back_pressure(lat, lon, when, hours):
     return p, path
 
 
-def main():
-    src = HERE / "data" / "matched.csv"
-    dst = HERE / "data" / "matched_tend.csv"
+def annotate(src, dst, lags=(12.0, 24.0)):
+    """Add a tendency column per lag in `lags` to every row of `src`.
+
+    Each lag is walked back independently rather than reusing the 12 h
+    track for the 24 h one: the tracker can follow a different low over a
+    longer walk, and two short walks agreeing is not the same evidence as
+    one long walk. The longest lag's path length is kept so a track that
+    wandered can be filtered afterwards.
+    """
     with open(src) as fh:
         rows = list(csv.DictReader(fh))
+    cols = [f"tend{int(h)}" for h in lags]
+    out_fields = [c for c in rows[0].keys() if c not in cols + ["back_path_km"]]
+    out_fields += cols + ["back_path_km"]
 
-    out_fields = list(rows[0].keys()) + ["tend12", "tend24", "back_path_km"]
     t0 = time.time()
     for n, r in enumerate(rows, 1):
         when = datetime.strptime(r["when"], "%Y-%m-%d %H").replace(tzinfo=timezone.utc)
         p_now = float(r["p_centre"])
-        p12, path12 = back_pressure(r["lat"], r["lon"], when, 12.0)
-        p24, path24 = back_pressure(r["lat"], r["lon"], when, 24.0)
-        r["tend12"] = round(p_now - p12, 1) if np.isfinite(p12) else ""
-        r["tend24"] = round(p_now - p24, 1) if np.isfinite(p24) else ""
-        r["back_path_km"] = round(path24, 0) if np.isfinite(path24) else ""
-        if n % 100 == 0:
-            print(f"  {n}/{len(rows)}  {time.time() - t0:.0f}s", flush=True)
+        longest = np.nan
+        for h in lags:
+            p_then, path = back_pressure(r["lat"], r["lon"], when, h)
+            r[f"tend{int(h)}"] = round(p_now - p_then, 1) if np.isfinite(p_then) else ""
+            if h == max(lags):
+                longest = path
+        r["back_path_km"] = round(longest, 0) if np.isfinite(longest) else ""
+        if n % 200 == 0:
+            rate = (time.time() - t0) / n
+            print(f"  {n}/{len(rows)}  {time.time() - t0:.0f}s  "
+                  f"eta {rate * (len(rows) - n):.0f}s", flush=True)
 
     with open(dst, "w", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=out_fields)
+        w = csv.DictWriter(fh, fieldnames=out_fields, extrasaction="ignore")
         w.writeheader()
         w.writerows(rows)
-    print(f"wrote {dst.name}: {len(rows)} rows", flush=True)
+    print(f"wrote {Path(dst).name}: {len(rows)} rows", flush=True)
+
+
+def main():
+    args = sys.argv[1:]
+    if args:
+        src, dst = Path(args[0]), Path(args[1])
+        lags = tuple(float(x) for x in args[2:]) or (12.0, 24.0)
+    else:
+        src = HERE / "data" / "matched.csv"
+        dst = HERE / "data" / "matched_tend.csv"
+        lags = (12.0, 24.0)
+    annotate(src, dst, lags)
 
 
 if __name__ == "__main__":
