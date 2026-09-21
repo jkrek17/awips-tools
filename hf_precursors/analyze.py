@@ -154,9 +154,12 @@ def descriptive(sets, label):
     ctrls = [m for _, cs in sets for m in cs]
     for var, unit in (("depth", "hPa"), ("scale_km", "km"),
                       ("grad_hpa_per_100km", "hPa/100km"), ("vg_kt", "kt"),
-                      ("p_centre", "hPa")):
-        a = np.median([c[var] for c in cases])
-        b = np.median([c[var] for c in ctrls])
+                      ("p_centre", "hPa"), ("tend12", "hPa/12h"),
+                      ("tend24", "hPa/24h")):
+        if var not in cases[0]:
+            continue
+        a = np.nanmedian([c[var] for c in cases])
+        b = np.nanmedian([c[var] for c in ctrls])
         print(f"  {var:<24} {a:>10.1f} {b:>10.1f} {a - b:>+12.1f}  {unit}")
 
 
@@ -171,6 +174,31 @@ def geometry_test(sets):
     report_fit("gradient wind only", sets, ["vg_kt"])
 
 
+def tendency_ladder(sets):
+    """Does which way the low is going beat how deep it has got?
+
+    Depth says where a low has reached; the tendency says where it is
+    headed. A control drawn at a random time can match a case's depth while
+    being past its own peak, so the ladder puts tendency in on its own
+    before combining it with the structure terms.
+    """
+    usable = [(c, [m for m in cs if np.isfinite(m["tend12"])])
+              for c, cs in sets if np.isfinite(c["tend12"])]
+    usable = [(c, cs) for c, cs in usable if cs]
+    if not usable:
+        print("\n  TENDENCY: no strata carry a 12 h tendency")
+        return
+    print(f"\n  TENDENCY LADDER  ({len(usable)} strata carry one)")
+    ll0 = report_fit("depth only", usable, ["depth"])
+    ll1 = report_fit("tendency only (12 h)", usable, ["tend12"])
+    report_fit("tendency only (24 h)", usable, ["tend24"])
+    report_fit("depth + tendency", usable, ["depth", "tend12"], ll1)
+    report_fit("scale + tendency", usable, ["scale_km", "tend12"], ll1)
+    report_fit("gradient + tendency", usable, ["grad_hpa_per_100km", "tend12"], ll1)
+    report_fit("depth + scale + tendency", usable,
+               ["depth", "scale_km", "tend12"], ll1)
+
+
 def run(rows, seasons, label):
     sets = strata(rows, seasons)
     if not sets:
@@ -181,6 +209,7 @@ def run(rows, seasons, label):
     print(f"\n{'=' * 70}\n{label}: {ncase} strata, {ncase} cases, {nctrl} controls\n{'=' * 70}")
     descriptive(sets, "Medians")
     geometry_test(sets)
+    tendency_ladder(sets)
 
 
 if __name__ == "__main__":

@@ -142,3 +142,63 @@ Whatever comes out, the project's standing rule still applies: a field that
 does no better than deepening rate alone is dropped. With 61% of these
 events reaching hurricane force *without* explosive deepening, that bar is
 lower than it first appeared, which is the encouraging part.
+
+## Exploration result (seasons 2020, 2022, 2024 -- confirmation withheld)
+
+79 matched strata, 79 cases and 215 controls, each low described 24 h before
+the moment of interest.
+
+**In the space the hypothesis predicted a boundary in, there is no boundary.**
+Depth against scale (`data/exploration.png`, panel a) shows cases and
+controls completely overlapped: not a ray through the origin, not a
+horizontal line, nothing. The medians are within a whisker of each other --
+depth 18.4 against 19.2 hPa, scale 520 against 510 km, gradient 4.0 against
+4.3 hPa/100 km.
+
+**What does separate them is which way the low is going.** The 12 h pressure
+tendency is a median -7.7 hPa for the cases against -3.2 for the controls,
+and -13.0 against -4.5 over 24 h: the lows that go on to make hurricane force
+are deepening between two and three times as fast as the ones matched to them
+on depth. In the model ladder the tendency is the only term with a
+respectable z, and the best two-variable fit is gradient plus tendency.
+
+### The sign problem, and why the structure terms cannot be read
+
+Every structural coefficient comes out negative -- at matched depth the
+hurricane-force case is the *shallower, weaker-gradient* low. That is not a
+statement about the atmosphere. It is the matching:
+
+Depth at an instant conflates how strong a low is with how far along it is.
+A case is a developing low 24 h short of its peak; a control drawn at a
+random time is often at or past its own. Matching them on depth therefore
+pairs a developing low with a mature one, and the mature one is
+structurally stronger at the same depth because it has had time to spin up.
+The negative coefficients are that pairing, not a finding, and adding
+tendency makes the gradient's coefficient *more* negative rather than less
+-- which is what an artifact does and a physical effect does not.
+
+So this pass neither confirms nor refutes the compactness hypothesis. It
+establishes that depth and scale at a single time, matched this way, carry
+no separable signal, and that the tendency does.
+
+### The next experiment, which is the right one
+
+Invert the design: **match on tendency, then test whether structure adds.**
+Among lows deepening at the same rate, does the compact one produce hurricane
+force and the broad one not? That asks the question directly, and it removes
+the maturity confound by holding fixed the variable that tracks it.
+
+It is a small change -- tendency joins the matching criteria -- and the
+extraction is already built and checkpointed, so only the matching and the
+fit are rerun.
+
+### What is not yet established
+
+- The confirmation seasons (2021, 2023, 2025) have not been looked at, and
+  will not be until a feature list and thresholds are written down.
+- 79 strata is a small exploration set; z values of 3 are worth following,
+  not worth believing.
+- ERA5 at 0.25 deg smooths exactly the compact lows the hypothesis is about,
+  which biases against finding the effect.
+- The cyclone phase space fields are not in this table yet. Whether they add
+  anything over tendency is untested.
