@@ -2,15 +2,15 @@
 """
 make_figures.py -- regenerates every figure on the GitHub Pages article
 (../index.html) from the package's own operational code
-(D2D/derivedParameters/functions/cps_HartCPS.py), run on synthetic fields.
-The two CAVE screen-capture figures (fig9_cave_lifecycle.jpg and
-fig10_cave_4panel.jpg) are cropped by make_cave_figures.py instead.
+(cyclone_phase_space/D2D/derivedParameters/functions/cps_HartCPS.py), run on
+synthetic fields. The two CAVE screen-capture figures (fig9_cave_lifecycle.jpg
+and fig10_cave_4panel.jpg) are cropped by make_cave_figures.py instead.
 
 Run from the repository root:
 
-    python3 docs/cps/figures/make_figures.py
+    python3 cyclone_phase_space/article/figures/make_figures.py
 
-Outputs land next to this script, in docs/cps/figures/:
+Outputs land next to this script, in cyclone_phase_space/article/figures/:
     fig2_method.png         fig3_gridded.png       fig4_tilt.png
     fig5_performance.png    fig7_parameter_b.png
     fig8_thermal_wind_concept.png  fig9_b_concept.png
@@ -137,7 +137,7 @@ from matplotlib.lines import Line2D
 # ---------------------------------------------------------------------------
 
 HERE = Path(__file__).resolve().parent
-REPO_ROOT = HERE.parent.parent.parent  # docs/cps/figures -> docs/cps -> docs -> repo root
+REPO_ROOT = HERE.parent.parent  # article/figures -> article -> cyclone_phase_space
 FUNCTIONS_DIR = REPO_ROOT / "D2D" / "derivedParameters" / "functions"
 SYNTHETIC_TEST_DIR = REPO_ROOT / "tests" / "cps"
 sys.path.insert(0, str(FUNCTIONS_DIR))

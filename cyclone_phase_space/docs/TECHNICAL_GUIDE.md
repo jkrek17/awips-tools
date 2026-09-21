@@ -26,22 +26,25 @@ rest of the repository, because the CAVE interpreter only sees the
 functions directory. It can be run standalone for a sanity check:
 
 ```
-python3 D2D/derivedParameters/functions/cps_HartCPS.py
+python3 cyclone_phase_space/D2D/derivedParameters/functions/cps_HartCPS.py
 ```
 
 Package layout:
 
 ```
-D2D/
-  derivedParameters/functions/    cps_HartCPS.py
-  derivedParameters/definitions/  one XML per product
-  colormaps/Grid/                 CPS_CoreDiverging.cmap, CPS_HartClass.cmap
-  styleRules/cpsStyleRules.xml    base-schema style rules (see 5.3)
-  menus/volumebrowser/cpsFields.xml  Volume Browser entries (see 5.4)
-  docs/                           this guide, the user guide
-  README.md                       install, troubleshooting, validation log
-tests/d2d_cps/                    pytest suite for the Hart family
-cps/hart.py                       storm-centered reference implementation
+cyclone_phase_space/
+  D2D/
+    derivedParameters/functions/    cps_HartCPS.py
+    derivedParameters/definitions/  one XML per product
+    colormaps/Grid/                 CPS_CoreDiverging.cmap, CPS_HartClass.cmap
+    styleRules/cpsStyleRules.xml    base-schema style rules (see 5.3)
+    menus/volumebrowser/cpsFields.xml  Volume Browser entries (see 5.4)
+  docs/                            this guide, the user guide
+  README.md                        install, troubleshooting, validation log
+  tests/d2d_cps/                   pytest suite for the Hart family
+  tests/cps/                       storm-centered reference test suite
+  cps/hart.py                      storm-centered reference implementation
+  article/                         published article source (staged to docs/cps/)
 ```
 
 ---
@@ -73,7 +76,7 @@ square sliding max and min is separable and runs in a handful of passes
 per level (section 3). Corners reach 707 km. For an isolated compact vortex the
 max and min are the far field and the center either way, so the
 difference from a circle is small; the test suite checks agreement with
-the circular point implementation in `cps/hart.py` to within 2 percent
+the circular point implementation in `cyclone_phase_space/cps/hart.py` to within 2 percent
 on an isolated synthetic vortex. On a background height gradient the
 square sees up to 41 percent more of the gradient's contribution to
 dZ than the circle does. The environmental gradient itself is not a
@@ -83,7 +86,7 @@ storm embedded in one. On a synthetic deep warm core (true terms
 191 m) a background gradient of 5 m per degree at 1000 hPa growing to
 14 m per degree at 300 hPa lowers the upper term to 70 m along a grid
 axis and to about 0 at 45 degrees; at twice that gradient the upper
-term is -85 and -193 m (`docs/cps/figures/experiments_extensions.py`).
+term is -85 and -193 m (`cyclone_phase_space/article/figures/experiments_extensions.py`).
 That response is by design: the phase space describes the cyclone
 together with the baroclinic zone it has entered, and the fall of the
 upper term as a storm meets a trough is the transition signal itself,
@@ -131,7 +134,7 @@ the zero threshold and transition timing carry over, and the Dujuan
 case confirmed the timing matches within one 6 h frame. A GFS-only definition on
 Hart's exact levels can be added with `executeBand7` (section 4.4).
 
-A synthetic test (`docs/cps/figures/band_comparison.py`, README
+A synthetic test (`cyclone_phase_space/article/figures/band_comparison.py`, README
 "Band experiment") fitted Hart's band and two alternatives to five
 prescribed profiles. For a shallow warm core with cold air above, the
 seclusion and transition profiles, 925/850/700 overstates Hart's value
@@ -143,7 +146,7 @@ the deeper band was rejected. The mean of the 925/850/700 and
 later revision once tested on real data. A morphing-profile test puts
 completion about 3 h late on a 48 h transition for the band in use,
 against about 6 h early for the deeper band; the upper crossing is
-within a frame of Hart's (`docs/cps/figures/experiments.py`, README
+within a frame of Hart's (`cyclone_phase_space/article/figures/experiments.py`, README
 "Band experiment").
 
 ### 2.4 Below-ground masking
@@ -219,7 +222,7 @@ dilation (200 km) can then merge their two blobs into one on the
 display. There is no per-low separation logic; check MSLP for a second
 low inside a blob's footprint before treating it as a single system.
 
-Detector sensitivity (synthetic, `docs/cps/figures/experiments.py`):
+Detector sensitivity (synthetic, `cyclone_phase_space/article/figures/experiments.py`):
 with the shipped 40 m ring test a 40 m deep low is never detected; 50 m
 is detected out to a 300 km e-folding scale, 80 m out to 500 km, 100 m
 out to 600 km, and an 800 km scale low is missed even at 120 m. The
@@ -393,7 +396,7 @@ worth keeping straight when comparing the two:
    levels explicitly (section 2.4) and blanks over ice sheets and high
    terrain.
 
-**Synthetic life-cycle comparison.** `docs/cps/figures/lifecycle_comparison.py`
+**Synthetic life-cycle comparison.** `cyclone_phase_space/article/figures/lifecycle_comparison.py`
 runs both methods on one synthetic transition (0 to 168 h, 6 h frames,
 0.25 degree grid): a vortex carried from 22N 150E to 52N 175E whose
 perturbation profile blends deep warm core, transition, deep cold core
@@ -401,7 +404,7 @@ and seclusion, with the scale growing 150 to 350 km, the speed 4 to
 16 m/s, a baroclinic zone whose gradient grows with height, and a
 motion-relative thermal asymmetry (warm to the right) that grows from
 24 h, peaks 72 to 108 h and is gone by 144 h. Hart's method is
-`cps/hart.py` (500 km circle, 50 hPa levels, semicircle B, motion from
+`cyclone_phase_space/cps/hart.py` (500 km circle, 50 hPa levels, semicircle B, motion from
 the track); the gridded method is this module on the standard levels
 with the deep-layer wind set equal to the track motion. Results: both
 walk classes 0, 2, 3, 4, 5, 1; gridded onset 54 h against Hart's 42 h,
@@ -637,11 +640,11 @@ bundle file extracted from the saved procedure:
 ## 6. Tests
 
 ```
-python3 -m pytest tests/d2d_cps tests/cps -q
+python3 -m pytest cyclone_phase_space/tests/d2d_cps cyclone_phase_space/tests/cps -q
 ```
 
-56 tests: the storm-centered reference in `tests/cps` and the Hart
-family in `tests/d2d_cps/test_hart_cps.py`. Every expected value is
+56 tests: the storm-centered reference in `cyclone_phase_space/tests/cps` and the Hart
+family in `cyclone_phase_space/tests/d2d_cps/test_hart_cps.py`. Every expected value is
 analytic or from a brute-force comparison, never copied from the
 implementation. Coverage includes sliding extrema against brute force,
 band slopes on exact linear profiles, agreement between the gridded and
@@ -649,14 +652,14 @@ the point Hart implementation on a synthetic vortex, the closed-low
 mask on flat, sloped, and two-low fields, the terrain mask, Pa versus
 hPa detection, orientation modes on transposed inputs, and a
 performance budget on a full 0.25 degree grid.
-`tests/d2d_cps/conftest.py` puts the functions directory on the path
+`cyclone_phase_space/tests/d2d_cps/conftest.py` puts the functions directory on the path
 so the files import exactly as CAVE imports them.
 
 ---
 
 ## 6a. Candidate extensions tested on synthetic fields
 
-`docs/cps/figures/experiments_extensions.py` tests four extensions as
+`cyclone_phase_space/article/figures/experiments_extensions.py` tests four extensions as
 parallel products that would leave Hart's parameters as the reference:
 
 - Storm-only core: subtracting the domain background plane from each
@@ -745,7 +748,7 @@ as a reason to change it.
 - Hart, R. E., 2003: A cyclone phase space derived from thermal wind
   and thermal asymmetry. Mon. Wea. Rev., 131, 585 to 616.
 - FSU cyclone phase page: https://moe.met.fsu.edu/cyclonephase/
-- Storm-centered reference implementation: `cps/hart.py` in this
+- Storm-centered reference implementation: `cyclone_phase_space/cps/hart.py` in this
   repository.
 
 ---
@@ -754,19 +757,19 @@ as a reason to change it.
 
 Where everything about this package lives, and what each piece is for:
 
-- `D2D/README.md`: install checklist, per-field method notes, and the
+- `cyclone_phase_space/README.md`: install checklist, per-field method notes, and the
   validation log. The first thing to read when standing up the package
   at a new site.
-- `D2D/docs/USER_GUIDE.md`: for forecasters, how to load and read the
+- `cyclone_phase_space/docs/USER_GUIDE.md`: for forecasters, how to load and read the
   products, what the three terms mean, and where they mislead.
-- `D2D/docs/TECHNICAL_GUIDE.md`: this document, for whoever installs,
+- `cyclone_phase_space/docs/TECHNICAL_GUIDE.md`: this document, for whoever installs,
   tunes, maintains, or ports the package.
-- `D2D/docs/ABSTRACT.md`: the one-paragraph scientific abstract, for
+- `cyclone_phase_space/docs/ABSTRACT.md`: the one-paragraph scientific abstract, for
   anyone citing or summarizing this work outside the repository.
-- `D2D/docs/TALK.md`: the script for a seven-minute spoken
+- `cyclone_phase_space/docs/TALK.md`: the script for a seven-minute spoken
   introduction to the package, timed and slide-cued.
-- `D2D/docs/TALK.pptx`: the slide deck that goes with `TALK.md`, same
+- `cyclone_phase_space/docs/TALK.pptx`: the slide deck that goes with `TALK.md`, same
   text in each slide's speaker notes.
-- `docs/cps/index.html`: the longer web article, with the method,
+- `cyclone_phase_space/article/index.html` (staged to `docs/cps/index.html` by the Pages workflow): the longer web article, with the method,
   figures, and validation cases in full; the source for the teaching
   figures embedded in the User Guide.

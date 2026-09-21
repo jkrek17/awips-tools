@@ -1,8 +1,9 @@
 """Pytest bootstrap for the cps test suite.
 
-Puts the repo root on sys.path so `import cps` resolves no matter what
-directory pytest is invoked from (e.g. `python3 -m pytest tests/cps -q`
-run from the repo root, or a CI job that cds elsewhere first).
+Puts the cyclone_phase_space project root on sys.path so `import cps`
+resolves no matter what directory pytest is invoked from (e.g.
+`python3 -m pytest cyclone_phase_space/tests/cps -q` run from the repo
+root, or a CI job that cds elsewhere first).
 """
 
 from __future__ import annotations

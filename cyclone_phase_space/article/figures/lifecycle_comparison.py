@@ -10,7 +10,7 @@ VTU) are computed two ways at the storm's own center grid point:
    in `cps/hart.py` (`thermal_wind`, `parameter_b`), on 50 hPa levels
    from 900 to 300 hPa, radius 500 km.
 2. "Gridded": the operational, pointwise D2D module
-   `D2D/derivedParameters/functions/cps_HartCPS.py`
+   `cyclone_phase_space/D2D/derivedParameters/functions/cps_HartCPS.py`
    (`executeBand3`, `executeB`, `executeHartClass`) on the seven
    standard levels (1000/925/850/700/500/400/300 hPa), sampled at the
    grid point nearest the storm center.
@@ -54,7 +54,7 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
 
 HERE = Path(__file__).resolve().parent
-REPO_ROOT = HERE.parent.parent.parent
+REPO_ROOT = HERE.parent.parent  # article/figures -> article -> cyclone_phase_space
 sys.path.insert(0, str(REPO_ROOT / "D2D" / "derivedParameters" / "functions"))
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(HERE))

@@ -1,7 +1,7 @@
 # Review panel report, 2026-09-18
 
-Four independent reviews of the article (`docs/cps/index.html`), the
-package (`D2D/`), the guides, the abstract and the talk, each from a
+Four independent reviews of the article (`cyclone_phase_space/article/index.html`), the
+package (`cyclone_phase_space/`), the guides, the abstract and the talk, each from a
 different remit: (1) extratropical transition dynamics and fidelity to
 Hart (2003) and Evans and Hart (2003); (2) numerical verification of
 the code and of every number in the article; (3) operational marine
@@ -31,7 +31,7 @@ all reproduced independent calculations to machine precision.
 3. **"Warm air on the equatorward flank always reads positive" is
    wrong** (1). B is motion-relative; Figure 7 itself shows the
    easterly vortex at −25 m with warm air to its south. Fix in the
-   article, `cps_HartCPS.py` and `cps/hart.py`.
+   article, `cps_HartCPS.py` and `cyclone_phase_space/cps/hart.py`.
 4. **Standard-level bands may bias the lower term by 25 to 50 percent**
    (1). The lower band 925/850/700 lies entirely below Hart's 900 to
    600 layer. "Comparable in magnitude to Hart's hurricanes" and

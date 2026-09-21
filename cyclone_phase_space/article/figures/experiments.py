@@ -34,7 +34,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent.parent.parent / "D2D" / "derivedParameters" / "functions"))
+sys.path.insert(0, str(HERE.parent.parent / "D2D" / "derivedParameters" / "functions"))
 import cps_HartCPS as hc  # noqa: E402
 
 hc.ORIENTATION_MODE = 0  # rows increase northward on these grids

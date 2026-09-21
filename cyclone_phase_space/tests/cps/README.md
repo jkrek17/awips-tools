@@ -1,6 +1,6 @@
 # cps test suite
 
-Analytic verification of `cps/hart.py` (Hart 2003 cyclone phase space
+Analytic verification of `cyclone_phase_space/cps/hart.py` (Hart 2003 cyclone phase space
 math), per `web/CPS/PLAN.md` section 8. `synthetic.py` builds
 closed-form vortices (Gaussian warm/cold core height bumps, a
 modified-Rankine wind field) with its own independent haversine, so
@@ -17,4 +17,4 @@ and `compute_point` end to end (including the too-few-points path).
 
 Run from the repo root:
 
-    python3 -m pytest tests/cps -q
+    python3 -m pytest cyclone_phase_space/tests/cps -q

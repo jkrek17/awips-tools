@@ -2,19 +2,19 @@
 
 *** EXPERIMENTAL. NOT OPERATIONALLY VETTED. *** This is a D2D
 derived-parameter implementation of Hart's (2003) Cyclone Phase Space
-(`cps/hart.py`, `web/CPS/PLAN.md`). It computes Hart's actual
+(`cyclone_phase_space/cps/hart.py`, `web/CPS/PLAN.md`). It computes Hart's actual
 thermal-wind and thermal-asymmetry quantities from geopotential height
 and wind, evaluated pointwise over the whole grid instead of only at
 one storm's moving center -- a D2D derived parameter has no concept of
-"the storm's center". `tests/cps` exercises the storm-centered
-reference implementation (`cps/hart.py`) this family is checked
+"the storm's center". `cyclone_phase_space/tests/cps` exercises the storm-centered
+reference implementation (`cyclone_phase_space/cps/hart.py`) this family is checked
 against; see "Tests" below.
 
 ## Guides
 
-- `docs/USER_GUIDE.md`: for forecasters, how to load and read the
+- `cyclone_phase_space/docs/USER_GUIDE.md`: for forecasters, how to load and read the
   products and where they mislead.
-- `docs/TECHNICAL_GUIDE.md`: method, wiring, every tunable, install,
+- `cyclone_phase_space/docs/TECHNICAL_GUIDE.md`: method, wiring, every tunable, install,
   troubleshooting, tests, limitations.
 
 ## What it is
@@ -70,7 +70,7 @@ executeBand7` and needs only a new XML definition, no Python change
 
 ### Band experiment (2026-09-20)
 
-`docs/cps/figures/band_comparison.py` fits Hart's 900-600 hPa band
+`cyclone_phase_space/article/figures/band_comparison.py` fits Hart's 900-600 hPa band
 (seven levels at 50 hPa), the package's 925/850/700 band and a
 proposed 925/850/700/500 band to five prescribed height-perturbation
 profiles. For profiles that are linear in ln p all three agree. For a
@@ -87,7 +87,7 @@ profile. The conclusion is to keep 925/850/700 rather than move to
 925/850/700/500, and to test the two-slope average against Hart's own
 levels on real GFS data before adopting it.
 
-`docs/cps/figures/experiments.py` runs five further sensitivity tests
+`cyclone_phase_space/article/figures/experiments.py` runs five further sensitivity tests
 with the operational code on synthetic fields:
 
 1. Timing. Morphing a profile from deep warm core through the
@@ -121,7 +121,7 @@ with the operational code on synthetic fields:
    flicker when a thermal wind term is within about 15 m of zero or B
    within about 1 m of 10 m.
 
-`docs/cps/figures/experiments_extensions.py` tests four candidate
+`cyclone_phase_space/article/figures/experiments_extensions.py` tests four candidate
 extensions (see the technical guide, "Candidate extensions"): the
 unmodified terms of a deep warm core fall to zero or below in a
 moderate baroclinic zone (upper term +191 m to +70 m along a grid axis
@@ -138,8 +138,8 @@ colder air across a 25 m gradient and passes 10 m only 24 degrees off
 it; and the seven standard levels place the warm-core top at 700 hPa
 for the seclusion and transition profiles.
 
-`docs/cps/figures/lifecycle_comparison.py` runs Hart's method
-(`cps/hart.py`: 500 km circle, 50 hPa levels, semicircle B) and this
+`cyclone_phase_space/article/figures/lifecycle_comparison.py` runs Hart's method
+(`cyclone_phase_space/cps/hart.py`: 500 km circle, 50 hPa levels, semicircle B) and this
 module side by side on one synthetic 168 h transition with the same
 motion vector. Both walk classes 0, 2, 3, 4, 5, 1; the gridded onset
 and completion trail Hart's by 12 and 6 h; the gridded lower term runs
@@ -488,7 +488,7 @@ each, via the doubling/sparse-table trick in `cps_HartCPS.
 running_extreme_1d` -- see that function's docstring). The full
 `executeHartClass` computation runs at about 2.6 s per forecast hour on
 a 0.25 degree global grid. Measured in this repo's
-environment, on a 721x1440 grid (`tests/d2d_cps/test_hart_cps.py`'s
+environment, on a 721x1440 grid (`cyclone_phase_space/tests/d2d_cps/test_hart_cps.py`'s
 performance tests -- see their `-s` output for the exact numbers on
 your own machine):
 
@@ -573,10 +573,10 @@ from the legend right-click menu. Two working routes:
    This is the recommended route.
 2. Untested fallback for ad hoc Volume Browser loads: copy the base
    gridImageryStyleRules.xml and gridContourStyleRules.xml to the site
-   level and paste the matching rules from `D2D/styleRules/cpsStyleRules.xml`
+   level and paste the matching rules from `cyclone_phase_space/D2D/styleRules/cpsStyleRules.xml`
    into them. The file is kept in the base schema for that purpose.
 
-Colormaps: copy `D2D/colormaps/Grid/CPS_CoreDiverging.cmap` and
+Colormaps: copy `cyclone_phase_space/D2D/colormaps/Grid/CPS_CoreDiverging.cmap` and
 `CPS_HartClass.cmap` to
 `/awips2/edex/data/utility/common_static/site/<SITE>/colormaps/Grid/`:
 
@@ -626,10 +626,10 @@ more likely cause is the `coriolis` pseudo-field, not `P` -- see
 ## Tests
 
 ```
-python3 -m pytest tests/d2d_cps -q
+python3 -m pytest cyclone_phase_space/tests/d2d_cps -q
 ```
 
-`tests/d2d_cps/test_hart_cps.py` covers the sliding-window doubling
+`cyclone_phase_space/tests/d2d_cps/test_hart_cps.py` covers the sliding-window doubling
 trick against a brute-force reference, the closed-form band-slope
 formula, `closed_low_mask`, the classification/index entry points, a
 direct numerical comparison against `cps.hart.thermal_wind` on a
@@ -641,22 +641,22 @@ cross-check against `cps.hart.parameter_b`'s true half-disk means
 (within 5%), the joint classification decision table, `executeB` with
 a 2D coriolis field straddling the equator, and `executeHartClass`'s
 behavior across Hart's strict B/thermal-wind lines on synthetic
-vortices. `tests/d2d_cps/conftest.py` puts `D2D/derivedParameters/
+vortices. `cyclone_phase_space/tests/d2d_cps/conftest.py` puts `cyclone_phase_space/D2D/derivedParameters/
 functions` on `sys.path` so the tests can import `cps_HartCPS` the same
 way AWIPS's embedded interpreter would (as a bare module, not a
 package), without needing any AWIPS runtime present.
 
 ```
-python3 -m pytest tests/cps -q
+python3 -m pytest cyclone_phase_space/tests/cps -q
 ```
 
-`tests/cps` is the storm-centered reference implementation this family
-approximates: analytic verification of `cps/hart.py` (Hart 2003 cyclone
+`cyclone_phase_space/tests/cps` is the storm-centered reference implementation this family
+approximates: analytic verification of `cyclone_phase_space/cps/hart.py` (Hart 2003 cyclone
 phase space math) against closed-form synthetic vortices. The
 `test_hart_cps.py` comparisons above check `cps_HartCPS.py`'s pointwise,
 windowed numbers against this module directly.
 
-Run `python3 D2D/derivedParameters/functions/cps_HartCPS.py` directly
+Run `python3 cyclone_phase_space/D2D/derivedParameters/functions/cps_HartCPS.py` directly
 for a quick standalone sanity check (a synthetic warm-core vortex,
 printing the lower/upper slope and the class at its center, plus a
 parameter B demo on a linear thickness gradient with its analytic
