@@ -16,6 +16,8 @@ against; see "Tests" below.
   products and where they mislead.
 - `cyclone_phase_space/docs/TECHNICAL_GUIDE.md`: method, wiring, every tunable, install,
   troubleshooting, tests, limitations.
+- `cyclone_phase_space/docs/TIME_ACCESS.md`: whether a derived parameter can
+  read a previous forecast hour, and what `cps_probe_dZ12.xml` is for.
 
 ## What it is
 
@@ -539,6 +541,12 @@ EDEX, site-level `common_static`:
 /awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/definitions/cps_HCPSclass.xml
 /awips2/edex/data/utility/common_static/site/<SITE>/derivedParameters/functions/cps_HartCPS.py
 ```
+
+`cps_probe_dZ12.xml` is deliberately not in that list. It is a probe,
+not a product: it answers whether the framework can read a previous
+forecast hour at all (`docs/TIME_ACCESS.md`). Install it on its own when
+you want that answer, read the result, record it in the validation log
+below, and delete it.
 
 The `cps_` file prefix is only so the family sorts together in the
 Localization perspective and on disk; AWIPS keys each definition on the

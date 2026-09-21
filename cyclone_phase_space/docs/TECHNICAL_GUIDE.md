@@ -764,6 +764,10 @@ Where everything about this package lives, and what each piece is for:
   products, what the three terms mean, and where they mislead.
 - `cyclone_phase_space/docs/TECHNICAL_GUIDE.md`: this document, for whoever installs,
   tunes, maintains, or ports the package.
+- `cyclone_phase_space/docs/TIME_ACCESS.md`: whether a derived parameter can read a
+  field at a previous forecast hour, the `ftime`/`timeShift` mechanism
+  that does it, and how to read the `cps_probe_dZ12.xml` probe that
+  confirms it on a site. Phase 0 of the warm seclusion wind project.
 - `cyclone_phase_space/docs/ABSTRACT.md`: the one-paragraph scientific abstract, for
   anyone citing or summarizing this work outside the repository.
 - `cyclone_phase_space/docs/TALK.md`: the script for a seven-minute spoken

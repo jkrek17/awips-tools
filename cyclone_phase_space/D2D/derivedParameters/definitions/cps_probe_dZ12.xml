@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  EXPERIMENTAL, AND A PROBE, NOT A PRODUCT. This definition exists to
+  answer one question on a real AWIPS build: can a D2D derived parameter
+  read a field at a previous forecast hour? It is Phase 0 of the warm
+  seclusion wind project - see docs/TIME_ACCESS.md, which explains the
+  mechanism, what this probe settles, and how to read its result.
+
+  Delete this file once the answer is recorded in README.md's validation
+  log. It is not meant to ship to forecasters and it is deliberately
+  absent from cpsFields.xml and cpsStyleRules.xml, so it will appear in
+  the Product Browser but not in the Volume Browser's CPS menu group.
+
+  What it computes: the 12 hour change in 1000 hPa geopotential height,
+  Z(F) - Z(F-12h), within the same model run. Over a deepening low this
+  must be NEGATIVE. That sign is the whole point of the probe - see
+  TIME_ACCESS.md section 5, which also covers what all-zeros and
+  all-blank mean.
+
+  Why no new Python: this uses the baseline `Difference` function, so
+  nothing in this package is between the framework and the result. If
+  the field is wrong, the framework is wrong, not our code.
+
+  Expect it to be BLANK before forecast hour 12. There is no frame 12
+  hours earlier in the same run. TIME_ACCESS.md section 6.
+
+  The two attributes doing the work:
+    - ftime="true" on the Method tells the framework to honor timeShift
+      on the Field tags, taking the shifted field from the SAME model
+      run at a different forecast time. (dtime="true" would instead
+      take it from any model run with data at that offset, silently
+      mixing cycles - never use it for a tendency.)
+    - timeShift="-43200" is 12 hours in seconds. It must be written in
+      seconds, not as a timestep count: a magnitude below 60 is read as
+      a multiple of the model's intrinsic timestep, and output spacing
+      coarsens at longer leads, so the field would change meaning
+      partway across the forecast.
+
+  VERIFY against an existing definition in
+  /awips2/edex/data/utility/common_static/base/derivedParameters/definitions/
+  that on your AWIPS version:
+    - `ftime` and `timeShift` are spelled as below. They are documented
+      in the NWS AWIPS-2 Application Focal Point derived parameter
+      course, Appendix A, but no field in this package has used them
+      before, so this is their first exercise on this site.
+    - a NEGATIVE timeShift means the PAST. The reference calls it a
+      "time offset" without stating a direction. If this field comes out
+      positive over a deepening low, the convention is reversed and
+      every timeShift in the package flips sign.
+    - the baseline `Difference` function takes its arguments in the
+      order (minuend, subtrahend), i.e. returns the first Field minus
+      the second. Check the function itself under
+      /awips2/edex/data/utility/common_static/base/derivedParameters/functions/.
+      If it subtracts the other way, swap the two Field elements below
+      rather than changing the timeShift.
+    - the geopotential height field's abbreviation is "GH" as used
+      below, and fixed-level Field references use the "1000MB" spelling
+      - both already confirmed on this site by cps_HVTL.xml and
+      cps_HCPSidx.xml.
+    - unit="" (empty) is accepted, as it is for this package's other
+      fields.
+-->
+<DerivedParameter abbreviation="HdZ12" name="PROBE 1000 hPa 12 h height change (m)" unit="">
+    <Method name="Difference" levels="Surface" ftime="true">
+        <!-- Z at the requested forecast hour. No timeShift: with
+             ftime, only the fields that ask to be shifted are shifted.
+             If this one moves too, the result is a field of zeros. -->
+        <Field abbreviation="GH" level="1000MB"/>
+        <!-- Z 12 hours earlier in the same run. -43200 s = 12 h. -->
+        <Field abbreviation="GH" level="1000MB" timeShift="-43200"/>
+    </Method>
+</DerivedParameter>
