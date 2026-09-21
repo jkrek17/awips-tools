@@ -16,3 +16,6 @@ dist/
 # cyclone_phase_space/article/ by the Pages workflow (.github/workflows/
 # pages.yml); never commit the local staging copy.
 docs/cps/
+
+# tests/create_xml_windhazards/test_windhazard_xml.py output
+tests/create_xml_windhazards/out/
