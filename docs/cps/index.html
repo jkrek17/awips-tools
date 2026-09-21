@@ -70,12 +70,13 @@
       over MSLP and 1000 to 500&nbsp;hPa thickness. It draws one colored
       block over each closed low. Reds mean a symmetric warm core, a
       hurricane or typhoon structure. Yellow and green mean the storm
-      has become frontal and is transitioning. Blues mean a cold core,
+      has become asymmetric, Hart's word for frontal, and is
+      transitioning. Blues mean a cold core,
       an ordinary extratropical low. Magenta means a warm seclusion: a
       warm core has re-formed inside a mature extratropical low, which
       is often when the winds peak. The other four fields are the
       numbers behind that block: the lower and upper warm-core strength,
-      the frontal asymmetry <i>B</i>, and a single index from +3
+      the asymmetry <i>B</i>, and a single index from +3
       (hurricane) to &minus;3 (deep cold low).
     </p>
     <p>
@@ -141,9 +142,8 @@
       triples listed in the figure script and colored light to dark by
       forecast hour (0 to 168&nbsp;h). <strong>(a)</strong> The asymmetry
       diagram: <i>B</i> (vertical axis) against &minus;V<sub>T</sub><sup>L</sup>,
-      both in meters, with the four symmetric/frontal, warm/cold
-      combinations shaded and labeled (Hart's term for frontal is
-      asymmetric),
+      both in meters, with the four symmetric/asymmetric, warm/cold
+      combinations shaded and labeled,
       Evans and Hart's
       (2003) <i>B</i> = 10&nbsp;m onset line and
       &minus;V<sub>T</sub><sup>L</sup> = 0 completion line drawn, and the
@@ -378,7 +378,7 @@
     same thickness field reads positive moving one way and negative
     moving the other (Figure 6). Evans and Hart (2003) took 10&nbsp;m as
     the threshold separating a symmetric, tropical-like thickness field
-    from an asymmetric, frontal one. A single grid point has no left
+    from an asymmetric one. A single grid point has no left
     half, so this package uses a gridded approximation:
   </p>
   <p class="eq"><i>B</i> = <i>h</i> (8<i>R</i> / 3&pi;) (<b>n</b><sub>R</sub> &middot; &lang;&nabla;<i>Z</i><sub>thk</sub>&rang;<sub><i>W</i></sub>) &lambda;</p>
@@ -432,7 +432,7 @@
     that happen to share the &minus;V<sub>T</sub><sup>L</sup> axis.
     Each diagram alone carries one piece of information the other lacks:
     the <i>B</i>&ndash;&minus;V<sub>T</sub><sup>L</sup> diagram says
-    whether the storm is frontal, the
+    whether the storm is asymmetric, the
     &minus;V<sub>T</sub><sup>L</sup>&ndash;&minus;V<sub>T</sub><sup>U</sup>
     diagram says whether a warm core is deep or shallow. Classification
     on all three parameters at once preserves both distinctions and
@@ -448,14 +448,14 @@
     a storm in transition, blues for a cold core:
   </p>
   <table>
-    <caption><code>HCPSclass</code>: the seven classes formed from the quadrants of Hart's two diagrams. A term of exactly zero counts as warm; <i>B</i> of exactly 10&nbsp;m counts as symmetric.</caption>
+    <caption><code>HCPSclass</code>: the seven classes formed from the quadrants of Hart's two diagrams (asymmetric is Hart's term; the storm has a warm and a cold side, that is, it is frontal). A term of exactly zero counts as warm; <i>B</i> of exactly 10&nbsp;m counts as symmetric.</caption>
     <thead><tr><th scope="col">Code</th><th scope="col">Color</th><th scope="col">Name</th><th scope="col"><i>B</i></th><th scope="col">&minus;V<sub>T</sub><sup>L</sup></th><th scope="col">&minus;V<sub>T</sub><sup>U</sup></th><th scope="col">Typical system</th></tr></thead>
     <tbody>
       <tr><td>0</td><td>red</td><td>symmetric deep warm core</td><td>&le; 10</td><td>warm</td><td>warm</td><td>hurricane, typhoon</td></tr>
       <tr><td>1</td><td>magenta</td><td>symmetric shallow warm core</td><td>&le; 10</td><td>warm</td><td>cold</td><td>subtropical storm, or warm seclusion once <i>B</i> falls</td></tr>
-      <tr><td>2</td><td>yellow</td><td>frontal deep warm core</td><td>&gt; 10</td><td>warm</td><td>warm</td><td>hurricane meeting a trough, transition beginning</td></tr>
-      <tr><td>3</td><td>green</td><td>frontal shallow warm core</td><td>&gt; 10</td><td>warm</td><td>cold</td><td>transition under way</td></tr>
-      <tr><td>4</td><td>blue</td><td>frontal cold core</td><td>&gt; 10</td><td>cold</td><td>cold</td><td>extratropical low, transition complete</td></tr>
+      <tr><td>2</td><td>yellow</td><td>asymmetric deep warm core</td><td>&gt; 10</td><td>warm</td><td>warm</td><td>hurricane meeting a trough, transition beginning</td></tr>
+      <tr><td>3</td><td>green</td><td>asymmetric shallow warm core</td><td>&gt; 10</td><td>warm</td><td>cold</td><td>transition under way</td></tr>
+      <tr><td>4</td><td>blue</td><td>asymmetric cold core</td><td>&gt; 10</td><td>cold</td><td>cold</td><td>extratropical low, transition complete</td></tr>
       <tr><td>5</td><td>indigo</td><td>symmetric cold core</td><td>&le; 10</td><td>cold</td><td>cold</td><td>occluded or cutoff cold low</td></tr>
       <tr><td>6</td><td>gray</td><td>shallow cold core (lower cold, upper warm)</td><td>any</td><td>cold</td><td>warm</td><td>perturbation peaking at mid-levels</td></tr>
       <tr><td>blank</td><td colspan="5">no closed low, or <i>B</i> undefined (window-mean steering below 2&nbsp;m/s)</td></tr>
@@ -511,8 +511,8 @@
       positive lower thermal wind (+119&nbsp;m at each center), so A
       reads class 0, symmetric deep warm core, over about four fifths of
       its footprint, with the poleward fifth, nearest the steering
-      reversal, across the frontal line in class 2; A&prime; reads class
-      2, frontal deep warm core, throughout. Neither shows a cold-core
+      reversal, across the <i>B</i> = 10&nbsp;m line in class 2; A&prime; reads class
+      2, asymmetric deep warm core, throughout. Neither shows a cold-core
       pixel.
       <strong>(d)</strong> The two vortices plotted on Hart's asymmetry
       diagram, <i>B</i> against &minus;V<sub>T</sub><sup>L</sup>, at their
@@ -780,7 +780,7 @@
     <figcaption><strong>Figure 10.</strong> The four-panel CAVE
       procedure at 48&nbsp;h of the 2026 September 20 0600&nbsp;UTC GFS
       run, cropped from a full-screen capture. Top left HCPSclass
-      (3, frontal shallow warm core); top right HB (36&nbsp;m); bottom left
+      (3, asymmetric shallow warm core); top right HB (36&nbsp;m); bottom left
       HVTL and HVTU overlaid (+114 and &minus;102&nbsp;m); bottom right
       HCPSidx (0.87), all sampled at the 976&nbsp;hPa center at
       38.2&deg;N 148.5&deg;E. The color bar ranges are the ones set on the
@@ -838,7 +838,7 @@
   </p>
   <figure id="fig11">
     <img src="figures/figD_lifecycle.png"
-         alt="Three panels comparing Hart's method and the gridded method on one synthetic life cycle. Left: B against the lower thermal wind, two loops colored light to dark by hour, Hart's in gray reaching 40 meters and the gridded in red reaching 24 meters, both starting in the symmetric warm quadrant, crossing into frontal warm, then frontal cold, and returning through symmetric cold to symmetric warm. Center: upper against lower thermal wind, both trajectories running from deep warm to shallow warm to deep cold and back to shallow warm. Right: time series of B and the two thermal wind terms for both methods, with two class strips along the top showing the sequence 0, 2, 3, 4, 5, 1 for each, Hart's transitions leading by one or two frames.">
+         alt="Three panels comparing Hart's method and the gridded method on one synthetic life cycle. Left: B against the lower thermal wind, two loops colored light to dark by hour, Hart's in gray reaching 40 meters and the gridded in red reaching 24 meters, both starting in the symmetric warm quadrant, crossing into asymmetric warm, then asymmetric cold, and returning through symmetric cold to symmetric warm. Center: upper against lower thermal wind, both trajectories running from deep warm to shallow warm to deep cold and back to shallow warm. Right: time series of B and the two thermal wind terms for both methods, with two class strips along the top showing the sequence 0, 2, 3, 4, 5, 1 for each, Hart's transitions leading by one or two frames.">
     <figcaption><strong>Figure 11.</strong> One <em>synthetic</em>
       transition life cycle (0 to 168&nbsp;h, 6&nbsp;h frames) evaluated
       with Hart's method (<code>cps.hart</code>, circular 500&nbsp;km
@@ -876,7 +876,7 @@
   </p>
   <figure id="fig12">
     <img src="figures/figE_lifecycle_storyboard.png"
-         alt="Six rows by five columns. Each row is one hour of the synthetic life cycle: 0, 60, 90, 120, 144 and 168 hours, labeled with the gridded class. Columns: 1000 hectopascal height contours with thickness contours and the storm track; the class field as a colored block over the low; the 900 to 600 hectopascal thickness anomaly with Hart's circle, the gridded square and the motion arrow; the B against lower thermal wind diagram with both trajectories drawn up to that hour; and the upper against lower thermal wind diagram. The storm moves from 22 north 150 east to 52 north 175 east, the block changes from red to yellow, green, blue, indigo and magenta, and the diagram points move from the symmetric warm quadrant through frontal warm and frontal cold to symmetric cold and back to symmetric warm.">
+         alt="Six rows by five columns. Each row is one hour of the synthetic life cycle: 0, 60, 90, 120, 144 and 168 hours, labeled with the gridded class. Columns: 1000 hectopascal height contours with thickness contours and the storm track; the class field as a colored block over the low; the 900 to 600 hectopascal thickness anomaly with Hart's circle, the gridded square and the motion arrow; the B against lower thermal wind diagram with both trajectories drawn up to that hour; and the upper against lower thermal wind diagram. The storm moves from 22 north 150 east to 52 north 175 east, the block changes from red to yellow, green, blue, indigo and magenta, and the diagram points move from the symmetric warm quadrant through asymmetric warm and asymmetric cold to symmetric cold and back to symmetric warm.">
     <figcaption><strong>Figure 12.</strong> The synthetic life cycle of
       Figure 11 at the six hours at which the gridded class changes
       (<code>docs/cps/figures/lifecycle_storyboard.py</code>). Rows: 0,
@@ -943,8 +943,8 @@
       of HB. HB also sets to missing for a stationary or
       steering-opposed system, and is the environment's gradient rather
       than a storm property away from a low center. HCPSclass inherits
-      these limits for its frontal/symmetric split. Neither HB nor the
-      frontal half of HCPSclass has been validated on a real case, and a
+      these limits for its asymmetric/symmetric split. Neither HB nor the
+      asymmetric half of HCPSclass has been validated on a real case, and a
       comparison against storm-centered <i>B</i> computed from
       finite-differenced model centers is the intended test.</li>
     <li>The closed-low detector measures relief between a center and the

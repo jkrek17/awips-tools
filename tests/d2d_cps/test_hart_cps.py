@@ -1178,7 +1178,7 @@ def test_steering_window_mean_recovers_environmental_flow_from_vortex_wind(hart_
 
 def test_hart_class_truth_table():
     # One point per code, 0-6, in order, using the boundary convention
-    # hart_class documents: B frontal at > 10 (thr), symmetric at <= 10;
+    # hart_class documents: B asymmetric at > 10 (thr), symmetric at <= 10;
     # each thermal wind term warm at >= 0, cold only at strictly < 0.
     B = np.array([5.0, 5.0, 20.0, 20.0, 20.0, 5.0, 20.0])
     vtl = np.array([50.0, 50.0, 50.0, 50.0, -50.0, -50.0, -50.0])
@@ -1190,7 +1190,7 @@ def test_hart_class_truth_table():
     np.testing.assert_allclose(code, [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
 
     # Boundary: B exactly at the 10 m threshold is symmetric (<=), not
-    # frontal (>) -- code 0, not 2.
+    # asymmetric (>) -- code 0, not 2.
     code_b_thr = hc.hart_class(np.array([10.0]), np.array([50.0]), np.array([50.0]), np.array([True]))
     assert code_b_thr[0] == 0.0
 
@@ -1303,14 +1303,14 @@ def test_execute_hart_class_deep_warm_core_weak_steering_no_gradient(hart_standa
     assert np.isnan(cls[0, 0])  # outside the closed-low mask
 
 
-def test_execute_hart_class_thickness_gradient_and_steering_gives_frontal_deep_warm(hart_standard_orientation):
+def test_execute_hart_class_thickness_gradient_and_steering_gives_asymmetric_deep_warm(hart_standard_orientation):
     # Same deep warm-core vortex, but with a 925-700 hPa thickness
     # gradient in the background and a steering flow along its contours
     # (the case that produces a clean, full-magnitude B -- see the
     # module docstring's "Parameter B and the joint class" section).
     # VTU is untouched by the z700 modification (it comes from
     # 500/400/300 hPa), so it stays clearly positive; only B crosses the
-    # 10 m frontal line -> code 2 (frontal deep warm core), not 0.
+    # 10 m asymmetry line -> code 2 (asymmetric deep warm core), not 0.
     clat, clon = 20.0, 0.0
     half_width_deg, dlat = 20.0, 0.5
     lat2d, lon2d, dx2d, dy_m = _grid_and_dx_dy(clat, clon, half_width_deg, dlat)
@@ -1338,12 +1338,12 @@ def test_execute_hart_class_thickness_gradient_and_steering_gives_frontal_deep_w
             psfc, coriolis, dx2d, dy_m,
         )
 
-    # Weak gradient: B stays below the 10 m frontal line -> still code 0.
+    # Weak gradient: B stays below the 10 m asymmetry line -> still code 0.
     cls_weak = _cls_for_slope(0.01)
     assert cls_weak[ci, cj] == 0.0
 
     # Stronger gradient: B crosses 10 m, both thermal wind terms still
-    # warm -> code 2 (frontal deep warm core, Evans and Hart's onset).
+    # warm -> code 2 (asymmetric deep warm core, Evans and Hart's onset).
     cls_onset = _cls_for_slope(0.06)
     assert cls_onset[ci, cj] == 2.0
 
@@ -1356,7 +1356,7 @@ def test_execute_hart_class_tilted_cold_core_in_gradient_gives_cold(capsys, hart
     # previous test. Both thermal wind terms are cold at the center
     # (amplitude grows with height at every level -- see the module
     # docstring's sign derivation), so the class must land on the cold
-    # side of the table (frontal cold core, 4, if B has crossed the 10 m
+    # side of the table (asymmetric cold core, 4, if B has crossed the 10 m
     # line; symmetric cold core, 5, otherwise) -- whichever the setup
     # actually produces is asserted and B is printed for visibility,
     # since only the qualitative "cold, not warm or shallow-cold-core"
@@ -1417,7 +1417,7 @@ def test_execute_hart_class_shallow_warm_vortex_gives_1_or_3(capsys, hart_standa
     # (amplitude shrinking toward 600 hPa) while the upper band
     # (500/400/300 hPa) reads cold (|amplitude| growing again above
     # 600 hPa) -- the classic shallow-warm-core signature. Which of the
-    # two shallow-warm codes (1 symmetric, 3 frontal) comes out depends
+    # two shallow-warm codes (1 symmetric, 3 asymmetric) comes out depends
     # only on B, which this setup does not force either way; whichever
     # it lands on is asserted and B is printed.
     clat, clon = 20.0, 0.0

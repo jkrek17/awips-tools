@@ -240,14 +240,14 @@ keeps one).
 | ---: | :--- | :--- | :--- | :--- | :--- |
 | 0 | symmetric deep warm core | <= 10 | warm | warm | hurricane, typhoon |
 | 1 | symmetric shallow warm core | <= 10 | warm | cold | subtropical storm, or warm seclusion after transition |
-| 2 | frontal deep warm core | > 10 | warm | warm | hurricane meeting a trough, transition beginning |
-| 3 | frontal shallow warm core | > 10 | warm | cold | transition under way |
-| 4 | frontal cold core | > 10 | cold | cold (code 6 takes lower cold, upper warm first) | extratropical low, transition complete |
+| 2 | asymmetric deep warm core | > 10 | warm | warm | hurricane meeting a trough, transition beginning |
+| 3 | asymmetric shallow warm core | > 10 | warm | cold | transition under way |
+| 4 | asymmetric cold core | > 10 | cold | cold (code 6 takes lower cold, upper warm first) | extratropical low, transition complete |
 | 5 | symmetric cold core | <= 10 | cold | cold (code 6 takes lower cold, upper warm first) | occluded or cutoff cold low |
 | 6 | shallow cold core (lower cold, upper warm) | any | cold | warm | perturbation peaking at mid-levels; rarely occupied |
 | blank | | | | | no closed low, or B undefined (steering below 2 m/s) |
 
-Boundary convention: warm is -VTL or -VTU >= 0, cold is < 0; frontal is
+Boundary convention: warm is -VTL or -VTU >= 0, cold is < 0; asymmetric is
 B > 10 m, symmetric is B <= 10 m. Ties go to the warm side and to the
 symmetric side (B exactly at 10 m counts as symmetric, either thermal
 wind term exactly at 0 counts as warm). The codes are ordered along a
@@ -261,11 +261,11 @@ code itself. `HCPSclass` is NaN outside
 Why one joint field rather than two: Hart's own two diagrams are two
 projections of one three-dimensional space (B, -VTL, -VTU) that share
 the -VTL axis. Each diagram alone carries one piece of information the
-other lacks: the B/-VTL diagram says frontal or not, the -VTL/-VTU
+other lacks: the B/-VTL diagram says asymmetric or not, the -VTL/-VTU
 diagram says deep or shallow warm core. That joint space has eight
-cells (B symmetric or frontal, times -VTL warm or cold, times -VTU warm
+cells (B symmetric or asymmetric, times -VTL warm or cold, times -VTU warm
 or cold); `HCPSclass` gives seven codes because code 6 merges the two
-cells where -VTL is cold and -VTU is warm, symmetric and frontal alike,
+cells where -VTL is cold and -VTU is warm, symmetric and asymmetric alike,
 into one code. Operationally this turns
 "sample two panels and combine them by eye" into "sample one number at
 the low center," and the resulting codes fall in the order the storm
@@ -518,7 +518,7 @@ What each does:
 - `layerScale`: rescales B from the 925-700 hPa layer this package
   computes it on to a 900-600 hPa equivalent, so Hart's 10 m threshold
   applies. 1.0 gives the raw, unscaled value.
-- `bThresholdM`: Hart's frontal threshold for B, used by `HCPSclass`.
+- `bThresholdM`: Hart's asymmetry threshold for B, used by `HCPSclass`.
   Hart's own is 10 m.
 - `MIN_STEERING_MS` (module constant in `cps_HartCPS.py`, not a
   `<ConstantField>`): the minimum area-averaged steering speed for `B`
@@ -569,7 +569,7 @@ They appear under Grid in the legend's Change Colormap menu.
 2. Load HCPSclass on a hurricane: 0 at the center, blank ocean.
 3. Step the same hurricane toward its extratropical transition and
    watch HCPSclass climb: 0 (or 2, once B crosses 10 m) while the
-   storm is still frontal-testing but warm all the way up, 3 once
+   storm is still asymmetric-testing but warm all the way up, 3 once
    HVTU turns negative, 4 once HVTL turns negative too. If HB/HCPSclass
    fail to load specifically (while HVTL/HVTU/HCPSidx load fine), the
    first suspect is the coriolis pseudo-field's abbreviation; see
@@ -587,7 +587,7 @@ without an error, a crash, or a blank field to flag it, and the site
 would be looking at a mirrored asymmetry until someone compares it
 against a known storm. `HVTL`, `HVTU`, and `HCPSidx` never call
 `gradient_2d` and are unaffected by this setting at all; only `HB` and
-`HCPSclass`'s frontal/symmetric call are exposed. Confirm `HB`'s sign
+`HCPSclass`'s asymmetric/symmetric call are exposed. Confirm `HB`'s sign
 against a known asymmetric storm (thickness gradient overlay, warm air
 on the correct side of the track) at first install on every new grid,
 not only on the grid this default was confirmed on (see 5.2 step 4 and
@@ -701,7 +701,7 @@ as a reason to change it.
 - Standard-level bands differ from Hart's. A GFS-only seven-level
   definition is a small addition (4.4).
 - Parameter B (`HB`, and `HCPSclass`, which depends on it for its
-  frontal/symmetric split) uses the deep-layer steering wind
+  asymmetric/symmetric split) uses the deep-layer steering wind
   (850/700/500/300 hPa mean, area-averaged over the 500 km window
   before its direction is taken; the area mean of the geostrophic wind
   depends only on the height on the window boundary, so any vortex

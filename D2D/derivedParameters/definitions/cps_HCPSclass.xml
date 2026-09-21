@@ -10,9 +10,9 @@
 
     0  symmetric deep warm core     B <= 10, lower VT >= 0, upper VT >= 0
     1  symmetric shallow warm core  B <= 10, lower VT >= 0, upper VT <  0
-    2  frontal deep warm core       B >  10, lower VT >= 0, upper VT >= 0
-    3  frontal shallow warm core    B >  10, lower VT >= 0, upper VT <  0
-    4  frontal cold core            B >  10, lower VT <  0
+    2  asymmetric deep warm core    B >  10, lower VT >= 0, upper VT >= 0
+    3  asymmetric shallow warm core B >  10, lower VT >= 0, upper VT <  0
+    4  asymmetric cold core         B >  10, lower VT <  0
     5  symmetric cold core          B <= 10, lower VT <  0
     6  shallow cold core (lower cold, upper warm)  any B, lower VT < 0, upper VT >= 0
 
@@ -51,7 +51,7 @@
   Field with <ConstantField value="1.0"/> at the same position to
   assume the Northern Hemisphere.
 -->
-<DerivedParameter abbreviation="HCPSclass" name="Hart CPS Class (0 sym deep warm, 1 sym shallow warm, 2 frontal deep warm, 3 frontal shallow warm, 4 frontal cold, 5 sym cold, 6 shallow cold)" unit="">
+<DerivedParameter abbreviation="HCPSclass" name="Hart CPS Class (0 sym deep warm, 1 sym shallow warm, 2 asym deep warm, 3 asym shallow warm, 4 asym cold, 5 sym cold, 6 shallow cold)" unit="">
     <Method name="cps_HartCPS.executeHartClass" levels="Surface">
         <Field abbreviation="GH" level="1000MB"/>
         <Field abbreviation="GH" level="925MB"/>
@@ -76,7 +76,7 @@
              used for HVTL, HVTU, parameter B's box-averaged gradient,
              and the mask's own ring_radius_km -->
         <ConstantField value="500.0"/>
-        <!-- bThresholdM (m): the Evans and Hart (2003) frontal/symmetric
+        <!-- bThresholdM (m): the Evans and Hart (2003) asymmetric/symmetric
              line for parameter B (900-600 hPa equivalent) -->
         <ConstantField value="10.0"/>
         <!-- layerScale: rescales B from this module's 925-700 hPa layer

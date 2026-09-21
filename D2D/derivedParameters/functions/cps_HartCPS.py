@@ -201,7 +201,7 @@ Hart's (2003) third CPS number, B (thermal asymmetry), is the
 right-minus-left half-window mean of 900-600 hPa thickness across the
 storm's own direction of motion, over the same 500 km circle VTL/VTU
 use: `B = h * (mean_right - mean_left)`, `h = +1` in the Northern
-Hemisphere, `-1` in the Southern, so that the frontal configuration
+Hemisphere, `-1` in the Southern, so that the asymmetric configuration
 (warm/thick air to the right of the track in the Northern Hemisphere,
 to the left in the Southern) always reads positive. B is relative to
 the direction of motion, not to latitude -- it is not "warm air on the
@@ -209,7 +209,7 @@ equatorward flank": a storm moving east has its warm side to the
 south, but a storm moving west has its warm side to the north, for the
 identical physical thickness field. `B_THRESHOLD_M` (10 m) separates a
 symmetric, tropical-like
-thickness field (below) from an asymmetric, frontal one (above), and
+thickness field (below) from an asymmetric one (above), and
 Evans and Hart (2003) define the extratropical transition **onset**
 as the first time `B` exceeds this threshold, with **completion** at
 the point VTL (the lower thermal wind) turns negative.
@@ -304,7 +304,7 @@ inside a closed low (`closed_low_mask` on 1000 hPa height, same as
 `executeIndexStd`), NaN elsewhere, from all three Hart parameters at
 once -- B, the lower thermal wind VTL, and the upper thermal wind VTU
 -- as a single categorical field. See `hart_class`'s own docstring for
-the full table, the boundary convention it uses (warm/frontal on the
+the full table, the boundary convention it uses (warm/asymmetric on the
 line, not cold/symmetric), and why a joint class carries information
 neither parameter alone does. `hart_class` does not use history: it looks
 only at the current frame's B, VTL, and VTU, so a storm that re-forms
@@ -494,7 +494,7 @@ ORIENTATION_MODE = 1
 
 #: Meters; Evans and Hart (2003) extratropical transition **onset**
 #: threshold for parameter B -- below this, the thickness field is read as
-#: symmetric/tropical-like; at or above it, asymmetric/frontal. Hart's own
+#: symmetric/tropical-like; at or above it, asymmetric. Hart's own
 #: threshold, unchanged from `cps.hart.B_SYMMETRIC_THRESHOLD_M`.
 B_THRESHOLD_M = 10.0
 
@@ -1574,9 +1574,9 @@ def hart_class(
         Code  Name                                         B      lower VT  upper VT
         0     symmetric deep warm core                    <= thr  >= 0      >= 0
         1     symmetric shallow warm core                 <= thr  >= 0      <  0
-        2     frontal deep warm core                      >  thr  >= 0      >= 0
-        3     frontal shallow warm core                    >  thr  >= 0      <  0
-        4     frontal cold core                            >  thr  <  0      < 0 (row 6 takes lower cold, upper warm first)
+        2     asymmetric deep warm core                   >  thr  >= 0      >= 0
+        3     asymmetric shallow warm core                >  thr  >= 0      <  0
+        4     asymmetric cold core                        >  thr  <  0      < 0 (row 6 takes lower cold, upper warm first)
         5     symmetric cold core                         <= thr  <  0      < 0 (row 6 takes lower cold, upper warm first)
         6     shallow cold core (lower cold, upper warm)   any     <  0      >= 0
 
@@ -1589,7 +1589,7 @@ def hart_class(
     (`>= 0`), and B of exactly `b_threshold` (10 m by default) counts as
     symmetric (`<= b_threshold`).
 
-    Boundary convention: **B is frontal at `B > b_threshold` (10 m by
+    Boundary convention: **B is asymmetric at `B > b_threshold` (10 m by
     default), symmetric at `B <= b_threshold`** -- Hart's own strict
     line, no neutral band. **Each thermal wind term is warm at
     `>= 0`, cold only at strictly `< 0`** -- this is not the arbitrary
@@ -1613,7 +1613,7 @@ def hart_class(
     levels, warm aloft) is checked before rows 4 and 5, so it wins the
     corner of `(B, vtl, vtu)` space that would otherwise also satisfy
     "lower VT negative" -- a genuine shallow cold core is a different
-    structure from a frontal or symmetric cold core (which are cold at
+    structure from an asymmetric or symmetric cold core (which are cold at
     *both* levels), not a third way of being one of those two,
     regardless of B. Every other row is a disjoint partition of the
     remaining `(vtl >= 0 or < 0) x (vtu >= 0 or < 0)` quadrants by the
@@ -1622,12 +1622,12 @@ def hart_class(
 
     Rationale for the code numbering: codes rise, in order, along a
     typical extratropical transition -- 0 (symmetric deep warm core,
-    the tropical-cyclone-like starting state) to 2 (frontal, still deep
-    warm, B has crossed 10 m: Evans and Hart's onset) to 3 (frontal
+    the tropical-cyclone-like starting state) to 2 (asymmetric, still deep
+    warm, B has crossed 10 m: Evans and Hart's onset) to 3 (asymmetric
     shallow warm core, the upper thermal wind has gone negative first)
-    to 4 (frontal cold core, VTL has now gone negative too: Evans and
+    to 4 (asymmetric cold core, VTL has now gone negative too: Evans and
     Hart's completion). A warm seclusion is a storm that reaches 4 and
-    then re-forms a warm core at low levels while still frontal, i.e.
+    then re-forms a warm core at low levels while still asymmetric, i.e.
     4 then back to 1 (not 0, since B commonly stays above 10 m through
     the seclusion) -- a drop in code number that looks like a
     regression only if the sequence is read as strictly increasing;
@@ -1653,9 +1653,9 @@ def hart_class(
             (vtl < 0.0) & (vtu >= 0.0),                    # 6 shallow cold core (checked first)
             (B <= thr) & (vtl >= 0.0) & (vtu >= 0.0),      # 0 symmetric deep warm core
             (B <= thr) & (vtl >= 0.0) & (vtu < 0.0),       # 1 symmetric shallow warm core
-            (B > thr) & (vtl >= 0.0) & (vtu >= 0.0),       # 2 frontal deep warm core
-            (B > thr) & (vtl >= 0.0) & (vtu < 0.0),        # 3 frontal shallow warm core
-            (B > thr) & (vtl < 0.0),                        # 4 frontal cold core
+            (B > thr) & (vtl >= 0.0) & (vtu >= 0.0),       # 2 asymmetric deep warm core
+            (B > thr) & (vtl >= 0.0) & (vtu < 0.0),        # 3 asymmetric shallow warm core
+            (B > thr) & (vtl < 0.0),                        # 4 asymmetric cold core
             (B <= thr) & (vtl < 0.0),                       # 5 symmetric cold core
         ]
         choices = [6, 0, 1, 2, 3, 4, 5]
@@ -1900,7 +1900,7 @@ def executeB(
     array, units meters ("900-600 hPa equivalent" -- see the module
     docstring); positive = warm/thick air on the right of motion in the
     Northern Hemisphere (or on the left in the Southern), i.e. the
-    frontal/asymmetric configuration; NaN below `MIN_STEERING_MS` or
+    asymmetric configuration; NaN below `MIN_STEERING_MS` or
     below ground.
     """
     radius_km = _coerce_scalar(radiusKm)

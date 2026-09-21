@@ -143,6 +143,7 @@ SYNTHETIC_TEST_DIR = REPO_ROOT / "tests" / "cps"
 sys.path.insert(0, str(FUNCTIONS_DIR))
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(SYNTHETIC_TEST_DIR))
+sys.path.insert(0, str(HERE))
 
 import cps_HartCPS  # noqa: E402
 
@@ -158,15 +159,23 @@ import cps_HartCPS  # noqa: E402
 import cps.hart as hart  # noqa: E402
 import synthetic as cps_synthetic  # noqa: E402  (tests/cps/synthetic.py)
 
+# TEXT_DARK/TEXT_SECONDARY/GRID_COLOR/CATEGORY_COLORS and Figure 10's own
+# quadrant colors/labels/limits/helpers live in diagram_style.py, so this
+# script and the lifecycle_comparison.py/lifecycle_storyboard.py scripts
+# share one definition of Figure 10's own look rather than copies that can
+# drift -- see that module's own docstring for why it, not this whole
+# script, is what the lifecycle scripts import.
+from diagram_style import (  # noqa: E402
+    TEXT_DARK, TEXT_SECONDARY, GRID_COLOR, CATEGORY_COLORS,
+    FIG10_B_LIM, FIG10_VTL_LIM, FIG10_VTU_LIM,
+    draw_b_vtl_quadrants, draw_vtu_vtl_quadrants,
+)
+
 OUT_DIR = HERE
 
 # ---------------------------------------------------------------------------
 # Palette (fixed, per the article's style rules)
 # ---------------------------------------------------------------------------
-
-TEXT_DARK = "#0b0b0b"
-TEXT_SECONDARY = "#52514e"
-GRID_COLOR = "#dedcd5"
 
 DIVERGING_STOPS = [
     (0.00, "#104281"),
@@ -179,8 +188,6 @@ CMAP_DIVERGING = LinearSegmentedColormap.from_list("cps_diverging", DIVERGING_ST
 
 CMAP_SEQ_BLUE = LinearSegmentedColormap.from_list("cps_seq_blue", ["#cde2fb", "#0d366b"])
 
-CATEGORY_COLORS = ["#4a3aa7", "#2a78d6", "#c3c2b7", "#eb6834", "#e34948"]
-
 # HCPSclass (the joint Hart CPS class): 7 entries in code order, matching
 # D2D/colormaps/Grid/CPS_HartClass.cmap's own colors exactly, so the
 # figure and the shipped D2D colormap read identically. Warm states
@@ -190,18 +197,18 @@ CATEGORY_COLORS = ["#4a3aa7", "#2a78d6", "#c3c2b7", "#eb6834", "#e34948"]
 HARTCLASS_COLORS = [
     (0.85, 0.15, 0.15, 1.0),  # 0 symmetric deep warm core -- red
     (0.80, 0.20, 0.75, 1.0),  # 1 symmetric shallow warm core -- magenta
-    (0.98, 0.85, 0.10, 1.0),  # 2 frontal deep warm core -- yellow
-    (0.20, 0.68, 0.25, 1.0),  # 3 frontal shallow warm core -- green
-    (0.15, 0.50, 0.90, 1.0),  # 4 frontal cold core -- blue
+    (0.98, 0.85, 0.10, 1.0),  # 2 asymmetric deep warm core -- yellow
+    (0.20, 0.68, 0.25, 1.0),  # 3 asymmetric shallow warm core -- green
+    (0.15, 0.50, 0.90, 1.0),  # 4 asymmetric cold core -- blue
     (0.35, 0.22, 0.72, 1.0),  # 5 symmetric cold core -- indigo
     (0.72, 0.72, 0.70, 1.0),  # 6 shallow cold core -- gray
 ]
 HARTCLASS_NAMES = [
     "0  sym. deep warm core",
     "1  sym. shallow warm core",
-    "2  frontal deep warm core",
-    "3  frontal shallow warm core",
-    "4  frontal cold core",
+    "2  asym. deep warm core",
+    "3  asym. shallow warm core",
+    "4  asym. cold core",
     "5  sym. cold core",
     "6  shallow cold core",
 ]
@@ -1234,7 +1241,7 @@ def make_fig7(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m):
     class_ok = (cls1 == 0.0) and (cls2 == 2.0)
     print(
         f"  check: HCPSclass at A is {cls1:.0f} (expect 0, symmetric deep warm core) and at "
-        f"A' is {cls2:.0f} (expect 2, frontal deep warm core): {class_ok}"
+        f"A' is {cls2:.0f} (expect 2, asymmetric deep warm core): {class_ok}"
     )
     if not class_ok:
         print("  WARNING: HCPSclass at A/A' did not land on the expected 0/2 codes.")
@@ -1260,7 +1267,7 @@ def make_fig7(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m):
     # to "see more") instead reopens exactly the empty band this is
     # solving.
     # wspace widened from 0.55 to 1.05 so the widest of the shortened
-    # HCPSclass legend labels above ("3 frontal shallow warm") ends at
+    # HCPSclass legend labels above ("3 asym. shallow warm") ends at
     # least 0.25 in before panel (d)'s own y-tick labels (measured gap
     # 0.31 in); the figure height is re-solved from the resulting
     # (narrower) column width the same way, so this does not reopen the
@@ -1345,8 +1352,8 @@ def make_fig7(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m):
     # HARTCLASS_NAMES strings run into panel (d)'s own y-tick labels
     # and its "B (m)" axis label at this figure's column width.
     fig7_hartclass_names_short = [
-        "0 sym. deep warm", "1 sym. shallow warm", "2 frontal deep warm",
-        "3 frontal shallow warm", "4 frontal cold", "5 sym. cold", "6 shallow cold",
+        "0 sym. deep warm", "1 sym. shallow warm", "2 asym. deep warm",
+        "3 asym. shallow warm", "4 asym. cold", "5 sym. cold", "6 shallow cold",
     ]
     cb_c.ax.set_yticklabels(fig7_hartclass_names_short, fontsize=8)
     panel_letter(ax_c, "c")
@@ -1372,8 +1379,8 @@ def make_fig7(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m):
 
     quadrants = [
         (0, 1e4, -1e4, cps_HartCPS.B_THRESHOLD_M, STAGE_COLORS[0], "symmetric warm core"),
-        (0, 1e4, cps_HartCPS.B_THRESHOLD_M, 1e4, STAGE_COLORS[1], "frontal warm core"),
-        (-1e4, 0, cps_HartCPS.B_THRESHOLD_M, 1e4, STAGE_COLORS[2], "frontal cold core"),
+        (0, 1e4, cps_HartCPS.B_THRESHOLD_M, 1e4, STAGE_COLORS[1], "asymmetric warm core"),
+        (-1e4, 0, cps_HartCPS.B_THRESHOLD_M, 1e4, STAGE_COLORS[2], "asymmetric cold core"),
         (-1e4, 0, -1e4, cps_HartCPS.B_THRESHOLD_M, "#4a3aa7", "symmetric cold core"),
     ]
     for x0, x1, y0, y1, color, _ in quadrants:
@@ -1387,10 +1394,10 @@ def make_fig7(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m):
     # rest so it never collides with the panel-letter box, which also
     # anchors top-left (see panel_letter).
     quadrant_label_pos = {
-        "frontal cold core": (0.04, 0.83, "left", "top"),
+        "asymmetric cold core": (0.04, 0.83, "left", "top"),
     }
     for _, _, _, _, _, label in quadrants:
-        if label in ("frontal warm core", "symmetric cold core", "symmetric warm core"):
+        if label in ("asymmetric warm core", "symmetric cold core", "symmetric warm core"):
             continue  # placed in data coordinates below
         x, y, ha, va = quadrant_label_pos[label]
         ax_d.text(
@@ -1409,7 +1416,7 @@ def make_fig7(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m):
     # Data coordinates, not axes fraction: this corner is where the
     # onset label now sits (moved in from outside the axes), so its
     # position needs to track that label rather than a fixed inset.
-    ax_d.text(290, 76, "frontal warm core", color=TEXT_SECONDARY, fontsize=7.2, ha="right", va="top", style="italic", zorder=1)
+    ax_d.text(290, 76, "asymmetric warm core", color=TEXT_SECONDARY, fontsize=7.2, ha="right", va="top", style="italic", zorder=1)
 
     ax_d.axhline(cps_HartCPS.B_THRESHOLD_M, color=TEXT_DARK, linewidth=1.0, zorder=2)
     ax_d.axvline(0, color=TEXT_DARK, linewidth=1.0, zorder=2)
@@ -1447,7 +1454,7 @@ def make_fig7(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m):
             # own VTL = 240 once the string's own width is added.
             dx_txt, dy_txt, ha, va = 1, -10, "left", "top"
         elif hours[k] == 96:
-            # Below-right of the point: above runs into the "frontal
+            # Below-right of the point: above runs into the "asymmetric
             # cold core" corner label at this panel's narrower width
             # (see this figure's own header on the wider wspace), and
             # a modest offset here stays clear of the completion
@@ -1483,7 +1490,7 @@ def make_fig7(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m):
         # string is wide enough that its box reaches almost to the left
         # spine regardless of y, so the only row in this quadrant clear
         # of both the panel-letter box above (y > 69.5) and the
-        # "frontal cold core" corner label below (y < 61.6) is this
+        # "asymmetric cold core" corner label below (y < 61.6) is this
         # narrow one in between.
         ax_d.text(
             -20, 65.5, r"completion: $-V_T^L$ < 0",
@@ -1881,7 +1888,7 @@ def make_fig9():
     panel_letter(ax_a, "a")
 
     cf_b = _fig9_panel(
-        ax_b, lon2d, lat2d, x_km, y_km, r_km, mx, my, thickness_front, b_front, "frontal, above the 10 m line",
+        ax_b, lon2d, lat2d, x_km, y_km, r_km, mx, my, thickness_front, b_front, "asymmetric, above the 10 m line",
         box_corner="top-left",
     )
     # Geographic flanks (warm/thick south, cold/thin north -- fixed by
@@ -1931,8 +1938,9 @@ FIG10_TRAJ = np.array(
     dtype=float,
 )
 FIG10_SECLUSION_END = np.array([5.0, 60.0, -180.0])
-FIG10_B_LIM = (-20.0, 80.0)  # panel (a) vertical axis: B (m)
-FIG10_VTL_LIM = (-300.0, 300.0)  # panel (a) horizontal axis: -V_T^L (m)
+# FIG10_B_LIM (panel (a) vertical axis, B m), FIG10_VTL_LIM (both panels'
+# horizontal axis, -V_T^L m) and FIG10_VTU_LIM (panel (b) vertical axis,
+# -V_T^U m) are imported from diagram_style.
 
 
 def make_fig10():
@@ -1949,27 +1957,9 @@ def make_fig10():
     ax_a.set_xlim(*xlim)
     ax_a.set_ylim(*ylim)
 
-    quadrants_a = [
-        (0, 1e4, -1e4, b_thr, STAGE_COLORS[0], "symmetric warm core"),
-        (0, 1e4, b_thr, 1e4, STAGE_COLORS[1], "frontal warm core"),
-        (-1e4, 0, b_thr, 1e4, STAGE_COLORS[2], "frontal cold core"),
-        (-1e4, 0, -1e4, b_thr, "#4a3aa7", "symmetric cold core"),
-    ]
-    for x0, x1, y0, y1, color, _ in quadrants_a:
-        x0c, x1c = max(x0, xlim[0]), min(x1, xlim[1])
-        y0c, y1c = max(y0, ylim[0]), min(y1, ylim[1])
-        ax_a.add_patch(Rectangle((x0c, y0c), x1c - x0c, y1c - y0c, facecolor=color, alpha=0.30, edgecolor="none", zorder=0))
-    # Corners, in axes fraction, so the labels track xlim/ylim; top-left
-    # is inset further than the rest to clear the panel-letter box.
-    label_pos_a = {
-        "frontal cold core": (0.04, 0.83, "left", "top"),
-        "frontal warm core": (0.97, 0.96, "right", "top"),
-        "symmetric cold core": (0.04, 0.04, "left", "bottom"),
-        "symmetric warm core": (0.97, 0.04, "right", "bottom"),
-    }
-    for _, _, _, _, _, label in quadrants_a:
-        x, y, ha, va = label_pos_a[label]
-        ax_a.text(x, y, label, transform=ax_a.transAxes, color=TEXT_SECONDARY, fontsize=7.2, ha=ha, va=va, style="italic", zorder=1)
+    # Quadrant rectangles + italic corner labels: diagram_style.draw_b_vtl_quadrants,
+    # shared with the lifecycle scripts' own B-vs-$-V_T^L$ panels.
+    draw_b_vtl_quadrants(ax_a, xlim, ylim, b_thr)
 
     ax_a.axhline(b_thr, color=TEXT_DARK, linewidth=1.0, zorder=2)
     ax_a.axvline(0, color=TEXT_DARK, linewidth=1.0, zorder=2)
@@ -2021,26 +2011,12 @@ def make_fig10():
     panel_letter(ax_a, "a")
 
     # --- panel (b): thermal wind diagram, -V_T^L vs -V_T^U -----------------
-    lim = 300.0
-    ax_b.set_xlim(-lim, lim)
-    ax_b.set_ylim(-lim, lim)
-    quadrants_b = [
-        (0, lim, 0, lim, "#e34948", "deep warm core"),
-        (0, lim, -lim, 0, "#eb6834", "shallow warm core"),
-        (-lim, 0, -lim, 0, "#2a78d6", "deep cold core"),
-        (-lim, 0, 0, lim, "#4a3aa7", "shallow cold core"),
-    ]
-    for x0, x1, y0, y1, color, _ in quadrants_b:
-        ax_b.add_patch(Rectangle((x0, y0), x1 - x0, y1 - y0, facecolor=color, alpha=0.11, edgecolor="none", zorder=0))
-    label_pos_b = {
-        "deep warm core": (lim * 0.55, lim * 0.90),
-        "shallow warm core": (lim * 0.55, -lim * 0.90),
-        "deep cold core": (-lim * 0.95, -lim * 0.90),
-        "shallow cold core": (-lim * 0.95, lim * 0.68),
-    }
-    for _, _, _, _, _, label in quadrants_b:
-        x, y = label_pos_b[label]
-        ax_b.text(x, y, label, color=TEXT_SECONDARY, fontsize=7.3, ha="left", va="center", style="italic", zorder=1)
+    xlim_b, ylim_b = FIG10_VTL_LIM, FIG10_VTU_LIM
+    ax_b.set_xlim(*xlim_b)
+    ax_b.set_ylim(*ylim_b)
+    # Quadrant rectangles + italic corner labels: diagram_style.draw_vtu_vtl_quadrants,
+    # shared with the lifecycle scripts' own $-V_T^U$-vs-$-V_T^L$ panels.
+    draw_vtu_vtl_quadrants(ax_b, xlim_b, ylim_b)
     ax_b.axhline(0, color=TEXT_DARK, linewidth=1.0, zorder=2)
     ax_b.axvline(0, color=TEXT_DARK, linewidth=1.0, zorder=2)
 
