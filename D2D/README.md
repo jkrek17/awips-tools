@@ -314,28 +314,29 @@ instead of carrying a hidden bias there.
 ## Joint classification (HCPSclass) and index (HCPSidx)
 
 `HCPSclass` is computed from all three Hart parameters at once:
-`B` (against Hart's frontal threshold of 10 m) and both thermal wind
+`B` (against Hart's asymmetry threshold of 10 m) and both thermal wind
 terms (each against 0, strictly; warm if greater than or equal to 0,
 cold if less than 0). Hart's own two diagrams are two projections of
 this same three-dimensional space that happen to share the lower
 thermal wind axis; each diagram alone carries one piece of information
-the other lacks (frontal or not, from `B`; deep or shallow warm core,
-from `HVTU`). The full joint space of `B` (symmetric or frontal),
+the other lacks (asymmetric or not, from `B`; deep or shallow warm core,
+from `HVTU`). The full joint space of `B` (symmetric or asymmetric),
 `HVTL` (warm or cold), and `HVTU` (warm or cold) has eight cells;
 `HCPSclass` gives seven codes because code 6 merges the two cells
-where `HVTL` is cold and `HVTU` is warm (symmetric and frontal) into
+where `HVTL` is cold and `HVTU` is warm (symmetric and asymmetric) into
 one code, since a cold lower core under a warm upper core is treated
 as its own quadrant regardless of `B`. Classifying on all three
 numbers at once turns "sample two panels and combine them by eye" into
-"sample one number at the low center":
+"sample one number at the low center" (asymmetric is Hart's term for a
+storm with a warm and a cold side, that is, one that has gone frontal):
 
 | Code | Name | B | HVTL | HVTU | Typical system |
 | ---: | :--- | :--- | :--- | :--- | :--- |
 | 0 | symmetric deep warm core | <= 10 | warm | warm | hurricane, typhoon |
 | 1 | symmetric shallow warm core | <= 10 | warm | cold | subtropical storm, or warm seclusion after transition |
-| 2 | frontal deep warm core | > 10 | warm | warm | hurricane meeting a trough, transition beginning |
-| 3 | frontal shallow warm core | > 10 | warm | cold | transition under way |
-| 4 | frontal cold core | > 10 | cold | cold (code 6 takes lower cold, upper warm first) | extratropical low, transition complete |
+| 2 | asymmetric deep warm core | > 10 | warm | warm | hurricane meeting a trough, transition beginning |
+| 3 | asymmetric shallow warm core | > 10 | warm | cold | transition under way |
+| 4 | asymmetric cold core | > 10 | cold | cold (code 6 takes lower cold, upper warm first) | extratropical low, transition complete |
 | 5 | symmetric cold core | <= 10 | cold | cold (code 6 takes lower cold, upper warm first) | occluded or cutoff cold low |
 | 6 | shallow cold core (lower cold, upper warm) | any | cold | warm | perturbation peaking at mid-levels; rarely occupied |
 | blank | | | | | no closed low, or B undefined (steering below 2 m/s) |
@@ -382,9 +383,9 @@ Northern Hemisphere (to the left in the Southern), and a large negative
 `B` means warm air sits to the *left* of the motion vector, not that
 the storm is symmetric -- symmetric means small `|B|` in either sign,
 not a particular side of the track. Hart's own line for calling a
-storm frontal rather than symmetric is `B` above 10 m; `HCPSclass` uses
+storm asymmetric rather than symmetric is `B` above 10 m; `HCPSclass` uses
 that line exactly, with no neutral band, to pick between its symmetric
-(0, 1, 5) and frontal (2, 3, 4) codes.
+(0, 1, 5) and asymmetric (2, 3, 4) codes.
 
 **The gridded approximation.** A single grid point has no "left half"
 or "right half" of an analysis circle the way a storm-centered
@@ -452,7 +453,7 @@ Constants (all `<ConstantField>` values in `cps_HB.xml`/`cps_HCPSclass.xml`):
 | :--- | :--- | :--- |
 | `radiusKm` | analysis-window half-width (also the `8*radiusKm/(3*pi)` geometry constant) | 500.0 |
 | `layerScale` | rescales 925-700 hPa `HB` to a 900-600 hPa equivalent | 1.4548 |
-| `bThresholdM` | Hart's frontal threshold for `B` (`HCPSclass` only) | 10.0 |
+| `bThresholdM` | Hart's asymmetry threshold for `B` (`HCPSclass` only) | 10.0 |
 
 ## Orientation verification
 

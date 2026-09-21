@@ -33,15 +33,15 @@ language in section 2. In short:
   hPa). Positive is warm.
 - **Upper thermal wind, -VTU.** The same for the upper troposphere
   (500 to 300 hPa). Positive is warm.
-- **B, the frontal asymmetry.** Whether warm and cold air sit on
-  opposite sides of the storm's motion. Computed as HB, and combined
-  with both thermal wind terms into HCPSclass, the joint
+- **B, the asymmetry (Hart's word for frontal).** Whether warm and cold
+  air sit on opposite sides of the storm's motion. Computed as HB, and
+  combined with both thermal wind terms into HCPSclass, the joint
   classification (see sections 3 and 5).
 
 HB relies on the model's own deep-layer steering wind standing in for
 the storm's motion, so it is worth cross-checking by eye too: overlay
 1000 to 850 hPa thickness and look for closed contours around the low
-(symmetric) or a tight gradient across it (frontal).
+(symmetric) or a tight gradient across it (asymmetric).
 
 ---
 
@@ -118,14 +118,14 @@ a look at the thickness field.
 ### The two diagrams and the transition sequence
 
 Hart plots these three numbers on two diagrams: B against the lower
-thermal wind, which separates symmetric from frontal and warm from
+thermal wind, which separates symmetric from asymmetric and warm from
 cold; and lower against upper thermal wind, which separates deep warm
 core, shallow warm core, and cold core. A hurricane starts in the deep
 warm, symmetric corner of both.
 
 As a storm undergoes extratropical transition it moves through these
 diagrams in a set order: B climbs past 10 meters and the storm becomes
-frontal first (HCPSclass moves from 0 to 2, the Evans and Hart onset),
+asymmetric first (HCPSclass moves from 0 to 2, the Evans and Hart onset),
 then the upper warm core is usually lost next (HCPSclass moves from 2
 to 3), and finally the lower thermal wind turns negative (HCPSclass
 reaches 4, the Evans and Hart completion). Some storms then curve back
@@ -149,12 +149,12 @@ Hart's two diagrams are two projections of one three-dimensional space
 (B, lower thermal wind, upper thermal wind) that happen to share the
 lower thermal wind axis. Each diagram alone carries one piece of
 information the other lacks: the B-versus-lower diagram says whether
-the storm is frontal, the lower-versus-upper diagram says whether a
+the storm is asymmetric, the lower-versus-upper diagram says whether a
 warm core is deep or shallow. That joint space has eight cells (B
-symmetric or frontal, times lower warm or cold, times upper warm or
+symmetric or asymmetric, times lower warm or cold, times upper warm or
 cold); HCPSclass gives seven codes because code 6 merges the two cells
 where the lower term is cold and the upper term is warm, symmetric and
-frontal alike, into a single code. Operationally that
+asymmetric alike, into a single code. Operationally that
 means sampling one number at the low center instead of reading two
 panels and combining them by eye, and the resulting codes fall in
 order along the transition (see "Reading the class" in section 5).
@@ -194,10 +194,10 @@ building it as a gridded product at all.
 
 | Product | Menu name | What it shows | Read as |
 | :--- | :--- | :--- | :--- |
-| HCPSclass | Hart CPS Class (0 sym deep warm, 1 sym shallow warm, 2 frontal deep warm, 3 frontal shallow warm, 4 frontal cold, 5 sym cold, 6 shallow cold) | one of seven classes (0-6), the intersection of the quadrants of Hart's two diagrams, at each detected low, blank elsewhere | see "Reading the class" in section 5 |
+| HCPSclass | Hart CPS Class (0 sym deep warm, 1 sym shallow warm, 2 asym deep warm, 3 asym shallow warm, 4 asym cold, 5 sym cold, 6 shallow cold) | one of seven classes (0-6), the intersection of the quadrants of Hart's two diagrams, at each detected low, blank elsewhere | see "Reading the class" in section 5 |
 | HVTL | Hart CPS -VTL 925-700 (m) | lower thermal wind, meters | positive warm core, negative cold core |
 | HVTU | Hart CPS -VTU 500-300 (m) | upper thermal wind, meters | positive warm core, negative cold core |
-| HB | Hart CPS B 900-600 equiv (m) | thermal asymmetry, meters (900-600 hPa equivalent) | at or below 10 symmetric, above 10 frontal |
+| HB | Hart CPS B 900-600 equiv (m) | thermal asymmetry, meters (900-600 hPa equivalent) | at or below 10 symmetric, above 10 asymmetric |
 | HCPSidx | Hart CPS Index -3 to +3 | one number from -3 to +3 at each detected low | -3 deep cold, 0 neutral, +3 deep warm |
 
 All products sit at a single Surface plane in the Product Browser and
@@ -269,18 +269,18 @@ shallow cold core.
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | 0 | red | symmetric deep warm core | <= 10 | warm | warm | hurricane, typhoon |
 | 1 | magenta | symmetric shallow warm core | <= 10 | warm | cold | subtropical storm, or warm seclusion after transition |
-| 2 | yellow | frontal deep warm core | > 10 | warm | warm | hurricane meeting a trough, transition beginning |
-| 3 | green | frontal shallow warm core | > 10 | warm | cold | transition under way |
-| 4 | blue | frontal cold core | > 10 | cold | cold (code 6 takes lower cold, upper warm first) | extratropical low, transition complete |
+| 2 | yellow | asymmetric deep warm core | > 10 | warm | warm | hurricane meeting a trough, transition beginning |
+| 3 | green | asymmetric shallow warm core | > 10 | warm | cold | transition under way |
+| 4 | blue | asymmetric cold core | > 10 | cold | cold (code 6 takes lower cold, upper warm first) | extratropical low, transition complete |
 | 5 | indigo | symmetric cold core | <= 10 | cold | cold (code 6 takes lower cold, upper warm first) | occluded or cutoff cold low |
 | 6 | gray | shallow cold core (lower cold, upper warm) | any | cold | warm | perturbation peaking at mid-levels; rarely occupied |
 | blank | | not a closed low, or B undefined | | | | no closed low, or steering below 2 m/s |
 
 Ties go to the warm side and the symmetric side: B exactly at 10 m
 counts as symmetric, and either thermal wind term exactly at 0 counts
-as warm. The seven codes are the eight cells of B (symmetric/frontal)
+as warm. The seven codes are the eight cells of B (symmetric/asymmetric)
 times lower and upper thermal wind (warm/cold), with code 6 merging
-the symmetric and frontal versions of "lower cold, upper warm" into
+the symmetric and asymmetric versions of "lower cold, upper warm" into
 one code.
 
 The codes rise along a typical extratropical transition: 0, 2, 3, 4. A
@@ -359,13 +359,13 @@ not the class color; HCPSclass is a convenient summary of where those
 two fields stand, not the event itself.
 
 1. **Onset.** The first frame HB crosses above 10 m is the Evans and
-   Hart (2003) objective onset: the storm has picked up a frontal
-   asymmetry while at least the lower core is still warm. HCPSclass
+   Hart (2003) objective onset: the storm has become asymmetric
+   while at least the lower core is still warm. HCPSclass
    moving from 0 to 2 or 3 in the same frame is the usual signature,
    but read HB itself, since a class jump can lag or lead it by a
    frame near a strict line.
 2. **Loss of the upper warm core.** HVTU going negative while the
-   storm is still frontal (HCPSclass moving from 2 to 3) is a sign
+   storm is still asymmetric (HCPSclass moving from 2 to 3) is a sign
    transition is under way, not itself one of the two named Evans and
    Hart markers.
 3. **Completion.** The first frame HVTL crosses below 0 is the Evans
@@ -393,7 +393,7 @@ steering wind (850, 700, 500, and 300 hPa), averaged over the 500 km
 window before its direction is taken, standing in for the storm's own
 motion, not a tracked heading. It is unreliable or blank for a storm
 moving against its own steering flow or one that is nearly stationary
-(steering under 2 m/s), and HCPSclass's frontal/symmetric split
+(steering under 2 m/s), and HCPSclass's asymmetric/symmetric split
 inherits that weakness wherever HB is unreliable or blank. HB is also
 a full field away from any low; a large reading there is the ambient
 environment, not a storm, so cross-check a large |HB| of either sign
@@ -441,10 +441,10 @@ system, not noise to be filtered out.
 
 **Handoff and hybrid cases.** HVTL, HVTU, and HCPSidx behave the same
 way on a hybrid or post-tropical system as on any other closed low;
-what is least tested on exactly these systems is the frontal half of
+what is least tested on exactly these systems is the asymmetric half of
 HCPSclass (codes 2 through 5), since a subtropical or hybrid system
 sits closest to the strict lines that split them. A system reading 2
-or 3, frontal with a still-warm lower core, is the classic subtropical
+or 3, asymmetric with a still-warm lower core, is the classic subtropical
 or hybrid case. Whether it trends toward 0 (rare) or on toward 4 over
 the next 24 h says which way the handoff goes; weigh the class call
 itself more cautiously than the raw HVTL/HVTU numbers here. Onset and
@@ -494,7 +494,7 @@ scatterometer data, never as a stand-in for any of those.
   is what cancels a developed storm's own circulation and leaves the
   environmental flow; a storm moving against its own steering flow, or
   a nearly stationary one (steering under 2 m/s), gets an unreliable
-  or blank HB, and HCPSclass's frontal/symmetric call inherits that
+  or blank HB, and HCPSclass's asymmetric/symmetric call inherits that
   weakness wherever HB is unreliable or blank. Cross-check against the
   thickness overlay before calling onset or completion from HB or
   HCPSclass alone.
@@ -549,11 +549,11 @@ scatterometer data, never as a stand-in for any of those.
 - Colors: CPS_CoreDiverging for HVTL, HVTU, HB, and HCPSidx;
   CPS_HartClass for the class.
 - Read: class at the MSLP center, never the blob's color or footprint.
-  0 symmetric deep warm, 1 symmetric shallow warm, 2 frontal deep warm,
-  3 frontal shallow warm, 4 frontal cold, 5 symmetric cold, 6 shallow
+  0 symmetric deep warm, 1 symmetric shallow warm, 2 asymmetric deep warm,
+  3 asymmetric shallow warm, 4 asymmetric cold, 5 symmetric cold, 6 shallow
   cold core (rare), blank not a closed low.
 - Numbers: positive warm, negative cold, zero is the line for HVTL and
-  HVTU; B at or below 10 m is symmetric, above 10 m frontal; HVTL, HVTU,
+  HVTU; B at or below 10 m is symmetric, above 10 m asymmetric; HVTL, HVTU,
   and HB read in meters, HCPSidx is a dimensionless -3 to +3 index.
 - Onset and completion: read from HB and HVTL, not from HCPSclass.
   Onset is HB crossing above 10 m; completion is HVTL crossing below 0.

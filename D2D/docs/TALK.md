@@ -21,7 +21,7 @@ a cyclone with three numbers from the height field alone, all taken
 inside a 500 kilometer circle around the center. Two are thermal wind
 terms, one for the lower troposphere and one for the upper, and they
 say whether the core is warmer or colder than its surroundings. The
-third, B, says whether the storm is frontal. Together they place any
+third, B, says whether the storm is asymmetric. Together they place any
 cyclone on a diagram, and a storm traces a path through it as it
 evolves.
 
@@ -62,7 +62,7 @@ summary.
 **[Slide 5, the two diagrams] 2:41**
 
 Put those together and you get Hart's two diagrams. On the left, B
-against the lower thermal wind: symmetric or frontal, warm or cold. On
+against the lower thermal wind: symmetric or asymmetric, warm or cold. On
 the right, lower against upper thermal wind: deep warm, shallow warm,
 or cold. A hurricane starts in the deep warm corner; during transition
 it crosses the B line first, loses the upper warm core, then the lower
@@ -87,7 +87,7 @@ it against log pressure: Hart's own definition, evaluated everywhere
 instead of at one tracked center. The square window and standard
 levels keep the magnitudes close to his, not identical. It needs
 geopotential height on standard levels and surface pressure; the
-frontal term also needs winds at four levels. That runs on any model
+asymmetric term also needs winds at four levels. That runs on any model
 in D2D carrying those fields, with no tracker and no advisory. A
 closed-low detector on the 1000 hPa height keeps the class off open
 ocean and open troughs in the cases we've tested, and terrain is
@@ -114,7 +114,7 @@ class, and the index. The capture is the 48 hour frame of the 20
 September run, the storm east of Japan at 976 millibars, class 3,
 with B at 36, the lower term at 114 and the upper at minus 102. The class reads at the
 storm's center, one number for one of seven classes built from Hart's
-two diagrams: symmetric or frontal, deep or shallow warm core, cold
+two diagrams: symmetric or asymmetric, deep or shallow warm core, cold
 core, or shallow cold core, lower cold and upper warm, a rare state.
 Step through the frames on a transitioning storm and the class climbs
 0, then 2, then 3, then 4; a warm seclusion runs it from 4 to 3, or to

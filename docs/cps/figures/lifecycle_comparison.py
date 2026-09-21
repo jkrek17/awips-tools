@@ -25,7 +25,7 @@ center itself sees as flat, contributing nothing to B there) plus a
 baroclinic environment (a meridional gradient the storm meets as it
 crosses 30-40N) plus a storm-attached, motion-relative thickness dipole
 (cold to the left of the track, warm to the right), so the storm
-actually passes through Hart's frontal classes (B > 10 m) the way a
+actually passes through Hart's asymmetric classes (B > 10 m) the way a
 real transition does, not just the cold-core/warm-core classes B alone
 cannot distinguish. Run from this directory:
 
@@ -89,9 +89,9 @@ CLASS_PALETTE = {
 CLASS_NAMES = {
     0: "symmetric deep warm core",
     1: "symmetric shallow warm core",
-    2: "frontal deep warm core",
-    3: "frontal shallow warm core",
-    4: "frontal cold core",
+    2: "asymmetric deep warm core",
+    3: "asymmetric shallow warm core",
+    4: "asymmetric cold core",
     5: "symmetric cold core",
     6: "shallow cold core",
 }
@@ -235,7 +235,7 @@ def dipole_amplitude(t, peak=DIPOLE_PEAK_AMP):
     """A(t): 0 until 24 h, a cosine ramp up to its peak at 72 h, held to
     108 h, a cosine decay back to 0 by 144 h as the warm air is wrapped
     into the seclusion and the asymmetry disappears again. Ramped
-    earlier than an initial 36/84/108/144 h draft so the frontal deep
+    earlier than an initial 36/84/108/144 h draft so the asymmetric deep
     warm core (class 2, B > 10 m with both thermal winds still warm)
     falls inside a printed 6 h frame instead of being aliased out
     between two samples.
@@ -602,8 +602,8 @@ def make_figure(hours, lats, lons, B_hart, VTL_hart, VTU_hart, B_grid, VTL_grid,
     pad_limits(ax)
     ax.text(0.03, 0.03, "symmetric\ncold", transform=ax.transAxes, fontsize=6.5, color="0.35", ha="left", va="bottom")
     ax.text(0.97, 0.03, "symmetric\nwarm", transform=ax.transAxes, fontsize=6.5, color="0.35", ha="right", va="bottom")
-    ax.text(0.97, 0.97, "frontal\nwarm", transform=ax.transAxes, fontsize=6.5, color="0.35", ha="right", va="top")
-    ax.text(0.03, 0.97, "frontal\ncold", transform=ax.transAxes, fontsize=6.5, color="0.35", ha="left", va="top")
+    ax.text(0.97, 0.97, "asymmetric\nwarm", transform=ax.transAxes, fontsize=6.5, color="0.35", ha="right", va="top")
+    ax.text(0.03, 0.97, "asymmetric\ncold", transform=ax.transAxes, fontsize=6.5, color="0.35", ha="left", va="top")
 
     # -- (b) -VTU vs -VTL (Hart's Phase 2 diagram)
     ax = axes[1]

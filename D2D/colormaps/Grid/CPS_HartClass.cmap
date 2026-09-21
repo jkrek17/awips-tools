@@ -7,9 +7,9 @@
 
     code 0  symmetric deep warm core                    red      (0.85, 0.15, 0.15, 1.0)
     code 1  symmetric shallow warm core                 magenta  (0.80, 0.20, 0.75, 1.0)
-    code 2  frontal deep warm core                      yellow   (0.98, 0.85, 0.10, 1.0)
-    code 3  frontal shallow warm core                   green    (0.20, 0.68, 0.25, 1.0)
-    code 4  frontal cold core                           blue     (0.15, 0.50, 0.90, 1.0)
+    code 2  asymmetric deep warm core                   yellow   (0.98, 0.85, 0.10, 1.0)
+    code 3  asymmetric shallow warm core                green    (0.20, 0.68, 0.25, 1.0)
+    code 4  asymmetric cold core                        blue     (0.15, 0.50, 0.90, 1.0)
     code 5  symmetric cold core                         indigo   (0.35, 0.22, 0.72, 1.0)
     code 6  shallow cold core (lower cold, upper warm)  gray     (0.72, 0.72, 0.70, 1.0)
 

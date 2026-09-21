@@ -72,8 +72,8 @@
         </imageStyle>
     </styleRule>
 
-    <!-- Categorical: 0 sym deep warm, 1 sym shallow warm, 2 frontal deep
-         warm, 3 frontal shallow warm, 4 frontal cold, 5 sym cold, 6
+    <!-- Categorical: 0 sym deep warm, 1 sym shallow warm, 2 asymmetric deep
+         warm, 3 asymmetric shallow warm, 4 asymmetric cold, 5 sym cold, 6
          mid-level vortex. Range is offset by half a category so each
          code sits in the middle of one color bin; interpolate off so
          colors hold flat across a bin. -->
@@ -93,7 +93,7 @@
 
     <!-- Parameter B, meters (900-600 hPa equivalent). A diverging map is
          used, not the categorical one, so a rare negative B (warm air on
-         the wrong side of the track - not the usual frontal
+         the wrong side of the track - not the usual asymmetric
          configuration) is still visible rather than clipped. -->
     <styleRule>
         <paramLevelMatch>

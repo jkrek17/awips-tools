@@ -9,8 +9,8 @@ for every analysis or forecast time:
 
 - **B**: how lopsided the low-level thickness is, left of the storm's
   track versus right of it. Near zero means an axisymmetric,
-  tropical-like structure; large means a frontal (asymmetric)
-  structure. B says nothing about warm versus cold core on its own;
+  tropical-like structure; large means an asymmetric structure. B
+  says nothing about warm versus cold core on its own;
   that is what VTL and VTU are for.
 - **VTL, VTU**: the lower- and upper-tropospheric "thermal wind"
   parameters. Positive means the storm's core is warmer than its
@@ -225,11 +225,11 @@ def parameter_b(
     - mean_left)`, with `h = +1` in the Northern Hemisphere and `-1` in
     the Southern. The hemisphere factor makes B positive whenever the
     warm (thick) air lies on the equatorward-facing flank of the track,
-    which is the frontal configuration a cyclone takes on during
+    which is the asymmetric configuration a cyclone takes on during
     extratropical transition: right of track in the Northern Hemisphere,
     left of track in the Southern. Values near zero (see
     `B_SYMMETRIC_THRESHOLD_M`) indicate an axisymmetric, tropical-like
-    thickness field; values well above it indicate a frontal one.
+    thickness field; values well above it indicate an asymmetric one.
 
     Returns nan if the circle is empty, or if either half is empty
     (e.g. the circle is clipped by the domain edge).

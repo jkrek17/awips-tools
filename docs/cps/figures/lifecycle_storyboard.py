@@ -253,8 +253,8 @@ def _map_axes(ax, d, fs):
 
 QUAD_LABELS_A = (("symmetric\ncold", 0.03, 0.03, "left", "bottom"),
                   ("symmetric\nwarm", 0.97, 0.03, "right", "bottom"),
-                  ("frontal\nwarm", 0.97, 0.97, "right", "top"),
-                  ("frontal\ncold", 0.03, 0.97, "left", "top"))
+                  ("asymmetric\nwarm", 0.97, 0.97, "right", "top"),
+                  ("asymmetric\ncold", 0.03, 0.97, "left", "top"))
 QUAD_LABELS_B = (("deep\ncold", 0.03, 0.03, "left", "bottom"),
                   ("shallow\nwarm", 0.97, 0.03, "right", "bottom"),
                   ("deep\nwarm", 0.97, 0.97, "right", "top"),
