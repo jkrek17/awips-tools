@@ -12,7 +12,7 @@ AWIPS tools and procedures.
 | `legacy_tools/` | Earlier versions kept for reference; see `legacy_tools/VERSION_CONTROL.md`. |
 | `tests/tcwind_jtwc/` | Parser goldens, Python/JavaScript parity, and the GTCM verification. |
 | `GFE/procedures/TCWind_JTWC.py` | Builds GFE Wind grids from JTWC tropical cyclone warnings. See below. |
-| `GFE/procedures/CreateXML_WindHazards.py` | Builds a PGEN XML of 34-47, 48-63 and 64+ kt wind polygons for F000-024 and F024-048, plus pmsl Lows at F000/F024/F048, to overlay in D2D while writing the High Seas text. See below. |
+| `GFE/procedures/CreateXML_WindHazards.py` | Builds a PGEN XML of 34-47, 48-63 and 64+ kt wind polygons for F000-024 and F024-048, plus the pmsl Lows and their track, to overlay in D2D while writing the High Seas text. See below. |
 | `tests/create_xml_windhazards/` | Harness test for that procedure, and a synthetic case it plots straight from the written XML. |
 | `web/TCWind_JTWC/` | Google Apps Script web app for that tool: live JTWC and NHC bulletins, a best-track archive, and the verification findings. |
 | `web/HFArchiveExport/` | Google Apps Script web app that exports the restricted HF low sheet as CSV for `tools/publish.py`. |
@@ -425,8 +425,18 @@ hand-edit it.
 
 `GFE/procedures/CreateXML_WindHazards.py` writes **one** PGEN XML per run
 holding, for each of the F000-024 and F024-048 periods, closed polygons for
-the 34-47, 48-63 and 64+ kt wind bands, plus mean sea level pressure **Lows**
-at F000, F024 and F048. It appears under GFE's **Consistency** menu.
+the 34-47, 48-63 and 64+ kt wind bands, plus the mean sea level pressure
+**Lows** and the **track** they trace. It appears under GFE's **Consistency**
+menu.
+
+Four layers, so each piece can be switched on or off in D2D on its own:
+
+| Layer | What is in it |
+|---|---|
+| `F000-024` | that period's three overlapping band polygons |
+| `F024-048` | the same for the second period |
+| `Lows` | every plotted Low, with its pressure and forecast hour |
+| `Track` | the line through the Lows that carry from one plot time to the next |
 
 It is a background field to overlay in D2D while writing the High Seas text:
 a guide to what the grids hold, on the same screen as the text, instead of a
@@ -467,9 +477,9 @@ read.
 ### The bands
 
 Each period's polygons come from the **per-gridpoint maximum** Wind magnitude
-over every grid in the window (F000, F006 ... F024 for the first period; F024,
-F030 ... F048 for the second), so a polygon covers anywhere reaching that force
-at any point in the period.
+over whatever grids exist in the window - one ranged read, so the grids set
+their own cadence - and a polygon covers anywhere reaching that force at any
+point in the period.
 
 A band's polygon is the closed contour at its **lower** bound, so **the bands
 overlap**: the 34-48 polygon is the whole gale-or-greater area, with the 48-64
@@ -484,16 +494,27 @@ decimated to `MAX_POLYGON_POINTS` so the result stays editable in PGEN.
 Polygons are emitted with `closed="true"`, which is also what joins the ends of
 an area clipped by the edge of the domain.
 
-### The Lows
+### The Lows and the track
 
-`pmsl` is read at F000, F024 and F048 - the endpoints of whichever periods are
-selected, so F024 is read once and both periods selected gives all three - and
-each hour's Lows go in their own layer. Highs are not plotted.
+**The pmsl inventory decides when Lows are plotted** - nothing is forced onto a
+schedule. `getGridInfo` is asked what exists over the selected span and those
+are the plot times, so a database with a gap simply yields fewer Lows instead
+of a run of "missing grid" warnings. They are then thinned to no closer than
+`LOW_INTERVAL_HRS` (6 h), so an hourly database doesn't put 49 Lows on the
+chart. If a site has no working `getGridInfo`, it falls back to every 6 hours.
+Highs are not plotted.
 
-Layers are named per band and period - `Gale_34-47_F000-024`,
-`Storm_48-63_F000-024`, `Hurricane_64+_F024-048` - plus `Lows_F000`,
-`Lows_F024` and `Lows_F048`, or all collapse into one `Default` layer when the
-basin's `pgenProd_dict["saveLayers"]` is false.
+The Lows are joined into **tracks** by nearest-neighbor matching from one plot
+time to the next: shortest distance first, so two tracks never claim the same
+Low, and anything unmatched starts a track of its own. A Low may move
+`TRACK_MAX_MOVE_NM` (600 NM) between plots and still count as the same Low -
+scaled up when a missing grid widens the gap - and a Low seen only once is not
+a track. Lows weaker than `TRACK_MAX_PRESSURE` are plotted but not tracked.
+Ranges are computed across the dateline correctly, for the Pacific.
+
+The four layers collapse into one `Default` layer when the basin's
+`pgenProd_dict["saveLayers"]` is false. Layer names are the `LAYER_NAMES`
+constant.
 
 ### Telling the periods apart
 
@@ -530,11 +551,12 @@ differs at your site, `addPolygonToXml` is the only place to change.
 ### Checking it without AWIPS
 
 ```bash
-python3 tests/create_xml_windhazards/test_windhazard_xml.py     # 108 checks
+python3 tests/create_xml_windhazards/test_windhazard_xml.py     # 115 checks
 python3 tests/create_xml_windhazards/plot_synthetic_case.py     # writes a PNG
 ```
 
-The first fakes the AWIPS and A2Graphics surface and drives `execute()` the way
-GFE would. The second reuses those fakes over a synthetic deepening low, then
-plots **the XML that run wrote** - every polygon and Low in the picture is read
-back out of the file. See `tests/create_xml_windhazards/README.md`.
+The first fakes the AWIPS and A2Graphics surface - including an inventory the
+procedure has to read - and drives `execute()` the way GFE would. The second
+reuses those fakes over a synthetic deepening low, then plots **the XML that
+run wrote** - every polygon, Low and track vertex in the picture is read back
+out of the file. See `tests/create_xml_windhazards/README.md`.

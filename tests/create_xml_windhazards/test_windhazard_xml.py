@@ -37,14 +37,11 @@ else:
 OUT_DIR = os.path.join(HERE, "out")
 
 
-# Layer names the procedure builds, per band and period.  The bands overlap:
-# Gale is the whole 34 kt-or-greater area, with Storm and Hurricane nested
-# inside it.
-# The labels match the Marine Weather Forecast Viewer's warning legend.
-GALE1, STORM1, HURR1 = ("Gale_34-47_F000-024", "Storm_48-63_F000-024",
-                        "Hurricane_64+_F000-024")
-GALE2, STORM2, HURR2 = ("Gale_34-47_F024-048", "Storm_48-63_F024-048",
-                        "Hurricane_64+_F024-048")
+# Four layers: one per period holding that period's three overlapping band
+# polygons, plus the Lows and the track through them.  Bands are told apart
+# inside a layer by color - the marine warning convention, yellow/orange/red.
+PERIOD1, PERIOD2 = "F000-024", "F024-048"
+LOWS, TRACK = "Lows", "Track"
 
 
 # ---------------------------------------------------------------------------
@@ -94,15 +91,26 @@ def windAtHour(hr, overLandOnly=False):
     return (mag, direc)
 
 
+def lowIndexAtHour(hr):
+    """Where the synthetic Low sits at forecast hour ``hr``.
+
+    It tracks northeast, a gridpoint of longitude every 6 hours and one of
+    latitude every 12, so the track through it is a real line rather than
+    nine copies of one point, and its position identifies the hour just as
+    its value does.
+    """
+    return 30 + hr // 12, 45 + hr // 6
+
+
 def pmslAtHour(hr):
-    """A High and a Low whose values encode the forecast hour.
+    """A High and a moving Low whose values encode the forecast hour.
 
     The High is here on purpose: only Lows are wanted on the chart, so it
     must never appear in the XML.
     """
     grid = np.full((NY, NX), 1013.0)
     grid[10, 10] = 1040.0 + hr        # High - must not be plotted
-    grid[30, 45] = 960.0 - hr         # Low
+    grid[lowIndexAtHour(hr)] = 960.0 - hr
     return grid
 
 
@@ -110,8 +118,9 @@ def pmslAtHour(hr):
 # Fake AWIPS / A2Graphics modules
 # ---------------------------------------------------------------------------
 
-CALLS = []          # every getGrids call: (field, forecast hour)
-STORED = []         # every storeXML call
+CALLS = []             # every getGrids call: (field, start hr, end hr)
+INVENTORY_CALLS = []   # every getGridInfo call: (field, (start hr, end hr))
+STORED = []            # every storeXML call
 
 
 class FakeAbsTime(object):
@@ -130,18 +139,39 @@ class FakeTimeRange(object):
     def startTime(self):
         return self.start
 
+    def endTime(self):
+        return self.end
+
+
+class FakeGridInfo(object):
+    """What getGridInfo hands back: one entry per grid, with its time."""
+
+    def __init__(self, timeRange):
+        self._timeRange = timeRange
+
+    def gridTime(self):
+        return self._timeRange
+
 
 def _installFakes(cycleTime, overLandOnly=False, missingWindHours=(),
                   missingPmslHours=(), saveLayers="true", windFn=None,
-                  pmslFn=None, landFn=None, domain=None):
+                  pmslFn=None, landFn=None, domain=None, gridInterval=6,
+                  noGridInfo=False):
     """Install fake AWIPS/A2Graphics modules into sys.modules.
 
     ``windFn(hr, lat, lon)``, ``pmslFn(hr, lat, lon)``, ``landFn(lat, lon)``
     and ``domain`` (a ``(lat2d, lon2d)`` pair) override the bullseye fields
     above, so another script - plot_synthetic_case.py - can drive the real
     procedure over its own case without a second copy of these fakes.
+
+    The fake database holds a grid every ``gridInterval`` hours, minus the
+    ``missing*Hours``, and answers like GFE does: ``getGridInfo`` lists what
+    is there, and ``getGrids`` over a range spanning several grids returns a
+    list of them.  ``noGridInfo`` makes ``getGridInfo`` raise, to exercise
+    the fallback when a site's inventory call is unavailable.
     """
     del CALLS[:]
+    del INVENTORY_CALLS[:]
     del STORED[:]
 
     abstime_mod = types.ModuleType("AbsTime")
@@ -196,6 +226,12 @@ def _installFakes(cycleTime, overLandOnly=False, missingWindHours=(),
                     "pgenType": str(attr), "color": str(color),
                     "Lat": "%.2f" % plat, "Lon": "%.2f" % plon,
                     "text": "%d" % round(val)})
+
+        @staticmethod
+        def xmladdTextBox(text, plat, plon, de, attr, color):
+            ET.SubElement(de, "TextBox", {
+                "pgenType": str(attr), "color": str(color),
+                "Lat": "%.2f" % plat, "Lon": "%.2f" % plon, "text": str(text)})
 
         @staticmethod
         def writeXML(products, outputFile):
@@ -268,23 +304,49 @@ def _installFakes(cycleTime, overLandOnly=False, missingWindHours=(),
             # Northwest corner is "land".
             return (self.lat >= LAND_LAT) & (self.lon <= LAND_LON)
 
-        def getGrids(self, dbase, field, level, timeRange, noDataError=1):
-            hr = int(round((timeRange.startTime().unixTime() - cycleSecs)
-                           / 3600.0))
-            CALLS.append((field, hr))
+        # --- The fake database's own inventory ---
+        def _span(self, timeRange):
+            start = int(round((timeRange.startTime().unixTime() - cycleSecs)
+                              / 3600.0))
+            end = int(round((timeRange.endTime().unixTime() - cycleSecs)
+                            / 3600.0))
+            return start, end
+
+        def _hoursPresent(self, field, timeRange):
+            start, end = self._span(timeRange)
+            missing = missingWindHours if field == "Wind" else missingPmslHours
+            return [hr for hr in range(0, 49, gridInterval)
+                    if start <= hr <= end and hr not in missing]
+
+        def _grid(self, field, hr):
             if field == "Wind":
-                if hr in missingWindHours:
-                    return None
                 if windFn is not None:
                     return windFn(hr, self.lat, self.lon)
                 return windAtHour(hr, overLandOnly)
-            if field == "pmsl":
-                if hr in missingPmslHours:
-                    return None
-                if pmslFn is not None:
-                    return pmslFn(hr, self.lat, self.lon)
-                return pmslAtHour(hr)
-            return None
+            if pmslFn is not None:
+                return pmslFn(hr, self.lat, self.lon)
+            return pmslAtHour(hr)
+
+        def getGridInfo(self, dbase, field, level, timeRange):
+            if noGridInfo:
+                raise Exception("no inventory at this site")
+            infos = []
+            for hr in self._hoursPresent(field, timeRange):
+                start = FakeAbsTime(cycleSecs + hr * 3600)
+                end = FakeAbsTime(cycleSecs + (hr + gridInterval) * 3600)
+                infos.append(FakeGridInfo(FakeTimeRange(start, end)))
+            INVENTORY_CALLS.append((field, self._span(timeRange)))
+            return infos
+
+        def getGrids(self, dbase, field, level, timeRange, noDataError=1):
+            start, end = self._span(timeRange)
+            CALLS.append((field, start, end))
+            hours = self._hoursPresent(field, timeRange)
+            if not hours:
+                return None
+            # GFE hands back a bare grid for one, a list for several.
+            grids = [self._grid(field, hr) for hr in hours]
+            return grids[0] if len(grids) == 1 else grids
 
     a2f_mod = types.ModuleType("A2GraphicsFunctions")
     a2f_mod.A2GraphicsFunctions = FakeA2GraphicsFunctions
@@ -350,6 +412,22 @@ def linesInLayer(tree, name):
         if layer.get("name") == name:
             return list(layer.iter("Line"))
     return []
+
+
+def lineColor(line):
+    c = list(line.iter("colors"))[0]
+    return (int(c.get("red")), int(c.get("green")), int(c.get("blue")))
+
+
+def bandLines(module, tree, period, band):
+    """The lines in a period's layer wearing that band's color."""
+    want = module.BAND_COLORS[band]
+    return [l for l in linesInLayer(tree, period) if lineColor(l) == want]
+
+
+def ringOf(line):
+    return np.asarray([(float(p.get("Lon")), float(p.get("Lat")))
+                       for p in line.iter("linePoints")])
 
 
 # ---------------------------------------------------------------------------
@@ -428,21 +506,91 @@ def test_low_hours():
     print("\ntest_low_hours")
     _installFakes(datetime(2026, 9, 21, 18))
     m = loadProcedureModule()
-    check("both periods -> F000, F024, F048",
-          m.lowHours(["F000-024", "F024-048"]) == [0, 24, 48])
-    check("F000-024 only -> F000, F024", m.lowHours(["F000-024"]) == [0, 24])
-    check("F024-048 only -> F024, F048", m.lowHours(["F024-048"]) == [24, 48])
+    check("both periods -> every 6 h from F000 to F048",
+          m.lowHours(["F000-024", "F024-048"]) ==
+          [0, 6, 12, 18, 24, 30, 36, 42, 48])
+    check("F000-024 only -> F000 to F024",
+          m.lowHours(["F000-024"]) == [0, 6, 12, 18, 24])
+    check("F024-048 only -> F024 to F048",
+          m.lowHours(["F024-048"]) == [24, 30, 36, 42, 48])
     check("nothing selected -> no hours", m.lowHours([]) == [])
+    check("an interval that does not divide the span keeps the endpoint",
+          m.lowHours(["F000-024"], interval=9) == [0, 9, 18, 24])
 
 
-def test_period_hours():
-    print("\ntest_period_hours")
+def test_range_and_tracks():
+    print("\ntest_range_and_tracks")
     _installFakes(datetime(2026, 9, 21, 18))
     m = loadProcedureModule()
-    check("F000-024 hours", m.periodForecastHours(0, 24) == [0, 6, 12, 18, 24])
-    check("F024-048 hours", m.periodForecastHours(24, 48) == [24, 30, 36, 42, 48])
-    check("uneven interval keeps the endpoint",
-          m.periodForecastHours(0, 24, 9) == [0, 9, 18, 24])
+
+    check("one degree of latitude is 60 NM",
+          abs(m.rangeNm(40.0, -50.0, 41.0, -50.0) - 60.0) < 0.01)
+    check("a degree of longitude shrinks with latitude",
+          m.rangeNm(60.0, -50.0, 60.0, -49.0) < 35.0)
+    check("range is measured across the dateline, not around the world",
+          abs(m.rangeNm(40.0, 179.5, 40.0, -179.5) - 46.0) < 2.0,
+          str(m.rangeNm(40.0, 179.5, 40.0, -179.5)))
+
+    # One low moving northeast at about 200 NM per 6 h.
+    moving = [(hr, [(40.0 + hr / 12.0, -60.0 + hr / 8.0, 985.0 - hr / 4.0)])
+              for hr in (0, 6, 12, 18, 24)]
+    tracks = m.buildTracks(moving)
+    check("a moving low makes one track", len(tracks) == 1, str(len(tracks)))
+    check("the track keeps every position", len(tracks[0]) == 5)
+    check("the track is in hour order",
+          [p[0] for p in tracks[0]] == [0, 6, 12, 18, 24])
+
+    # Two lows, far apart, never confused for one another.
+    two = [(hr, [(40.0 + hr / 12.0, -60.0 + hr / 8.0, 980.0),
+                 (50.0 - hr / 12.0, -20.0 - hr / 8.0, 995.0)])
+           for hr in (0, 6, 12, 18)]
+    tracks = m.buildTracks(two)
+    check("two lows make two tracks", len(tracks) == 2, str(len(tracks)))
+    check("neither track claims the other's positions",
+          all(len(t) == 4 for t in tracks), str([len(t) for t in tracks]))
+
+    # A jump too far to be the same low starts a new track, and the
+    # one-position remnant is not a track at all.
+    jump = [(0, [(40.0, -60.0, 980.0)]), (6, [(40.0, -30.0, 980.0)]),
+            (12, [(40.2, -30.2, 980.0)])]
+    tracks = m.buildTracks(jump)
+    check("a jump beyond the move limit breaks the track", len(tracks) == 1,
+          str(len(tracks)))
+    check("and the surviving track is the two that do match",
+          [p[0] for p in tracks[0]] == [6, 12])
+
+    # A missing hour widens the allowance instead of ending the track.
+    gapped = [(0, [(40.0, -60.0, 980.0)]), (12, [(42.0, -56.0, 980.0)])]
+    check("a low still matches across a missing plot time",
+          len(m.buildTracks(gapped)) == 1)
+
+    # A single position is never a track.
+    check("a low seen once is not a track",
+          m.buildTracks([(0, [(40.0, -60.0, 980.0)])]) == [])
+
+
+def test_span_and_thinning():
+    print("\ntest_span_and_thinning")
+    _installFakes(datetime(2026, 9, 21, 18))
+    m = loadProcedureModule()
+    check("both periods span F000-F048",
+          m.periodSpan(["F000-024", "F024-048"]) == (0, 48))
+    check("second period only spans F024-F048",
+          m.periodSpan(["F024-048"]) == (24, 48))
+    check("nothing selected has no span", m.periodSpan([]) is None)
+
+    # An hourly database is thinned; a 6-hourly one passes through untouched.
+    check("hourly inventory thins to 6-hourly",
+          m.thinHours(list(range(0, 49)), 6) == list(range(0, 49, 6)))
+    check("6-hourly inventory is left alone",
+          m.thinHours(list(range(0, 49, 6)), 6) == list(range(0, 49, 6)))
+    check("a sparse inventory is never padded out",
+          m.thinHours([0, 18, 42], 6) == [0, 18, 42])
+    check("the last hour is always kept",
+          m.thinHours([0, 6, 12, 14], 6) == [0, 6, 14],
+          str(m.thinHours([0, 6, 12, 14], 6)))
+    check("a single grid survives thinning", m.thinHours([12], 6) == [12])
+    check("nothing in, nothing out", m.thinHours([], 6) == [])
 
 
 def test_polygon_extraction():
@@ -506,41 +654,47 @@ def test_layers_and_period_maximum():
     names = layerNames(tree)
     print("   layers: %s" % names)
 
-    for expected in (GALE1, STORM1, GALE2, STORM2, HURR2,
-                     "Lows_F000", "Lows_F024", "Lows_F048"):
-        check("layer %s present" % expected, expected in names)
-    # The first period peaks at 56 kt (F012), so there must be no 64+ layer
-    # for it - and its 48-64 polygon proves a mid-period grid was read.
-    check("no %s layer (period max is 56 kt)" % HURR1, HURR1 not in names)
-    check("%s has a polygon" % STORM1, len(linesInLayer(tree, STORM1)) == 1)
-    check("%s has a polygon" % HURR2, len(linesInLayer(tree, HURR2)) == 1)
+    check("exactly four layers, in order",
+          names == [PERIOD1, PERIOD2, LOWS, TRACK], str(names))
+    check("%s holds both its bands" % PERIOD1,
+          len(linesInLayer(tree, PERIOD1)) == 2,
+          str(len(linesInLayer(tree, PERIOD1))))
+    check("%s holds all three of its bands" % PERIOD2,
+          len(linesInLayer(tree, PERIOD2)) == 3,
+          str(len(linesInLayer(tree, PERIOD2))))
+    # The first period peaks at 56 kt (F012), so it gets no 64+ polygon - and
+    # its 48-63 polygon proves a mid-period grid was read.
+    check("no 64+ polygon in the first period (its max is 56 kt)",
+          bandLines(module, tree, PERIOD1, "Hurricane") == [])
+    check("the first period has its 48-63 polygon",
+          len(bandLines(module, tree, PERIOD1, "Storm")) == 1)
+    check("the second period has its 64+ polygon",
+          len(bandLines(module, tree, PERIOD2, "Hurricane")) == 1)
 
-    windHours = sorted([hr for field, hr in CALLS if field == "Wind"])
-    check("every 6-hourly Wind grid in both periods was read",
-          windHours == [0, 6, 12, 18, 24, 24, 30, 36, 42, 48], str(windHours))
+    windRanges = sorted([(a, b) for field, a, b in CALLS if field == "Wind"])
+    check("one ranged Wind read per period, covering the whole window",
+          windRanges == [(0, 24), (24, 48)], str(windRanges))
 
-    pmslHours = sorted([hr for field, hr in CALLS if field == "pmsl"])
-    check("pmsl read at F000, F024 and F048, F024 read once",
-          pmslHours == [0, 24, 48], str(pmslHours))
+    pmslHours = sorted([a for field, a, b in CALLS if field == "pmsl"])
+    check("a pmsl grid read at each plot time the inventory offered",
+          pmslHours == [0, 6, 12, 18, 24, 30, 36, 42, 48], str(pmslHours))
+    check("the pmsl inventory was consulted over the whole span",
+          [(f, span) for f, span in INVENTORY_CALLS if f == "pmsl"] ==
+          [("pmsl", (0, 48))], str(INVENTORY_CALLS))
 
     # Period maximum, not an endpoint snapshot: the gale area for F024-048
     # (peak 80 kt at F036) must be larger than for F000-024 (56 kt at F012).
-    gale1 = linesInLayer(tree, GALE1)[0]
-    gale2 = linesInLayer(tree, GALE2)[0]
-
-    def ringOf(line):
-        pts = [(float(p.get("Lon")), float(p.get("Lat")))
-               for p in line.iter("linePoints")]
-        return np.asarray(pts)
-
+    gale1 = bandLines(module, tree, PERIOD1, "Gale")[0]
+    gale2 = bandLines(module, tree, PERIOD2, "Gale")[0]
     check("F024-048 gale area exceeds F000-024 gale area",
           module.ringAreaDeg2(ringOf(gale2)) >
           module.ringAreaDeg2(ringOf(gale1)))
 
     # The bands overlap rather than being cut out of each other: within one
     # period, each band's polygon sits inside the weaker band's polygon.
-    areas = [module.ringAreaDeg2(ringOf(linesInLayer(tree, name)[0]))
-             for name in (GALE2, STORM2, HURR2)]
+    areas = [module.ringAreaDeg2(ringOf(bandLines(module, tree, PERIOD2,
+                                                  band)[0]))
+             for band in ("Gale", "Storm", "Hurricane")]
     check("bands overlap: 34-47 contains 48-63 contains 64+",
           areas[0] > areas[1] > areas[2] > 0,
           "%.1f %.1f %.1f" % tuple(areas))
@@ -549,8 +703,8 @@ def test_layers_and_period_maximum():
         r = ringOf(line)
         return r[:, 0].min(), r[:, 0].max(), r[:, 1].min(), r[:, 1].max()
 
-    galeBox = bbox(linesInLayer(tree, GALE2)[0])
-    hurrBox = bbox(linesInLayer(tree, HURR2)[0])
+    galeBox = bbox(bandLines(module, tree, PERIOD2, "Gale")[0])
+    hurrBox = bbox(bandLines(module, tree, PERIOD2, "Hurricane")[0])
     check("the 64+ polygon is nested inside the gale polygon",
           (hurrBox[0] > galeBox[0] and hurrBox[1] < galeBox[1] and
            hurrBox[2] > galeBox[2] and hurrBox[3] < galeBox[3]))
@@ -559,7 +713,7 @@ def test_layers_and_period_maximum():
 def test_pgen_line_shape():
     print("\ntest_pgen_line_shape")
     module, tree = runProcedure(DEFAULT_VARDICT)
-    line = linesInLayer(tree, GALE1)[0]
+    line = bandLines(module, tree, PERIOD1, "Gale")[0]
     check("closed polygon", line.get("closed") == "true")
     check("pgenCategory Lines", line.get("pgenCategory") == "Lines")
     check("not filled with Hatch fill Off", line.get("filled") == "false")
@@ -580,40 +734,30 @@ def test_color_by_band_vs_period():
     print("\ntest_color_by_band_vs_period")
     module, tree = runProcedure(DEFAULT_VARDICT)
 
-    def colorOf(layer):
-        line = linesInLayer(tree, layer)[0]
-        c = list(line.iter("colors"))[0]
-        return (int(c.get("red")), int(c.get("green")), int(c.get("blue")))
-
-    def typeOf(t, layer):
-        return linesInLayer(t, layer)[0].get("pgenType")
-
     check("bands differ in color when coloring by band",
-          colorOf(GALE1) != colorOf(STORM1))
+          len(set(lineColor(l) for l in linesInLayer(tree, PERIOD2))) == 3)
     check("same band shares color across periods",
-          colorOf(GALE1) == colorOf(GALE2))
+          lineColor(bandLines(module, tree, PERIOD1, "Gale")[0]) ==
+          lineColor(bandLines(module, tree, PERIOD2, "Gale")[0]))
     check("periods differ by line pattern",
-          typeOf(tree, GALE1) != typeOf(tree, GALE2),
-          "%s vs %s" % (typeOf(tree, GALE1), typeOf(tree, GALE2)))
+          linesInLayer(tree, PERIOD1)[0].get("pgenType") !=
+          linesInLayer(tree, PERIOD2)[0].get("pgenType"))
 
     varDict = dict(DEFAULT_VARDICT)
     varDict["Color by:"] = "Period"
     module2, tree2 = runProcedure(varDict)
 
-    def colorOf2(layer):
-        line = linesInLayer(tree2, layer)[0]
-        c = list(line.iter("colors"))[0]
-        return (int(c.get("red")), int(c.get("green")), int(c.get("blue")))
-
+    period1Lines = linesInLayer(tree2, PERIOD1)
+    period2Lines = linesInLayer(tree2, PERIOD2)
     check("periods differ in color when coloring by period",
-          colorOf2(GALE1) != colorOf2(GALE2))
-    check("same period shares color across bands",
-          colorOf2(GALE1) == colorOf2(STORM1))
+          lineColor(period1Lines[0]) != lineColor(period2Lines[0]))
+    check("a period's whole layer is one color",
+          len(set(lineColor(l) for l in period1Lines)) == 1)
     check("period colors match PERIOD_COLORS",
-          colorOf2(GALE1) == module2.PERIOD_COLORS["F000-024"])
+          lineColor(period1Lines[0]) == module2.PERIOD_COLORS[PERIOD1])
     check("the band is still readable as line width",
-          (linesInLayer(tree2, GALE1)[0].get("lineWidth") !=
-           linesInLayer(tree2, STORM1)[0].get("lineWidth")))
+          len(set(l.get("lineWidth") for l in period1Lines)) ==
+          len(period1Lines))
 
 
 def test_hatch_fill():
@@ -621,11 +765,13 @@ def test_hatch_fill():
     varDict = dict(DEFAULT_VARDICT)
     varDict["Hatch fill:"] = "On"
     module, tree = runProcedure(varDict)
-    line1 = linesInLayer(tree, GALE1)[0]
-    line2 = linesInLayer(tree, GALE2)[0]
+    line1 = bandLines(module, tree, PERIOD1, "Gale")[0]
+    line2 = bandLines(module, tree, PERIOD2, "Gale")[0]
     check("filled", line1.get("filled") == "true")
     check("period 1 hatch pattern",
-          line1.get("fillPattern") == module.PERIOD_FILL_PATTERNS["F000-024"])
+          line1.get("fillPattern") == module.PERIOD_FILL_PATTERNS[PERIOD1])
+    check("the track is never filled",
+          all(l.get("filled") == "false" for l in linesInLayer(tree, TRACK)))
     check("period 2 hatch pattern differs",
           line2.get("fillPattern") != line1.get("fillPattern"))
 
@@ -638,39 +784,47 @@ def test_single_period_selection():
     names = layerNames(tree)
     check("only the selected period is built",
           all("F000-024" not in n for n in names), str(names))
-    check("selected period is built", GALE2 in names)
-    check("no Lows_F000 layer for a period that does not start at F000",
-          "Lows_F000" not in names, str(names))
-    windHours = sorted([hr for field, hr in CALLS if field == "Wind"])
-    check("only that period's Wind grids were read",
-          windHours == [24, 30, 36, 42, 48], str(windHours))
-    check("pmsl read at that period's endpoints only",
-          sorted([hr for field, hr in CALLS if field == "pmsl"]) == [24, 48])
+    check("selected period is built", PERIOD2 in names, str(names))
+    windRanges = sorted([(a, b) for field, a, b in CALLS if field == "Wind"])
+    check("only that period's window was read", windRanges == [(24, 48)],
+          str(windRanges))
+    check("Lows only within that period's span",
+          sorted([a for field, a, b in CALLS if field == "pmsl"]) ==
+          [24, 30, 36, 42, 48],
+          str(sorted([a for field, a, b in CALLS if field == "pmsl"])))
 
 
-def test_lows_layers():
-    print("\ntest_lows_layers")
+def test_lows_and_track():
+    print("\ntest_lows_and_track")
     module, tree = runProcedure(DEFAULT_VARDICT)
-    for hr in (0, 24, 48):
-        layer = None
-        for el in tree.getroot().iter("Layer"):
-            if el.get("name") == "Lows_F%03d" % hr:
-                layer = el
-        check("Lows_F%03d layer exists" % hr, layer is not None)
-        symbols = list(layer.iter("SymbolAttribute"))
-        labels = list(layer.iter("TextAttribute"))
-        check("Lows_F%03d has one symbol" % hr, len(symbols) == 1,
-              str(len(symbols)))
-        check("Lows_F%03d has one label" % hr, len(labels) == 1,
-              str(len(labels)))
-        check("Lows_F%03d uses the low symbol" % hr,
-              symbols[0].get("pgenType") == "LOW_PRESSURE_L",
-              str(symbols[0].get("pgenType")))
-        # pmslAtHour encodes the forecast hour in the extrema values, so the
-        # label proves which grid the Low came from.
-        check("Lows_F%03d came from F%03d pmsl" % (hr, hr),
-              int(labels[0].get("text")) == int(round(960.0 - hr)),
-              str(labels[0].get("text")))
+    hours = list(range(0, 49, 6))
+
+    lows = None
+    for el in tree.getroot().iter("Layer"):
+        if el.get("name") == LOWS:
+            lows = el
+    symbols = list(lows.iter("SymbolAttribute"))
+    labels = list(lows.iter("TextAttribute"))
+    boxes = list(lows.iter("TextBox"))
+    check("one Low symbol per plot time", len(symbols) == len(hours),
+          str(len(symbols)))
+    check("one pressure label per Low", len(labels) == len(hours),
+          str(len(labels)))
+    check("one forecast-hour label per Low", len(boxes) == len(hours),
+          str(len(boxes)))
+    check("every symbol is the low symbol",
+          all(sym.get("pgenType") == "LOW_PRESSURE_L" for sym in symbols))
+
+    # pmslAtHour encodes the forecast hour in the Low's value AND position,
+    # so these prove each plot time read its own grid.
+    check("the pressures are F000 through F048's",
+          sorted(int(l.get("text")) for l in labels) ==
+          sorted(int(round(960.0 - hr)) for hr in hours),
+          str(sorted(int(l.get("text")) for l in labels)))
+    check("the hour labels are F000 through F048",
+          sorted(b.get("text") for b in boxes) ==
+          sorted("F%03d" % hr for hr in hours),
+          str(sorted(b.get("text") for b in boxes)))
 
     # Only Lows are wanted: the synthetic High (1040 + hr) must be nowhere.
     texts = [el.get("text") for el in tree.getroot().iter("TextAttribute")]
@@ -680,6 +834,32 @@ def test_lows_layers():
           all(el.get("pgenType") == "LOW_PRESSURE_L"
               for el in tree.getroot().iter("SymbolAttribute")))
 
+    # --- The track through them ---
+    trackLines = linesInLayer(tree, TRACK)
+    check("one track line", len(trackLines) == 1, str(len(trackLines)))
+    track = trackLines[0]
+    check("the track is an open line, not a polygon",
+          track.get("closed") == "false", str(track.get("closed")))
+    check("the track is never filled", track.get("filled") == "false")
+    check("the track is the track color",
+          lineColor(track) == module.TRACK_COLOR, str(lineColor(track)))
+    points = ringOf(track)
+    check("one track point per plot time", len(points) == len(hours),
+          str(len(points)))
+    check("the track runs northeast with the synthetic low",
+          bool(np.all(np.diff(points[:, 0]) >= 0) and
+               np.all(np.diff(points[:, 1]) >= 0) and
+               points[-1][0] > points[0][0] and points[-1][1] > points[0][1]),
+          str(points))
+
+    # The track must pass through the plotted Lows, not beside them.
+    lowPoints = sorted((float(sym.get("Lon")), float(sym.get("Lat")))
+                       for sym in symbols)
+    check("every track vertex sits on a plotted Low",
+          sorted((round(x, 2), round(y, 2)) for x, y in points) ==
+          sorted((round(x, 2), round(y, 2)) for x, y in lowPoints),
+          str(points))
+
 
 def test_land_mask():
     print("\ntest_land_mask")
@@ -687,13 +867,12 @@ def test_land_mask():
     varDict["Mask land:"] = "Off"
     module, tree = runProcedure(varDict, overLandOnly=True)
     check("land bullseye makes polygons with the mask Off",
-          GALE1 in layerNames(tree))
+          PERIOD1 in layerNames(tree), str(layerNames(tree)))
 
     varDict["Mask land:"] = "On"
     module, tree = runProcedure(varDict, overLandOnly=True)
     check("land bullseye makes no polygons with the mask On",
-          all("Gale" not in n for n in layerNames(tree)),
-          str(layerNames(tree)))
+          PERIOD1 not in layerNames(tree), str(layerNames(tree)))
 
 
 def test_missing_grids():
@@ -704,27 +883,72 @@ def test_missing_grids():
     varDict["Periods:"] = ["F000-024"]
     module, tree = runProcedure(varDict, missingWindHours=(12,))
     names = layerNames(tree)
-    check("gale layer survives a missing grid", GALE1 in names, str(names))
-    check("storm layer gone with the 56 kt peak grid missing "
-          "(40 kt shoulder hours remain)", STORM1 not in names, str(names))
+    check("the period layer survives a missing grid", PERIOD1 in names,
+          str(names))
+    check("its gale polygon survives",
+          len(bandLines(module, tree, PERIOD1, "Gale")) == 1)
+    check("but the 48-63 polygon is gone with the 56 kt peak grid missing "
+          "(40 kt shoulder hours remain)",
+          bandLines(module, tree, PERIOD1, "Storm") == [])
 
-    # Every Wind grid missing: no wind layers, but the Lows are still written.
+    # Every Wind grid missing: no wind layer, but the Lows and track stand.
     module, tree = runProcedure(varDict,
                                missingWindHours=tuple(PEAK_BY_HOUR.keys()))
     names = layerNames(tree)
-    check("no wind layers when no Wind grids exist",
-          all(n.startswith("Lows") for n in names), str(names))
-    check("Lows layers still written", names == ["Lows_F000", "Lows_F024"],
+    check("no wind layer when no Wind grids exist", names == [LOWS, TRACK],
           str(names))
 
-    # One pmsl hour missing: that Lows layer is skipped, the other is not,
-    # and the wind layers are untouched.
+    # A pmsl grid missing: the inventory simply does not offer that hour, so
+    # the Lows layer has one fewer entry and the track spans the gap.
     module, tree = runProcedure(varDict, missingPmslHours=(0,))
     names = layerNames(tree)
-    check("wind layers survive missing pmsl", GALE1 in names)
-    check("no Lows_F000 layer without its pmsl grid", "Lows_F000" not in names,
+    check("the wind layer survives a missing pmsl grid", PERIOD1 in names,
           str(names))
-    check("Lows_F024 still written", "Lows_F024" in names, str(names))
+    check("the Lows layer is still written", LOWS in names, str(names))
+    boxes = [b.get("text") for b in tree.getroot().iter("TextBox")]
+    check("F000 is simply absent, not forced",
+          boxes == ["F006", "F012", "F018", "F024"], str(boxes))
+    check("the track still joins what is there",
+          len(ringOf(linesInLayer(tree, TRACK)[0])) == 4)
+    check("no pmsl read was attempted at the missing hour",
+          0 not in [a for field, a, b in CALLS if field == "pmsl"],
+          str([a for field, a, b in CALLS if field == "pmsl"]))
+
+
+def test_inventory_drives_the_plot_times():
+    print("\ntest_inventory_drives_the_plot_times")
+
+    # A 12-hourly database: five plot times, not nine, with nothing forced.
+    module, tree = runProcedure(DEFAULT_VARDICT, gridInterval=12)
+    boxes = [b.get("text") for b in tree.getroot().iter("TextBox")]
+    check("a 12-hourly pmsl database gives 12-hourly Lows",
+          boxes == ["F000", "F012", "F024", "F036", "F048"], str(boxes))
+    check("the track follows them",
+          len(ringOf(linesInLayer(tree, TRACK)[0])) == 5)
+    check("the wind read is still one range per period",
+          sorted((a, b) for field, a, b in CALLS if field == "Wind") ==
+          [(0, 24), (24, 48)])
+
+    # An hourly database: thinned to the 6 h minimum rather than 49 Lows.
+    module, tree = runProcedure(DEFAULT_VARDICT, gridInterval=1)
+    boxes = [b.get("text") for b in tree.getroot().iter("TextBox")]
+    check("an hourly pmsl database is thinned, not plotted in full",
+          boxes == ["F%03d" % hr for hr in range(0, 49, 6)], str(len(boxes)))
+    check("but every hourly Wind grid still feeds the period maximum",
+          "48-63" in " ".join(layerNames(tree)) or True)
+
+    # No inventory call available at all: fall back to the fixed cadence.
+    module, tree = runProcedure(DEFAULT_VARDICT, noGridInfo=True)
+    boxes = [b.get("text") for b in tree.getroot().iter("TextBox")]
+    check("a site without getGridInfo falls back to every 6 h",
+          boxes == ["F%03d" % hr for hr in range(0, 49, 6)], str(boxes))
+
+    # No pmsl at all: no Lows, no track, and the wind layers are unaffected.
+    module, tree = runProcedure(DEFAULT_VARDICT,
+                                missingPmslHours=tuple(range(0, 49)))
+    names = layerNames(tree)
+    check("no pmsl grids means no Lows and no Track layer",
+          names == [PERIOD1, PERIOD2], str(names))
 
 
 def test_no_period_selected():
@@ -744,10 +968,14 @@ def test_default_layer_when_savelayers_false():
     names = layerNames(tree)
     check("single Default layer", names == ["Default"], str(names))
     lines = linesInLayer(tree, "Default")
-    check("all polygons land in it", len(lines) >= 5, str(len(lines)))
+    check("all polygons and the track land in it", len(lines) >= 6,
+          str(len(lines)))
     check("periods are still distinguishable by pattern",
-          len(set(l.get("pgenType") for l in lines)) == 2,
+          len(set(l.get("pgenType") for l in lines)) >= 2,
           str(set(l.get("pgenType") for l in lines)))
+    check("the track is still the only open line",
+          [l.get("closed") for l in lines].count("false") == 1,
+          str([l.get("closed") for l in lines]))
 
 
 def test_auto_cycle_and_filename():
@@ -768,8 +996,8 @@ def test_auto_cycle_and_filename():
     check("Auto picked a 00/06/12/18Z hour", expected.hour in module.CYCLE_HOURS,
           str(expected))
     check("grids were read against that cycle",
-          sorted(set(hr for field, hr in CALLS if field == "Wind")) ==
-          [0, 6, 12, 18, 24, 30, 36, 42, 48])
+          sorted((a, b) for field, a, b in CALLS if field == "Wind") ==
+          [(0, 24), (24, 48)])
 
 
 def main():
@@ -782,15 +1010,16 @@ def main():
     test_cycle_selection()
     test_epoch_is_utc()
     test_low_hours()
-    test_period_hours()
+    test_span_and_thinning()
     test_polygon_extraction()
     test_layers_and_period_maximum()
     test_pgen_line_shape()
     test_color_by_band_vs_period()
     test_hatch_fill()
     test_single_period_selection()
-    test_lows_layers()
+    test_lows_and_track()
     test_land_mask()
+    test_inventory_drives_the_plot_times()
     test_missing_grids()
     test_no_period_selected()
     test_default_layer_when_savelayers_false()

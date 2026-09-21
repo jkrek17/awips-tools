@@ -37,22 +37,27 @@
 #   occurrence of that hour at or before now (18z asked for at 05Z means
 #   yesterday's 18Z).
 # * Wind: each period's polygons come from the per-gridpoint MAXIMUM Wind
-#   magnitude over every grid in the window (F000,006,...,024 for the first
-#   period; F024,030,...,048 for the second), so a polygon covers anywhere
-#   reaching that force at any point in the period.
-# * Bands: 34-48, 48-64 and 64+ kt.  Each band's polygon is the closed
-#   contour at its LOWER bound, so the bands overlap - the 34-48 polygon is
-#   the whole gale-or-greater area with the 48-64 and 64+ polygons nested
-#   inside it.  A PGEN Line cannot carry a hole, and overlapping closed
+#   magnitude over whatever grids exist in the window - one ranged getGrids
+#   call, so the cadence is whatever the grids actually have - and a polygon
+#   covers anywhere reaching that force at any point in the period.
+# * Bands: 34-47, 48-63 and 64+ kt.  Each band's polygon is the closed
+#   contour at its LOWER bound, so the bands overlap - the gale polygon is
+#   the whole gale-or-greater area with the storm and hurricane polygons
+#   nested inside it.  A PGEN Line cannot carry a hole, and overlapping closed
 #   contours are how these charts are drawn anyway.
 # * Polygons: the max-wind field is lightly smoothed, optionally zeroed over
 #   the Land edit area, then contoured.  Each closed contour becomes a PGEN
 #   Line with closed="true".
-# * pmsl: Lows only, at F000, F024 and F048 - the endpoints of whichever
-#   periods are selected - each hour in its own layer.
-# * Output: a single XML with both periods, layers named per band and period
-#   (Gale_34-48_F000-024 ... Hurricane_64+_F024-048) plus Lows_F000,
-#   Lows_F024 and Lows_F048.
+# * pmsl: Lows only, at the times a pmsl grid actually exists.  The
+#   inventory over the selected span decides the plot times - nothing is
+#   forced onto a 6-hourly schedule - and they are then thinned to no closer
+#   than LOW_INTERVAL_HRS so an hourly database does not put 49 Lows on the
+#   chart.  The Lows are joined into track lines by nearest-neighbor matching
+#   from one plot time to the next.
+# * Output: a single XML with four layers - "F000-024" and "F024-048", each
+#   holding that period's three band polygons; "Lows", holding every 6-hourly
+#   Low with its pressure and forecast hour; and "Track", holding the lines
+#   through them.  Layer names are LAYER_NAMES below.
 #
 # Telling the periods apart
 # -------------------------
@@ -64,13 +69,18 @@
 # "Hatch fill:" On additionally fills each polygon with the period's hatch
 # pattern (PERIOD_FILL_PATTERNS) instead of leaving it as an outline.
 #
-# One thing to check on first run
-# -------------------------------
-# The site's XmlUtils has no polygon writer to borrow, so addPolygonToXml
-# below emits the PGEN Line element itself.  Open the first XML this writes
-# and compare its <Line> against one your existing charts produce (the
-# Isobars layer is the closest thing); if the element or color spelling
-# differs, addPolygonToXml is the only place to change.
+# Two things to check on first run
+# --------------------------------
+# 1. The site's XmlUtils has no polygon writer to borrow, so addLineToXml
+#    below emits the PGEN Line element itself.  Open the first XML this
+#    writes and compare its <Line> against one your existing charts produce
+#    (the Isobars layer is the closest thing); if the element or color
+#    spelling differs, addLineToXml is the only place to change.
+# 2. The forecast-hour label beside each Low goes through the site's
+#    XmlUtils.xmladdTextBox, which CreateXML.py only ever calls with the
+#    disclaimer box.  If it wants something other than a plain string, or if
+#    the label lands on top of the pressure value, set LABEL_LOW_HOURS to
+#    False and the hours come off - the Low symbols and pressures stay.
 # ----------------------------------------------------------------------------
 
 # The MenuItems list defines the GFE menu item(s) under which the
@@ -120,10 +130,39 @@ WIND_BANDS = [("Gale", "34-47", 34.0),
 PERIODS = [("F000-024", 0, 24), ("F024-048", 24, 48)]
 
 # Cycle hours this tool recognizes, and the spacing of the Wind grids read
-# inside each period.  Lows are plotted at the endpoints of the selected
-# periods, so both periods selected gives F000, F024 and F048.
+# inside each period.
 CYCLE_HOURS = [0, 6, 12, 18]
 WIND_GRID_INTERVAL_HRS = 6
+
+# The closest two plotted Lows may be.  The plot times come from the pmsl
+# inventory over the selected span, so a sparser database simply gives fewer
+# Lows; this only stops a denser one from crowding the chart.  It is also
+# the fallback cadence if the inventory cannot be read at all.
+LOW_INTERVAL_HRS = 6
+
+# The four layers.  The wind bands share one layer per period, so a period
+# can be switched on or off in D2D in one go; the Lows and the track they
+# form get a layer each, so the track can come off without losing the
+# positions.
+LAYER_NAMES = {"F000-024": "F000-024", "F024-048": "F024-048",
+               "lows": "Lows", "track": "Track"}
+
+# Track building.  Lows weaker than TRACK_MAX_PRESSURE are still plotted but
+# not tracked; a low may move TRACK_MAX_MOVE_NM between consecutive plots and
+# still count as the same low (scaled up if a grid is missing and the gap
+# widens); a track that goes TRACK_MAX_GAP_HRS unmatched has ended; and a
+# single position is not a track.
+TRACK_MAX_PRESSURE = 1008.0
+TRACK_MAX_MOVE_NM = 600.0
+TRACK_MAX_GAP_HRS = 12
+MIN_TRACK_POINTS = 2
+
+TRACK_COLOR = (255, 0, 255)
+TRACK_LINE_TYPE = "LINE_SOLID"
+TRACK_LINE_WIDTH = 2.0
+
+# Label each plotted Low with its forecast hour.  See note 2 in the header.
+LABEL_LOW_HOURS = True
 
 # Color by band: the band carries the color, the period carries the pattern.
 # The usual marine warning convention - yellow, orange, red.
@@ -215,29 +254,114 @@ def makeTimeRange(start, hours=1):
                                AbsTime.AbsTime(endSecs))
 
 
-def periodForecastHours(startHr, endHr, interval=None):
-    """Forecast hours to read for a period, both endpoints included."""
+def periodSpan(selected, periods=None):
+    """The (first hour, last hour) the selected periods cover, or None."""
+    if periods is None:
+        periods = PERIODS
+    bounds = [(s, e) for period, s, e in periods if period in selected]
+    if not bounds:
+        return None
+    return int(min(s for s, _ in bounds)), int(max(e for _, e in bounds))
+
+
+def thinHours(hours, minSpacing=None):
+    """Thin an inventory to hours no closer together than ``minSpacing``.
+
+    The first and last hour are always kept, so the span the grids cover is
+    never shortened by the thinning.
+    """
+    if minSpacing is None:
+        minSpacing = LOW_INTERVAL_HRS
+    hours = sorted(set(int(h) for h in hours))
+    if len(hours) < 2:
+        return hours
+    kept = [hours[0]]
+    for hr in hours[1:-1]:
+        if hr - kept[-1] >= minSpacing:
+            kept.append(hr)
+    if hours[-1] - kept[-1] >= minSpacing:
+        kept.append(hours[-1])
+    else:
+        kept[-1] = hours[-1]
+    return kept
+
+
+def lowHours(selected, periods=None, interval=None):
+    """The fallback Low plot times, used only when the inventory is unreadable.
+
+    Both periods at the default interval gives F000, F006 ... F048; only the
+    second gives F024 ... F048.
+    """
     if interval is None:
-        interval = WIND_GRID_INTERVAL_HRS
-    hours = list(range(int(startHr), int(endHr) + 1, int(interval)))
-    if hours and hours[-1] != int(endHr):
-        hours.append(int(endHr))
+        interval = LOW_INTERVAL_HRS
+    span = periodSpan(selected, periods)
+    if span is None:
+        return []
+    start, end = span
+    hours = list(range(start, end + 1, int(interval)))
+    if hours[-1] != end:
+        hours.append(end)
     return hours
 
 
-def lowHours(selected, periods=None):
-    """Forecast hours to plot Lows at: the endpoints of selected periods.
+def rangeNm(lat1, lon1, lat2, lon2):
+    """Range in nautical miles, flat-earth, and safe across the dateline."""
+    dLat = (lat2 - lat1) * 60.0
+    dLon = (((lon2 - lon1) + 180.0) % 360.0 - 180.0) * 60.0 * np.cos(
+        np.radians((lat1 + lat2) / 2.0))
+    return float(np.hypot(dLat, dLon))
 
-    Both periods gives F000, F024 and F048; F024 is shared and read once.
+
+def buildTracks(positions, maxMoveNm=None, interval=None, maxGapHrs=None,
+                minPoints=None):
+    """Join Lows from one plot time to the next into tracks.
+
+    ``positions`` is ``[(hr, [(lat, lon, value), ...]), ...]`` in increasing
+    hour order.  Each plot time's Lows are matched to the open tracks nearest
+    them, shortest distance first, so two tracks never claim the same Low;
+    anything unmatched starts a track of its own.  Returns a list of tracks,
+    each a list of ``(hr, lat, lon, value)``, dropping any left shorter than
+    ``minPoints``.
     """
-    if periods is None:
-        periods = PERIODS
-    hours = set()
-    for period, startHr, endHr in periods:
-        if period in selected:
-            hours.add(int(startHr))
-            hours.add(int(endHr))
-    return sorted(hours)
+    if maxMoveNm is None:
+        maxMoveNm = TRACK_MAX_MOVE_NM
+    if interval is None:
+        interval = LOW_INTERVAL_HRS
+    if maxGapHrs is None:
+        maxGapHrs = TRACK_MAX_GAP_HRS
+    if minPoints is None:
+        minPoints = MIN_TRACK_POINTS
+
+    tracks = []
+    for hr, lows in positions:
+        lows = list(lows)
+        openTracks = [t for t in tracks if hr - t[-1][0] <= maxGapHrs]
+
+        pairs = []
+        for ti, track in enumerate(openTracks):
+            lastHr, lastLat, lastLon = track[-1][0], track[-1][1], track[-1][2]
+            gap = max(hr - lastHr, interval)
+            limit = maxMoveNm * (float(gap) / float(interval))
+            for li, (lat, lon, value) in enumerate(lows):
+                distance = rangeNm(lastLat, lastLon, lat, lon)
+                if distance <= limit:
+                    pairs.append((distance, ti, li))
+        pairs.sort()
+
+        usedTracks, usedLows = set(), set()
+        for _, ti, li in pairs:
+            if ti in usedTracks or li in usedLows:
+                continue
+            usedTracks.add(ti)
+            usedLows.add(li)
+            lat, lon, value = lows[li]
+            openTracks[ti].append((hr, lat, lon, value))
+
+        for li, (lat, lon, value) in enumerate(lows):
+            if li not in usedLows:
+                tracks.append([(hr, lat, lon, value)])
+
+    return [t for t in tracks if len(t) >= minPoints]
 
 
 # ---------------------------------------------------------------------------
@@ -402,11 +526,21 @@ def polygonStyle(band, period, colorBy="band", hatch=False):
             "filled": bool(hatch)}
 
 
-def addPolygonToXml(de, points, style):
-    """Append one closed PGEN Line to a DrawableElement element."""
+def trackStyle():
+    """PGEN attributes for a Low track line."""
+    return {"color": TRACK_COLOR,
+            "pgenType": TRACK_LINE_TYPE,
+            "fillPattern": None,
+            "lineWidth": TRACK_LINE_WIDTH,
+            "smoothFactor": SMOOTH_FACTOR,
+            "filled": False}
+
+
+def addLineToXml(de, points, style, closed=True):
+    """Append one PGEN Line, closed or open, to a DrawableElement element."""
     attrs = {"pgenCategory": "Lines",
              "pgenType": style["pgenType"],
-             "closed": "true",
+             "closed": "true" if closed else "false",
              "filled": "true" if style["filled"] else "false",
              "flagColor": "false",
              "lineWidth": "%.1f" % float(style["lineWidth"]),
@@ -427,6 +561,17 @@ def addPolygonToXml(de, points, style):
     return line
 
 
+def addPolygonToXml(de, points, style):
+    """Append one closed wind band polygon."""
+    return addLineToXml(de, points, style, closed=True)
+
+
+def addTrackToXml(de, track):
+    """Append one open track line through ``(hr, lat, lon, value)`` points."""
+    return addLineToXml(de, [(lat, lon) for _, lat, lon, _ in track],
+                        trackStyle(), closed=False)
+
+
 # ---------------------------------------------------------------------------
 # GFE Procedure
 # ---------------------------------------------------------------------------
@@ -445,23 +590,71 @@ if _IN_GFE:
         # -------------------------------------------------------------
 
         def _readMaxWind(self, dbase, cycleTime, startHr, endHr):
-            """Per-gridpoint max Wind magnitude over one forecast period."""
-            mags = []
-            for hr in periodForecastHours(startHr, endHr):
-                timeRange = makeTimeRange(cycleTime + timedelta(hours=hr))
-                result = self.getGrids(dbase, "Wind", "SFC", timeRange,
-                                       noDataError=0)
-                mag = magnitudeGrid(result)
-                if mag is None:
-                    self.statusBarMsg("No Wind grid at F%03d - skipped" % hr, "R")
-                    continue
-                mags.append(mag)
-            if not mags:
+            """Per-gridpoint max Wind magnitude over one forecast period.
+
+            One ranged read, so the grids in the window set their own
+            cadence: however many there are, and whatever hours they sit on,
+            all of them go into the maximum.
+            """
+            timeRange = makeTimeRange(cycleTime + timedelta(hours=startHr),
+                                      endHr - startHr)
+            result = self.getGrids(dbase, "Wind", "SFC", timeRange,
+                                   noDataError=0)
+            mag = magnitudeGrid(result)
+            if mag is None:
                 return None
+            count = len(result) if isinstance(result, list) else 1
             self.statusBarMsg("F%03d-%03d: max wind %.0f kt from %d grid(s)"
-                              % (startHr, endHr, np.max(maxOverGrids(mags)),
-                                 len(mags)), "R")
-            return maxOverGrids(mags)
+                              % (startHr, endHr, np.max(mag), count), "R")
+            return mag
+
+        def _inventoryHours(self, dbase, element, cycleTime, startHr, endHr):
+            """Forecast hours where a grid for ``element`` actually exists.
+
+            None means the inventory could not be read at all, which is the
+            caller's cue to fall back to a fixed cadence; an empty list means
+            it was read and there is genuinely nothing there.
+            """
+            timeRange = makeTimeRange(cycleTime + timedelta(hours=startHr),
+                                      endHr - startHr)
+            try:
+                infos = self.getGridInfo(dbase, element, "SFC", timeRange)
+            except Exception as exc:
+                self.statusBarMsg("Could not read the %s inventory (%s) - "
+                                  "falling back to every %d h"
+                                  % (element, exc, LOW_INTERVAL_HRS), "R")
+                return None
+
+            base = epochSeconds(cycleTime)
+            hours = []
+            for info in infos:
+                secs = info.gridTime().startTime().unixTime()
+                hr = int(round((secs - base) / 3600.0))
+                if startHr <= hr <= endHr:
+                    hours.append(hr)
+            return sorted(set(hours))
+
+        def _lowPlotHours(self, dbase, cycleTime, selected):
+            """When to plot Lows: the pmsl grids there are, thinned."""
+            span = periodSpan(selected)
+            if span is None:
+                return []
+            startHr, endHr = span
+
+            hours = self._inventoryHours(dbase, "pmsl", cycleTime, startHr,
+                                         endHr)
+            if hours is None:
+                return lowHours(selected)
+            if not hours:
+                self.statusBarMsg("No pmsl grids between F%03d and F%03d - no "
+                                  "Lows and no track" % (startHr, endHr), "S")
+                return []
+
+            thinned = thinHours(hours, LOW_INTERVAL_HRS)
+            self.statusBarMsg("pmsl grids at %d time(s) between F%03d and "
+                              "F%03d; plotting %d of them"
+                              % (len(hours), startHr, endHr, len(thinned)), "R")
+            return thinned
 
         def _readPmsl(self, dbase, cycleTime, hr):
             """pmsl grid at one forecast hour, or None."""
@@ -474,54 +667,114 @@ if _IN_GFE:
         # Layers
         # -------------------------------------------------------------
 
-        def _windLayers(self, product, saveLayers, defaultDe, wind, lon, lat,
-                        period, colorBy, hatch):
-            """Add one overlapping polygon layer per wind band for this period."""
+        def _windLayer(self, product, defaultDe, wind, lon, lat, period,
+                       colorBy, hatch):
+            """Add this period's three overlapping band polygons, one layer.
+
+            ``defaultDe`` None means make a layer of this period's own, and
+            only once there is something to put in it - an empty period adds
+            no empty layer.
+            """
+            de = defaultDe
+
             for band, label, level in WIND_BANDS:
                 polygons, dropped = extractHazardPolygons(lon, lat, wind, level)
 
-                layerName = band + "_" + label + "_" + period
-                # Never lose an area silently - the text has to match the
-                # grids, so say what was contoured and left off.
+                # Never lose an area silently - say what was left off.
                 if dropped:
                     self.statusBarMsg(
-                        "%s: %d area(s) below the %.2f sq deg minimum NOT "
-                        "drawn (largest %.2f sq deg)"
-                        % (layerName, len(dropped), MIN_POLYGON_AREA_DEG2,
+                        "%s %s kt: %d area(s) below the %.2f sq deg minimum "
+                        "NOT drawn (largest %.2f sq deg)"
+                        % (period, label, len(dropped), MIN_POLYGON_AREA_DEG2,
                            max(d[0] for d in dropped)), "R")
                 if not polygons:
                     self.statusBarMsg("No %s kt area for %s" % (label, period),
                                       "R")
                     continue
-                if saveLayers:
-                    de = XmlUtils.createXmlLayer(product, layerName)
-                else:
-                    de = defaultDe
+
+                if de is None:
+                    de = XmlUtils.createXmlLayer(product, LAYER_NAMES[period])
                 style = polygonStyle(band, period, colorBy, hatch)
                 for polygon in polygons:
                     addPolygonToXml(de, polygon, style)
-                self.statusBarMsg("%s: %d polygon(s) at %d kt+"
-                                  % (layerName, len(polygons), int(level)), "R")
+                self.statusBarMsg("%s %s kt: %d polygon(s)"
+                                  % (period, label, len(polygons)), "R")
+            return de
 
-        def _lowsLayer(self, product, saveLayers, defaultDe, pmsl, lon, lat,
-                       basin, hr):
-            """Add the pmsl Lows, and their labels, for one forecast hour."""
+        def _readLowPositions(self, dbase, cycleTime, lon, lat, basin, hours):
+            """The plotted Lows at each forecast hour, in hour order.
+
+            The positions are the ones plotPeakPressureLocations hands back,
+            not the raw extrema, so the track line runs through the symbols
+            as they are actually drawn.
+            """
+            positions = []
+            for hr in hours:
+                pmsl = self._readPmsl(dbase, cycleTime, hr)
+                if pmsl is None:
+                    self.statusBarMsg("No pmsl grid at F%03d - no Low plotted "
+                                      "for that hour" % hr, "S")
+                    continue
+                eLon, eLat, eVal = MathUtils.findPressureExtrema(
+                    pmsl, lon, lat, type="Min")
+                xLon, xLat, xVal = XmlUtils.plotPeakPressureLocations(
+                    eLon, eLat, eVal, basin)
+                positions.append((hr, [(la, lo, va) for la, lo, va
+                                       in zip(xLat, xLon, xVal)]))
+            return positions
+
+        def _lowsLayer(self, product, defaultDe, positions):
+            """Add every plotted Low, with its pressure and forecast hour."""
             pa = pgenAttr_dict["Features"]
-            if saveLayers:
-                de = XmlUtils.createXmlLayer(product, "Lows_F%03d" % hr)
-            else:
-                de = defaultDe
+            de = defaultDe
+            total = 0
 
-            eLon, eLat, eVal = MathUtils.findPressureExtrema(pmsl, lon, lat,
-                                                             type="Min")
-            xLon, xLat, xVal = XmlUtils.plotPeakPressureLocations(
-                eLon, eLat, eVal, basin)
-            XmlUtils.xmladdPressureSymbol(xVal, xLat, xLon, de,
-                                          pa["low_attr"], pa["low_color"])
-            XmlUtils.xmladdPressureExtremaLabel(xVal, xLat, xLon, de,
-                                                pa["text_attr"],
-                                                pa["text_color"])
-            self.statusBarMsg("Lows_F%03d: %d low(s)" % (hr, len(xVal)), "R")
+            for hr, lows in positions:
+                if not lows:
+                    continue
+                if de is None:
+                    de = XmlUtils.createXmlLayer(product, LAYER_NAMES["lows"])
+                lats = [low[0] for low in lows]
+                lons = [low[1] for low in lows]
+                values = [low[2] for low in lows]
+                XmlUtils.xmladdPressureSymbol(values, lats, lons, de,
+                                              pa["low_attr"], pa["low_color"])
+                XmlUtils.xmladdPressureExtremaLabel(values, lats, lons, de,
+                                                    pa["text_attr"],
+                                                    pa["text_color"])
+                if LABEL_LOW_HOURS:
+                    for plat, plon in zip(lats, lons):
+                        XmlUtils.xmladdTextBox("F%03d" % hr, plat, plon, de,
+                                               pa["text_attr"],
+                                               pa["text_color"])
+                total += len(lows)
+
+            self.statusBarMsg("%s: %d low(s) over %d hour(s)"
+                              % (LAYER_NAMES["lows"], total, len(positions)),
+                              "R")
+            return de
+
+        def _trackLayer(self, product, defaultDe, positions):
+            """Add a line through the Lows that track from one hour to the next."""
+            trackable = [(hr, [low for low in lows
+                               if low[2] <= TRACK_MAX_PRESSURE])
+                         for hr, lows in positions]
+            tracks = buildTracks(trackable)
+            if not tracks:
+                self.statusBarMsg("No Low tracked across two or more hours",
+                                  "R")
+                return defaultDe
+
+            de = defaultDe
+            if de is None:
+                de = XmlUtils.createXmlLayer(product, LAYER_NAMES["track"])
+            for track in tracks:
+                addTrackToXml(de, track)
+                self.statusBarMsg("Track: F%03d %.0f mb to F%03d %.0f mb, "
+                                  "%d position(s)"
+                                  % (track[0][0], track[0][3], track[-1][0],
+                                     track[-1][3], len(track)), "R")
+            return de
 
         # -------------------------------------------------------------
         # Housekeeping
@@ -598,7 +851,7 @@ if _IN_GFE:
             if not saveLayers:
                 defaultDe = XmlUtils.createXmlLayer(product, "Default")
 
-            # --- One set of wind band layers per selected period ---
+            # --- One layer of band polygons per selected period ---
             for period, startHr, endHr in PERIODS:
 
                 if period not in selected:
@@ -613,19 +866,16 @@ if _IN_GFE:
                 wind = smoothGrid(maxWind, SMOOTH_PASSES)
                 if landmask is not None:
                     wind = np.where(landmask, 0.0, wind)
-                self._windLayers(product, saveLayers, defaultDe, wind, lon, lat,
-                                 period, colorBy, hatch)
+                self._windLayer(product, defaultDe, wind, lon, lat, period,
+                                colorBy, hatch)
 
-            # --- Lows at the endpoints of the selected periods ---
-            for hr in lowHours(selected):
-
-                pmsl = self._readPmsl(dbase, cycleTime, hr)
-                if pmsl is None:
-                    self.statusBarMsg("No pmsl grid at F%03d - Lows layer "
-                                      "skipped" % hr, "S")
-                    continue
-                self._lowsLayer(product, saveLayers, defaultDe, pmsl, lon, lat,
-                                basin, hr)
+            # --- Lows every LOW_INTERVAL_HRS, and the track through them ---
+            positions = self._readLowPositions(
+                dbase, cycleTime, lon, lat, basin,
+                self._lowPlotHours(dbase, cycleTime, selected))
+            if positions:
+                self._lowsLayer(product, defaultDe, positions)
+                self._trackLayer(product, defaultDe, positions)
 
             # --- Write XML to a file, then store it to the PGEN database ---
             XmlUtils.writeXML(products, outputFile)

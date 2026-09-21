@@ -4,13 +4,18 @@
 Builds a deepening North Atlantic low that tracks northeast over 48 hours,
 plus a weaker gale-only feature in the east, drives the real procedure over
 it through the fakes in test_windhazard_xml.py, then plots *the XML the
-procedure wrote* - every polygon and every Low comes back out of the file, not
-from the fields.  So the picture is what PGEN would be handed.
+procedure wrote* - every polygon, Low and track vertex comes back out of the
+file, not from the fields.  So the picture is what PGEN would be handed.
+
+The four layers are drawn as a forecaster would see them with everything
+switched on: one panel per wind period, with the shared Lows and Track layers
+repeated on both.
 
     python3 plot_synthetic_case.py [-o out.png]
 
-Colors are the procedure's own BAND_COLORS, which is the point: yellow/red/
-magenta is what PGEN will draw.  Nothing here is real weather.
+Colors are the procedure's own BAND_COLORS, which is the point: the marine
+warning convention, yellow/orange/red, is what PGEN will draw.  Nothing here
+is real weather.
 """
 import argparse
 import os
@@ -145,7 +150,7 @@ def runCase(varDict):
 def periodMaxWind(module, lat2d, lon2d, startHr, endHr):
     """The field the procedure contoured, recomputed for background shading."""
     mags = [windFn(hr, lat2d, lon2d)[0]
-            for hr in module.periodForecastHours(startHr, endHr)]
+            for hr in range(startHr, endHr + 1, 6)]
     wind = module.smoothGrid(np.maximum.reduce(mags), module.SMOOTH_PASSES)
     return np.where(landFn(lat2d, lon2d), 0.0, wind)
 
@@ -167,18 +172,25 @@ def xmlLayers(xmlPath):
                                          for c in line.iter("colors")
                                          for k in ("red", "green", "blue")),
                           "dashed": "DASH" in (line.get("pgenType") or ""),
+                          "closed": line.get("closed") == "true",
                           "width": float(line.get("lineWidth"))})
-        symbols = list(layer.iter("SymbolAttribute"))
-        labels = list(layer.iter("TextAttribute"))
-        for symbol, label in zip(symbols, labels):
-            lows.append((float(symbol.get("Lon")), float(symbol.get("Lat")),
-                         label.get("text")))
+        # Lows carry a pressure label and a forecast-hour text box, written
+        # in the same order as the symbols.
+        for symbol, label, box in zip(layer.iter("SymbolAttribute"),
+                                      layer.iter("TextAttribute"),
+                                      layer.iter("TextBox")):
+            lows.append({"lon": float(symbol.get("Lon")),
+                         "lat": float(symbol.get("Lat")),
+                         "value": label.get("text"),
+                         "hour": int(box.get("text")[1:])})
         layers[layer.get("name")] = {"lines": lines, "lows": lows}
     return layers
 
 
-def drawPanel(ax, module, layers, lat2d, lon2d, period, startHr, endHr,
-              lowHours):
+LABELLED_HOURS = (0, 12, 24, 36, 48)
+
+
+def drawPanel(ax, module, layers, lat2d, lon2d, period, startHr, endHr):
     wind = periodMaxWind(module, lat2d, lon2d, startHr, endHr)
 
     # Recessive background: the max-wind field the polygons came from.
@@ -190,32 +202,49 @@ def drawPanel(ax, module, layers, lat2d, lon2d, period, startHr, endHr,
                             (LON_MIN - 8, LAT_MIN - 4)])),
             facecolor="#e8e3d9", edgecolor="#9aa3ad", linewidth=0.8, zorder=2)
 
-    # The polygons, exactly as written to the XML.
+    # This period's band polygons, exactly as written to the XML.  Bands are
+    # told apart inside the layer by color, so count them that way.
+    for line in layers.get(period, {}).get("lines", []):
+        ring = np.vstack([line["points"], line["points"][:1]])
+        ax.plot(ring[:, 0], ring[:, 1], color=line["color"],
+                linewidth=line["width"] * 0.7,
+                linestyle="--" if line["dashed"] else "-",
+                solid_capstyle="round", zorder=4)
     counts = []
     for band, label, _ in module.WIND_BANDS:
-        name = band + "_" + label + "_" + period
-        if name not in layers:
-            continue
-        for line in layers[name]["lines"]:
-            ring = np.vstack([line["points"], line["points"][:1]])
-            ax.plot(ring[:, 0], ring[:, 1], color=line["color"],
-                    linewidth=line["width"] * 0.7,
-                    linestyle="--" if line["dashed"] else "-",
-                    solid_capstyle="round", zorder=4)
-        counts.append("%s kt x%d" % (label, len(layers[name]["lines"])))
+        want = tuple(c / 255.0 for c in module.BAND_COLORS[band])
+        n = sum(1 for line in layers.get(period, {}).get("lines", [])
+                if line["color"] == want)
+        if n:
+            counts.append("%s kt x%d" % (label, n))
 
-    # The Lows, from the Lows_Fxxx layers belonging to this period.
-    for hr in lowHours:
-        for lon, lat, value in layers.get("Lows_F%03d" % hr, {}).get("lows", []):
-            ax.plot(lon, lat, marker="o", markersize=15, markerfacecolor="white",
-                    markeredgecolor="#1f4e8c", markeredgewidth=1.6, zorder=5)
-            ax.text(lon, lat, "L", ha="center", va="center", fontsize=9,
-                    fontweight="bold", color="#1f4e8c", zorder=6)
-            ax.annotate("%s / F%03d" % (value, hr), (lon, lat),
-                        textcoords="offset points", xytext=(0, -17),
-                        ha="center", fontsize=7.5, color="#33404f", zorder=6,
-                        bbox=dict(boxstyle="round,pad=0.18", facecolor="white",
-                                  edgecolor="none", alpha=0.85))
+    # The Track layer - the same on both panels, as in D2D with both on.
+    for line in layers.get("Track", {}).get("lines", []):
+        ax.plot(line["points"][:, 0], line["points"][:, 1],
+                color=line["color"], linewidth=1.6, marker="o",
+                markersize=2.5, zorder=5, alpha=0.9)
+
+    # The Lows layer, also shared.  Every plot time gets a mark; the 12-hourly
+    # ones get the full symbol and label, so the track stays readable.
+    for low in layers.get("Lows", {}).get("lows", []):
+        lon, lat, hr = low["lon"], low["lat"], low["hour"]
+        if hr not in LABELLED_HOURS:
+            ax.plot(lon, lat, marker="o", markersize=4.5,
+                    markerfacecolor="white", markeredgecolor="#1f4e8c",
+                    markeredgewidth=1.0, zorder=6)
+            continue
+        ax.plot(lon, lat, marker="o", markersize=15, markerfacecolor="white",
+                markeredgecolor="#1f4e8c", markeredgewidth=1.6, zorder=6)
+        ax.text(lon, lat, "L", ha="center", va="center", fontsize=9,
+                fontweight="bold", color="#1f4e8c", zorder=7)
+        # Alternate the label above and below, so a slow-moving low's
+        # labels do not stack on each other.
+        offset = (0, -17) if LABELLED_HOURS.index(hr) % 2 == 0 else (0, 12)
+        ax.annotate("%s / F%03d" % (low["value"], hr), (lon, lat),
+                    textcoords="offset points", xytext=offset,
+                    ha="center", fontsize=7.5, color="#33404f", zorder=7,
+                    bbox=dict(boxstyle="round,pad=0.18", facecolor="white",
+                              edgecolor="none", alpha=0.85))
 
     ax.set_xlim(LON_MIN, LON_MAX)
     ax.set_ylim(LAT_MIN, LAT_MAX)
@@ -250,13 +279,13 @@ def main():
     layers = xmlLayers(xmlPath)
     print("\nXML: %s" % xmlPath)
     for name, content in layers.items():
-        print("  %-28s %d polygon(s), %d low(s)"
+        print("  %-12s %d line(s), %d low(s)"
               % (name, len(content["lines"]), len(content["lows"])))
 
     fig, axes = plt.subplots(1, 2, figsize=(13.5, 6.6), dpi=140)
     fig.patch.set_facecolor("white")
-    drawPanel(axes[0], module, layers, lat2d, lon2d, "F000-024", 0, 24, [0, 24])
-    drawPanel(axes[1], module, layers, lat2d, lon2d, "F024-048", 24, 48, [24, 48])
+    drawPanel(axes[0], module, layers, lat2d, lon2d, "F000-024", 0, 24)
+    drawPanel(axes[1], module, layers, lat2d, lon2d, "F024-048", 24, 48)
 
     handles = [Line2D([], [], color=tuple(c / 255.0 for c in
                                           module.BAND_COLORS[band]),
@@ -265,7 +294,11 @@ def main():
     handles.append(Line2D([], [], marker="o", markersize=8, linestyle="none",
                           markerfacecolor="white", markeredgecolor="#1f4e8c",
                           label="Low (mb / valid hour)"))
-    fig.legend(handles=handles, loc="lower center", ncol=4, frameon=False,
+    handles.append(Line2D([], [], color=tuple(c / 255.0
+                                              for c in module.TRACK_COLOR),
+                          linewidth=1.6, marker="o", markersize=3,
+                          label="Track"))
+    fig.legend(handles=handles, loc="lower center", ncol=5, frameon=False,
                fontsize=8.5, bbox_to_anchor=(0.5, 0.005))
 
     fig.suptitle("CreateXML_WindHazards - synthetic case, 18Z cycle",

@@ -21,8 +21,11 @@ ElementTree, so the written XML can be parsed and asserted against - then
 imports the procedure fresh against those fakes and drives
 `Procedure.execute()` with a fully built `varDict`, the way GFE would.
 
-The fake `getGrids` records every `(field, forecast hour)` it is asked for,
-which is what lets the tests assert *which* grids the procedure reads.
+The fake database holds a grid every N hours (6 by default, and the tests
+vary it), answers `getGridInfo` with what is there, and returns a list from
+`getGrids` when a range spans several grids - the way GFE does. It records
+every call, which is what lets the tests assert *which* grids the procedure
+reads, and that it reads the inventory rather than assuming a cadence.
 
 ## What the synthetic data is built to prove
 
@@ -41,9 +44,10 @@ Viewer's warning legend and the colors are the marine warning convention
 (yellow, orange, red), so either one drifting fails here rather than quietly
 going its own way.
 
-`pmsl` encodes the forecast hour in its High and Low values, so each `Lows_Fxxx`
-layer's label proves which grid it came from - and the High, which the field
-carries on purpose, must appear nowhere at all.
+`pmsl` encodes the forecast hour in both the Low's value *and* its position -
+the Low tracks northeast a gridpoint at a time - so the labels prove which grid
+each plotted Low came from, and the track through them has a direction to
+check. The High the field also carries must appear nowhere at all.
 
 ## Covered
 
@@ -56,8 +60,17 @@ carries on purpose, must appear nowhere at all.
   the gale one), `(lat, lon)` ordering, decimation, no duplicate closing
   point, nothing below threshold, and a single-gridpoint spike filtered out as
   noise *and reported* - nothing leaves the chart unannounced.
-- Layer set per band and period, the forecast hours actually read, and the
-  Lows hours following the selected periods' endpoints (F024 read once).
+- The four layers, what lands in each, and the forecast hours actually read.
+- Track building: a moving low making one track, two lows never confused for
+  each other, a jump beyond the move limit breaking a track, a missing plot
+  time widening the allowance instead of ending it, and a low seen once not
+  being a track at all.
+- The plot times following the pmsl inventory: a 12-hourly database giving
+  12-hourly Lows, an hourly one thinned to 6-hourly rather than 49 Lows, a
+  missing grid simply absent rather than warned about, no pmsl at all giving
+  no Lows and no Track layer, and a site without `getGridInfo` falling back.
+- The track being an open line, in the track color, with a vertex on every
+  plotted Low.
 - The PGEN `Line` element's attributes, color child and `linePoints`.
 - `Color by:` Threshold vs Period, and `Hatch fill:` On.
 - The `Land` mask on and off, `saveLayers` false collapsing to one `Default`
