@@ -5,9 +5,23 @@
 #
 # CreateXML_WindHazards.py
 #
-# Builds one PGEN XML holding gale, storm and hurricane force wind polygons
-# for the F000-024 and F024-048 periods, plus mean sea level pressure Highs
-# and Lows at each period's start time.
+# Builds one PGEN XML holding 34-47, 48-63 and 64+ kt wind polygons for the
+# F000-024 and F024-048 periods, plus mean sea level pressure Lows at F000,
+# F024 and F048.
+#
+# It is a background field to overlay in D2D while writing the High Seas
+# text: a guide to what the grids hold, on the same screen as the text,
+# instead of a second screen showing the grids themselves.  The text is far
+# coarser than the grids - quadrants, semicircles and boxes around a low, not
+# gridpoints - so the outline here is deliberately smoothed and simplified
+# into something that can be read off and written down.  What that does not
+# excuse is an area disappearing quietly, so every contour dropped by the
+# noise filters is reported by name and size on the status bar.
+#
+# The band labels and colors match the Marine Weather Forecast Viewer's
+# legend - Gale 34-47, Storm 48-63, Hurricane 64+ - so this overlay and the
+# viewer's rendering of the issued text read the same way.  Sub-gale is not
+# drawn; adding ("SubGale", "<34", 0.0) to WIND_BANDS would draw it.
 #
 # Patterned on CreateXML.py (stephanie.stevenson) and, like it, subclasses
 # A2GraphicsFunctions so the site's own XmlUtils/MathUtils and the
@@ -24,21 +38,27 @@
 #   magnitude over every grid in the window (F000,006,...,024 for the first
 #   period; F024,030,...,048 for the second), so a polygon covers anywhere
 #   reaching that force at any point in the period.
+# * Bands: 34-48, 48-64 and 64+ kt.  Each band's polygon is the closed
+#   contour at its LOWER bound, so the bands overlap - the 34-48 polygon is
+#   the whole gale-or-greater area with the 48-64 and 64+ polygons nested
+#   inside it.  A PGEN Line cannot carry a hole, and overlapping closed
+#   contours are how these charts are drawn anyway.
 # * Polygons: the max-wind field is lightly smoothed, optionally zeroed over
-#   the Land edit area, then contoured at 34/48/64 kt.  Each closed contour
-#   becomes a PGEN Line with closed="true".
-# * pmsl: read at each period's START valid time (F000 for F000-024, F024 for
-#   F024-048); Highs and Lows go in a Features layer per period.
-# * Output: a single XML with both periods, layers named per period
-#   (Gale_F000-024, Storm_F000-024, ..., Features_F024-048).
+#   the Land edit area, then contoured.  Each closed contour becomes a PGEN
+#   Line with closed="true".
+# * pmsl: Lows only, at F000, F024 and F048 - the endpoints of whichever
+#   periods are selected - each hour in its own layer.
+# * Output: a single XML with both periods, layers named per band and period
+#   (Gale_34-48_F000-024 ... Hurricane_64+_F024-048) plus Lows_F000,
+#   Lows_F024 and Lows_F048.
 #
 # Telling the periods apart
 # -------------------------
 # "Color by:" in the dialog chooses which dimension carries the color:
-#   Threshold - gale/storm/hurricane get their own colors (THRESHOLD_COLORS)
-#               and each period gets its own line pattern (PERIOD_LINE_TYPES).
-#   Period    - each period gets its own color (PERIOD_COLORS) and severity
-#               is carried by line width (LINE_WIDTH).
+#   Band   - each band gets its own color (BAND_COLORS) and each period gets
+#            its own line pattern (PERIOD_LINE_TYPES).
+#   Period - each period gets its own color (PERIOD_COLORS) and the band is
+#            carried by line width (LINE_WIDTH).
 # "Hatch fill:" On additionally fills each polygon with the period's hatch
 # pattern (PERIOD_FILL_PATTERNS) instead of leaving it as an outline.
 #
@@ -58,7 +78,7 @@ MenuItems = ["Consistency"]
 VariableList = [("Cycle:", "Auto", "radio", ["Auto", "00z", "06z", "12z", "18z"]),
                 ("Periods:", ["F000-024", "F024-048"], "check", ["F000-024", "F024-048"]),
                 ("Input Grid:", "Fcst", "radio", ["Fcst", "Official"]),
-                ("Color by:", "Threshold", "radio", ["Threshold", "Period"]),
+                ("Color by:", "Band", "radio", ["Band", "Period"]),
                 ("Hatch fill:", "Off", "radio", ["Off", "On"]),
                 ("Mask land:", "On", "radio", ["On", "Off"])]
 
@@ -86,25 +106,33 @@ except ImportError:
 # Tunables
 # ---------------------------------------------------------------------------
 
-# Warning thresholds in knots, weakest first.
-WIND_THRESHOLDS = [("Gale", 34.0), ("Storm", 48.0), ("Hurricane", 64.0)]
+# Wind bands, weakest first: (name, label, lower bound in knots).  The
+# polygon for a band is the closed contour at its lower bound, so the bands
+# overlap - Gale is the whole 34 kt-or-greater area, with Storm and Hurricane
+# nested inside it.
+WIND_BANDS = [("Gale", "34-47", 34.0),
+              ("Storm", "48-63", 48.0),
+              ("Hurricane", "64+", 64.0)]
 
 # (layer suffix, first forecast hour, last forecast hour) per period.
 PERIODS = [("F000-024", 0, 24), ("F024-048", 24, 48)]
 
 # Cycle hours this tool recognizes, and the spacing of the Wind grids read
-# inside each period.
+# inside each period.  Lows are plotted at the endpoints of the selected
+# periods, so both periods selected gives F000, F024 and F048.
 CYCLE_HOURS = [0, 6, 12, 18]
 WIND_GRID_INTERVAL_HRS = 6
 
-# Color by threshold: severity carries the color, period carries the pattern.
-THRESHOLD_COLORS = {"Gale": (255, 255, 0),
-                    "Storm": (255, 0, 0),
-                    "Hurricane": (255, 0, 255)}
+# Color by band: the band carries the color, the period carries the pattern.
+# These follow the Marine Weather Forecast Viewer's warning legend.
+BAND_COLORS = {"Gale": (255, 165, 0),
+               "Storm": (230, 60, 50),
+               "Hurricane": (190, 90, 215)}
 
-# Color by period: the period carries the color, severity carries the width.
+# Color by period: the period carries the color, the band carries the width.
+# Kept clear of the band colors above so the two modes never look alike.
 PERIOD_COLORS = {"F000-024": (0, 255, 255),
-                 "F024-048": (255, 145, 0)}
+                 "F024-048": (0, 150, 255)}
 
 PERIOD_LINE_TYPES = {"F000-024": "LINE_SOLID",
                      "F024-048": "LINE_DASHED_4"}
@@ -117,13 +145,18 @@ LINE_WIDTH = {"Gale": 3.0, "Storm": 4.0, "Hurricane": 5.0}
 # PGEN's own render-time smoothing of the polygon it is handed.
 SMOOTH_FACTOR = 2
 
-# 3x3 box smoothing passes over the max-wind field before contouring.  Keeps
-# single-gridpoint noise from becoming a polygon.
+# 3x3 box smoothing passes over the max-wind field before contouring.  Two
+# passes take out the gridpoint noise and the scalloping a period maximum
+# leaves along a fast track, at the cost of a little drift in the boundary -
+# far less drift than the text's own resolution.
 SMOOTH_PASSES = 2
 
-# Polygons smaller than either of these are dropped as noise; polygons with
-# more points than MAX_POLYGON_POINTS are decimated so PGEN stays editable.
-MIN_POLYGON_POINTS = 5
+# Polygons smaller than either of these are dropped as noise, and every drop
+# is reported on the status bar so nothing leaves the chart unannounced.
+# 1 sq deg is roughly a 60 x 40 NM box at high-seas latitudes - below
+# anything the text would call out.  Polygons with more points than
+# MAX_POLYGON_POINTS are decimated so PGEN stays editable.
+MIN_POLYGON_POINTS = 4
 MIN_POLYGON_AREA_DEG2 = 1.0
 MAX_POLYGON_POINTS = 60
 
@@ -188,6 +221,21 @@ def periodForecastHours(startHr, endHr, interval=None):
     if hours and hours[-1] != int(endHr):
         hours.append(int(endHr))
     return hours
+
+
+def lowHours(selected, periods=None):
+    """Forecast hours to plot Lows at: the endpoints of selected periods.
+
+    Both periods gives F000, F024 and F048; F024 is shared and read once.
+    """
+    if periods is None:
+        periods = PERIODS
+    hours = set()
+    for period, startHr, endHr in periods:
+        if period in selected:
+            hours.add(int(startHr))
+            hours.add(int(endHr))
+    return sorted(hours)
 
 
 # ---------------------------------------------------------------------------
@@ -302,7 +350,11 @@ def ringAreaDeg2(points):
 
 def extractHazardPolygons(lon, lat, grid, level, minPoints=None, minArea=None,
                           maxPoints=None):
-    """Contour ``grid`` at ``level`` and return polygons as (lat, lon) arrays.
+    """Contour ``grid`` at ``level``, returning ``(polygons, dropped)``.
+
+    Polygons are (lat, lon) point arrays.  ``dropped`` holds one
+    ``(area, points)`` pair per contour rejected as noise, so the caller can
+    say what was left off the chart instead of losing it silently.
 
     Segments that run off the edge of the domain come back open; PGEN's
     closed="true" joins their ends, which is how a gale area clipped by the
@@ -313,33 +365,37 @@ def extractHazardPolygons(lon, lat, grid, level, minPoints=None, minArea=None,
     if minArea is None:
         minArea = MIN_POLYGON_AREA_DEG2
 
-    polygons = []
+    polygons, dropped = [], []
     for seg in contourSegments(lon, lat, grid, level):
         ring = openRing(decimatePoints(seg, maxPoints))
-        if len(ring) < minPoints:
+        if len(ring) < 3:
+            # Degenerate: cannot enclose an area, so there is nothing to
+            # report as having been left off the chart.
             continue
-        if ringAreaDeg2(ring) < minArea:
+        area = ringAreaDeg2(ring)
+        if len(ring) < minPoints or area < minArea:
+            dropped.append((area, len(ring)))
             continue
         # contour works in (lon, lat); PGEN wants (lat, lon)
         polygons.append(np.column_stack([ring[:, 1], ring[:, 0]]))
-    return polygons
+    return polygons, dropped
 
 
 # ---------------------------------------------------------------------------
 # XML
 # ---------------------------------------------------------------------------
 
-def polygonStyle(threshold, period, colorBy="threshold", hatch=False):
-    """PGEN attributes for one threshold/period combination."""
+def polygonStyle(band, period, colorBy="band", hatch=False):
+    """PGEN attributes for one band/period combination."""
     colorBy = str(colorBy).lower()
     if colorBy == "period":
         color = PERIOD_COLORS.get(period, (255, 255, 255))
     else:
-        color = THRESHOLD_COLORS.get(threshold, (255, 255, 255))
+        color = BAND_COLORS.get(band, (255, 255, 255))
     return {"color": color,
             "pgenType": PERIOD_LINE_TYPES.get(period, "LINE_SOLID"),
             "fillPattern": PERIOD_FILL_PATTERNS.get(period, "FILL_PATTERN_2"),
-            "lineWidth": LINE_WIDTH.get(threshold, 3.0),
+            "lineWidth": LINE_WIDTH.get(band, 3.0),
             "smoothFactor": SMOOTH_FACTOR,
             "filled": bool(hatch)}
 
@@ -418,45 +474,52 @@ if _IN_GFE:
 
         def _windLayers(self, product, saveLayers, defaultDe, wind, lon, lat,
                         period, colorBy, hatch):
-            """Add one polygon layer per wind threshold for this period."""
-            for threshold, level in WIND_THRESHOLDS:
-                polygons = extractHazardPolygons(lon, lat, wind, level)
-                layerName = threshold + "_" + period
+            """Add one overlapping polygon layer per wind band for this period."""
+            for band, label, level in WIND_BANDS:
+                polygons, dropped = extractHazardPolygons(lon, lat, wind, level)
+
+                layerName = band + "_" + label + "_" + period
+                # Never lose an area silently - the text has to match the
+                # grids, so say what was contoured and left off.
+                if dropped:
+                    self.statusBarMsg(
+                        "%s: %d area(s) below the %.2f sq deg minimum NOT "
+                        "drawn (largest %.2f sq deg)"
+                        % (layerName, len(dropped), MIN_POLYGON_AREA_DEG2,
+                           max(d[0] for d in dropped)), "R")
                 if not polygons:
-                    self.statusBarMsg("No %s force area for %s"
-                                      % (threshold.lower(), period), "R")
+                    self.statusBarMsg("No %s kt area for %s" % (label, period),
+                                      "R")
                     continue
                 if saveLayers:
                     de = XmlUtils.createXmlLayer(product, layerName)
                 else:
                     de = defaultDe
-                style = polygonStyle(threshold, period, colorBy, hatch)
+                style = polygonStyle(band, period, colorBy, hatch)
                 for polygon in polygons:
                     addPolygonToXml(de, polygon, style)
                 self.statusBarMsg("%s: %d polygon(s) at %d kt+"
                                   % (layerName, len(polygons), int(level)), "R")
 
-        def _featuresLayer(self, product, saveLayers, defaultDe, pmsl, lon, lat,
-                           basin, period):
-            """Add pmsl Highs and Lows for this period's start time."""
+        def _lowsLayer(self, product, saveLayers, defaultDe, pmsl, lon, lat,
+                       basin, hr):
+            """Add the pmsl Lows, and their labels, for one forecast hour."""
             pa = pgenAttr_dict["Features"]
             if saveLayers:
-                de = XmlUtils.createXmlLayer(product, "Features_" + period)
+                de = XmlUtils.createXmlLayer(product, "Lows_F%03d" % hr)
             else:
                 de = defaultDe
 
-            for extremaType, symbolAttr, symbolColor in (
-                    ("Max", pa["high_attr"], pa["high_color"]),
-                    ("Min", pa["low_attr"], pa["low_color"])):
-                eLon, eLat, eVal = MathUtils.findPressureExtrema(
-                    pmsl, lon, lat, type=extremaType)
-                xLon, xLat, xVal = XmlUtils.plotPeakPressureLocations(
-                    eLon, eLat, eVal, basin)
-                XmlUtils.xmladdPressureSymbol(xVal, xLat, xLon, de,
-                                              symbolAttr, symbolColor)
-                XmlUtils.xmladdPressureExtremaLabel(xVal, xLat, xLon, de,
-                                                    pa["text_attr"],
-                                                    pa["text_color"])
+            eLon, eLat, eVal = MathUtils.findPressureExtrema(pmsl, lon, lat,
+                                                             type="Min")
+            xLon, xLat, xVal = XmlUtils.plotPeakPressureLocations(
+                eLon, eLat, eVal, basin)
+            XmlUtils.xmladdPressureSymbol(xVal, xLat, xLon, de,
+                                          pa["low_attr"], pa["low_color"])
+            XmlUtils.xmladdPressureExtremaLabel(xVal, xLat, xLon, de,
+                                                pa["text_attr"],
+                                                pa["text_color"])
+            self.statusBarMsg("Lows_F%03d: %d low(s)" % (hr, len(xVal)), "R")
 
         # -------------------------------------------------------------
         # Housekeeping
@@ -533,33 +596,34 @@ if _IN_GFE:
             if not saveLayers:
                 defaultDe = XmlUtils.createXmlLayer(product, "Default")
 
-            # --- One set of layers per selected period ---
+            # --- One set of wind band layers per selected period ---
             for period, startHr, endHr in PERIODS:
 
                 if period not in selected:
                     continue
                 self.statusBarMsg("creating XML layers for " + period, "R")
 
-                # --- Wind polygons from the period maximum ---
                 maxWind = self._readMaxWind(dbase, cycleTime, startHr, endHr)
                 if maxWind is None:
                     self.statusBarMsg("ERROR: no Wind grids found for " + period,
                                       "S")
-                else:
-                    wind = smoothGrid(maxWind, SMOOTH_PASSES)
-                    if landmask is not None:
-                        wind = np.where(landmask, 0.0, wind)
-                    self._windLayers(product, saveLayers, defaultDe, wind, lon,
-                                     lat, period, colorBy, hatch)
+                    continue
+                wind = smoothGrid(maxWind, SMOOTH_PASSES)
+                if landmask is not None:
+                    wind = np.where(landmask, 0.0, wind)
+                self._windLayers(product, saveLayers, defaultDe, wind, lon, lat,
+                                 period, colorBy, hatch)
 
-                # --- Highs and Lows at the period start time ---
-                pmsl = self._readPmsl(dbase, cycleTime, startHr)
+            # --- Lows at the endpoints of the selected periods ---
+            for hr in lowHours(selected):
+
+                pmsl = self._readPmsl(dbase, cycleTime, hr)
                 if pmsl is None:
-                    self.statusBarMsg("No pmsl grid at F%03d - Features layer "
-                                      "skipped for %s" % (startHr, period), "S")
-                else:
-                    self._featuresLayer(product, saveLayers, defaultDe, pmsl,
-                                        lon, lat, basin, period)
+                    self.statusBarMsg("No pmsl grid at F%03d - Lows layer "
+                                      "skipped" % hr, "S")
+                    continue
+                self._lowsLayer(product, saveLayers, defaultDe, pmsl, lon, lat,
+                                basin, hr)
 
             # --- Write XML to a file, then store it to the PGEN database ---
             XmlUtils.writeXML(products, outputFile)

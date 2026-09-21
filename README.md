@@ -12,8 +12,8 @@ AWIPS tools and procedures.
 | `legacy_tools/` | Earlier versions kept for reference; see `legacy_tools/VERSION_CONTROL.md`. |
 | `tests/tcwind_jtwc/` | Parser goldens, Python/JavaScript parity, and the GTCM verification. |
 | `GFE/procedures/TCWind_JTWC.py` | Builds GFE Wind grids from JTWC tropical cyclone warnings. See below. |
-| `GFE/procedures/CreateXML_WindHazards.py` | Builds a PGEN XML of gale/storm/hurricane force wind polygons for F000-024 and F024-048, plus pmsl Highs and Lows. See below. |
-| `tests/create_xml_windhazards/` | Harness test for that procedure - fakes the AWIPS and A2Graphics surface and asserts against the XML it writes. |
+| `GFE/procedures/CreateXML_WindHazards.py` | Builds a PGEN XML of 34-47, 48-63 and 64+ kt wind polygons for F000-024 and F024-048, plus pmsl Lows at F000/F024/F048, to overlay in D2D while writing the High Seas text. See below. |
+| `tests/create_xml_windhazards/` | Harness test for that procedure, and a synthetic case it plots straight from the written XML. |
 | `web/TCWind_JTWC/` | Google Apps Script web app for that tool: live JTWC and NHC bulletins, a best-track archive, and the verification findings. |
 | `web/HFArchiveExport/` | Google Apps Script web app that exports the restricted HF low sheet as CSV for `tools/publish.py`. |
 | `data/hf_lows/` | CSV exports of the hurricane force extratropical low archive workbook, committed here on purpose (see below). |
@@ -424,14 +424,33 @@ hand-edit it.
 ## CreateXML_WindHazards - warning wind polygons as PGEN XML
 
 `GFE/procedures/CreateXML_WindHazards.py` writes **one** PGEN XML per run
-holding, for each of the F000-024 and F024-048 periods, closed polygons at
-gale (34 kt), storm (48 kt) and hurricane (64 kt) force, plus mean sea level
-pressure Highs and Lows. It appears under GFE's **Consistency** menu.
+holding, for each of the F000-024 and F024-048 periods, closed polygons for
+the 34-47, 48-63 and 64+ kt wind bands, plus mean sea level pressure **Lows**
+at F000, F024 and F048. It appears under GFE's **Consistency** menu.
+
+It is a background field to overlay in D2D while writing the High Seas text:
+a guide to what the grids hold, on the same screen as the text, instead of a
+second screen showing the grids themselves. The text is far coarser than the
+grids - quadrants, semicircles and boxes around a low, not gridpoints - so the
+outline is deliberately smoothed and simplified into something that can be read
+off and written down. What that does not excuse is an area disappearing
+quietly: every contour the noise filters drop is named, with its size, on the
+status bar.
+
+The band labels and colors follow the **Marine Weather Forecast Viewer**'s
+warning legend - Gale 34-47, Storm 48-63, Hurricane 64+ - so this overlay and
+the viewer's rendering of the issued text read the same way. Sub-gale is not
+drawn; adding `("SubGale", "<34", 0.0)` to `WIND_BANDS` would draw it.
 
 It follows `CreateXML.py`: it subclasses `A2GraphicsFunctions` and leaves the
 product, layer, pressure extrema and `storeXML` work to the site's own
 `XmlUtils`/`MathUtils` and the `A2GraphicsConfig` dictionaries (`outDir`,
 `pgenProd_dict`, `pgenAttr_dict["Features"]`).
+
+![Synthetic case](docs/img/createxml_windhazards_synthetic.png)
+
+*Both panels are drawn from the XML the procedure wrote, not from the fields -
+see `tests/create_xml_windhazards/plot_synthetic_case.py`.*
 
 ### The cycle
 
@@ -443,33 +462,45 @@ All times are UTC, and epoch seconds come from `calendar.timegm`, not
 `datetime.timestamp()`, so the workstation's `TZ` cannot shift which grids get
 read.
 
-### The polygons
+### The bands
 
 Each period's polygons come from the **per-gridpoint maximum** Wind magnitude
 over every grid in the window (F000, F006 ... F024 for the first period; F024,
 F030 ... F048 for the second), so a polygon covers anywhere reaching that force
-at any point in the period. That field is lightly smoothed (`SMOOTH_PASSES`),
-optionally zeroed over the `Land` edit area, then contoured. Contours smaller
-than `MIN_POLYGON_AREA_DEG2` or `MIN_POLYGON_POINTS` are dropped as noise, and
-longer ones are decimated to `MAX_POLYGON_POINTS` so the result stays editable
-in PGEN. Polygons are emitted with `closed="true"`, which is also what joins the
-ends of an area clipped by the edge of the domain.
+at any point in the period.
 
-`pmsl` is read at each period's **start** valid time (F000 and F024) and its
-extrema go in a `Features` layer per period.
+A band's polygon is the closed contour at its **lower** bound, so **the bands
+overlap**: the 34-48 polygon is the whole gale-or-greater area, with the 48-64
+and 64+ polygons nested inside it. A PGEN `Line` cannot carry a hole, and
+overlapping closed contours are how these charts are drawn anyway.
 
-Layers are named per period - `Gale_F000-024`, `Storm_F000-024`,
-`Hurricane_F024-048`, `Features_F024-048` - or all collapse into one `Default`
-layer when the basin's `pgenProd_dict["saveLayers"]` is false.
+That field is lightly smoothed (`SMOOTH_PASSES`), optionally zeroed over the
+`Land` edit area, then contoured. Contours below `MIN_POLYGON_AREA_DEG2`
+(1 sq deg, roughly a 60 x 40 NM box at high-seas latitudes) or
+`MIN_POLYGON_POINTS` are dropped as noise **and reported**; longer ones are
+decimated to `MAX_POLYGON_POINTS` so the result stays editable in PGEN.
+Polygons are emitted with `closed="true"`, which is also what joins the ends of
+an area clipped by the edge of the domain.
+
+### The Lows
+
+`pmsl` is read at F000, F024 and F048 - the endpoints of whichever periods are
+selected, so F024 is read once and both periods selected gives all three - and
+each hour's Lows go in their own layer. Highs are not plotted.
+
+Layers are named per band and period - `Gale_34-47_F000-024`,
+`Storm_48-63_F000-024`, `Hurricane_64+_F024-048` - plus `Lows_F000`,
+`Lows_F024` and `Lows_F048`, or all collapse into one `Default` layer when the
+basin's `pgenProd_dict["saveLayers"]` is false.
 
 ### Telling the periods apart
 
 `Color by:` chooses which dimension carries the color:
 
-| Setting | Color | Period shown by | Severity shown by |
+| Setting | Color | Period shown by | Band shown by |
 |---|---|---|---|
-| `Threshold` (default) | `THRESHOLD_COLORS` - gale yellow, storm red, hurricane magenta | line pattern (`PERIOD_LINE_TYPES`: solid vs dashed) | color |
-| `Period` | `PERIOD_COLORS` - cyan and orange | color | line width (`LINE_WIDTH`) |
+| `Band` (default) | `BAND_COLORS` - the viewer's orange / red / purple | line pattern (`PERIOD_LINE_TYPES`: solid vs dashed) | color |
+| `Period` | `PERIOD_COLORS` - cyan and blue, kept clear of the band colors | color | line width (`LINE_WIDTH`) |
 
 `Hatch fill: On` additionally fills each polygon with its period's hatch
 pattern (`PERIOD_FILL_PATTERNS`) instead of leaving it as an outline. Every one
@@ -485,7 +516,7 @@ PGEN `Line` element itself:
 ```xml
 <Line pgenCategory="Lines" pgenType="LINE_SOLID" closed="true" filled="false"
       flagColor="false" lineWidth="3.0" sizeScale="1.0" smoothFactor="2">
-  <colors red="255" green="255" blue="0" alpha="255"/>
+  <colors red="255" green="165" blue="0" alpha="255"/>
   <linePoints Lat="34.9010" Lon="-51.0000"/>
 </Line>
 ```
@@ -494,4 +525,14 @@ Compare that against a `Line` from a chart your existing procedures produce
 (the `Isobars` layer is the closest thing). If the element or color spelling
 differs at your site, `addPolygonToXml` is the only place to change.
 
-See `tests/create_xml_windhazards/README.md` for the harness test.
+### Checking it without AWIPS
+
+```bash
+python3 tests/create_xml_windhazards/test_windhazard_xml.py     # 108 checks
+python3 tests/create_xml_windhazards/plot_synthetic_case.py     # writes a PNG
+```
+
+The first fakes the AWIPS and A2Graphics surface and drives `execute()` the way
+GFE would. The second reuses those fakes over a synthetic deepening low, then
+plots **the XML that run wrote** - every polygon and Low in the picture is read
+back out of the file. See `tests/create_xml_windhazards/README.md`.

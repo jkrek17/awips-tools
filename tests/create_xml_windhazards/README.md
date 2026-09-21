@@ -1,9 +1,10 @@
 # `CreateXML_WindHazards` checks
 
-One script, no dependencies beyond `numpy` and `matplotlib`:
+Two scripts, no dependencies beyond `numpy` and `matplotlib`:
 
 ```bash
-python3 test_windhazard_xml.py
+python3 test_windhazard_xml.py      # the checks
+python3 plot_synthetic_case.py      # a synthetic case, plotted from the XML
 ```
 
 It exits non-zero on the first failing check and prints every check it ran.
@@ -30,14 +31,18 @@ non-endpoint hour** of their period: 56 kt at F012 and 80 kt at F036, with
 40-46 kt shoulders.
 
 That shape is the test. A snapshot at either end of F000-024 would be 18 or
-28 kt and produce no polygon at all, so a gale *and* storm polygon for that
+28 kt and produce no polygon at all, so a 34-48 *and* a 48-64 polygon for that
 period can only come from a per-gridpoint maximum over the whole window.
-F000-024 topping out at 56 kt is also why there must be **no**
-`Hurricane_F000-024` layer, while F024-048 at 80 kt gets all three.
 
-`pmsl` encodes the forecast hour in its High and Low values, so the labels in
-each `Features` layer prove the grid came from that period's **start** time
-(F000 and F024), not anywhere else.
+F000-024 topping out at 56 kt is also why there must be **no**
+`Hurricane_64+_F000-024` layer, while F024-048 at 80 kt gets all three bands.
+The band labels (`34-47`, `48-63`, `64+`) match the Marine Weather Forecast
+Viewer's warning legend, so a renamed band fails here rather than quietly
+drifting away from it.
+
+`pmsl` encodes the forecast hour in its High and Low values, so each `Lows_Fxxx`
+layer's label proves which grid it came from - and the High, which the field
+carries on purpose, must appear nowhere at all.
 
 ## Covered
 
@@ -45,12 +50,35 @@ each `Features` layer prove the grid came from that period's **start** time
   has not come round today steps back a day (including across a month end).
 - `epochSeconds` is unaffected by the workstation's `TZ` (the reason the
   procedure uses `calendar.timegm` rather than `datetime.timestamp`).
-- Polygon extraction: nesting (gale area > storm > hurricane), `(lat, lon)`
-  ordering, decimation, no duplicate closing point, nothing below threshold,
-  and a single-gridpoint spike filtered out as noise.
-- Layer set per period, and the forecast hours actually read.
+- Polygon extraction: the bands overlapping rather than being cut out of each
+  other (34-47 contains 48-63 contains 64+, and the 64+ ring is nested inside
+  the gale one), `(lat, lon)` ordering, decimation, no duplicate closing
+  point, nothing below threshold, and a single-gridpoint spike filtered out as
+  noise *and reported* - nothing leaves the chart unannounced.
+- Layer set per band and period, the forecast hours actually read, and the
+  Lows hours following the selected periods' endpoints (F024 read once).
 - The PGEN `Line` element's attributes, color child and `linePoints`.
 - `Color by:` Threshold vs Period, and `Hatch fill:` On.
 - The `Land` mask on and off, `saveLayers` false collapsing to one `Default`
   layer, a single selected period, no period selected, and missing `Wind` or
   `pmsl` grids.
+
+## The synthetic case plot
+
+`plot_synthetic_case.py` reuses the same fakes - `_installFakes` takes
+`windFn`, `pmslFn`, `landFn` and `domain` overrides for exactly this - over a
+North Atlantic case: a low deepening from 992 to 956 mb along a northeast
+track, a second gale-only feature to the east, a High that must not be
+plotted, and a coastline that doubles as the `Land` edit area, so the
+polygons are clipped by the same outline the plot draws.
+
+It runs the real procedure, then plots **the XML that run wrote**: every
+polygon and every Low is parsed back out of the file, in the colors and line
+patterns the XML itself carries. The shading behind them is the period-max
+wind field recomputed for context. Vertices are drawn raw - PGEN renders them
+with `smoothFactor`, so the real chart comes out smoother.
+
+```bash
+python3 plot_synthetic_case.py                     # default Band coloring
+python3 plot_synthetic_case.py --color-by Period --hatch
+```
