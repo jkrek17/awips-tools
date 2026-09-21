@@ -1,4 +1,4 @@
-"""Analytic tests for D2D/derivedParameters/functions/cps_HartCPS.py.
+"""Analytic tests for cyclone_phase_space/D2D/derivedParameters/functions/cps_HartCPS.py.
 
 Expectations here are derived independently from the algorithm's own
 specification (brute-force sliding-window loops, the closed-form
@@ -6,10 +6,11 @@ least-squares formula, and a second numerical implementation of Hart's
 actual method via `cps.hart`) rather than copied from cps_HartCPS.py's own
 implementation, per the task instructions.
 
-`tests/d2d_cps/conftest.py` puts `D2D/derivedParameters/functions` on
-sys.path (`import cps_HartCPS`), the repo root on sys.path (`import cps`),
-and `tests/cps` on sys.path (`import synthetic`, the vortex-generator
-module `tests/cps/test_hart.py` itself uses).
+`tests/d2d_cps/conftest.py` puts `cyclone_phase_space/D2D/derivedParameters/
+functions` on sys.path (`import cps_HartCPS`), the cyclone_phase_space
+project root on sys.path (`import cps`), and `tests/cps` on sys.path
+(`import synthetic`, the vortex-generator module `tests/cps/test_hart.py`
+itself uses).
 """
 
 from __future__ import annotations

@@ -19,6 +19,7 @@ on:
       - 'flat/**'
       - 'data/hf_lows/**'
       - 'tools/build_hf_lows.py'
+      - 'cyclone_phase_space/article/**'
       - '.github/workflows/pages.yml'
   # Lets you publish a preview from a feature branch: Actions > this workflow >
   # Run workflow > pick the branch.
@@ -38,6 +39,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Stage the cyclone phase space article
+        run: rm -rf docs/cps && cp -r cyclone_phase_space/article docs/cps
 
       - uses: actions/setup-python@v5
         with:

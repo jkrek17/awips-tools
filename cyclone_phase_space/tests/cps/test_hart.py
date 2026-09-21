@@ -3,7 +3,7 @@
 Every expected value here is derived independently of cps.hart's own
 code (closed-form geometry, or a second haversine/least-squares
 computation in synthetic.py / this file), per web/CPS/PLAN.md section 8.
-Run with:  python3 -m pytest tests/cps -q
+Run with:  python3 -m pytest cyclone_phase_space/tests/cps -q
 """
 
 from __future__ import annotations

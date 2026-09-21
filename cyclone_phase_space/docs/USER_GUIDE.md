@@ -134,13 +134,13 @@ near the surface (HCPSclass back to 1, with the upper term still
 cold), which is one reason those systems can deepen unexpectedly over
 cold water. Section 6 walks through spotting this sequence on shift.
 
-![Cross-sections showing a warm-core storm's height dip shrinking with altitude and a cold-core low's dip growing with altitude, with the resulting height-range-versus-pressure slope on the right](../../docs/cps/figures/fig8_thermal_wind_concept.png)
+![Cross-sections showing a warm-core storm's height dip shrinking with altitude and a cold-core low's dip growing with altitude, with the resulting height-range-versus-pressure slope on the right](../article/figures/fig8_thermal_wind_concept.png)
 *A warm core's height perturbation weakens with height, giving a positive slope; a cold core's grows, giving a negative slope: that slope is HVTL and HVTU.*
 
-![Plan view of parameter B for a symmetric hurricane against a storm sitting on a thickness gradient](../../docs/cps/figures/fig9_b_concept.png)
+![Plan view of parameter B for a symmetric hurricane against a storm sitting on a thickness gradient](../article/figures/fig9_b_concept.png)
 *B compares the average thickness on the two sides of the storm's track; a hurricane in a uniform air mass reads near zero, a storm in a front reads well above 10 meters.*
 
-![Hart's two cyclone phase space diagrams sharing one schematic extratropical transition trajectory](../../docs/cps/figures/fig10_two_diagrams.png)
+![Hart's two cyclone phase space diagrams sharing one schematic extratropical transition trajectory](../article/figures/fig10_two_diagrams.png)
 *A transitioning storm traces a path through both diagrams: B crosses 10 meters, the upper warm core is lost, then the lower one, sometimes hooking back toward a warm seclusion.*
 
 ### Why one number

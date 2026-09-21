@@ -16,8 +16,8 @@
 
   <p class="byline">Jason Krekeler, NOAA/NWS Ocean Prediction Center &middot; 2026-09-18</p>
   <p class="meta">Code:
-    <a href="https://github.com/jkrek17/awips-tools/tree/main/D2D">github.com/jkrek17/awips-tools</a>
-    (directory <code>D2D/</code>)
+    <a href="https://github.com/jkrek17/awips-tools/tree/main/cyclone_phase_space">github.com/jkrek17/awips-tools</a>
+    (directory <code>cyclone_phase_space/</code>)
   </p>
 
   <div class="abstract">
@@ -186,7 +186,7 @@
       core, 123 and 301&nbsp;m for the cold core. <strong>(c)</strong> That
       same range plotted against ln(<i>p</i>) for both cores (markers at the
       seven standard levels), from <code>cps.hart.thermal_wind</code> run on
-      a 2D grid (<code>tests/cps/synthetic.py</code>'s <code>make_grid</code>/
+      a 2D grid (<code>cyclone_phase_space/tests/cps/synthetic.py</code>'s <code>make_grid</code>/
       <code>warm_core_heights</code>, centered 30&deg;N 0&deg;E, 0.5&deg;
       spacing, the same 150&nbsp;km scale) built at Hart's own 50&nbsp;hPa
       spacing, so that the regression in panel (c) is performed over the
@@ -209,7 +209,7 @@
       view, on a <em>synthetic</em> case built for this figure alone, evaluated
       with <code>cps.hart.parameter_b</code> over the 500&nbsp;km circle for
       a storm heading 45&deg; (northeast), on a grid centered 30&deg;N 0&deg;E
-      (<code>tests/cps/synthetic.py</code>'s <code>make_grid</code>).
+      (<code>cyclone_phase_space/tests/cps/synthetic.py</code>'s <code>make_grid</code>).
       <strong>(a)</strong> A warm-core vortex alone (a 60&nbsp;m 900&ndash;600&nbsp;hPa
       thickness anomaly, 150&nbsp;km scale) on a flat 2480&nbsp;m thickness
       background: the thickness contours (every 10&nbsp;m) close
@@ -761,7 +761,7 @@
          alt="Six cropped screen captures of the AWIPS CAVE display, each centered on the same western Pacific typhoon with MSLP contours, wind barbs and the HCPSclass field drawn as a colored block over the closed low: red for class 0 at 12 hours, yellow for class 2 at 30 hours, blue with green edges for class 4 at 96 hours, green with a blue flank for class 3 at 114 hours, red with a magenta corner for class 0 at 126 hours, and magenta for class 1 at 144 hours over the Bering Sea.">
     <figcaption><strong>Figure 9.</strong> The HCPSclass field on the
       operational CAVE display through one typhoon's life cycle, cropped
-      from full-screen captures (<code>docs/cps/figures/make_cave_figures.py</code>;
+      from full-screen captures (<code>cyclone_phase_space/article/figures/make_cave_figures.py</code>;
       nothing altered beyond cropping and the panel labels). GFS
       0.25&deg;, with MSLP (yellow), 1000 to 500&nbsp;hPa thickness (red)
       and surface wind barbs. <strong>(a)</strong>&nbsp;12&nbsp;h and
@@ -794,7 +794,7 @@
     from the difference between the models and analyses behind this
     package and the Florida State page, so the two methods were also
     run side by side on one synthetic life cycle where every field is
-    known (Figure 11; <code>docs/cps/figures/lifecycle_comparison.py</code>).
+    known (Figure 11; <code>cyclone_phase_space/article/figures/lifecycle_comparison.py</code>).
     A vortex on a 0.25&deg; grid is carried 168&nbsp;h from 22&deg;N
     150&deg;E to 52&deg;N 175&deg;E, its height-perturbation profile
     blending from the deep warm core through the transition profile to
@@ -879,7 +879,7 @@
          alt="Six rows by five columns. Each row is one hour of the synthetic life cycle: 0, 60, 90, 120, 144 and 168 hours, labeled with the gridded class. Columns: 1000 hectopascal height contours with thickness contours and the storm track; the class field as a colored block over the low; the 900 to 600 hectopascal thickness anomaly with Hart's circle, the gridded square and the motion arrow; the B against lower thermal wind diagram with both trajectories drawn up to that hour; and the upper against lower thermal wind diagram. The storm moves from 22 north 150 east to 52 north 175 east, the block changes from red to yellow, green, blue, indigo and magenta, and the diagram points move from the symmetric warm quadrant through asymmetric warm and asymmetric cold to symmetric cold and back to symmetric warm.">
     <figcaption><strong>Figure 12.</strong> The synthetic life cycle of
       Figure 11 at the six hours at which the gridded class changes
-      (<code>docs/cps/figures/lifecycle_storyboard.py</code>). Rows: 0,
+      (<code>cyclone_phase_space/article/figures/lifecycle_storyboard.py</code>). Rows: 0,
       60, 90, 120, 144 and 168&nbsp;h, labeled with the gridded class.
       <strong>(a)</strong> 1000&nbsp;hPa height (about 8&nbsp;m per hPa)
       every 40&nbsp;m, 1000 to 500&nbsp;hPa thickness every 60&nbsp;m
@@ -990,7 +990,7 @@
     <img src="figures/figA_band_comparison.png"
          alt="Three-panel synthetic band test. Left: five prescribed height-perturbation profiles against pressure on a log axis, with Hart's 900 to 600 hectopascal lower band shaded. Center: bar chart of the lower thermal wind each band returns for each profile, Hart's band in gray, the 925 to 700 band in red, a 925 to 500 band in blue and an 850 to 500 band in green. Right: bar chart of the rescaled layer thickness gradient, a proxy for parameter B, for three baroclinic-zone profiles and the same four layers.">
     <figcaption><strong>Figure 13.</strong> Synthetic test of the lower
-      band, computed by <code>docs/cps/figures/band_comparison.py</code>.
+      band, computed by <code>cyclone_phase_space/article/figures/band_comparison.py</code>.
       <strong>(a)</strong> Five prescribed height-perturbation profiles
       &Delta;<i>Z</i>(<i>p</i>) at 50&nbsp;hPa spacing: a mature deep warm
       core, a warm core linear in ln&nbsp;<i>p</i>, a shallow warm core
@@ -1013,7 +1013,7 @@
          alt="Grid of central depth from 20 to 120 meters against e-folding scale from 100 to 800 kilometers, dark cells where the closed-low detector accepts a synthetic Gaussian low at its center: nothing at 40 meters or less, 50 meters accepted out to 300 kilometers, 80 meters out to 500, 100 meters out to 600, and nothing at 800 kilometers.">
     <figcaption><strong>Figure 14.</strong> Closed-low detector
       sensitivity on synthetic Gaussian lows in 1000&nbsp;hPa height on a
-      0.25&deg; grid (<code>docs/cps/figures/experiments.py</code>): dark
+      0.25&deg; grid (<code>cyclone_phase_space/article/figures/experiments.py</code>): dark
       cells are detected at the center. The 40&nbsp;m ring test admits a
       compact low of about 50&nbsp;m (6&nbsp;hPa) and needs 80 to
       100&nbsp;m for lows of 500 to 600&nbsp;km e-folding scale.</figcaption>
@@ -1056,7 +1056,7 @@
     <img src="figures/figC_extensions.png"
          alt="Three panels. Left: lower and upper thermal wind at the center of a synthetic deep warm core against background height gradient strength, for the gradient along a grid axis and at 45 degrees, both falling steeply, with the values after background plane removal flat at the true value. Center: lower term as a fraction of its true value against vortex scale for window half-widths of 300, 500 and 700 kilometers, falling with scale, and for a half-width of 2.5 times the scale, flat at one. Right: Hart's B and the fore-aft component against the angle between the thickness gradient and the motion, B rising from zero to the full magnitude and the fore-aft component falling, with the 10 meter threshold marked.">
     <figcaption><strong>Figure 15.</strong> Synthetic tests of three
-      candidate extensions (<code>docs/cps/figures/experiments_extensions.py</code>).
+      candidate extensions (<code>cyclone_phase_space/article/figures/experiments_extensions.py</code>).
       <strong>(a)</strong> Terms at the center of a deep warm core (true
       value 191&nbsp;m, black line) on a background height gradient that
       grows with height, for the gradient along a grid axis (solid) and
@@ -1101,14 +1101,20 @@
 
   <h2 id="availability">8. Availability</h2>
   <p>
-    The package lives at <code>D2D/</code> in the repository linked at the
-    top of this page: derived-parameter Python and XML under
-    <code>derivedParameters/</code>, colormaps under <code>colormaps/Grid/</code>,
-    the storm-centered reference implementation at <code>cps/hart.py</code>,
-    and the technical, user, and installation guides under
-    <code>D2D/docs/</code> and <code>D2D/README.md</code>. The test suite
-    (<code>tests/cps</code> and <code>tests/d2d_cps</code>, run with
-    <code>python3 -m pytest tests/cps tests/d2d_cps -q</code>) counts
+    The whole project lives at <code>cyclone_phase_space/</code> in the
+    repository linked at the top of this page. Under it:
+    <code>D2D/</code> is the AWIPS install tree (derived-parameter Python
+    and XML under <code>D2D/derivedParameters/</code>, colormaps under
+    <code>D2D/colormaps/Grid/</code>); <code>cps/hart.py</code> is the
+    storm-centered reference implementation; <code>docs/</code> holds the
+    technical, user, and installation guides
+    (<code>cyclone_phase_space/docs/</code> and
+    <code>cyclone_phase_space/README.md</code>); and <code>article/</code>
+    is the source for this page, staged to <code>docs/cps/</code> and
+    published by GitHub Pages. The test suite
+    (<code>cyclone_phase_space/tests/cps</code> and
+    <code>cyclone_phase_space/tests/d2d_cps</code>, run with
+    <code>python3 -m pytest cyclone_phase_space/tests -q</code>) counts
     62 tests, every expected value analytic or from an independent
     brute-force comparison. No license is specified.
   </p>
@@ -1141,7 +1147,7 @@
 
   <footer>
     All figures except Figures 9 and 10 are synthetic and are regenerated by
-    <code>docs/cps/figures/make_figures.py</code>, except Figures 11 to
+    <code>cyclone_phase_space/article/figures/make_figures.py</code>, except Figures 11 to
     15, which <code>lifecycle_comparison.py</code>,
     <code>lifecycle_storyboard.py</code> (which also writes an animated
     version, <code>figures/lifecycle_storyboard.gif</code>, one frame per

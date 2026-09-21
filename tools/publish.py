@@ -520,8 +520,13 @@ NOT_DEPLOYED = {"data/qc-report.txt"}
 # archive site: they are served by Pages straight from docs/, but they never
 # go to the NOAA web server with --deploy and never into a --flat build
 # (docs/cps/index.html would collide with the archive's index.html there).
-# Read by the workflow's flat-sync job the same way NOT_DEPLOYED is, so the
-# two can never disagree about what --flat leaves out.
+# docs/cps/ itself is not committed - the Pages workflow stages it on every
+# build by copying cyclone_phase_space/article/ there (see
+# .github/workflows/pages.yml's "Stage the cyclone phase space article"
+# step) - so this set exists to protect that local staging copy from the
+# NOAA deploy, the same way it would a committed subtree. Read by the
+# workflow's flat-sync job the same way NOT_DEPLOYED is, so the two can
+# never disagree about what --flat leaves out.
 NOT_DEPLOYED_DIRS = {"cps"}
 
 

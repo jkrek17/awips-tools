@@ -11,3 +11,8 @@ tools/publish.local.json
 
 # tools/export_awips.py output
 dist/
+
+# Cyclone phase space article, staged into docs/cps/ from
+# cyclone_phase_space/article/ by the Pages workflow (.github/workflows/
+# pages.yml); never commit the local staging copy.
+docs/cps/
