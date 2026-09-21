@@ -63,6 +63,7 @@ import cps_HartCPS as hc  # noqa: E402
 import cps as ch  # noqa: E402
 from experiments import make_grid, dist_km, std_height, LEVELS, ANCHOR_P  # noqa: E402
 from band_comparison import ARCHETYPES  # noqa: E402
+import diagram_style as ds  # noqa: E402  (make_fig10's own quadrant colors/labels/lines/limits)
 
 hc.ORIENTATION_MODE = 0  # rows increase northward on these grids, as in experiments_extensions.py
 
@@ -567,60 +568,65 @@ def main():
 
 
 # ------------------------------------------------------------- figure
-def pad_limits(ax, frac=0.22):
-    """Expand xlim/ylim by frac of the data range, so corner labels
-    placed in axes-fraction coordinates land in blank space instead
-    of on top of the data itself. Module level (not a make_figure closure)
-    so lifecycle_storyboard.py can reproduce figD's own B-vs-VTL/VTU axis
-    limits exactly, from the same data, instead of guessing at them.
-    """
-    x0, x1 = ax.get_xlim()
-    y0, y1 = ax.get_ylim()
-    dx, dy = x1 - x0, y1 - y0
-    ax.set_xlim(x0 - frac * dx, x1 + frac * dx)
-    ax.set_ylim(y0 - frac * dy, y1 + frac * dy)
-
-
 def make_figure(hours, lats, lons, B_hart, VTL_hart, VTU_hart, B_grid, VTL_grid, VTU_grid, CLS_grid, CLS_hart,
                  onset_hart, onset_grid, completion_hart, completion_grid):
     cmap_hart = LinearSegmentedColormap.from_list("hart_gray", ["#c9c9c9", "#000000"])
     cmap_grid = LinearSegmentedColormap.from_list("grid_red", ["#fbdede", RED])
 
+    # Panels (a)/(b)'s background (quadrant colors/labels, reference lines,
+    # grid, axis labels) and limits match make_figures.make_fig10 (the
+    # article's Figure 1) exactly, via diagram_style -- widened past its
+    # fixed limits only where this life cycle's own data actually exceeds
+    # them (see PHASE_XLIM_VTL/PHASE_YLIM_B/PHASE_YLIM_VTU below).
+    xlim_vtl = ds.widen_limits(ds.FIG10_VTL_LIM, VTL_hart, VTL_grid)
+    ylim_b = ds.widen_limits(ds.FIG10_B_LIM, B_hart, B_grid)
+    ylim_vtu = ds.widen_limits(ds.FIG10_VTU_LIM, VTU_hart, VTU_grid)
+    for lim, base, name in ((xlim_vtl, ds.FIG10_VTL_LIM, "-V_T^L"), (ylim_b, ds.FIG10_B_LIM, "B"),
+                             (ylim_vtu, ds.FIG10_VTU_LIM, "-V_T^U")):
+        if lim != base:
+            print(f"Note: {name} axis widened from {base} to {lim} (figD_lifecycle.png), "
+                  f"data exceeded make_fig10's own limit.")
+
     fig, axes = plt.subplots(1, 3, figsize=(12.5, 4.0))
 
     # -- (a) B vs -VTL (Hart's Phase 1 diagram)
     ax = axes[0]
+    ax.set_xlim(*xlim_vtl)
+    ax.set_ylim(*ylim_b)
+    ds.draw_b_vtl_quadrants(ax, xlim_vtl, ylim_b, 10.0)
     ax.plot(VTL_hart, B_hart, "-", color="0.75", lw=1.0, zorder=1)
     ax.plot(VTL_grid, B_grid, "-", color=RED, alpha=0.35, lw=1.0, zorder=1)
     ax.scatter(VTL_hart, B_hart, c=hours, cmap=cmap_hart, s=32, marker="o", zorder=3, edgecolor="white", linewidth=0.4)
     ax.scatter(VTL_grid, B_grid, c=hours, cmap=cmap_grid, s=32, marker="s", zorder=4, edgecolor="white", linewidth=0.4)
-    ax.axhline(10.0, color="k", lw=0.8, ls="--")
-    ax.axvline(0.0, color="k", lw=0.8, ls="--")
-    ax.set_xlabel("$-V_T^L$ (m)")
-    ax.set_ylabel("B (m)")
+    ax.axhline(10.0, color=ds.TEXT_DARK, lw=1.0, zorder=2)
+    ax.axvline(0.0, color=ds.TEXT_DARK, lw=1.0, zorder=2)
+    ax.set_xlabel(ds.AXIS_LABEL_VTL)
+    ax.set_ylabel(ds.AXIS_LABEL_B)
     ax.set_title("(a) B versus $-V_T^L$", loc="left", fontsize=10)
-    pad_limits(ax)
-    ax.text(0.03, 0.03, "symmetric\ncold", transform=ax.transAxes, fontsize=6.5, color="0.35", ha="left", va="bottom")
-    ax.text(0.97, 0.03, "symmetric\nwarm", transform=ax.transAxes, fontsize=6.5, color="0.35", ha="right", va="bottom")
-    ax.text(0.97, 0.97, "asymmetric\nwarm", transform=ax.transAxes, fontsize=6.5, color="0.35", ha="right", va="top")
-    ax.text(0.03, 0.97, "asymmetric\ncold", transform=ax.transAxes, fontsize=6.5, color="0.35", ha="left", va="top")
+    ax.grid(True, color=ds.GRID_COLOR, linewidth=0.5, zorder=0.2)
 
     # -- (b) -VTU vs -VTL (Hart's Phase 2 diagram)
     ax = axes[1]
+    ax.set_xlim(*xlim_vtl)
+    ax.set_ylim(*ylim_vtu)
+    # "deep cold core"/"shallow warm core" nudged up off the x axis (make_fig10's
+    # own y0*0.90 corner, where this life cycle's own trajectory actually passes,
+    # unlike make_fig10's schematic one) into the clear gap around VTU = -100.
+    label_overrides_b = {
+        "deep cold core": (xlim_vtl[0] * 0.95, ylim_vtu[0] * 0.33),
+        "shallow warm core": (xlim_vtl[1] * 0.55, ylim_vtu[0] * 0.33),
+    }
+    ds.draw_vtu_vtl_quadrants(ax, xlim_vtl, ylim_vtu, label_overrides=label_overrides_b)
     ax.plot(VTL_hart, VTU_hart, "-", color="0.75", lw=1.0, zorder=1)
     ax.plot(VTL_grid, VTU_grid, "-", color=RED, alpha=0.35, lw=1.0, zorder=1)
     ax.scatter(VTL_hart, VTU_hart, c=hours, cmap=cmap_hart, s=32, marker="o", zorder=3, edgecolor="white", linewidth=0.4)
     ax.scatter(VTL_grid, VTU_grid, c=hours, cmap=cmap_grid, s=32, marker="s", zorder=4, edgecolor="white", linewidth=0.4)
-    ax.axhline(0.0, color="k", lw=0.8, ls="--")
-    ax.axvline(0.0, color="k", lw=0.8, ls="--")
-    ax.set_xlabel("$-V_T^L$ (m)")
-    ax.set_ylabel("$-V_T^U$ (m)")
+    ax.axhline(0.0, color=ds.TEXT_DARK, lw=1.0, zorder=2)
+    ax.axvline(0.0, color=ds.TEXT_DARK, lw=1.0, zorder=2)
+    ax.set_xlabel(ds.AXIS_LABEL_VTL)
+    ax.set_ylabel(ds.AXIS_LABEL_VTU)
     ax.set_title("(b) $-V_T^U$ versus $-V_T^L$", loc="left", fontsize=10)
-    pad_limits(ax)
-    ax.text(0.03, 0.03, "deep\ncold", transform=ax.transAxes, fontsize=6.5, color="0.35", ha="left", va="bottom")
-    ax.text(0.97, 0.03, "shallow\nwarm", transform=ax.transAxes, fontsize=6.5, color="0.35", ha="right", va="bottom")
-    ax.text(0.97, 0.97, "deep\nwarm", transform=ax.transAxes, fontsize=6.5, color="0.35", ha="right", va="top")
-    ax.text(0.03, 0.97, "shallow\ncold", transform=ax.transAxes, fontsize=6.5, color="0.35", ha="left", va="top")
+    ax.grid(True, color=ds.GRID_COLOR, linewidth=0.5, zorder=0.2)
 
     handles = [
         Line2D([0], [0], marker="o", color="0.4", lw=1.0, markersize=6, label="Hart, circular window"),

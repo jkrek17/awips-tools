@@ -32,9 +32,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.colors import ListedColormap, BoundaryNorm
-from matplotlib.figure import Figure
 from PIL import Image
 
 HERE = Path(__file__).resolve().parent
@@ -43,9 +41,9 @@ sys.path.insert(0, str(HERE))
 from lifecycle_comparison import (  # noqa: E402
     hc, ch,
     make_hours, build_track_and_motion, build_grid, env_fields, compute_frame,
-    pad_limits,
     RADIUS_KM, CLASS_PALETTE, CLASS_NAMES, RED, BLUE, PURPLE,
 )
+import diagram_style as ds  # noqa: E402  (make_fig10's own quadrant colors/labels/lines/limits)
 
 SNAPSHOT_HOURS = [0.0, 60.0, 90.0, 120.0, 144.0, 168.0]
 FIG_PATH = HERE / "figE_lifecycle_storyboard.png"
@@ -99,29 +97,18 @@ def level_step(field, step):
     return np.arange(lo, hi + step, step)
 
 
-def phase_axis_limits(x_hart, y_hart, x_grid, y_grid, hline, vline):
-    """Reproduce figD's own axis limits for a B/VTL or VTU/VTL panel
-    exactly: a scratch figure, the same plot/scatter/axhline/axvline calls
-    make_figure makes (in the same order, so matplotlib's autoscale sees the
-    same thing), then pad_limits -- so the storyboard and gif line up with
-    figD_lifecycle.png instead of approximating its limits.
-
-    Built with the plain matplotlib.figure.Figure/FigureCanvasAgg API
-    rather than plt.subplots()/plt.close(), since this scratch figure is
-    never shown, closed via pyplot, or saved -- there is no reason to route
-    it through pyplot's global figure manager at all.
+def phase_diagram_limits(d):
+    """(xlim_vtl, ylim_b, ylim_vtu): the same fixed article limits
+    (diagram_style.FIG10_VTL_LIM/FIG10_B_LIM/FIG10_VTU_LIM) figD_lifecycle.png
+    uses, widened only where this life cycle's own data exceeds them --
+    identical computation to lifecycle_comparison.make_figure's, from the
+    same data, so the storyboard and gif line up with figD_lifecycle.png
+    exactly rather than approximating it.
     """
-    fig_tmp = Figure()
-    FigureCanvasAgg(fig_tmp)
-    ax_tmp = fig_tmp.add_subplot(1, 1, 1)
-    ax_tmp.plot(x_hart, y_hart)
-    ax_tmp.plot(x_grid, y_grid)
-    ax_tmp.scatter(x_hart, y_hart)
-    ax_tmp.scatter(x_grid, y_grid)
-    ax_tmp.axhline(hline)
-    ax_tmp.axvline(vline)
-    pad_limits(ax_tmp)
-    return ax_tmp.get_xlim(), ax_tmp.get_ylim()
+    xlim_vtl = ds.widen_limits(ds.FIG10_VTL_LIM, d["VTL_hart"], d["VTL_grid"])
+    ylim_b = ds.widen_limits(ds.FIG10_B_LIM, d["B_hart"], d["B_grid"])
+    ylim_vtu = ds.widen_limits(ds.FIG10_VTU_LIM, d["VTU_hart"], d["VTU_grid"])
+    return xlim_vtl, ylim_b, ylim_vtu
 
 
 # ------------------------------------------------------- data assembly
@@ -251,48 +238,59 @@ def _map_axes(ax, d, fs):
     ax.set_yticks(np.arange(20, 61, 10))
 
 
-QUAD_LABELS_A = (("symmetric\ncold", 0.03, 0.03, "left", "bottom"),
-                  ("symmetric\nwarm", 0.97, 0.03, "right", "bottom"),
-                  ("asymmetric\nwarm", 0.97, 0.97, "right", "top"),
-                  ("asymmetric\ncold", 0.03, 0.97, "left", "top"))
-QUAD_LABELS_B = (("deep\ncold", 0.03, 0.03, "left", "bottom"),
-                  ("shallow\nwarm", 0.97, 0.03, "right", "bottom"),
-                  ("deep\nwarm", 0.97, 0.97, "right", "top"),
-                  ("shallow\ncold", 0.03, 0.97, "left", "top"))
-
-
-def draw_panel_d(ax, d, i, xlim, ylim, fs=7):
+def draw_panel_d(ax, d, i, xlim, ylim, fs=7, quad_fontsize=None):
     """B versus -V_T^L, both trajectories up to hour i, current points as
-    large markers -- as in figD panel (a)."""
+    large markers. Background (quadrant colors/labels, reference lines,
+    grid, axis labels) and limits match make_figures.make_fig10 (the
+    article's Figure 1) exactly, via diagram_style -- as in figD panel (a).
+
+    `quad_fontsize` (default None, i.e. make_fig10's own corner-label size):
+    the storyboard grid's own panels are narrower than figD's or the gif's,
+    so build_storyboard passes a smaller size there to keep opposite
+    corners' labels from running into each other.
+    """
     j = i + 1
+    ds.draw_b_vtl_quadrants(ax, xlim, ylim, 10.0, fontsize=quad_fontsize)
     ax.plot(d["VTL_hart"][:j], d["B_hart"][:j], "-o", color="0.6", ms=2.5, lw=0.9, mfc="0.6", zorder=2)
     ax.plot(d["VTL_grid"][:j], d["B_grid"][:j], "-s", color=RED, alpha=0.55, ms=2.5, lw=0.9, zorder=2)
     ax.plot(d["VTL_hart"][i], d["B_hart"][i], "o", color="0.15", ms=9, zorder=5)
     ax.plot(d["VTL_grid"][i], d["B_grid"][i], "s", color=RED, ms=9, zorder=5)
-    ax.axhline(10.0, color="k", lw=0.7, ls="--", zorder=1)
-    ax.axvline(0.0, color="k", lw=0.7, ls="--", zorder=1)
+    ax.axhline(10.0, color=ds.TEXT_DARK, lw=1.0, zorder=3)
+    ax.axvline(0.0, color=ds.TEXT_DARK, lw=1.0, zorder=3)
     ax.set_xlim(*xlim)
     ax.set_ylim(*ylim)
+    ax.set_xlabel(ds.AXIS_LABEL_VTL, fontsize=fs - 1)
+    ax.set_ylabel(ds.AXIS_LABEL_B, fontsize=fs - 1)
+    ax.grid(True, color=ds.GRID_COLOR, linewidth=0.5, zorder=0.2)
     ax.tick_params(labelsize=fs - 1)
-    for txt, xf, yf, ha, va in QUAD_LABELS_A:
-        ax.text(xf, yf, txt, transform=ax.transAxes, fontsize=fs - 1, color="0.35", ha=ha, va=va)
 
 
-def draw_panel_e(ax, d, i, xlim, ylim, fs=7):
+def draw_panel_e(ax, d, i, xlim, ylim, fs=7, quad_fontsize=None):
     """-V_T^U versus -V_T^L, same treatment as panel (d) -- as in figD
-    panel (b)."""
+    panel (b). "deep cold core"/"shallow warm core" nudged up off the x
+    axis (make_fig10's own corner, where this life cycle's own trajectory
+    actually passes, unlike make_fig10's schematic one) into the clear
+    gap around -V_T^U = -100, same as figD_lifecycle.png panel (b).
+    `quad_fontsize`: see draw_panel_d.
+    """
     j = i + 1
+    label_overrides = {
+        "deep cold core": (xlim[0] * 0.95, ylim[0] * 0.33),
+        "shallow warm core": (xlim[1] * 0.55, ylim[0] * 0.33),
+    }
+    ds.draw_vtu_vtl_quadrants(ax, xlim, ylim, label_overrides=label_overrides, fontsize=quad_fontsize)
     ax.plot(d["VTL_hart"][:j], d["VTU_hart"][:j], "-o", color="0.6", ms=2.5, lw=0.9, mfc="0.6", zorder=2)
     ax.plot(d["VTL_grid"][:j], d["VTU_grid"][:j], "-s", color=RED, alpha=0.55, ms=2.5, lw=0.9, zorder=2)
     ax.plot(d["VTL_hart"][i], d["VTU_hart"][i], "o", color="0.15", ms=9, zorder=5)
     ax.plot(d["VTL_grid"][i], d["VTU_grid"][i], "s", color=RED, ms=9, zorder=5)
-    ax.axhline(0.0, color="k", lw=0.7, ls="--", zorder=1)
-    ax.axvline(0.0, color="k", lw=0.7, ls="--", zorder=1)
+    ax.axhline(0.0, color=ds.TEXT_DARK, lw=1.0, zorder=3)
+    ax.axvline(0.0, color=ds.TEXT_DARK, lw=1.0, zorder=3)
     ax.set_xlim(*xlim)
     ax.set_ylim(*ylim)
+    ax.set_xlabel(ds.AXIS_LABEL_VTL, fontsize=fs - 1)
+    ax.set_ylabel(ds.AXIS_LABEL_VTU, fontsize=fs - 1)
+    ax.grid(True, color=ds.GRID_COLOR, linewidth=0.5, zorder=0.2)
     ax.tick_params(labelsize=fs - 1)
-    for txt, xf, yf, ha, va in QUAD_LABELS_B:
-        ax.text(xf, yf, txt, transform=ax.transAxes, fontsize=fs - 1, color="0.35", ha=ha, va=va)
 
 
 COLUMN_TITLES = (
@@ -312,8 +310,7 @@ def row_label(hour, cls_code):
 
 # ---------------------------------------------------------------- (1)
 def build_storyboard(d):
-    xlim_vtl, ylim_b = phase_axis_limits(d["VTL_hart"], d["B_hart"], d["VTL_grid"], d["B_grid"], 10.0, 0.0)
-    _, ylim_vtu = phase_axis_limits(d["VTL_hart"], d["VTU_hart"], d["VTL_grid"], d["VTU_grid"], 0.0, 0.0)
+    xlim_vtl, ylim_b, ylim_vtu = phase_diagram_limits(d)
 
     idxs = [int(round(h / 6.0)) for h in SNAPSHOT_HOURS]
     nrows = len(idxs)
@@ -330,10 +327,13 @@ def build_storyboard(d):
         for col, draw_fn in enumerate(draw_fns):
             ax = fig.add_subplot(gs[row, col + 1])
             if draw_fn in (draw_panel_d, draw_panel_e):
+                # Narrower panels than figD's or the gif's own (1 of 5.5 gridspec
+                # columns in a 15 in figure): a smaller corner-label size than
+                # make_fig10's own keeps opposite corners' labels apart.
                 if draw_fn is draw_panel_d:
-                    draw_fn(ax, d, i, xlim_vtl, ylim_b)
+                    draw_fn(ax, d, i, xlim_vtl, ylim_b, quad_fontsize=5.0)
                 else:
-                    draw_fn(ax, d, i, xlim_vtl, ylim_vtu)
+                    draw_fn(ax, d, i, xlim_vtl, ylim_vtu, quad_fontsize=5.0)
             else:
                 draw_fn(ax, d, i)
             if row == 0:
@@ -356,8 +356,7 @@ def build_gif(d):
     object at each seek position, so a list of it is a list of aliases to
     wherever that Image was last seeked, not independent per-frame copies).
     """
-    xlim_vtl, ylim_b = phase_axis_limits(d["VTL_hart"], d["B_hart"], d["VTL_grid"], d["B_grid"], 10.0, 0.0)
-    _, ylim_vtu = phase_axis_limits(d["VTL_hart"], d["VTU_hart"], d["VTL_grid"], d["VTU_grid"], 0.0, 0.0)
+    xlim_vtl, ylim_b, ylim_vtu = phase_diagram_limits(d)
 
     n = len(d["hours"])
     draw_fns = (draw_panel_a, draw_panel_b, draw_panel_c, draw_panel_d, draw_panel_e)

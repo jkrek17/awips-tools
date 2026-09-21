@@ -143,6 +143,7 @@ SYNTHETIC_TEST_DIR = REPO_ROOT / "tests" / "cps"
 sys.path.insert(0, str(FUNCTIONS_DIR))
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(SYNTHETIC_TEST_DIR))
+sys.path.insert(0, str(HERE))
 
 import cps_HartCPS  # noqa: E402
 
@@ -158,15 +159,23 @@ import cps_HartCPS  # noqa: E402
 import cps.hart as hart  # noqa: E402
 import synthetic as cps_synthetic  # noqa: E402  (tests/cps/synthetic.py)
 
+# TEXT_DARK/TEXT_SECONDARY/GRID_COLOR/CATEGORY_COLORS and Figure 10's own
+# quadrant colors/labels/limits/helpers live in diagram_style.py, so this
+# script and the lifecycle_comparison.py/lifecycle_storyboard.py scripts
+# share one definition of Figure 10's own look rather than copies that can
+# drift -- see that module's own docstring for why it, not this whole
+# script, is what the lifecycle scripts import.
+from diagram_style import (  # noqa: E402
+    TEXT_DARK, TEXT_SECONDARY, GRID_COLOR, CATEGORY_COLORS,
+    FIG10_B_LIM, FIG10_VTL_LIM, FIG10_VTU_LIM,
+    draw_b_vtl_quadrants, draw_vtu_vtl_quadrants,
+)
+
 OUT_DIR = HERE
 
 # ---------------------------------------------------------------------------
 # Palette (fixed, per the article's style rules)
 # ---------------------------------------------------------------------------
-
-TEXT_DARK = "#0b0b0b"
-TEXT_SECONDARY = "#52514e"
-GRID_COLOR = "#dedcd5"
 
 DIVERGING_STOPS = [
     (0.00, "#104281"),
@@ -178,8 +187,6 @@ DIVERGING_STOPS = [
 CMAP_DIVERGING = LinearSegmentedColormap.from_list("cps_diverging", DIVERGING_STOPS)
 
 CMAP_SEQ_BLUE = LinearSegmentedColormap.from_list("cps_seq_blue", ["#cde2fb", "#0d366b"])
-
-CATEGORY_COLORS = ["#4a3aa7", "#2a78d6", "#c3c2b7", "#eb6834", "#e34948"]
 
 # HCPSclass (the joint Hart CPS class): 7 entries in code order, matching
 # D2D/colormaps/Grid/CPS_HartClass.cmap's own colors exactly, so the
@@ -1931,8 +1938,9 @@ FIG10_TRAJ = np.array(
     dtype=float,
 )
 FIG10_SECLUSION_END = np.array([5.0, 60.0, -180.0])
-FIG10_B_LIM = (-20.0, 80.0)  # panel (a) vertical axis: B (m)
-FIG10_VTL_LIM = (-300.0, 300.0)  # panel (a) horizontal axis: -V_T^L (m)
+# FIG10_B_LIM (panel (a) vertical axis, B m), FIG10_VTL_LIM (both panels'
+# horizontal axis, -V_T^L m) and FIG10_VTU_LIM (panel (b) vertical axis,
+# -V_T^U m) are imported from diagram_style.
 
 
 def make_fig10():
@@ -1949,27 +1957,9 @@ def make_fig10():
     ax_a.set_xlim(*xlim)
     ax_a.set_ylim(*ylim)
 
-    quadrants_a = [
-        (0, 1e4, -1e4, b_thr, STAGE_COLORS[0], "symmetric warm core"),
-        (0, 1e4, b_thr, 1e4, STAGE_COLORS[1], "asymmetric warm core"),
-        (-1e4, 0, b_thr, 1e4, STAGE_COLORS[2], "asymmetric cold core"),
-        (-1e4, 0, -1e4, b_thr, "#4a3aa7", "symmetric cold core"),
-    ]
-    for x0, x1, y0, y1, color, _ in quadrants_a:
-        x0c, x1c = max(x0, xlim[0]), min(x1, xlim[1])
-        y0c, y1c = max(y0, ylim[0]), min(y1, ylim[1])
-        ax_a.add_patch(Rectangle((x0c, y0c), x1c - x0c, y1c - y0c, facecolor=color, alpha=0.30, edgecolor="none", zorder=0))
-    # Corners, in axes fraction, so the labels track xlim/ylim; top-left
-    # is inset further than the rest to clear the panel-letter box.
-    label_pos_a = {
-        "asymmetric cold core": (0.04, 0.83, "left", "top"),
-        "asymmetric warm core": (0.97, 0.96, "right", "top"),
-        "symmetric cold core": (0.04, 0.04, "left", "bottom"),
-        "symmetric warm core": (0.97, 0.04, "right", "bottom"),
-    }
-    for _, _, _, _, _, label in quadrants_a:
-        x, y, ha, va = label_pos_a[label]
-        ax_a.text(x, y, label, transform=ax_a.transAxes, color=TEXT_SECONDARY, fontsize=7.2, ha=ha, va=va, style="italic", zorder=1)
+    # Quadrant rectangles + italic corner labels: diagram_style.draw_b_vtl_quadrants,
+    # shared with the lifecycle scripts' own B-vs-$-V_T^L$ panels.
+    draw_b_vtl_quadrants(ax_a, xlim, ylim, b_thr)
 
     ax_a.axhline(b_thr, color=TEXT_DARK, linewidth=1.0, zorder=2)
     ax_a.axvline(0, color=TEXT_DARK, linewidth=1.0, zorder=2)
@@ -2021,26 +2011,12 @@ def make_fig10():
     panel_letter(ax_a, "a")
 
     # --- panel (b): thermal wind diagram, -V_T^L vs -V_T^U -----------------
-    lim = 300.0
-    ax_b.set_xlim(-lim, lim)
-    ax_b.set_ylim(-lim, lim)
-    quadrants_b = [
-        (0, lim, 0, lim, "#e34948", "deep warm core"),
-        (0, lim, -lim, 0, "#eb6834", "shallow warm core"),
-        (-lim, 0, -lim, 0, "#2a78d6", "deep cold core"),
-        (-lim, 0, 0, lim, "#4a3aa7", "shallow cold core"),
-    ]
-    for x0, x1, y0, y1, color, _ in quadrants_b:
-        ax_b.add_patch(Rectangle((x0, y0), x1 - x0, y1 - y0, facecolor=color, alpha=0.11, edgecolor="none", zorder=0))
-    label_pos_b = {
-        "deep warm core": (lim * 0.55, lim * 0.90),
-        "shallow warm core": (lim * 0.55, -lim * 0.90),
-        "deep cold core": (-lim * 0.95, -lim * 0.90),
-        "shallow cold core": (-lim * 0.95, lim * 0.68),
-    }
-    for _, _, _, _, _, label in quadrants_b:
-        x, y = label_pos_b[label]
-        ax_b.text(x, y, label, color=TEXT_SECONDARY, fontsize=7.3, ha="left", va="center", style="italic", zorder=1)
+    xlim_b, ylim_b = FIG10_VTL_LIM, FIG10_VTU_LIM
+    ax_b.set_xlim(*xlim_b)
+    ax_b.set_ylim(*ylim_b)
+    # Quadrant rectangles + italic corner labels: diagram_style.draw_vtu_vtl_quadrants,
+    # shared with the lifecycle scripts' own $-V_T^U$-vs-$-V_T^L$ panels.
+    draw_vtu_vtl_quadrants(ax_b, xlim_b, ylim_b)
     ax_b.axhline(0, color=TEXT_DARK, linewidth=1.0, zorder=2)
     ax_b.axvline(0, color=TEXT_DARK, linewidth=1.0, zorder=2)
 
