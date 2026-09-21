@@ -64,6 +64,67 @@ easier, which is the safe direction.
 - Extraction of the phase space fields at each lead time.
 - The analysis, which needs the discipline below.
 
+## Phase 0 result: the record starts in 2020, not 2016
+
+Hurricane-force counts per Pacific season step up 35% at 2020 -- 32.3 per
+season over 2016-2019, 43.5 over 2020-2025. The Atlantic shows no such step
+over the same years (ratio 0.91).
+
+That asymmetry is the tell. Weather does not raise the Pacific count by a
+third while leaving the Atlantic flat. ASCAT-C (MetOp-C, launched late 2018,
+data through 2019) improves revisit most where the coverage gaps are widest,
+and the Pacific basin is the wider one. A predictor correlated with era would
+otherwise masquerade as a predictor of wind, and the compactness hypothesis is
+about small, short-lived wind maxima -- exactly the population a third
+scatterometer preferentially catches.
+
+**The study record is Pacific, 2020-2025: 261 cases.** 2016-2019 is available
+as a sensitivity check but is not pooled with it.
+
+With six seasons the interleaved split is 3 explore / 3 confirm, about 130
+each. That is thinner than is comfortable, which raises the value of the
+Atlantic replication: a second basin is stronger confirmation than a larger
+holdout in the same one.
+
+## Phase 0.5 result: the archive cannot decide the compactness hypothesis
+
+The hypothesis under test is that hurricane force comes from a tight pressure
+gradient rather than a deep centre, so a compact, fast-falling low can reach
+it at a central pressure in the 980s. The archive carries no footprint and no
+environmental pressure, so it cannot test that directly; the corollary it can
+test is whether events reaching hurricane force at modest depth are the
+fast-falling ones.
+
+They are not, on the measure available: grouping by minimum track pressure,
+the shallow group's fastest 12 h fall is a median 8 hPa against the deep
+group's 12 hPa -- the opposite of the prediction. But that comparison is
+between two track extremes that need not occur together, and minimum pressure
+is not depth: a 985 hPa low under a 1035 hPa ridge is a 50 hPa depression, and
+nothing in the archive says which it was.
+
+Conditioning properly, on the state at hurricane-force onset, the test runs
+out of data: only 68 events in the whole record carry a 12 h fall ending at
+onset, and **none of them are Pacific**, because Pacific tracks begin at onset.
+Among those 68 the correlation is +0.18, not significant, and the shallow and
+deep groups' falls are within 2 hPa of each other.
+
+Two things the archive does establish:
+
+- **The stated signature is real but rare.** 13 events in the full record
+  reached hurricane force with a minimum pressure at or above 980 hPa and a
+  12 h fall of 20 hPa or more, including one at 1005 hPa falling 21 hPa and
+  one at 994 falling 24.
+- **The converse is common.** 162 of 362 deep events, 45%, never fell more
+  than 10 hPa in 12 h. Nearly half of deep hurricane-force lows got there
+  without rapid deepening.
+
+Both routes exist, which is consistent with wind depending on something other
+than central pressure alone -- but it does not confirm depth-over-scale
+specifically, because scale is exactly what is missing. The gate outcome is to
+proceed to ERA5, and Phase 0.5 has earned its hour by naming precisely what
+ERA5 has to supply: environmental pressure, for depth, and footprint, for
+scale.
+
 ## Holdout, decided before any of it is looked at
 
 This is an exploratory search for differentiators across many candidate
