@@ -37,8 +37,9 @@ period can only come from a per-gridpoint maximum over the whole window.
 F000-024 topping out at 56 kt is also why there must be **no**
 `Hurricane_64+_F000-024` layer, while F024-048 at 80 kt gets all three bands.
 The band labels (`34-47`, `48-63`, `64+`) match the Marine Weather Forecast
-Viewer's warning legend, so a renamed band fails here rather than quietly
-drifting away from it.
+Viewer's warning legend and the colors are the marine warning convention
+(yellow, orange, red), so either one drifting fails here rather than quietly
+going its own way.
 
 `pmsl` encodes the forecast hour in its High and Low values, so each `Lows_Fxxx`
 layer's label proves which grid it came from - and the High, which the field

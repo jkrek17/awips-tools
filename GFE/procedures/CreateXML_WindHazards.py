@@ -18,10 +18,12 @@
 # excuse is an area disappearing quietly, so every contour dropped by the
 # noise filters is reported by name and size on the status bar.
 #
-# The band labels and colors match the Marine Weather Forecast Viewer's
-# legend - Gale 34-47, Storm 48-63, Hurricane 64+ - so this overlay and the
-# viewer's rendering of the issued text read the same way.  Sub-gale is not
-# drawn; adding ("SubGale", "<34", 0.0) to WIND_BANDS would draw it.
+# The band labels match the Marine Weather Forecast Viewer's legend - Gale
+# 34-47, Storm 48-63, Hurricane 64+ - so this overlay and the viewer's
+# rendering of the issued text read the same way, and the colors follow the
+# usual marine warning convention: yellow gale, orange storm, red hurricane
+# force.  Sub-gale is not drawn; adding ("SubGale", "<34", 0.0) to WIND_BANDS
+# would draw it.
 #
 # Patterned on CreateXML.py (stephanie.stevenson) and, like it, subclasses
 # A2GraphicsFunctions so the site's own XmlUtils/MathUtils and the
@@ -124,13 +126,13 @@ CYCLE_HOURS = [0, 6, 12, 18]
 WIND_GRID_INTERVAL_HRS = 6
 
 # Color by band: the band carries the color, the period carries the pattern.
-# These follow the Marine Weather Forecast Viewer's warning legend.
-BAND_COLORS = {"Gale": (255, 165, 0),
-               "Storm": (230, 60, 50),
-               "Hurricane": (190, 90, 215)}
+# The usual marine warning convention - yellow, orange, red.
+BAND_COLORS = {"Gale": (255, 255, 0),
+               "Storm": (255, 165, 0),
+               "Hurricane": (255, 0, 0)}
 
 # Color by period: the period carries the color, the band carries the width.
-# Kept clear of the band colors above so the two modes never look alike.
+# Kept clear of the warning colors above so the two modes never look alike.
 PERIOD_COLORS = {"F000-024": (0, 255, 255),
                  "F024-048": (0, 150, 255)}
 

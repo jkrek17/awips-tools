@@ -567,7 +567,7 @@ def test_pgen_line_shape():
     check("smoothFactor set", line.get("smoothFactor") == str(module.SMOOTH_FACTOR))
     colors = list(line.iter("colors"))
     check("one color child", len(colors) == 1)
-    check("the gale band is the viewer's orange",
+    check("the gale band is warning-convention yellow",
           colors and (int(colors[0].get("red")), int(colors[0].get("green")),
                       int(colors[0].get("blue"))) == module.BAND_COLORS["Gale"])
     pts = list(line.iter("linePoints"))

@@ -437,10 +437,12 @@ off and written down. What that does not excuse is an area disappearing
 quietly: every contour the noise filters drop is named, with its size, on the
 status bar.
 
-The band labels and colors follow the **Marine Weather Forecast Viewer**'s
-warning legend - Gale 34-47, Storm 48-63, Hurricane 64+ - so this overlay and
-the viewer's rendering of the issued text read the same way. Sub-gale is not
-drawn; adding `("SubGale", "<34", 0.0)` to `WIND_BANDS` would draw it.
+The band labels follow the **Marine Weather Forecast Viewer**'s warning
+legend - Gale 34-47, Storm 48-63, Hurricane 64+ - so this overlay and the
+viewer's rendering of the issued text read the same way, and the colors follow
+the usual marine warning convention: yellow gale, orange storm, red hurricane
+force. Sub-gale is not drawn; adding `("SubGale", "<34", 0.0)` to `WIND_BANDS`
+would draw it.
 
 It follows `CreateXML.py`: it subclasses `A2GraphicsFunctions` and leaves the
 product, layer, pressure extrema and `storeXML` work to the site's own
@@ -499,8 +501,8 @@ basin's `pgenProd_dict["saveLayers"]` is false.
 
 | Setting | Color | Period shown by | Band shown by |
 |---|---|---|---|
-| `Band` (default) | `BAND_COLORS` - the viewer's orange / red / purple | line pattern (`PERIOD_LINE_TYPES`: solid vs dashed) | color |
-| `Period` | `PERIOD_COLORS` - cyan and blue, kept clear of the band colors | color | line width (`LINE_WIDTH`) |
+| `Band` (default) | `BAND_COLORS` - yellow gale, orange storm, red hurricane force | line pattern (`PERIOD_LINE_TYPES`: solid vs dashed) | color |
+| `Period` | `PERIOD_COLORS` - cyan and blue, kept clear of the warning colors | color | line width (`LINE_WIDTH`) |
 
 `Hatch fill: On` additionally fills each polygon with its period's hatch
 pattern (`PERIOD_FILL_PATTERNS`) instead of leaving it as an outline. Every one
@@ -516,7 +518,7 @@ PGEN `Line` element itself:
 ```xml
 <Line pgenCategory="Lines" pgenType="LINE_SOLID" closed="true" filled="false"
       flagColor="false" lineWidth="3.0" sizeScale="1.0" smoothFactor="2">
-  <colors red="255" green="165" blue="0" alpha="255"/>
+  <colors red="255" green="255" blue="0" alpha="255"/>
   <linePoints Lat="34.9010" Lon="-51.0000"/>
 </Line>
 ```
