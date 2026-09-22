@@ -50,7 +50,12 @@ TRACK_STEP_H = 6.0
 MAX_STEP_KM = 550.0        # 6 h of storm motion, generous but bounded
 EXCLUDE_KM = 750.0
 EXCLUDE_HOURS = 48.0
-MIN_DEPTH_HPA = 15.0       # a candidate has to be a real low to be comparable
+import os
+# A candidate has to be a real low to be comparable. Settable because
+# this floor also decides when a track is deemed to BEGIN: a low only
+# enters the database once it is this deep, so "lifetime" measured
+# against it is time spent deeper than the floor, not time in existence.
+MIN_DEPTH_HPA = float(os.environ.get("MIN_DEPTH_HPA", "15.0"))
 SYNOPTIC_HOURS = (0, 6, 12, 18)
 
 # North Pacific, set from where the archive's own Pacific fixes are.

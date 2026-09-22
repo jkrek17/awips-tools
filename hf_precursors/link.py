@@ -42,6 +42,11 @@ GUESS_RADIUS_KM = 350.0    # once a motion exists, how far from the guess
 MATCH_KM = 750.0
 MATCH_HOURS = 6.0
 MIN_TRACK_POINTS = 3       # 18 h; shorter is not a life cycle
+import os
+# How long a low may go undetected and still be the same track.
+# Breaking on every miss fragments one storm into several and makes
+# measured lifetimes shorter than the storms are.
+MAX_GAP_H = float(os.environ.get("MAX_GAP_H", "6"))
 
 
 def load_instances(paths):
@@ -74,7 +79,7 @@ def link(rows):
         claimed = set()
         still = []
         for tid, last, prev in live:
-            if (t - last["when"]) > timedelta(hours=6, minutes=1):
+            if (t - last["when"]) > timedelta(hours=MAX_GAP_H, minutes=1):
                 continue                                  # track ended
             if prev is None:
                 glat, glon, radius = last["lat"], last["lon"], MAX_LINK_KM

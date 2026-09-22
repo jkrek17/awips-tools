@@ -199,3 +199,52 @@ amplitude, jet-level divergence, low-level baroclinicity and the SST
 gradient, evaluated where the low will form rather than where it is. Nothing
 in this pipeline addresses it, and extending the horizon will not make it
 appear.
+
+---
+
+# Correction: the 96 h conclusion was an artifact of my own depth floor
+
+The earlier claim that "at 96 h the low does not exist" was measured against
+tracks anchored on each track's own pressure minimum, in a database that only
+admitted a low once it was **15 hPa deep**. Two things were tested:
+
+**Fragmentation is not the cause.** Allowing a track to survive one or two
+missed detections (6, 12, 18 h gaps) changes nothing: median lifetime stays
+30 h and the share living 96 h stays 3.1%.
+
+**The depth floor is the cause.** Anchoring instead on the archive's own
+hurricane-force onset and walking back from it with no floor at all:
+
+| lead before HF onset | identifiable | median depth | median gradient | median gust |
+| ---: | ---: | ---: | ---: | ---: |
+| 0 h | 100% | 33.7 hPa | 8.09 | 73 kt |
+| 12 h | 74% | 23.6 | 5.20 | 60 |
+| **24 h** | **73%** | **14.1** | **3.04** | **52** |
+| 48 h | 64% | 9.4 | 2.27 | 44 |
+| 72 h | 53% | 10.5 | 2.58 | 43 |
+| 96 h | 50% | 10.2 | 2.47 | 43 |
+
+**At 24 h before hurricane-force onset the median storm is 14.1 hPa deep --
+below the 15 hPa floor that decided whether it entered the track database at
+all.** The pipeline was systematically blind to the developmental phase it
+was supposed to forecast from, which is exactly the objection raised against
+the archive, landing instead on my own detector.
+
+## What the trail back actually shows
+
+A low is findable at T-96 in **half** of all cases, so "the low does not
+exist" was wrong. But the *unbroken* trail -- every step from onset back to
+that lead identifiable and reachable by a plausible storm step -- tells a
+harder story: median 18 h, reaching 24 h in 49% of cases, 48 h in 20%,
+72 h in 8% and 96 h in 5%.
+
+And beyond about 60 h the numbers stop moving: depth sits near 10 hPa, gust
+near 43 kt, and the step stays near 380 km at every lead. A trail whose
+quantities are independent of how far back you have gone is not following a
+storm; it has settled onto whatever low is nearby.
+
+**So following the surface low is good to roughly 36-48 h and goes cold after
+that.** Past that the forecast cannot be about the low's own depth and scale,
+because the thing being measured is no longer reliably the storm. It has to
+be about the environment that will produce one -- which is where upper levels
+come in.
