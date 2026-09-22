@@ -73,3 +73,62 @@ ratio on the confirmation seasons are the number that matters.
 The regression is on ERA5 analyses, not forecasts. It measures the physical
 relationship, which is an upper bound on what a forecaster could get from a
 model that has to predict depth and scale 24 h ahead in the first place.
+
+---
+
+# Confirmation, run after the above was committed
+
+Seasons 2021, 2023, 2025. 122 hurricane-force tracks, 556 others.
+
+| # | Prediction | Result | |
+| --- | --- | --- | --- |
+| 1 | scale coef on gust at peak negative, ~-0.013 | **-0.0152**, t = -8.3 | held |
+| 2 | scale coef at 24 h lead negative, ~-0.021, larger than at peak | **-0.0238**, t = -5.6, larger | held |
+| 3 | depth coef at peak ~ +0.9 | **+0.849**, t = 26.6 | held |
+| 4 | gradient R2 ~0.45 peak, ~0.34 lead | **0.528** and **0.335** | lead held; peak came in higher than predicted |
+| 5 | scale odds ratio below 1, ~0.996 | **0.9967** peak, **0.9944** lead | held |
+| 6 | every HF track reaches 64 kt gust, under a third of others | **97%** and **20%** | held on the second half; 97%, not every |
+
+The medians replicate across independent seasons almost exactly: peak scale
+500 against 550 km (exploration 490 against 540), peak gradient 8.2 against
+4.8 (exploration 8.2 against 5.0), ERA5 max gust 75.8 against 57.5
+(exploration 77.5 against 58.0).
+
+## The threshold, scored
+
+`gradient = depth / scale >= 7.0 hPa/100 km`, fixed before looking:
+
+| | POD | FAR | CSI |
+| --- | --- | --- | --- |
+| at the peak, exploration | 0.73 | 0.53 | 0.40 |
+| **at the peak, confirmation** | **0.70** | **0.44** | **0.45** |
+| **24 h before the peak, confirmation** | **0.31** | **0.15** | **0.29** |
+| depth >= 30 hPa at the peak, confirmation | 0.84 | 0.54 | 0.42 |
+
+Against depth alone the gradient threshold trades recall for precision: ten
+fewer false alarms for every seventeen, at the cost of catching fewer events.
+Its CSI is better, 0.45 against 0.42, and that is the honest size of the
+improvement -- real, replicated, and modest.
+
+At 24 h lead the same threshold becomes a high-confidence, low-sensitivity
+trigger: when it fires it is right 85% of the time, and it fires for only a
+third of the events, because many lows have not tightened yet a day out.
+
+## What this establishes, and what it does not
+
+**Established.** At a given depth, the compact low is the windier one, in
+both outcomes, at the peak and a day before it, in two independent sets of
+seasons, with every coefficient physically signed. The forecaster's
+hypothesis is supported.
+
+**Its size.** 100 km of extra compactness is worth about 1.5 kt of gust;
+1 hPa of extra depth about 0.85 kt. So 100 km of compactness trades for
+roughly 1.8 hPa of depth. Depth remains the bigger lever; compactness is a
+real second term, not a replacement.
+
+**Not established.** This is perfect prog: ERA5 analyses, not forecasts, so
+it measures the physical relationship and sets an upper bound on what a
+forecaster gets from a model that must first predict depth and scale a day
+ahead. The 24 h lead sample is 210 tracks. And the cyclone phase space
+fields are still not in this table -- whether they add anything over depth
+and scale is untested.
