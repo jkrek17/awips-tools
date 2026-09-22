@@ -223,3 +223,69 @@ about 5 GB streamed and discarded, well inside an hour in parallel.
 
 Until that runs, the honest statement about both panels is that the physics
 holds and the operational gain is unmeasured.
+
+---
+
+# Test 2, run: against the model's own forecast, the gain mostly disappears
+
+## First, a correction: sustained wind, not gust
+
+The archive's hurricane force is an analyst's SUSTAINED wind determination.
+The pipeline had been pairing it with ERA5's instantaneous gust, both as the
+"wind now" predictor and as the measured outcome. That was wrong, and the
+sustained field was recorded all along beside it.
+
+Redone on sustained wind, the phase-space gain is slightly LARGER: baseline
+0.877 rather than 0.882, and +0.054 rather than +0.047.
+
+One earlier claim does not survive the correction. The statement that every
+hurricane-force track reaches 64 kt in ERA5 was made on gust. **On sustained
+wind, none of them do** -- 0%, with a median of 44 kt against 33 for the
+rest. ERA5's 10 m wind at 0.25 degrees is a smoothed model wind and sits
+about 20 kt below what an analyst determines from scatterometer data. It
+discriminates well; it does not measure. The earlier threshold agreement was
+a coincidence of the gust field's scaling, not a validation of the label.
+
+## The operational ladder, held-out season 2025, 270 lows
+
+GFS f024 forecasts fetched by byte range from the AWS archive, one per cycle,
+sampled where the low actually was 24 h later -- a perfect track handed to
+the competitor on purpose.
+
+| model | AUC | FAR at POD 0.80 | false alarms |
+| :--- | ---: | ---: | ---: |
+| 1  depth + sustained wind now | 0.783 | 0.44 | 64 |
+| 2  + GFS f024 forecast wind | 0.876 | 0.30 | 35 |
+| **3  + HVTL and HVTU** | **0.889** | **0.28** | **33** |
+| GFS f024 wind alone | 0.846 | 0.34 | 42 |
+| phase space, without the forecast | 0.859 | 0.35 | 45 |
+
+**The model's own forecast is worth +0.093. The phase space on top of it is
+worth +0.013** -- two fewer false alarms in 270 lows.
+
+That is the answer to whether a panel is truly useful, and it is mostly no.
+The +0.054 measured without the forecast in the model was largely the phase
+space standing in for information the model's own forecast already carries,
+which is what should have been expected: GFS integrated the developing
+structure to produce that wind.
+
+## What does survive
+
+The phase space without the forecast (0.859) is about as good as the
+forecast alone (0.846). They are two largely independent readings of the
+same storm that reach similar skill by different routes, and combining them
+adds little because they agree most of the time.
+
+**Where they disagree is the only place a panel can earn anything.** That is
+a different product from the one proposed: not a probability field to add to
+the model's wind, but a flag for the cases where the structure says
+something the model's wind does not. Whether that subset is one a forecaster
+wins on is untested and is the obvious next experiment.
+
+## Limits of this test
+
+One held-out season, 270 lows, so FAR 0.30 against 0.28 is inside the noise.
+The GFS archive on AWS begins in 2021, which is why the fit/score split had
+to be made within the confirmation seasons rather than against the
+exploration ones. And the label remains the archive's, so every "false
+alarm" is a low no analyst recorded at hurricane force.
