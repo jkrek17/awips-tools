@@ -132,3 +132,70 @@ forecaster gets from a model that must first predict depth and scale a day
 ahead. The 24 h lead sample is 210 tracks. And the cyclone phase space
 fields are still not in this table -- whether they add anything over depth
 and scale is untested.
+
+---
+
+# Lead time: what predicts the wind, and how far ahead
+
+Fitted on 2020/2022/2024, scored on 2021/2023/2025, 678 held-out tracks.
+Outcome is the maximum ERA5 gust STRICTLY AFTER the predictor time -- an
+earlier version included the current instant, which let persistence score
+itself, and inflated its R2 by about 0.07.
+
+## Best predictor at 24 h
+
+| predictor | out-of-sample R2 | AUC for 64 kt ahead |
+| --- | --- | --- |
+| **persistence + 24 h deepening** | **0.743** | |
+| persistence (the gust already blowing) | 0.573 | 0.872 |
+| 24 h deepening alone | 0.382 | 0.841 |
+| gradient wind Vg | 0.335 | 0.784 |
+| gradient = depth/scale | 0.285 | 0.770 |
+| depth | 0.191 | 0.694 |
+| scale | 0.120 | 0.692 |
+
+## What each variable adds to persistence, which is the only test that matters
+
+| added to the gust now | R2 | gain |
+| --- | --- | --- |
+| **24 h deepening** | **0.743** | **+0.171** |
+| 12 h deepening | 0.738 | +0.165 |
+| depth + scale + deepening + latitude | 0.740 | +0.167 |
+| latitude | 0.591 | +0.019 |
+| depth + scale | 0.583 | +0.011 |
+| gradient | 0.573 | -0.000 |
+| gradient wind Vg | 0.572 | -0.000 |
+
+**The gradient adds nothing once the current wind is known, and that is not a
+failure of the earlier result -- it is the explanation of it.** The gradient
+explains the wind that is blowing: diagnostically it accounts for 53% of the
+variance in peak gust, which is why compact lows are windier. But the wind
+field already IS that gradient's consequence, so a forecaster looking at it
+has the information. What the current wind cannot say is which way it is
+going, and that is the one thing the tendency adds.
+
+Two variables carry the 24 h forecast: **how windy it is now, and how fast
+it is deepening.** Depth, scale and the gradient add a rounding error on top
+of those, and adding them costs nothing but buys nothing.
+
+## 96 hours: the question has to change
+
+Anchored on each track's own peak, the lead-time study runs out of storms,
+not out of data: at 48 h before its peak there are 33 held-out tracks, at
+72 h there are 5, and at 96 h there is 1. Median track lifetime is 30 h,
+p90 is 72 h, and **only 3% of North Pacific lows live 96 h at all** -- 14%
+of the hurricane-force ones.
+
+The forward-window framing ("given a low now, how windy in the next N
+hours") keeps its sample at every horizon because every instance can answer,
+but the curves flatten past about 48 h for the same reason: the window stops
+adding future to look at, because the storm is over.
+
+So 96 h is not a longer version of this question. At 96 h the low being
+forecast does not exist yet, and depth, scale, tendency and current wind are
+all undefined for it. That is a **cyclogenesis** forecast, and its predictors
+are environmental rather than structural -- upstream trough position and
+amplitude, jet-level divergence, low-level baroclinicity and the SST
+gradient, evaluated where the low will form rather than where it is. Nothing
+in this pipeline addresses it, and extending the horizon will not make it
+appear.

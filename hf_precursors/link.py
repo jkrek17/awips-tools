@@ -192,6 +192,23 @@ def main():
         w.writerows(tracks)
     print(f"wrote {dst.name}", flush=True)
 
+    # The linked instances themselves, so any lead time can be read off
+    # later without re-linking. Track summaries fix one lead; the lead-time
+    # study needs every point.
+    keep = {t["track"] for t in tracks}
+    inst = HERE / "data" / "instances.csv"
+    cols = ["track", "hf", "when", "lat", "lon", "p_centre", "p_env", "depth",
+            "scale_km", "fit_rms", "grad_hpa_per_100km", "vg_kt", "vgeo_kt",
+            "wind_kt", "gust_kt", "wind_dist_km"]
+    with open(inst, "w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=cols, extrasaction="ignore")
+        w.writeheader()
+        for r in rows:
+            if r.get("track") in keep:
+                w.writerow(dict(r, hf=int(r["track"] in hf),
+                                when=r["when"].strftime("%Y-%m-%d %H")))
+    print(f"wrote {inst.name}", flush=True)
+
 
 if __name__ == "__main__":
     main()
