@@ -172,3 +172,54 @@ means no track spans fit and score, so the generalization is honest even
 though the nominal significance is overstated. The baseline is already at
 0.88, where gains are hard to come by, which makes +0.047 worth more than it
 looks. And this is still perfect prog -- ERA5 analyses, not forecasts.
+
+---
+
+# Would a panel actually work? Two tests
+
+## Test 1: does the gain survive what D2D can compute? YES
+
+The screen used a depth from a Gaussian fit to the azimuthal-mean pressure
+profile around a detected centre. A derived parameter has no centre -- it
+computes one number per grid point from windowed operations. So the depth a
+panel could show is not the depth the model was fitted on, and a gain
+measured with one is not evidence for the other.
+
+Refitting with the pointwise analogue the package already builds -- maximum
+pressure within a 500 km window minus the value at the point:
+
+| depth used | baseline | + Hart | gain | FAR at POD 0.80 |
+| :--- | ---: | ---: | ---: | :--- |
+| fitted profile (what the screen used) | 0.882 | 0.929 | +0.047 | 0.33 -> 0.22 |
+| **pointwise 500 km window (what a panel shows)** | **0.882** | **0.928** | **+0.046** | **0.34 -> 0.23** |
+
+The two depths correlate at r = 0.92, the pointwise one running 1.3 hPa
+shallower. The gain is intact: +0.046 against +0.047, and false alarms still
+fall by a third at the same detection rate. **Panel A is worth building.**
+
+## Test 2: does it survive on FORECASTS rather than analyses? Not yet run
+
+Everything above is perfect prog. Both panels are fitted and scored on ERA5
+analyses, so they measure the physical relationship and set an upper bound on
+what a forecaster gets from a model that has to predict the 3D structure
+24 h ahead in the first place.
+
+The real competitor for Panel B is not persistence of the analysis -- it is
+**the model's own 24 h forecast of 10 m wind**, which a forecaster already
+has on the screen. A tendency field only earns its place by beating that.
+
+The test is feasible and cheap, which was not obvious:
+
+- the GFS forecast archive on AWS open data is reachable, and covers the
+  confirmation seasons from 2021;
+- each cycle's `.idx` allows byte-range reads, so the eight fields needed --
+  PRMSL and geopotential on seven levels -- cost **6.8 MB per forecast
+  instead of the 500 MB file**;
+- cfgrib parses them onto a 721x1440 0.25 degree grid, the same grid ERA5
+  uses, so every routine in this package applies unchanged.
+
+For the confirmation-season lows that is roughly 700 unique valid times,
+about 5 GB streamed and discarded, well inside an hour in parallel.
+
+Until that runs, the honest statement about both panels is that the physics
+holds and the operational gain is unmeasured.
