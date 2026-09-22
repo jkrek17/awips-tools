@@ -142,6 +142,11 @@ def scan_season(season, out_path):
 
 
 if __name__ == "__main__":
+    import os
     season = int(sys.argv[1])
-    out = HERE / "data" / f"scan_{season}.csv"
+    # The detection floor also decides when a track is deemed to BEGIN, so a
+    # run at a lower floor is written beside the old one rather than over it:
+    # the two cohorts are different populations, not versions of one.
+    tag = os.environ.get("SCAN_TAG", "")
+    out = HERE / "data" / f"scan{tag}_{season}.csv"
     scan_season(season, out)

@@ -178,7 +178,11 @@ def summarize(rows, hf, onset):
 
 
 def main():
-    paths = sorted((HERE / "data").glob("scan_*.csv"))
+    # The 5 hPa cohort is written as scan_d5_*.csv, which would also match a
+    # bare scan_*.csv glob -- linking the two together would silently merge
+    # two different populations into one track database.
+    tag = os.environ.get("SCAN_TAG", "")
+    paths = sorted((HERE / "data").glob(f"scan{tag}_[0-9]*.csv"))
     print(f"reading {len(paths)} season scans", flush=True)
     rows = load_instances(paths)
     print(f"{len(rows)} low-instances", flush=True)
@@ -190,7 +194,7 @@ def main():
           f"{n_hf} matched to an archive hurricane-force event "
           f"({n_hf}/{n_cases} of the archive's own cases found)", flush=True)
 
-    dst = HERE / "data" / "tracks.csv"
+    dst = HERE / "data" / f"tracks{tag}.csv"
     with open(dst, "w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=list(tracks[0].keys()))
         w.writeheader()
@@ -201,7 +205,7 @@ def main():
     # later without re-linking. Track summaries fix one lead; the lead-time
     # study needs every point.
     keep = {t["track"] for t in tracks}
-    inst = HERE / "data" / "instances.csv"
+    inst = HERE / "data" / f"instances{tag}.csv"
     cols = ["track", "hf", "when", "lat", "lon", "p_centre", "p_env", "depth",
             "scale_km", "fit_rms", "grad_hpa_per_100km", "vg_kt", "vgeo_kt",
             "wind_kt", "gust_kt", "wind_dist_km"]

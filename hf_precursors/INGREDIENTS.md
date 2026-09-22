@@ -105,3 +105,70 @@ different processes. Whatever is measured here must be measured the same way
 for cases and for non-events, by one detector, with the depth floor low
 enough to admit a developing low -- the median storm is 14.1 hPa deep 24 h
 before hurricane-force onset, and the first pipeline's floor was 15.
+
+---
+
+# Screen result: the phase space fields are the only ingredient that adds
+
+2652 lows from the 5 hPa cohort, each carrying every ingredient above,
+labelled by whether hurricane force followed within 24 h. Baseline is what a
+forecaster already has from the low itself: **its depth and the wind
+currently blowing near it**, AUC 0.892 on the exploration seasons and 0.882
+on the confirmation seasons. An ingredient earns a field in D2D only by
+beating that.
+
+| ingredient | alone | + baseline | gain (explore) | gain (confirm) |
+| :--- | ---: | ---: | ---: | ---: |
+| **Hart HVTU** | 0.756 | 0.927 | **+0.044** | **+0.045** |
+| **Hart HVTL** | 0.503 | 0.905 | **+0.019** | **+0.023** |
+| gradient wind Vg | 0.825 | 0.887 | +0.008 | +0.005 |
+| S&G trough depth | 0.679 | 0.886 | +0.003 | +0.004 |
+| scale | 0.611 | 0.886 | +0.005 | +0.004 |
+| G&D thickness anomaly | 0.649 | 0.885 | +0.002 | +0.003 |
+| S&G SST gradient | 0.607 | 0.882 | +0.004 | +0.000 |
+| G&D upstream anticyclone | 0.746 | 0.882 | -0.000 | +0.000 |
+| G&D downstream cyclone | 0.735 | 0.882 | +0.000 | +0.001 |
+| S&G trough distance | 0.558 | 0.882 | +0.002 | -0.000 |
+
+Both Hart terms together take the baseline from 0.882 to **0.929**, and
+adding every other ingredient on top of them buys nothing further (0.928).
+**The entire gain is the phase space.**
+
+## Why, and what it means
+
+HVTU is the upper-tropospheric thermal wind: how cold the core is aloft.
+Depth says how strong the low is and the current wind says what it is doing;
+neither says whether the system has developed the deep cold core aloft that
+marks a mature extratropical cyclone rather than a shallow wave. That is
+development STAGE, and it is the piece the surface fields cannot see.
+
+So after this whole sequence -- compactness, tendency, the classic
+ingredients -- the package already built and installed at OPC turns out to
+carry the one thing that adds to what a forecaster can already read off a
+surface chart. HVTL and HVTU need only geopotential, which the definitions
+already request.
+
+## Signs that came out opposite to what was expected
+
+Reported rather than quietly flipped, because each one is informative:
+
+- **HVTU, and HVTL.** The expected sign was Hart's positive-is-warm-core,
+  which is the TROPICAL reading. These are extratropical systems, and a cold
+  core aloft is the mature signature, so the reversal is the expected physics
+  rather than a contradiction.
+- **G&D thickness anomaly, and the downstream cyclone.** Gyakum and
+  Danielson's finding is about the region of *incipient cyclogenesis*, which
+  lies upstream of the low; both quantities here are measured at the low
+  itself, with sectors fixed to west and east rather than to their composite
+  frame. A sign flip under that mismatch is an implementation caveat, not a
+  refutation of their result, and testing it properly means compositing in
+  their frame.
+
+## Caveats
+
+Instances from one track are not independent, so the effective sample is
+nearer the number of tracks than the 1360 rows scored; the season split
+means no track spans fit and score, so the generalization is honest even
+though the nominal significance is overstated. The baseline is already at
+0.88, where gains are hard to come by, which makes +0.047 worth more than it
+looks. And this is still perfect prog -- ERA5 analyses, not forecasts.
