@@ -135,8 +135,21 @@ def timing():
 
 # ------------------------------------------------ 2. closed-low detector
 def detector_map():
+    """closed_low_mask now takes MSLP (hPa or Pa), not 1000 hPa height, and
+    its depth test (depth_hpa, DEFAULT_DEPTH_HPA = 5.0 hPa by default)
+    reads directly in hPa rather than meters. The synthetic lows here are
+    built directly as pressure fields (1000 hPa minus a Gaussian
+    depression, hPa) rather than as a height field silently reinterpreted
+    as pressure -- passing height straight through raises no error but
+    tests a depth about 8x too small (5 m of "depth" for what looks like a
+    5 hPa test). The depth axis is the same central-depth series the old
+    height-based test used, converted by the same 8 m per hPa rule
+    (1000 hPa height depth in m, divided by 8): 20-120 m becomes
+    2.5-15 hPa.
+    """
     lats, lons, lat2d, lon2d, dx, dy = make_grid(0.25)
-    depths = [20, 30, 40, 50, 60, 80, 100, 120]
+    depths_m = [20, 30, 40, 50, 60, 80, 100, 120]
+    depths = [d / 8.0 for d in depths_m]  # hPa
     scales = [100, 150, 200, 300, 400, 500, 600, 800]
     hit = np.zeros((len(depths), len(scales)), bool)
     clat, clon = 45.0, 165.0
@@ -144,26 +157,28 @@ def detector_map():
     cj = int(np.argmin(abs(lons - clon)))
     for i, d in enumerate(depths):
         for j, s in enumerate(scales):
-            z = std_height(1000) - d * np.exp(-((dist_km(lat2d, lon2d, clat, clon) / s) ** 2))
-            m = hc.closed_low_mask(z, dx, dy, hc.MIN_RADIUS_KM, hc.RADIUS_KM, hc.DEFAULT_DEPTH_M, hc.DEFAULT_BLOB_RADIUS_KM, hc.DEFAULT_CENTER_TOL_M)
+            pmsl = 1000.0 - d * np.exp(-((dist_km(lat2d, lon2d, clat, clon) / s) ** 2))
+            m = hc.closed_low_mask(pmsl, dx, dy, hc.MIN_RADIUS_KM, hc.RADIUS_KM, hc.DEFAULT_DEPTH_HPA, hc.DEFAULT_BLOB_RADIUS_KM, hc.DEFAULT_CENTER_TOL_HPA)
             hit[i, j] = bool(m[ci, cj])
-    print("\n2. Closed-low detector: detected (X) or not (.) at the center, by central depth (rows, m) and e-folding scale (columns, km)")
+    print("\n2. Closed-low detector: detected (X) or not (.) at the center, by central depth (rows, hPa) and e-folding scale (columns, km)")
     print("   depth\\scale " + " ".join(f"{s:>4d}" for s in scales))
     for i, d in enumerate(depths):
-        print(f"   {d:>6d} m    " + " ".join(f"{'X' if hit[i, j] else '.':>4s}" for j in range(len(scales))))
-    # false positive tests
+        print(f"   {d:>6.2f} hPa  " + " ".join(f"{'X' if hit[i, j] else '.':>4s}" for j in range(len(scales))))
+    # false positive tests -- same features as before (40/30 m per 1000 km
+    # trough gradient, 80 m deep flat/elongated lows), converted to hPa by
+    # the same 8 m per hPa rule: 5.0/3.75 hPa per 1000 km, 10.0 hPa deep.
     r = dist_km(lat2d, lon2d, clat, clon)
     x_km = (lon2d - clon) * 111.0 * np.cos(np.radians(clat))
     y_km = (lat2d - clat) * 111.0
-    trough = std_height(1000) + 0.04 * abs(x_km) - 0.03 * y_km  # V-shaped trough, 40 m per 1000 km each side, 30 m per 1000 km along
-    m_trough = hc.closed_low_mask(trough, dx, dy, hc.MIN_RADIUS_KM, hc.RADIUS_KM, hc.DEFAULT_DEPTH_M, hc.DEFAULT_BLOB_RADIUS_KM, hc.DEFAULT_CENTER_TOL_M)
-    flat = std_height(1000) - 80.0 * np.exp(-((np.clip(r - 300.0, 0, None) / 250.0) ** 2))  # 80 m deep, flat within 300 km
-    m_flat = hc.closed_low_mask(flat, dx, dy, hc.MIN_RADIUS_KM, hc.RADIUS_KM, hc.DEFAULT_DEPTH_M, hc.DEFAULT_BLOB_RADIUS_KM, hc.DEFAULT_CENTER_TOL_M)
-    elong = std_height(1000) - 80.0 * np.exp(-((x_km / 700.0) ** 2) - ((y_km / 150.0) ** 2))  # elongated 80 m low, 700 by 150 km
-    m_elong = hc.closed_low_mask(elong, dx, dy, hc.MIN_RADIUS_KM, hc.RADIUS_KM, hc.DEFAULT_DEPTH_M, hc.DEFAULT_BLOB_RADIUS_KM, hc.DEFAULT_CENTER_TOL_M)
-    print(f"   open V trough, 40 m per 1000 km cross-trough gradient: detected anywhere = {bool(np.nanmax(m_trough))}")
-    print(f"   80 m low with a flat 300 km center:                      detected at center = {bool(m_flat[ci, cj])}, anywhere = {bool(np.nanmax(m_flat))}")
-    print(f"   80 m elongated low, 700 by 150 km:                       detected at center = {bool(m_elong[ci, cj])}")
+    trough = 1000.0 + 0.005 * abs(x_km) - 0.00375 * y_km  # V-shaped trough, 5 hPa per 1000 km cross-trough, 3.75 hPa per 1000 km along
+    m_trough = hc.closed_low_mask(trough, dx, dy, hc.MIN_RADIUS_KM, hc.RADIUS_KM, hc.DEFAULT_DEPTH_HPA, hc.DEFAULT_BLOB_RADIUS_KM, hc.DEFAULT_CENTER_TOL_HPA)
+    flat = 1000.0 - 10.0 * np.exp(-((np.clip(r - 300.0, 0, None) / 250.0) ** 2))  # 10 hPa deep, flat within 300 km
+    m_flat = hc.closed_low_mask(flat, dx, dy, hc.MIN_RADIUS_KM, hc.RADIUS_KM, hc.DEFAULT_DEPTH_HPA, hc.DEFAULT_BLOB_RADIUS_KM, hc.DEFAULT_CENTER_TOL_HPA)
+    elong = 1000.0 - 10.0 * np.exp(-((x_km / 700.0) ** 2) - ((y_km / 150.0) ** 2))  # elongated 10 hPa low, 700 by 150 km
+    m_elong = hc.closed_low_mask(elong, dx, dy, hc.MIN_RADIUS_KM, hc.RADIUS_KM, hc.DEFAULT_DEPTH_HPA, hc.DEFAULT_BLOB_RADIUS_KM, hc.DEFAULT_CENTER_TOL_HPA)
+    print(f"   open V trough, 5 hPa per 1000 km cross-trough gradient: detected anywhere = {bool(np.nanmax(m_trough))}")
+    print(f"   10 hPa low with a flat 300 km center:                    detected at center = {bool(m_flat[ci, cj])}, anywhere = {bool(np.nanmax(m_flat))}")
+    print(f"   10 hPa elongated low, 700 by 150 km:                     detected at center = {bool(m_elong[ci, cj])}")
     return depths, scales, hit
 
 
@@ -248,8 +263,8 @@ def main():
     fig, ax = plt.subplots(figsize=(5.2, 3.6))
     ax.imshow(hit, cmap="Greys", vmin=0, vmax=1.4, origin="lower", aspect="auto")
     ax.set_xticks(range(len(scales))); ax.set_xticklabels(scales)
-    ax.set_yticks(range(len(depths))); ax.set_yticklabels(depths)
-    ax.set_xlabel("e-folding scale (km)"); ax.set_ylabel("central depth at 1000 hPa (m)")
+    ax.set_yticks(range(len(depths))); ax.set_yticklabels([f"{d:.2f}" for d in depths])
+    ax.set_xlabel("e-folding scale (km)"); ax.set_ylabel("central depth (hPa)")
     ax.set_title("closed-low detector: dark = detected at center", fontsize=9)
     fig.tight_layout(); fig.savefig(HERE / "figB_detector.png", dpi=300)
     print("\nwrote", HERE / "figB_detector.png")

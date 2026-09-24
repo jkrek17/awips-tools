@@ -377,12 +377,18 @@ def compute_frame(t, clat, clon, heading_deg, speed_ms, lat2d, lon2d, lat_vals, 
     scalars (circular window, `cps.hart`) and the gridded fields sampled at
     the grid point nearest (clat, clon) (square window, `cps_HartCPS`).
 
-    Returns a dict with the eight scalars (`VTL_hart`, `VTU_hart`, `B_hart`,
-    `CLS_hart`, `VTL_grid`, `VTU_grid`, `B_grid`, `CLS_grid`) plus `ci`/`cj`
-    (the sampled grid indices). With `return_fields=True` it also includes
-    the full 2D fields a map needs: `z` (level -> height array, for every
-    level in `NEEDED_LEVELS`), `vtl_full`, `vtu_full`, `b_full`, `cls_full`,
-    `u_arr`, `v_arr` (the gridded module's own outputs before sampling).
+    Returns a dict with the nine scalars (`VTL_hart`, `VTU_hart`, `B_hart`,
+    `CLS_hart`, `VTL_grid`, `VTU_grid`, `B_grid`, `CLS_grid`, `B_grid_former`)
+    plus `ci`/`cj` (the sampled grid indices). `B_grid_former` is parameter B
+    from the earlier first-order gradient form (`parameter_b_grid_gradient`,
+    kept in cps_HartCPS.py for comparison against the current, exact
+    half-disk-mean `parameter_b_grid` that `B_grid`/`executeB` use), computed
+    on the exact same thickness and motion fields `B_grid` uses -- see the
+    module docstring's "Parameter B and the joint class" section. With
+    `return_fields=True` it also includes the full 2D fields a map needs:
+    `z` (level -> height array, for every level in `NEEDED_LEVELS`),
+    `vtl_full`, `vtu_full`, `b_full`, `b_full_former`, `cls_full`, `u_arr`,
+    `v_arr` (the gridded module's own outputs before sampling).
     """
     z = build_heights(t, clat, clon, lat2d, lon2d, heading_deg, speed_ms, NEEDED_LEVELS)
 
@@ -410,8 +416,30 @@ def compute_frame(t, clat, clon, heading_deg, speed_ms, lat2d, lon2d, lat_vals, 
         u_arr, v_arr, u_arr, v_arr, u_arr, v_arr, u_arr, v_arr,
         psfc, coriolis, dx, dy, radiusKm=RADIUS_KM, layerScale=hc.HART_B_LAYER_SCALE,
     )
+
+    # Former, first-order gradient form of gridded B (parameter_b_grid_gradient),
+    # kept only for comparison in figD_lifecycle.png -- built from the exact same
+    # 925-700 hPa thickness and (window-averaged) steering motion executeB's own
+    # parameter_b_grid call uses, so the two differ only in the half-disk-mean
+    # versus gradient method itself, not in their inputs. u_arr/v_arr are already
+    # spatially uniform, so steering()/steering_window_mean() would just hand
+    # them straight back -- passed directly here for the identical result.
+    psfc_hpa = hc.surface_pressure_hpa(psfc)
+    z925_masked = hc.mask_below_ground(z[925], psfc_hpa, 925.0, hc.BELOW_GROUND_CAP_HPA)
+    z700_masked = hc.mask_below_ground(z[700], psfc_hpa, 700.0, hc.BELOW_GROUND_CAP_HPA)
+    thickness = np.asarray(z700_masked, dtype=float) - np.asarray(z925_masked, dtype=float)
+    b_full_former = hc.parameter_b_grid_gradient(
+        thickness, u_arr, v_arr, dx, dy, coriolis, RADIUS_KM, hc.HART_B_LAYER_SCALE,
+    )
+
+    # closed_low_mask (via executeHartClass) reads mean sea level pressure, not
+    # 1000 hPa height: build a synthetic MSLP field (hPa) from this life cycle's
+    # own 1000 hPa height at about 8 m per hPa. Passing z[1000] unchanged here
+    # would raise no error but silently test 5 m of "depth" instead of 5 hPa
+    # (DEFAULT_DEPTH_HPA) -- see cps_HartCPS.py's module docstring.
+    pmsl = 1000.0 + z[1000] / 8.0
     cls_full = hc.executeHartClass(
-        z[1000], z[925], z[850], z[700], z[500], z[400], z[300],
+        pmsl, z[925], z[850], z[700], z[500], z[400], z[300],
         u_arr, v_arr, u_arr, v_arr, u_arr, v_arr, u_arr, v_arr,
         psfc, coriolis, dx, dy, radiusKm=RADIUS_KM,
     )
@@ -422,11 +450,11 @@ def compute_frame(t, clat, clon, heading_deg, speed_ms, lat2d, lon2d, lat_vals, 
     result = dict(
         VTL_hart=float(vtl_hart), VTU_hart=float(vtu_hart), B_hart=float(b_hart), CLS_hart=float(cls_hart),
         VTL_grid=float(vtl_full[ci, cj]), VTU_grid=float(vtu_full[ci, cj]), B_grid=float(b_full[ci, cj]),
-        CLS_grid=float(cls_full[ci, cj]), ci=ci, cj=cj,
+        CLS_grid=float(cls_full[ci, cj]), B_grid_former=float(b_full_former[ci, cj]), ci=ci, cj=cj,
     )
     if return_fields:
-        result.update(z=z, vtl_full=vtl_full, vtu_full=vtu_full, b_full=b_full, cls_full=cls_full,
-                       u_arr=u_arr, v_arr=v_arr)
+        result.update(z=z, vtl_full=vtl_full, vtu_full=vtu_full, b_full=b_full, b_full_former=b_full_former,
+                       cls_full=cls_full, u_arr=u_arr, v_arr=v_arr, pmsl=pmsl)
     return result
 
 
@@ -459,6 +487,7 @@ def main():
     VTU_grid = np.full(n, np.nan)
     CLS_grid = np.full(n, np.nan)
     CLS_hart = np.full(n, np.nan)
+    B_grid_former = np.full(n, np.nan)
 
     for i, t in enumerate(hours):
         clat, clon = float(lats[i]), float(lons[i])
@@ -467,6 +496,7 @@ def main():
                            psfc, coriolis)
         VTL_hart[i], VTU_hart[i], B_hart[i], CLS_hart[i] = r["VTL_hart"], r["VTU_hart"], r["B_hart"], r["CLS_hart"]
         VTL_grid[i], VTU_grid[i], B_grid[i], CLS_grid[i] = r["VTL_grid"], r["VTU_grid"], r["B_grid"], r["CLS_grid"]
+        B_grid_former[i] = r["B_grid_former"]
 
     # ---------------------------------------------------------- table
     print()
@@ -498,38 +528,55 @@ def main():
 
     onset_hart = first_cross(B_hart, np.greater, 10.0)
     onset_grid = first_cross(B_grid, np.greater, 10.0)
+    onset_former = first_cross(B_grid_former, np.greater, 10.0)
     completion_hart = first_cross(VTL_hart, np.less, 0.0)
     completion_grid = first_cross(VTL_grid, np.less, 0.0)
+    # The former B form only changes B itself, not VTL (thermal_wind_grid is
+    # untouched by which parameter_b_grid* form is used), so completion --
+    # defined purely from VTL -- is identical for "new gridded" and "former".
+    completion_former = completion_grid
     fall_below_hart = first_cross_after_peak(B_hart, np.less, 10.0)
     fall_below_grid = first_cross_after_peak(B_grid, np.less, 10.0)
+    fall_below_former = first_cross_after_peak(B_grid_former, np.less, 10.0)
 
     rms = {}
     for name, hart_arr, grid_arr in (("B", B_hart, B_grid), ("VTL", VTL_hart, VTL_grid), ("VTU", VTU_hart, VTU_grid)):
         diff = grid_arr - hart_arr
         rms[name] = float(np.sqrt(np.nanmean(diff ** 2)))
+    rms["B_former"] = float(np.sqrt(np.nanmean((B_grid_former - B_hart) ** 2)))
 
     deep_mask = hours <= 48.0
     ratio_lower_deep = float(np.nanmean(VTL_grid[deep_mask]) / np.nanmean(VTL_hart[deep_mask]))
 
     peak_idx_hart = int(np.nanargmax(B_hart))
     peak_idx_grid = int(np.nanargmax(B_grid))
+    peak_idx_former = int(np.nanargmax(B_grid_former))
     b_peak_ratio = float(B_grid[peak_idx_grid] / B_hart[peak_idx_hart])
+    b_peak_ratio_former = float(B_grid_former[peak_idx_former] / B_hart[peak_idx_hart])
 
     print()
-    print(f"Onset (B first exceeds 10 m):          Hart {onset_hart:.0f} h,  gridded {onset_grid:.0f} h")
-    print(f"Completion (VTL first turns negative): Hart {completion_hart:.0f} h,  gridded {completion_grid:.0f} h")
-    print(f"B falls back under 10 m (after the peak): Hart {fall_below_hart:.0f} h,  gridded {fall_below_grid:.0f} h")
+    print(f"Onset (B first exceeds 10 m):          Hart {onset_hart:.0f} h,  gridded {onset_grid:.0f} h,  "
+          f"former gridded {onset_former:.0f} h")
+    print(f"Completion (VTL first turns negative): Hart {completion_hart:.0f} h,  gridded {completion_grid:.0f} h,  "
+          f"former gridded {completion_former:.0f} h (same VTL as gridded)")
+    print(f"B falls back under 10 m (after the peak): Hart {fall_below_hart:.0f} h,  gridded {fall_below_grid:.0f} h,  "
+          f"former gridded {fall_below_former:.0f} h")
     print()
     print(f"B peak: Hart {B_hart[peak_idx_hart]:.1f} m at {hours[peak_idx_hart]:.0f} h,  "
-          f"gridded {B_grid[peak_idx_grid]:.1f} m at {hours[peak_idx_grid]:.0f} h")
+          f"gridded {B_grid[peak_idx_grid]:.1f} m at {hours[peak_idx_grid]:.0f} h,  "
+          f"former gridded {B_grid_former[peak_idx_former]:.1f} m at {hours[peak_idx_former]:.0f} h")
     print(f"Ratio of the gridded B peak to the Hart B peak: {b_peak_ratio:.3f}")
+    print(f"Ratio of the former gridded B peak to the Hart B peak: {b_peak_ratio_former:.3f}")
     print()
     print("RMS difference between methods over the life cycle (gridded minus Hart):")
-    print(f"  B:   {rms['B']:6.2f} m")
-    print(f"  VTL: {rms['VTL']:6.2f} m")
-    print(f"  VTU: {rms['VTU']:6.2f} m")
+    print(f"  B (new, half-disk means):      {rms['B']:6.2f} m")
+    print(f"  B (former, first-order gradient): {rms['B_former']:6.2f} m")
+    print(f"  VTL (lower term):               {rms['VTL']:6.2f} m")
+    print(f"  VTU (upper term):               {rms['VTU']:6.2f} m")
     print()
     print(f"Ratio gridded/Hart of the lower term during the deep warm core phase (0 to 48 h): {ratio_lower_deep:.3f}")
+    print(f"Seclusion-phase lower term (last frame, hour {hours[-1]:.0f}): "
+          f"gridded {VTL_grid[-1]:.1f} m,  Hart {VTL_hart[-1]:.1f} m")
 
     n_nan_hart = int(np.sum(~np.isfinite(VTL_hart) | ~np.isfinite(B_hart)))
     n_nan_grid = int(np.sum(~np.isfinite(VTL_grid) | ~np.isfinite(B_grid)))
@@ -575,12 +622,12 @@ def main():
     print(f"  Hart 925-700(x lambda) / Hart 900-600 (layer only, both semicircle):     {b_hart_925_700 / B_hart[peak_idx_hart]:.3f}")
 
     make_figure(hours, lats, lons, B_hart, VTL_hart, VTU_hart, B_grid, VTL_grid, VTU_grid, CLS_grid, CLS_hart,
-                onset_hart, onset_grid, completion_hart, completion_grid)
+                onset_hart, onset_grid, completion_hart, completion_grid, B_grid_former)
 
 
 # ------------------------------------------------------------- figure
 def make_figure(hours, lats, lons, B_hart, VTL_hart, VTU_hart, B_grid, VTL_grid, VTU_grid, CLS_grid, CLS_hart,
-                 onset_hart, onset_grid, completion_hart, completion_grid):
+                 onset_hart, onset_grid, completion_hart, completion_grid, B_grid_former):
     cmap_hart = LinearSegmentedColormap.from_list("hart_gray", ["#c9c9c9", "#000000"])
     cmap_grid = LinearSegmentedColormap.from_list("grid_red", ["#fbdede", RED])
 
@@ -590,7 +637,7 @@ def make_figure(hours, lats, lons, B_hart, VTL_hart, VTU_hart, B_grid, VTL_grid,
     # fixed limits only where this life cycle's own data actually exceeds
     # them (see PHASE_XLIM_VTL/PHASE_YLIM_B/PHASE_YLIM_VTU below).
     xlim_vtl = ds.widen_limits(ds.FIG10_VTL_LIM, VTL_hart, VTL_grid)
-    ylim_b = ds.widen_limits(ds.FIG10_B_LIM, B_hart, B_grid)
+    ylim_b = ds.widen_limits(ds.FIG10_B_LIM, B_hart, B_grid, B_grid_former)
     ylim_vtu = ds.widen_limits(ds.FIG10_VTU_LIM, VTU_hart, VTU_grid)
     for lim, base, name in ((xlim_vtl, ds.FIG10_VTL_LIM, "-V_T^L"), (ylim_b, ds.FIG10_B_LIM, "B"),
                              (ylim_vtu, ds.FIG10_VTU_LIM, "-V_T^U")):
@@ -607,6 +654,11 @@ def make_figure(hours, lats, lons, B_hart, VTL_hart, VTU_hart, B_grid, VTL_grid,
     ds.draw_b_vtl_quadrants(ax, xlim_vtl, ylim_b, 10.0)
     ax.plot(VTL_hart, B_hart, "-", color="0.75", lw=1.0, zorder=1)
     ax.plot(VTL_grid, B_grid, "-", color=RED, alpha=0.35, lw=1.0, zorder=1)
+    # Former, first-order gradient form of gridded B (parameter_b_grid_gradient),
+    # plotted against the SAME VTL_grid (VTL does not depend on which B form is
+    # used) -- thin dotted, no markers, so it reads as a comparison trace behind
+    # the two marker series rather than competing with them for attention.
+    ax.plot(VTL_grid, B_grid_former, ":", color=RED, alpha=0.55, lw=1.0, zorder=1)
     ax.scatter(VTL_hart, B_hart, c=hours, cmap=cmap_hart, s=32, marker="o", zorder=3, edgecolor="white", linewidth=0.4)
     ax.scatter(VTL_grid, B_grid, c=hours, cmap=cmap_grid, s=32, marker="s", zorder=4, edgecolor="white", linewidth=0.4)
     ax.axhline(10.0, color=ds.TEXT_DARK, lw=1.0, zorder=2)
@@ -642,13 +694,17 @@ def make_figure(hours, lats, lons, B_hart, VTL_hart, VTU_hart, B_grid, VTL_grid,
     handles = [
         Line2D([0], [0], marker="o", color="0.4", lw=1.0, markersize=6, label="Hart, circular window"),
         Line2D([0], [0], marker="s", color=RED, lw=1.0, markersize=6, label="gridded, square window"),
+        Line2D([0], [0], ls=":", color=RED, alpha=0.55, lw=1.4,
+               label="gridded, first-order gradient (former)"),
     ]
-    fig.legend(handles=handles, loc="upper center", ncol=2, fontsize=8, bbox_to_anchor=(0.5, 1.0), frameon=False)
+    fig.legend(handles=handles, loc="upper center", ncol=3, fontsize=8, bbox_to_anchor=(0.5, 1.0), frameon=False)
 
     # -- (c) time series, with the gridded class as a strip along the top
     ax = axes[2]
     ax.plot(hours, B_hart, "--", color=PURPLE, lw=1.2, label="B, Hart")
     ax.plot(hours, B_grid, "-", color=PURPLE, lw=1.2, label="B, gridded")
+    ax.plot(hours, B_grid_former, ":", color=PURPLE, lw=1.0, alpha=0.75,
+            label="B, gridded (former)")
     ax.plot(hours, VTL_hart, "--", color=RED, lw=1.2, label="$-V_T^L$, Hart")
     ax.plot(hours, VTL_grid, "-", color=RED, lw=1.2, label="$-V_T^L$, gridded")
     ax.plot(hours, VTU_hart, "--", color=BLUE, lw=1.2, label="$-V_T^U$, Hart")

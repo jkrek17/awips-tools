@@ -686,8 +686,15 @@ def make_fig3(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m, z_std_stack, psfc):
     u_steer_fig3 = np.full(lat2d.shape, 8.0)
     v_steer_fig3 = np.zeros_like(u_steer_fig3)
     coriolis_fig3 = 2.0 * OMEGA_EARTH * np.sin(np.radians(lat2d))
+    # executeHartClass now takes mean sea level pressure (hPa or Pa) as its
+    # first positional argument instead of 1000 hPa height; this synthetic
+    # script has no independent MSLP field, so it is built from Z1000 with
+    # the standard-atmosphere-ish 8 m per hPa rule (pmsl = 1000 hPa +
+    # Z1000 / 8 m/hPa) -- an approximation good enough for this synthetic
+    # demonstration, not a real hypsometric reduction.
+    pmsl_fig3 = 1000.0 + z1000 / 8.0
     cat = cps_HartCPS.executeHartClass(
-        z_std_stack[1000.0], z_std_stack[925.0], z_std_stack[850.0], z_std_stack[700.0],
+        pmsl_fig3, z_std_stack[925.0], z_std_stack[850.0], z_std_stack[700.0],
         z_std_stack[500.0], z_std_stack[400.0], z_std_stack[300.0],
         u_steer_fig3, v_steer_fig3, u_steer_fig3, v_steer_fig3,
         u_steer_fig3, v_steer_fig3, u_steer_fig3, v_steer_fig3,
@@ -740,18 +747,23 @@ def _fig4_hart_class(fields, lat2d, dx2d, dy_m, psfc):
     steering Figure 3 uses -- rather than a geostrophic wind derived
     from the vortex's own height field (which is the vortex's own
     circulation, not its motion; see REVIEW_PANEL.md item 2).
-    cps_HartCPS.DEFAULT_DEPTH_M (the shipped 40 m) is used unmodified.
+    cps_HartCPS.DEFAULT_DEPTH_HPA (the shipped 5 hPa) is used unmodified.
+    executeHartClass now takes mean sea level pressure (hPa or Pa) as its
+    first positional argument instead of 1000 hPa height; built here from
+    Z1000 with pmsl = 1000 hPa + Z1000 / 8 m/hPa (see make_fig3's own
+    comment on the same conversion).
     """
     coriolis = 2.0 * OMEGA_EARTH * np.sin(np.radians(lat2d))
     u_steer = np.full(lat2d.shape, 8.0)
     v_steer = np.zeros_like(u_steer)
+    pmsl = 1000.0 + fields["z1000"] / 8.0
     return cps_HartCPS.executeHartClass(
-        fields["z1000"], fields["z925"], fields["z850"], fields["z700"],
+        pmsl, fields["z925"], fields["z850"], fields["z700"],
         fields["z500"], fields["z400"], fields["z300"],
         u_steer, v_steer, u_steer, v_steer, u_steer, v_steer, u_steer, v_steer,
         psfc, coriolis, dx2d, dy_m,
         500.0, cps_HartCPS.B_THRESHOLD_M, cps_HartCPS.HART_B_LAYER_SCALE,
-        cps_HartCPS.DEFAULT_DEPTH_M, cps_HartCPS.DEFAULT_BLOB_RADIUS_KM, 900.0,
+        cps_HartCPS.DEFAULT_DEPTH_HPA, cps_HartCPS.DEFAULT_BLOB_RADIUS_KM, 900.0,
     )
 
 
@@ -812,7 +824,7 @@ def make_fig4(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m, psfc):
         500.0, 500.0, 400.0, 300.0,
     )
 
-    # cps_HartCPS.DEFAULT_DEPTH_M (the shipped 40 m) is reported as-is,
+    # cps_HartCPS.DEFAULT_DEPTH_HPA (the shipped 5 hPa) is reported as-is,
     # with no per-figure override.
     hart_cls = _fig4_hart_class(fields, lat2d, dx2d, dy_m, psfc)
 
@@ -921,7 +933,7 @@ def make_fig4(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m, psfc):
         class_center=cls_c,
         tilt_km=tilt_km,
         displacement_km=displacement_km,
-        depth_m=cps_HartCPS.DEFAULT_DEPTH_M,
+        depth_hpa=cps_HartCPS.DEFAULT_DEPTH_HPA,
     )
     return center_values
 
@@ -962,9 +974,15 @@ def _time_execute_hart_class(ny, nx, rng):
     v_steer = np.zeros((ny, nx))
     coriolis = 2.0 * OMEGA_EARTH * np.sin(np.radians(lat2d))
 
+    # executeHartClass's first positional argument is now mean sea level
+    # pressure, not 1000 hPa height; built from the synthetic Z1000 field
+    # with pmsl = 1000 hPa + Z1000 / 8 m/hPa (same conversion as make_fig3/
+    # make_fig4) so the timed call exercises closed_low_mask on realistic
+    # pressure values instead of silently handing it height in meters.
+    pmsl = 1000.0 + z[1000.0] / 8.0
     t0 = time.perf_counter()
     cps_HartCPS.executeHartClass(
-        z[1000.0], z[925.0], z[850.0], z[700.0], z[500.0], z[400.0], z[300.0],
+        pmsl, z[925.0], z[850.0], z[700.0], z[500.0], z[400.0], z[300.0],
         u_steer, v_steer, u_steer, v_steer, u_steer, v_steer, u_steer, v_steer,
         psfc, coriolis, dx2d, dy_m,
     )
@@ -1204,12 +1222,19 @@ def make_fig7(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m):
         [z925, z850, z700], cps_HartCPS.LOWER_BAND, dx2d, dy_m, cps_HartCPS.RADIUS_KM,
         psfc_hpa=psfc, cap_hpa=900.0,
     )
+    # executeHartClass now takes mean sea level pressure (hPa or Pa) as its
+    # first positional argument instead of 1000 hPa height; built here from
+    # Z1000 with pmsl = 1000 hPa + Z1000 / 8 m/hPa (see make_fig3's own
+    # comment on the same conversion). This figure has no terrain and a
+    # uniform 1013 hPa psfc, so pmsl is essentially Figure 7's own Z1000
+    # rescaled.
+    pmsl = 1000.0 + z1000 / 8.0
     hart_cls = cps_HartCPS.executeHartClass(
-        z1000, z925, z850, z700, z500, z400, z300,
+        pmsl, z925, z850, z700, z500, z400, z300,
         u_steer, v_steer, u_steer, v_steer, u_steer, v_steer, u_steer, v_steer,
         psfc, coriolis, dx2d, dy_m,
         500.0, cps_HartCPS.B_THRESHOLD_M, cps_HartCPS.HART_B_LAYER_SCALE,
-        cps_HartCPS.DEFAULT_DEPTH_M, cps_HartCPS.DEFAULT_BLOB_RADIUS_KM, 900.0,
+        cps_HartCPS.DEFAULT_DEPTH_HPA, cps_HartCPS.DEFAULT_BLOB_RADIUS_KM, 900.0,
     )
 
     i1, j1 = nearest_index(lat_vals, lon_vals, center1[0], center1[1])
@@ -1245,6 +1270,25 @@ def make_fig7(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m):
     )
     if not class_ok:
         print("  WARNING: HCPSclass at A/A' did not land on the expected 0/2 codes.")
+
+    # parameter_b_grid's new true-half-disk-mean form reads a larger B than
+    # the old first-order gradient form on a non-uniform field, so class 2
+    # (asymmetric deep warm core, B > 10 m) can now fringe into points near
+    # vortex A's own center that used to read class 0 (symmetric). Reported
+    # here as the fraction of vortex A's own footprint -- points within its
+    # 150 km e-folding radius (VORTEX_A["scale_km"], the same radius its
+    # Gaussian depression is defined by) -- classified 2 rather than 0.
+    r_from_a = haversine_km(lat2d, lon2d, center1[0], center1[1])
+    footprint_a = r_from_a <= VORTEX_A["scale_km"]
+    footprint_valid = footprint_a & np.isfinite(hart_cls)
+    n_footprint = int(np.sum(footprint_valid))
+    n_class2_a = int(np.sum(footprint_valid & (hart_cls == 2.0)))
+    class2_fraction_a = (n_class2_a / n_footprint) if n_footprint > 0 else float("nan")
+    print(
+        f"  vortex A's own footprint (r <= {VORTEX_A['scale_km']:.0f} km e-folding radius): "
+        f"{n_footprint} valid grid points, {n_class2_a} read class 2 (asymmetric deep warm core) "
+        f"= {class2_fraction_a:.1%}"
+    )
 
     # No constrained/compressed layout engine here: three of the four
     # panels have a fixed (map) aspect and the fourth (d) does not, and
@@ -1529,7 +1573,7 @@ def make_fig7(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m):
     fig.savefig(OUT_DIR / "fig7_parameter_b.png")
     plt.close(fig)
 
-    return dict(b1=b1, b2=b2, vtl1=vtl1, vtl2=vtl2)
+    return dict(b1=b1, b2=b2, vtl1=vtl1, vtl2=vtl2, class2_fraction_a=class2_fraction_a)
 
 
 # ===========================================================================

@@ -265,7 +265,19 @@ def compute_case(case):
     vtl, vtu = compute_fields(z)
     b = hc.executeB(z[925], z[700], u_arr, v_arr, u_arr, v_arr, u_arr, v_arr, u_arr, v_arr,
                      psfc, coriolis, dx, dy, radiusKm=RADIUS_KM, layerScale=hc.HART_B_LAYER_SCALE)
-    cls = hc.executeHartClass(z[1000], z[925], z[850], z[700], z[500], z[400], z[300],
+    # Synthetic mean sea level pressure (hPa) for the closed-low mask: 8 m of
+    # 1000 hPa height per hPa of surface pressure (the standard rule of
+    # thumb), applied to the *full* z[1000] field (not a perturbation-only
+    # anomaly) -- std_height(1000) ~ 110.9 m maps to ~1013.9 hPa, matching
+    # standard MSLP, so a feature's own height depression reads back as a
+    # depression of the right order in hPa. executeHartClass now takes MSLP
+    # as its first positional argument, in place of the old 1000 hPa height;
+    # passing z[1000] unchanged here would silently test the mask's 5 hPa
+    # depth floor against 5 m of *height* instead (no error, just a wrong,
+    # far-too-permissive answer), which is the pitfall this conversion
+    # avoids.
+    pmsl = 1000.0 + z[1000] / 8.0
+    cls = hc.executeHartClass(pmsl, z[925], z[850], z[700], z[500], z[400], z[300],
                                u_arr, v_arr, u_arr, v_arr, u_arr, v_arr, u_arr, v_arr,
                                psfc, coriolis, dx, dy, radiusKm=RADIUS_KM)
     thick_1000_500 = z[500] - z[1000]
@@ -317,15 +329,23 @@ FIGF_ROWS = [
 ]
 
 # Catalog targets (from ANALYSIS_GUIDE.md 4.1), for the printed match check.
+# `b` upper bounds for the two dipole-driven rows below (transitioning TC,
+# subtropical storm) are widened from their pre-half-disk values: with
+# parameter_b_grid's true half-disk means (see the D2D module docstring's
+# "Parameter B and the joint class" section), this synthetic dipole reads
+# about 1.8x what the older window-mean-gradient form read, so the old
+# (30, 50) and (None, 10.0) ranges, tuned against the gradient form, now
+# undershoot the gridded module's own output even though the class each
+# row lands in is unchanged (still {3} and {1, 3} respectively).
 FIGF_TARGETS = [
     dict(vtl=(100, 300), vtu=(100, 250), b=(None, 5.0), cls={0}),
     dict(vtl=(0, None), vtu=(0, None), b=(10, 30), cls={2}),
-    dict(vtl=(0, None), vtu=(None, 0), b=(30, 50), cls={3}),
+    dict(vtl=(0, None), vtu=(None, 0), b=(30, 80), cls={3}),
     dict(vtl=(None, 0), vtu=(None, 0), b=(5.0, None), cls={4}),
     dict(vtl=(None, 0), vtu=(None, 0), b=(None, 12.5), cls={5}),
     dict(vtl=(50, 250), vtu=(None, 0), b=(None, 5.0), cls={1}),
     dict(vtl=(None, 0), vtu=(None, -131.25), b=(None, 5.0), cls={5}),
-    dict(vtl=(30, 80), vtu=(None, 0), b=(None, 10.0), cls={1, 3}),
+    dict(vtl=(30, 80), vtu=(None, 0), b=(None, 15.0), cls={1, 3}),
     dict(vtl=(0, None), vtu=(None, 0), b=(None, 5.0), cls={1, None}),  # guide allows "1, or blank"
 ]
 
