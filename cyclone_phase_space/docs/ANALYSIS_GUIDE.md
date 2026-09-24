@@ -166,9 +166,11 @@ Read the two fields away from lows as baroclinicity maps:
 - **Blue HVTU with transparent HVTL** is an elevated baroclinic zone
   with no surface front: a jet crossing warm-sector or subtropical air,
   or a front that has lifted off the surface.
-- **Red away from a low** means the gradient weakens with height, so
-  the geostrophic wind weakens with height through the layer: a
-  shallow cold high, a cold dome, or a low-level jet that fades aloft.
+- **Red away from a low** means the height gradient weakens with
+  height through the 925 to 700 hPa layer, so the geostrophic wind
+  weakens with height there: a shallow cold high, a cold dome whose
+  easterly flow fades and reverses to westerly above it, or a low-level
+  jet that fades aloft.
 - **Red HVTL with blue HVTU** is a shallow cold air mass under an
   upper-level baroclinic zone: cold-air damming or an arctic high with
   the jet overhead, or the cold side of a warm front where warm air is
@@ -205,6 +207,17 @@ class where a closed low is present. Colors are for the shipped ranges
 "blue" on HVTL and HVTU, and "magenta" and "teal" on HB, mean solid
 color, "pale" the fading band, "clear" the transparent band near zero. Read the class only at a closed low; read
 HVTL, HVTU and HB anywhere.
+
+Two synthetic storyboards show every row below as the operational
+code renders it, one feature per row, with the 1000 hPa height and
+thickness, HVTL, HVTU, HB and the class side by side
+(`../article/figures/feature_catalog.py`). They are idealized cases
+built to the catalog's description, not model output, so use them to
+learn the signatures, not the magnitudes.
+
+![Feature catalog at a closed low](../article/figures/figF_catalog_lows.png)
+
+![Feature catalog away from lows](../article/figures/figG_catalog_environment.png)
 
 ### 4.1 At a closed low
 
