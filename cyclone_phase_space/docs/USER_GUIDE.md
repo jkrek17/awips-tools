@@ -164,6 +164,9 @@ storm is in right now. Onset and completion are read from HB and HVTL
 directly, not from HCPSclass (see "Reading the class" in section 5 and
 section 6).
 
+![Hart's three numbers as one three-dimensional space, cut into seven colored boxes, one per HCPSclass code, with the synthetic life cycle's path running through them](../article/figures/figJ_phase_space_3d.png)
+*The class is simply which box of this three-number space the storm sits in; the two classic diagrams are what you see looking at the space from two of its sides ([rotatable version](../article/figures/phase_space_3d.html)).*
+
 ### How this differs from the FSU page
 
 HCPSclass and the FSU page describe the same three numbers, but not the

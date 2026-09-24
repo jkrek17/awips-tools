@@ -70,7 +70,9 @@ one, and ends in the cold corner. Some storms hook back toward shallow
 warm core: a warm seclusion re-forming a warm core at the surface, the
 ones that deepen unexpectedly over cold water. The product we built
 turns all three numbers into one, so a forecaster reads a single class
-instead of two diagrams. For a marine center, transition is when the
+instead of two diagrams. The class is the cell of Hart's
+three-dimensional space the storm falls in, and the two diagrams are
+that space's projections, which is the picture on the right. For a marine center, transition is when the
 wind field expands, so these crossings are the forecast question.
 
 **[Slide 6, what we built] 3:26**

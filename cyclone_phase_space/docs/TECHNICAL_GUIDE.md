@@ -298,6 +298,17 @@ the User Guide's "Using it on shift"). `HCPSclass`'s own crossings
 (0 to 2 or 3, then to 4 or 5) are the usual signature of the same two
 events but can lag or lead them by a frame near a strict line.
 
+![Hart's phase space in three dimensions, the seven HCPSclass cells drawn as translucent colored boxes cut by the planes B = 10 m, -VTL = 0 and -VTU = 0, with the synthetic life cycle's Hart and gridded trajectories threading through them](../article/figures/figJ_phase_space_3d.png)
+
+The figure (article Figure 7, from `cyclone_phase_space/article/figures/phase_space_3d.py`)
+draws that space with -VTL, B and -VTU on the axes, the seven cells as
+boxes in the class colors (code 6 spanning both sides of B = 10 m), and
+the synthetic life cycle of section 2.8 as Hart's trajectory (gray) and
+the gridded one (red), so a storm's class is the box its (B, -VTL, -VTU)
+point falls in and the two classic diagrams are the space's projections
+onto two faces. An interactive version that can be rotated and read by
+hovering is at [`article/figures/phase_space_3d.html`](../article/figures/phase_space_3d.html).
+
 Index = 2 tanh(HVTL / scaleM) + tanh(HVTU / scaleM), scaleM = 100 m,
 NaN outside the closed-low mask, and the only place in this family a
 neutral band (via `scaleM`) remains.
