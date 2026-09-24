@@ -194,12 +194,69 @@ extensions and would be two more fields from the same inputs.
 
 ---
 
-## 4. Cautions specific to analysis
+## 4. Feature catalog
+
+What each synoptic feature looks like on the three fields, with the
+class where a closed low is present. Colors are for the shipped ranges
+(HVTL and HVTU plus or minus 300 m, HB plus or minus 40 m): "red" and
+"blue" mean solid color, "pale" the fading band, "clear" the
+transparent band near zero. Read the class only at a closed low; read
+HVTL, HVTU and HB anywhere.
+
+### 4.1 At a closed low
+
+| Feature | HVTL | HVTU | HB | Class | What to look for |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| Hurricane or typhoon | red, +100 to +300 | red, +100 to +250 | clear | 0 | tight MSLP, no fronts; index above +2 |
+| Tropical cyclone meeting a front | red | red | red, 10 to 30 | 2 | onset; first front to the low |
+| Transitioning tropical cyclone | red, falling | blue | red, 30 to 50 | 3 | upper core gone; warm and cold fronts |
+| Extratropical low on a front, frontal wave | blue | blue | red | 4 | the everyday developing low |
+| Mature occluded low, Norwegian type | blue | blue | clear or pale | 5 | occlusion spirals to the center |
+| Warm seclusion, Shapiro-Keyser type | red, +50 to +250 | blue | clear | 1 | bent-back warm front, fractured cold front, T-bone; often the wind peak |
+| Cut-off low, cold low | blue | blue, strongly | clear | 5 | sits off the jet; slow moving; no surface fronts or weak ones |
+| Subtropical storm, hybrid | pale red, +30 to +80 | clear or pale blue | pale, under 10 | 1 or 3 | index near +0.5 to +1; wording call |
+| Weak tropical depression | pale red | pale red | clear | 0, or blank | may fall under the 5 hPa detector floor |
+| Polar low | pale red | blue | clear | 1, or blank | small; the window smooths it and the detector may miss it |
+| Lee low, thermal low | red | clear or blue | pale | 1, or blank | near terrain the mask blanks it; check surface pressure |
+
+### 4.2 Away from lows
+
+| Feature | HVTL | HVTU | HB | What to look for |
+| :--- | :--- | :--- | :--- | :--- |
+| Surface front, low-level baroclinic zone | blue band | any | red band | the front sits on the wind shift inside the band |
+| Polar jet axis | any | blue band | pale or red | follows the jet; the upper thermal wind |
+| Deep baroclinic zone, front under the jet | blue | blue | red | the main polar front; the storm track |
+| Shallow front: arctic, coastal, marine | blue | clear | red or pale | no jet above; often sharp and short |
+| Elevated baroclinic zone, jet over the warm sector | clear | blue | pale | no surface front; a lifted or upper front |
+| Cold dome under the jet, overrunning | red | blue | pale or red | cold-air damming, arctic high under warm advection; freezing spray and frozen precipitation in winter |
+| Shallow cold high, arctic high | red | clear | clear | the high fades aloft |
+| Warm subtropical high, ridge | pale blue | pale blue | clear | the ridge builds aloft; weak signal |
+| Warm sector, tropical air | clear | clear | clear | nothing to see, which is the point |
+| Open trough, no closed low | blue along the axis | blue | red flanks | class blank; the fields still show the trough's structure |
+| Easterly flow along a front, north side of a block | any | any | blue | warm air on the left of the flow; check the steering |
+
+### 4.3 In the animation
+
+- **Frontogenesis:** HB rising along a band frame to frame; the band
+  narrows and brightens.
+- **A storm entering the baroclinic zone:** HVTU at the center turns
+  from red to blue while HVTL stays red, and HB rises through 10 m.
+  The class walks 0, 2, 3.
+- **Occlusion:** HB at the center falls toward zero while both terms
+  are blue. The class goes 4 to 5.
+- **Seclusion:** HVTL at the center turns back to red while HVTU stays
+  blue and HB stays near zero. The class goes 5 or 4 to 1.
+- **A front lifting off the surface:** HVTL under the band fades while
+  HVTU stays blue.
+- **A cold dome eroding:** red HVTL under the jet fades to clear as the
+  low levels warm.
+
+## 5. Cautions specific to analysis
 
 - **The thresholds mean nothing away from a low.** Along a
   baroclinic zone HB can read 40 m or more and HVTL minus 150 m with no
   low anywhere. Hart's tests are for a storm, applied at the storm's
-  center; away from lows the fields are environment maps (section 3.7).
+  center; away from lows the fields are environment maps (sections 3.7 and 4).
 - **Blue HB is a flag, not a finding.** Negative HB means the warm air
   is on the left of the deep-layer flow. That is real for easterly flow
   along a front, for the north side of a block and for some seclusions.
@@ -223,7 +280,7 @@ extensions and would be two more fields from the same inputs.
 
 ---
 
-## 5. Worked example
+## 6. Worked example
 
 The 2026 September 20 0600 UTC GFS carried a western Pacific typhoon
 through its transition, sampled at the center each day.
@@ -246,7 +303,7 @@ same path.
 
 ---
 
-## 6. Checklist
+## 7. Checklist
 
 Before the analysis goes out:
 
@@ -264,7 +321,7 @@ Before the analysis goes out:
 
 ---
 
-## 7. Document set
+## 8. Document set
 
 - `USER_GUIDE.md`: loading and reading the products on shift.
 - `TECHNICAL_GUIDE.md`: method, tunables, install, limitations.
