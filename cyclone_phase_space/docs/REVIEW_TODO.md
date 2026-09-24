@@ -11,13 +11,12 @@ need CAVE, real model data, or a decision, in the order they matter.
 
 ## Needs CAVE or real data
 
-1. **Reinstall the D2D set and check the class field on every model.**
-   Install revision 3 of the flat set. HCPSidx and HCPSclass try four
-   MSLP inputs in order (`MSLP`, `PMSL`, `MSLP` at Surface, then 1000
-   hPa height converted). GFS loaded with `PMSL`; ECMWF did not, which
-   is what the ordering is for. For any model that still comes up
-   blank, look up the key behind "MSL Press" (README, Install) and
-   report it so the definition can carry it.
+1. **Check the class field on the remaining models.** Revision 3 is
+   installed; HCPSidx and HCPSclass try four MSLP inputs in order
+   (`MSLP`, `PMSL`, `MSLP` at Surface, then 1000 hPa height converted)
+   and load on GFS and ECMWF (verified 24 September). For any other
+   model that comes up blank, look up the key behind "MSL Press"
+   (README, Install) and report it so the definition can carry it.
 
 2. **Quantitative real-case comparison against the FSU page (review
    item 1, the main open point).** For Typhoon Dujuan in the 19

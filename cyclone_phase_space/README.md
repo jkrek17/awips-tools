@@ -590,8 +590,8 @@ Press", which aliases each model's own field), `PMSL` at `MSL` (verified
 on GFS at OPC), `MSLP` at `Surface`, and finally `GH` at `1000MB` with
 the trailing `pmslKind` constant set to 1, which converts the height to
 an equivalent MSLP at 8 m per hPa for a model whose inventory has no
-MSLP field. ECMWF did not load with `PMSL` alone, which is what the
-ordering is for. To see which name a model uses, open the base Volume
+MSLP field. ECMWF did not load with `PMSL` alone and does with this
+ordering; GFS and ECMWF are verified at OPC (24 September 2026). To see which name a model uses, open the base Volume
 Browser menu on the EDEX side and look up the key behind "MSL Press":
 
 ```
