@@ -70,7 +70,7 @@ import feature_catalog as fc  # noqa: E402
 from feature_catalog import hc  # noqa: E402
 import lifecycle_comparison as lc  # noqa: E402
 from regime_prototype import (  # noqa: E402
-    classify_regime, REGIME_CMAP, REGIME_NORM, REGIME_NAMES, REGIME_COLORS, ENV_CODES_FOR_LEGEND, TROUGH_CODE_BASE,
+    classify_regime, REGIME_CMAP, REGIME_NORM, REGIME_NAMES, REGIME_COLORS, ENV_CODES_FOR_LEGEND,
 )
 
 FIGI_PATH = HERE / "figI_basin_scene.png"
@@ -287,17 +287,11 @@ def draw_regime_panel(ax, codes, fs=7):
     masked = np.ma.masked_invalid(codes)
     ax.imshow(masked, extent=EXTENT, origin="lower", cmap=REGIME_CMAP, norm=REGIME_NORM,
               interpolation="nearest", aspect="auto", zorder=1)
-    trough_class = np.where(codes >= TROUGH_CODE_BASE, codes - TROUGH_CODE_BASE, np.nan)
-    ax.imshow(np.ma.masked_invalid(trough_class), extent=EXTENT, origin="lower", cmap=fc.CLASS_CMAP,
-              norm=fc.CLASS_NORM, interpolation="nearest", aspect="auto", zorder=2)
-    ax.set_title("(f) regime map, trough: Hart class", fontsize=8)
+    ax.set_title("(f) regime map (environment only)", fontsize=8)
     _map_axes(ax, fs)
     env_handles = [Patch(facecolor=REGIME_COLORS[k], edgecolor="0.3", label=f"{k} {REGIME_NAMES[k]}")
                    for k in ENV_CODES_FOR_LEGEND]
-    class_handles = [Patch(facecolor=fc.CLASS_PALETTE[k], edgecolor="0.3",
-                            label=f"{TROUGH_CODE_BASE + k} trough: class {k} ({fc.CLASS_NAMES[k]})")
-                      for k in range(7)]
-    ax.legend(handles=env_handles + class_handles, loc="upper left", bbox_to_anchor=(1.02, 1.0), fontsize=5.5,
+    ax.legend(handles=env_handles, loc="upper left", bbox_to_anchor=(1.02, 1.0), fontsize=6,
               frameon=False, handlelength=1.2, handleheight=1.2)
 
 
@@ -314,7 +308,7 @@ def main():
     levels = build_levels()
     thick = levels[500.0] - levels[1000.0]
     vtl, vtu, b, cls = compute_fields(levels)
-    codes, d, trough, closed_high, closed_low_ref = classify_regime(vtl, vtu, b, levels[1000.0], dx, dy, psfc)
+    codes, d, trough, closed_high = classify_regime(vtl, vtu, b, levels[1000.0], dx, dy, psfc)
 
     print(f"\n{'#':>2s} {'feature':32s} {'HVTL':>8s} {'HVTU':>8s} {'HB':>7s} {'class/regime':>14s} "
           f"{'catalog expects':>16s}  note")
