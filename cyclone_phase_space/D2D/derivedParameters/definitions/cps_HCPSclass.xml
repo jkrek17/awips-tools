@@ -48,7 +48,7 @@
 
   VERIFY: same checks as cps_HB.xml and cps_HCPSidx.xml (GH abbreviation,
   fixed-level Field spelling, P abbreviation and its Surface level
-  spelling, the PMSL abbreviation and its MSL level spelling, the
+  spelling, the MSLP/PMSL abbreviations and level spellings (the four Method blocks are tried in order and the first whose inputs exist is used, so a model with no MSLP field falls back to 1000 hPa height), the
   coriolis pseudo-field's abbreviation, dx/dy pseudo-fields and
   ConstantField support, levels= value, unit="" acceptance). If this
   definition fails to load, replace the coriolis Field with
@@ -57,9 +57,51 @@
 -->
 <DerivedParameter abbreviation="HCPSclass" name="Hart CPS Class (0 sym deep warm, 1 sym shallow warm, 2 asym deep warm, 3 asym shallow warm, 4 asym cold, 5 sym cold, 6 shallow cold)" unit="">
     <Method name="cps_HartCPS.executeHartClass" levels="Surface">
-        <!-- pmsl: mean sea level pressure (Pa or hPa) for the closed-low
-             mask - VERIFY the abbreviation and level spelling, see
-             cps_HCPSidx.xml -->
+        <!-- Method 1: the baseline MSLP derived parameter (the Volume Browser "MSL Press"), which aliases each model's own field -->
+        <Field abbreviation="MSLP" level="MSL"/>
+        <Field abbreviation="GH" level="925MB"/>
+        <Field abbreviation="GH" level="850MB"/>
+        <Field abbreviation="GH" level="700MB"/>
+        <Field abbreviation="GH" level="500MB"/>
+        <Field abbreviation="GH" level="400MB"/>
+        <Field abbreviation="GH" level="300MB"/>
+        <Field abbreviation="uW" level="850MB"/>
+        <Field abbreviation="vW" level="850MB"/>
+        <Field abbreviation="uW" level="700MB"/>
+        <Field abbreviation="vW" level="700MB"/>
+        <Field abbreviation="uW" level="500MB"/>
+        <Field abbreviation="vW" level="500MB"/>
+        <Field abbreviation="uW" level="300MB"/>
+        <Field abbreviation="vW" level="300MB"/>
+        <Field abbreviation="P" level="Surface"/>
+        <Field abbreviation="coriolis"/>
+        <Field abbreviation="dx"/>
+        <Field abbreviation="dy"/>
+        <!-- radiusKm (km): Hart's own 500 km analysis-window half-width,
+             used for HVTL, HVTU, parameter B's semicircles, and the
+             mask's own ring_radius_km -->
+        <ConstantField value="500.0"/>
+        <!-- bThresholdM (m): the Evans and Hart (2003) asymmetric/symmetric
+             line for parameter B (900-600 hPa equivalent) -->
+        <ConstantField value="10.0"/>
+        <!-- layerScale: rescales B from this module's 925-700 hPa layer
+             to a 900-600 hPa equivalent, ln(900/600)/ln(925/700) =
+             1.45477... - see cps_HB.xml -->
+        <ConstantField value="1.4548"/>
+        <!-- depthHpa (hPa): the closed-low mask's annulus depth test,
+             see cps_HCPSidx.xml -->
+        <ConstantField value="5.0"/>
+        <!-- blobKm (km): half-width of the blob painted around each
+             detected low's center, see cps_HCPSidx.xml -->
+        <ConstantField value="200.0"/>
+        <!-- capHpa: below-ground cap, see cps_HartCPS.py -->
+        <ConstantField value="900.0"/>
+        <!-- pmslKind: 0 = the first Field is mean sea level pressure (Pa or hPa),
+             1 = it is 1000 hPa height, converted at 8 m per hPa -->
+        <ConstantField value="0.0"/>
+    </Method>
+    <Method name="cps_HartCPS.executeHartClass" levels="Surface">
+        <!-- Method 2: the raw PMSL field (verified on GFS at OPC) -->
         <Field abbreviation="PMSL" level="MSL"/>
         <Field abbreviation="GH" level="925MB"/>
         <Field abbreviation="GH" level="850MB"/>
@@ -98,5 +140,96 @@
         <ConstantField value="200.0"/>
         <!-- capHpa: below-ground cap, see cps_HartCPS.py -->
         <ConstantField value="900.0"/>
+        <!-- pmslKind: 0 = the first Field is mean sea level pressure (Pa or hPa),
+             1 = it is 1000 hPa height, converted at 8 m per hPa -->
+        <ConstantField value="0.0"/>
+    </Method>
+    <Method name="cps_HartCPS.executeHartClass" levels="Surface">
+        <!-- Method 3: MSLP stored at the Surface level -->
+        <Field abbreviation="MSLP" level="Surface"/>
+        <Field abbreviation="GH" level="925MB"/>
+        <Field abbreviation="GH" level="850MB"/>
+        <Field abbreviation="GH" level="700MB"/>
+        <Field abbreviation="GH" level="500MB"/>
+        <Field abbreviation="GH" level="400MB"/>
+        <Field abbreviation="GH" level="300MB"/>
+        <Field abbreviation="uW" level="850MB"/>
+        <Field abbreviation="vW" level="850MB"/>
+        <Field abbreviation="uW" level="700MB"/>
+        <Field abbreviation="vW" level="700MB"/>
+        <Field abbreviation="uW" level="500MB"/>
+        <Field abbreviation="vW" level="500MB"/>
+        <Field abbreviation="uW" level="300MB"/>
+        <Field abbreviation="vW" level="300MB"/>
+        <Field abbreviation="P" level="Surface"/>
+        <Field abbreviation="coriolis"/>
+        <Field abbreviation="dx"/>
+        <Field abbreviation="dy"/>
+        <!-- radiusKm (km): Hart's own 500 km analysis-window half-width,
+             used for HVTL, HVTU, parameter B's semicircles, and the
+             mask's own ring_radius_km -->
+        <ConstantField value="500.0"/>
+        <!-- bThresholdM (m): the Evans and Hart (2003) asymmetric/symmetric
+             line for parameter B (900-600 hPa equivalent) -->
+        <ConstantField value="10.0"/>
+        <!-- layerScale: rescales B from this module's 925-700 hPa layer
+             to a 900-600 hPa equivalent, ln(900/600)/ln(925/700) =
+             1.45477... - see cps_HB.xml -->
+        <ConstantField value="1.4548"/>
+        <!-- depthHpa (hPa): the closed-low mask's annulus depth test,
+             see cps_HCPSidx.xml -->
+        <ConstantField value="5.0"/>
+        <!-- blobKm (km): half-width of the blob painted around each
+             detected low's center, see cps_HCPSidx.xml -->
+        <ConstantField value="200.0"/>
+        <!-- capHpa: below-ground cap, see cps_HartCPS.py -->
+        <ConstantField value="900.0"/>
+        <!-- pmslKind: 0 = the first Field is mean sea level pressure (Pa or hPa),
+             1 = it is 1000 hPa height, converted at 8 m per hPa -->
+        <ConstantField value="0.0"/>
+    </Method>
+    <Method name="cps_HartCPS.executeHartClass" levels="Surface">
+        <!-- Method 4, fallback for a model with no MSLP in the inventory: 1000 hPa height, converted to an equivalent MSLP at 8 m per hPa (extrapolated inside deep lows and over terrain; the band levels still blank terrain) -->
+        <Field abbreviation="GH" level="1000MB"/>
+        <Field abbreviation="GH" level="925MB"/>
+        <Field abbreviation="GH" level="850MB"/>
+        <Field abbreviation="GH" level="700MB"/>
+        <Field abbreviation="GH" level="500MB"/>
+        <Field abbreviation="GH" level="400MB"/>
+        <Field abbreviation="GH" level="300MB"/>
+        <Field abbreviation="uW" level="850MB"/>
+        <Field abbreviation="vW" level="850MB"/>
+        <Field abbreviation="uW" level="700MB"/>
+        <Field abbreviation="vW" level="700MB"/>
+        <Field abbreviation="uW" level="500MB"/>
+        <Field abbreviation="vW" level="500MB"/>
+        <Field abbreviation="uW" level="300MB"/>
+        <Field abbreviation="vW" level="300MB"/>
+        <Field abbreviation="P" level="Surface"/>
+        <Field abbreviation="coriolis"/>
+        <Field abbreviation="dx"/>
+        <Field abbreviation="dy"/>
+        <!-- radiusKm (km): Hart's own 500 km analysis-window half-width,
+             used for HVTL, HVTU, parameter B's semicircles, and the
+             mask's own ring_radius_km -->
+        <ConstantField value="500.0"/>
+        <!-- bThresholdM (m): the Evans and Hart (2003) asymmetric/symmetric
+             line for parameter B (900-600 hPa equivalent) -->
+        <ConstantField value="10.0"/>
+        <!-- layerScale: rescales B from this module's 925-700 hPa layer
+             to a 900-600 hPa equivalent, ln(900/600)/ln(925/700) =
+             1.45477... - see cps_HB.xml -->
+        <ConstantField value="1.4548"/>
+        <!-- depthHpa (hPa): the closed-low mask's annulus depth test,
+             see cps_HCPSidx.xml -->
+        <ConstantField value="5.0"/>
+        <!-- blobKm (km): half-width of the blob painted around each
+             detected low's center, see cps_HCPSidx.xml -->
+        <ConstantField value="200.0"/>
+        <!-- capHpa: below-ground cap, see cps_HartCPS.py -->
+        <ConstantField value="900.0"/>
+        <!-- pmslKind: 0 = the first Field is mean sea level pressure (Pa or hPa),
+             1 = it is 1000 hPa height, converted at 8 m per hPa -->
+        <ConstantField value="1.0"/>
     </Method>
 </DerivedParameter>

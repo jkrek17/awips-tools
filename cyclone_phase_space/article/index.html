@@ -744,9 +744,10 @@
     external cyclone tracker. HVTL and HVTU need geopotential height on
     their three levels and surface pressure; HCPSidx and HCPSclass also
     need mean sea level pressure for the closed-low detector, which the
-    definitions read as the PMSL abbreviation at the MSL level, a
-    spelling to be verified against the site's grid inventory at
-    install; HB and
+    definitions request under the names the inventory may carry (the
+    baseline MSLP alias, the raw PMSL field, and 1000&nbsp;hPa height
+    converted at 8&nbsp;m per hPa as a last resort), trying each in
+    turn so that a model without an MSLP field still classifies; HB and
     HCPSclass also need wind components at 850, 700, 500 and
     300&nbsp;hPa for the motion proxy and the Coriolis pseudo-field for
     the hemisphere sign. The sliding window that &Delta;<i>Z</i> is built

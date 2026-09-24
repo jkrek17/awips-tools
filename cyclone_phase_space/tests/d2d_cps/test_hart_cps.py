@@ -1923,3 +1923,24 @@ def test_execute_hart_class_performance(capsys):
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+def test_pmsl_input_hpa_height1000_fallback_matches_pressure_path():
+    """pmslKind 1 (1000 hPa height) must give the same closed-low mask as
+    the pressure path when the height is the hydrostatic image of the
+    pressure field, and an unknown kind must raise."""
+    clat, clon = 20.0, 0.0
+    lat2d, lon2d, dx2d, dy_m, r_km = _big_grid(clat, clon)
+    pmsl = _gaussian_low(r_km, depth_hpa=7.5, scale_km=150.0)
+    z1000 = (pmsl - 1000.0) * hc.HEIGHT1000_M_PER_HPA
+
+    np.testing.assert_allclose(hc.pmsl_input_hpa(z1000, 1.0), pmsl, atol=1e-9)
+    np.testing.assert_allclose(hc.pmsl_input_hpa(pmsl * 100.0, 0), pmsl, atol=1e-9)
+
+    mask_p = hc.closed_low_mask(hc.pmsl_input_hpa(pmsl, 0), dx2d, dy_m)
+    mask_z = hc.closed_low_mask(hc.pmsl_input_hpa(z1000, 1), dx2d, dy_m)
+    assert np.array_equal(mask_p, mask_z)
+    assert mask_z[lat2d.shape[0] // 2, lat2d.shape[1] // 2]
+
+    with pytest.raises(ValueError):
+        hc.pmsl_input_hpa(pmsl, 2)

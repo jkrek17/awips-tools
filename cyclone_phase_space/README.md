@@ -580,12 +580,28 @@ definitions, no other dependencies; the Python needs only numpy):
 | `GH` (geopotential height) | 925, 850, 700, 500, 400, 300 MB | all five |
 | `uW`, `vW` (wind) | 850, 700, 500, 300 MB | HB, HCPSclass |
 | `P` (surface pressure) | Surface | all five (below-ground mask) |
-| `PMSL` (mean sea level pressure) | MSL | HCPSclass, HCPSidx (closed-low mask) |
+| `MSLP` or `PMSL` (mean sea level pressure), or `GH` 1000MB as a fallback | MSL (or Surface; 1000MB for the fallback) | HCPSclass, HCPSidx (closed-low mask); four `<Method>` blocks tried in order |
 | `coriolis`, `dx`, `dy` pseudo-fields | | coriolis: HB, HCPSclass; dx/dy: all five |
 
-1000 hPa height is no longer read by any definition. The `PMSL`/`MSL`
-spelling is unverified (see "Troubleshooting"); check it against the
-site's grid inventory at install.
+The two class definitions carry four `<Method>` blocks that AWIPS tries
+in order, using the first whose inputs exist for the model: `MSLP` at
+`MSL` (the baseline derived parameter behind the Volume Browser's "MSL
+Press", which aliases each model's own field), `PMSL` at `MSL` (verified
+on GFS at OPC), `MSLP` at `Surface`, and finally `GH` at `1000MB` with
+the trailing `pmslKind` constant set to 1, which converts the height to
+an equivalent MSLP at 8 m per hPa for a model whose inventory has no
+MSLP field. ECMWF did not load with `PMSL` alone, which is what the
+ordering is for. To see which name a model uses, open the base Volume
+Browser menu on the EDEX side and look up the key behind "MSL Press":
+
+```
+grep -l "MSL Press" /awips2/edex/data/utility/cave_static/base/menus/volumebrowser/*.xml
+grep "MSL Press" <that file>        # the key="..." attribute is the abbreviation
+cat /awips2/edex/data/utility/common_static/base/derivedParameters/definitions/<key>.xml
+```
+
+The last file lists, one `<Method>` per model family, the raw field the
+alias resolves to.
 
 The `cps_` file prefix is only so the family sorts together in the
 Localization perspective and on disk; AWIPS keys each definition on the
@@ -674,15 +690,21 @@ more likely cause is the `coriolis` pseudo-field, not `P` -- see
 "Parameter B (HB) and its role in HCPSclass" above.
 
 **HCPSclass and HCPSidx fail to load, or come back empty, while HVTL,
-HVTU and HB work.** The suspect is the mean sea level pressure Field,
-`<Field abbreviation="PMSL" level="MSL"/>`, the one input only these two
-definitions read. Neither the `PMSL` abbreviation nor the `MSL` level
-spelling has been verified against a real site's grid inventory. Check
-a base definition or the Volume Browser's MSL plane for how your build
-names it, and try, in order, `level="0.0MSL"`, omitting the `level`
-attribute, and the model's own MSLP abbreviation (some models carry
-reduced MSLP under a model-specific name); change the same line in both
-files.
+HVTU and HB work.** The suspect is the mean sea level pressure input,
+the one field only these two definitions read. Each definition tries
+four `<Method>` blocks in order (`MSLP` at `MSL`, `PMSL` at `MSL`,
+`MSLP` at `Surface`, then `GH` at `1000MB` converted at 8 m per hPa),
+so a model is blank only if none of the four resolves. Find the name
+the model's "MSL Press" resolves to (see the Install section) and add
+it as a further `<Method>` block, copying an existing one and changing
+only the first `<Field>` line, in both files.
+
+**"unexpected element menuTemplate" when CAVE starts.** `cpsFields.xml`
+(the Volume Browser menu contribution, root element `menuTemplate`) was
+placed under `derivedParameters/definitions/` or `styleRules/`, whose
+loaders expect `DerivedParameter` or `styleRuleset`. Remove it from
+there; the fields load without it. It belongs, if wanted, under the
+site `cave_static` tree at `menus/volumebrowser/`.
 
 ## Tests
 
