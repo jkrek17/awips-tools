@@ -8,8 +8,9 @@ cropping, resizing and the panel labels added along the top edge.
 
 Figure 9  (fig9_cave_lifecycle.jpg): six crops of the HCPSclass field
           around one western Pacific typhoon, GFS runs of 2026-09-19.
-Figure 10 (fig10_cave_4panel.jpg): the four-panel procedure at 48 h of
-          the 2026-09-20 0600 UTC GFS run, with the sampled values.
+Figure 10 (fig10_cave_4panel.jpg): the North Atlantic four-panel at 6 h
+          of the 2026-09-24 0600 UTC GFS run, with the shipped colormaps
+          and the 959 hPa warm seclusion south of Greenland.
 Figure 11 (fig11_cave_atlantic.jpg): the North Atlantic four-panel at
           five hours of the 2026-09-24 0600 UTC GFS run, with the shipped
           colormaps (CPS_HartClass, CPS_Asymmetry on HB, CPS_CoreDiverging
@@ -94,8 +95,8 @@ def make_fig9():
 
 
 def make_fig10():
-    im = Image.open(CAPTURES / "img19.png").convert("RGB")
-    crop = im.crop((22, 115, 1998, 1075))
+    im = Image.open(CAPTURES / "atl_006.png").convert("RGB")
+    crop = im.crop((12, 48, 1497, 805))
     new_w = 1800
     crop = crop.resize((new_w, int(round(crop.size[1] * new_w / crop.size[0]))), Image.LANCZOS)
     out = HERE / "fig10_cave_4panel.jpg"
