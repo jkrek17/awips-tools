@@ -11,6 +11,11 @@ of all requested hours.
 
     python3 gfs_cps.py --cycle 2026092406 --hours 6 54 78 102 126 --region natl
 
+With --track NAME:LAT,LON[:FHR0] (repeatable) the lows are followed
+through the forecast instead and the storm-following phase-space
+diagrams are drawn (track_cps.py); --hart-bands adds Hart's 50 hPa
+spaced 900-600 and 600-300 hPa bands.
+
 Grid convention: every field is reordered to rows increasing northward
 (latitude ascending) and columns increasing eastward with contiguous
 longitudes, whatever order the source file uses, and the module is run
@@ -59,6 +64,10 @@ RES_DEG = 0.25
 KM_PER_DEG = 111.32
 OMEGA = 7.292e-5
 HGT_LEVELS = (925, 850, 700, 500, 400, 300)
+# Hart's 50 hPa spaced bands (900-600 and 600-300 hPa), fetched with --hart-bands.
+HART_LOWER = (900, 850, 800, 750, 700, 650, 600)
+HART_UPPER = (600, 550, 500, 450, 400, 350, 300)
+HART_EXTRA_LEVELS = tuple(sorted(set(HART_LOWER + HART_UPPER) - set(HGT_LEVELS), reverse=True))
 WIND_LEVELS = (850, 700, 500, 300)
 NOMADS = "https://nomads.ncep.noaa.gov"
 AWS = "https://noaa-gfs-bdp-pds.s3.amazonaws.com"
@@ -72,6 +81,13 @@ WANTED.update({f"u{p}": ("UGRD", f"{p} mb") for p in WIND_LEVELS})
 WANTED.update({f"v{p}": ("VGRD", f"{p} mb") for p in WIND_LEVELS})
 WANTED.update(pmsl=("PRMSL", "mean sea level"), psfc=("PRES", "surface"), land=("LAND", "surface"))
 PYGRIB_NAMES = {"HGT": "gh", "UGRD": "u", "VGRD": "v", "PRMSL": "prmsl", "PRES": "sp", "LAND": "lsm"}
+
+
+def wanted_fields(hart: bool = False) -> dict:
+    """WANTED, plus HGT at Hart's extra 50 hPa levels when `hart` is set."""
+    if not hart:
+        return WANTED
+    return {**WANTED, **{f"z{p}": ("HGT", f"{p} mb") for p in HART_EXTRA_LEVELS}}
 
 CMAP_DIR = CPS_ROOT / "D2D" / "colormaps" / "Grid"
 CLASS_NAMES = ["sym deep\nwarm", "sym shallow\nwarm", "asym deep\nwarm", "asym shallow\nwarm",
@@ -143,33 +159,44 @@ def fetch_box(region: str) -> tuple[float, float, float, float]:
 
 
 # ------------------------------------------------------------------ download
-def fetch_nomads(cycle: str, fhr: int, region: str, path: Path) -> None:
-    """One grib-filter request: var_/lev_ flags (a cross product, so a few extra
-    messages such as UGRD 925 mb come along and are ignored) and the region
-    plus margin as a subregion."""
+def fetch_nomads(cycle: str, fhr: int, region: str, path: Path, wanted: dict = WANTED) -> None:
+    """Grib-filter requests with var_/lev_ flags and the region plus margin as
+    a subregion. The filter takes the cross product of the flags, so the
+    variables are grouped by their level sets and each group is one request
+    (HGT on its levels, the winds on theirs, the surface fields), which
+    keeps the unneeded messages to a few (PRES at mean sea level does not
+    exist, LAND and PRES share the surface); the parts are concatenated."""
     d, f = gfs_name(cycle, fhr)
-    params = {"dir": "/" + d, "file": f}
-    for var, lev in WANTED.values():
-        params["var_" + var] = "on"
-        params["lev_" + lev.replace(" ", "_")] = "on"
+    levels: dict[str, set] = {}
+    for var, lev in wanted.values():
+        levels.setdefault(var, set()).add(lev)
+    groups: dict[frozenset, list] = {}
+    for var, levs in levels.items():
+        groups.setdefault(frozenset(levs), []).append(var)
+    box = {}
     if REGIONS[region] is not None:
         w, span, s, n = fetch_box(region)
         left = w % 360.0
-        params.update(subregion="", leftlon=f"{left:g}", rightlon=f"{left + span:g}",
-                      toplat=f"{n:g}", bottomlat=f"{s:g}")
-    r = http_get(f"{NOMADS}/cgi-bin/filter_gfs_0p25.pl?" + "&".join(f"{k}={v}" for k, v in params.items()))
-    if not r.content.startswith(b"GRIB"):
-        raise RuntimeError(f"NOMADS returned no GRIB data ({len(r.content)} bytes)")
-    path.write_bytes(r.content)
+        box = dict(subregion="", leftlon=f"{left:g}", rightlon=f"{left + span:g}", toplat=f"{n:g}",
+                   bottomlat=f"{s:g}")
+    parts = []
+    for levs, vars_ in groups.items():
+        params = {"dir": "/" + d, "file": f, **{"var_" + v: "on" for v in vars_},
+                  **{"lev_" + lev.replace(" ", "_"): "on" for lev in sorted(levs)}, **box}
+        r = http_get(f"{NOMADS}/cgi-bin/filter_gfs_0p25.pl?" + "&".join(f"{k}={v}" for k, v in params.items()))
+        if not r.content.startswith(b"GRIB"):
+            raise RuntimeError(f"NOMADS returned no GRIB data ({len(r.content)} bytes)")
+        parts.append(r.content)
+    path.write_bytes(b"".join(parts))
 
 
-def fetch_aws(cycle: str, fhr: int, path: Path) -> None:
+def fetch_aws(cycle: str, fhr: int, path: Path, wanted_map: dict = WANTED) -> None:
     """Read the .idx sidecar and byte-range GET just the wanted messages of the global file."""
     d, f = gfs_name(cycle, fhr)
     url = f"{AWS}/{d}/{f}"
     lines = http_get(url + ".idx").text.strip().splitlines()
     offsets = [int(ln.split(":")[1]) for ln in lines]
-    wanted = set(WANTED.values())
+    wanted = set(wanted_map.values())
     chunks = []
     for i, ln in enumerate(lines):
         parts = ln.split(":")
@@ -181,32 +208,39 @@ def fetch_aws(cycle: str, fhr: int, path: Path) -> None:
     path.write_bytes(b"".join(chunks))
 
 
-def get_grib(cycle: str, fhr: int, region: str, cache: Path, source: str) -> Path:
+def get_grib(cycle: str, fhr: int, region: str, cache: Path, source: str, hart: bool = False) -> Path:
     """Cached GRIB2 path for one frame, downloading on a miss. NOMADS files are
     per region (subsetted server side); AWS files hold the wanted messages on
-    the whole grid and serve every region."""
+    the whole grid and serve every region. Files fetched with Hart's extra
+    levels carry `.hart` in their name and also serve runs without them."""
     cache.mkdir(parents=True, exist_ok=True)
-    nom = cache / f"{region}_f{fhr:03d}.nomads.grb2"
-    aws = cache / f"global_f{fhr:03d}.aws.grb2"
-    for p in (nom, aws):
-        if p.exists() and p.stat().st_size > 0:
-            return p
+    tags = [".hart"] if hart else ["", ".hart"]
+    for tag in tags:
+        for p in (cache / f"{region}_f{fhr:03d}{tag}.nomads.grb2", cache / f"global_f{fhr:03d}{tag}.aws.grb2"):
+            if p.exists() and p.stat().st_size > 0:
+                return p
+    tag, wanted = tags[0], wanted_fields(hart)
+    nom = cache / f"{region}_f{fhr:03d}{tag}.nomads.grb2"
+    aws = cache / f"global_f{fhr:03d}{tag}.aws.grb2"
     if source == "nomads":
         try:
-            fetch_nomads(cycle, fhr, region, nom)
+            fetch_nomads(cycle, fhr, region, nom.with_suffix(".part"), wanted)
+            nom.with_suffix(".part").rename(nom)
             return nom
         except RuntimeError as exc:
             print(f"  NOMADS failed for f{fhr:03d} ({exc}); falling back to AWS")
-    fetch_aws(cycle, fhr, aws)
+    fetch_aws(cycle, fhr, aws.with_suffix(".part"), wanted)
+    aws.with_suffix(".part").rename(aws)
     return aws
 
 
 # ------------------------------------------------------------------ decode
-def decode(path: Path, region: str) -> dict:
+def decode(path: Path, region: str, hart: bool = False) -> dict:
     """Decode the wanted messages with pygrib and reorder them to latitude
     ascending (rows northward) and contiguous longitude ascending from the
     fetch box's west edge (rolled across the dateline or the 0/360 seam as
-    needed). Returns the fields plus 1D lat/lon."""
+    needed). Returns the fields plus 1D lat/lon; with `hart`, also HGT at
+    Hart's extra 50 hPa levels."""
     import pygrib
 
     w, span, s, n = fetch_box(region)
@@ -214,7 +248,7 @@ def decode(path: Path, region: str) -> dict:
     with pygrib.open(str(path)) as g:
         msgs = list(g)
     lat = lon = None
-    for key, (var, lev) in WANTED.items():
+    for key, (var, lev) in wanted_fields(hart).items():
         short, level = PYGRIB_NAMES[var], (int(lev.split()[0]) if lev.endswith("mb") else 0)
         tol = "isobaricInhPa" if lev.endswith("mb") else ("meanSea" if var == "PRMSL" else "surface")
         hit = [m for m in msgs if m.shortName == short and m.typeOfLevel == tol and m.level == level]
@@ -261,6 +295,17 @@ def compute_products(f: dict) -> dict:
         idx=hc.executeIndexStd(pmsl, *z, psfc, dx, dy, 500.0, 100.0, 5.0, 200.0, 900.0, 0),
         cls=hc.executeHartClass(pmsl, *z, *winds, psfc, cor, dx, dy, 500.0, 10.0, 1.4548, 5.0, 200.0, 900.0, 0),
     )
+
+
+def compute_hart_bands(f: dict) -> dict:
+    """Thermal wind terms over Hart's own 50 hPa spaced bands, 900-600 hPa
+    (hvtl_hart) and 600-300 hPa (hvtu_hart), through the module's
+    executeBand7 with the operational radius and below-ground cap."""
+    dx, dy, _ = grid_metrics(f["lat"], f["lon"].size)
+    out = {}
+    for key, levs in (("hvtl_hart", HART_LOWER), ("hvtu_hart", HART_UPPER)):
+        out[key] = hc.executeBand7(*[f[f"z{p}"] for p in levs], f["psfc"], dx, dy, 500.0, *map(float, levs))
+    return out
 
 
 def region_slices(f: dict, region: str):
@@ -516,13 +561,15 @@ def plot_montage(frames: list[dict], region: str, cycle: str, cm: dict, path: Pa
 
 
 # ------------------------------------------------------------------ driver
-def run_frame(cycle: str, fhr: int, region: str, outdir: Path, source: str, cm: dict) -> dict:
+def run_frame(cycle: str, fhr: int, region: str, outdir: Path, source: str, cm: dict, hart: bool = False) -> dict:
     """Fetch, decode, compute, save the npz and the figure for one forecast hour."""
     t0 = time.time()
-    grib = get_grib(cycle, fhr, region, outdir.parent / "cache" / cycle, source)
-    f = decode(grib, region)
+    grib = get_grib(cycle, fhr, region, outdir.parent / "cache" / cycle, source, hart)
+    f = decode(grib, region, hart)
     t1 = time.time()
     p = compute_products(f)
+    if hart:
+        p.update(compute_hart_bands(f))
     t2 = time.time()
     lows = find_lows(f, p, region, cycle, fhr)
     rows, cols = region_slices(f, region)
@@ -532,7 +579,8 @@ def run_frame(cycle: str, fhr: int, region: str, outdir: Path, source: str, cm: 
     fr.update(lat=f["lat"][rows], lon=f["lon"][cols], valid=f["valid"], fhr=fhr, lows=lows)
     np.savez_compressed(outdir / f"cps_{region}_f{fhr:03d}.npz", lat=fr["lat"], lon=fr["lon"],
                         mslp_hpa=fr["mslp"].astype(np.float32),
-                        **{k: fr[k].astype(np.float32) for k in ("hvtl", "hvtu", "hb", "idx", "cls")})
+                        **{k: fr[k].astype(np.float32) for k in ("hvtl", "hvtu", "hb", "idx", "cls",
+                                                                 "hvtl_hart", "hvtu_hart") if k in fr})
     plot_frame(fr, region, cycle, cm, outdir / f"cps4_{region}_f{fhr:03d}.png")
     print(f"  f{fhr:03d}: {grib.name}, fetch+decode {t1 - t0:.1f} s, compute {t2 - t1:.1f} s, "
           f"plot {time.time() - t2:.1f} s, {len(lows)} lows")
@@ -548,12 +596,21 @@ def main(argv=None) -> int:
     ap.add_argument("--out", type=Path, default=HERE / "out")
     ap.add_argument("--source", choices=["nomads", "aws"], default="nomads")
     ap.add_argument("--plain", action="store_true", help="skip cartopy; coastline from the GFS land mask")
+    ap.add_argument("--track", action="append", metavar="NAME:LAT,LON[:FHR0[:FHR1]]",
+                    help="follow a low from LAT,LON at forecast hour FHR0 (default 0; up to FHR1 if given) and draw its phase "
+                         "diagrams instead of the maps; repeatable (see track_cps.py)")
+    ap.add_argument("--hart-bands", action="store_true",
+                    help="also fetch HGT every 50 hPa from 900 to 300 hPa and compute Hart's 900-600 and "
+                         "600-300 hPa thermal wind terms with executeBand7")
     a = ap.parse_args(argv)
     global HAVE_CARTOPY
     HAVE_CARTOPY = HAVE_CARTOPY and not a.plain
     cycle = a.cycle or latest_cycle()
     outdir = a.out / cycle
     outdir.mkdir(parents=True, exist_ok=True)
+    if a.track:
+        import track_cps
+        return track_cps.run(cycle, a.hours, a.region, outdir, a.source, a.track, a.hart_bands)
     print(f"cycle {cycle}, region {a.region}, hours {a.hours}, source {a.source}, "
           f"maps {'cartopy' if HAVE_CARTOPY else 'plain lon/lat, GFS land-mask coastline'}")
     cm = make_cmaps()
@@ -561,7 +618,7 @@ def main(argv=None) -> int:
     frames, lows = [], []
     for fhr in a.hours:
         try:
-            fr = run_frame(cycle, fhr, a.region, outdir, a.source, cm)
+            fr = run_frame(cycle, fhr, a.region, outdir, a.source, cm, a.hart_bands)
         except Exception as exc:  # keep going: late hours may not be posted yet
             print(f"  f{fhr:03d}: skipped ({exc})")
             continue
