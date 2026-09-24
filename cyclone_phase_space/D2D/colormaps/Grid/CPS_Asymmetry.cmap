@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  CPS_Asymmetry: 64 entry colormap for HB, Hart's parameter B (the
+  storm-relative thickness asymmetry). B is not a temperature, so it
+  does not use the red/blue CPS_CoreDiverging map that HVTL, HVTU and
+  HCPSidx share; red and blue mean warm core and cold core everywhere
+  else in this set, and B in red read as "warm". Positive B (warm air on
+  the right of the deep-layer flow in the Northern Hemisphere, the
+  asymmetric or frontal configuration) ramps from pale magenta to deep
+  purple, magenta being the hue Hart's own phase diagram uses for the
+  asymmetric side. Negative B (warm air on the left, unusual, and a cue
+  to check the steering direction) ramps from pale to dark teal, a hue
+  that appears nowhere else in the set so the reversed case stands out.
+
+  The alpha structure is identical to CPS_CoreDiverging: the middle 8
+  entries (indices 28 through 35) are fully transparent, and alpha ramps
+  0.2 to 0.8 over the next 4 entries on each side (24 to 27 and 36 to
+  39). With the shipped HB range of -40 to +40 m each entry is 1.25 m,
+  so B within 5 m of zero is transparent (symmetric), 5 to 10 m fades
+  in, and the first fully opaque magenta step sits exactly at Hart's
+  10 m onset line. Keep the range at +/-40 m to keep that alignment.
+
+  File format: as CPS_CoreDiverging.cmap; VERIFY the element and
+  attribute names against a .cmap file from your AWIPS build.
+-->
+<colorMap>
+        <color r="0.000" g="0.380" b="0.400" a="1.0"/>
+        <color r="0.018" g="0.395" b="0.415" a="1.0"/>
+        <color r="0.035" g="0.410" b="0.429" a="1.0"/>
+        <color r="0.053" g="0.425" b="0.444" a="1.0"/>
+        <color r="0.071" g="0.441" b="0.458" a="1.0"/>
+        <color r="0.089" g="0.456" b="0.473" a="1.0"/>
+        <color r="0.106" g="0.471" b="0.487" a="1.0"/>
+        <color r="0.124" g="0.486" b="0.502" a="1.0"/>
+        <color r="0.142" g="0.501" b="0.516" a="1.0"/>
+        <color r="0.160" g="0.516" b="0.531" a="1.0"/>
+        <color r="0.177" g="0.532" b="0.545" a="1.0"/>
+        <color r="0.195" g="0.547" b="0.560" a="1.0"/>
+        <color r="0.213" g="0.562" b="0.574" a="1.0"/>
+        <color r="0.231" g="0.577" b="0.589" a="1.0"/>
+        <color r="0.248" g="0.592" b="0.603" a="1.0"/>
+        <color r="0.266" g="0.607" b="0.618" a="1.0"/>
+        <color r="0.284" g="0.623" b="0.632" a="1.0"/>
+        <color r="0.302" g="0.638" b="0.647" a="1.0"/>
+        <color r="0.319" g="0.653" b="0.661" a="1.0"/>
+        <color r="0.337" g="0.668" b="0.676" a="1.0"/>
+        <color r="0.355" g="0.683" b="0.690" a="1.0"/>
+        <color r="0.373" g="0.698" b="0.705" a="1.0"/>
+        <color r="0.390" g="0.714" b="0.719" a="1.0"/>
+        <color r="0.408" g="0.729" b="0.734" a="0.8"/>
+        <color r="0.426" g="0.744" b="0.748" a="0.6"/>
+        <color r="0.444" g="0.759" b="0.763" a="0.4"/>
+        <color r="0.461" g="0.774" b="0.777" a="0.2"/>
+        <color r="0.479" g="0.789" b="0.792" a="0.0"/>
+        <color r="0.497" g="0.805" b="0.806" a="0.0"/>
+        <color r="0.515" g="0.820" b="0.821" a="0.0"/>
+        <color r="0.532" g="0.835" b="0.835" a="0.0"/>
+        <color r="0.550" g="0.850" b="0.850" a="0.0"/>
+        <color r="0.960" g="0.720" b="0.930" a="0.0"/>
+        <color r="0.943" g="0.698" b="0.916" a="0.0"/>
+        <color r="0.925" g="0.676" b="0.902" a="0.0"/>
+        <color r="0.908" g="0.654" b="0.888" a="0.0"/>
+        <color r="0.890" g="0.632" b="0.875" a="0.0"/>
+        <color r="0.873" g="0.610" b="0.861" a="0.2"/>
+        <color r="0.855" g="0.588" b="0.847" a="0.4"/>
+        <color r="0.838" g="0.566" b="0.833" a="0.6"/>
+        <color r="0.821" g="0.545" b="0.819" a="0.8"/>
+        <color r="0.803" g="0.523" b="0.805" a="1.0"/>
+        <color r="0.786" g="0.501" b="0.791" a="1.0"/>
+        <color r="0.768" g="0.479" b="0.777" a="1.0"/>
+        <color r="0.751" g="0.457" b="0.764" a="1.0"/>
+        <color r="0.734" g="0.435" b="0.750" a="1.0"/>
+        <color r="0.716" g="0.413" b="0.736" a="1.0"/>
+        <color r="0.699" g="0.391" b="0.722" a="1.0"/>
+        <color r="0.681" g="0.369" b="0.708" a="1.0"/>
+        <color r="0.664" g="0.347" b="0.694" a="1.0"/>
+        <color r="0.646" g="0.325" b="0.680" a="1.0"/>
+        <color r="0.629" g="0.303" b="0.666" a="1.0"/>
+        <color r="0.612" g="0.281" b="0.653" a="1.0"/>
+        <color r="0.594" g="0.259" b="0.639" a="1.0"/>
+        <color r="0.577" g="0.237" b="0.625" a="1.0"/>
+        <color r="0.559" g="0.215" b="0.611" a="1.0"/>
+        <color r="0.542" g="0.194" b="0.597" a="1.0"/>
+        <color r="0.525" g="0.172" b="0.583" a="1.0"/>
+        <color r="0.507" g="0.150" b="0.569" a="1.0"/>
+        <color r="0.490" g="0.128" b="0.555" a="1.0"/>
+        <color r="0.472" g="0.106" b="0.542" a="1.0"/>
+        <color r="0.455" g="0.084" b="0.528" a="1.0"/>
+        <color r="0.437" g="0.062" b="0.514" a="1.0"/>
+        <color r="0.420" g="0.040" b="0.500" a="1.0"/></colorMap>

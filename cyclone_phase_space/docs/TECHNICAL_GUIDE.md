@@ -36,7 +36,7 @@ cyclone_phase_space/
   D2D/
     derivedParameters/functions/    cps_HartCPS.py
     derivedParameters/definitions/  one XML per product
-    colormaps/Grid/                 CPS_CoreDiverging.cmap, CPS_HartClass.cmap
+    colormaps/Grid/                 CPS_CoreDiverging.cmap, CPS_Asymmetry.cmap, CPS_HartClass.cmap
     styleRules/cpsStyleRules.xml    base-schema style rules (see 5.3)
     menus/volumebrowser/cpsFields.xml  Volume Browser entries (see 5.4)
   docs/                            this guide, the user guide
@@ -552,6 +552,7 @@ Site level under `/awips2/edex/data/utility/common_static/site/<SITE>/`:
 derivedParameters/functions/cps_HartCPS.py
 derivedParameters/definitions/cps_HVTL.xml cps_HVTU.xml cps_HCPSclass.xml cps_HCPSidx.xml cps_HB.xml
 colormaps/Grid/CPS_CoreDiverging.cmap
+colormaps/Grid/CPS_Asymmetry.cmap
 colormaps/Grid/CPS_HartClass.cmap
 ```
 
