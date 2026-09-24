@@ -48,7 +48,11 @@ Two panels cover the analysis uses.
    with MSLP contours.
 
 Use the analysis-time frame of the model you are analyzing against,
-and keep the previous 6 and 12 h frames a click away for trends.
+and keep the previous 6 and 12 h frames a click away for trends. The
+article's Figure 11 shows this load on the North Atlantic at five
+hours of one GFS run, with the shipped colormaps:
+
+![North Atlantic four-panel at five hours](../article/figures/fig11_cave_atlantic.jpg)
 
 ---
 
