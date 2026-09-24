@@ -19,19 +19,26 @@ need CAVE, real model data, or a decision, in the order they matter.
    (README, Install) and report it so the definition can carry it.
 
 2. **Quantitative real-case comparison against the FSU page (review
-   item 1, the main open point).** For Typhoon Dujuan in the 19
-   September 1200 UTC run (or the 20 September 0600 UTC run), sample
-   HVTL, HVTU and HB at the MSLP center every 6 h through the life
-   cycle and record them with the FSU values for the same run and
-   hours. A time-series figure of the three parameters, gridded
-   against FSU, would replace the color-only comparison in Section 6.
+   item 1, the main open point).** `realtime/gfs_cps.py` now samples
+   every detected low from public GFS output, so the gridded side of
+   this no longer needs hand sampling in CAVE: run it on the cycle the
+   FSU page plotted for Typhoon Dujuan (the 19 September 1200 UTC run
+   is past NOMADS retention; the AWS bucket keeps cycles longer, or use
+   the next storm the FSU page tracks), chain the low nearest the track
+   frame to frame, and read the FSU values for the same hours off the
+   page. A time-series figure of the three parameters, gridded against
+   FSU, would replace the color-only comparison in Section 6.
 
 3. **Re-sample the validation log.** Every HB value and every
    detection in the validation table was made with the former B and
-   the 1000 hPa detector. Re-sample the 20 September 0600 UTC frames
-   (0 to 120 h) and the 959 hPa North Atlantic low at 6 h of the 24
-   September 0600 UTC run with the new install, and update the table
-   in the article and the README log.
+   the 1000 hPa detector. The 959 hPa North Atlantic low at 6 h of the
+   24 September 0600 UTC run is now sampled by `realtime/gfs_cps.py`
+   (958.6 hPa at 61.0N 22.75W: HVTL +68, HVTU minus 186, HB +20 m,
+   class 3), and the CAVE readouts of the five captured frames match
+   the tool's HVTL and HVTU to about 1 m. What remains is a CAVE
+   re-sample of the 20 September 0600 UTC frames with the new install,
+   or the same cycle from the AWS bucket through the tool, and the
+   update of the table in the article and the README log.
 
 4. **Motion proxy against true motion (review item 7).** Along the
    Dujuan track, compare the window-mean deep-layer wind heading with
