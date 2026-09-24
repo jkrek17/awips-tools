@@ -14,6 +14,9 @@ against; see "Tests" below.
 
 - `cyclone_phase_space/docs/USER_GUIDE.md`: for forecasters, how to load and read the
   products and where they mislead.
+- `cyclone_phase_space/docs/ANALYSIS_GUIDE.md`: for analysts, using HB and the
+  class while drawing a surface analysis: typing lows, the
+  post-tropical handoff, thermal support for drawn fronts.
 - `cyclone_phase_space/docs/TECHNICAL_GUIDE.md`: method, wiring, every tunable, install,
   troubleshooting, tests, limitations.
 

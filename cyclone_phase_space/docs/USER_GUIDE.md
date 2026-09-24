@@ -544,6 +544,10 @@ scatterometer data, never as a stand-in for any of those.
 
 ## 8. Quick reference
 
+For surface analysis, typing lows, the post-tropical handoff and
+checking drawn fronts against HB, see `ANALYSIS_GUIDE.md`.
+
+
 - Load: Product Browser, Grid, model, Hart CPS products, Surface. Or the
   saved procedure.
 - Colors: CPS_CoreDiverging for HVTL, HVTU, HB, and HCPSidx;
