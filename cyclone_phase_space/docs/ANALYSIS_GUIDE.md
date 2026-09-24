@@ -163,8 +163,17 @@ Read the two fields away from lows as baroclinicity maps:
 - **Blue HVTU with transparent HVTL** is an elevated baroclinic zone
   with no surface front: a jet crossing warm-sector or subtropical air,
   or a front that has lifted off the surface.
-- **Red away from a low** means the gradient weakens with height, as
-  over a shallow cold high or a cold dome.
+- **Red away from a low** means the gradient weakens with height, so
+  the geostrophic wind weakens with height through the layer: a
+  shallow cold high, a cold dome, or a low-level jet that fades aloft.
+- **Red HVTL with blue HVTU** is a shallow cold air mass under an
+  upper-level baroclinic zone: cold-air damming or an arctic high with
+  the jet overhead, or the cold side of a warm front where warm air is
+  overrunning the dome. It is the overrunning signature, and in winter
+  it marks where freezing spray and frozen precipitation sit under
+  warm advection aloft. At a closed-low center the same pair is a
+  shallow warm core, class 1 or 3, which is a different thing: read
+  the class there, not the pair.
 
 The most useful analyst move is to read a storm's core term relative
 to its surroundings. If HVTL reads minus 150 m in the baroclinic zone
