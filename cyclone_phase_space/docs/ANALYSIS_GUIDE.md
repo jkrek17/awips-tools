@@ -169,8 +169,10 @@ Read the two fields away from lows as baroclinicity maps:
 - **Red away from a low** means the height gradient weakens with
   height through the 925 to 700 hPa layer, so the geostrophic wind
   weakens with height there: a shallow cold high, a cold dome whose
-  easterly flow fades and reverses to westerly above it, or a low-level
-  jet that fades aloft.
+  easterly flow fades and reverses to westerly above it, a low-level
+  jet that fades aloft, or the trade-wind belt on the equatorward
+  flank of the subtropical high, which shows as a broad red band
+  across the subtropics on a full-basin view.
 - **Red HVTL with blue HVTU** is a shallow cold air mass under an
   upper-level baroclinic zone: cold-air damming or an arctic high with
   the jet overhead, or the cold side of a warm front where warm air is
@@ -247,6 +249,7 @@ learn the signatures, not the magnitudes.
 | Cold dome under the jet, overrunning | red | blue | pale or magenta | cold-air damming, arctic high under warm advection; freezing spray and frozen precipitation in winter |
 | Shallow cold high, arctic high | red | clear | clear | the high fades aloft |
 | Warm subtropical high, ridge | pale blue | pale blue | clear | the ridge builds aloft; weak signal |
+| Trade-wind belt, low-level easterly jet | red | clear | clear or pale | the easterlies on the equatorward flank of the subtropical high are strongest near the surface and fade aloft; a broad red band across the subtropics on a full-basin view |
 | Warm sector, tropical air | clear | clear | clear | nothing to see, which is the point |
 | Open trough, no closed low | blue along the axis | blue | magenta flanks | class blank; the fields still show the trough's structure |
 | Easterly flow along a front, north side of a block | any | any | teal | warm air on the left of the flow; check the steering |

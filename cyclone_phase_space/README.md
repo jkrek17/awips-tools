@@ -686,6 +686,7 @@ or representative sample. Add to this table as cases accumulate.
 | 2026-09-20 | GFS 06Z, 72 h | same storm, 41.3N 163.7E, 992 hPa | 22 | -284 | 3 (HB 45.9) | -0.56 |
 | 2026-09-20 | GFS 06Z, 96 h | same storm, 55.2N 171.9W, 976 hPa | 241 | -295 | 1 (HB 0.5) | 0.97 |
 | 2026-09-20 | GFS 06Z, 120 h | same storm, 56.0N 165.2W, 971 hPa | -33 | 3 | 6 (HB 20.1); HVTU is +3 m, a threshold artifact, effectively class 4 | -0.61 |
+| 2026-09-24 | GFS 06Z, 6 h | 959 hPa low south of Greenland, North Atlantic (first extratropical seclusion case; class panel and colors only, values to be sampled) | red at the center (warm lower core) | blue (cold aloft) | 3 at the center with 1 on the flanks: a warm seclusion signature, HB near zero at the center with the magenta band wrapped around the low | not sampled |
 
 Notes: the 2026-09-20 06Z rows are the same storm in the next cycle
 with all four products sampled at one point per frame. Onset falls
