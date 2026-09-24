@@ -381,10 +381,25 @@ def loadProcedureModule():
     return module
 
 
+def mostRecentCycle(hour=18):
+    """The most recent occurrence of ``hour``Z, worked out independently.
+
+    The procedure resolves its cycle from the real clock, so the fake
+    database has to sit on the same day it picks - a fixed date here would
+    pass only until the date rolled over.
+    """
+    now = datetime(*time.gmtime()[:6]).replace(minute=0, second=0,
+                                               microsecond=0)
+    base = now.replace(hour=hour)
+    if base > now:
+        base = base - timedelta(days=1)
+    return base
+
+
 def runProcedure(varDict, cycleTime=None, **fakeKwargs):
     """Install fakes, import the procedure, run execute(), parse the XML."""
     if cycleTime is None:
-        cycleTime = datetime(2026, 9, 21, 18)
+        cycleTime = mostRecentCycle(18)
     _installFakes(cycleTime, **fakeKwargs)
     module = loadProcedureModule()
     os.environ.setdefault("USER", "first.last")
@@ -978,6 +993,20 @@ def test_default_layer_when_savelayers_false():
           str([l.get("closed") for l in lines]))
 
 
+def test_pgen_activity():
+    print("\ntest_pgen_activity")
+    module, tree = runProcedure(DEFAULT_VARDICT)
+    product = list(tree.getroot().iter("Product"))[0]
+    check("stored as the stock Default activity type",
+          product.get("type") == "Default", str(product.get("type")))
+    check("the subtype still identifies the product",
+          product.get("subType") == "Pacific_WindHazards",
+          str(product.get("subType")))
+    check("the file name carries the same name",
+          os.path.basename(STORED[-1]).startswith("Pacific_WindHazards_"),
+          os.path.basename(STORED[-1]))
+
+
 def test_auto_cycle_and_filename():
     print("\ntest_auto_cycle_and_filename")
     varDict = dict(DEFAULT_VARDICT)
@@ -1023,6 +1052,7 @@ def main():
     test_missing_grids()
     test_no_period_selected()
     test_default_layer_when_savelayers_false()
+    test_pgen_activity()
     test_auto_cycle_and_filename()
 
     print("")

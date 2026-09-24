@@ -35,7 +35,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import test_windhazard_xml as harness            # noqa: E402  (fakes live here)
 
-CYCLE = datetime(2026, 9, 21, 18)
+# The procedure resolves "18z" against the real clock, so the fake database
+# has to sit on the day it picks rather than a fixed date.
+CYCLE = harness.mostRecentCycle(18)
 
 # --- Domain: western North Atlantic, half-degree ---------------------------
 LAT_MIN, LAT_MAX, LON_MIN, LON_MAX, STEP = 25.0, 62.0, -75.0, -15.0, 0.5

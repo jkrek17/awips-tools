@@ -530,6 +530,15 @@ pattern (`PERIOD_FILL_PATTERNS`) instead of leaving it as an outline. Every one
 of those tables is a module constant at the top of the file - retune without
 touching the logic.
 
+### The PGEN activity
+
+The XML is stored as PGEN's stock **`Default`** activity type
+(`ACTIVITY_TYPE`), so nothing has to be registered in the site's PGEN activity
+list. The subtype carries the label - `Pacific_WindHazards` - so the activity
+stays identifiable among other `Default` ones. Both are constants at the top
+of the file; set `ACTIVITY_SUBTYPE` to `""` or `"Default"` if the site's PGEN
+wants a registered subtype as well.
+
 ### One thing to check on the first run
 
 The site's `XmlUtils` has no polygon writer to borrow (`CreateXML.py` only ever

@@ -54,6 +54,9 @@
 #   than LOW_INTERVAL_HRS so an hourly database does not put 49 Lows on the
 #   chart.  The Lows are joined into track lines by nearest-neighbor matching
 #   from one plot time to the next.
+# * Activity: stored as PGEN's stock "Default" type (ACTIVITY_TYPE), with
+#   <basin>_WindHazards as the subtype label, so nothing has to be added to
+#   the site's PGEN activity list.
 # * Output: a single XML with four layers - "F000-024" and "F024-048", each
 #   holding that period's three band polygons; "Lows", holding every 6-hourly
 #   Low with its pressure and forecast hour; and "Track", holding the lines
@@ -200,6 +203,15 @@ SMOOTH_PASSES = 2
 MIN_POLYGON_POINTS = 4
 MIN_POLYGON_AREA_DEG2 = 1.0
 MAX_POLYGON_POINTS = 60
+
+# The PGEN activity this is stored as.  "Default" is the stock activity
+# type, so nothing has to be registered in the site's PGEN activity list -
+# unlike a name of its own, which PGEN would not know.  The subtype is the
+# label that rides along with it; None means <basin>_WindHazards, so the
+# activity is still identifiable among other Default ones.  Set it to "" or
+# "Default" if the site's PGEN wants a registered subtype too.
+ACTIVITY_TYPE = "Default"
+ACTIVITY_SUBTYPE = None
 
 # Edit area zeroed out when "Mask land:" is On.
 MASK_EDIT_AREA = "Land"
@@ -839,11 +851,13 @@ if _IN_GFE:
             basin_long = pd["basin"]
             outputFile = (outDir + basin_long + "_WindHazards_" + str(dbase) +
                           "_" + gridstart + ".xml")
-            typeSubtype = basin_long + "_WindHazards"
+            subtype = ACTIVITY_SUBTYPE
+            if subtype is None:
+                subtype = basin_long + "_WindHazards"
 
             products, product = XmlUtils.createXmlProduct(
                 outputFile, pd["useFile"], pd["saveLayers"], pd["onOff"],
-                pd["status"], pd["center"], fcstr, typeSubtype, typeSubtype)
+                pd["status"], pd["center"], fcstr, ACTIVITY_TYPE, subtype)
 
             # Set layer name to Default if saveLayers is false
             saveLayers = str(pd["saveLayers"]).lower() == "true"
