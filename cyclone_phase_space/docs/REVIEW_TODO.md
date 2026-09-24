@@ -5,7 +5,7 @@ part is done and merged: parameter B now uses true semicircle means,
 the closed-low detector runs on mean sea level pressure, the article
 was restructured (Data section, validation table, appendix, split
 limitations), the 12% deep-warm excess was traced to the standard-level
-band, the B-versus-scale panel was added to Figure 18, and eight
+band, the B-versus-scale panel was added to Figure 19, and eight
 references were added. This file lists the second part: the items that
 need CAVE, real model data, or a decision, in the order they matter.
 
@@ -38,8 +38,8 @@ need CAVE, real model data, or a decision, in the order they matter.
    the finite-differenced center motion heading frame by frame. A
    heading difference under about 20 degrees changes B by under 6%.
 
-5. **Fresh Figure 9 captures.** The class legend in the Figure 9 and
-   Figure 10 to 11 captures still reads "frontal". Retake after the
+5. **Fresh Figure 10 captures.** The class legend in the Figure 10 and
+   Figure 11 to 12 captures still reads "frontal". Retake after the
    reinstall so the captures also show the MSLP detector and the
    semicircle B, and drop them into `article/figures/` under the same
    names for `make_cave_figures.py`.
