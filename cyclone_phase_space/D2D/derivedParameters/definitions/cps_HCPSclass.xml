@@ -2,8 +2,9 @@
 <!--
   EXPERIMENTAL. Hart CPS joint class: at every grid point, computes
   HVTL (925/850/700 hPa), HVTU (500/400/300 hPa), and parameter B (the
-  925-700 hPa thickness gradient projected onto the steering flow's
-  right-hand normal, see cps_HB.xml) all at once, and buckets the triple
+  right-minus-left difference of 925-700 hPa thickness between the two
+  500 km semicircles either side of the steering flow, see cps_HB.xml)
+  all at once, and buckets the triple
   (B, HVTL, HVTU) into a single 7-code class (cps_HartCPS.hart_class) using
   Hart's own strict lines - B against 10 m, both thermal wind terms
   against 0 m, no neutral band:
@@ -23,37 +24,43 @@
   B and the joint class" and "Relation to Hart's storm-centered diagrams"
   sections, for why a single joint class is preferred over reading two
   separate categorical fields side by side. NaN outside a closed low in
-  1000 hPa height (cps_HartCPS.closed_low_mask, same height-based mask
-  HCPSidx uses - see cps_HCPSidx.xml's comment for the full explanation of
-  why 1000 hPa height is used for the mask rather than a thermal-wind
-  band level) or wherever B is NaN (the steering-flow speed below
-  MIN_STEERING_MS - rare, but see cps_HartCPS.parameter_b_grid's docstring).
+  mean sea level pressure (cps_HartCPS.closed_low_mask, the same MSLP
+  mask HCPSidx uses - see cps_HCPSidx.xml's comment for why MSLP), below
+  ground (a NaN HVTL), or wherever B is NaN (the steering-flow speed
+  below MIN_STEERING_MS - rare, but see cps_HartCPS.parameter_b_grid's
+  docstring).
 
   Hemisphere: same as cps_HB.xml - the coriolis pseudo-field's sign is the
   hemisphere factor parameter B uses; a 2D field gets the correct sign
   on both sides of a grid straddling the equator.
 
-  Below-ground masking: every one of the seven height Fields below
-  (z1000 and the six HVTL/HVTU band levels) is blanked (NaN) before its
-  own computation wherever it is below ground for its own pressure,
-  using the surface pressure field (P, Surface) and capHpa below - see
+  Below-ground masking: every one of the six height Fields below (the
+  HVTL/HVTU band levels) is blanked (NaN) before its own computation
+  wherever it is below ground for its own pressure, using the surface
+  pressure field (P, Surface) and capHpa below - see
   cps_HartCPS.mask_below_ground and cps_HCPSidx.xml's comment for the same
   convention. capHpa (default 900 hPa) is a cap, not the literal level
   pressure: it keeps a deep low's own legitimately low surface pressure
   over open water from being mistaken for terrain, while still masking
-  the Greenland ice sheet and Iceland highlands at 1000/925/850 hPa.
+  the Greenland ice sheet and Iceland highlands at 925/850 hPa. The MSLP
+  Field is not masked (it is defined everywhere); the class is blanked
+  over terrain because HVTL is.
 
   VERIFY: same checks as cps_HB.xml and cps_HCPSidx.xml (GH abbreviation,
   fixed-level Field spelling, P abbreviation and its Surface level
-  spelling, the coriolis pseudo-field's abbreviation, dx/dy
-  pseudo-fields and ConstantField support, levels= value, unit=""
-  acceptance). If this definition fails to load, replace the coriolis
-  Field with <ConstantField value="1.0"/> at the same position to
-  assume the Northern Hemisphere.
+  spelling, the PMSL abbreviation and its MSL level spelling, the
+  coriolis pseudo-field's abbreviation, dx/dy pseudo-fields and
+  ConstantField support, levels= value, unit="" acceptance). If this
+  definition fails to load, replace the coriolis Field with
+  <ConstantField value="1.0"/> at the same position to assume the
+  Northern Hemisphere.
 -->
 <DerivedParameter abbreviation="HCPSclass" name="Hart CPS Class (0 sym deep warm, 1 sym shallow warm, 2 asym deep warm, 3 asym shallow warm, 4 asym cold, 5 sym cold, 6 shallow cold)" unit="">
     <Method name="cps_HartCPS.executeHartClass" levels="Surface">
-        <Field abbreviation="GH" level="1000MB"/>
+        <!-- pmsl: mean sea level pressure (Pa or hPa) for the closed-low
+             mask - VERIFY the abbreviation and level spelling, see
+             cps_HCPSidx.xml -->
+        <Field abbreviation="PMSL" level="MSL"/>
         <Field abbreviation="GH" level="925MB"/>
         <Field abbreviation="GH" level="850MB"/>
         <Field abbreviation="GH" level="700MB"/>
@@ -73,8 +80,8 @@
         <Field abbreviation="dx"/>
         <Field abbreviation="dy"/>
         <!-- radiusKm (km): Hart's own 500 km analysis-window half-width,
-             used for HVTL, HVTU, parameter B's box-averaged gradient,
-             and the mask's own ring_radius_km -->
+             used for HVTL, HVTU, parameter B's semicircles, and the
+             mask's own ring_radius_km -->
         <ConstantField value="500.0"/>
         <!-- bThresholdM (m): the Evans and Hart (2003) asymmetric/symmetric
              line for parameter B (900-600 hPa equivalent) -->
@@ -83,9 +90,9 @@
              to a 900-600 hPa equivalent, ln(900/600)/ln(925/700) =
              1.45477... - see cps_HB.xml -->
         <ConstantField value="1.4548"/>
-        <!-- depthM (m): the closed-low mask's annulus depth test, see
-             cps_HCPSidx.xml -->
-        <ConstantField value="40.0"/>
+        <!-- depthHpa (hPa): the closed-low mask's annulus depth test,
+             see cps_HCPSidx.xml -->
+        <ConstantField value="5.0"/>
         <!-- blobKm (km): half-width of the blob painted around each
              detected low's center, see cps_HCPSidx.xml -->
         <ConstantField value="200.0"/>

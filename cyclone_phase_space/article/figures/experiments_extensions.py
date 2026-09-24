@@ -2,7 +2,9 @@
 
 Run from this directory: python3 experiments_extensions.py. Prints four
 tables and writes figC_extensions.png. Tests 1 and 2 use the
-operational module on 0.25 degree grids; tests 3 and 4 are analytic.
+operational module on 0.25 degree grids; test 3 is analytic; test 4
+compares the operational module against the storm-centered reference
+implementation on its own 0.25 degree grid.
 
 1. Background gradient removal. A deep warm core sits on a meridional
    height gradient that grows with height (a baroclinic zone). The
@@ -21,6 +23,25 @@ operational module on 0.25 degree grids; tests 3 and 4 are analytic.
    angles 0 to 90 degrees to the storm motion, Hart's B (the right-left
    projection) against the full gradient magnitude and the fore-aft
    component.
+5. Semicircle B versus scale. A wavenumber-one thickness dipole
+   `A * (x_R / L) * exp(-r**2 / (2 * L**2))` (`x_R` the across-track
+   coordinate, `r` the radial distance, both km) on a flat background,
+   for `L` (the dipole's own across-track length scale) from 200 to
+   1500 km, at a fixed R = 500 km analysis window: the ratio of the
+   gridded B to Hart's own exact semicircle B, for both the current
+   half-disk-mean form (`cps_HartCPS.parameter_b_grid`) and the earlier
+   window-mean-gradient form (`parameter_b_grid_gradient`). Grid: 0.25
+   degree lat/lon, latitude 20-40N, longitude 150-180E (center at
+   30N, 165E, so the 500 km window never nears a domain edge for any L
+   tested); heading fixed at HEADING_DEG (45 degrees, storm moving
+   northeast) for both the gridded functions' steering proxy and Hart's
+   own track heading. Hart's reference value is `cps.hart.parameter_b`
+   itself (a true circular 500 km window split by the cross product
+   into an exact right/left half-plane) fed z900=0, z600=the same
+   dipole field, rather than a separate brute-force reimplementation --
+   its interface already takes any two-level thickness field and a
+   heading, so this is not an approximation of Hart's method, it is
+   Hart's method run on the idealized field.
 """
 from __future__ import annotations
 
@@ -34,13 +55,23 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent.parent / "D2D" / "derivedParameters" / "functions"))
+REPO_ROOT = HERE.parent.parent  # article/figures -> article -> cyclone_phase_space
+sys.path.insert(0, str(REPO_ROOT / "D2D" / "derivedParameters" / "functions"))
+sys.path.insert(0, str(REPO_ROOT))
 import cps_HartCPS as hc  # noqa: E402
+import cps as ch  # noqa: E402
 from experiments import make_grid, dist_km, std_height, LEVELS, linear_amp, ANCHOR_P  # noqa: E402
 from band_comparison import ARCHETYPES  # noqa: E402
 
 hc.ORIENTATION_MODE = 0
 TRUE_SLOPE = 191.0  # slope of the linear 250 -> 20 m amplitude profile
+
+# ---- test 5 (panel d) constants: see its own docstring for the grid/heading ----
+DIPOLE_HEADING_DEG = 45.0
+DIPOLE_SPEED_MS = 10.0
+DIPOLE_R_KM = 500.0
+DIPOLE_AMP_M = 100.0  # arbitrary; B is linear in it, so it cancels out of the ratio
+DIPOLE_L_VALUES_KM = [200.0, 300.0, 400.0, 500.0, 600.0, 800.0, 1000.0, 1250.0, 1500.0]
 
 
 def fields_with_background(lat2d, lon2d, amp, g0_m_per_deg, angle_deg, scale_km=150.0):
@@ -145,13 +176,62 @@ def test_vector_b():
     return rows
 
 
+def test_semicircle_ratio():
+    """5. Ratio of gridded B to Hart's exact semicircle B for a
+    wavenumber-one thickness dipole, against the dipole's across-track
+    scale L -- see this module's own docstring for the grid, heading,
+    and why `cps.hart.parameter_b` is used directly as the reference
+    rather than a separate brute-force half-disk mean.
+    """
+    lats, lons, lat2d, lon2d, dx, dy = make_grid(0.25, lat0=20.0, lat1=40.0, lon0=150.0, lon1=180.0)
+    clat, clon = 30.0, 165.0
+    ci = int(np.argmin(np.abs(lats - clat)))
+    cj = int(np.argmin(np.abs(lons - clon)))
+
+    u_s = DIPOLE_SPEED_MS * np.sin(np.radians(DIPOLE_HEADING_DEG))
+    v_s = DIPOLE_SPEED_MS * np.cos(np.radians(DIPOLE_HEADING_DEG))
+    u_arr = np.full(lat2d.shape, u_s)
+    v_arr = np.full(lat2d.shape, v_s)
+
+    # Across-track coordinate x_R (km, positive right of motion, using
+    # parameter_b_grid's own right-hand normal (v_s, -u_s)/speed) and the
+    # radial distance r (km) from the center, on a flat local Cartesian
+    # projection -- the same convention cps.hart.local_offsets_km and
+    # article/figures/lifecycle_comparison.py's across_track_km use.
+    dx_km, dy_km = ch.local_offsets_km(lat2d, lon2d, clat, clon)
+    nrx, nry = v_s / DIPOLE_SPEED_MS, -u_s / DIPOLE_SPEED_MS
+    x_r = dx_km * nrx + dy_km * nry
+    r = np.hypot(dx_km, dy_km)
+
+    print("\n5. Ratio of gridded B to Hart's exact semicircle B, wavenumber-one dipole "
+          f"(R = {DIPOLE_R_KM:.0f} km, heading {DIPOLE_HEADING_DEG:.0f} deg, grid center {clat:.0f}N)")
+    print("   L (km)   Hart B (m)   semicircle B   ratio   gradient B   ratio")
+    rows = []
+    for L in DIPOLE_L_VALUES_KM:
+        thickness = DIPOLE_AMP_M * (x_r / L) * np.exp(-(r ** 2) / (2.0 * L ** 2))
+        z900 = np.zeros_like(thickness)
+        z600 = thickness
+
+        b_hart = ch.parameter_b(z900, z600, lat2d, lon2d, clat, clon, DIPOLE_HEADING_DEG, radius_km=DIPOLE_R_KM)
+        b_semi = float(hc.parameter_b_grid(thickness, u_arr, v_arr, dx, dy, 1.0, DIPOLE_R_KM, 1.0)[ci, cj])
+        b_grad = float(hc.parameter_b_grid_gradient(thickness, u_arr, v_arr, dx, dy, 1.0, DIPOLE_R_KM, 1.0)[ci, cj])
+
+        ratio_semi = b_semi / b_hart
+        ratio_grad = b_grad / b_hart
+        rows.append((L, b_hart, b_semi, ratio_semi, b_grad, ratio_grad))
+        print(f"   {L:6.0f}   {b_hart:10.3f}   {b_semi:12.3f}   {ratio_semi:5.3f}   {b_grad:10.3f}   {ratio_grad:5.3f}")
+    return rows
+
+
 def main():
     bg = test_background()
     rad = test_radius()
     prof = test_profile()
     vec = test_vector_b()
+    semi = test_semicircle_ratio()
 
-    fig, axes = plt.subplots(1, 3, figsize=(12.5, 3.9))
+    fig, axes = plt.subplots(2, 2, figsize=(9.4, 7.6))
+    axes = axes.ravel()
     ax = axes[0]
     g = [r[0] for r in bg if r[1] == 0]
     ax.plot(g, [r[2] for r in bg if r[1] == 0], "o-", color="#e34948", label="HVTL, gradient on grid axis")
@@ -184,6 +264,17 @@ def main():
     ax.set_ylabel("m")
     ax.set_title("(c) vector asymmetry", loc="left", fontsize=10)
     ax.legend(fontsize=7)
+
+    ax = axes[3]
+    L = [r[0] for r in semi]
+    ax.plot(L, [r[3] for r in semi], "o-", color="#e34948", label="semicircle (parameter_b_grid)")
+    ax.plot(L, [r[5] for r in semi], "s--", color="#2a78d6", label="gradient (parameter_b_grid_gradient)")
+    ax.axhline(1.0, color="k", lw=0.8, label="uniform-gradient limit")
+    ax.set_xlabel("dipole across-track scale L (km)")
+    ax.set_ylabel("gridded B / Hart's semicircle B")
+    ax.set_title("(d) semicircle B versus scale", loc="left", fontsize=10)
+    ax.legend(fontsize=7)
+
     fig.tight_layout()
     fig.savefig(HERE / "figC_extensions.png", dpi=300)
     print("\nwrote", HERE / "figC_extensions.png")

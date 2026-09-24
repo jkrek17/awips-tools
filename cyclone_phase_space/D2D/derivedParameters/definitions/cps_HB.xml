@@ -1,18 +1,19 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <!--
-  EXPERIMENTAL. Hart CPS parameter B (thermal asymmetry), gridded
-  approximation: at every grid point, the 925-700 hPa thickness gradient
-  (cps_HartCPS.gradient_2d, box averaged over the same 500 km analysis window
-  HVTL/HVTU use) is projected onto the right-hand normal of the steering
-  flow (the mean of the 850/700/500/300 hPa wind), then scaled by the
-  geometric constant 8*radiusKm/(3*pi) that approximates Hart's own
-  right-minus-left half-window mean difference for a smoothly varying
-  thickness field, then rescaled from this module's 925-700 hPa layer to
-  a 900-600 hPa equivalent by layerScale so Hart's 10 m onset threshold
-  applies - see cps_HartCPS.py's module docstring, "Parameter B and ET
-  stage" section, for the full derivation, what the linear-gradient
-  approximation loses (a genuinely nonlinear thickness structure inside
-  the window, e.g. a warm-seclusion tongue, only to first order), and the
+  EXPERIMENTAL. Hart CPS parameter B (thermal asymmetry), gridded: at
+  every grid point, Hart's own right-minus-left semicircle difference of
+  925-700 hPa thickness across the direction of the steering flow (the
+  mean of the 850/700/500/300 hPa wind, area averaged over 500 km), over
+  the same 500 km radius HVTL/HVTU use. cps_HartCPS.half_disk_means
+  gives the mean thickness over the north, south, east and west
+  half-disks of every point, and with the unit motion vector (mx, my)
+  the difference is mx*(south - north) + my*(east - west), exact for any
+  wavenumber-one thickness pattern about the point (a uniform gradient
+  or a storm-scale dipole alike; only odd harmonics of order 3 and up
+  are missed). The result is rescaled from this module's 925-700 hPa
+  layer to a 900-600 hPa equivalent by layerScale so Hart's 10 m onset
+  threshold applies - see cps_HartCPS.py's module docstring, "Parameter
+  B and the joint class" section, for the derivation and the
   steering-flow motion proxy's own limits (unreliable or missing for a
   stationary or steering-opposed storm). See cps_HartCPS.executeB and
   D2D/README.md's "Hart CPS family" section.
@@ -64,9 +65,8 @@
         <Field abbreviation="coriolis"/>
         <Field abbreviation="dx"/>
         <Field abbreviation="dy"/>
-        <!-- radiusKm (km): Hart's own 500 km analysis-window half-width,
-             used both for the box-averaged thickness gradient and the
-             8*radiusKm/(3*pi) geometry constant -->
+        <!-- radiusKm (km): Hart's own 500 km analysis radius, used for
+             the thickness semicircles and the steering-flow average -->
         <ConstantField value="500.0"/>
         <!-- layerScale: rescales B from this module's 925-700 hPa layer
              to a 900-600 hPa equivalent, ln(900/600)/ln(925/700) =

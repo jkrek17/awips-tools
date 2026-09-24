@@ -4,36 +4,51 @@
   HVTU and closed-low mask as cps_HCPSclass.xml, squashed into a single
   continuous number from -3 (cold core) to +3 (deep warm core) via
   2*tanh(HVTL/scaleM) + tanh(HVTU/scaleM) - see cps_HartCPS.executeIndexStd
-  and D2D/README.md's "Hart CPS family" section. The closed-low mask
-  (cps_HartCPS.closed_low_mask) is evaluated on 1000 hPa height rather than
-  one of the thermal-wind band levels below, because 1000 hPa height is
-  nearly a linear function of MSLP (about 8 m per hPa), so the closed
-  low the mask finds is the same closed low a forecaster already sees
-  drawn on the MSLP contours; depthM's 40 m is therefore about 5 hPa of
-  MSLP. 1000 hPa is below ground over major terrain and below sea level
-  inside a deep low, so the model extrapolates there; this is now
-  handled by below-ground masking (see next paragraph), not left as a
-  caveat.
+  and D2D/README.md's "Hart CPS family" section.
 
-  Below-ground masking: same as cps_HCPSclass.xml - every one of the seven
-  height Fields above (z1000 and the six HVTL/HVTU band levels) is
-  blanked (NaN) before its own computation wherever it is below ground
-  for its own pressure, using the surface pressure field (P, Surface)
-  and capHpa below - see cps_HartCPS.mask_below_ground. capHpa (default
-  900 hPa) is a cap, not the literal level pressure: it keeps a deep
-  low's own legitimately low surface pressure over open water from
-  being mistaken for terrain, while still masking the Greenland ice
-  sheet and Iceland highlands at 1000/925/850 hPa - see cps_HCPSclass.xml's
-  comment for the full explanation.
+  Why MSLP for the closed-low mask (cps_HartCPS.closed_low_mask): it is
+  one field, the same surface the forecaster already contours, so the
+  closed low the mask finds is the closed low drawn on the chart; it is
+  defined everywhere, so there is no extrapolation below sea level
+  inside a deep low (as there is for 1000 hPa height) and nothing to
+  mask below ground; and the ring test reads directly in pressure: the
+  annulus 300 to 500 km out must average at least depthHpa (5 hPa)
+  above the candidate center, which must itself be within 0.6 hPa of
+  the lowest MSLP within 300 km. Pa or hPa are both accepted (the same
+  median rule as the surface pressure field).
+
+  Below-ground masking: same as cps_HCPSclass.xml - every one of the six
+  height Fields below (the HVTL/HVTU band levels) is blanked (NaN)
+  before its own computation wherever it is below ground for its own
+  pressure, using the surface pressure field (P, Surface) and capHpa
+  below - see cps_HartCPS.mask_below_ground. capHpa (default 900 hPa) is
+  a cap, not the literal level pressure: it keeps a deep low's own
+  legitimately low surface pressure over open water from being mistaken
+  for terrain, while still masking the Greenland ice sheet and Iceland
+  highlands at 925/850 hPa - see cps_HCPSclass.xml's comment for the full
+  explanation. The MSLP Field is not masked; the index is blanked over
+  terrain because HVTL is.
 
   VERIFY: same checks as cps_HCPSclass.xml (GH abbreviation, fixed-level Field
   spelling, P abbreviation and its Surface level spelling, dx/dy
   pseudo-fields and ConstantField support, levels= value, unit=""
-  acceptance).
+  acceptance), and in addition:
+    - the mean sea level pressure Field is spelled
+      <Field abbreviation="PMSL" level="MSL"/> below. Neither the PMSL
+      abbreviation nor the MSL level spelling could be verified here;
+      check both against the site's grid inventory (an existing base
+      definition that reads MSLP, or the volume browser's MSL plane) at
+      install. If the definition fails to load or comes back empty,
+      try level="0.0MSL", then omitting the level attribute, then the
+      model's own MSLP abbreviation (some models carry reduced MSLP
+      under a model-specific name rather than PMSL). The same change
+      applies to cps_HCPSclass.xml.
 -->
 <DerivedParameter abbreviation="HCPSidx" name="Hart CPS Index -3 to +3" unit="">
     <Method name="cps_HartCPS.executeIndexStd" levels="Surface">
-        <Field abbreviation="GH" level="1000MB"/>
+        <!-- pmsl: mean sea level pressure (Pa or hPa) for the closed-low
+             mask - VERIFY, see above -->
+        <Field abbreviation="PMSL" level="MSL"/>
         <Field abbreviation="GH" level="925MB"/>
         <Field abbreviation="GH" level="850MB"/>
         <Field abbreviation="GH" level="700MB"/>
@@ -50,10 +65,10 @@
         <!-- scaleM (m): tanh squashing scale - roughly the |HVTL|/|HVTU|
              magnitude that reads as "fully" warm/cold -->
         <ConstantField value="100.0"/>
-        <!-- depthM (m): the annulus around a candidate point must average
-             at least this much higher than the point itself before it
-             counts as a real closed low, not a uniform slope -->
-        <ConstantField value="40.0"/>
+        <!-- depthHpa (hPa): the annulus around a candidate point must
+             average at least this much higher MSLP than the point itself
+             before it counts as a real closed low, not a uniform slope -->
+        <ConstantField value="5.0"/>
         <!-- blobKm (km): half-width of the blob painted around each
              detected low's center (a display radius, not the low's own
              true physical size) -->

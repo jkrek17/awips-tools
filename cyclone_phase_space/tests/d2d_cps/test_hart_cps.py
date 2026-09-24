@@ -553,9 +553,9 @@ def test_square_vs_circle_scale_sensitivity():
 # closed_low_mask's dilation step uses a *square* window (like everything
 # else in this file), whose corners reach sqrt(2) times its half-width --
 # see the module docstring's "Square window versus Hart's circle" section.
-# The tight (5 m) candidate test around a smooth 150 km-scale Gaussian low
-# also has some spatial extent of its own (the height only needs to rise
-# 5 m from the true minimum, which for a gentle 150 km-scale bowl reaches
+# The tight (0.6 hPa) candidate test around a smooth 150 km-scale Gaussian
+# low also has some spatial extent of its own (the pressure only needs to
+# rise 0.6 hPa from the true minimum, which for a gentle 150 km-scale bowl reaches
 # several tens of km out), so the dilated blob's true reach from the exact
 # center is a bit more than DEFAULT_BLOB_RADIUS_KM: this bound is a generous
 # but finite envelope for both effects together, used instead of a tight
@@ -577,16 +577,28 @@ def _big_grid(clat=20.0, clon=0.0, half_width_deg=None, dlat=0.25):
     return lat2d, lon2d, dx2d, dy_m, r_km
 
 
-def _gaussian_low(r_km, depth_m, scale_km=150.0, background_m=1500.0):
-    return background_m - depth_m * np.exp(-(r_km / scale_km) ** 2)
+def _gaussian_low(r_km, depth_hpa, scale_km=150.0, background_hpa=1012.0):
+    """A Gaussian MSLP low (hPa) -- closed_low_mask works on mean sea
+    level pressure.
+    """
+    return background_hpa - depth_hpa * np.exp(-(r_km / scale_km) ** 2)
+
+
+def _pmsl_from_z1000(z1000):
+    """MSLP (hPa) from a synthetic 1000 hPa height field, at the usual
+    ~8 m of 1000 hPa height per hPa near sea level: 1000 hPa plus z/8.
+    A synthetic vortex's 200 m deep 1000 hPa low becomes a 25 hPa low
+    on a 1012.5 hPa background (the synthetic background z1000 is 100 m).
+    """
+    return 1000.0 + np.asarray(z1000, dtype=float) / 8.0
 
 
 def test_closed_low_mask_gaussian_low_blob_and_far_field_false():
     clat, clon = 20.0, 0.0
     lat2d, lon2d, dx2d, dy_m, r_km = _big_grid(clat, clon)
-    z925 = _gaussian_low(r_km, depth_m=60.0, scale_km=150.0)
+    pmsl = _gaussian_low(r_km, depth_hpa=7.5, scale_km=150.0)
 
-    mask = hc.closed_low_mask(z925, dx2d, dy_m)
+    mask = hc.closed_low_mask(pmsl, dx2d, dy_m)
     ci, cj = lat2d.shape[0] // 2, lat2d.shape[1] // 2
 
     assert mask[ci, cj]  # True at the center (r = 0)
@@ -605,11 +617,11 @@ def test_closed_low_mask_low_on_uniform_gradient_still_one_blob():
 
     dlon_deg = ((lon2d - clon + 180.0) % 360.0) - 180.0
     dx_km_from_center = EARTH_RADIUS_KM * math.cos(math.radians(clat)) * np.radians(dlon_deg)
-    gradient_m_per_km = 50.0 / 1000.0  # 50 m per 1000 km
-    z_gradient = 1500.0 + gradient_m_per_km * dx_km_from_center
+    gradient_hpa_per_km = 6.0 / 1000.0  # 6 hPa per 1000 km
+    p_gradient = 1012.0 + gradient_hpa_per_km * dx_km_from_center
 
-    z925 = z_gradient - 60.0 * np.exp(-(r_km / 150.0) ** 2)
-    mask = hc.closed_low_mask(z925, dx2d, dy_m)
+    pmsl = p_gradient - 7.5 * np.exp(-(r_km / 150.0) ** 2)
+    mask = hc.closed_low_mask(pmsl, dx2d, dy_m)
     ci, cj = lat2d.shape[0] // 2, lat2d.shape[1] // 2
 
     assert mask[ci, cj]
@@ -628,27 +640,27 @@ def test_closed_low_mask_uniform_gradient_alone_all_false():
 
     dlon_deg = ((lon2d - clon + 180.0) % 360.0) - 180.0
     dx_km_from_center = EARTH_RADIUS_KM * math.cos(math.radians(clat)) * np.radians(dlon_deg)
-    gradient_m_per_km = 50.0 / 1000.0
-    z925 = 1500.0 + gradient_m_per_km * dx_km_from_center
+    gradient_hpa_per_km = 6.0 / 1000.0
+    pmsl = 1012.0 + gradient_hpa_per_km * dx_km_from_center
 
-    mask = hc.closed_low_mask(z925, dx2d, dy_m)
+    mask = hc.closed_low_mask(pmsl, dx2d, dy_m)
     assert not np.any(mask)
 
 
 def test_closed_low_mask_shallow_low_all_false():
     clat, clon = 20.0, 0.0
     lat2d, lon2d, dx2d, dy_m, r_km = _big_grid(clat, clon)
-    z925 = _gaussian_low(r_km, depth_m=20.0, scale_km=150.0)  # depth 20 m < depthM 40
+    pmsl = _gaussian_low(r_km, depth_hpa=2.5, scale_km=150.0)  # depth 2.5 hPa < depth_hpa 5
 
-    mask = hc.closed_low_mask(z925, dx2d, dy_m, depth_m=40.0)
+    mask = hc.closed_low_mask(pmsl, dx2d, dy_m, depth_hpa=5.0)
     assert not np.any(mask)
 
 
 def test_closed_low_mask_flat_field_all_false():
     lat2d, lon2d, dx2d, dy_m, r_km = _big_grid()
-    z925 = np.full(lat2d.shape, 1500.0)
+    pmsl = np.full(lat2d.shape, 1012.0)
 
-    mask = hc.closed_low_mask(z925, dx2d, dy_m)
+    mask = hc.closed_low_mask(pmsl, dx2d, dy_m)
     assert not np.any(mask)
 
 
@@ -664,8 +676,8 @@ def test_closed_low_mask_two_lows_two_separate_blobs():
     r_a = synthetic._haversine_km(lat2d, lon2d, clat, clon_a)
     r_b = synthetic._haversine_km(lat2d, lon2d, clat, clon_b)
 
-    z925 = 1500.0 - 60.0 * np.exp(-(r_a / 150.0) ** 2) - 60.0 * np.exp(-(r_b / 150.0) ** 2)
-    mask = hc.closed_low_mask(z925, dx2d, dy_m)
+    pmsl = 1012.0 - 7.5 * np.exp(-(r_a / 150.0) ** 2) - 7.5 * np.exp(-(r_b / 150.0) ** 2)
+    mask = hc.closed_low_mask(pmsl, dx2d, dy_m)
 
     idx_a = np.unravel_index(np.argmin(r_a), r_a.shape)
     idx_b = np.unravel_index(np.argmin(r_b), r_b.shape)
@@ -682,6 +694,24 @@ def test_closed_low_mask_two_lows_two_separate_blobs():
     near_a = r_a <= _BLOB_REACH_BOUND_KM
     near_b = r_b <= _BLOB_REACH_BOUND_KM
     assert np.array_equal(mask, mask & (near_a | near_b))
+
+
+def test_closed_low_mask_accepts_pa_or_hpa():
+    """MSLP in Pa (AWIPS's usual unit) and in hPa give the same mask:
+    closed_low_mask normalizes with mslp_hpa, the same median rule
+    surface_pressure_hpa uses, and its depth/tolerance are always hPa.
+    """
+    lat2d, lon2d, dx2d, dy_m, r_km = _big_grid()
+    pmsl_hpa = _gaussian_low(r_km, depth_hpa=7.5, scale_km=150.0)
+    mask_hpa = hc.closed_low_mask(pmsl_hpa, dx2d, dy_m)
+    mask_pa = hc.closed_low_mask(pmsl_hpa * 100.0, dx2d, dy_m)
+    assert mask_hpa.any()
+    np.testing.assert_array_equal(mask_pa, mask_hpa)
+    np.testing.assert_allclose(hc.mslp_hpa(pmsl_hpa * 100.0), pmsl_hpa)
+
+    # A 4 hPa low is below the 5 hPa default ring depth; a 6 hPa one is not.
+    assert not hc.closed_low_mask(_gaussian_low(r_km, depth_hpa=4.0) * 100.0, dx2d, dy_m).any()
+    assert hc.closed_low_mask(_gaussian_low(r_km, depth_hpa=6.0) * 100.0, dx2d, dy_m).any()
 
 
 # ---------------------------------------------------------------------------
@@ -709,14 +739,15 @@ def _ocean_psfc(shape, hpa=1013.0):
 
 def test_execute_index_std_deep_warm_core_and_far_field_nan():
     # z1000 is built the same way as z925 (same synthetic-vortex machinery),
-    # with a slightly larger amplitude so the low is deepest at 1000 hPa --
-    # closed_low_mask reads z1000, not z925 (see cps_HartCPS.py's module
-    # docstring, "Closed-low mask level").
+    # with a slightly larger amplitude so the low is deepest at 1000 hPa,
+    # then converted to MSLP (_pmsl_from_z1000, about 8 m per hPa) for
+    # closed_low_mask, which reads mean sea level pressure (see
+    # cps_HartCPS.py's module docstring, "Closed-low mask").
     amp_by_level = {1000.0: 200.0, 925.0: 180.0, 850.0: 150.0, 700.0: 110.0, 500.0: 50.0, 400.0: 25.0, 300.0: 5.0}
     lat2d, lon2d, z_by_level, dx2d, dy_m = _warm_core_fields(amp_by_level)
 
     idx = hc.executeIndexStd(
-        z_by_level[1000.0],
+        _pmsl_from_z1000(z_by_level[1000.0]),
         z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
         z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
         _ocean_psfc(lat2d.shape), dx2d, dy_m,
@@ -774,7 +805,7 @@ def test_execute_index_std_psfc_accepts_pa_or_hpa():
     amp_by_level = {1000.0: 200.0, 925.0: 180.0, 850.0: 150.0, 700.0: 110.0, 500.0: 50.0, 400.0: 25.0, 300.0: 5.0}
     lat2d, lon2d, z_by_level, dx2d, dy_m = _warm_core_fields(amp_by_level)
     args = (
-        z_by_level[1000.0],
+        _pmsl_from_z1000(z_by_level[1000.0]),
         z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
         z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
     )
@@ -824,7 +855,7 @@ def test_execute_index_std_terrain_block_west_of_vortex():
 
     ci, cj = lat2d.shape[0] // 2, lat2d.shape[1] // 2
     band_args = (
-        z_by_level[1000.0],
+        _pmsl_from_z1000(z_by_level[1000.0]),
         z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
         z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
     )
@@ -975,8 +1006,11 @@ def test_gradient_2d_invalid_mode_raises():
 
 def test_parameter_b_grid_sign_and_magnitude(hart_standard_orientation):
     # thickness = -g*y: warm/thick to the south (y < 0), cold/thin to the
-    # north (y > 0) -- dThickness/dy = -g everywhere.
-    ny, nx = 41, 43
+    # north (y > 0) -- dThickness/dy = -g everywhere. The grid is large
+    # enough (61 x 63 at 20 km) that the center's 500 km half-disks fit
+    # inside it: parameter_b_grid now uses true half-disk means, which a
+    # grid edge would clip.
+    ny, nx = 61, 63
     dx_m = 20000.0
     dy_m = 20000.0
     y_idx, x_idx = np.mgrid[0:ny, 0:nx]
@@ -992,24 +1026,28 @@ def test_parameter_b_grid_sign_and_magnitude(hart_standard_orientation):
     # (facing west, north is to your right) -- the cold side of this
     # thickness field -- so the right-minus-left difference is negative,
     # and B = h*(mean_right - mean_left) with h=+1 in the NH is negative.
+    # For a uniform gradient the half-disk centroids are 8R/(3*pi) apart,
+    # so the semicircle difference is that distance times the gradient;
+    # rtol 5e-3 covers the 20 km lattice's own discretization of the
+    # disk (measured about 2e-4 here).
     full_magnitude = hc.b_geometry_km(radius_km) * 1000.0 * g * layer_scale
 
     u_west = np.full((ny, nx), -10.0)
     v_west = np.zeros((ny, nx))
     b_west = hc.parameter_b_grid(thickness, u_west, v_west, dx_m, dy_m, 1.0, radius_km, layer_scale)
-    np.testing.assert_allclose(b_west[ci, cj], -full_magnitude, rtol=1e-6)
+    np.testing.assert_allclose(b_west[ci, cj], -full_magnitude, rtol=5e-3)
 
     # Moving due EAST instead, the right-hand side flips to SOUTH (the
     # warm side): B flips sign to positive.
     u_east = np.full((ny, nx), 10.0)
     v_east = np.zeros((ny, nx))
     b_east = hc.parameter_b_grid(thickness, u_east, v_east, dx_m, dy_m, 1.0, radius_km, layer_scale)
-    np.testing.assert_allclose(b_east[ci, cj], full_magnitude, rtol=1e-6)
+    np.testing.assert_allclose(b_east[ci, cj], full_magnitude, rtol=5e-3)
 
     # Southern Hemisphere (h=-1) flips the sign again, back to negative,
     # for the same due-east motion.
     b_east_sh = hc.parameter_b_grid(thickness, u_east, v_east, dx_m, dy_m, -1.0, radius_km, layer_scale)
-    np.testing.assert_allclose(b_east_sh[ci, cj], -full_magnitude, rtol=1e-6)
+    np.testing.assert_allclose(b_east_sh[ci, cj], -full_magnitude, rtol=5e-3)
 
     # Moving due NORTH -- parallel to the gradient, perpendicular to the
     # (east-west) thickness contours -- puts the "right" and "left" of
@@ -1052,13 +1090,308 @@ def test_parameter_b_grid_matches_cps_hart_parameter_b(hart_standard_orientation
     b_grid = hc.parameter_b_grid(thickness_field, u_s, v_s, dx2d, dy_m, 1.0, radius_km, 1.0)
 
     assert np.isfinite(b_ref)
-    # Tightened from rel=0.05 to what the code actually achieves on a
-    # perfectly linear thickness field (about 4.6e-4 relative -- the
-    # linear-gradient approximation is exact in this case, per the
-    # module docstring's "Parameter B and the joint class" section, so
-    # the small residual is square-vs-circle geometry, not the
-    # approximation itself).
-    assert b_grid[ci, cj] == pytest.approx(b_ref, rel=1e-3)
+    # Both are semicircle differences of the same linear field; the
+    # residual (about 3e-3 relative) is the two discretizations of the
+    # disk (this module's row-by-row lattice disk with the dividing
+    # line's points split half and half, against cps.hart's great-circle
+    # mask with those points left out), not an approximation of B.
+    assert b_grid[ci, cj] == pytest.approx(b_ref, rel=5e-3)
+    # And the first-order gradient form, exact for a linear field.
+    b_old = hc.parameter_b_grid_gradient(thickness_field, u_s, v_s, dx2d, dy_m, 1.0, radius_km, 1.0)
+    assert b_old[ci, cj] == pytest.approx(b_ref, rel=1e-3)
+
+
+# --- (c1) half_disk_means and the semicircle-mean parameter B --------------
+
+
+def _brute_half_disk_means(field, row_dx, dy_m, radius_km, wrap, north_step):
+    """Nested-loop half-disk means, independent of cps_HartCPS's
+    cumulative-sum implementation: every cell whose local planar offset
+    (x in its own row's dx, y = j*dy) is within `radius_km` of the
+    center, weighted by its row's dx (its area), with the center row
+    split half and half between north and south and the center column
+    half and half between east and west. `north_step` is the row-index
+    step that moves one row north (+1 or -1).
+    """
+    field = np.asarray(field, dtype=float)
+    ny, nx = field.shape
+    radius_m = radius_km * 1000.0
+    j_max = min(int(math.floor(radius_m / dy_m + 1e-9)), ny - 1)
+    cap = (nx - 1) // 2 if wrap else nx - 1
+    out = np.full((4, ny, nx), np.nan)
+    for i in range(ny):
+        for c in range(nx):
+            sums = np.zeros(4)
+            weights = np.zeros(4)
+            for j in range(-j_max, j_max + 1):
+                r = i + north_step * j
+                if r < 0 or r >= ny:
+                    continue
+                chord = math.sqrt(max(radius_m ** 2 - (j * dy_m) ** 2, 0.0))
+                h = min(int(math.floor(chord / row_dx[r] + 1e-9)), cap)
+                area = row_dx[r] / row_dx.max()
+                for k in range(-h, h + 1):
+                    cc = c + k
+                    if wrap:
+                        cc %= nx
+                    elif cc < 0 or cc >= nx:
+                        continue
+                    val = field[r, cc]
+                    if not np.isfinite(val):
+                        continue
+                    split = (
+                        1.0 if j > 0 else (0.5 if j == 0 else 0.0),
+                        1.0 if j < 0 else (0.5 if j == 0 else 0.0),
+                        1.0 if k > 0 else (0.5 if k == 0 else 0.0),
+                        1.0 if k < 0 else (0.5 if k == 0 else 0.0),
+                    )
+                    for q in range(4):
+                        sums[q] += split[q] * area * val
+                        weights[q] += split[q] * area
+            for q in range(4):
+                if weights[q] > 1e-9:
+                    out[q, i, c] = sums[q] / weights[q]
+    return out
+
+
+def test_half_disk_means_matches_brute_force():
+    rng = np.random.default_rng(20260924)
+    ny, nx = 19, 26
+    field = rng.standard_normal((ny, nx))
+    field[rng.random((ny, nx)) < 0.1] = np.nan
+    lat_vals = np.linspace(40.0, 70.0, ny)
+    row_dx = 50000.0 * np.cos(np.radians(lat_vals))
+    dx2d = np.repeat(row_dx[:, np.newaxis], nx, axis=1)
+    dy_m = 60000.0
+    radius_km = 300.0
+
+    for mode, north_step in ((0, 1), (1, -1)):
+        for wrap in (False, True):
+            got = np.array(hc.half_disk_means(field, dx2d, dy_m, radius_km, global_lon=wrap, mode=mode))
+            expected = _brute_half_disk_means(field, row_dx, dy_m, radius_km, wrap, north_step)
+            np.testing.assert_allclose(got, expected, rtol=1e-10, atol=1e-12, equal_nan=True,
+                                       err_msg=f"mode={mode} wrap={wrap}")
+
+    # Transposed layouts (modes 2/3) are the same computation on the
+    # transposed arrays.
+    got1 = np.array(hc.half_disk_means(field, dx2d, dy_m, radius_km, global_lon=False, mode=1))
+    got3 = np.array(hc.half_disk_means(field.T, dx2d.T, dy_m, radius_km, global_lon=False, mode=3))
+    np.testing.assert_allclose(got3.transpose(0, 2, 1), got1, equal_nan=True)
+
+
+def _flat_grid(spacing_km=25.0, half_width_km=900.0):
+    n = int(round(2.0 * half_width_km / spacing_km)) + 1
+    c = n // 2
+    j_idx, i_idx = np.mgrid[0:n, 0:n]
+    x_km = (i_idx - c) * spacing_km  # east, axis 1
+    y_km = (j_idx - c) * spacing_km  # north, axis 0 (ORIENTATION_MODE 0)
+    return x_km, y_km, c, spacing_km * 1000.0
+
+
+def _motion(heading_deg, speed_ms, shape):
+    mx, my = math.sin(math.radians(heading_deg)), math.cos(math.radians(heading_deg))
+    return np.full(shape, speed_ms * mx), np.full(shape, speed_ms * my), mx, my
+
+
+_DIPOLE_L_KM = 400.0
+_DIPOLE_A_M = 30.0
+
+
+def _dipole(x_km, y_km, mx, my, amp=_DIPOLE_A_M, scale_km=_DIPOLE_L_KM):
+    """Wavenumber-one Gaussian dipole A*(x_R/L)*exp(-r**2/(2*L**2)), with
+    x_R the distance to the right of motion (m) = (mx, my): the right-hand
+    normal is (my, -mx). Thick to the right of motion, thin to the left.
+    """
+    x_right = my * x_km - mx * y_km
+    r2 = x_km ** 2 + y_km ** 2
+    return amp * (x_right / scale_km) * np.exp(-r2 / (2.0 * scale_km ** 2))
+
+
+def _dipole_continuum_b(radius_km=hc.RADIUS_KM, amp=_DIPOLE_A_M, scale_km=_DIPOLE_L_KM):
+    """Hart's semicircle difference of the dipole in the continuum: for
+    f(r)*cos(theta) it is (4/pi) times the area mean of f over the disk.
+    """
+    r = np.linspace(0.0, radius_km, 200001)
+    f = amp * (r / scale_km) * np.exp(-r ** 2 / (2.0 * scale_km ** 2))
+    integrand = f * r
+    area_mean = float(np.sum((integrand[1:] + integrand[:-1]) * np.diff(r)) / 2.0) / (radius_km ** 2 / 2.0)
+    return 4.0 / math.pi * area_mean
+
+
+def _brute_semicircle_difference(field, x_km, y_km, mx, my, radius_km):
+    """Right-minus-left half-disk mean difference with an explicit mask:
+    disk r <= R, right of motion where the cross product m x offset < 0
+    (the cps.hart.parameter_b convention), left where > 0. Grid points
+    exactly on the dividing line count half to each side, the lattice
+    counterpart of the continuum semicircles (and the same convention
+    half_disk_means uses for the center row and column).
+    """
+    disk = x_km ** 2 + y_km ** 2 <= radius_km ** 2 + 1e-6
+    cross = mx * y_km - my * x_km
+    tol = 1e-6
+    w_right = disk * ((cross < -tol) + 0.5 * (np.abs(cross) <= tol))
+    w_left = disk * ((cross > tol) + 0.5 * (np.abs(cross) <= tol))
+    return float(np.sum(field * w_right) / np.sum(w_right) - np.sum(field * w_left) / np.sum(w_left))
+
+
+def test_parameter_b_grid_uniform_gradient_equals_8r_over_3pi(hart_standard_orientation):
+    x_km, y_km, c, spacing_m = _flat_grid()
+    gx, gy = 0.03, -0.02  # m per km, east and north
+    thickness = gx * x_km + gy * y_km
+    layer_scale = 1.3
+    for heading in (0.0, 30.0, 45.0, 90.0, 135.0, 200.0, 300.0):
+        u, v, mx, my = _motion(heading, 10.0, thickness.shape)
+        b = hc.parameter_b_grid(thickness, u, v, spacing_m, spacing_m, 1.0, hc.RADIUS_KM, layer_scale)
+        n_right_dot_grad = my * gx - mx * gy
+        expected = hc.b_geometry_km(hc.RADIUS_KM) * n_right_dot_grad * layer_scale
+        assert b[c, c] == pytest.approx(expected, rel=0.01), heading
+
+
+def test_parameter_b_grid_storm_scale_dipole_matches_semicircles(capsys, hart_standard_orientation):
+    """The case the first-order gradient form under-reads: a 400 km
+    wavenumber-one dipole inside Hart's 500 km circle. The semicircle-mean
+    B matches an explicit brute-force half-disk difference to within 2%
+    (and the continuum value to within 1%) at every heading, while
+    parameter_b_grid_gradient reads only about 55% of it.
+    """
+    x_km, y_km, c, spacing_m = _flat_grid()
+    continuum = _dipole_continuum_b()
+    lines = []
+    for heading in (0.0, 45.0, 90.0, 135.0, 200.0, 300.0):
+        u, v, mx, my = _motion(heading, 10.0, x_km.shape)
+        thickness = _dipole(x_km, y_km, mx, my)
+        b_new = hc.parameter_b_grid(thickness, u, v, spacing_m, spacing_m, 1.0, hc.RADIUS_KM, 1.0)[c, c]
+        b_old = hc.parameter_b_grid_gradient(thickness, u, v, spacing_m, spacing_m, 1.0, hc.RADIUS_KM, 1.0)[c, c]
+        brute = _brute_semicircle_difference(thickness, x_km, y_km, mx, my, hc.RADIUS_KM)
+        lines.append(f"heading {heading:5.1f}: new {b_new:7.3f}  brute {brute:7.3f}  continuum {continuum:7.3f}  "
+                     f"old {b_old:7.3f} ({b_old / brute:.2f} of brute)")
+        assert brute > 0  # thick to the right of motion in the NH reads positive
+        assert b_new == pytest.approx(brute, rel=0.02), heading
+        assert b_new == pytest.approx(continuum, rel=0.01), heading
+        assert 0.45 < b_old / brute < 0.70, heading
+    with capsys.disabled():
+        print("\nParameter B on the L = 400 km dipole (A = 30 m, R = 500 km, 25 km grid):")
+        for line in lines:
+            print("  " + line)
+
+
+def test_parameter_b_grid_orientation_mode_1_matches_mode_0(monkeypatch):
+    """Rows stored north-to-south (ORIENTATION_MODE 1, the AWIPS layout)
+    give the same B as the same field stored south-to-north in mode 0.
+    """
+    x_km, y_km, c, spacing_m = _flat_grid()
+    u, v, mx, my = _motion(60.0, 10.0, x_km.shape)
+    thickness = _dipole(x_km, y_km, mx, my) + 0.01 * x_km - 0.02 * y_km
+    monkeypatch.setattr(hc, "ORIENTATION_MODE", 0)
+    b0 = hc.parameter_b_grid(thickness, u, v, spacing_m, spacing_m, 1.0, hc.RADIUS_KM, 1.0)
+    monkeypatch.setattr(hc, "ORIENTATION_MODE", 1)
+    b1 = hc.parameter_b_grid(thickness[::-1, :], u, v, spacing_m, spacing_m, 1.0, hc.RADIUS_KM, 1.0)
+    np.testing.assert_allclose(b1[::-1, :], b0, rtol=1e-9, equal_nan=True)
+    assert b0[c, c] > 0
+
+
+def test_parameter_b_grid_southern_hemisphere_sign(hart_standard_orientation):
+    x_km, y_km, c, spacing_m = _flat_grid()
+    for heading in (45.0, 200.0):
+        u, v, mx, my = _motion(heading, 10.0, x_km.shape)
+        thickness = _dipole(x_km, y_km, mx, my)
+        b_nh = hc.parameter_b_grid(thickness, u, v, spacing_m, spacing_m, 1.0, hc.RADIUS_KM, 1.0)
+        b_sh = hc.parameter_b_grid(thickness, u, v, spacing_m, spacing_m, -1.0, hc.RADIUS_KM, 1.0)
+        assert b_nh[c, c] > 0
+        assert b_sh[c, c] == pytest.approx(-b_nh[c, c], rel=1e-12)
+
+
+def test_parameter_b_grid_sign_matches_cps_hart_on_dipole(hart_standard_orientation):
+    """Sign convention checked against cps.hart.parameter_b itself (not
+    by reasoning): with the warm side of a storm-scale dipole to the
+    right of motion, both are positive in the Northern Hemisphere and
+    negative in the Southern, and agree in size to within the two
+    discretizations' difference (cps.hart leaves the dividing line's
+    points out, which matters most for axis-aligned headings on a
+    0.25 degree grid).
+    """
+    for clat in (20.0, -20.0):
+        lat2d, lon2d, dx2d, dy_m = _grid_and_dx_dy(clat, 0.0, half_width_deg=8.0, dlat=0.25)
+        ci, cj = lat2d.shape[0] // 2, lat2d.shape[1] // 2
+        x_km = EARTH_RADIUS_KM * np.cos(np.radians(lat2d)) * np.radians(lon2d)
+        y_km = EARTH_RADIUS_KM * np.radians(lat2d - clat)
+        for heading in (0.0, 60.0, 135.0, 250.0):
+            u, v, mx, my = _motion(heading, 10.0, lat2d.shape)
+            thickness = _dipole(x_km, y_km, mx, my)
+            b_grid = hc.parameter_b_grid(thickness, u, v, dx2d, dy_m, np.sign(clat), hc.RADIUS_KM, 1.0)[ci, cj]
+            b_ref = cps.parameter_b(np.zeros_like(thickness), thickness, lat2d, lon2d, clat, 0.0, heading, hc.RADIUS_KM)
+            assert np.sign(b_grid) == np.sign(b_ref) == np.sign(clat), (clat, heading)
+            assert b_grid == pytest.approx(b_ref, rel=0.10), (clat, heading)
+
+
+def test_parameter_b_grid_stationary_point_is_nan(hart_standard_orientation):
+    x_km, y_km, c, spacing_m = _flat_grid()
+    thickness = 0.03 * x_km
+    for speed, finite in ((0.0, False), (0.5 * hc.MIN_STEERING_MS, False), (0.95 * hc.MIN_STEERING_MS, False),
+                          (1.05 * hc.MIN_STEERING_MS, True)):
+        u, v, _, _ = _motion(30.0, speed, thickness.shape)
+        b = hc.parameter_b_grid(thickness, u, v, spacing_m, spacing_m, 1.0, hc.RADIUS_KM, 1.0)
+        assert np.isfinite(b[c, c]) == finite, speed
+
+
+def test_parameter_b_grid_global_grid_dateline_matches_mid_grid(hart_standard_orientation):
+    """A global 0.5 degree grid: the same dipole centered on the seam
+    (longitude 0, column 0) and in mid-grid (longitude 180) gives the same
+    B, because half_disk_means wraps its x sums around the seam; with the
+    wrap forced off, the seam's half-disks are clipped and differ.
+    """
+    dlat = 0.5
+    lat_vals = np.linspace(-90.0, 90.0, 361)
+    lon_vals = np.arange(720) * dlat
+    lon2d, lat2d = np.meshgrid(lon_vals, lat_vals)
+    dx2d = EARTH_RADIUS_KM * 1000.0 * np.cos(np.radians(lat2d)) * np.radians(dlat)
+    dy_m = EARTH_RADIUS_KM * 1000.0 * np.radians(dlat)
+    assert hc.is_global_lon(lon_vals.size, dy_m)
+
+    clat = 20.0
+    row = int(np.argmin(np.abs(lat_vals - clat)))
+    heading = 60.0
+    u, v, mx, my = _motion(heading, 10.0, lat2d.shape)
+
+    def _field(clon):
+        dlon = ((lon2d - clon + 180.0) % 360.0) - 180.0
+        x_km = EARTH_RADIUS_KM * np.cos(np.radians(lat2d)) * np.radians(dlon)
+        y_km = EARTH_RADIUS_KM * np.radians(lat2d - clat)
+        return _dipole(x_km, y_km, mx, my)
+
+    b_seam = hc.parameter_b_grid(_field(0.0), u, v, dx2d, dy_m, 1.0, hc.RADIUS_KM, 1.0)[row, 0]
+    b_mid = hc.parameter_b_grid(_field(180.0), u, v, dx2d, dy_m, 1.0, hc.RADIUS_KM, 1.0)[row, 360]
+    assert b_seam > 0
+    assert b_seam == pytest.approx(b_mid, rel=1e-9)
+    assert b_mid == pytest.approx(_dipole_continuum_b(), rel=0.03)
+
+    means_nowrap = hc.half_disk_means(_field(0.0), dx2d, dy_m, hc.RADIUS_KM, global_lon=False)
+    means_wrap = hc.half_disk_means(_field(0.0), dx2d, dy_m, hc.RADIUS_KM)
+    assert abs(means_nowrap[3][row, 0] - means_wrap[3][row, 0]) > 1.0  # west half clipped at the seam
+
+
+def test_parameter_b_grid_same_dipole_at_60n_as_20n(hart_standard_orientation):
+    """The same dipole, in km, on a 0.25 degree grid at 20 N and at 60 N
+    (where a grid cell is half as wide): the per-row cos-latitude cell
+    counts and area weights give the same B at both.
+    """
+    results = {}
+    for clat in (20.0, 60.0):
+        # 12 degrees each way, so the 500 km disk fits in longitude at 60 N.
+        lat2d, lon2d, dx2d, dy_m = _grid_and_dx_dy(clat, 0.0, half_width_deg=12.0, dlat=0.25)
+        ci, cj = lat2d.shape[0] // 2, lat2d.shape[1] // 2
+        x_km = EARTH_RADIUS_KM * np.cos(np.radians(lat2d)) * np.radians(lon2d)
+        y_km = EARTH_RADIUS_KM * np.radians(lat2d - clat)
+        for heading in (0.0, 45.0, 90.0, 135.0, 200.0, 300.0):
+            u, v, mx, my = _motion(heading, 10.0, lat2d.shape)
+            thickness = _dipole(x_km, y_km, mx, my)
+            results[(clat, heading)] = hc.parameter_b_grid(
+                thickness, u, v, dx2d, dy_m, 1.0, hc.RADIUS_KM, 1.0,
+            )[ci, cj]
+    continuum = _dipole_continuum_b()
+    for heading in (0.0, 45.0, 90.0, 135.0, 200.0, 300.0):
+        assert results[(60.0, heading)] == pytest.approx(results[(20.0, heading)], rel=0.02), heading
+        assert results[(60.0, heading)] == pytest.approx(continuum, rel=0.02), heading
 
 
 # --- (c2) steering_window_mean: window-averaging removes the vortex's own
@@ -1294,7 +1627,7 @@ def test_execute_hart_class_deep_warm_core_weak_steering_no_gradient(hart_standa
     v_weak = np.full(lat2d.shape, 0.0)
 
     cls = hc.executeHartClass(
-        z_by_level[1000.0], z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
+        _pmsl_from_z1000(z_by_level[1000.0]), z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
         z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
         *_four_level_steering(u_weak, v_weak),
         psfc, coriolis, dx2d, dy_m,
@@ -1333,7 +1666,7 @@ def test_execute_hart_class_thickness_gradient_and_steering_gives_asymmetric_dee
     def _cls_for_slope(slope):
         z700_mod = z_by_level[700.0] - slope * y_km
         return hc.executeHartClass(
-            z_by_level[1000.0], z_by_level[925.0], z_by_level[850.0], z700_mod,
+            _pmsl_from_z1000(z_by_level[1000.0]), z_by_level[925.0], z_by_level[850.0], z700_mod,
             z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
             *_four_level_steering(u_level, v_level),
             psfc, coriolis, dx2d, dy_m,
@@ -1394,7 +1727,7 @@ def test_execute_hart_class_tilted_cold_core_in_gradient_gives_cold(capsys, hart
     v_level = np.full(lat2d.shape, 0.0)
 
     cls = hc.executeHartClass(
-        z_by_level[1000.0], z_by_level[925.0], z_by_level[850.0], z700_mod,
+        _pmsl_from_z1000(z_by_level[1000.0]), z_by_level[925.0], z_by_level[850.0], z700_mod,
         z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
         *_four_level_steering(u_level, v_level),
         psfc, coriolis, dx2d, dy_m,
@@ -1441,7 +1774,7 @@ def test_execute_hart_class_shallow_warm_vortex_gives_1_or_3(capsys, hart_standa
     v_weak = np.full(lat2d.shape, 0.0)
 
     cls = hc.executeHartClass(
-        z_by_level[1000.0], z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
+        _pmsl_from_z1000(z_by_level[1000.0]), z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
         z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
         *_four_level_steering(u_weak, v_weak),
         psfc, coriolis, dx2d, dy_m,
@@ -1455,6 +1788,52 @@ def test_execute_hart_class_shallow_warm_vortex_gives_1_or_3(capsys, hart_standa
         print(f"\nShallow warm-core class at center: {cls[ci, cj]!r}, B = {b[ci, cj]:.1f} m")
 
     assert cls[ci, cj] in (1.0, 3.0)
+
+
+def test_execute_hart_class_nan_wherever_hvtl_nan_terrain_inside_low(hart_standard_orientation):
+    """MSLP is defined everywhere, so the closed-low mask no longer knows
+    about terrain; terrain blanking of the class comes from the band
+    levels. A terrain block (surface pressure 750 hPa) inside the painted
+    blob of a warm-core low: the mask is still True over the block, HVTL
+    is NaN there (925 hPa below ground), and the class is NaN wherever
+    HVTL is NaN, while the low's own center still gets a class.
+    """
+    clat, clon = 20.0, 0.0
+    lat2d, lon2d, dx2d, dy_m = _grid_and_dx_dy(clat, clon, 20.0, 0.5)
+    ci, cj = lat2d.shape[0] // 2, lat2d.shape[1] // 2
+
+    amp_warm = {1000.0: 200.0, 925.0: 180.0, 850.0: 150.0, 700.0: 110.0, 500.0: 50.0, 400.0: 25.0, 300.0: 5.0}
+    levels = tuple(amp_warm.keys())
+    z_stack = synthetic.warm_core_heights(lat2d, lon2d, clat, clon, levels, lambda p: amp_warm[p], scale_km=150.0)
+    z_by_level = {p: z_stack[i] for i, p in enumerate(levels)}
+    pmsl = _pmsl_from_z1000(z_by_level[1000.0])
+
+    km_per_deg_lon = EARTH_RADIUS_KM * math.cos(math.radians(clat)) * math.radians(1.0)
+    block_lon = clon + 150.0 / km_per_deg_lon  # 150 km east of the center
+    block = (np.abs(lon2d - block_lon) <= 0.5) & (np.abs(lat2d - clat) <= 0.5)
+    psfc = _ocean_psfc(lat2d.shape)
+    psfc[block] = 750.0
+
+    coriolis = np.full(lat2d.shape, 1.0)
+    u_level = np.full(lat2d.shape, 8.0)
+    v_level = np.zeros(lat2d.shape)
+    cls = hc.executeHartClass(
+        pmsl, z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
+        z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
+        *_four_level_steering(u_level, v_level),
+        psfc, coriolis, dx2d, dy_m,
+    )
+    hvtl = hc.executeBand3(
+        z_by_level[925.0], z_by_level[850.0], z_by_level[700.0], psfc, dx2d, dy_m,
+        hc.RADIUS_KM, 925.0, 850.0, 700.0,
+    )
+    mask = hc.closed_low_mask(pmsl, dx2d, dy_m)
+
+    assert mask[block].all()  # the MSLP low's blob covers the block
+    assert np.isnan(hvtl[block]).all()
+    assert np.isnan(cls[np.isnan(hvtl)]).all()
+    assert np.isnan(cls[block]).all()
+    assert np.isfinite(cls[ci, cj])
 
 
 def test_execute_hart_class_constants_as_one_element_arrays(hart_standard_orientation):
@@ -1475,7 +1854,7 @@ def test_execute_hart_class_constants_as_one_element_arrays(hart_standard_orient
     v_level = np.full(lat2d.shape, 0.0)
 
     args = (
-        z_by_level[1000.0], z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
+        _pmsl_from_z1000(z_by_level[1000.0]), z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
         z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
         *_four_level_steering(u_level, v_level),
         psfc, coriolis, dx2d, dy_m,
@@ -1487,7 +1866,7 @@ def test_execute_hart_class_constants_as_one_element_arrays(hart_standard_orient
         radiusKm=np.array([500.0]),
         bThresholdM=np.array([10.0]),
         layerScale=np.array([hc.HART_B_LAYER_SCALE]),
-        depthM=np.array([40.0]),
+        depthHpa=np.array([5.0]),
         blobKm=np.array([200.0]),
         capHpa=np.array([900.0]),
     )
@@ -1521,6 +1900,7 @@ def test_execute_hart_class_performance(capsys):
 
     levels = [1000.0, 925.0, 850.0, 700.0, 500.0, 400.0, 300.0]
     zs = [_smooth(base + i) * 50.0 + (3900.0 - i * 400.0) for i in range(len(levels))]
+    zs[0] = _pmsl_from_z1000(zs[0] - 3800.0) * 100.0  # the mask field is MSLP, here in Pa
     winds = [(_smooth(base + 10.0 + i) * 2.0 + 10.0, _smooth(base - 10.0 - i) * 2.0) for i in range(4)]
     psfc = _ocean_psfc((ny, nx))
     coriolis = np.repeat(np.sign(lat_vals)[:, np.newaxis], nx, axis=1)

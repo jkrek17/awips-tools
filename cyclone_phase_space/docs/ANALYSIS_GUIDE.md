@@ -15,9 +15,11 @@ OPC hand analyses. Treat them as a second opinion until that is done.
 
 ## 1. What the fields say, in analyst terms
 
-- **HB** is the 900 to 600 hPa thickness gradient across the
-  deep-layer flow, averaged over a 1000 km square and scaled to Hart's
-  units. On a global map it paints the low-level baroclinic zones
+- **HB** is Hart's B: the difference in 900 to 600 hPa thickness
+  (computed on 925 to 700 hPa and scaled to Hart's units) between the
+  500 km half-circle to the right of the deep-layer flow and the one to
+  the left. Away from a low that is the thickness gradient across the
+  flow times about 424 km. On a global map it paints the low-level baroclinic zones
   magenta (its colormap is CPS_Asymmetry: magenta for positive B, teal
   for negative, because B is an asymmetry, not a temperature). Deep
   purple inside a magenta band is where the gradient is concentrated,
@@ -286,10 +288,12 @@ learn the signatures, not the magnitudes.
   It is also what you get when the deep-layer steering points against
   the low's actual motion, which swaps left and right. Check the 850 to
   300 hPa mean flow before reading anything into teal.
-- **HB under-reads a storm's own asymmetry.** For a thickness
-  asymmetry confined to the storm scale it reads about 60% of Hart's
-  value, which is why onset can trail the Florida State page by a
-  frame or two. It reads a broad environmental gradient in full.
+- **HB is Hart's semicircle difference, not a smoothed gradient.** It
+  reads a thickness asymmetry confined to the storm scale at Hart's
+  value, as well as a broad environmental gradient. (An earlier version
+  read storm-scale asymmetry at about 60% and called onset a frame or
+  two after the Florida State page; values sampled before that change
+  are low.)
 - **The window blurs everything.** Two fronts closer than about 500 km
   merge into one band. A short front segment reads weaker than a long
   one of the same strength.

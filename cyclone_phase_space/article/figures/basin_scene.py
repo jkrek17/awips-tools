@@ -219,7 +219,15 @@ def compute_fields(levels):
                            500.0, 400.0, 300.0)
     b = hc.executeB(levels[925.0], levels[700.0], U2D, V2D, U2D, V2D, U2D, V2D, U2D, V2D,
                      psfc, coriolis, dx, dy, radiusKm=fc.RADIUS_KM, layerScale=hc.HART_B_LAYER_SCALE)
-    cls = hc.executeHartClass(levels[1000.0], levels[925.0], levels[850.0], levels[700.0], levels[500.0],
+    # executeHartClass now takes mean sea level pressure (hPa or Pa) as its
+    # first positional argument instead of 1000 hPa height. This scene has
+    # no independent MSLP field, so it is built from Z1000 with the
+    # standard-atmosphere-ish 8 m per hPa rule (pmsl = 1000 hPa +
+    # Z1000 / 8 m/hPa) -- an approximation good enough for this synthetic
+    # scene, not a real hypsometric reduction. Passing Z1000 unchanged
+    # would raise no error but silently test a depth about 8x too small.
+    pmsl = 1000.0 + levels[1000.0] / 8.0
+    cls = hc.executeHartClass(pmsl, levels[925.0], levels[850.0], levels[700.0], levels[500.0],
                                levels[400.0], levels[300.0], U2D, V2D, U2D, V2D, U2D, V2D, U2D, V2D,
                                psfc, coriolis, dx, dy, radiusKm=fc.RADIUS_KM)
     return vtl, vtu, b, cls

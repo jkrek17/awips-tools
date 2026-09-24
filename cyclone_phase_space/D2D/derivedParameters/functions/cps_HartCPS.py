@@ -6,8 +6,10 @@ wind parameters, computed pointwise on the grid.
 
 This is the operational cyclone phase space module. It computes Hart's
 own quantity -- the actual -V_T^L / -V_T^U thermal wind parameters from
-`cps/hart.py`'s `thermal_wind` -- at every point of the grid, using
-nothing but geopotential height, plus parameter B and the joint class.
+`cps/hart.py`'s `thermal_wind` -- at every point of the grid, from
+geopotential height, plus parameter B (from 925-700 hPa thickness and
+the steering wind) and the joint class (which also needs mean sea level
+pressure, for its closed-low mask).
 
 
 Method
@@ -94,7 +96,8 @@ Longitude wrap on global grids
 --------------------------------
 
 `window_extreme_2d`/`window_sum_2d` (and, through them, `delta_z`,
-`window_mean`, and `closed_low_mask`) slide their x-direction pass
+`window_mean`, and `closed_low_mask`), and `half_disk_means`, slide
+their x-direction pass
 along axis 1 of the field array. On a regional grid that is exactly
 right: there is real "off the edge of the grid" on both sides, and the
 window should shrink there rather than wrap. On a *global* lat/lon
@@ -110,35 +113,42 @@ degrees of longitude at the same angular spacing as `dy_m`'s
 north-south step -- true for a genuinely global grid, false for a
 regional one (whose `nx` columns span less than 360 degrees) purely by
 how many columns happen to fit the same test. `delta_z`, `window_mean`,
-and `closed_low_mask` each take an optional `global_lon` keyword
+`half_disk_means`, and `closed_low_mask` each take an optional
+`global_lon` keyword
 (`None`, the default, means "decide with `is_global_lon`"; `True`/
 `False` forces the decision either way, mainly so a test can exercise
 both code paths on the same grid) and pass the resulting `wrap_x` flag
 down to `window_extreme_2d`/`window_sum_2d`, which cyclically pad the
 columns (by the largest per-row half-width actually needed, clamped to
-`nx // 2`) before the x pass and crop the padding back off afterward.
+`nx // 2`) before the x pass and crop the padding back off afterward
+(`half_disk_means` pads the same way, internally).
 
-Closed-low mask level
-----------------------
+Closed-low mask
+----------------
 
 `closed_low_mask` (used by `executeHartClass`/`executeIndexStd` to blank
-every point outside a real closed low) is computed from **1000 hPa
-height** (`z1000`), a separate argument from the six `LOWER_BAND`/
-`UPPER_BAND` heights the thermal wind itself is built from. 1000 hPa
-height is nearly a linear function of MSLP (about 8 m per hPa), so the
-closed low the mask finds is, to a good approximation, the same closed
-low a forecaster already sees drawn on the MSLP contours -- which is
-the point of masking at all. `DEFAULT_DEPTH_M` (40 m) is therefore
-about 5 hPa of MSLP. 1000 hPa is below ground over major terrain and
-below sea level inside a sufficiently deep low, so the model is
-extrapolating there rather than reporting an analyzed height; see
-"Below-ground masking" below for how that is handled.
+every point outside a real closed low) is computed from **mean sea level
+pressure** (`pmsl`, AWIPS's PMSL field, Pa or hPa), a separate argument
+from the six `LOWER_BAND`/`UPPER_BAND` heights the thermal wind itself
+is built from. MSLP is one field, the same surface a forecaster already
+contours, so the closed low the mask finds is the closed low drawn on
+the chart -- which is the point of masking at all. It is defined
+everywhere (reduced to sea level over terrain), so it needs no
+below-ground masking of its own, and unlike 1000 hPa height (which an
+earlier version of this module used, at about 8 m per hPa) it involves
+no extrapolation below sea level inside a deep low. The ring depth test
+reads directly in pressure: `DEFAULT_DEPTH_HPA` (5 hPa), with a
+`DEFAULT_CENTER_TOL_HPA` (0.6 hPa) candidate tolerance. Terrain blanking
+of the masked products comes from the band levels instead, which are NaN
+below ground (see "Below-ground masking" below): a point whose 925 hPa
+height is below ground has a NaN lower thermal wind and so a NaN class
+or index, whatever the mask says.
 
 Below-ground masking
 ----------------------
 
-Every height level this module uses -- `z1000` and the six
-`LOWER_BAND`/`UPPER_BAND` levels -- can be below the ground surface
+Every height level this module uses -- the six `LOWER_BAND`/
+`UPPER_BAND` levels -- can be below the ground surface
 over major terrain, or below sea level itself inside a sufficiently
 deep low, where the model is extrapolating rather than reporting an
 analyzed height. Over the open ocean that extrapolation is harmless (a
@@ -146,7 +156,7 @@ deep low's surface pressure legitimately drops well under 1000 or
 925 hPa at its own center, and the height there is still meaningful).
 Over ice sheets and high mountains it is not: a level whose pressure
 is below the local surface pressure is fictitious, and letting it into
-a window's max/min or the closed-low mask's ring mean can quietly bias
+a window's max/min or parameter B's half-disk means can quietly bias
 the result.
 
 `mask_below_ground(z, psfc_hpa, level_hpa, cap_hpa)` blanks (NaN) `z`
@@ -159,7 +169,8 @@ case above from being caught by this rule: without it, a deep low's
 own surface pressure (which can legitimately fall well under 1000 or
 925 hPa at its center) would mask the very feature this family exists
 to find. With the cap, a point only counts as below ground for the
-1000 and 925 hPa levels when the surface pressure drops under 900 hPa
+925 hPa level (or 1000 hPa, for a caller that uses it) when the
+surface pressure drops under 900 hPa
 -- true over the Greenland ice sheet (surface pressure roughly
 700-800 hPa) and the Iceland highlands (roughly 850-900 hPa), not
 true over an open-ocean low (surface pressure rarely below 900 hPa
@@ -175,7 +186,8 @@ level is roughly 101325 Pa), but this checks the field's own finite
 median rather than trusting a caller's label -- a median above 2000
 can only be Pa (no real surface pressure is above 2000 hPa), so the
 whole field is divided by 100; at or below 2000 it is assumed to
-already be hPa.
+already be hPa. `mslp_hpa` applies the same rule to the MSLP field the
+closed-low mask reads.
 
 `thermal_wind_grid` applies `mask_below_ground` to each of its
 `z_levels` (matched to its own `pressures`) before `delta_z`, when
@@ -185,12 +197,13 @@ mask -- including this module's own reference tests -- are
 unaffected. `executeHartClass`/`executeIndexStd`/`executeBand3`/
 `executeBand4`/`executeBand7` all take a `psfc` argument and a
 `capHpa` constant (default `BELOW_GROUND_CAP_HPA`) and apply the mask
-to every height argument, including `z1000` before it reaches
-`closed_low_mask` (`closed_low_mask` itself is unchanged -- it is
-simply handed an already-masked `z_low`). Because the sliding window
-extrema (`window_extreme_2d`) and box sums (`window_sum_2d`) this
-module uses throughout are already NaN-aware, a below-ground point's
-neighbors just see one fewer valid sample in their own window -- no
+to every height argument (`executeB` does the same for its two). The
+MSLP argument of `executeHartClass`/`executeIndexStd` is not masked (see
+"Closed-low mask" above). Because the sliding window extrema
+(`window_extreme_2d`), box sums (`window_sum_2d`) and half-disk means
+(`half_disk_means`) this module uses are already NaN-aware, a
+below-ground point's neighbors just see one fewer valid sample in
+their own window -- no
 extra plumbing was needed beyond masking the input before it reaches
 them.
 
@@ -214,24 +227,40 @@ Evans and Hart (2003) define the extratropical transition **onset**
 as the first time `B` exceeds this threshold, with **completion** at
 the point VTL (the lower thermal wind) turns negative.
 
-`parameter_b`'s storm-centered half-disk means (`cps/hart.py`) have no
-pointwise analogue -- there is no "left half" or "right half" of a
-single grid point. This module instead uses a **linear-gradient
-approximation**: for a thickness field that varies smoothly across the
-analysis window, the right-minus-left half-window mean difference
-equals `(8*R/(3*pi))` times the window-mean gradient of thickness,
-projected onto the right-hand normal of the storm's motion (`R` the
-500 km analysis radius; see `b_geometry_km`, ~424.4 km for R=500).
-This is exact for a perfectly linear thickness field (the square
-window's mean gradient recovers the field's own gradient exactly, and
-the half-plane-mean-vs-gradient constant is a fixed geometric fact of
-a disk); it degrades for a genuinely nonlinear thickness structure
-inside the window -- most notably a warm-seclusion tongue folding back
-into one side of the circle -- which this approximation only captures
-to first order (the gradient at/near the point), not the true
-half-disk integral a real occlusion would produce. Read a gridded B
-that looks marginal alongside the thickness overlay itself, not on
-its own.
+Hart's B is a semicircle difference, and this module computes exactly
+that at every grid point: `half_disk_means` gives the NaN-aware,
+area-weighted mean thickness over the north, south, east and west
+half-disks of radius `R` (500 km) around each point, built row offset
+by row offset from one cumulative sum along x (cost of order the number
+of row offsets times the number of grid points, about 0.4 s on a
+721 x 1440 grid), and `parameter_b_grid` combines them with the unit
+motion vector `(mx, my)` (east, north):
+
+    ZR - ZL = mx * (mean_south - mean_north) + my * (mean_east - mean_west)
+    B       = h * (ZR - ZL) * layer_scale
+
+This is the wavenumber-one interpolation between the two axis-aligned
+splits. Expanding the thickness about the point in azimuthal harmonics,
+harmonic `k` contributes nothing to any semicircle difference when `k`
+is even and `(4/pi)/k` times its area-mean amplitude (with sign
+`sin(k*pi/2)`) when `k` is odd; the `k = 1` contribution turns with the
+motion direction exactly as the formula above does, so B is exact (up to
+the grid's discretization of the disk) for any wavenumber-one pattern
+about the point. That covers a uniform thickness gradient, for which it
+reduces to the older first-order form `(8*R/(3*pi))` times the
+window-mean gradient projected on the right-hand normal of motion (kept
+as `parameter_b_grid_gradient` for comparison; see `b_geometry_km`), and
+it covers the storm-scale dipole that the first-order form reads at only
+about 55-60%: for a thickness dipole `A*(x_R/L)*exp(-r**2/(2*L**2))`
+with `L = 400 km` and `R = 500 km` the semicircle means recover Hart's
+difference to well within 1%, the gradient form about 0.55 of it (see
+`tests/d2d_cps/test_hart_cps.py`). What the interpolation does not
+capture is the odd harmonics `k >= 3` of the thickness field about the
+point, whose weight in Hart's semicircle difference is at most `(4/pi)/k`
+of their area-mean amplitude (0.42 for `k = 3`, against 1.27 for
+`k = 1`); a sharply folded warm-seclusion tongue can carry some of that.
+The lattice discretization of the disk (whole cells, row by row) costs
+well under 1% at 0.25 degree spacing, and a few percent at 1 degree.
 
 **Motion**: Hart's own B needs the storm's own track heading; a
 gridded pointwise field has no storm to track, so the motion at each
@@ -246,7 +275,7 @@ through every compass heading within a degree or so of the center, so
 using it directly as "storm motion" mixes the vortex into its own
 motion proxy. `steering_window_mean` fixes this by area-averaging each
 component of `steering`'s output over the same `RADIUS_KM` (500 km)
-analysis window `delta_z`/parameter B's own gradient use (via
+analysis window `delta_z`/parameter B's half-disks use (via
 `window_mean`) *before* `parameter_b_grid` takes its direction: a
 symmetric vortex's own tangential wind averages out over a window that
 large, leaving the environmental flow the vortex is actually embedded
@@ -263,15 +292,17 @@ near-zero speed and amplify noise), gets an unreliable or missing B
 from this method even where Hart's own track-based B would be well
 defined.
 
-**Right-hand normal**: for steering `(u_s, v_s)`, the right-hand
+**Right of motion**: for steering `(u_s, v_s)`, the right-hand
 normal used in the Northern Hemisphere is `(v_s, -u_s)/|V_s|` (e.g.
 moving due north, `(u_s, v_s) = (0, +V)`, gives normal `(1, 0)`, i.e.
-east -- the intuitive "right" when facing north). This is the same
-left/right convention `cps.hart.parameter_b` uses via its cross
-product (moving north, a point due east has `cross < 0`, defined
-there as "right of track"). The hemisphere factor `h = sign(coriolis)`
-(exact zero treated as `+1`, matching the Northern Hemisphere
-convention) then multiplies the projected gradient so the "warm air on
+east -- the intuitive "right" when facing north), which is why moving
+north reads the east-minus-west half-disk difference and moving east
+the south-minus-north one. This is the same left/right convention
+`cps.hart.parameter_b` uses via its cross product (moving north, a
+point due east has `cross < 0`, defined there as "right of track"),
+checked against it numerically in the tests. The hemisphere factor
+`h = sign(coriolis)` (exact zero treated as `+1`, matching the Northern
+Hemisphere convention) then multiplies the semicircle difference so the "warm air on
 the right in the NH, on the left in the SH" reading is positive in
 both hemispheres, exactly mirroring `cps.hart.parameter_b`'s own
 `hemisphere_sign`. `coriolis` may be handed in as a 2D pseudo-field (so
@@ -287,20 +318,19 @@ so the result reads as a "900-600 equivalent" against Hart's own 10 m
 threshold; a caller wanting the raw, unscaled 925-700 hPa value passes
 `layerScale=1.0`.
 
-This entire scheme -- the linear-gradient approximation, the
-steering-flow motion proxy, and the layer scaling -- is orientation-
-and sign-free by construction except for one place: computing the
-thickness gradient itself (`gradient_2d`) takes a spatial derivative,
-and that derivative's sign depends on which way the grid's axes
-actually run. `ORIENTATION_MODE` (module level; see its own comment
-for the full description of the four conventions) controls this;
-every other function in this module (`window_mean`, `steering`,
-`parameter_b_grid`'s cross-product-style normal, `hart_class`) takes
-no derivative and is orientation-free. Mode 1 is confirmed on the OPC
-build.
+This entire scheme -- the semicircle means, the steering-flow motion
+proxy, and the layer scaling -- is orientation- and sign-free by
+construction except for one place: which half-disk is north and which
+is east (`half_disk_means`; and, for the first-order comparison form,
+the sign of `gradient_2d`'s derivative) depends on which way the
+grid's axes actually run. `ORIENTATION_MODE` (module level; see its
+own comment for the full description of the four conventions)
+controls this; every other function in this module (`window_mean`,
+`steering`, `hart_class`) is orientation-free. Mode 1 is confirmed on
+the OPC build.
 
 `hart_class` reports a single joint category (0-6) at every point
-inside a closed low (`closed_low_mask` on 1000 hPa height, same as
+inside a closed low (`closed_low_mask` on mean sea level pressure, same as
 `executeIndexStd`), NaN elsewhere, from all three Hart parameters at
 once -- B, the lower thermal wind VTL, and the upper thermal wind VTU
 -- as a single categorical field. See `hart_class`'s own docstring for
@@ -353,9 +383,9 @@ __all__ = [
     "RADIUS_KM",
     "MISSING_THRESHOLD",
     "MIN_RADIUS_KM",
-    "DEFAULT_DEPTH_M",
+    "DEFAULT_DEPTH_HPA",
     "DEFAULT_BLOB_RADIUS_KM",
-    "DEFAULT_CENTER_TOL_M",
+    "DEFAULT_CENTER_TOL_HPA",
     "LOWER_BAND",
     "UPPER_BAND",
     "BELOW_GROUND_CAP_HPA",
@@ -366,6 +396,7 @@ __all__ = [
     "MIN_VALID_FRACTION",
     "EARTH_CIRCUMFERENCE_KM",
     "surface_pressure_hpa",
+    "mslp_hpa",
     "mask_below_ground",
     "running_extreme_1d",
     "is_global_lon",
@@ -382,7 +413,9 @@ __all__ = [
     "window_mean",
     "steering",
     "steering_window_mean",
+    "half_disk_means",
     "parameter_b_grid",
+    "parameter_b_grid_gradient",
     "hart_class",
     "executeBand3",
     "executeBand4",
@@ -416,15 +449,15 @@ MISSING_THRESHOLD = -99990.0
 #: depth test integrates over".
 MIN_RADIUS_KM = 300.0
 
-#: Meters; closed_low_mask() requires the mean height of the annulus between
-#: MIN_RADIUS_KM and its own ring_radius_km argument to exceed the point's
-#: own height by at least this much before the point counts as being inside
-#: a real closed low, not merely a local dip on a monotonic slope (see
-#: closed_low_mask's docstring for why a plain "shallower than the far
-#: field" window max-minus-min test is not enough by itself). closed_low_mask
-#: is evaluated on 1000 hPa height, which is nearly a linear function of
-#: MSLP (about 8 m per hPa), so this 40 m is about 5 hPa of MSLP.
-DEFAULT_DEPTH_M = 40.0
+#: hPa; closed_low_mask() requires the mean sea level pressure of the
+#: annulus between MIN_RADIUS_KM and its own ring_radius_km argument to
+#: exceed the point's own MSLP by at least this much before the point
+#: counts as being inside a real closed low, not merely a local dip on a
+#: monotonic slope (see closed_low_mask's docstring for why a plain
+#: "shallower than the far field" window max-minus-min test is not enough
+#: by itself). 5 hPa is about the 40 m of 1000 hPa height an earlier,
+#: height-based version of this test used (about 8 m per hPa).
+DEFAULT_DEPTH_HPA = 5.0
 
 #: Half-width (km) closed_low_mask() dilates its raw (candidate-and-deep)
 #: point detections by, so the mask paints a blob of about this radius
@@ -433,16 +466,16 @@ DEFAULT_DEPTH_M = 40.0
 #: radius.
 DEFAULT_BLOB_RADIUS_KM = 200.0
 
-#: Meters; closed_low_mask() requires a point's own height to be within
-#: this of the local minimum height found over MIN_RADIUS_KM before the
-#: point is even a *candidate* center -- tight on purpose (much tighter
-#: than a low's typical depth) so that a point out on a monotonic slope,
-#: which is only ever approximately its own neighborhood's minimum in the
-#: single direction the slope descends, does not qualify; the annulus
-#: depth test (see DEFAULT_DEPTH_M) is what actually distinguishes a real
-#: closed low from a slope, but both tests must pass together (see
-#: closed_low_mask's docstring).
-DEFAULT_CENTER_TOL_M = 5.0
+#: hPa; closed_low_mask() requires a point's own MSLP to be within this
+#: of the local minimum MSLP found over MIN_RADIUS_KM before the point is
+#: even a *candidate* center -- tight on purpose (much tighter than a
+#: low's typical depth) so that a point out on a monotonic slope, which
+#: is only ever approximately its own neighborhood's minimum in the single
+#: direction the slope descends, does not qualify; the annulus depth test
+#: (see DEFAULT_DEPTH_HPA) is what actually distinguishes a real closed
+#: low from a slope, but both tests must pass together (see
+#: closed_low_mask's docstring). 0.6 hPa is about 5 m of 1000 hPa height.
+DEFAULT_CENTER_TOL_HPA = 0.6
 
 #: Pressure levels (hPa) for the lower-tropospheric standard-level band --
 #: see the module docstring's "Standard level bands" section for why these
@@ -466,17 +499,19 @@ UPPER_BAND = (500.0, 400.0, 300.0)
 #: effectively never, except over the Himalaya and Antarctica.
 BELOW_GROUND_CAP_HPA = 900.0
 
-#: Grid orientation mode used by `gradient_2d` (and, through it,
-#: `parameter_b_grid`/`executeB`/`executeHartClass`) when no explicit `mode`
-#: argument is given: which way the grid's axes actually run, so the
-#: thickness-gradient computation's sign comes out right no matter how a
-#: site's grid is laid out.
+#: Grid orientation mode used by `half_disk_means` (and, through it,
+#: `parameter_b_grid`/`executeB`/`executeHartClass`) and by `gradient_2d`
+#: (and `parameter_b_grid_gradient`) when no explicit `mode` argument is
+#: given: which way the grid's axes actually run, so that "north" and
+#: "east" (and so the sign of B) come out right no matter how a site's
+#: grid is laid out.
 #:
 #:     0: axis 0 (rows) increases northward, axis 1 (columns) increases
 #:        eastward -- the plain numpy/mathematical default layout.
 #:     1: same axis assignment as 0, but axis 0 increases southward (row
 #:        0 is the north edge, as most raster and AWIPS grids are
-#:        stored) -- the y-derivative's sign is flipped to compensate.
+#:        stored) -- the y-derivative's sign is flipped, and the north
+#:        half-disk is taken toward decreasing row index, to compensate.
 #:     2: axes swapped relative to 0 -- axis 0 is the eastward direction,
 #:        axis 1 the northward one; the field and its gradients are
 #:        transposed into mode 0's layout internally, and back on the
@@ -484,10 +519,10 @@ BELOW_GROUND_CAP_HPA = 900.0
 #:     3: axes swapped as in 2, with axis 1 (now the north-south axis)
 #:        increasing southward -- mode 2's counterpart to mode 1.
 #:
-#: Only `gradient_2d`'s thickness-gradient computation in this module
-#: takes a spatial derivative; every other function here (`window_mean`,
-#: `steering`, the rest of `parameter_b_grid`, `hart_class`) is
-#: orientation-free. Mode 1 is confirmed correct on the OPC build (see
+#: Only `half_disk_means` (which half is north, which east) and
+#: `gradient_2d` (the sign of a derivative) depend on it; every other
+#: function here (`window_mean`, `steering`, the rest of
+#: `parameter_b_grid`, `hart_class`) is orientation-free. Mode 1 is confirmed correct on the OPC build (see
 #: D2D/README.md's "Orientation verification" procedure) -- it is not
 #: merely the untested default here either.
 ORIENTATION_MODE = 1
@@ -595,6 +630,18 @@ def surface_pressure_hpa(psfc: np.ndarray) -> np.ndarray:
         p = p / 100.0
     return p
 
+
+
+def mslp_hpa(pmsl: np.ndarray) -> np.ndarray:
+    """Coerce a mean sea level pressure field to hPa, with exactly the
+    rule `surface_pressure_hpa` uses: missing input becomes NaN, and a
+    field whose finite median is above 2000 is taken to be Pa and
+    divided by 100 (sea level is roughly 101325 Pa, and no real MSLP is
+    above 2000 hPa), otherwise it is assumed to be hPa already. Used by
+    `closed_low_mask`, so `executeHartClass`/`executeIndexStd` accept
+    AWIPS's PMSL field in either unit.
+    """
+    return surface_pressure_hpa(pmsl)
 
 def mask_below_ground(
     z: np.ndarray,
@@ -934,6 +981,26 @@ def window_sum_2d(
 # ---------------------------------------------------------------------------
 
 
+def _row_spacing_m(dx: np.ndarray, ny: int, nx: int) -> np.ndarray:
+    """Per-row x spacing (meters), shape `(ny,)`: `dx` itself if it is a
+    scalar, otherwise the `nanmean` of each row of a `(ny, nx)` `dx`
+    pseudo-field. Shared by `cells_per_row` and `half_disk_means`, so
+    both convert a distance to a per-row cell count with the same
+    cos-latitude scaling. Non-finite or non-positive entries are left
+    for the caller to handle.
+    """
+    dx_arr = np.asarray(dx, dtype=float)
+    if dx_arr.ndim == 0:
+        return np.full(ny, float(dx_arr))
+    if dx_arr.ndim == 2:
+        if dx_arr.shape != (ny, nx):
+            raise ValueError(f"dx must have shape ({ny}, {nx}); got {dx_arr.shape}")
+        with np.errstate(invalid="ignore"), warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            return np.nanmean(dx_arr, axis=1)
+    raise ValueError("dx must be a scalar or a 2D array")
+
+
 def cells_per_row(radius_km: float, dx: np.ndarray, ny: int, nx: int) -> np.ndarray:
     """Per-row half-width (grid cells) for a `radius_km` window along x.
 
@@ -951,16 +1018,7 @@ def cells_per_row(radius_km: float, dx: np.ndarray, ny: int, nx: int) -> np.ndar
     `window_sum_2d`'s own per-axis clamp -- see the module docstring's
     "Longitude wrap on global grids" section.
     """
-    dx_arr = np.asarray(dx, dtype=float)
-    if dx_arr.ndim == 0:
-        row_dx = np.full(ny, float(dx_arr))
-    elif dx_arr.ndim == 2:
-        if dx_arr.shape != (ny, nx):
-            raise ValueError(f"dx must have shape ({ny}, {nx}); got {dx_arr.shape}")
-        with np.errstate(invalid="ignore"):
-            row_dx = np.nanmean(dx_arr, axis=1)
-    else:
-        raise ValueError("dx must be a scalar or a 2D array")
+    row_dx = _row_spacing_m(dx, ny, nx)
 
     radius_m = float(radius_km) * 1000.0
     max_cells = max(int(nx) // 2, 1)
@@ -1165,65 +1223,62 @@ def thermal_wind_grid(
 
 
 def closed_low_mask(
-    z_low: np.ndarray,
+    pmsl: np.ndarray,
     dx: np.ndarray,
     dy: np.ndarray,
     min_radius_km: float = MIN_RADIUS_KM,
     ring_radius_km: float = RADIUS_KM,
-    depth_m: float = DEFAULT_DEPTH_M,
+    depth_hpa: float = DEFAULT_DEPTH_HPA,
     blob_radius_km: float = DEFAULT_BLOB_RADIUS_KM,
-    center_tol_m: float = DEFAULT_CENTER_TOL_M,
+    center_tol_hpa: float = DEFAULT_CENTER_TOL_HPA,
     global_lon: bool | None = None,
 ) -> np.ndarray:
     """Boolean mask: True within `blob_radius_km` of a real closed low's
-    center in `z_low` (typically 1000 hPa height, passed by
-    `executeHartClass`/`executeIndexStd` as `z1000`). 1000 hPa height is
-    used rather than a level from `LOWER_BAND`/`UPPER_BAND` because it is
-    nearly a linear function of MSLP (about 8 m per hPa), so the closed
-    low this mask finds is the same closed low a forecaster already sees
-    drawn on the MSLP contours -- `depth_m`'s default of 40 m is
-    therefore about 5 hPa of MSLP.
+    center in the mean sea level pressure field `pmsl` (passed by
+    `executeHartClass`/`executeIndexStd` from AWIPS's PMSL field). `pmsl`
+    may be in Pa or hPa: it is normalized with `mslp_hpa` (the same
+    median rule `surface_pressure_hpa` uses) before anything else, and
+    `depth_hpa`/`center_tol_hpa` are always hPa.
 
-    1000 hPa is below the ground surface over major terrain, and below
-    sea level itself inside a sufficiently deep low, so in both cases
-    the model is extrapolating rather than reporting a directly
-    analyzed height there. Over the open ocean -- most of this family's
-    intended use -- that extrapolation is harmless. Over ice sheets and
-    high mountains it is not: callers should pre-mask `z_low` with
-    `mask_below_ground` (as `executeHartClass`/`executeIndexStd` do)
-    before calling this function, rather than relying on
-    `closed_low_mask` itself to know about terrain -- it takes `z_low`
-    exactly as given and has no notion of surface pressure of its own.
+    Why MSLP: it is one field, the same surface the forecaster already
+    contours, so the closed low this mask finds is the closed low drawn
+    on the chart; it is defined everywhere (reduced to sea level over
+    terrain), so it needs no below-ground masking of its own; unlike
+    1000 hPa height it involves no extrapolation below sea level inside
+    a deep low; and the depth test reads directly in pressure (5 hPa by
+    default). Terrain blanking of the products that use this mask comes
+    from their thermal-wind band levels, which are NaN below ground
+    (see `mask_below_ground`), not from the mask itself.
 
     A plain "is this point close to the local minimum of a box that also
     has a big max-minus-min" test (an earlier version of this function)
     turns out to accept far more than closed lows: on a *uniform slope*
-    (no low at all -- e.g. a steady 40-60 m per 1000 km height gradient
-    across a front) every point is, to within a few meters, already the
-    minimum of its own neighborhood in the single direction the slope
-    descends, and the same window's max-minus-min is large simply because
-    the slope has covered a lot of height by the time it reaches the far
-    edge of a 500 km box -- so both tests passed *everywhere*, not just at
-    an actual low. This function instead uses two tests that a monotonic
-    slope cannot satisfy simultaneously:
+    (no low at all -- e.g. a steady 5-8 hPa per 1000 km pressure gradient
+    across a front) every point is, to within a fraction of a hPa,
+    already the minimum of its own neighborhood in the single direction
+    the slope descends, and the same window's max-minus-min is large
+    simply because the slope has covered a lot of pressure by the time
+    it reaches the far edge of a 500 km box -- so both tests passed
+    *everywhere*, not just at an actual low. This function instead uses
+    two tests that a monotonic slope cannot satisfy simultaneously:
 
-    1. **Candidate test**: `z_low - window_min(z_low, min_radius_km) <=
-       center_tol_m` -- the point is (within a tight tolerance) the
-       minimum of its own `min_radius_km` neighborhood. `center_tol_m`
+    1. **Candidate test**: `p - window_min(p, min_radius_km) <=
+       center_tol_hpa` -- the point is (within a tight tolerance) the
+       minimum of its own `min_radius_km` neighborhood. `center_tol_hpa`
        is deliberately tight (much tighter than a real low's depth) so
        this alone is a weak filter, not a claim of "this is a low".
-    2. **Depth test**: `ring_mean - z_low >= depth_m`, where `ring_mean`
-       is the mean height of the *annulus* between `min_radius_km` and
+    2. **Depth test**: `ring_mean - p >= depth_hpa`, where `ring_mean`
+       is the mean MSLP of the *annulus* between `min_radius_km` and
        `ring_radius_km` around the point (computed from two box sums via
        `window_sum_2d`: `(sum_outer - sum_inner) / (count_outer -
-       count_inner)`). On a closed low, the annulus sits on the
-       surrounding higher terrain/background and is higher than the
-       center by roughly the low's depth. On a uniform slope, the
-       annulus is centered on the same point as the candidate itself, so
-       its mean height equals the point's own height to first order (a
-       symmetric ring around a point on a linear slope averages back to
-       that point's own value) -- the depth comes back ~0 and the test
-       correctly rejects it.
+       count_inner)`). On a closed low, the annulus sits in the
+       surrounding higher pressure and exceeds the center by roughly the
+       low's depth. On a uniform slope, the annulus is centered on the
+       same point as the candidate itself, so its mean pressure equals
+       the point's own pressure to first order (a symmetric ring around
+       a point on a linear slope averages back to that point's own
+       value) -- the depth comes back ~0 and the test correctly rejects
+       it.
 
     Points passing both tests are `raw` detections (typically a single
     pixel, or a couple, right at each low's true minimum); the returned
@@ -1235,7 +1290,7 @@ def closed_low_mask(
 
     NaN-safe throughout: any comparison against a NaN intermediate value
     is False in numpy already, but missing input (see `_missing_mask`) is
-    also explicitly excluded before dilation, so a bad `z_low` value can
+    also explicitly excluded before dilation, so a bad `pmsl` value can
     never masquerade as "yes, this is a low center."
 
     `global_lon` (default `None`) is the same longitude-wrap decision
@@ -1248,31 +1303,31 @@ def closed_low_mask(
     seam of a global grid is found and painted consistently on both
     sides of it.
     """
-    z_arr = np.asarray(z_low, dtype=float)
-    ny, nx = z_arr.shape
-    bad = _missing_mask(z_arr)
-    z_clean = np.where(bad, np.nan, z_arr)
+    p_arr = mslp_hpa(pmsl)
+    ny, nx = p_arr.shape
+    bad = _missing_mask(p_arr)
+    p_clean = np.where(bad, np.nan, p_arr)
 
     dy_m = float(np.nanmean(np.asarray(dy, dtype=float)))
     wrap = is_global_lon(nx, dy_m) if global_lon is None else bool(global_lon)
 
     half_x_min = cells_per_row(min_radius_km, dx, ny, nx)
     half_y_min = cells_y(min_radius_km, dy)
-    local_min = window_extreme_2d(z_clean, half_x_min, half_y_min, "min", wrap_x=wrap)
+    local_min = window_extreme_2d(p_clean, half_x_min, half_y_min, "min", wrap_x=wrap)
 
     with np.errstate(invalid="ignore"):
-        candidate = (z_clean - local_min) <= center_tol_m
+        candidate = (p_clean - local_min) <= float(center_tol_hpa)
 
     half_x_ring = cells_per_row(ring_radius_km, dx, ny, nx)
     half_y_ring = cells_y(ring_radius_km, dy)
-    sum_outer, count_outer = window_sum_2d(z_clean, half_x_ring, half_y_ring, wrap_x=wrap)
-    sum_inner, count_inner = window_sum_2d(z_clean, half_x_min, half_y_min, wrap_x=wrap)
+    sum_outer, count_outer = window_sum_2d(p_clean, half_x_ring, half_y_ring, wrap_x=wrap)
+    sum_inner, count_inner = window_sum_2d(p_clean, half_x_min, half_y_min, wrap_x=wrap)
 
     ring_sum = sum_outer - sum_inner
     ring_count = count_outer - count_inner
     with np.errstate(invalid="ignore", divide="ignore"):
         ring_mean = np.where(ring_count > 0, ring_sum / ring_count, np.nan)
-        depth_ok = (ring_mean - z_clean) >= depth_m
+        depth_ok = (ring_mean - p_clean) >= float(depth_hpa)
 
     valid = ~bad & np.isfinite(local_min) & np.isfinite(ring_mean)
     raw = (candidate & depth_ok & valid).astype(float)
@@ -1290,9 +1345,12 @@ def closed_low_mask(
 
 def b_geometry_km(radius_km: float) -> float:
     """`8*radius_km/(3*pi)` -- the geometric constant that converts a
-    window-mean thickness gradient into an approximation of Hart's
-    right-minus-left half-window mean difference (see the module
-    docstring's "Parameter B and the joint class" section). Computed from
+    uniform thickness gradient into Hart's right-minus-left half-disk
+    mean difference (the half-disk centroid sits `4R/(3*pi)` from the
+    center, so the two centroids are `8R/(3*pi)` apart). Used by
+    `parameter_b_grid_gradient`, the first-order form kept for
+    comparison; `parameter_b_grid` itself does not need it (see the
+    module docstring's "Parameter B and the joint class" section). Computed from
     `radius_km` at call time rather than baked into a module constant, so
     a caller using a non-default `radiusKm` gets the matching constant.
     For Hart's own 500 km radius this is about 424.4 km.
@@ -1396,6 +1454,243 @@ def window_mean(
     return mean
 
 
+def half_disk_means(
+    field: np.ndarray,
+    dx: np.ndarray,
+    dy: np.ndarray,
+    radius_km: float,
+    global_lon: bool | None = None,
+    mode: int | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """NaN-aware means of `field` over the north, south, east and west
+    half-disks of radius `radius_km` centered on every grid point.
+    Returns `(mean_north, mean_south, mean_east, mean_west)`, each the
+    same shape as `field`. A half-disk is the disk split by the line
+    through its center perpendicular to the direction it is named for:
+    the north half-disk is every point of the disk north of the
+    east-west line through the center, the east half-disk every point
+    east of the north-south line, and so on. These are the building
+    blocks of `parameter_b_grid`'s semicircle difference (see the module
+    docstring's "Parameter B and the joint class" section).
+
+    Discretization. The disk is the set of grid points whose local
+    planar offset `(x, y)` from the center satisfies `x**2 + y**2 <=
+    R**2`, with `y = j * dy` for row offset `j` and `x` measured in the
+    source row's own `dx`. Row by row: for each row offset `j` with
+    `|j * dy| <= R`, the disk's chord half-width along x is `w_j =
+    sqrt(R**2 - (j*dy)**2)`, converted to whole cells separately for
+    every row as `floor(w_j / row_dx)` with the same per-row `dx`
+    (`nanmean` of that row of `dx`, so the cos-latitude growth of the
+    cell count toward the poles is followed exactly as `cells_per_row`
+    follows it). The x-direction box sum of that half-width, and the
+    partial sums from the center column to `+w_j` (east) and from
+    `-w_j` to the center (west), all come from a single cumulative sum
+    along x computed once; each row offset then only gathers from it
+    and shifts the result by `j` rows into the north (`j > 0`) or south
+    (`j < 0`) accumulators. The center row (`j = 0`) is split half and
+    half between north and south, and the center column half and half
+    between east and west, so `north + south` and `east + west` each
+    cover the whole disk exactly once. Cost is O(number of row offsets
+    x N), vectorized, with no Python loop over grid points (about 18
+    row offsets on a 0.25 degree grid with R = 500 km).
+
+    Orientation. Row offset `j > 0` always means **north**. Which way
+    that is in array terms follows `ORIENTATION_MODE` (or the explicit
+    `mode` argument, same four conventions as `gradient_2d`): in modes 0
+    and 2 north is increasing row index (after the transpose modes 2
+    and 3 apply), in modes 1 and 3 (row 0 is the north edge, the AWIPS
+    layout) north is decreasing row index. Axis 1 (after any transpose)
+    always increases eastward, so east is increasing column index in
+    every mode. Modes 2 and 3 transpose `field`, `dx`, `dy` on the way
+    in and the four results back on the way out.
+
+    Area weighting and missing data. Every cell is weighted by its own
+    row's `dx` (its area, since `dy` is the same for every row), the
+    gridded counterpart of the cos-latitude weighting `cps.hart`'s
+    `weighted_mean` uses: on a lat/lon grid the cells in the poleward
+    rows of the disk are smaller, and an unweighted mean would count
+    them too heavily. With a scalar `dx` every weight is 1. NaN or
+    otherwise missing input (see `_missing_mask`) contributes to neither
+    the weighted sum nor the weight total, as in `window_sum_2d`, so each
+    result is the area-weighted mean of the valid points in that
+    half-disk; a half-disk with no valid point at all is NaN.
+
+    Edges and wrap. `global_lon` is the same longitude-wrap decision
+    `delta_z`/`window_mean` take (`None` auto-detects with
+    `is_global_lon`; see the module docstring's "Longitude wrap on
+    global grids" section): on a global grid the x sums wrap cyclically
+    across the seam, otherwise they are clipped at the array edge. Rows
+    beyond the first or last row (the poles on a global grid, the edge
+    of a regional one) are dropped: the half-disk shrinks there, it is
+    never reflected, consistent with every other window in this module.
+    The per-row half-width is clamped to `(nx - 1) // 2` when wrapping
+    (so a near-pole row never counts a column twice) and to `nx - 1`
+    otherwise.
+    """
+    field = np.asarray(field, dtype=float)
+    if field.ndim != 2:
+        raise ValueError("field must be 2D")
+    dx_arr = np.asarray(dx, dtype=float)
+    dy_arr = np.asarray(dy, dtype=float)
+
+    if mode is None:
+        mode = ORIENTATION_MODE
+    mode = int(mode)
+    if mode not in (0, 1, 2, 3):
+        raise ValueError(f"mode must be 0, 1, 2, or 3; got {mode!r}")
+    transposed = mode in (2, 3)
+    if transposed:
+        field = field.T
+        if dx_arr.ndim == 2:
+            dx_arr = dx_arr.T
+        if dy_arr.ndim == 2:
+            dy_arr = dy_arr.T
+    # Row-index step that moves one row north.
+    north_step = -1 if mode in (1, 3) else 1
+
+    ny, nx = field.shape
+    row_dx = _row_spacing_m(dx_arr, ny, nx)
+    good_dx = np.isfinite(row_dx) & (row_dx > 0)
+
+    # Area weight of one cell in each row (proportional to that row's
+    # dx; dy is the same for every row), normalized to at most 1.
+    if good_dx.any():
+        row_weight = np.where(good_dx, row_dx, 0.0) / float(np.max(row_dx[good_dx]))
+    else:
+        row_weight = np.ones(ny)
+    bad = _missing_mask(field)
+    counts = np.where(bad, 0.0, row_weight[:, np.newaxis])
+    values = np.where(bad, 0.0, field) * counts
+
+    with np.errstate(invalid="ignore"):
+        dy_m = float(np.nanmean(dy_arr))
+    wrap = is_global_lon(nx, dy_m) if global_lon is None else bool(global_lon)
+
+    radius_m = float(radius_km) * 1000.0
+    if np.isfinite(dy_m) and dy_m > 0 and radius_m > 0:
+        j_max = min(int(math.floor(radius_m / dy_m + 1e-9)), ny - 1)
+    else:
+        j_max = 0
+
+    # Per-row x half-width (cells) for every row offset 0..j_max.
+    half_cap = max((nx - 1) // 2, 0) if wrap else max(nx - 1, 0)
+    safe_dx = np.where(good_dx, row_dx, 1.0)
+    offsets_m = np.arange(j_max + 1) * (dy_m if j_max > 0 else 0.0)
+    chord_m = np.sqrt(np.maximum(radius_m ** 2 - offsets_m ** 2, 0.0))
+    half = np.floor(chord_m[:, np.newaxis] / safe_dx[np.newaxis, :] + 1e-9)
+    half = np.where(good_dx[np.newaxis, :], half, 0.0)
+    half = np.clip(half, 0, half_cap).astype(np.intp)  # shape (j_max+1, ny)
+
+    # Pad the columns once by the largest half-width needed: cyclically
+    # on a global grid, with zeros (no value, no count) otherwise, so
+    # every gather below is in bounds and clipping falls out for free.
+    pad = int(half.max()) if half.size else 0
+    if pad > 0:
+        if wrap:
+            values_p = np.concatenate([values[:, nx - pad :], values, values[:, :pad]], axis=1)
+            counts_p = np.concatenate([counts[:, nx - pad :], counts, counts[:, :pad]], axis=1)
+        else:
+            zeros = np.zeros((ny, pad))
+            values_p = np.concatenate([zeros, values, zeros], axis=1)
+            counts_p = np.concatenate([zeros, counts, zeros], axis=1)
+    else:
+        values_p, counts_p = values, counts
+    width = values_p.shape[1] + 1
+    cs_v = np.zeros((ny, width))
+    cs_c = np.zeros((ny, width))
+    np.cumsum(values_p, axis=1, out=cs_v[:, 1:])
+    np.cumsum(counts_p, axis=1, out=cs_c[:, 1:])
+    flat_v = cs_v.ravel()
+    flat_c = cs_c.ravel()
+
+    # Flat index of the cumulative-sum entry just left of each point's
+    # own column; the strict-east sum from a gather at `hi` is
+    # cs[hi] - cs[center + 1], so fold the constant part (plus half the
+    # center column) in once here.
+    base = np.arange(ny, dtype=np.intp)[:, np.newaxis] * width + (np.arange(nx, dtype=np.intp) + pad)[np.newaxis, :]
+    east_const_v = 0.5 * values - cs_v[:, pad + 1 : pad + 1 + nx]
+    east_const_c = 0.5 * counts - cs_c[:, pad + 1 : pad + 1 + nx]
+
+    north_v = np.zeros((ny, nx))
+    south_v = np.zeros((ny, nx))
+    east_v = np.zeros((ny, nx))
+    north_c = np.zeros((ny, nx))
+    south_c = np.zeros((ny, nx))
+    east_c = np.zeros((ny, nx))
+
+    # Work buffers reused across row offsets (allocation, not
+    # arithmetic, dominates at this size).
+    idx_hi = np.empty((ny, nx), dtype=np.intp)
+    idx_lo = np.empty((ny, nx), dtype=np.intp)
+    hi_v = np.empty((ny, nx))
+    hi_c = np.empty((ny, nx))
+    full_v = np.empty((ny, nx))
+    full_c = np.empty((ny, nx))
+    e_v = np.empty((ny, nx))
+    e_c = np.empty((ny, nx))
+
+    for j in range(j_max + 1):
+        h = half[j][:, np.newaxis]
+        np.add(base, h + 1, out=idx_hi)
+        np.subtract(base, h, out=idx_lo)
+        # Every index is in bounds by construction (the padding);
+        # mode="clip" only lets `take` write straight into `out`.
+        np.take(flat_v, idx_hi, out=hi_v, mode="clip")
+        np.take(flat_c, idx_hi, out=hi_c, mode="clip")
+        np.take(flat_v, idx_lo, out=full_v, mode="clip")
+        np.take(flat_c, idx_lo, out=full_c, mode="clip")
+        np.subtract(hi_v, full_v, out=full_v)
+        np.subtract(hi_c, full_c, out=full_c)
+        np.add(hi_v, east_const_v, out=e_v)
+        np.add(hi_c, east_const_c, out=e_c)
+        if j == 0:
+            full_v *= 0.5
+            full_c *= 0.5
+            north_v += full_v
+            south_v += full_v
+            north_c += full_c
+            south_c += full_c
+            east_v += e_v
+            east_c += e_c
+            continue
+        # Output row i takes source row i + north_step*j into its north
+        # half and source row i - north_step*j into its south half.
+        up_out, up_src = (slice(0, ny - j), slice(j, ny))
+        dn_out, dn_src = (slice(j, ny), slice(0, ny - j))
+        n_out, n_src, s_out, s_src = (
+            (up_out, up_src, dn_out, dn_src) if north_step == 1 else (dn_out, dn_src, up_out, up_src)
+        )
+        north_v[n_out] += full_v[n_src]
+        north_c[n_out] += full_c[n_src]
+        south_v[s_out] += full_v[s_src]
+        south_c[s_out] += full_c[s_src]
+        east_v[up_out] += e_v[up_src]
+        east_v[dn_out] += e_v[dn_src]
+        east_c[up_out] += e_c[up_src]
+        east_c[dn_out] += e_c[dn_src]
+
+    # West is the whole disk minus the east half (both carry the center
+    # column at half weight). Reuse the work buffers for it.
+    west_v = np.add(north_v, south_v, out=hi_v)
+    west_v -= east_v
+    west_c = np.add(north_c, south_c, out=hi_c)
+    west_c -= east_c
+
+    # A half-disk whose total weight is zero up to rounding (the west
+    # sums are differences) has no valid point: NaN. Divide in place.
+    tiny = 1e-9
+    means = []
+    for v, c in ((north_v, north_c), (south_v, south_c), (east_v, east_c), (west_v, west_c)):
+        empty = c <= tiny
+        np.divide(v, c, out=v, where=~empty)
+        v[empty] = np.nan
+        means.append(v)
+    means = tuple(means)
+    if transposed:
+        means = tuple(m.T for m in means)
+    return means
+
+
 def steering(u_levels, v_levels) -> tuple[np.ndarray, np.ndarray]:
     """`(u_s, v_s)`: the elementwise (NaN-aware) mean of a list of u
     arrays and a list of v arrays, the steering-flow proxy for a storm's
@@ -1448,7 +1743,7 @@ def steering_window_mean(
     dominated by the vortex's own circulation, not by the larger-scale
     flow that actually carries the storm along. Averaging each
     component horizontally over the same `radius_km` (500 km) analysis
-    window `delta_z`/parameter B's own thickness gradient use lets a
+    window `delta_z`/parameter B's own half-disk means use lets a
     roughly axisymmetric vortex's own tangential wind cancel out over
     the window (it circles the center, so its horizontal mean over a
     large enough symmetric window is small), leaving the environmental
@@ -1457,7 +1752,7 @@ def steering_window_mean(
     `radius_km` should match the `radius_km` the caller's own B
     computation uses (`executeB`/`executeHartClass` both pass the same
     `radiusKm` here as they pass to `parameter_b_grid`), so the motion
-    proxy and the thickness-gradient window agree on what "the analysis
+    proxy and the thickness half-disks agree on what "the analysis
     window" means. `global_lon` is passed straight through to
     `window_mean` (see its own docstring and the module docstring's
     "Longitude wrap on global grids" section).
@@ -1480,9 +1775,116 @@ def parameter_b_grid(
     layer_scale: float,
     min_speed: float = MIN_STEERING_MS,
 ) -> np.ndarray:
-    """Gridded approximation of Hart's parameter B at every grid point --
-    see the module docstring's "Parameter B and the joint class" section
-    for the full derivation.
+    """Hart's parameter B at every grid point, from semicircle means --
+    see the module docstring's "Parameter B and the joint class" section.
+
+    `thickness` is a layer thickness field (meters, e.g. 700 hPa height
+    minus 925 hPa height). `half_disk_means` gives its mean over the
+    north, south, east and west half-disks of radius `radius_km` around
+    every point. With the unit motion vector `m = (mx, my) = (u_s, v_s)
+    / speed` (east, north components), the right-minus-left semicircle
+    difference is
+
+        ZR - ZL = mx * (mean_south - mean_north) + my * (mean_east - mean_west)
+
+    (moving north, `m = (0, 1)`, the right half is the east half; moving
+    east, `m = (1, 0)`, the right half is the south half), and
+
+        B = h * (ZR - ZL) * layer_scale
+
+    with `h = sign(hemisphere)` (exact zero treated as `+1`, the
+    Northern Hemisphere). `hemisphere` may be a scalar or a 2D array
+    (the coriolis pseudo-field), so a grid straddling the equator gets
+    the right sign on each side.
+
+    Why the two axis-aligned splits are enough: write the thickness
+    field about the point as a sum of azimuthal harmonics `f_k(r)
+    cos(k*theta - phi_k)`. Harmonic `k` contributes nothing to any
+    semicircle difference when `k` is even (including the axisymmetric
+    `k = 0` part), and `(4/pi) * sin(k*pi/2) / k` times its area-mean
+    amplitude when `k` is odd. For `k = 1` that contribution varies with
+    the motion direction exactly as `cos` and `sin` of the heading, so
+    the combination above, which interpolates between the north-south
+    and east-west splits, is exact for any wavenumber-one pattern about
+    the point: a uniform gradient (for which it reduces to the
+    `8*R/(3*pi)` gradient form of `parameter_b_grid_gradient`) and the
+    storm-scale dipole that form under-reads alike. Odd harmonics
+    `k >= 3` are not captured correctly by the interpolation (it
+    evaluates them only along the two axes); their weight in Hart's
+    semicircle difference is bounded by `(4/pi)/k` times their
+    area-mean amplitude (about 0.42 for `k = 3`, against 1.27 for
+    `k = 1`), which is the size of the error they can introduce.
+
+    `u_s`/`v_s` (m/s) are the storm's motion proxy at each point --
+    typically `steering`'s output *after* `steering_window_mean` (both
+    `executeB` and `executeHartClass` do this), so the vortex's own
+    circulation does not steer its own motion proxy; see the module
+    docstring's "Parameter B and the joint class" section, "Motion".
+
+    Sign convention: identical to `cps.hart.parameter_b` -- warm (thick)
+    air to the right of motion in the Northern Hemisphere, or to the
+    left in the Southern, is positive.
+
+    NaN wherever `speed < min_speed` (see `MIN_STEERING_MS`), wherever
+    `thickness` itself is missing at the point (below ground, for
+    example), or wherever a half-disk has no valid thickness at all.
+    """
+    thickness = np.asarray(thickness, dtype=float)
+    bad_thk = _missing_mask(thickness)
+    thickness_clean = np.where(bad_thk, np.nan, thickness)
+
+    mean_n, mean_s, mean_e, mean_w = half_disk_means(thickness_clean, dx, dy, radius_km)
+
+    u_s_arr = np.asarray(u_s, dtype=float)
+    v_s_arr = np.asarray(v_s, dtype=float)
+    bad_uv = _missing_mask(u_s_arr, v_s_arr)
+    u_s_clean = np.where(bad_uv, np.nan, u_s_arr)
+    v_s_clean = np.where(bad_uv, np.nan, v_s_arr)
+
+    speed = np.hypot(u_s_clean, v_s_clean)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        mx = u_s_clean / speed
+        my = v_s_clean / speed
+        right_minus_left = mx * (mean_s - mean_n) + my * (mean_e - mean_w)
+
+    hemi = np.asarray(hemisphere, dtype=float)
+    h_sign = np.sign(hemi)
+    h_sign = np.where(h_sign == 0, 1.0, h_sign)
+
+    b = h_sign * right_minus_left * float(layer_scale)
+
+    with np.errstate(invalid="ignore"):
+        invalid = (
+            ~np.isfinite(speed)
+            | (speed < float(min_speed))
+            | ~np.isfinite(right_minus_left)
+            | bad_thk
+        )
+    return np.where(invalid, np.nan, b)
+
+
+def parameter_b_grid_gradient(
+    thickness: np.ndarray,
+    u_s: np.ndarray,
+    v_s: np.ndarray,
+    dx: np.ndarray,
+    dy: np.ndarray,
+    hemisphere,
+    radius_km: float,
+    layer_scale: float,
+    min_speed: float = MIN_STEERING_MS,
+) -> np.ndarray:
+    """The earlier, first-order form of gridded parameter B, kept for
+    comparison with `parameter_b_grid` (same signature, same motion,
+    hemisphere, layer-scale and `min_speed` conventions). It replaces
+    Hart's semicircle difference with `(8*R/(3*pi))` times the
+    window-mean thickness gradient projected on the right-hand normal of
+    motion. That is exact for a uniform thickness gradient but reads a
+    storm-scale wavenumber-one asymmetry at only about 60% of Hart's
+    semicircle difference (the gradient at and near the point
+    under-represents structure that peaks a few hundred km out); see the
+    module docstring's "Parameter B and the joint class" section.
+    `executeB` and `executeHartClass` use `parameter_b_grid`, not this.
 
     `thickness` is a layer thickness field (meters, e.g. 700 hPa height
     minus 925 hPa height). Its gradient (`gradient_2d`) is computed once,
@@ -1561,7 +1963,7 @@ def hart_class(
     Hart's storm-centered diagrams" section for why a single joint class
     carries information neither parameter alone does).
 
-    NaN outside `mask` (typically `closed_low_mask` on 1000 hPa height)
+    NaN outside `mask` (typically `closed_low_mask` on MSLP)
     or wherever any of `B`, `vtl`, `vtu` is not finite -- `B` is NaN
     whenever the steering-flow speed is below `MIN_STEERING_MS` (a
     near-stationary or dead-calm-steering point; see `parameter_b_grid`),
@@ -1733,13 +2135,13 @@ def executeBand7(z1, z2, z3, z4, z5, z6, z7, psfc, dx, dy, radiusKm, p1, p2, p3,
 
 
 def executeHartClass(
-    z1000, z925, z850, z700, z500, z400, z300,
+    pmsl, z925, z850, z700, z500, z400, z300,
     u850, v850, u700, v700, u500, v500, u300, v300,
     psfc, coriolis, dx, dy,
     radiusKm=RADIUS_KM,
     bThresholdM=B_THRESHOLD_M,
     layerScale=HART_B_LAYER_SCALE,
-    depthM=DEFAULT_DEPTH_M,
+    depthHpa=DEFAULT_DEPTH_HPA,
     blobKm=DEFAULT_BLOB_RADIUS_KM,
     capHpa=BELOW_GROUND_CAP_HPA,
 ):
@@ -1753,35 +2155,37 @@ def executeHartClass(
 
     Computes the lower thermal wind (`LOWER_BAND`, 925/850/700 hPa) and
     upper thermal wind (`UPPER_BAND`, 500/400/300 hPa, both via
-    `thermal_wind_grid`), parameter B (925-700 hPa thickness gradient
-    projected onto the window-averaged steering flow's right-hand
-    normal, via `steering`, `steering_window_mean`, and
+    `thermal_wind_grid`), parameter B (the right-minus-left semicircle
+    difference of 925-700 hPa thickness across the window-averaged
+    steering flow, via `steering`, `steering_window_mean`, and
     `parameter_b_grid` -- same method as `executeB`), and
-    `closed_low_mask` on `z1000` (same mask `executeIndexStd` uses), then
+    `closed_low_mask` on `pmsl` (same mask `executeIndexStd` uses), then
     combines all three with `hart_class`.
 
-    `z1000`...`z300` are geopotential height (meters) at the seven
-    standard levels; `u850`/`v850`...`u300`/`v300` are the four
+    `pmsl` is mean sea level pressure (Pa or hPa -- normalized by
+    `mslp_hpa`); `z925`...`z300` are geopotential height (meters) at the
+    six band levels; `u850`/`v850`...`u300`/`v300` are the four
     steering-flow wind level pairs (as in `executeB`). `psfc` is AWIPS
     surface pressure (Pa or hPa -- `surface_pressure_hpa` auto-detects
     which); `coriolis` is the AWIPS coriolis pseudo-field (as in
     `executeB`) whose sign is parameter B's hemisphere factor. `dx`,
     `dy` are the grid spacing pseudo-fields (meters).
 
-    Before anything else, every one of the seven height arguments is run
-    through `mask_below_ground` against its own pressure and `capHpa` --
-    see the module docstring's "Below-ground masking" section and
-    `executeIndexStd`'s docstring for the full explanation (why `z1000`
-    is used for the mask rather than a band level, and why the
-    below-ground threshold is capped rather than applied at each level's
-    own literal pressure).
+    Every one of the six height arguments is run through
+    `mask_below_ground` against its own pressure and `capHpa` -- see the
+    module docstring's "Below-ground masking" section. `pmsl` is not:
+    MSLP is defined everywhere, and terrain blanking of the class comes
+    from the band levels instead (a point whose 925 hPa height is below
+    ground has a NaN lower thermal wind, hence a NaN class).
 
-    `radiusKm`, `bThresholdM`, `layerScale`, `depthM`, `blobKm`, `capHpa`
-    may each arrive as a float, a 0-d numpy array, or a 1-element numpy
-    array (AWIPS `<ConstantField>` values) and are coerced with
-    `_coerce_scalar`; see `executeIndexStd`'s docstring for why
-    `closed_low_mask`'s `min_radius_km`/`center_tol_m` are not exposed
-    here either.
+    `radiusKm`, `bThresholdM`, `layerScale`, `depthHpa`, `blobKm`,
+    `capHpa` may each arrive as a float, a 0-d numpy array, or a
+    1-element numpy array (AWIPS `<ConstantField>` values) and are
+    coerced with `_coerce_scalar`. `closed_low_mask`'s
+    `min_radius_km`/`center_tol_hpa` are not exposed (they stay at
+    `MIN_RADIUS_KM`/`DEFAULT_CENTER_TOL_HPA`): they tune how a low's own
+    center is located, while `depthHpa` is what decides whether there is
+    a low at all.
 
     Returns a float32 array: NaN outside the closed-low mask, below
     ground, or wherever B is NaN (the steering-flow speed below
@@ -1792,7 +2196,7 @@ def executeHartClass(
     radius_km = _coerce_scalar(radiusKm)
     b_threshold_m = _coerce_scalar(bThresholdM)
     layer_scale = _coerce_scalar(layerScale)
-    depth_m = _coerce_scalar(depthM)
+    depth_hpa = _coerce_scalar(depthHpa)
     blob_radius_km = _coerce_scalar(blobKm)
     cap_hpa = _coerce_scalar(capHpa)
 
@@ -1808,17 +2212,16 @@ def executeHartClass(
     u_s, v_s = steering_window_mean(u_s, v_s, dx, dy, radius_km)
     b = parameter_b_grid(thickness, u_s, v_s, dx, dy, coriolis, radius_km, layer_scale)
 
-    z1000_masked = mask_below_ground(z1000, psfc_hpa, 1000.0, cap_hpa)
-    mask = closed_low_mask(z1000_masked, dx, dy, MIN_RADIUS_KM, radius_km, depth_m, blob_radius_km)
+    mask = closed_low_mask(pmsl, dx, dy, MIN_RADIUS_KM, radius_km, depth_hpa, blob_radius_km)
 
     return hart_class(b, vtl, vtu, mask, b_threshold_m)
 
 
 def executeIndexStd(
-    z1000, z925, z850, z700, z500, z400, z300, psfc, dx, dy,
+    pmsl, z925, z850, z700, z500, z400, z300, psfc, dx, dy,
     radiusKm=RADIUS_KM,
     scaleM=100.0,
-    depthM=DEFAULT_DEPTH_M,
+    depthHpa=DEFAULT_DEPTH_HPA,
     blobKm=DEFAULT_BLOB_RADIUS_KM,
     capHpa=BELOW_GROUND_CAP_HPA,
 ):
@@ -1827,22 +2230,23 @@ def executeIndexStd(
     Same lower/upper thermal wind and mask as `executeHartClass`, combined
     into `2*tanh(VTL/scaleM) + tanh(VTU/scaleM)` (range -3 to +3, `scaleM`
     already in meters), blanked (NaN) outside the same `closed_low_mask`
-    computed from `z1000`, and the same below-ground masking of `z1000`
-    and the six band levels via `psfc`/`capHpa` -- see `executeHartClass`'s
-    docstring for the full explanation (why `z1000` rather than a band
-    level is used for the mask, and why the below-ground threshold is
-    capped at `capHpa` rather than applied at each level's own literal
-    pressure). `radiusKm`, `scaleM`, `depthM`, `blobKm`, `capHpa` are
-    coerced the same way as `executeHartClass`'s constants; see that
-    function's docstring for why `closed_low_mask`'s
-    `min_radius_km`/`center_tol_m` are not exposed here either.
+    computed from `pmsl` (mean sea level pressure, Pa or hPa), and the
+    same below-ground masking of the six band levels via `psfc`/`capHpa`
+    -- see `executeHartClass`'s docstring for the full explanation (why
+    MSLP is used for the mask, why it is not itself masked below ground,
+    and why the below-ground threshold is capped at `capHpa` rather than
+    applied at each level's own literal pressure). `radiusKm`, `scaleM`,
+    `depthHpa`, `blobKm`, `capHpa` are coerced the same way as
+    `executeHartClass`'s constants; see that function's docstring for why
+    `closed_low_mask`'s `min_radius_km`/`center_tol_hpa` are not exposed
+    here either.
 
     Returns a float32 array, NaN outside the mask or below ground,
     otherwise in [-3, 3].
     """
     radius_km = _coerce_scalar(radiusKm)
     scale_m = _coerce_scalar(scaleM)
-    depth_m = _coerce_scalar(depthM)
+    depth_hpa = _coerce_scalar(depthHpa)
     blob_radius_km = _coerce_scalar(blobKm)
     cap_hpa = _coerce_scalar(capHpa)
 
@@ -1850,8 +2254,7 @@ def executeIndexStd(
 
     vtl = thermal_wind_grid([z925, z850, z700], LOWER_BAND, dx, dy, radius_km, psfc_hpa=psfc_hpa, cap_hpa=cap_hpa)
     vtu = thermal_wind_grid([z500, z400, z300], UPPER_BAND, dx, dy, radius_km, psfc_hpa=psfc_hpa, cap_hpa=cap_hpa)
-    z1000_masked = mask_below_ground(z1000, psfc_hpa, 1000.0, cap_hpa)
-    mask = closed_low_mask(z1000_masked, dx, dy, MIN_RADIUS_KM, radius_km, depth_m, blob_radius_km)
+    mask = closed_low_mask(pmsl, dx, dy, MIN_RADIUS_KM, radius_km, depth_hpa, blob_radius_km)
 
     index = 2.0 * np.tanh(vtl / scale_m) + np.tanh(vtu / scale_m)
     masked = ~mask | ~np.isfinite(vtl) | ~np.isfinite(vtu)
@@ -1868,9 +2271,10 @@ def executeB(
     capHpa=BELOW_GROUND_CAP_HPA,
 ):
     """AWIPS derived-parameter entry point for HB (cps_HB.xml): Hart's
-    parameter B (thermal asymmetry), gridded -- see the module
-    docstring's "Parameter B and the joint class" section for the full
-    method.
+    parameter B (thermal asymmetry), gridded as the right-minus-left
+    semicircle difference of thickness (`parameter_b_grid`) -- see the
+    module docstring's "Parameter B and the joint class" section for the
+    full method.
 
     `z925`/`z700` are geopotential height (meters); their difference
     (`z700 - z925`) is this module's thickness layer (see the module
@@ -1878,8 +2282,9 @@ def executeB(
     `layerScale`'s role in rescaling for it). Each is blanked (NaN) below
     ground for its own pressure and `capHpa` before the difference is
     taken (`mask_below_ground`), so `B` comes back NaN wherever either
-    height input was masked -- via the resulting NaN thickness
-    propagating through `parameter_b_grid`'s gradient and window mean.
+    height input was masked (`parameter_b_grid` blanks any point whose
+    own thickness is missing; its half-disk means simply skip masked
+    neighbors).
 
     `u850`/`v850`, `u700`/`v700`, `u500`/`v500`, `u300`/`v300` are the
     wind components at those four levels, averaged by `steering` and
@@ -1955,15 +2360,18 @@ if __name__ == "__main__":
 
     # Amplitude decreasing with height (larger at 925 than at 300 hPa) --
     # a warm core, per the module docstring's sign derivation. 1000 hPa
-    # (the mask level -- see the module docstring's "Closed-low mask
-    # level" section) gets the largest amplitude of all, so the low is
-    # deepest there, the same way it deepens toward the surface in a
-    # real warm-core vortex.
+    # gets the largest amplitude of all, so the low is deepest there, the
+    # same way it deepens toward the surface in a real warm-core vortex;
+    # it is only used below to make a matching MSLP field for the
+    # closed-low mask (see the module docstring's "Closed-low mask"
+    # section), at about 8 m of 1000 hPa height per hPa.
     amp_by_level = {1000.0: 200.0, 925.0: 180.0, 850.0: 150.0, 700.0: 110.0, 500.0: 50.0, 400.0: 25.0, 300.0: 5.0}
     z_by_level = {}
     for p, amp in amp_by_level.items():
         background = 100.0 + 7000.0 * np.log(1000.0 / p)
         z_by_level[p] = background - amp * decay
+
+    pmsl_demo = 1000.0 + z_by_level[1000.0] / 8.0  # hPa; a 25 hPa low on a 1012.5 hPa background
 
     vtl = thermal_wind_grid([z_by_level[p] for p in LOWER_BAND], LOWER_BAND, dx2d, dy_m, RADIUS_KM)
     vtu = thermal_wind_grid([z_by_level[p] for p in UPPER_BAND], UPPER_BAND, dx2d, dy_m, RADIUS_KM)
@@ -1990,7 +2398,7 @@ if __name__ == "__main__":
 
     u_westerly = np.full(lat2d.shape, 8.0)
     cls_westerly = executeHartClass(
-        z_by_level[1000.0],
+        pmsl_demo,
         z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
         z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
         u_westerly, v_zero, u_westerly, v_zero, u_westerly, v_zero, u_westerly, v_zero,
@@ -2001,7 +2409,7 @@ if __name__ == "__main__":
 
     u_easterly = np.full(lat2d.shape, -8.0)
     cls_easterly = executeHartClass(
-        z_by_level[1000.0],
+        pmsl_demo,
         z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
         z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
         u_easterly, v_zero, u_easterly, v_zero, u_easterly, v_zero, u_easterly, v_zero,
@@ -2024,7 +2432,7 @@ if __name__ == "__main__":
     psfc_terrain[block_mask] = 750.0
 
     cls_terrain = executeHartClass(
-        z_by_level[1000.0],
+        pmsl_demo,
         z_by_level[925.0], z_by_level[850.0], z_by_level[700.0],
         z_by_level[500.0], z_by_level[400.0], z_by_level[300.0],
         u_westerly, v_zero, u_westerly, v_zero, u_westerly, v_zero, u_westerly, v_zero,
@@ -2062,10 +2470,36 @@ if __name__ == "__main__":
     u_s_demo, v_s_demo = steering([u_level] * 4, [v_level] * 4)
     b_linear = parameter_b_grid(thickness_linear, u_s_demo, v_s_demo, dx2d, dy_m, coriolis_nh, RADIUS_KM, HART_B_LAYER_SCALE)
 
-    # Analytic expectation: n_right for due-east motion is (0, -1) (south);
-    # dThickness/dy = -GRADIENT_M_PER_KM/1000 m/m, so
-    # n_right . grad = -1 * (-GRADIENT_M_PER_KM/1000) = GRADIENT_M_PER_KM/1000.
+    # Analytic expectation: moving due east, the right half-disk is the
+    # south one; for a uniform gradient the south-minus-north half-disk
+    # mean difference is the gradient times the 8R/(3*pi) distance
+    # between the two half-disk centroids.
     analytic_b = b_geometry_km(RADIUS_KM) * 1000.0 * (GRADIENT_M_PER_KM / 1000.0) * HART_B_LAYER_SCALE
+    b_linear_old = parameter_b_grid_gradient(
+        thickness_linear, u_s_demo, v_s_demo, dx2d, dy_m, coriolis_nh, RADIUS_KM, HART_B_LAYER_SCALE,
+    )
     print("Parameter B on a linear thickness gradient, steering due east along the contours:")
-    print("  gridded B at center, m (900-600 equivalent):", b_linear[ci, cj])
+    print("  gridded B at center, semicircle means, m (900-600 equivalent):", b_linear[ci, cj])
+    print("  gridded B at center, first-order gradient form, m:", b_linear_old[ci, cj])
     print("  analytic expectation, m:", analytic_b)
+
+    # ---------------------------------------------------------------------
+    # Parameter B on a storm-scale wavenumber-one dipole: thickness
+    # A*(x_R/L)*exp(-r**2/(2*L**2)) with x_R the distance to the right of
+    # the (due east) motion, i.e. southward, L = 400 km. Hart's semicircle
+    # difference over R = 500 km is (4/pi) times the area mean of
+    # A*(r/L)*exp(-r**2/(2*L**2)) over the disk; the semicircle-mean B
+    # recovers it, the first-order gradient form reads only about 55-60%.
+    DIPOLE_A_M, DIPOLE_L_KM = 20.0, 400.0
+    x_km_from_center = EARTH_RADIUS_KM * np.cos(np.radians(lat2d)) * np.radians(lon2d - CENTER_LON)
+    r2_km = x_km_from_center ** 2 + y_km_from_center ** 2
+    thickness_dipole = DIPOLE_A_M * (-y_km_from_center / DIPOLE_L_KM) * np.exp(-r2_km / (2.0 * DIPOLE_L_KM ** 2))
+    r_quad = np.linspace(0.0, RADIUS_KM, 20001)
+    f_quad = DIPOLE_A_M * (r_quad / DIPOLE_L_KM) * np.exp(-r_quad ** 2 / (2.0 * DIPOLE_L_KM ** 2)) * r_quad
+    area_mean = float(np.sum((f_quad[1:] + f_quad[:-1]) * np.diff(r_quad)) / 2.0) / (RADIUS_KM ** 2 / 2.0)
+    b_dipole = parameter_b_grid(thickness_dipole, u_s_demo, v_s_demo, dx2d, dy_m, coriolis_nh, RADIUS_KM, 1.0)
+    b_dipole_old = parameter_b_grid_gradient(thickness_dipole, u_s_demo, v_s_demo, dx2d, dy_m, coriolis_nh, RADIUS_KM, 1.0)
+    print("Parameter B on a 400 km wavenumber-one dipole (unscaled layer):")
+    print("  semicircle means, m:", b_dipole[ci, cj])
+    print("  first-order gradient form, m:", b_dipole_old[ci, cj])
+    print("  continuum semicircle difference, m:", 4.0 / math.pi * area_mean)
