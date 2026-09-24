@@ -24,6 +24,12 @@ against; see "Tests" below.
   rotatable view of Hart's three-dimensional phase space with the seven
   HCPSclass cells and a synthetic life cycle, the class read as the box
   a storm's (B, -VTL, -VTU) point falls in.
+- `cyclone_phase_space/realtime/`: `gfs_cps.py` builds the four-panel
+  images and a table of every detected low from public GFS output
+  (NOMADS or the NOAA AWS bucket) with the unchanged operational
+  module, so figures no longer depend on CAVE screenshots. On the 24
+  September 2026 0600 UTC cycle it reproduces the CAVE thermal wind
+  readouts to about 1 m. See `realtime/README.md`.
 
 ## What it is
 

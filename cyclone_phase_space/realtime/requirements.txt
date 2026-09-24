@@ -1,0 +1,9 @@
+# Versions that installed and worked on Python 3.11, Linux x86_64.
+numpy==2.4.6
+matplotlib==3.11.2
+requests==2.33.1
+# GRIB2 decoder; the manylinux wheel bundles ecCodes (pulls in pyproj 3.7.2).
+pygrib==2.1.8
+# Maps and Natural Earth coastlines (pulls in shapely 2.1.2, pyshp 3.1.6).
+# Optional: without it the script draws plain lon/lat maps.
+cartopy==0.26.0
