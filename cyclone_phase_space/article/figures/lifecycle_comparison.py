@@ -327,13 +327,24 @@ GRID_DLAT = 0.25
 GRID_KWARGS = dict(lat0=15.0, lat1=60.0, lon0=140.0, lon1=190.0)
 
 
-def build_grid():
+def build_grid(dlat=None, lat0=None, lat1=None, lon0=None, lon1=None):
     """(lat_vals, lon_vals, lat2d, lon2d, dx, dy) for this life cycle's regional
     0.25 deg grid -- see the module docstring for why this domain (not
     experiments.make_grid's own default) is wide enough that the 500 km
     analysis window never touches the edge.
+
+    Every argument defaults to this life cycle's own fixed domain
+    (GRID_DLAT/GRID_KWARGS), unchanged from before this optional-domain
+    argument existed. Pass any subset to build a grid over a different
+    domain with the same make_grid machinery -- e.g. a full ocean basin
+    for a scene wider than one storm's own regional window.
     """
-    return make_grid(GRID_DLAT, **GRID_KWARGS)
+    dlat = GRID_DLAT if dlat is None else dlat
+    lat0 = GRID_KWARGS["lat0"] if lat0 is None else lat0
+    lat1 = GRID_KWARGS["lat1"] if lat1 is None else lat1
+    lon0 = GRID_KWARGS["lon0"] if lon0 is None else lon0
+    lon1 = GRID_KWARGS["lon1"] if lon1 is None else lon1
+    return make_grid(dlat, lat0=lat0, lat1=lat1, lon0=lon0, lon1=lon1)
 
 
 def env_fields(lat2d):
