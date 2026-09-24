@@ -7,8 +7,8 @@ Reuses the case-building blocks feature_catalog.py already established
 (vortex_shape, amp_at, front_shape, profile_in_lnp, dipole_term, the
 archetypes and anchor lists) and lifecycle_comparison.build_grid (given
 an optional domain argument for this file, default unchanged) /
-env_fields, plus regime_prototype.classify_regime for panel (f). Domain:
-0.25 deg, 10-70N, 100W-10E (negative longitude west).
+env_fields. Domain: 0.25 deg, 10-70N, 100W-10E (negative longitude
+west).
 
 Background: a deep baroclinic zone (feature_catalog.DEEP_PARTS's own
 vertical profile -- a gradient growing with height through every level,
@@ -20,9 +20,8 @@ flattening completely, so the band reads as a band -- HB and HVTL a
 strip along the front, pale to clear well away from it -- instead of one
 continuous zone from the front to the domain's own edge. The front's
 centre latitude is 47N plus a 6 degree sine wave, one trough near 60W and
-one ridge near 25W. A low-level easterly belt sits south of 22N (same
-mechanism regime_prototype's composite scene uses, amplitude halved here
-so its own HB reads pale rather than solid teal). Steering is a single
+one ridge near 25W. A low-level easterly belt sits south of 22N (a
+shallow reversed-sign height ramp on 1000 and 925 hPa only). Steering is a single
 zonal wind profile, uniform by latitude: easterly south of 22N, turning
 westerly and peaking along the front near 47N.
 
@@ -34,11 +33,11 @@ anchor lists feature_catalog's own shallow-cold-high/warm-ridge rows
 use), each moving with the local steering wind unless a feature-specific
 motion is given.
 
-Figure: 2x3, one row of maps per pair -- (a) 1000 hPa height (40 m) and
+Figure: 2x3 with the last cell empty -- (a) 1000 hPa height (40 m) and
 1000-500 hPa thickness (60 m dashed red), features numbered; (b)
 HCPSclass over the 1000 hPa contours, the shipped class palette; (c) HB,
 the CPS_Asymmetry mimic, +/-40 m; (d) HVTL and (e) HVTU, the red/blue
-mimic, +/-300 m; (f) the regime prototype's own map, with its legend.
+mimic, +/-300 m.
 Every panel shows the whole domain with a light graticule, no
 coastlines.
 
@@ -46,9 +45,8 @@ Run from this directory:
 
     python3 basin_scene.py
 
-Prints, per feature, the sampled HVTL/HVTU/HB and class (the six lows)
-or regime code (the two anticyclones and the ridge) at its own center,
-and the class the catalog expects for a low. Writes figI_basin_scene.png
+Prints, per feature, the sampled HVTL/HVTU/HB at its own center and,
+for the six lows, the class found and the class the catalog expects. Writes figI_basin_scene.png
 (300 dpi).
 """
 from __future__ import annotations
@@ -69,9 +67,6 @@ sys.path.insert(0, str(HERE))
 import feature_catalog as fc  # noqa: E402
 from feature_catalog import hc  # noqa: E402
 import lifecycle_comparison as lc  # noqa: E402
-from regime_prototype import (  # noqa: E402
-    classify_regime, REGIME_CMAP, REGIME_NORM, REGIME_NAMES, REGIME_COLORS, ENV_CODES_FOR_LEGEND,
-)
 
 FIGI_PATH = HERE / "figI_basin_scene.png"
 
@@ -129,7 +124,7 @@ def confined_front_shape(rel_lat, halfwidth=FRONT_STEP_HALFWIDTH, residual_frac=
 
 
 # Low-level easterly belt, south of 22N -- same mechanism as
-# regime_prototype's own composite scene, recentred so the belt's own
+# the composite-scene easterly belt, recentred so the belt's own
 # ramp sits south of 22N instead of 25N, amplitude halved from that scene
 # (-6/-5 m) so its own HB reads pale rather than solid teal.
 EAST_CENTER = 17.0
@@ -171,11 +166,11 @@ FEATURES = [
     dict(num=6, name="Cut-off low", kind="vortex", clat=33.0, clon=-18.0, sign=-1,
          anchors=fc.CUTOFF_ANCHORS, amp_scale=1.0, scale_km=STORM_SCALE_KM, dipole_peak=0.0, expected_class=5),
     dict(num=7, name="Shallow cold high", kind="anticyclone", clat=48.0, clon=-92.0, sign=+1,
-         anchors=HIGH_ANCHORS, amp_scale=1.0, scale_km=500.0, expected_regime=5),
+         anchors=HIGH_ANCHORS, amp_scale=1.0, scale_km=500.0),
     dict(num=8, name="Warm subtropical ridge", kind="anticyclone", clat=30.0, clon=-42.0, sign=+1,
-         anchors=RIDGE_ANCHORS, amp_scale=0.5, scale_km=800.0, expected_regime=8),
+         anchors=RIDGE_ANCHORS, amp_scale=0.5, scale_km=800.0),
     dict(num=9, name="Arctic cold dome", kind="anticyclone", clat=64.0, clon=-75.0, sign=+1,
-         anchors=HIGH_ANCHORS, amp_scale=1.0, scale_km=350.0, expected_regime=5),
+         anchors=HIGH_ANCHORS, amp_scale=1.0, scale_km=350.0),
 ]
 
 
@@ -283,16 +278,6 @@ def draw_diverging_panel(ax, levels, field, title, fs=7):
     _map_axes(ax, fs)
 
 
-def draw_regime_panel(ax, codes, fs=7):
-    masked = np.ma.masked_invalid(codes)
-    ax.imshow(masked, extent=EXTENT, origin="lower", cmap=REGIME_CMAP, norm=REGIME_NORM,
-              interpolation="nearest", aspect="auto", zorder=1)
-    ax.set_title("(f) regime map (environment only)", fontsize=8)
-    _map_axes(ax, fs)
-    env_handles = [Patch(facecolor=REGIME_COLORS[k], edgecolor="0.3", label=f"{k} {REGIME_NAMES[k]}")
-                   for k in ENV_CODES_FOR_LEGEND]
-    ax.legend(handles=env_handles, loc="upper left", bbox_to_anchor=(1.02, 1.0), fontsize=6,
-              frameon=False, handlelength=1.2, handleheight=1.2)
 
 
 # ----------------------------------------------------------------- main
@@ -308,9 +293,8 @@ def main():
     levels = build_levels()
     thick = levels[500.0] - levels[1000.0]
     vtl, vtu, b, cls = compute_fields(levels)
-    codes, d, trough, closed_high = classify_regime(vtl, vtu, b, levels[1000.0], dx, dy, psfc)
 
-    print(f"\n{'#':>2s} {'feature':32s} {'HVTL':>8s} {'HVTU':>8s} {'HB':>7s} {'class/regime':>14s} "
+    print(f"\n{'#':>2s} {'feature':32s} {'HVTL':>8s} {'HVTU':>8s} {'HB':>7s} {'class':>14s} "
           f"{'catalog expects':>16s}  note")
     mismatches = []
     for feat in FEATURES:
@@ -329,15 +313,8 @@ def main():
             print(f"{feat['num']:2d} {feat['name']:32s} {v_l:8.1f} {v_u:8.1f} {v_b:7.2f} "
                   f"{found_txt:>14s} {expected:>16d}  {note}")
         else:
-            code = codes[ci, cj]
-            code_txt = "NaN" if np.isnan(code) else str(int(round(code)))
-            expected = feat["expected_regime"]
-            ok = (not np.isnan(code)) and int(round(code)) == expected
-            note = "OK" if ok else "MISMATCH"
-            if not ok:
-                mismatches.append((feat, code_txt, expected))
             print(f"{feat['num']:2d} {feat['name']:32s} {v_l:8.1f} {v_u:8.1f} {v_b:7.2f} "
-                  f"{code_txt:>14s} {expected:>16d}  {note}")
+                  f"{'':>14s} {'':>16s}  no class away from a closed low")
 
     fig, axes = plt.subplots(2, 3, figsize=(19.0, 12.5), constrained_layout=True)
     draw_panel_a(axes[0, 0], levels, thick)
@@ -345,7 +322,7 @@ def main():
     draw_hb_panel(axes[0, 2], levels, b)
     draw_diverging_panel(axes[1, 0], levels, vtl, "(d) HVTL")
     draw_diverging_panel(axes[1, 1], levels, vtu, "(e) HVTU")
-    draw_regime_panel(axes[1, 2], codes)
+    axes[1, 2].set_axis_off()
 
     fig.suptitle("Basin scene: nine synthetic features on one North Atlantic domain (synthetic, gridded module)",
                  fontsize=12)
@@ -356,7 +333,7 @@ def main():
     print(f"\nwrote {FIGI_PATH} ({size:.2f} MB)")
 
     if mismatches:
-        print("\nFeatures whose class/regime does not match the catalog's own expectation:")
+        print("\nFeatures whose class does not match the catalog's own expectation:")
         for feat, found_txt, expected in mismatches:
             print(f"  {feat['num']} {feat['name']}: expected {expected}, found {found_txt}")
     else:
