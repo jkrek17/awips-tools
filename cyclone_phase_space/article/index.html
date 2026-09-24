@@ -262,7 +262,7 @@
     14&nbsp;m per degree at 300&nbsp;hPa, lowers the upper term to
     +70&nbsp;m when the gradient runs along a grid axis and to
     &minus;4&nbsp;m at 45&deg; to it; at twice that gradient the upper
-    term reads &minus;85 and &minus;193&nbsp;m (Figure 15a). The
+    term reads &minus;85 and &minus;193&nbsp;m (Figure 17a). The
     environmental response is by design: the phase space describes the
     cyclone together with the baroclinic zone it has entered, and the
     fall of the upper term as a storm meets a trough is the transition
@@ -549,7 +549,7 @@
       layer, so its magnitude differs from his by an amount that depends
       on the vertical profile of the core anomaly: near zero for a
       profile linear in ln&nbsp;<i>p</i>, and two to three times Hart's
-      value for a shallow warm seclusion (Section 5, Figure 13). Signs
+      value for a shallow warm seclusion (Section 5, Figure 15). Signs
       and zero crossings carry over.</li>
     <li>Hart's <i>B</i> uses the tracker's storm motion and true
       half-circle means; this package uses the window-mean deep-layer
@@ -798,7 +798,7 @@
     A vortex on a 0.25&deg; grid is carried 168&nbsp;h from 22&deg;N
     150&deg;E to 52&deg;N 175&deg;E, its height-perturbation profile
     blending from the deep warm core through the transition profile to
-    the deep cold core and then to the seclusion profile of Figure 13,
+    the deep cold core and then to the seclusion profile of Figure 15,
     its e-folding scale growing from 150 to 350&nbsp;km, its speed rising
     from 4 to 16&nbsp;m/s as it recurves into a baroclinic zone whose
     meridional height gradient grows with height, and with a
@@ -821,7 +821,7 @@
     agrees to 15&nbsp;m root mean square over the life cycle and the
     lower term to 49&nbsp;m, the latter dominated by the seclusion phase,
     where the gridded lower term recovers to +109&nbsp;m against Hart's
-    +41&nbsp;m, the band effect of Figure 13 and the same direction as
+    +41&nbsp;m, the band effect of Figure 15 and the same direction as
     the real seclusion of the previous paragraph. The one substantive
     disagreement is the size of <i>B</i>: Hart's peaks at 40&nbsp;m and
     the gridded value at 24&nbsp;m. Evaluating Hart's semicircle
@@ -895,11 +895,116 @@
       per 6&nbsp;h is at <code>figures/lifecycle_storyboard.gif</code>.</figcaption>
   </figure>
 
+
+  <h3 id="feature-recognition">Feature recognition on synthetic cases</h3>
+  <p>
+    The life cycle above exercises one storm. A product that classifies
+    every closed low on every frame also has to give the right answer
+    for the lows a forecaster meets on an ordinary day, and its three
+    fields are drawn over the whole domain, not only at lows, so what
+    they show away from a low matters too. Seventeen idealized cases
+    were built to the descriptions a synoptic analyst would give and run
+    through the operational functions
+    (<code>cyclone_phase_space/article/figures/feature_catalog.py</code>): nine
+    closed lows, from a hurricane to a polar low (Figure 13), and eight
+    environments with no closed low, from a surface front to easterly
+    flow along one (Figure 14). Each row of the two figures shows the
+    1000&nbsp;hPa height and thickness, HVTL, HVTU, HB and the class as
+    they would appear on the display, with HB drawn on its own colormap
+    (magenta for positive, teal for negative) because <i>B</i> is an
+    asymmetry rather than a temperature and the shared red-blue map read
+    as warm and cold. The sampled values are tabulated after the figures.
+  </p>
+  <p>
+    All nine lows land in the class an analyst would assign from the
+    description: the hurricane, the tropical cyclone meeting a front and
+    the transitioning cyclone walk 0, 2, 3; the frontal wave reads 4, the
+    Norwegian occlusion and the cut-off low read 5, and the Shapiro-Keyser
+    seclusion, the subtropical storm and the polar low read 1. The last
+    two show how faint the thermal wind terms are near the detector
+    floor: a subtropical storm reads +32 and &minus;76&nbsp;m against a
+    hurricane's +298 and +125, and the polar low is a small block whose
+    120&nbsp;km scale the 500&nbsp;km window smooths. Away from lows the
+    fields read as baroclinicity maps. With no vortex in the window the
+    height range the window sees is the large-scale gradient times the
+    window's width, so a term is negative wherever that gradient grows
+    with height: HVTL is blue under a surface front and HVTU under a jet,
+    both under a deep baroclinic zone, and only HVTL under a shallow
+    front with no jet above. HB is positive along every front the
+    westerlies run along, at 16 to 28&nbsp;m, and negative only where
+    the flow is reversed. The one case that resisted a first
+    description was the cold dome under a jet: it is not a gradient that
+    weakens with height but one that reverses, easterly geostrophic
+    flow under the dome and westerlies above, and built that way it
+    gives the expected red HVTL, blue HVTU and positive HB. The shallow
+    cold high is the strongest positive HVTL in the set, +185&nbsp;m,
+    stronger than any warm-core low, which is why the thresholds apply
+    only at a low center. On a full-basin display these signatures are
+    the ones that appear: a magenta HB band along the polar front and a
+    second along the subtropical baroclinic zone, a blue HVTU band under
+    the jet, red HVTL under the surface highs behind fronts and across
+    the trade-wind belt, and the warm seclusion signature at a
+    959&nbsp;hPa North Atlantic low, red HVTL and blue HVTU at the
+    center with HB near zero and the magenta band wrapped around it.
+  </p>
+  <figure id="fig13">
+    <img src="figures/figF_catalog_lows.png"
+         alt="Nine rows by five columns. Each row is one synthetic closed low, zoomed to the storm: hurricane, tropical cyclone meeting a front, transitioning tropical cyclone, frontal wave, Norwegian occluded low, Shapiro-Keyser warm seclusion, cut-off low, subtropical storm, polar low. Columns: 1000 hectopascal height and thickness contours; HVTL in red and blue; HVTU in red and blue; HB in magenta and teal with lobes either side of each storm; the class as a colored block, red, yellow, green, blue, indigo, magenta, indigo, magenta, magenta down the rows.">
+    <figcaption><strong>Figure 13.</strong> Nine <em>synthetic</em>
+      closed lows run through the operational functions
+      (<code>cyclone_phase_space/article/figures/feature_catalog.py</code>), one per
+      row, zoomed to the storm. <strong>(a)</strong> 1000&nbsp;hPa height
+      every 20&nbsp;m and 1000 to 500&nbsp;hPa thickness every 60&nbsp;m
+      (red, dashed); <strong>(b)</strong> HVTL and <strong>(c)</strong>
+      HVTU on the red-blue core map, &plusmn;300&nbsp;m;
+      <strong>(d)</strong> HB on the asymmetry map, magenta positive and
+      teal negative, &plusmn;40&nbsp;m; <strong>(e)</strong> HCPSclass.
+      Each row is labeled with the class read at the center. The lobes
+      either side of a symmetric storm in (d) are the storm's own
+      gradient projected across the flow and are why HB is read at the
+      center.</figcaption>
+  </figure>
+  <figure id="fig14">
+    <img src="figures/figG_catalog_environment.png"
+         alt="Eight rows by five columns. Each row is one synthetic environment with no closed low over the full domain: surface front, polar jet axis, deep baroclinic zone, cold dome under the jet, shallow cold high, warm ridge, open trough, easterly flow along a front. Columns as in the previous figure. HVTL shows blue bands under the fronts and a red block over the cold high; HVTU shows blue bands under the jets; HB shows magenta bands along the fronts and one teal band for the easterly case; the class column is blank in every row.">
+    <figcaption><strong>Figure 14.</strong> Eight <em>synthetic</em>
+      environments with no closed low, one per row over the full domain,
+      panels as in Figure 13. The class panel is blank throughout, as it
+      should be. HVTL and HVTU read as lower and upper baroclinicity
+      maps, HB as the thickness gradient across the flow, and the
+      easterly case is the one row with negative HB.</figcaption>
+  </figure>
+  <table>
+    <caption>Sampled values for the seventeen synthetic cases of Figures 13 and 14, at the storm center for the lows and the domain center for the environments (m; class for the lows).</caption>
+    <thead>
+      <tr><th scope="col">Case</th><th scope="col">HVTL</th><th scope="col">HVTU</th><th scope="col">HB</th><th scope="col">Class</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Hurricane or typhoon</td><td>+298</td><td>+125</td><td>0</td><td>0</td></tr>
+      <tr><td>Tropical cyclone meeting a front</td><td>+259</td><td>+110</td><td>12</td><td>2</td></tr>
+      <tr><td>Transitioning tropical cyclone</td><td>+88</td><td>&minus;278</td><td>35</td><td>3</td></tr>
+      <tr><td>Extratropical low on a front, frontal wave</td><td>&minus;255</td><td>&minus;211</td><td>11</td><td>4</td></tr>
+      <tr><td>Mature occluded low, Norwegian type</td><td>&minus;214</td><td>&minus;213</td><td>0</td><td>5</td></tr>
+      <tr><td>Warm seclusion, Shapiro-Keyser type</td><td>+141</td><td>&minus;195</td><td>0</td><td>1</td></tr>
+      <tr><td>Cut-off low, cold low</td><td>&minus;214</td><td>&minus;352</td><td>0</td><td>5</td></tr>
+      <tr><td>Subtropical storm, hybrid</td><td>+32</td><td>&minus;76</td><td>6</td><td>1</td></tr>
+      <tr><td>Polar low</td><td>+42</td><td>&minus;58</td><td>0</td><td>1</td></tr>
+      <tr><td>Surface front, low-level baroclinic zone</td><td>&minus;75</td><td>0</td><td>16</td><td>none</td></tr>
+      <tr><td>Polar jet axis</td><td>&minus;42</td><td>&minus;183</td><td>8</td><td>none</td></tr>
+      <tr><td>Deep baroclinic zone, front under the jet</td><td>&minus;157</td><td>&minus;126</td><td>28</td><td>none</td></tr>
+      <tr><td>Cold dome under the jet, overrunning</td><td>+42</td><td>&minus;88</td><td>25</td><td>none</td></tr>
+      <tr><td>Shallow cold high, arctic high</td><td>+185</td><td>0</td><td>0</td><td>none</td></tr>
+      <tr><td>Warm subtropical high, ridge</td><td>&minus;89</td><td>&minus;60</td><td>0</td><td>none</td></tr>
+      <tr><td>Open trough, no closed low</td><td>&minus;107</td><td>&minus;107</td><td>0</td><td>none</td></tr>
+      <tr><td>Easterly flow along a front</td><td>&minus;75</td><td>0</td><td>&minus;16</td><td>none</td></tr>
+    </tbody>
+  </table>
+
   <h2 id="limitations">6. Limitations and future work</h2>
   <ul>
     <li>The lower band, 925 to 700&nbsp;hPa, lies entirely below Hart's
       900 to 600&nbsp;hPa layer, and the upper band omits 600 to
-      500&nbsp;hPa. Figure 13 fits Hart's band and two standard-level
+      500&nbsp;hPa. Figure 15 fits Hart's band and two standard-level
       alternatives to five prescribed height-perturbation profiles. For
       a profile linear in ln&nbsp;<i>p</i> all bands agree. For a shallow
       warm core with cold air above, the seclusion and transition
@@ -949,7 +1054,7 @@
       finite-differenced model centers is the intended test.</li>
     <li>The closed-low detector measures relief between a center and the
       300 to 500&nbsp;km ring, so its floor rises with the breadth of the
-      low: on synthetic Gaussian lows (Figure 14) a 50&nbsp;m central
+      low: on synthetic Gaussian lows (Figure 16) a 50&nbsp;m central
       depth is detected out to a 300&nbsp;km e-folding scale, 80&nbsp;m
       out to 500&nbsp;km, 100&nbsp;m out to 600&nbsp;km, and an
       800&nbsp;km scale low is missed even at 120&nbsp;m, so the
@@ -986,10 +1091,10 @@
       timing across the local inventory are the next steps.</li>
   </ul>
 
-  <figure id="fig13">
+  <figure id="fig15">
     <img src="figures/figA_band_comparison.png"
          alt="Three-panel synthetic band test. Left: five prescribed height-perturbation profiles against pressure on a log axis, with Hart's 900 to 600 hectopascal lower band shaded. Center: bar chart of the lower thermal wind each band returns for each profile, Hart's band in gray, the 925 to 700 band in red, a 925 to 500 band in blue and an 850 to 500 band in green. Right: bar chart of the rescaled layer thickness gradient, a proxy for parameter B, for three baroclinic-zone profiles and the same four layers.">
-    <figcaption><strong>Figure 13.</strong> Synthetic test of the lower
+    <figcaption><strong>Figure 15.</strong> Synthetic test of the lower
       band, computed by <code>cyclone_phase_space/article/figures/band_comparison.py</code>.
       <strong>(a)</strong> Five prescribed height-perturbation profiles
       &Delta;<i>Z</i>(<i>p</i>) at 50&nbsp;hPa spacing: a mature deep warm
@@ -1008,10 +1113,10 @@
       the uniform case.</figcaption>
   </figure>
 
-  <figure id="fig14" class="half">
+  <figure id="fig16" class="half">
     <img src="figures/figB_detector.png"
          alt="Grid of central depth from 20 to 120 meters against e-folding scale from 100 to 800 kilometers, dark cells where the closed-low detector accepts a synthetic Gaussian low at its center: nothing at 40 meters or less, 50 meters accepted out to 300 kilometers, 80 meters out to 500, 100 meters out to 600, and nothing at 800 kilometers.">
-    <figcaption><strong>Figure 14.</strong> Closed-low detector
+    <figcaption><strong>Figure 16.</strong> Closed-low detector
       sensitivity on synthetic Gaussian lows in 1000&nbsp;hPa height on a
       0.25&deg; grid (<code>cyclone_phase_space/article/figures/experiments.py</code>): dark
       cells are detected at the center. The 40&nbsp;m ring test admits a
@@ -1021,12 +1126,12 @@
 
   <p>
     Four candidate extensions were tested on synthetic fields with the
-    operational code (Figure 15), as parallel products that would leave
+    operational code (Figure 17), as parallel products that would leave
     Hart's parameters as the reference. <strong>Storm-only core.</strong>
     Subtracting the domain background plane from each level before the
     range is taken returns the isolated-vortex terms exactly for every
     gradient tested, where the unmodified terms fall to zero or below in
-    a moderate baroclinic zone (Figure 15a). This is not an improvement
+    a moderate baroclinic zone (Figure 17a). This is not an improvement
     to the phase space, which is meant to respond to the environment;
     it answers a different question, whether an intact warm core still
     sits under the trough while the phase reads cold, which bears on how
@@ -1035,13 +1140,13 @@
     <strong>Storm-scaled radius.</strong> At a fixed 500&nbsp;km half-width
     the lower term falls to 77% of its true value for a vortex of
     600&nbsp;km e-folding scale; a half-width of 2.5 times the scale
-    holds 100% across all sizes tested (Figure 15b), at the cost of
+    holds 100% across all sizes tested (Figure 17b), at the cost of
     admitting more environment for large storms. <strong>Vector
     asymmetry.</strong> <i>B</i> is the cross-track projection of the
     thickness gradient. For a 40&nbsp;m per 1000&nbsp;km gradient, worth
     25&nbsp;m in Hart's units, <i>B</i> is 0 when the storm moves straight
     toward colder air and passes 10&nbsp;m only once the motion is
-    24&deg; off the gradient (Figure 15c); the full gradient magnitude
+    24&deg; off the gradient (Figure 17c); the full gradient magnitude
     and its fore-aft component are available at no cost and would flag
     a head-on approach that <i>B</i> reads as symmetric. <strong>Warm-core
     top.</strong> Layer-by-layer slopes on the seven standard levels place
@@ -1052,10 +1157,10 @@
     the fraction of members past each threshold by forecast hour, uses
     the method unchanged and needs only ensemble input.
   </p>
-  <figure id="fig15">
+  <figure id="fig17">
     <img src="figures/figC_extensions.png"
          alt="Three panels. Left: lower and upper thermal wind at the center of a synthetic deep warm core against background height gradient strength, for the gradient along a grid axis and at 45 degrees, both falling steeply, with the values after background plane removal flat at the true value. Center: lower term as a fraction of its true value against vortex scale for window half-widths of 300, 500 and 700 kilometers, falling with scale, and for a half-width of 2.5 times the scale, flat at one. Right: Hart's B and the fore-aft component against the angle between the thickness gradient and the motion, B rising from zero to the full magnitude and the fore-aft component falling, with the 10 meter threshold marked.">
-    <figcaption><strong>Figure 15.</strong> Synthetic tests of three
+    <figcaption><strong>Figure 17.</strong> Synthetic tests of three
       candidate extensions (<code>cyclone_phase_space/article/figures/experiments_extensions.py</code>).
       <strong>(a)</strong> Terms at the center of a deep warm core (true
       value 191&nbsp;m, black line) on a background height gradient that
@@ -1082,6 +1187,12 @@
     <li>On a synthetic life cycle evaluated both ways, Hart's method and
       the gridded method assign the same sequence of classes, with the
       gridded onset and completion one to two frames later.</li>
+    <li>On seventeen idealized cases the class matches the analyst's
+      label for every kind of closed low tried, and away from lows the
+      three fields read as lower and upper baroclinicity maps and a map
+      of the thickness gradient across the flow, so a full-basin
+      display shows the polar front, the jet, cold domes and the
+      trade-wind belt as well as the storms.</li>
     <li>The thermal wind terms agree with Hart's in sign and timing but
       not in magnitude. The square window reads about 12% high for
       compact storms, and the 925 to 700&nbsp;hPa band reads a warm
@@ -1148,10 +1259,11 @@
   <footer>
     All figures except Figures 9 and 10 are synthetic and are regenerated by
     <code>cyclone_phase_space/article/figures/make_figures.py</code>, except Figures 11 to
-    15, which <code>lifecycle_comparison.py</code>,
+    17, which <code>lifecycle_comparison.py</code>,
     <code>lifecycle_storyboard.py</code> (which also writes an animated
     version, <code>figures/lifecycle_storyboard.gif</code>, one frame per
-    6&nbsp;h), <code>band_comparison.py</code>, <code>experiments.py</code>
+    6&nbsp;h), <code>feature_catalog.py</code>,
+    <code>band_comparison.py</code>, <code>experiments.py</code>
     and <code>experiments_extensions.py</code> in the same directory
     produce; each
     caption states which implementation produced it. Figures 9 and 10
