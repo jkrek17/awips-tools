@@ -139,7 +139,43 @@ hurricane-type warm core, near zero is transitional, below minus 1 is
 an ordinary extratropical low. Compare the same index between two
 models at the same hour to see how confident to be in the wording.
 
-### 3.7 Not yet available: warm front versus cold front
+### 3.7 Lower and upper baroclinicity from HVTL and HVTU
+
+Away from a closed low the two thermal wind terms are not blank, and
+they are not noise. With no vortex in the window, the height range the
+window sees is the large-scale gradient times the window's width, and
+in a baroclinic zone that gradient grows with height. So the range
+grows with height, and the term, which is the slope of the range
+against log pressure, comes out negative. Its size is the layer's
+thermal wind magnitude scaled to the window: a 925 to 700 hPa thickness
+gradient of 40 m per 1000 km reads about minus 140 m on HVTL. That is
+the same order as a cold-core low, which is why the environment matters
+so much inside a storm's window.
+
+Read the two fields away from lows as baroclinicity maps:
+
+- **Blue HVTL** is the low-level baroclinic zone: fronts and the polar
+  front region as the 925 to 700 hPa layer sees them.
+- **Blue HVTU** is the upper-level baroclinic zone: the thermal wind
+  under the jet in the 500 to 300 hPa layer. It follows the jet axis.
+- **Blue HVTL with transparent HVTU** is a shallow front: an arctic
+  front, a coastal front, a low-level baroclinic zone with no jet above.
+- **Blue HVTU with transparent HVTL** is an elevated baroclinic zone
+  with no surface front: a jet crossing warm-sector or subtropical air,
+  or a front that has lifted off the surface.
+- **Red away from a low** means the gradient weakens with height, as
+  over a shallow cold high or a cold dome.
+
+The most useful analyst move is to read a storm's core term relative
+to its surroundings. If HVTL reads minus 150 m in the baroclinic zone
+next to a low and minus 100 m at the low's center, the low's own core
+is warm by about 50 m relative to its environment even though the
+center reads cold. Hart's classes use the raw value, by design, so the
+class stays as it is; the relative reading tells you whether an intact
+warm core is still there under the trough, which bears on how long the
+core winds persist.
+
+### 3.8 Not yet available: warm front versus cold front
 
 HB keeps only the part of the thickness gradient across the flow. The
 part along the flow is the sign of layer-mean thermal advection, which
@@ -151,9 +187,10 @@ extensions and would be two more fields from the same inputs.
 
 ## 4. Cautions specific to analysis
 
-- **The 10 m threshold means nothing away from a low.** Along a
-  baroclinic zone HB can read 40 m or more with no low anywhere. The
-  threshold is Hart's test for a storm, applied at the storm's center.
+- **The thresholds mean nothing away from a low.** Along a
+  baroclinic zone HB can read 40 m or more and HVTL minus 150 m with no
+  low anywhere. Hart's tests are for a storm, applied at the storm's
+  center; away from lows the fields are environment maps (section 3.7).
 - **Blue HB is a flag, not a finding.** Negative HB means the warm air
   is on the left of the deep-layer flow. That is real for easterly flow
   along a front, for the north side of a block and for some seclusions.

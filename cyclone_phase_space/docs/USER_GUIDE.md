@@ -331,10 +331,18 @@ Reading the three together at a low center:
 - blue, blue, transparent: mature occluded low (class 5).
 - red, blue, transparent: warm seclusion (class 1).
 
-Away from a low center HB is the ambient thickness gradient across the
-flow, so a global HB map paints the low-level baroclinic zones red;
-the 10 m line means nothing there. HVTL and HVTU away from a low are
-the window's height range, not a core property, and are best ignored.
+Away from a low center the three fields are still physical, but they
+describe the environment rather than a storm. HB is the thickness
+gradient across the flow, so a global HB map paints the low-level
+baroclinic zones red; the 10 m line means nothing there. HVTL and HVTU
+away from a low are minus the layer's thermal wind magnitude over the
+window: where the height gradient strengthens with height, the window's
+height range grows with height and the term reads blue. Blue HVTL is a
+low-level baroclinic zone, blue HVTU is the upper-level baroclinic
+zone under the jet, and the two together are a lower and upper
+baroclinicity map in the same units as the storm terms. Positive
+values away from a low mean the gradient weakens with height, as over
+a shallow cold high. See the Analysis Guide for how to use this.
 
 ### The numbers, HVTL and HVTU
 
