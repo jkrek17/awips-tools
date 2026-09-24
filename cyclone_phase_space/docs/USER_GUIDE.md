@@ -239,9 +239,12 @@ four panels, not as a replacement for reading them.
 
 **Colormaps.** If a panel comes up in the default green ramp, right
 click the legend, Change Colormap, Grid, and pick CPS_CoreDiverging for
-HVTL, HVTU, HB, and HCPSidx; or CPS_HartClass for HCPSclass. The
-diverging map is transparent near zero on purpose so the contours show
-through.
+HVTL, HVTU, and HCPSidx; CPS_Asymmetry for HB; or CPS_HartClass for
+HCPSclass. Both diverging maps are transparent near zero on purpose so
+the contours show through. HB has its own map because B is an
+asymmetry, not a temperature: red and blue mean warm and cold core on
+the thermal wind terms, while HB reads magenta for positive B and teal
+for negative.
 
 **Sampling.** Left click and hold reads the value under the cursor.
 HVTL, HVTU, and HB read in meters, HCPSclass reads the class code,
@@ -306,35 +309,38 @@ between adjacent codes frame to frame; that is expected near a
 boundary, and HVTL, HVTU, and HB are smoother places to look for the
 underlying trend when it happens.
 
-### Reading CPS_CoreDiverging on HVTL, HVTU and HB
+### Reading the colormaps on HVTL, HVTU and HB
 
-The same colormap goes on all three, and it always means the same
-thing: red is positive, blue is negative, and a band around zero is
-transparent so the contours show through. What positive means differs
-by field. The style rules set HVTL and HVTU to plus or minus 300 m and
-HB to plus or minus 40 m, and the bands below follow from those ranges.
+HVTL and HVTU share CPS_CoreDiverging: red is a warm core, blue a cold
+core, and a band around zero is transparent so the contours show
+through. HB has its own map, CPS_Asymmetry, because B is an asymmetry
+rather than a temperature: magenta is positive, teal is negative, and
+the same transparent band sits around zero. The style rules set HVTL
+and HVTU to plus or minus 300 m and HB to plus or minus 40 m, and the
+bands below follow from those ranges. On HB the first fully opaque
+magenta step falls exactly at Hart's 10 m onset line.
 
 | Color | HVTL (lower core) | HVTU (upper core) | HB (asymmetry) |
 | :--- | :--- | :--- | :--- |
-| transparent | within about 37 m of zero: core neither warm nor cold in the layer | same | within about 5 m of zero: symmetric |
-| pale red, fading in | +37 to +95 m: weak warm core | +37 to +95 m: weak upper warm core | +5 to +12 m: crossing Hart's 10 m line; onset if at a low center |
-| solid red | above +95 m: warm core; a hurricane reads +100 to +300 | above +95 m: deep warm core, the hurricane signature | above +12 m: asymmetric; warm air on the right of the deep-layer flow, cold on the left, the normal transition geometry |
-| pale blue, fading in | minus 37 to minus 95 m: weak cold core | minus 37 to minus 95 m: upper core going cold; transition under way | minus 5 to minus 12 m: weak reversed asymmetry |
-| solid blue | below minus 95 m: cold core; an extratropical low reads minus 100 to minus 300 | below minus 95 m: cold aloft; mature extratropical low, or a seclusion's cold upper level | below minus 12 m: warm air on the left of the flow; check the steering direction before trusting it |
+| transparent | within about 37 m of zero: core neither warm nor cold in the layer | same | within 5 m of zero: symmetric |
+| pale, fading in | red, +37 to +95 m: weak warm core | red, +37 to +95 m: weak upper warm core | magenta, +5 to +10 m: approaching Hart's 10 m line |
+| solid positive | red, above +95 m: warm core; a hurricane reads +100 to +300 | red, above +95 m: deep warm core, the hurricane signature | magenta to purple, from +10 m: asymmetric; warm air on the right of the deep-layer flow, cold on the left, the normal transition geometry; onset if at a low center |
+| pale, fading in | blue, minus 37 to minus 95 m: weak cold core | blue, minus 37 to minus 95 m: upper core going cold; transition under way | teal, minus 5 to minus 10 m: weak reversed asymmetry |
+| solid negative | blue, below minus 95 m: cold core; an extratropical low reads minus 100 to minus 300 | blue, below minus 95 m: cold aloft; mature extratropical low, or a seclusion's cold upper level | teal, below minus 10 m: warm air on the left of the flow; check the steering direction before trusting it |
 
-Reading the three together at a low center:
+Reading the three together at a low center (HVTL, HVTU, HB):
 
-- red, red, transparent: symmetric deep warm core, a hurricane (class 0).
-- red, red, red: a hurricane meeting a front, onset passed (class 2).
-- red, blue, red: transition under way, upper core gone (class 3).
-- blue, blue, red: extratropical low on a front (class 4).
-- blue, blue, transparent: mature occluded low (class 5).
-- red, blue, transparent: warm seclusion (class 1).
+- red, red, clear: symmetric deep warm core, a hurricane (class 0).
+- red, red, magenta: a hurricane meeting a front, onset passed (class 2).
+- red, blue, magenta: transition under way, upper core gone (class 3).
+- blue, blue, magenta: extratropical low on a front (class 4).
+- blue, blue, clear: mature occluded low (class 5).
+- red, blue, clear: warm seclusion (class 1).
 
 Away from a low center the three fields are still physical, but they
 describe the environment rather than a storm. HB is the thickness
 gradient across the flow, so a global HB map paints the low-level
-baroclinic zones red; the 10 m line means nothing there. HVTL and HVTU
+baroclinic zones magenta; the 10 m line means nothing there. HVTL and HVTU
 away from a low are minus the layer's thermal wind magnitude over the
 window: where the height gradient strengthens with height, the window's
 height range grows with height and the term reads blue. Blue HVTL is a
@@ -588,7 +594,8 @@ checking drawn fronts against HB, see `ANALYSIS_GUIDE.md`.
 
 - Load: Product Browser, Grid, model, Hart CPS products, Surface. Or the
   saved procedure.
-- Colors: CPS_CoreDiverging for HVTL, HVTU, HB, and HCPSidx;
+- Colors: CPS_CoreDiverging for HVTL, HVTU, and HCPSidx (red warm,
+  blue cold); CPS_Asymmetry for HB (magenta positive, teal negative);
   CPS_HartClass for the class.
 - Read: class at the MSLP center, never the blob's color or footprint.
   0 symmetric deep warm, 1 symmetric shallow warm, 2 asymmetric deep warm,

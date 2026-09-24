@@ -17,8 +17,10 @@ OPC hand analyses. Treat them as a second opinion until that is done.
 
 - **HB** is the 900 to 600 hPa thickness gradient across the
   deep-layer flow, averaged over a 1000 km square and scaled to Hart's
-  units. On a global map it paints the low-level baroclinic zones red.
-  Bright red inside a red band is where the gradient is concentrated,
+  units. On a global map it paints the low-level baroclinic zones
+  magenta (its colormap is CPS_Asymmetry: magenta for positive B, teal
+  for negative, because B is an asymmetry, not a temperature). Deep
+  purple inside a magenta band is where the gradient is concentrated,
   which is where a surface front lives. It is a map of thermal
   contrast, not a front locator: the averaging blurs a 100 km front
   into a band several hundred kilometers wide.
@@ -38,8 +40,9 @@ at closed-low centers, and the class is blank away from them.
 
 Two panels cover the analysis uses.
 
-1. **HB** as image with CPS_CoreDiverging, range about minus 50 to
-   +50 m, with MSLP contours and 10 m wind barbs. Add 1000 to 850 hPa
+1. **HB** as image with CPS_Asymmetry, range minus 40 to +40 m (the
+   first solid magenta step is then the 10 m onset line), with MSLP
+   contours and 10 m wind barbs. Add 1000 to 850 hPa
    thickness if the panel is not too busy.
 2. **HCPSclass** as image with CPS_HartClass, range minus 0.5 to 6.5,
    with MSLP contours.
@@ -97,7 +100,7 @@ Overlay HB on the surface analysis with the 10 m winds.
   thermal contrast under it. It is either a trough drawn as a front, a
   front that has weakened past keeping, or a front whose contrast is
   shallower than 900 hPa. Look again before keeping it.
-- A strong red band with no front drawn on it is either a front you
+- A strong magenta band with no front drawn on it is either a front you
   have not found, or a baroclinic zone that has not yet made a surface
   front. The wind barbs decide: a wind shift along the band says front,
   no shift says zone.
@@ -199,8 +202,8 @@ extensions and would be two more fields from the same inputs.
 What each synoptic feature looks like on the three fields, with the
 class where a closed low is present. Colors are for the shipped ranges
 (HVTL and HVTU plus or minus 300 m, HB plus or minus 40 m): "red" and
-"blue" mean solid color, "pale" the fading band, "clear" the
-transparent band near zero. Read the class only at a closed low; read
+"blue" on HVTL and HVTU, and "magenta" and "teal" on HB, mean solid
+color, "pale" the fading band, "clear" the transparent band near zero. Read the class only at a closed low; read
 HVTL, HVTU and HB anywhere.
 
 ### 4.1 At a closed low
@@ -208,9 +211,9 @@ HVTL, HVTU and HB anywhere.
 | Feature | HVTL | HVTU | HB | Class | What to look for |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | Hurricane or typhoon | red, +100 to +300 | red, +100 to +250 | clear | 0 | tight MSLP, no fronts; index above +2 |
-| Tropical cyclone meeting a front | red | red | red, 10 to 30 | 2 | onset; first front to the low |
-| Transitioning tropical cyclone | red, falling | blue | red, 30 to 50 | 3 | upper core gone; warm and cold fronts |
-| Extratropical low on a front, frontal wave | blue | blue | red | 4 | the everyday developing low |
+| Tropical cyclone meeting a front | red | red | magenta, 10 to 30 | 2 | onset; first front to the low |
+| Transitioning tropical cyclone | red, falling | blue | magenta, 30 to 50 | 3 | upper core gone; warm and cold fronts |
+| Extratropical low on a front, frontal wave | blue | blue | magenta | 4 | the everyday developing low |
 | Mature occluded low, Norwegian type | blue | blue | clear or pale | 5 | occlusion spirals to the center |
 | Warm seclusion, Shapiro-Keyser type | red, +50 to +250 | blue | clear | 1 | bent-back warm front, fractured cold front, T-bone; often the wind peak |
 | Cut-off low, cold low | blue | blue, strongly | clear | 5 | sits off the jet; slow moving; no surface fronts or weak ones |
@@ -223,17 +226,17 @@ HVTL, HVTU and HB anywhere.
 
 | Feature | HVTL | HVTU | HB | What to look for |
 | :--- | :--- | :--- | :--- | :--- |
-| Surface front, low-level baroclinic zone | blue band | any | red band | the front sits on the wind shift inside the band |
-| Polar jet axis | any | blue band | pale or red | follows the jet; the upper thermal wind |
-| Deep baroclinic zone, front under the jet | blue | blue | red | the main polar front; the storm track |
-| Shallow front: arctic, coastal, marine | blue | clear | red or pale | no jet above; often sharp and short |
+| Surface front, low-level baroclinic zone | blue band | any | magenta band | the front sits on the wind shift inside the band |
+| Polar jet axis | any | blue band | pale or magenta | follows the jet; the upper thermal wind |
+| Deep baroclinic zone, front under the jet | blue | blue | magenta | the main polar front; the storm track |
+| Shallow front: arctic, coastal, marine | blue | clear | magenta or pale | no jet above; often sharp and short |
 | Elevated baroclinic zone, jet over the warm sector | clear | blue | pale | no surface front; a lifted or upper front |
-| Cold dome under the jet, overrunning | red | blue | pale or red | cold-air damming, arctic high under warm advection; freezing spray and frozen precipitation in winter |
+| Cold dome under the jet, overrunning | red | blue | pale or magenta | cold-air damming, arctic high under warm advection; freezing spray and frozen precipitation in winter |
 | Shallow cold high, arctic high | red | clear | clear | the high fades aloft |
 | Warm subtropical high, ridge | pale blue | pale blue | clear | the ridge builds aloft; weak signal |
 | Warm sector, tropical air | clear | clear | clear | nothing to see, which is the point |
-| Open trough, no closed low | blue along the axis | blue | red flanks | class blank; the fields still show the trough's structure |
-| Easterly flow along a front, north side of a block | any | any | blue | warm air on the left of the flow; check the steering |
+| Open trough, no closed low | blue along the axis | blue | magenta flanks | class blank; the fields still show the trough's structure |
+| Easterly flow along a front, north side of a block | any | any | teal | warm air on the left of the flow; check the steering |
 
 ### 4.3 In the animation
 
@@ -257,12 +260,12 @@ HVTL, HVTU and HB anywhere.
   baroclinic zone HB can read 40 m or more and HVTL minus 150 m with no
   low anywhere. Hart's tests are for a storm, applied at the storm's
   center; away from lows the fields are environment maps (sections 3.7 and 4).
-- **Blue HB is a flag, not a finding.** Negative HB means the warm air
+- **Teal HB is a flag, not a finding.** Negative HB means the warm air
   is on the left of the deep-layer flow. That is real for easterly flow
   along a front, for the north side of a block and for some seclusions.
   It is also what you get when the deep-layer steering points against
   the low's actual motion, which swaps left and right. Check the 850 to
-  300 hPa mean flow before reading anything into blue.
+  300 hPa mean flow before reading anything into teal.
 - **HB under-reads a storm's own asymmetry.** For a thickness
   asymmetry confined to the storm scale it reads about 60% of Hart's
   value, which is why onset can trail the Florida State page by a
@@ -312,12 +315,12 @@ Before the analysis goes out:
 - [ ] Every transitioning tropical cyclone has an onset and a
       completion hour read from HB and HVTL, and the symbol and fronts
       follow those hours.
-- [ ] Every drawn front sits inside a red HB band, or has a reason not
+- [ ] Every drawn front sits inside a magenta HB band, or has a reason not
       to.
 - [ ] Every strong HB band without a front has been checked against the
       wind barbs.
 - [ ] Fronts marked dissipating have falling HB over two or more frames.
-- [ ] Any blue HB near a low has had its steering direction checked.
+- [ ] Any teal HB near a low has had its steering direction checked.
 
 ---
 

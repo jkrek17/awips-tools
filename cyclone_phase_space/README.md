@@ -579,18 +579,21 @@ from the legend right-click menu. Two working routes:
    level and paste the matching rules from `cyclone_phase_space/D2D/styleRules/cpsStyleRules.xml`
    into them. The file is kept in the base schema for that purpose.
 
-Colormaps: copy `cyclone_phase_space/D2D/colormaps/Grid/CPS_CoreDiverging.cmap` and
-`CPS_HartClass.cmap` to
+Colormaps: copy `cyclone_phase_space/D2D/colormaps/Grid/CPS_CoreDiverging.cmap`,
+`CPS_Asymmetry.cmap` and `CPS_HartClass.cmap` to
 `/awips2/edex/data/utility/common_static/site/<SITE>/colormaps/Grid/`:
 
 ```
 /awips2/edex/data/utility/common_static/site/<SITE>/colormaps/Grid/CPS_CoreDiverging.cmap
+/awips2/edex/data/utility/common_static/site/<SITE>/colormaps/Grid/CPS_Asymmetry.cmap
 /awips2/edex/data/utility/common_static/site/<SITE>/colormaps/Grid/CPS_HartClass.cmap
 ```
 
 (VERIFY the exact colormaps path for your AWIPS version.)
-`CPS_CoreDiverging` is used by `HVTL`, `HVTU`, `HCPSidx`, and `HB`;
-`CPS_HartClass` is used by `HCPSclass` only. Restart CAVE. Even
+`CPS_CoreDiverging` (red warm, blue cold) is used by `HVTL`, `HVTU` and
+`HCPSidx`; `CPS_Asymmetry` (magenta positive, teal negative) by `HB`,
+because B is an asymmetry, not a temperature; `CPS_HartClass` by
+`HCPSclass` only. Restart CAVE. Even
 without the style rules, both then appear in the right-click legend
 menu under Change Colormap, listed under Grid (a separate colormap
 subfolder at site level was not possible on the OPC build, so both

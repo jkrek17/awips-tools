@@ -91,16 +91,19 @@
         </imageStyle>
     </styleRule>
 
-    <!-- Parameter B, meters (900-600 hPa equivalent). A diverging map is
-         used, not the categorical one, so a rare negative B (warm air on
-         the wrong side of the track - not the usual asymmetric
-         configuration) is still visible rather than clipped. -->
+    <!-- Parameter B, meters (900-600 hPa equivalent). Its own map,
+         CPS_Asymmetry (magenta for positive, teal for negative,
+         transparent within 5 m of zero, first opaque step at the 10 m
+         onset line with this +/-40 m range), because B is an asymmetry,
+         not a temperature, and the red/blue core map read as warm/cold.
+         A rare negative B (warm air on the wrong side of the track) is
+         visible in teal rather than clipped. -->
     <styleRule>
         <paramLevelMatch>
             <parameter>HB</parameter>
         </paramLevelMatch>
         <imageStyle>
-            <defaultColormap>Grid/CPS_CoreDiverging</defaultColormap>
+            <defaultColormap>Grid/CPS_Asymmetry</defaultColormap>
             <range scale="LINEAR">
                 <minValue>-40</minValue>
                 <maxValue>40</maxValue>
