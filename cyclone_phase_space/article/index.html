@@ -738,7 +738,7 @@
     page's upper term at peak identifies the single frame of class 0 as a
     marginal upper term rather than a deep warm core. The next cycle
     (2026 September 20 0600 UTC) was sampled with all four products at
-    one point per frame (Figure 10 shows the 48&nbsp;h frame): HVTL/HVTU/HB of +128/+176/6&nbsp;m at 0&nbsp;h
+    one point per frame: HVTL/HVTU/HB of +128/+176/6&nbsp;m at 0&nbsp;h
     (class 0), +107/+147/13&nbsp;m at 24&nbsp;h (class 2, onset passed),
     +114/&minus;102/36&nbsp;m at 48&nbsp;h (class 3), +22/&minus;284/46&nbsp;m
     at 72&nbsp;h (class 3), +241/&minus;295/0.5&nbsp;m at 96&nbsp;h at
@@ -779,25 +779,29 @@
 
   <figure id="fig10">
     <img src="figures/fig10_cave_4panel.jpg"
-         alt="Four-panel screen capture of the AWIPS CAVE display at the 48 hour frame of the 20 September 0600 UTC GFS run, centered on a typhoon east of Japan at 976 hPa. Top left: the HCPSclass field, a green block over the storm reading 3. Top right: parameter B, a red to green shaded field reading 36. Bottom left: the lower and upper thermal wind fields, a bright square around the storm reading 114 and minus 102. Bottom right: the phase index, reading 0.87.">
+         alt="Four-panel screen capture of the AWIPS CAVE display over North America and the North Atlantic at 6 hours of the 24 September 0600 UTC GFS run. Top left: the class field with MSLP, a green and magenta block at a 959 hectopascal low south of Greenland and smaller blocks at other lows. Top right: HB in magenta bands along the polar front and the subtropical zone, with the band wrapped around the Greenland low and clear at its center. Bottom left: HVTL with 850 hectopascal wind, red at the Greenland low's center and blue along the front. Bottom right: HVTU with 300 hectopascal wind arrows, blue under the jet and at the Greenland low.">
     <figcaption><strong>Figure 10.</strong> The four-panel CAVE
-      procedure at 48&nbsp;h of the 2026 September 20 0600&nbsp;UTC GFS
-      run, cropped from a full-screen capture. Top left HCPSclass
-      (3, asymmetric shallow warm core); top right HB (36&nbsp;m); bottom left
-      HVTL and HVTU overlaid (+114 and &minus;102&nbsp;m); bottom right
-      HCPSidx (0.87), all sampled at the 976&nbsp;hPa center at
-      38.2&deg;N 148.5&deg;E. The color bar ranges are the ones set on the
-      workstation. The square footprint of the thermal wind fields
-      (Section 2) and the closed-low mask restricting every product to
-      the storm are both visible. As in Figure 9, the class legend in
-      the capture predates the change to Hart's term
-      "asymmetric".</figcaption>
+      procedure on the North Atlantic at 6&nbsp;h of the 2026 September
+      24 0600&nbsp;UTC GFS run, cropped from a full-screen capture, with
+      the shipped colormaps. Top left HCPSclass with MSLP; top right HB
+      on the CPS_Asymmetry map (&plusmn;40&nbsp;m, magenta positive, teal
+      negative) with MSLP; bottom left HVTL on the core map
+      (&plusmn;300&nbsp;m) with the 850&nbsp;hPa wind; bottom right HVTU
+      on the core map with the 300&nbsp;hPa wind. The 959&nbsp;hPa low
+      south of Greenland carries the warm seclusion signature: red HVTL
+      and blue HVTU at the center, HB near zero there with the magenta
+      band wrapped around the low, and a class block of 3 with 1 on the
+      flanks. The square footprints of the thermal wind fields
+      (Section 2) are visible at every low. The class legend in the
+      capture carries the product name as installed at the
+      time.</figcaption>
   </figure>
 
   <p>
-    Figure 11 shows the same four products on the North Atlantic, the
-    Ocean Prediction Center's own domain, at five hours of the 2026
-    September 24 0600&nbsp;UTC GFS run, with the shipped colormaps: the
+    Figures 10 and 11 show the four products on the North Atlantic,
+    the Ocean Prediction Center's own domain, in the 2026 September 24
+    0600&nbsp;UTC GFS run, Figure 10 the 6&nbsp;h frame in full and
+    Figure 11 five frames from 6 to 126&nbsp;h, with the shipped colormaps: the
     class palette, the asymmetry map on HB, and the core map on the
     thermal wind terms, with the 850&nbsp;hPa wind over HVTL and the
     300&nbsp;hPa wind over HVTU. Away from the lows the three fields read
@@ -809,7 +813,7 @@
     the 300&nbsp;hPa wind arrows run, the upper baroclinic zone under the
     jet; HVTL is blue under the front, red over the interior where the
     surface highs sit behind the fronts, and red across the subtropics
-    where the trade-wind easterlies fade with height. At 6&nbsp;h a
+    where the trade-wind easterlies fade with height. At 6&nbsp;h (Figure 10) a
     959&nbsp;hPa low south of Greenland carries the warm seclusion
     signature at its center, red HVTL, blue HVTU, HB near zero with the
     magenta band wrapped around it, and a class block of 3 with 1 on the
