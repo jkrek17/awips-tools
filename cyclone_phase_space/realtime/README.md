@@ -39,6 +39,8 @@ products across, like the article's Figure 12.
 | `--out DIR` | `realtime/out` | Output root; frames go to `DIR/<cycle>/`, downloads to `DIR/cache/<cycle>/`. |
 | `--source` | `nomads` | `nomads` or `aws`. NOMADS falls back to AWS by itself after 3 failed tries with backoff (2 s, 4 s). |
 | `--plain` | off | Skip cartopy and draw plain lon/lat maps (see coastlines below). |
+| `--track NAME:LAT,LON[:FHR0[:FHR1]]` | none | Follow a low from LAT,LON (degrees, west negative) at forecast hour FHR0 (default 0), optionally only up to hour FHR1, and draw its phase diagrams instead of the maps; repeatable. See "Storm-following phase diagrams" below. |
+| `--hart-bands` | off | Also fetch HGT every 50 hPa from 900 to 300 hPa and compute the thermal wind terms over Hart's own 900-600 and 600-300 hPa bands (`executeBand7`); added to the npz as `hvtl_hart`, `hvtu_hart`, or to the track tables. |
 
 Run time on this machine for the five natl frames above, from an empty
 cache: about 50 s in total (per frame about 1.5 s download and decode
@@ -56,12 +58,18 @@ Per forecast hour, 17 messages of `gfs.tHHz.pgrb2.0p25.fFFF`:
 - LAND at the surface (the land-sea mask, used only for the fallback
   coastline).
 
-**NOMADS** (default): one request to
+With `--hart-bands`, HGT also at 900, 800, 750, 650, 600, 550, 450 and
+350 mb (25 messages).
+
+**NOMADS** (default): requests to
 `https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl` with `var_`
 and `lev_` flags and, for a region, the `subregion` box. The filter
-takes the cross product of the variables and levels, so a few unneeded
-messages (UGRD 925 and 400 mb, surface orography) come along and are
-ignored; a natl file is about 7 MB. The box is the region plus 10
+takes the cross product of the variables and levels, so the variables
+are grouped by their level sets and each group is one request (HGT on
+its levels, UGRD and VGRD on theirs, PRES and LAND at the surface,
+PRMSL), concatenated into one file; only surface orography comes along
+unasked and is ignored. A natl file is about 7 MB, a global file with
+Hart's levels about 18 MB. The box is the region plus 10
 degrees on every side (natl: 110W to 30E, 5S to 90N; npac: 110E to
 100W, 5S to 80N) so the 500 km window, the 300 to 500 km closed-low
 ring and the half-disks of B are complete at the plotted edge; the
@@ -152,6 +160,157 @@ Downloads are kept under `out/cache/<cycle>/`:
 serve any region). A rerun finds them and does no network traffic; the
 products and figures are always recomputed (about 5 s a frame). Delete
 the cache directory to refetch. `out/` is ignored by git.
+
+## Storm-following phase diagrams (`--track`)
+
+`--track NAME:LAT,LON[:FHR0[:FHR1]]` follows a low through the requested hours
+and draws its Hart phase diagrams the way the Florida State University
+cyclone phase pages draw them, so the two can be compared by eye. The
+tracking and plotting live in `track_cps.py`, which reuses this
+script's fetch, decode and compute functions; with `--track` no maps or
+npz files are written.
+
+    python3 gfs_cps.py --cycle 2026092412 --region global --hours $(seq 0 6 198) \
+        --track EPAC:15.5,-155.5 --track GREENLAND:62,-20 --track LABRADOR:61.5,-63:0:96 --hart-bands
+
+Use `--region global`: a track that leaves a regional box (plus its
+margin) simply ends there. All tracks of a run share the frames, so
+several lows cost no more than one. Downloads run ahead of the
+computation in two threads.
+
+**Tracker.** At FHR0 the center is the MSLP minimum nearest the seed
+within 400 km. At every later frame the first guess is the last center
+moved on by the last 6 h motion (the last center itself at the second
+frame), and the search radius is 60 km/h times the hours since the last
+fix, capped at 700 km (360 km at 6 h spacing). A candidate is a grid
+point that is the lowest of its +/- 1 degree box (9 x 9 points); the
+candidate nearest the first guess wins. A minimum of 1018 hPa or more
+is not a candidate (FSU's tracker uses the same limit, and a filled low
+otherwise hands over to any weak minimum nearby), nor is one where the
+surface pressure is under 950 hPa (terrain above about 500 m, where
+MSLP is extrapolated: the Greenland ice cap, Iceland's interior). If
+there is none, the track coasts one frame on the extrapolated motion (that frame is left out of
+the table) and tries again with the larger radius; a second miss ends
+it. An optional FHR1 in the spec (`NAME:LAT,LON:0:96`) stops the track
+after that hour, for a low that is lost or replaced by another after it.
+The center is refined to a fraction of a cell by a parabola through
+the minimum and its neighbors along each axis.
+
+**Sampling.** HVTL, HVTU, HB, HCPSidx and the Hart-band terms are
+sampled bilinearly at the refined center (corners without a value are
+dropped and the rest renormalized); HCPSclass is taken at the nearest
+grid point (blank where the module found no closed low); `mslp_hpa` is
+the grid-point minimum. The products are the full-grid ones, so the
+values are exactly what the maps show there.
+
+**Motion.** `motion_kt` and `heading_deg` (toward, clockwise from
+north) are centered finite differences of the track positions over the
+neighboring fixes (12 h), one-sided at the ends. `steering_heading_deg`
+and `steering_kt` are the module's own motion proxy at the center: the
+850/700/500/300 hPa mean wind (`steering`) averaged over the 500 km
+window (`steering_window_mean`), as `executeB` uses it.
+
+**B with the track motion.** `hb_track` is `parameter_b_grid` on the
+same 925-700 hPa thickness (below-ground masked, times 1.4548) with
+`u_s`, `v_s` a uniform field of the track motion, computed on a box of
++/- 1000 km around the center and sampled there. The same box with the
+steering proxy reproduces the full-grid HB to 1e-6 m, which checks that
+the box holds the whole window. With `--hart-bands`, `hb_hart` is the
+same with Hart's own 900-600 hPa thickness and no rescaling. Unlike HB,
+which is blank where the steering proxy is under 2 m/s
+(`MIN_STEERING_MS`), these use any nonzero track motion, as FSU's B
+uses its tracker's motion whatever the speed.
+
+**Hart bands.** `hvtl_hart` and `hvtu_hart` are `executeBand7` over
+900, 850, ..., 600 and 600, 550, ..., 300 hPa (the least-squares slope
+of the window's height range against ln p, as for the standard bands),
+on the same 0.25 degree grid and 500 km window.
+
+Outputs in `out/<cycle>/`:
+
+- `track_<NAME>.csv`: one row per fix, columns `fhr, valid, lat, lon,
+  mslp_hpa, hvtl, hvtu, hb, idx, class, hvtl_hart, hvtu_hart, hb_track,
+  motion_kt, heading_deg, steering_heading_deg`, then `steering_kt` and
+  `hb_hart`; the Hart columns are blank without `--hart-bands`.
+- `phase_<NAME>.png`, 2400 x 1000 px: (a) B against -V_T^L and (b)
+  -V_T^U against -V_T^L on Hart's quadrants
+  (`article/figures/diagram_style.py`) with the B = 10 m and zero
+  lines; the 24 h running mean (centered, 5 frames, fewer at the track
+  ends) of the standard terms as the main line with markers every 6 h
+  colored by MSLP in FSU's steps (1015 black, 1010 purple, 1000 blue,
+  990 cyan, 980 green, 970 yellow, 960 orange, 950 magenta; a step
+  covers the pressures above the next deeper step), the analysis solid
+  and the forecasts with an x, day of month at 00Z, A and Z at the
+  ends; the raw 6-hourly series as a faint line; the 24 h mean of the
+  Hart-band terms (with the track-motion B on (a)) dashed with open
+  diamonds. Axes are at least -50 to 250 m by -10 to 30 m (FSU's zoom
+  window) on (a) and -50 to 250 by -100 to 100 m on (b), widened to fit
+  the data. (c) the raw time series of the three parameters (Hart
+  bands dashed, track-motion B dotted) with the class strip along the
+  top and the onset (B above 10 m, purple) and completion (-V_T^L
+  below 0 after onset, red) hours of the smoothed series marked
+  (solid: standard; dashed: Hart bands with track-motion B), which the
+  title block also lists.
+
+### Comparing with the FSU pages
+
+The FSU GFS page for a cycle is
+`http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/YYMMDDHH/` (plain
+http). Its `alltrack.png` map shows every cyclone of the run with its
+number (black: existing at the analysis; red: forms later in the
+forecast); cyclone N's page is `N.html`, and the images to screenshot
+are `N.phase1.zoom.png` (B against -V_T^L) and `N.phase2.zoom.png`
+(-V_T^U against -V_T^L), with `N.track.png` for the track. Put
+them next to `phase_<NAME>.png` and compare the shape of the path, the
+quadrant it is in, the day labels and the colors. Expect these
+differences:
+
+- FSU draws the trajectory from the first analysis of the storm (days
+  before the run for a long-lived cyclone), so its path starts earlier;
+  compare from the circled current position C onward. A low FSU picked
+  up only later in the forecast ("Future cyclone") starts at that hour.
+- FSU uses the 0.5 degree GFS; this uses 0.25 degree. Minima,
+  and the terms near a compact warm core, differ somewhat.
+- FSU uses Hart's bands, 900-600 and 600-300 hPa every 50 hPa; the
+  standard trace here uses 925-850-700 and 500-400-300 hPa. The dashed
+  Hart-band trace is the one to compare. Where 900 hPa is below ground
+  (Greenland, Labrador, high terrain) the bands are masked differently.
+- FSU computes over a 500 km radius circle; the module's thermal wind
+  terms use a square 500 km window (more area, corners farther out), so
+  the height range, and hence $-V_T$, is larger in magnitude.
+- FSU's B takes the motion from its tracker; the standard B here uses
+  the module's steering proxy. `hb_track` (dotted, and on the dashed
+  trace of (a)) uses the track's own motion, which is closer to FSU.
+- The 24 h running mean is applied to both, but FSU's includes the
+  frames before the run, so its first day differs.
+- FSU's tracker needs MSLP under 1018 hPa and a 24 h lifetime; a weak or
+  short-lived low may not be on its list.
+
+### Example: 2026092412
+
+    python3 gfs_cps.py --cycle 2026092412 --region global --hours $(seq 0 6 198) --hart-bands \
+        --track EPAC:15.5,-155.5 --track GREENLAND:62,-20 --track LABRADOR:61.5,-63:0:96
+
+takes about 6 minutes here (34 global frames at about 10 s of
+computation each; the 18 MB NOMADS downloads run ahead and are hidden
+behind it). The three lows and their FSU pages for the same run:
+
+| Low | Our track | FSU cyclone |
+|---|---|---|
+| EPAC, tropical cyclone near 15N 156W | 0 to 198 h, 998 hPa to 963 hPa (84 h) to 977 hPa at 46.9N 160.9W | [#1](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/1.html), existing cyclone, through +198 h |
+| GREENLAND, 958 hPa low southwest of Iceland at 60.6N 22.75W | 0 to 114 h, ends when it fills (the next minimum is over 1018 hPa) | [#19](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/19.html), existing cyclone, through +54 h |
+| LABRADOR, cold-core low at 61.5N 63.1W | 0 to 96 h (after 96 h the nearest minimum is a different low south of Iceland) | [#48](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/48.html), picked up as a "future cyclone" from +6 h, through +96 h |
+
+The 0.25 degree GFS keeps GREENLAND as a closed minimum circling north
+of Iceland well past FSU's +54 h end; after a missed frame at 84 h the
+track resumes about 500 km west at 90 h on a weak minimum (1000 to 1010
+hPa) that the module does not count as a closed low.
+
+With the standard bands the EPAC storm reaches B = 10 m (24 h mean) at
++132 h, with Hart's bands and the track-motion B at +144 h; the lower
+term stays warm (100 to 130 m) to the end, so there is no completion
+within 198 h in either, as on FSU's diagram (B crosses 10 m near its
+00Z 1 October label, about +156 h, and the lower term stays warm).
 
 ## Lows table
 
