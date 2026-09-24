@@ -187,8 +187,10 @@ km of Greenland and Iceland instead of carrying that hidden bias.
 ### 2.5 Closed-low mask
 
 The class and index products are shown only near closed lows. The mask
-is built from mean sea level pressure (`PMSL` at `MSL` in the XML, Pa
-or hPa, normalized by the same median rule as surface pressure). Why
+is built from mean sea level pressure (`MSLP` or `PMSL` in the XML,
+Pa or hPa, normalized by the same median rule as surface pressure;
+four `<Method>` blocks are tried in order and the last falls back to
+1000 hPa height converted at 8 m per hPa, see 5.2 step 5). Why
 MSLP: it is one field, the same surface the forecaster contours, so a
 detected low is the one on the chart; it is defined everywhere, with no
 extrapolation below sea level inside a deep low (as there is for
@@ -635,12 +637,16 @@ They appear under Grid in the legend's Change Colormap menu.
    OPC-confirmed `ORIENTATION_MODE = 1` in `cps_HartCPS.py` (section
    2.7) is the first thing to check; it affects only these two
    products' half-disk (north/east) step.
-5. If HCPSclass and HCPSidx fail to load or come back empty while the
-   other three products work, check the mean sea level pressure Field
-   `<Field abbreviation="PMSL" level="MSL"/>`: neither the abbreviation
-   nor the level spelling could be verified before release. Try
-   `level="0.0MSL"`, then no `level` attribute, then the model's own
-   MSLP abbreviation (see the VERIFY note in `cps_HCPSidx.xml`).
+5. If HCPSclass and HCPSidx fail to load or come back empty for one
+   model while the other three products work, the mean sea level
+   pressure input did not resolve for that model. The definitions try
+   four `<Method>` blocks in order: `MSLP` at `MSL` (the baseline
+   derived parameter behind the Volume Browser's "MSL Press"), `PMSL`
+   at `MSL` (verified on GFS), `MSLP` at `Surface`, and `GH` at
+   `1000MB` with the trailing `pmslKind` constant 1 (height converted
+   to MSLP at 8 m per hPa). Find what the model's "MSL Press" resolves
+   to (README, Install) and add it as another `<Method>` block in both
+   files.
 
 **Installation risk: `ORIENTATION_MODE`.** This is the one setting in
 the whole package that can be silently wrong on a new site or a new
@@ -689,7 +695,8 @@ bundle file extracted from the saved procedure:
 | HB/HCPSclass mirrored or lobed at a low | wrong `ORIENTATION_MODE` in `cps_HartCPS.py` | check against mode 1 (section 2.7); see 5.2 step 4 |
 | whole field green on load | style rule not applied | pick the colormap from the legend or load the procedure |
 | Hart products vanish after adding P | P field level spelling | check how base definitions reference Surface |
-| HCPSclass/HCPSidx missing or empty while HVTL, HVTU, HB load | PMSL abbreviation or MSL level spelling not in the inventory | try `level="0.0MSL"`, no `level`, or the model's own MSLP abbreviation (5.2 step 5) |
+| HCPSclass/HCPSidx missing or empty for one model while HVTL, HVTU, HB load | none of the four MSLP `<Method>` blocks resolves for that model | add a `<Method>` with the model's own MSLP name (5.2 step 5) |
+| CAVE reports "unexpected element menuTemplate" | `cpsFields.xml` placed in a derivedParameters or styleRules folder | remove it; it belongs under cave_static `menus/volumebrowser/` if used at all |
 | blank over land | below-ground mask | expected |
 | HVTL/HVTU/HCPSclass blank over open water near Greenland or Iceland | window valid-fraction mask (2.4): a level's 500 km window is mostly over masked terrain | expected; the value belongs to the mask, not the model |
 | HB/HCPSclass missing while other Hart products load | coriolis pseudo-field abbreviation not recognized | replace the `coriolis` Field with `<ConstantField value="1.0"/>` (assumes Northern Hemisphere) |

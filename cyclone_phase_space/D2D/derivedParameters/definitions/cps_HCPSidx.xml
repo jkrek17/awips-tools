@@ -46,8 +46,40 @@
 -->
 <DerivedParameter abbreviation="HCPSidx" name="Hart CPS Index -3 to +3" unit="">
     <Method name="cps_HartCPS.executeIndexStd" levels="Surface">
-        <!-- pmsl: mean sea level pressure (Pa or hPa) for the closed-low
-             mask - VERIFY, see above -->
+        <!-- Method 1: the baseline MSLP derived parameter (the Volume Browser "MSL Press"), which aliases each model's own field -->
+        <Field abbreviation="MSLP" level="MSL"/>
+        <Field abbreviation="GH" level="925MB"/>
+        <Field abbreviation="GH" level="850MB"/>
+        <Field abbreviation="GH" level="700MB"/>
+        <Field abbreviation="GH" level="500MB"/>
+        <Field abbreviation="GH" level="400MB"/>
+        <Field abbreviation="GH" level="300MB"/>
+        <Field abbreviation="P" level="Surface"/>
+        <Field abbreviation="dx"/>
+        <Field abbreviation="dy"/>
+        <!-- radiusKm (km): Hart's own 500 km analysis-window half-width,
+             used for both HVTL/HVTU and as the mask's ring_radius_km
+             (the outer edge of the annulus the depth test averages over) -->
+        <ConstantField value="500.0"/>
+        <!-- scaleM (m): tanh squashing scale - roughly the |HVTL|/|HVTU|
+             magnitude that reads as "fully" warm/cold -->
+        <ConstantField value="100.0"/>
+        <!-- depthHpa (hPa): the annulus around a candidate point must
+             average at least this much higher MSLP than the point itself
+             before it counts as a real closed low, not a uniform slope -->
+        <ConstantField value="5.0"/>
+        <!-- blobKm (km): half-width of the blob painted around each
+             detected low's center (a display radius, not the low's own
+             true physical size) -->
+        <ConstantField value="200.0"/>
+        <!-- capHpa: below-ground cap, see cps_HartCPS.py -->
+        <ConstantField value="900.0"/>
+        <!-- pmslKind: 0 = the first Field is mean sea level pressure (Pa or hPa),
+             1 = it is 1000 hPa height, converted at 8 m per hPa -->
+        <ConstantField value="0.0"/>
+    </Method>
+    <Method name="cps_HartCPS.executeIndexStd" levels="Surface">
+        <!-- Method 2: the raw PMSL field (verified on GFS at OPC) -->
         <Field abbreviation="PMSL" level="MSL"/>
         <Field abbreviation="GH" level="925MB"/>
         <Field abbreviation="GH" level="850MB"/>
@@ -75,5 +107,74 @@
         <ConstantField value="200.0"/>
         <!-- capHpa: below-ground cap, see cps_HartCPS.py -->
         <ConstantField value="900.0"/>
+        <!-- pmslKind: 0 = the first Field is mean sea level pressure (Pa or hPa),
+             1 = it is 1000 hPa height, converted at 8 m per hPa -->
+        <ConstantField value="0.0"/>
+    </Method>
+    <Method name="cps_HartCPS.executeIndexStd" levels="Surface">
+        <!-- Method 3: MSLP stored at the Surface level -->
+        <Field abbreviation="MSLP" level="Surface"/>
+        <Field abbreviation="GH" level="925MB"/>
+        <Field abbreviation="GH" level="850MB"/>
+        <Field abbreviation="GH" level="700MB"/>
+        <Field abbreviation="GH" level="500MB"/>
+        <Field abbreviation="GH" level="400MB"/>
+        <Field abbreviation="GH" level="300MB"/>
+        <Field abbreviation="P" level="Surface"/>
+        <Field abbreviation="dx"/>
+        <Field abbreviation="dy"/>
+        <!-- radiusKm (km): Hart's own 500 km analysis-window half-width,
+             used for both HVTL/HVTU and as the mask's ring_radius_km
+             (the outer edge of the annulus the depth test averages over) -->
+        <ConstantField value="500.0"/>
+        <!-- scaleM (m): tanh squashing scale - roughly the |HVTL|/|HVTU|
+             magnitude that reads as "fully" warm/cold -->
+        <ConstantField value="100.0"/>
+        <!-- depthHpa (hPa): the annulus around a candidate point must
+             average at least this much higher MSLP than the point itself
+             before it counts as a real closed low, not a uniform slope -->
+        <ConstantField value="5.0"/>
+        <!-- blobKm (km): half-width of the blob painted around each
+             detected low's center (a display radius, not the low's own
+             true physical size) -->
+        <ConstantField value="200.0"/>
+        <!-- capHpa: below-ground cap, see cps_HartCPS.py -->
+        <ConstantField value="900.0"/>
+        <!-- pmslKind: 0 = the first Field is mean sea level pressure (Pa or hPa),
+             1 = it is 1000 hPa height, converted at 8 m per hPa -->
+        <ConstantField value="0.0"/>
+    </Method>
+    <Method name="cps_HartCPS.executeIndexStd" levels="Surface">
+        <!-- Method 4, fallback for a model with no MSLP in the inventory: 1000 hPa height, converted to an equivalent MSLP at 8 m per hPa (extrapolated inside deep lows and over terrain; the band levels still blank terrain) -->
+        <Field abbreviation="GH" level="1000MB"/>
+        <Field abbreviation="GH" level="925MB"/>
+        <Field abbreviation="GH" level="850MB"/>
+        <Field abbreviation="GH" level="700MB"/>
+        <Field abbreviation="GH" level="500MB"/>
+        <Field abbreviation="GH" level="400MB"/>
+        <Field abbreviation="GH" level="300MB"/>
+        <Field abbreviation="P" level="Surface"/>
+        <Field abbreviation="dx"/>
+        <Field abbreviation="dy"/>
+        <!-- radiusKm (km): Hart's own 500 km analysis-window half-width,
+             used for both HVTL/HVTU and as the mask's ring_radius_km
+             (the outer edge of the annulus the depth test averages over) -->
+        <ConstantField value="500.0"/>
+        <!-- scaleM (m): tanh squashing scale - roughly the |HVTL|/|HVTU|
+             magnitude that reads as "fully" warm/cold -->
+        <ConstantField value="100.0"/>
+        <!-- depthHpa (hPa): the annulus around a candidate point must
+             average at least this much higher MSLP than the point itself
+             before it counts as a real closed low, not a uniform slope -->
+        <ConstantField value="5.0"/>
+        <!-- blobKm (km): half-width of the blob painted around each
+             detected low's center (a display radius, not the low's own
+             true physical size) -->
+        <ConstantField value="200.0"/>
+        <!-- capHpa: below-ground cap, see cps_HartCPS.py -->
+        <ConstantField value="900.0"/>
+        <!-- pmslKind: 0 = the first Field is mean sea level pressure (Pa or hPa),
+             1 = it is 1000 hPa height, converted at 8 m per hPa -->
+        <ConstantField value="1.0"/>
     </Method>
 </DerivedParameter>

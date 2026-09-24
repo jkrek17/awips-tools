@@ -643,6 +643,47 @@ def mslp_hpa(pmsl: np.ndarray) -> np.ndarray:
     """
     return surface_pressure_hpa(pmsl)
 
+
+#: Meters of 1000 hPa height per hPa of mean sea level pressure, the
+#: hydrostatic conversion `pmsl_from_height1000` uses for the fallback
+#: closed-low input on models whose D2D inventory carries no MSLP field.
+HEIGHT1000_M_PER_HPA = 8.0
+
+#: `pmslKind` values accepted by `executeHartClass`/`executeIndexStd`:
+#: 0 means the first field is mean sea level pressure (Pa or hPa), 1
+#: means it is 1000 hPa geopotential height (m), converted by
+#: `pmsl_from_height1000` before the closed-low mask runs.
+PMSL_KIND_PRESSURE = 0
+PMSL_KIND_HEIGHT1000 = 1
+
+
+def pmsl_from_height1000(z1000: np.ndarray) -> np.ndarray:
+    """Equivalent mean sea level pressure (hPa) from 1000 hPa height (m):
+    `1000 + z1000 / HEIGHT1000_M_PER_HPA`, the hydrostatic rule of thumb
+    (about 8 m per hPa near sea level). Used only by the fallback
+    `<Method>` of cps_HCPSidx.xml/cps_HCPSclass.xml for a model whose
+    inventory has no MSLP field, so the detector's 5 hPa ring test then
+    reads 40 m of 1000 hPa height, as the pre-MSLP version of this
+    module did. Missing input becomes NaN.
+    """
+    z = np.asarray(z1000, dtype=float)
+    z = np.where(_missing_mask(z), np.nan, z)
+    return 1000.0 + z / HEIGHT1000_M_PER_HPA
+
+
+def pmsl_input_hpa(pmsl: np.ndarray, pmsl_kind) -> np.ndarray:
+    """Dispatch on `pmslKind`: pressure (Pa or hPa) through `mslp_hpa`,
+    1000 hPa height through `pmsl_from_height1000`. Any other value
+    raises, so a mis-set constant in a definition fails loudly rather
+    than silently testing the wrong units."""
+    kind = int(round(_coerce_scalar(pmsl_kind)))
+    if kind == PMSL_KIND_PRESSURE:
+        return mslp_hpa(pmsl)
+    if kind == PMSL_KIND_HEIGHT1000:
+        return pmsl_from_height1000(pmsl)
+    raise ValueError(f"pmslKind must be {PMSL_KIND_PRESSURE} (pressure) or {PMSL_KIND_HEIGHT1000} (1000 hPa height); got {pmsl_kind!r}")
+
+
 def mask_below_ground(
     z: np.ndarray,
     psfc_hpa: np.ndarray,
@@ -2144,6 +2185,7 @@ def executeHartClass(
     depthHpa=DEFAULT_DEPTH_HPA,
     blobKm=DEFAULT_BLOB_RADIUS_KM,
     capHpa=BELOW_GROUND_CAP_HPA,
+    pmslKind=PMSL_KIND_PRESSURE,
 ):
     """AWIPS derived-parameter entry point for HCPSclass (cps_HCPSclass.xml):
     the joint Hart CPS class -- see `hart_class`'s own docstring for the
@@ -2212,7 +2254,7 @@ def executeHartClass(
     u_s, v_s = steering_window_mean(u_s, v_s, dx, dy, radius_km)
     b = parameter_b_grid(thickness, u_s, v_s, dx, dy, coriolis, radius_km, layer_scale)
 
-    mask = closed_low_mask(pmsl, dx, dy, MIN_RADIUS_KM, radius_km, depth_hpa, blob_radius_km)
+    mask = closed_low_mask(pmsl_input_hpa(pmsl, pmslKind), dx, dy, MIN_RADIUS_KM, radius_km, depth_hpa, blob_radius_km)
 
     return hart_class(b, vtl, vtu, mask, b_threshold_m)
 
@@ -2224,6 +2266,7 @@ def executeIndexStd(
     depthHpa=DEFAULT_DEPTH_HPA,
     blobKm=DEFAULT_BLOB_RADIUS_KM,
     capHpa=BELOW_GROUND_CAP_HPA,
+    pmslKind=PMSL_KIND_PRESSURE,
 ):
     """AWIPS derived-parameter entry point for HCPSidx (cps_HCPSidx.xml).
 
@@ -2254,7 +2297,7 @@ def executeIndexStd(
 
     vtl = thermal_wind_grid([z925, z850, z700], LOWER_BAND, dx, dy, radius_km, psfc_hpa=psfc_hpa, cap_hpa=cap_hpa)
     vtu = thermal_wind_grid([z500, z400, z300], UPPER_BAND, dx, dy, radius_km, psfc_hpa=psfc_hpa, cap_hpa=cap_hpa)
-    mask = closed_low_mask(pmsl, dx, dy, MIN_RADIUS_KM, radius_km, depth_hpa, blob_radius_km)
+    mask = closed_low_mask(pmsl_input_hpa(pmsl, pmslKind), dx, dy, MIN_RADIUS_KM, radius_km, depth_hpa, blob_radius_km)
 
     index = 2.0 * np.tanh(vtl / scale_m) + np.tanh(vtu / scale_m)
     masked = ~mask | ~np.isfinite(vtl) | ~np.isfinite(vtu)
