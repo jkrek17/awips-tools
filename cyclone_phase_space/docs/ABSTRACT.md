@@ -9,25 +9,26 @@ within 500 km of the center, and a low-level thermal asymmetry, from
 which Evans and Hart (2003) defined objective onset and completion times
 for extratropical transition. This work reformulates the parameters as
 gridded AWIPS II derived parameters computed on demand from geopotential
-height on standard isobaric levels, surface pressure and, for the
-asymmetry parameter, the deep-layer wind. At each grid point the height
+height on standard isobaric levels, surface pressure, mean sea level
+pressure and, for the asymmetry parameter, the deep-layer wind. At each grid point the height
 perturbation is evaluated over a 500 km window by a separable sliding-
 extrema filter, the thermal wind is the regression slope against log
 pressure over 925 to 700 hPa and 500 to 300 hPa, below-ground levels are
-excluded, and a closed-low detector on 1000 hPa height restricts
-classification to closed lows about 5 hPa deep. One categorical field
+excluded, the asymmetry parameter is Hart's semicircle difference
+evaluated at every point from half-disk means, and a closed-low detector
+on mean sea level pressure restricts classification to closed lows
+about 5 hPa deep. One categorical field
 assigns each detected low to one of seven classes formed from the
-quadrants of Hart's two diagrams. A global 0.25° grid takes about 2.6 s
+quadrants of Hart's two diagrams. A global 0.25° grid takes about 3 s
 per forecast hour. On GFS forecasts the class followed a typhoon
 through its full transition on the path the Florida State University
 phase diagrams traced for the same run. On a synthetic life cycle
 evaluated with Hart's method and with the gridded method, both assign
-the same class sequence, the gridded onset and completion one to two
-frames later. The square window reads about 12% high for compact
-storms, the 925 to 700 hPa band reads a warm seclusion two to three
-times higher than Hart's layer, and the asymmetry parameter reads a
-storm-scale asymmetry at about 60% of Hart's value while reading a
-uniform environmental gradient exactly.
+the same class sequence, with the gridded onset on the same frame and
+completion one frame later. The square window reads about 12% high for
+compact storms, the 925 to 700 hPa band reads a warm seclusion two to
+three times higher than Hart's layer, and the asymmetry parameter
+peaks within 1% of Hart's value.
 
 ## References
 

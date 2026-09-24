@@ -100,17 +100,17 @@ storm's motion, not to the compass: it is the side to the right of the
 track (in the Northern Hemisphere) versus the side to the left, so a
 large negative B means warm air to the left of the motion, not that
 the storm is symmetric. Hart's threshold for calling that asymmetry
-significant is 10 meters. HB reproduces this idea from a gridded
-approximation, standing in the deep-layer steering wind (the 850 to
-300 hPa mean), horizontally averaged over the same window used for the
-thermal wind terms, for a tracked heading. Averaging the wind over the
+significant is 10 meters. HB computes Hart's own two-semicircle
+difference at every grid point, standing in the deep-layer steering
+wind (the 850 to 300 hPa mean), horizontally averaged over the same
+window used for the thermal wind terms, for a tracked heading. Averaging the wind over the
 window before taking its direction is what cancels a developed storm's
 own circulation and leaves the environmental flow; it is why HB should
 not be trusted blindly for a storm that is barely moving (steering
 under 2 m/s leaves HB blank) or moving against its own steering flow
 (see section 7). HB is also a full field, computed everywhere the
 inputs allow, not only at detected lows: away from a low it is just
-the ambient thickness gradient across the flow at that point, which
+the ambient thickness contrast across the flow at that point, which
 says nothing about a storm, so a large HB reading away from a low is
 not itself a finding, and a large HB of either sign anywhere is worth
 a look at the thickness field.
@@ -212,9 +212,10 @@ Surface. The five Hart products appear together because their names
 start with Hart CPS. If a product is missing for a model, check which
 inputs that model lacks: HVTL and HVTU need their three height levels
 (925/850/700 or 500/400/300) plus surface pressure; HCPSclass and
-HCPSidx also need 1000 hPa height; HCPSclass and HB also need wind at
-850, 700, 500, and 300 hPa and the coriolis field. That is seven
-height levels in all, not six.
+HCPSidx also need mean sea level pressure (for the closed-low test);
+HCPSclass and HB also need wind at 850, 700, 500, and 300 hPa and the
+coriolis field. That is six height levels in all; 1000 hPa height is
+not used.
 
 **Volume Browser.** Only if your site has added the entries to the
 Fields menu; then they are under a Hart CPS heading.
@@ -339,7 +340,7 @@ Reading the three together at a low center (HVTL, HVTU, HB):
 
 Away from a low center the three fields are still physical, but they
 describe the environment rather than a storm. HB is the thickness
-gradient across the flow, so a global HB map paints the low-level
+contrast across the flow, so a global HB map paints the low-level
 baroclinic zones magenta; the 10 m line means nothing there. HVTL and HVTU
 away from a low are minus the layer's thermal wind magnitude over the
 window: where the height gradient strengthens with height, the window's
@@ -543,15 +544,15 @@ scatterometer data, never as a stand-in for any of those.
   thickness overlay before calling onset or completion from HB or
   HCPSclass alone.
 - **HB is a full field, not masked to lows.** Away from a detected
-  low, HB is just the ambient thickness gradient across the flow at
-  that point and says nothing about a storm; under this package's
-  first-order method a symmetric vortex contributes nothing to B at
-  all, and an asymmetry confined to the storm itself reads at about
-  60 percent of Hart's value (a synthetic test; the environment's
-  gradient reads in full), so expect HB to cross 10 m a frame or two
-  later than Hart's diagram would. A large |HB| of either sign, on
-  or off a low, is a cue to check the thickness field, not a finding
-  on its own.
+  low, HB is just the ambient thickness contrast across the flow at
+  that point and says nothing about a storm. At a low, HB is Hart's
+  own semicircle difference: a symmetric vortex contributes nothing,
+  and an asymmetry confined to the storm itself reads at Hart's value
+  (in a synthetic transition HB crossed 10 m on the same frame as
+  Hart's diagram; an earlier version of HB read such an asymmetry at
+  about 60 percent and crossed a frame or two late). A large |HB| of
+  either sign, on or off a low, is a cue to check the thickness field,
+  not a finding on its own.
 - **Blank over high terrain, and near it too.** Greenland, the
   Rockies, and other high ground are blank because the lower levels
   are below the surface there. Within a few hundred kilometers of
@@ -560,8 +561,9 @@ scatterometer data, never as a stand-in for any of those.
   over that masked terrain and is dropped rather than fit through
   sparse data. Both are correct behavior, not missing data.
 - **Weak lows and broad lows are not classified.** The closed-low test
-  is about 40 m (roughly 5 hPa) of height rise between the center and
-  the square 300 to 500 km ring around it; a compact 300 km low clears
+  is 5 hPa of mean sea level pressure rise between the center and the
+  square 300 to 500 km ring around it, read from the same MSLP field
+  you contour; a compact 300 km low clears
   it around 6 hPa deep, but a broad, flat low needs more than 5 hPa of
   true depth to clear the same test and can go unclassified. The
   numbers still exist in HVTL, HVTU, and HB if you need them, but see

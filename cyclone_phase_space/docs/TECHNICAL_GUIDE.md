@@ -19,7 +19,7 @@ The package implements the Hart family:
 
 | Family | Function file | Products | Inputs | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| Hart | `derivedParameters/functions/cps_HartCPS.py` | HVTL, HVTU, HCPSclass, HCPSidx, HB | geopotential height at 1000, 925, 850, 700, 500, 400, 300 hPa (seven levels); u/v wind at 850, 700, 500, 300 hPa; surface pressure; coriolis (HB and HCPSclass only) | experimental |
+| Hart | `derivedParameters/functions/cps_HartCPS.py` | HVTL, HVTU, HCPSclass, HCPSidx, HB | geopotential height at 925, 850, 700, 500, 400, 300 hPa (six levels); u/v wind at 850, 700, 500, 300 hPa; surface pressure; mean sea level pressure (HCPSclass and HCPSidx only, for the closed-low mask); coriolis (HB and HCPSclass only) | experimental |
 
 The function file is self-contained numpy with no imports from the
 rest of the repository, because the CAVE interpreter only sees the
@@ -163,10 +163,10 @@ over open water, where the surface pressure is below 1000 or 925 but
 the extrapolated height is fine, from being treated as terrain.
 Surface pressure arrives in Pa from AWIPS; the code detects Pa versus
 hPa from the finite median and converts. A level is below ground
-wherever the surface pressure is lower than that level's pressure, so
-in any low deeper than 1000 hPa the 1000 hPa height at the center is
-the post-processor's extrapolation; that level feeds only the
-closed-low detector. The 925 hPa level, the lowest in the lower band,
+wherever the surface pressure is lower than that level's pressure. The
+closed-low detector reads MSLP (2.5), which is defined everywhere and
+is not masked; no extrapolated height level feeds it. The 925 hPa
+level, the lowest in the lower band,
 is extrapolated only where the surface pressure is between 900 and
 925 hPa, the core of a major hurricane, and different models'
 extrapolation schemes disagree there; keep that in mind before
@@ -187,34 +187,44 @@ km of Greenland and Iceland instead of carrying that hidden bias.
 ### 2.5 Closed-low mask
 
 The class and index products are shown only near closed lows. The mask
-is built from 1000 hPa height, which is nearly linear in MSLP at about
-8 m per hPa, so a detected low is the one on the MSLP contours. A point
-is a low center when both hold:
+is built from mean sea level pressure (`PMSL` at `MSL` in the XML, Pa
+or hPa, normalized by the same median rule as surface pressure). Why
+MSLP: it is one field, the same surface the forecaster contours, so a
+detected low is the one on the chart; it is defined everywhere, with no
+extrapolation below sea level inside a deep low (as there is for
+1000 hPa height, which an earlier version used) and nothing to mask
+below ground; and the ring test reads directly in pressure. A point is
+a low center when both hold:
 
-1. Candidate: it is within `center_tol_m` (5 m) of the minimum of its
-   own 300 km neighborhood (`MIN_RADIUS_KM`).
-2. Depth: the mean height over the annulus from 300 to 500 km out
-   exceeds the point's height by at least `depthM` (40 m, about 5 hPa).
+1. Candidate: its MSLP is within `center_tol_hpa` (0.6 hPa,
+   `DEFAULT_CENTER_TOL_HPA`) of the minimum of its own 300 km
+   neighborhood (`MIN_RADIUS_KM`).
+2. Depth: the mean MSLP over the annulus from 300 to 500 km out
+   exceeds the point's MSLP by at least `depthHpa` (5 hPa,
+   `DEFAULT_DEPTH_HPA`).
 
 A uniform gradient fails the depth test because the annulus mean equals
 the point's own value on a slope. Detected centers are dilated by
 `blobKm` (200 km) for display. The annulus (a square ring, the
 difference of two square box sums, not a circular one) mean is
-computed from two NaN-aware box sums.
+computed from two NaN-aware box sums. Terrain blanking of the class
+and index comes from the band levels: a point whose 925 hPa height is
+below ground has a NaN `HVTL` (2.4), hence a NaN class and index,
+whatever the mask says.
 
-**In forecaster terms**, the depth test is 40 m (about 5 hPa) of
-height rise between the center and the square 300 to 500 km ring
-around it, not literally "a closed low at least 5 hPa deep". For a
-compact 300 km low the effective floor works out closer to 6 hPa once
-the ring mean and the height-to-MSLP conversion are combined; a
-broader, flatter low needs more than 5 hPa of true depth to clear the
-same 40 m test and can go unclassified even though a forecaster would
-call it closed. An elongated trough with a strong gradient across it
-(rather than along it) can pass both tests at a point that is not
-really a closed low's center, producing a spurious blob; check MSLP
-before trusting an isolated one. Lowering `depthM` to 25 (the
-`<ConstantField>` in `cps_HCPSclass.xml` and `cps_HCPSidx.xml`; see
-4.3) admits weaker lows at the cost of more of these false detections.
+**In forecaster terms**, the depth test is 5 hPa of pressure rise
+between the center and the square 300 to 500 km ring around it, not
+literally "a closed low at least 5 hPa deep". For a compact 300 km low
+the effective floor works out closer to 6 hPa once the ring mean is
+folded in; a broader, flatter low needs more than 5 hPa of true depth
+to clear the same test and can go unclassified even though a
+forecaster would call it closed. An elongated trough with a strong
+gradient across it (rather than along it) can pass both tests at a
+point that is not really a closed low's center, producing a spurious
+blob; check MSLP before trusting an isolated one. Lowering `depthHpa`
+to 3 (the `<ConstantField>` in `cps_HCPSclass.xml` and
+`cps_HCPSidx.xml`; see 4.3) admits weaker lows at the cost of more of
+these false detections.
 
 **Neighboring lows.** Two lows within about 1000 km of each other have
 overlapping 500 km windows and can share detections, and the `blobKm`
@@ -222,14 +232,17 @@ dilation (200 km) can then merge their two blobs into one on the
 display. There is no per-low separation logic; check MSLP for a second
 low inside a blob's footprint before treating it as a single system.
 
-Detector sensitivity (synthetic, `cyclone_phase_space/article/figures/experiments.py`):
-with the shipped 40 m ring test a 40 m deep low is never detected; 50 m
-is detected out to a 300 km e-folding scale, 80 m out to 500 km, 100 m
-out to 600 km, and an 800 km scale low is missed even at 120 m. The
-effective floor is therefore about 6 hPa for a compact low and 10 to
-12 hPa for a broad one. An open trough with a 40 m per 1000 km
-cross-trough gradient produces no detection; a flat-centered 80 m low
-and an elongated 700 by 150 km low are both detected.
+Detector sensitivity (synthetic Gaussian MSLP lows on a 0.25 degree
+grid at 45 N, the `experiments.py` setup rerun on MSLP): with the
+shipped 5 hPa ring test a 5 hPa deep low is never detected; 6 hPa is
+detected out to a 300 km e-folding scale, 7 hPa out to 400 km, 10 hPa
+out to 500 km, 12 hPa out to 600 km, and an 800 km scale low is missed
+even at 15 hPa. The effective floor is therefore about 6 hPa for a
+compact low and 10 to 12 hPa for a broad one. An open trough with a
+5 hPa per 1000 km cross-trough gradient produces no detection; a
+flat-centered 10 hPa low and an elongated 700 by 150 km low are both
+detected. The earlier 1000 hPa height detector (40 m ring test) gave
+the same pattern at about 8 m per hPa.
 
 ### 2.6 Joint classification
 
@@ -296,21 +309,47 @@ are defined by the direction of travel, so warm air to the right of
 the track reads positive in the Northern Hemisphere (to the left in
 the Southern), and a large negative B means warm air sits to the left
 of the motion vector, not that the storm is symmetric -- symmetric
-means small `|B|` in either sign. A single grid point has no half-disk
-of its own, so the
-gridded version uses a linear-gradient approximation: for a smoothly
-varying thickness field, that right-minus-left difference equals
-`(8*radiusKm/(3*pi))` times the window-mean thickness gradient,
-projected onto the right-hand normal of the storm's motion. This is
-exact for a linear field and only first-order for a genuinely
-nonlinear one (a warm-seclusion tongue folding into one side of the
-circle is the case that loses the most). Measured on a synthetic
-storm-scale dipole (400 km) it returns about 60 percent of Hart's
-semicircle difference, with the layer choice contributing nothing to
-the gap (section 2.8). Because a symmetric vortex's
-thickness gradient integrates to zero over the window under this
-first-order method, `HB` at a symmetric low is entirely the
-environment and the motion, not the storm.
+means small `|B|` in either sign.
+
+The gridded B is Hart's semicircle difference itself, evaluated at
+every grid point. `half_disk_means` returns the NaN-aware,
+area-weighted mean thickness over the north, south, east and west
+half-disks of radius `radiusKm` around every point. It works row offset
+by row offset: for row offset `j` the disk's chord half-width is
+`w_j = sqrt(R^2 - (j dy)^2)`, converted to cells separately for each
+row with that row's own `dx` (the cos-latitude growth toward the
+poles), and the x sums over the chord and over its east and west
+halves are gathered from one cumulative sum along x, then shifted `j`
+rows into the north or south accumulators. The center row and column
+are split half and half. On a global grid the x sums wrap across the
+seam; rows beyond the grid edge (the poles) are dropped, never
+reflected. Cost is of order the number of row offsets times the number
+of grid points: about 18 offsets and 0.4 s on a 0.25 degree global
+grid. `parameter_b_grid` then combines the four means with the unit
+motion vector `(mx, my)` (east, north):
+
+    ZR - ZL = mx (mean_south - mean_north) + my (mean_east - mean_west)
+    B       = h (ZR - ZL) layerScale
+
+Moving north the right half is the east half; moving east it is the
+south half. This interpolates between the two axis-aligned splits the
+way a wavenumber-one pattern turns with the heading. Expanded in
+azimuthal harmonics about the point, harmonic `k` contributes nothing
+to any semicircle difference when `k` is even and `(4/pi)/k` times its
+area-mean amplitude when `k` is odd, so the formula is exact for any
+wavenumber-one thickness pattern: a uniform gradient (for which it
+reduces to the older `(8 radiusKm/(3 pi))` times the projected
+window-mean gradient, kept as `parameter_b_grid_gradient`) and a
+storm-scale dipole alike. On a 400 km dipole inside the 500 km circle
+it matches a brute-force semicircle difference to well within 1%, where
+the gradient form reads about 55%. What it misses is the odd harmonics
+`k >= 3`, weighted at most `(4/pi)/k` (0.42 for `k = 3`); a sharply
+folded warm-seclusion tongue can carry some of that. The grid's
+whole-cell disk costs well under 1% at 0.25 degree spacing and a few
+percent at 1 degree. A perfectly symmetric vortex contributes nothing
+to any semicircle difference, so `HB` at a low center is the
+environment plus the storm's own asymmetric structure, read across the
+motion.
 
 Motion has no tracked storm to read either, so it comes from the
 **deep-layer steering wind**, the mean wind at 850, 700, 500, and
@@ -324,7 +363,7 @@ whose steering speed is below `MIN_STEERING_MS` (2 m/s) has no well
 defined right/left of motion and is blanked, and so is `HCPSclass`
 at that point, since it needs B. `HB` is a full field, not masked to
 `closed_low_mask`: away from a low it is the ambient thickness
-gradient across the flow at that point and carries no storm
+asymmetry across the flow at that point and carries no storm
 information, so a large `|HB|` of either sign anywhere is a cue to
 check the thickness field, not a result on its own. The thickness
 layer is 925-700 hPa
@@ -336,15 +375,17 @@ sign of the coriolis pseudo-field (positive north, negative south, zero
 treated as positive), matching `cps.hart.parameter_b`'s own
 `hemisphere_sign`.
 
-Unlike every other function in this file, computing B's thickness
-gradient (`gradient_2d`) takes a spatial derivative, so it is subject
-to grid-orientation ambiguity. `cps_HartCPS.py` therefore carries its own module-level
-`ORIENTATION_MODE` (0 to 3, default 1, confirmed on the OPC build) --
-used only by `gradient_2d`; `HVTL`/`HVTU`/`HCPSidx` never call it and
-are unaffected, and neither does `HCPSclass`'s own thermal-wind
-arithmetic, though `HCPSclass` still calls `gradient_2d` internally to
-get B. In other words, only the code paths behind `HB` and `HCPSclass`
-depend on `ORIENTATION_MODE` at all.
+Unlike every other function in this file, B needs to know which
+half-disk is north and which is east (`half_disk_means`), so it is
+subject to grid-orientation ambiguity. `cps_HartCPS.py` therefore
+carries its own module-level `ORIENTATION_MODE` (0 to 3, default 1,
+confirmed on the OPC build) -- used only by `half_disk_means` (and by
+`gradient_2d`, for the first-order comparison form); `HVTL`/`HVTU`/
+`HCPSidx` never call either and are unaffected, and neither is
+`HCPSclass`'s own thermal-wind arithmetic, though `HCPSclass` still
+calls `half_disk_means` internally to get B. In other words, only the
+code paths behind `HB` and `HCPSclass` depend on `ORIENTATION_MODE` at
+all.
 
 ### 2.8 Relation to Hart's storm-centered diagrams
 
@@ -371,16 +412,15 @@ worth keeping straight when comparing the two:
    this package uses 925, 850, 700 hPa and 500, 400, 300 hPa.
    Magnitudes come out near Hart's but not equal; sign, the zero
    threshold, and transition timing carry over.
-5. Hart's B uses the tracker's actual storm motion and true half-circle
-   means; this package uses the deep-layer (850-300 hPa) mean wind,
-   area-averaged over the 500 km window before its direction is taken,
-   as a motion proxy, and a first-order gradient approximation scaled
-   from the 925-700 hPa layer (section 2.7). The approximation equals
-   Hart's semicircle difference for a gradient uniform across the
-   window and under-reads an asymmetry confined to the storm scale
-   (about 60 percent of Hart's value for a 400 km dipole; see the
-   life-cycle comparison below). It is unreliable for a stationary
-   (steering under 2 m/s) or steering-opposed storm.
+5. Hart's B uses the tracker's actual storm motion and half-circle
+   means; this package uses the same half-circle means at every grid
+   point (section 2.7), scaled from the 925-700 hPa layer, with the
+   deep-layer (850-300 hPa) mean wind, area-averaged over the 500 km
+   window before its direction is taken, as the motion proxy. The
+   semicircle means are exact for any wavenumber-one thickness pattern
+   and match Hart's B in the life-cycle comparison below; the motion
+   proxy is unreliable for a stationary (steering under 2 m/s) or
+   steering-opposed storm.
 6. Hart's diagrams are drawn for the cyclones a tracker identifies;
    this package classifies any closed low that clears its depth test
    (about 5 hPa for a compact low, more for a broad flat one; 2.5) on
@@ -406,19 +446,21 @@ motion-relative thermal asymmetry (warm to the right) that grows from
 24 h, peaks 72 to 108 h and is gone by 144 h. Hart's method is
 `cyclone_phase_space/cps/hart.py` (500 km circle, 50 hPa levels, semicircle B, motion from
 the track); the gridded method is this module on the standard levels
-with the deep-layer wind set equal to the track motion. Results: both
-walk classes 0, 2, 3, 4, 5, 1; gridded onset 54 h against Hart's 42 h,
-completion 114 h against 108 h, B back under 10 m at 138 h for both;
-the gridded lower term is 12 percent above Hart's in the deep warm
-core phase (square window, 150 to 200 km vortex) and 109 m against
-41 m at the seclusion (band effect, section 2.3); rms differences over
-the life cycle are 15 m (upper term), 49 m (lower term) and 10 m (B).
-Hart's B peaks at 40 m and the gridded at 24 m; Hart's semicircle
-difference evaluated on the 925-700 hPa layer with lambda gives
-39.8 m, so the gap is entirely the window-mean gradient approximation
-on an asymmetry that reverses inside the window, not the layer. The
-intended remedy is true semicircle means for a set of motion
-directions by convolution (section 7).
+with the deep-layer wind set equal to the track motion. Results (with
+the semicircle-mean B; closed-low mask on MSLP made from the synthetic
+1000 hPa height at 8 m per hPa): both walk classes 0, 2, 3, 4, 5, 1;
+gridded onset 42 h, the same frame as Hart's, completion 114 h against
+108 h, B back under 10 m at 138 h for both; the gridded lower term is
+12 percent above Hart's in the deep warm core phase (square window,
+150 to 200 km vortex) and 109 m against 41 m at the seclusion (band
+effect, section 2.3); rms differences over the life cycle are 15 m
+(upper term), 49 m (lower term) and 1.3 m (B). Hart's B peaks at
+39.9 m and the gridded at 40.3 m (Hart's semicircle difference on the
+same 925-700 hPa layer with lambda gives 39.8 m). The earlier
+first-order form of B (window-mean gradient times 8R/(3 pi)) peaked at
+24 m on the same case, put the gridded onset at 54 h, and had a 10 m
+rms difference in B: the whole gap was that approximation on an
+asymmetry that reverses inside the window, not the layer.
 
 ---
 
@@ -447,6 +489,14 @@ neither path.
 `window_sum_2d` does the same for NaN-aware sums and counts using
 cumulative sums, for the annulus mean.
 
+`half_disk_means` builds the four half-disk means for B (section 2.7)
+from one cumulative sum along x per field: for each row offset it
+gathers the chord sums for every row at once with a flat index (the
+per-row half-width folded into the index), then adds them, shifted by
+the offset, into north/south and east accumulators; west is the whole
+disk minus east. Sums and weights both carry the row's `dx` as an area
+weight. It is checked against a nested-loop brute force in the tests.
+
 ### 3.2 Performance
 
 Measured on a 721 by 1440 grid (0.25 degree global) in the test suite:
@@ -454,7 +504,8 @@ Measured on a 721 by 1440 grid (0.25 degree global) in the test suite:
 | Call | Time |
 | :--- | :--- |
 | `thermal_wind_grid`, three levels | about 0.8 s |
-| `executeHartClass`, seven levels, B, and mask | about 2.6 s per forecast hour on a 0.25 degree global grid |
+| `executeHartClass`, six levels, B, and MSLP mask | about 3 s per forecast hour on a 0.25 degree global grid (about 2.6 s with the earlier first-order B) |
+| `half_disk_means` alone | about 0.4 s |
 
 CAVE computes per frame on load, so a 41-frame loop costs about a
 minute on first display and is cached after. A regional grid is faster.
@@ -489,9 +540,9 @@ Hart family (`cps_HartCPS.py`):
 | `executeBand3` | z1, z2, z3, psfc, dx, dy, radiusKm, p1, p2, p3, capHpa |
 | `executeBand4` | z1..z4, psfc, dx, dy, radiusKm, p1..p4, capHpa |
 | `executeBand7` | z1..z7, psfc, dx, dy, radiusKm, p1..p7, capHpa |
-| `executeIndexStd` | z1000, z925, z850, z700, z500, z400, z300, psfc, dx, dy, radiusKm, scaleM, depthM, blobKm, capHpa |
+| `executeIndexStd` | pmsl, z925, z850, z700, z500, z400, z300, psfc, dx, dy, radiusKm, scaleM, depthHpa, blobKm, capHpa |
 | `executeB` | z925, z700, u850, v850, u700, v700, u500, v500, u300, v300, psfc, coriolis, dx, dy, radiusKm, layerScale, capHpa |
-| `executeHartClass` | z1000, z925, z850, z700, z500, z400, z300, u850, v850, u700, v700, u500, v500, u300, v300, psfc, coriolis, dx, dy, radiusKm, bThresholdM, layerScale, depthM, blobKm, capHpa |
+| `executeHartClass` | pmsl, z925, z850, z700, z500, z400, z300, u850, v850, u700, v700, u500, v500, u300, v300, psfc, coriolis, dx, dy, radiusKm, bThresholdM, layerScale, depthHpa, blobKm, capHpa |
 
 ### 4.3 Tunables by definition
 
@@ -502,18 +553,19 @@ CAVE; no Python change is needed.
 | :--- | :--- | :--- |
 | HVTL | radiusKm, p1, p2, p3, capHpa | 500, 925, 850, 700, 900 |
 | HVTU | radiusKm, p1, p2, p3, capHpa | 500, 500, 400, 300, 900 |
-| HCPSclass | radiusKm, bThresholdM, layerScale, depthM, blobKm, capHpa | 500, 10, 1.4548, 40, 200, 900 |
-| HCPSidx | radiusKm, scaleM, depthM, blobKm, capHpa | 500, 100, 40, 200, 900 |
+| HCPSclass | radiusKm, bThresholdM, layerScale, depthHpa, blobKm, capHpa | 500, 10, 1.4548, 5, 200, 900 |
+| HCPSidx | radiusKm, scaleM, depthHpa, blobKm, capHpa | 500, 100, 5, 200, 900 |
 | HB | radiusKm, layerScale, capHpa | 500, 1.4548, 900 |
 
 What each does:
 
 - `radiusKm`: window half-width. Hart's 500. Larger integrates more of
   a tilted system; smaller sharpens compact storms.
-- `depthM`: minimum low depth at 1000 hPa for classification. 40 m is
-  about 5 hPa for a compact 300 km low, more for a broad flat one. Use
-  25 to include weak lows, at the cost of more false detections on
-  broad lows and elongated troughs (section 2.5).
+- `depthHpa`: minimum MSLP rise from a low's center to its 300 to
+  500 km ring for classification. 5 hPa is an effective floor of about
+  6 hPa for a compact 300 km low, more for a broad flat one. Use 3 to
+  include weak lows, at the cost of more false detections on broad lows
+  and elongated troughs (section 2.5).
 - `blobKm`: display radius around a detected center.
 - `capHpa`: below-ground cap. Lower it only if deep ocean lows are
   being blanked, which has not been seen.
@@ -582,7 +634,13 @@ They appear under Grid in the legend's Change Colormap menu.
 4. If HB or HCPSclass look mirrored or lobed on a known storm, the
    OPC-confirmed `ORIENTATION_MODE = 1` in `cps_HartCPS.py` (section
    2.7) is the first thing to check; it affects only these two
-   products' thickness-gradient step.
+   products' half-disk (north/east) step.
+5. If HCPSclass and HCPSidx fail to load or come back empty while the
+   other three products work, check the mean sea level pressure Field
+   `<Field abbreviation="PMSL" level="MSL"/>`: neither the abbreviation
+   nor the level spelling could be verified before release. Try
+   `level="0.0MSL"`, then no `level` attribute, then the model's own
+   MSLP abbreviation (see the VERIFY note in `cps_HCPSidx.xml`).
 
 **Installation risk: `ORIENTATION_MODE`.** This is the one setting in
 the whole package that can be silently wrong on a new site or a new
@@ -590,7 +648,7 @@ grid's storage order: a wrong mode flips `HB`'s sign everywhere,
 without an error, a crash, or a blank field to flag it, and the site
 would be looking at a mirrored asymmetry until someone compares it
 against a known storm. `HVTL`, `HVTU`, and `HCPSidx` never call
-`gradient_2d` and are unaffected by this setting at all; only `HB` and
+`half_disk_means` and are unaffected by this setting at all; only `HB` and
 `HCPSclass`'s asymmetric/symmetric call are exposed. Confirm `HB`'s sign
 against a known asymmetric storm (thickness gradient overlay, warm air
 on the correct side of the track) at first install on every new grid,
@@ -631,6 +689,7 @@ bundle file extracted from the saved procedure:
 | HB/HCPSclass mirrored or lobed at a low | wrong `ORIENTATION_MODE` in `cps_HartCPS.py` | check against mode 1 (section 2.7); see 5.2 step 4 |
 | whole field green on load | style rule not applied | pick the colormap from the legend or load the procedure |
 | Hart products vanish after adding P | P field level spelling | check how base definitions reference Surface |
+| HCPSclass/HCPSidx missing or empty while HVTL, HVTU, HB load | PMSL abbreviation or MSL level spelling not in the inventory | try `level="0.0MSL"`, no `level`, or the model's own MSLP abbreviation (5.2 step 5) |
 | blank over land | below-ground mask | expected |
 | HVTL/HVTU/HCPSclass blank over open water near Greenland or Iceland | window valid-fraction mask (2.4): a level's 500 km window is mostly over masked terrain | expected; the value belongs to the mask, not the model |
 | HB/HCPSclass missing while other Hart products load | coriolis pseudo-field abbreviation not recognized | replace the `coriolis` Field with `<ConstantField value="1.0"/>` (assumes Northern Hemisphere) |
@@ -644,15 +703,20 @@ bundle file extracted from the saved procedure:
 python3 -m pytest cyclone_phase_space/tests/d2d_cps cyclone_phase_space/tests/cps -q
 ```
 
-56 tests: the storm-centered reference in `cyclone_phase_space/tests/cps` and the Hart
+73 tests: the storm-centered reference in `cyclone_phase_space/tests/cps` and the Hart
 family in `cyclone_phase_space/tests/d2d_cps/test_hart_cps.py`. Every expected value is
 analytic or from a brute-force comparison, never copied from the
 implementation. Coverage includes sliding extrema against brute force,
 band slopes on exact linear profiles, agreement between the gridded and
-the point Hart implementation on a synthetic vortex, the closed-low
-mask on flat, sloped, and two-low fields, the terrain mask, Pa versus
-hPa detection, orientation modes on transposed inputs, and a
-performance budget on a full 0.25 degree grid.
+the point Hart implementation on a synthetic vortex, the MSLP
+closed-low mask on flat, sloped, and two-low fields (in Pa and hPa),
+the terrain mask and the class going blank wherever `HVTL` is,
+`half_disk_means` against a nested-loop brute force, parameter B on a
+uniform gradient (the `8R/(3 pi)` value), on a 400 km dipole (against a
+brute-force semicircle difference, with the first-order form alongside),
+against `cps.hart.parameter_b` in both hemispheres, across the dateline
+and at 60 N, orientation modes on transposed inputs, and a performance
+budget on a full 0.25 degree grid.
 `cyclone_phase_space/tests/d2d_cps/conftest.py` puts the functions directory on the path
 so the files import exactly as CAVE imports them.
 
@@ -677,8 +741,8 @@ parallel products that would leave Hart's parameters as the reference:
   falls to 77 percent of its true value for a 600 km e-folding scale
   vortex; a half-width of 2.5 times the scale holds 100 percent across
   all sizes tested, at the cost of admitting more environment.
-- Vector asymmetry: B is the cross-track projection of the thickness
-  gradient. For a 40 m per 1000 km gradient (25 m in Hart's units) B is
+- Vector asymmetry: for a uniform thickness gradient B is its
+  cross-track projection. For a 40 m per 1000 km gradient (25 m in Hart's units) B is
   0 when the storm moves straight toward colder air and passes 10 m only
   once the motion is 24 degrees off the gradient; the full magnitude and
   the fore-aft component come free from the same gradient.
@@ -710,22 +774,18 @@ as a reason to change it.
   before its direction is taken; the area mean of the geostrophic wind
   depends only on the height on the window boundary, so any vortex
   contained in the window cancels, symmetric or not) as its motion
-  proxy, and a
-  linear-gradient approximation for the right-minus-left half-window
-  mean. Both are awaiting validation: the steering proxy is unreliable
-  for a storm moving against its own steering flow or for a nearly
-  stationary system (below `MIN_STEERING_MS`, 2 m/s), and `HCPSclass`
-  inherits that unreliability wherever B is unreliable or blank; the
-  linear approximation also loses genuinely
-  nonlinear thickness structure inside the window (e.g. a
-  warm-seclusion tongue) to first order: about 40 percent of a
-  storm-scale asymmetry in the synthetic life cycle of section 2.8,
-  which delayed onset there by two 6 h frames. The intended remedy is
-  to compute the semicircle means directly for a set of motion
-  directions (sixteen half-window masks applied by transform-based
-  convolution, then interpolated to the local steering direction),
-  which restores Hart's definition at a cost of a few tenths of a
-  second per frame.
+  proxy, with the right-minus-left semicircle means computed at every
+  grid point (section 2.7). The steering proxy is awaiting validation:
+  it is unreliable for a storm moving against its own steering flow or
+  for a nearly stationary system (below `MIN_STEERING_MS`, 2 m/s), and
+  `HCPSclass` inherits that unreliability wherever B is unreliable or
+  blank. The semicircle means are exact for any wavenumber-one
+  thickness pattern about the point; odd harmonics of order 3 and up
+  (at most `(4/pi)/k` of their amplitude, 0.42 for `k = 3`) are not
+  captured. The earlier first-order gradient form, which lost about
+  40 percent of a storm-scale asymmetry and delayed onset by two 6 h
+  frames in the synthetic life cycle of section 2.8, is kept only as
+  `parameter_b_grid_gradient` for comparison.
 - `HCPSclass` flickers between adjacent codes when a storm sits on one
   of Hart's strict lines (B at 10 m, or a thermal wind term at 0) from
   one frame to the next, because the field has no neutral band by

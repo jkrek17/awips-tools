@@ -86,12 +86,12 @@ height range inside a 500 kilometer window at each level and regresses
 it against log pressure: Hart's own definition, evaluated everywhere
 instead of at one tracked center. The square window and standard
 levels keep the magnitudes close to his, not identical. It needs
-geopotential height on standard levels and surface pressure; the
-asymmetric term also needs winds at four levels. That runs on any model
-in D2D carrying those fields, with no tracker and no advisory. A
-closed-low detector on the 1000 hPa height keeps the class off open
-ocean and open troughs in the cases we've tested, and terrain is
-masked below ground.
+geopotential height on standard levels, surface pressure and sea level
+pressure; the asymmetric term also needs winds at four levels. That
+runs on any model in D2D carrying those fields, with no tracker and no
+advisory. A closed-low detector on sea level pressure keeps the class
+off open ocean and open troughs in the cases we've tested, and terrain
+is masked below ground.
 
 **[Slide 7, a tilted cold core] 4:23**
 
