@@ -167,16 +167,25 @@ def find_center(f: dict, lat: float, lon: float, radius_km: float, wrap: bool):
     the lowest of its +/- LOCAL_MIN_HALF box, below MAX_MSLP_HPA, where the
     surface pressure is at least MIN_PSFC_HPA. Returns (fi, fj, mslp_hpa) on
     the full grid, refined to a fraction of a cell by a parabola through the
-    minimum and its neighbors along each axis, or None."""
+    minimum and its neighbors along each axis, or None.
+
+    Terrain points (surface pressure below MIN_PSFC_HPA, where MSLP is
+    extrapolated well below ground) are masked out before the box-minimum
+    test, not just filtered from the candidate list afterward: otherwise an
+    artificially deep terrain reading (the Greenland ice cap, Iceland's
+    interior) can sit inside a genuine low's +/- 1 degree box and hide it,
+    since the real, slightly shallower minimum beside the terrain then no
+    longer looks like the lowest point of its own box."""
     fi, fj = frac_index(f, lat, lon)
     rows, cols, _, _ = subgrid(f, fi, fj, radius_km + 150.0, wrap)
     pm = f["pmsl"][np.ix_(rows, cols)] / 100.0
     la = f["lat"][rows][:, None]
     lo = f["lon"][cols][None, :]
-    ismin = local_minima(pm, LOCAL_MIN_HALF)
-    dist = gc_km(lat, lon, la, lo)
     ps = f["psfc"][np.ix_(rows, cols)] / 100.0
-    cand = np.argwhere(ismin & (dist <= radius_km) & (pm < MAX_MSLP_HPA) & (ps >= MIN_PSFC_HPA))
+    pm_ok = np.where(ps >= MIN_PSFC_HPA, pm, np.inf)
+    ismin = local_minima(pm_ok, LOCAL_MIN_HALF)
+    dist = gc_km(lat, lon, la, lo)
+    cand = np.argwhere(ismin & (dist <= radius_km) & (pm_ok < MAX_MSLP_HPA))
     if cand.size == 0:
         return None
     r, c = min(cand, key=lambda rc: dist[rc[0], rc[1]])
