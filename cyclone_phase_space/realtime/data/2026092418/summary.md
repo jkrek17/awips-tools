@@ -4,8 +4,26 @@ Storm-following phase diagrams from the 18 UTC 2026-09-24 GFS 0.25 degree run, f
 
 | Storm | FSU | Start position | MSLP (hPa) | Track (h) | Class sequence (h) | Onset std | Completion std | Onset Hart | Completion Hart |
 |---|---|---|---|---|---|---|---|---|---|
+| [AUTO_260924_01](AUTO_260924_01/) | [5](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092418/5.html) | 17.1N 105.0W | 953 | 0-126 | 2 0-12, 0 18-114, 1 120, 4 126 | 0 | none | 0 | none |
+| [AUTO_260924_02](AUTO_260924_02/) | [8](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092418/8.html) | 55.2N 175.0E | 964 | 0-6 | 1 0-6 | none | none | none | 0 |
+| [AUTO_260924_03](AUTO_260924_03/) | none | 57.3N 171.0W | 968 | 0-90 | 3 0-6, 1 12-18, 6 24, 5 30-54, 1 60-90 | 0 | 30 | none | 30 |
+| [AUTO_260924_04](AUTO_260924_04/) | none | 81.3N 145.6W | 978 | 0-48 | 6 0-6, - 12-18, 6 24-48 | 0 | 0 | none | 0 |
+| [AUTO_260924_05](AUTO_260924_05/) | [4](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092418/4.html) | 16.4N 125.2W | 980 | 0-144 | 0 0, 2 6, 0 12, 2 18-30, 0 36, 2 42-48, 3 54-72, 1 78-102, - 108-144 | 18 | none | 36 | none |
 | [EPAC](EPAC/) | [1](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092418/1.html) | 14.8N 156.2W | 995 | 0-198 | - 0, 0 6-30, - 36-54, 0 60-120, 2 126-156, 0 162-192, 2 198 | 132 | none | 144 | none |
-| [GREENLAND](GREENLAND/) | [17](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092418/17.html) | 62.5N 21.4W | 960 | 0-138 | 3 0-18, - 24-48, 3 54, - 60-126, 3 138 | 0 | 96 | 0 | 90 |
+| [GREENLAND](GREENLAND/) | [17](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092418/17.html) | 62.5N 21.4W | 960 | 0-54 | 3 0-18, - 24-48, 3 54 | 0 | none | 0 | none |
 | [LABRADOR](LABRADOR/) | [40](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092418/40.html) | 60.9N 55.4W | 1001 | 0-90 | 4 0-30, - 36, 4 42-72, 3 78-84, - 90 | 0 | 0 | 0 | 0 |
 
 Class codes (HCPSclass at the center): 0 sym deep warm, 1 sym shallow warm, 2 asym deep warm, 3 asym shallow warm, 4 asym cold, 5 sym cold, 6 shallow cold; - no closed low.
+
+## Automatic discovery
+
+Closed lows at 0 h below 980 hPa north of 0N, one per system (minima within 500 km of a deeper one dropped), not within 500 km of a watched storm; at most 6 new storms per day.
+
+| Position | MSLP (hPa) | Basin | Result |
+|---|---|---|---|
+| 17.1N 105.0W | 953.45 | TROP | added as AUTO_260924_01 |
+| 62.4N 19.8W | 959.56 | NATL | skipped, 84 km from GREENLAND |
+| 55.2N 175.0E | 964.27 | NPAC | added as AUTO_260924_02 |
+| 57.3N 171.0W | 968.30 | NPAC | added as AUTO_260924_03 |
+| 81.3N 145.6W | 978.46 | NPAC | added as AUTO_260924_04 |
+| 16.4N 125.2W | 979.97 | TROP | added as AUTO_260924_05 |

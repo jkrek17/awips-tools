@@ -30,6 +30,56 @@
       "fhr1": 90,
       "notes": "Cold-core low over Labrador; crosses Iceland's terrain after 96 h, where the tracker would hand over to another low.",
       "active": true
+    },
+    {
+      "name": "AUTO_260924_01",
+      "lat": 17.12,
+      "lon": -105.02,
+      "cycle": "2026092418",
+      "fhr0": 0,
+      "fhr1": null,
+      "notes": "Found automatically at 0 h of 2026092418: 953.45 hPa, TROP.",
+      "active": true
+    },
+    {
+      "name": "AUTO_260924_02",
+      "lat": 55.23,
+      "lon": 175.04,
+      "cycle": "2026092418",
+      "fhr0": 0,
+      "fhr1": null,
+      "notes": "Found automatically at 0 h of 2026092418: 964.27 hPa, NPAC.",
+      "active": true
+    },
+    {
+      "name": "AUTO_260924_03",
+      "lat": 57.26,
+      "lon": -170.99,
+      "cycle": "2026092418",
+      "fhr0": 0,
+      "fhr1": null,
+      "notes": "Found automatically at 0 h of 2026092418: 968.30 hPa, NPAC.",
+      "active": true
+    },
+    {
+      "name": "AUTO_260924_04",
+      "lat": 81.31,
+      "lon": -145.55,
+      "cycle": "2026092418",
+      "fhr0": 0,
+      "fhr1": null,
+      "notes": "Found automatically at 0 h of 2026092418: 978.46 hPa, NPAC.",
+      "active": true
+    },
+    {
+      "name": "AUTO_260924_05",
+      "lat": 16.44,
+      "lon": -125.18,
+      "cycle": "2026092418",
+      "fhr0": 0,
+      "fhr1": null,
+      "notes": "Found automatically at 0 h of 2026092418: 979.97 hPa, TROP.",
+      "active": true
     }
   ]
 }

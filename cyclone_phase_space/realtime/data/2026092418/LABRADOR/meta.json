@@ -35,5 +35,6 @@
     "lon": -55.35,
     "distance_km": 36,
     "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092418/40.html"
-  }
+  },
+  "track_end": "FHR1 90 h reached"
 }

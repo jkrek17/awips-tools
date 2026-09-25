@@ -9,7 +9,8 @@ storm. Experimental; not operationally vetted.
     data/
       log.csv                 one row per cycle and storm: cycle, storm, fsu_number, status
       <cycle>/                GFS cycle, YYYYMMDDHH (12 UTC runs)
-        summary.md            table of the storms of the run
+        summary.md            table of the storms of the run, and of the automatic discovery
+        discovery.json        deep lows found at 0 h and what became of each (added, known, cap)
         <NAME>/               one storm of watch.json
           meta.json           seed used, start and end hours and positions, onset and
                               completion hours (standard and Hart bands), class
@@ -23,8 +24,16 @@ storm. Experimental; not operationally vetted.
 
 Statuses in `log.csv` and `meta.json`: `ok` (tracked), `lost` (no closed
 low within 400 km of the seed; the storm was marked inactive in
-`watch.json` and its folder holds only `meta.json`), `error` (the frame at
-the seed hour could not be fetched; the storm stays active). A
+`watch.json` and its folder holds only `meta.json`), `merged` (within
+300 km of an older active storm at 0 h, or stopped at its first frame
+for another track: marked inactive, only `meta.json`; or stopped later
+in the run because another track took the same low: the track up to
+there is kept, `meta.json` has `merged_into` and a `note`, and the storm
+is marked inactive only if that happened by +24 h), `error` (the frame at the seed hour could not be fetched;
+the storm stays active). Storms named `AUTO_<YYMMDD>_<NN>` were added by
+the automatic discovery; their `meta.json` has a `discovered` block, and
+an `ended` line when the storm filled. `track_end` in `meta.json` says
+why the track stopped (no minimum, outside a closed low, FHR1). A
 `fsu_number` is blank when no FSU cyclone was within 400 km of the
 storm's first fix or the FSU page could not be read.
 

@@ -180,27 +180,79 @@ computation in two threads.
 
 **Tracker.** At FHR0 the center is the MSLP minimum nearest the seed
 within 400 km. At every later frame the first guess is the last center
-moved on by the last 6 h motion (the last center itself at the second
-frame), and the search radius is 60 km/h times the hours since the last
-fix, capped at 700 km (360 km at 6 h spacing). A candidate is a grid
+moved on by the last motion over the hours since it (the last center
+itself at the second frame; after a coasted frame, half that
+extrapolation, so a wrong motion does not carry the search away), and
+the search radius around the guess is 90 km/h times the hours since the
+last fix, capped at 600 km (540 km at 6 h spacing). A candidate is a grid
 point that is the lowest of its +/- 1 degree box (9 x 9 points); the
-candidate nearest the first guess wins. A minimum of 1018 hPa or more
-is not a candidate (FSU's tracker uses the same limit, and a filled low
-otherwise hands over to any weak minimum nearby), nor is one where the
-surface pressure is under 950 hPa (terrain above about 500 m, where
-MSLP is extrapolated: the Greenland ice cap, Iceland's interior). A
-terrain point is masked out before the box-minimum test itself, not
-just dropped from the candidate list afterward, so an artificially deep
-terrain reading cannot sit inside a genuine low's box and hide the
-real, slightly shallower minimum beside it (a low crossing Iceland's
-highlands otherwise loses its box-minimum status to the terrain point
-next to it and the track ends). If
-there is none, the track coasts one frame on the extrapolated motion (that frame is left out of
-the table) and tries again with the larger radius; a second miss ends
-it. An optional FHR1 in the spec (`NAME:LAT,LON:0:96`) stops the track
-after that hour, for a low that is lost or replaced by another after it.
-The center is refined to a fraction of a cell by a parabola through
-the minimum and its neighbors along each axis.
+candidate nearest the first guess wins. (`find_center` also has a
+move-to-deeper-center step: if a candidate more than 0.6 hPa deeper, the
+mask's center tolerance, lies within `CLIMB_KM` of the chosen one, the
+fix moves to the deepest such candidate, repeatedly, still within the
+reach limit below. It is off by default, `CLIMB_KM = 0`; set it to
+`hc.MIN_RADIUS_KM`, 300 km, to turn it on. In testing on 2026092418 it
+moved GREENLAND at +60 h from its own minimum onto LABRADOR's center
+290 km away, so the merge rule stopped LABRADOR at +54 h and the
+LABRADOR low that FSU follows to +96 h was no longer tracked.)
+Not a candidate:
+
+- a minimum of 1018 hPa or more (FSU's tracker uses the same limit);
+- one farther from the last fix than 90 km/h times the hours since it
+  (540 km for one 6 h step, 1080 km after a coasted frame; no cap):
+  with the guess extrapolated, a search radius alone would let each
+  jump lengthen the next;
+- one more than 12 hPa above the previous fix (`MAX_RISE_HPA`): a
+  filling low does not rise 12 hPa in 6 h, a handover to a different,
+  weaker low does;
+- one poleward of 85 degrees (`POLE_LAT`): the pole row of the grid is
+  one value repeated, so it passes the box test and a track that
+  reaches it spins in longitude;
+- one where the surface pressure is under 950 hPa (terrain above about
+  500 m, where MSLP is extrapolated: the Greenland ice cap, Iceland's
+  interior). A terrain point is masked out before the box-minimum test
+  itself, not just dropped from the candidate list afterward, so an
+  artificially deep terrain reading cannot sit inside a genuine low's
+  box and hide the real, slightly shallower minimum beside it (a low
+  crossing Iceland's highlands otherwise loses its box-minimum status
+  to the terrain point next to it and the track ends).
+
+A track ends in four ways:
+
+1. *No candidate.* The track coasts one frame on the extrapolated
+   motion (that frame is left out of the table) and tries again with
+   the larger radius; a second miss ends it.
+2. *Outside a closed low.* Each fix is checked against the module's own
+   closed-low definition, `closed_low_mask` on MSLP, computed once per
+   frame and taken at the grid point nearest the center, with the
+   arguments `executeHartClass` gives it (300 km candidate radius,
+   500 km ring, 200 km blob) except a 2 hPa ring depth
+   (`CLOSED_DEPTH_HPA`) instead of the product's 5 hPa, which a broad
+   deep low whose ring is not 5 hPa above its center fails. The mask is
+   used rather than a blank HCPSclass because the class is also blank
+   where HB is (steering under 2 m/s) or below ground, inside a
+   perfectly good low. The mask's candidate test requires the center to
+   be within 0.6 hPa of the lowest MSLP anywhere in a +/- 300 km box, so
+   a minimum on the flank of a deeper low just beyond 300 km is still
+   outside it. After two
+   consecutive fixes outside the mask (`OUTSIDE_FRAMES`; a coasted
+   frame between them does not reset the count), the track ends at its
+   last fix inside one, which stops a filled low from wandering from one
+   weak minimum to the next. A single fix outside is kept.
+3. *Same low as another track.* When two tracks of a run choose centers
+   within 150 km of each other in a frame (`MERGE_TRACK_KM`), the one
+   whose track started later (for the same start, the shallower at that
+   frame; then the later in the list) stops at its previous fix and the
+   other continues. `collect_daily.py` notes "merged into <name> at
+   +<fhr> h" in the stopped storm's `meta.json` and logs it as `merged`.
+4. *FHR1.* An optional FHR1 in the spec (`NAME:LAT,LON:0:96`) stops the
+   track after that hour, for a low that is lost or replaced by another
+   after it.
+
+These apply to every track, from `--track` or from `watch.json`, picked
+by hand or found automatically. The center is refined to a fraction of
+a cell by a parabola through the minimum and its neighbors along each
+axis.
 
 **Sampling.** HVTL, HVTU, HB, HCPSidx and the Hart-band terms are
 sampled bilinearly at the refined center (corners without a value are
@@ -304,13 +356,19 @@ behind it). The three lows and their FSU pages for the same run:
 | Low | Our track | FSU cyclone |
 |---|---|---|
 | EPAC, tropical cyclone near 15N 156W | 0 to 198 h, 998 hPa to 963 hPa (84 h) to 977 hPa at 46.9N 160.9W | [#1](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/1.html), existing cyclone, through +198 h |
-| GREENLAND, 958 hPa low southwest of Iceland at 60.6N 22.75W | 0 to 114 h, ends when it fills (the next minimum is over 1018 hPa) | [#19](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/19.html), existing cyclone, through +54 h |
-| LABRADOR, cold-core low at 61.5N 63.1W | 0 to 96 h (after 96 h the nearest minimum is a different low south of Iceland) | [#48](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/48.html), picked up as a "future cyclone" from +6 h, through +96 h |
+| GREENLAND, 958 hPa low southwest of Iceland at 60.6N 22.75W | 0 to 18 h (970 hPa at 64.4N 15.5W, off east Iceland) | [#19](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/19.html), existing cyclone, through +54 h |
+| LABRADOR, cold-core low at 61.5N 63.1W | 0 to 96 h (its FHR1), deepest 985 hPa (66 h), 996 hPa at 63.9N 15.8W | [#48](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/48.html), picked up as a "future cyclone" from +6 h, through +96 h |
 
-The 0.25 degree GFS keeps GREENLAND as a closed minimum circling north
-of Iceland well past FSU's +54 h end; after a missed frame at 84 h the
-track resumes about 500 km west at 90 h on a weak minimum (1000 to 1010
-hPa) that the module does not count as a closed low.
+Rerun from the GRIB cache with the tracker rules above. GREENLAND ends
+well before FSU's +54 h because the tracker stays on a secondary
+minimum: at +24 h the candidate nearest its first guess is 64.4N 15.6W
+(975 hPa, beside Iceland), while the low's deeper center is north of
+Iceland at 67.25N 15.75W (970 hPa), 320 km away. The closed-low mask's
+candidate test compares a center with every grid point in a +/- 300 km
+box, which reaches onto the flank of that deeper center, so the +24 h
+and +30 h minima are outside the mask at any ring depth and the track
+ends at +18 h. The move-to-deeper-center step described above would
+keep it on the 970 hPa center, but it is off by default.
 
 With the standard bands the EPAC storm reaches B = 10 m (24 h mean) at
 +132 h, with Hart's bands and the track-motion B at +144 h; the lower
@@ -349,7 +407,12 @@ message `CPS daily collection <cycle>`; nothing is committed when
 nothing changed, and a rejected push is rebased and retried. The GFS
 work runs through `gfs_cps` and `track_cps` functions (global grid,
 Hart's bands; about 6 minutes of computation for 34 frames plus the
-downloads, about 600 MB from NOMADS). The tracking path draws no maps,
+downloads, about 600 MB from NOMADS). Each frame is fetched, decoded and
+run through the module, Hart's bands and the closed-low mask once (about
+10 s of the 11 s a frame takes), and every storm samples those shared fields (about 0.02 s
+per storm and frame); per storm there is then B with the track motion
+and the diagram (about 1 s) and four FSU requests spaced a second apart,
+so ten storms cost well under a minute more than one. The tracking path draws no maps,
 so cartopy never downloads its Natural Earth data there and nothing is
 cached between runs.
 
@@ -400,6 +463,58 @@ give its position at `fhr0` of that cycle. To stop following a storm set
 
     {"name": "NATL1", "lat": 35.0, "lon": -60.0, "cycle": "2026092512", "fhr0": 0,
      "fhr1": null, "notes": "", "active": true}
+
+**Automatic discovery.** Besides the hand-picked storms, every run adds
+the deep lows of its analysis on its own (constants at the top of
+`collect_daily.py`):
+
+- *Rule.* On the 0 h frame (global grid, fields computed once for all
+  storms), every point the tracker would accept as a center
+  (`track_cps.all_centers`, the rule of `find_center`: the lowest point
+  of its +/- 1 degree box after terrain with surface pressure below
+  950 hPa is masked, MSLP under 1018 hPa, within 85 degrees of the
+  equator) with MSLP below
+  `AUTO_MSLP_HPA` (980 hPa) and latitude north of `AUTO_LAT_MIN` (0,
+  so the northern hemisphere only) is a candidate. Deepest first, a
+  candidate within 500 km of a deeper one kept is dropped (one per
+  system). A low within 500 km of the 0 h position of a storm already in
+  `watch.json`, active or made inactive in this cycle, is skipped, so a
+  hand-picked storm is not duplicated and a storm just lost or merged is
+  not re-added at the same spot.
+- *Naming.* Each remaining low becomes an active entry
+  `AUTO_<YYMMDD>_<NN>` (the cycle's date, `NN` a two-digit serial per
+  day, deepest first), seeded at its 0 h position of the cycle with
+  `fhr0` 0 and a note giving the 0 h MSLP and a basin word: `NATL`
+  north of 20N between 100W and 20E, `NPAC` north of 20N west of 100W or
+  east of 100E, `TROP` south of 20N, otherwise the position. It is
+  tracked in the same run like any other storm and followed on later
+  days the same way. Its `meta.json` has a `discovered` block.
+- *Cap.* At most `AUTO_MAX_PER_DAY` (6) AUTO storms per day, deepest
+  first (the ones already named for that day count), so a bad analysis
+  cannot flood the record; lows left out by the cap are listed.
+- *Record.* `data/<cycle>/discovery.json` lists every candidate with
+  its result (`added`, `known` with the storm it is near, `cap`), and
+  `summary.md` shows it as a table. A rerun of the cycle without
+  `--force` does not repeat the discovery; with `--force` it does, adds
+  nothing twice (the storms it added before now cover their lows) and
+  keeps them listed as added.
+- *Merging.* If two active storms are within 300 km of each other at
+  0 h of a cycle (`MERGE_KM`), the older entry (earlier in `watch.json`)
+  is kept and the newer is marked inactive with the note `merged into
+  <name>`; its folder gets only a `meta.json` with status `merged`.
+- *Ending.* A storm whose track is lost is marked inactive, as before.
+  An AUTO storm whose 0 h MSLP is above 1000 hPa (`FILL_HPA`) in two
+  consecutive collected cycles (`FILL_CYCLES`, this one and its newest
+  earlier `meta.json`) is marked inactive with the note `filled`; that
+  cycle's diagrams are still kept. Hand-picked storms (no `AUTO_`
+  prefix) are never ended by this rule.
+- *Stopping by hand.* To stop following an AUTO storm (or any other),
+  set its `active` to false in `watch.json` and keep the entry: it holds
+  the day's serial, and as long as the storm's last collected track
+  reaches the time of a new cycle, a low within 500 km of where that
+  track puts it is not added again (a storm set inactive by hand has no
+  `ended_cycle`). Once that track has run out, a low still deeper than
+  980 hPa there is found again under a new name.
 
 **Backfilling a cycle.** Actions > CPS daily collection > Run workflow,
 with `cycle` set to a 12 UTC cycle (YYYYMMDD12); NOMADS keeps about ten
