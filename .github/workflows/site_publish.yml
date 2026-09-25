@@ -42,10 +42,10 @@ jobs:
         id: cfg
         env:
           REPO: ${{ vars.PUBLIC_SITE_REPO }}
-          KEY: ${{ secrets.WEB_DEPLOY_KEY }}
+          TOKEN: ${{ secrets.WEB_TOKEN }}
         run: |
-          if [ -z "$REPO" ] || [ -z "$KEY" ]; then
-            echo "PUBLIC_SITE_REPO or WEB_DEPLOY_KEY not set; nothing to publish."
+          if [ -z "$REPO" ] || [ -z "$TOKEN" ]; then
+            echo "PUBLIC_SITE_REPO or WEB_TOKEN not set; nothing to publish."
             echo "ready=false" >> "$GITHUB_OUTPUT"
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
