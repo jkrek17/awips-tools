@@ -10,6 +10,8 @@ executeIndexStd entry points) and written as files a static web page can
 load directly:
 
     DIR/index.json                cycle, hours, valid times, layers, raster geometry, storms
+                                  (every low closed for 24 h, linked across the frames, plus the
+                                  daily collection's storms that no track matches)
     DIR/legend.json               class palette, colormap stops, ranges
     DIR/history.json              the cycles exported to DIR
     DIR/frames/fHHH/lows.geojson  one polygon per closed low (HCPSclass blob) and its center
@@ -56,6 +58,10 @@ LAST_FHR = 198
 PROBE_CYCLES = 8  # default cycle: the newest with f198, probing back this many 6 h steps
 DATA = HERE / "data"
 STORMS_REL = "../storms"  # storm assets, relative to index.json's directory: STORMS_REL/<cycle>/<NAME>/...
+TRACK_REACH_KM = 600.0  # a center may move this far between 6 h frames (track_cps: 90 km/h reach, 600 km cap)
+TRACK_GAP_FRAMES = 1  # one missing frame is bridged, with the reach scaled by the elapsed time
+TRACK_MIN_FRAMES = 5  # a track is kept when the low stays closed for 24 h (five 6 h frames)
+TRACK_MATCH_KM = 300.0  # a collected storm and a track are the same low when their same-hour centers are this close
 
 # Rasters: Web Mercator (EPSG:3857) image covering lon -180..180, lat -85..85.
 LAT_MAX = 85.0
@@ -449,6 +455,118 @@ def storms_for(cycle: str, data_dir: Path = DATA) -> tuple[str | None, list[dict
     return pick, storms
 
 
+
+# ------------------------------------------------------------------ tracks
+def link_tracks(frames: list[dict], reach_km: float = TRACK_REACH_KM, gap: int = TRACK_GAP_FRAMES,
+                min_frames: int = TRACK_MIN_FRAMES) -> list[list[dict]]:
+    """Link the closed-low centers of consecutive frames into tracks.
+
+    frames: [{"fhr", "valid", "centers": [center properties as lows_features
+    writes them]}] in time order. Centers over high terrain (the extrapolated
+    MSLP there is not a low) are not linked. Each center is predicted from the
+    track's last position plus half its last 6 h motion and joined to the
+    closest unclaimed center within reach_km per 6 h elapsed, closest pairs
+    first, one center per track; a track may skip up to gap frames. Tracks
+    shorter than min_frames are dropped. Each point keeps the center's frame
+    id so the page can join the map marks to the track."""
+    tracks: list[dict] = []
+    for fr in frames:
+        fhr, valid = fr["fhr"], fr["valid"]
+        cands = [c for c in fr["centers"] if not c.get("terrain")]
+        live = [t for t in tracks if 0 < fhr - t["last_fhr"] <= 6 * (gap + 1)]
+        pairs = []
+        for ti, t in enumerate(live):
+            steps = (fhr - t["last_fhr"]) / 6.0
+            plat = t["lat"] + 0.5 * t["dlat"] * steps
+            plon = t["lon"] + 0.5 * t["dlon"] * steps
+            for ci, c in enumerate(cands):
+                d = float(tc.gc_km(plat, plon, c["lat"], c["lon"]))
+                if d <= reach_km * steps:
+                    pairs.append((d, ti, ci))
+        pairs.sort()
+        used_t, used_c = set(), set()
+        for d, ti, ci in pairs:
+            if ti in used_t or ci in used_c:
+                continue
+            used_t.add(ti)
+            used_c.add(ci)
+            t, c = live[ti], cands[ci]
+            steps = (fhr - t["last_fhr"]) / 6.0
+            dlon = float(tc.wrap180(c["lon"] - t["lon"]))
+            t["dlat"], t["dlon"] = (c["lat"] - t["lat"]) / steps, dlon / steps
+            t["lat"], t["lon"], t["last_fhr"] = c["lat"], c["lon"], fhr
+            t["points"].append(_track_point(fhr, valid, c))
+        for ci, c in enumerate(cands):
+            if ci not in used_c:
+                tracks.append({"lat": c["lat"], "lon": c["lon"], "dlat": 0.0, "dlon": 0.0, "last_fhr": fhr,
+                               "points": [_track_point(fhr, valid, c)]})
+    return [t["points"] for t in tracks if len(t["points"]) >= min_frames]
+
+
+def _track_point(fhr: int, valid: str, c: dict) -> dict:
+    return {"fhr": fhr, "valid": valid, "id": c["id"], "lat": c["lat"], "lon": c["lon"], "mslp": c["mslp"],
+            "cls": c["cls"], "hvtl": c["hvtl"], "hvtu": c["hvtu"], "hb": c["hb"], "idx": c.get("idx")}
+
+
+def match_collection(points: list[dict], storms: list[dict], km: float = TRACK_MATCH_KM) -> dict | None:
+    """The collected storm whose track shares the most valid times within km
+    of this track (at least two, and at least half of the hours both have),
+    or None."""
+    by_valid = {p["valid"]: p for p in points}
+    best, best_n = None, 0
+    for s in storms:
+        both = [(by_valid[q["valid"]], q) for q in s["points"] if q["valid"] in by_valid]
+        if len(both) < 2:
+            continue
+        n = sum(1 for p, q in both if float(tc.gc_km(p["lat"], p["lon"], q["lat"], q["lon"])) <= km)
+        if n >= 2 and n * 2 >= len(both) and n > best_n:
+            best, best_n = s, n
+    return best
+
+
+def build_storms(out: Path, hours: list[int], valids: list[str], collection: list[dict]) -> list[dict]:
+    """The storm list of index.json: every track of link_tracks over the
+    exported frames, deepest first, named after the collected storm it
+    matches (with its FSU number and diagrams) or L01, L02, ...; then the
+    collected storms no track matched. The frames' center features get a
+    "track" property with the track id."""
+    frames, feats = [], {}
+    for fhr, valid in zip(hours, valids):
+        path = out / "frames" / f"f{fhr:03d}" / "lows.geojson"
+        try:
+            fc = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        feats[fhr] = (path, fc)
+        frames.append({"fhr": fhr, "valid": valid,
+                       "centers": [ft["properties"] for ft in fc["features"] if ft["properties"]["kind"] == "center"]})
+    tracks = link_tracks(frames)
+    tracks.sort(key=lambda pts: (min(p["mslp"] for p in pts), pts[0]["fhr"]))
+    storms, taken, n_unnamed = [], set(), 0
+    for k, pts in enumerate(tracks, start=1):
+        tid = f"T{k:02d}"
+        hit = match_collection(pts, [s for s in collection if s["name"] not in taken])
+        if hit is not None:
+            taken.add(hit["name"])
+            name, fsu, phase, comp = hit["name"], hit["fsu"], hit["phase_png"], hit["compare_png"]
+        else:
+            n_unnamed += 1
+            name, fsu, phase, comp = f"L{n_unnamed:02d}", None, None, None
+        storms.append({"id": tid, "name": name, "source": "track", "fsu": fsu,
+                       "min_mslp": min(p["mslp"] for p in pts), "points": pts,
+                       "cls_seq": [p["cls"] for p in pts], "phase_png": phase, "compare_png": comp})
+        for p in pts:
+            for ft in feats[p["fhr"]][1]["features"]:
+                if ft["properties"]["kind"] == "center" and ft["properties"]["id"] == p["id"]:
+                    ft["properties"]["track"] = tid
+    for k, s in enumerate((s for s in collection if s["name"] not in taken), start=1):
+        storms.append({"id": f"C{k:02d}", "source": "collection", "min_mslp": min(p["mslp"] for p in s["points"]),
+                       **s})
+    for path, fc in feats.values():
+        write_json(path, fc)
+    return storms
+
+
 # ------------------------------------------------------------------ driver
 def update_history(path: Path, cycle: str, generated: str, index: str) -> None:
     """history.json: {"latest": cycle, "cycles": [{"cycle", "generated", "index"}, ...]}, newest first."""
@@ -471,7 +589,11 @@ def main(argv=None) -> int:
     ap.add_argument("--cache", type=Path, help="GRIB cache (default: out/cache/<cycle>/)")
     ap.add_argument("--workers", type=int, default=min(3, os.cpu_count() or 1),
                     help="frames computed in parallel (processes)")
+    ap.add_argument("--relink", type=Path, metavar="DIR",
+                    help="only rebuild the storms of an existing export DIR from its frames")
     a = ap.parse_args(argv)
+    if a.relink:
+        return relink(a.relink.resolve())
     cycle = a.cycle or default_cycle()
     if not re.fullmatch(r"\d{10}", cycle):
         ap.error("--cycle must be YYYYMMDDHH")
@@ -507,7 +629,8 @@ def main(argv=None) -> int:
     pal = palettes()
     leg = legend(pal)
     write_json(out / "legend.json", leg)
-    storms_cycle, storms = storms_for(cycle)
+    storms_cycle, collection = storms_for(cycle)
+    storms = build_storms(out, [r["fhr"] for r in done], [r["valid"] for r in done], collection)
     index = {
         "cycle": cycle,
         "model": "GFS 0.25",
@@ -522,13 +645,27 @@ def main(argv=None) -> int:
         "storms_cycle": storms_cycle,
         "storms": storms,
     }
+    index["tracks"] = sum(1 for s_ in storms if s_["source"] == "track")
     write_json(out / "index.json", index)
     update_history(out / "history.json", cycle, generated, "index.json")
     if a.out is None:
         update_history(web_root / "history.json", cycle, generated, f"{cycle}/index.json")
     total = sum(p.stat().st_size for p in out.rglob("*") if p.is_file())
-    log(f"done: {len(done)} of {len(hours)} frames in {time.time() - t0:.0f} s, {len(storms)} storms "
-        f"(data/{storms_cycle}), {total / 1e6:.1f} MB in {out}")
+    log(f"done: {len(done)} of {len(hours)} frames in {time.time() - t0:.0f} s, {index['tracks']} tracks, "
+        f"{len(storms) - index['tracks']} more collected storms (data/{storms_cycle}), {total / 1e6:.1f} MB in {out}")
+    return 0
+
+
+def relink(out: Path) -> int:
+    """Rebuild index.json's storms from the frames already in out (no GRIB)."""
+    ip = out / "index.json"
+    index = json.loads(ip.read_text())
+    storms_cycle, collection = storms_for(index["cycle"])
+    storms = build_storms(out, index["hours"], index["valid"], collection)
+    index["storms_cycle"], index["storms"] = storms_cycle, storms
+    index["tracks"] = sum(1 for s_ in storms if s_["source"] == "track")
+    write_json(ip, index)
+    log(f"relinked {out}: {index['tracks']} tracks, {len(storms) - index['tracks']} more collected storms")
     return 0
 
 
