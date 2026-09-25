@@ -28,6 +28,16 @@ const MW = 150;
 const MH = 136;
 const PX = [34, 140];
 const PY = [18, 100];
+const SMALL = { w: MW, h: MH, px: PX, py: PY };  // the mini diagram geometry of a listed storm
+const BIG_W = 312;  // the selected storm's diagrams fill the panel width, one above the other
+
+// The large geometry for a panel this wide: the same margins, the plot
+// scaled to the width, the small diagram's aspect kept.
+function bigGeom(w) {
+  const pw = w - PX[0] - (MW - PX[1]);
+  const ph = Math.round(pw * (PY[1] - PY[0]) / (PX[1] - PX[0]));
+  return { w, h: ph + PY[0] + (MH - PY[1]), px: [PX[0], PX[0] + pw], py: [PY[0], PY[0] + ph] };
+}
 const SVGNS = 'http://www.w3.org/2000/svg';
 const TAIL_STEPS = 4;            // map tail: the last 24 h, at 6 h steps
 const DEPTHS = ['all', '1000', '980', 'fsu'];
@@ -304,6 +314,17 @@ function fill(s) {
   updateEntry(s, S.i);
 }
 
+// The selected storm's diagrams are rebuilt at the panel width, one
+// above the other; deselecting restores the small pair.
+function resize(s, big) {
+  if (!s.filled || !!s.big === big) return;
+  s.big = big;
+  const m = s.body.querySelector('.minis');
+  m.classList.toggle('big', big);
+  const G = big ? bigGeom(Math.max(240, m.clientWidth || BIG_W)) : SMALL;
+  m.replaceChildren(miniSVG(s, 'b', G), miniSVG(s, 'u', G));
+}
+
 function stripHTML(s) {
   const w = (ST.dt / ST.span) * 100;
   let html = '';
@@ -318,6 +339,7 @@ function stripHTML(s) {
 
 function updateEntry(s, i) {
   if (!s.el) return;
+  resize(s, ST.selected === s.key);
   const e = s.at[i];
   const on = S.follow === s.key;
   s.el.classList.toggle('absent', !e);
@@ -376,14 +398,16 @@ function vtLabel(parent, x, y, sup, anchor) {
   parent.append(t);
 }
 
-function miniSVG(s, kind) {
+function miniSVG(s, kind, G = SMALL) {
+  const { w: MW, h: MH, px: PX, py: PY } = G;
+  const big = G !== SMALL;
   const yl = kind === 'b' ? FIG1.b : FIG1.vtu;
   const xl = FIG1.vtl;
   const X = (v) => PX[0] + ((v - xl[0]) / (xl[1] - xl[0])) * (PX[1] - PX[0]);
   const Y = (v) => PY[1] - ((v - yl[0]) / (yl[1] - yl[0])) * (PY[1] - PY[0]);
   const title = kind === 'b' ? 'thermal asymmetry against lower thermal wind' : 'upper against lower thermal wind';
-  const svg = svgEl('svg', { viewBox: `0 0 ${MW} ${MH}`, width: MW, height: MH, class: `mini mini-${kind}`, role: 'img',
-    'aria-label': `${s.label}, phase diagram, ${title}` });
+  const svg = svgEl('svg', { viewBox: `0 0 ${MW} ${MH}`, width: MW, height: MH, class: `mini mini-${kind}${big ? ' big' : ''}`,
+    role: 'img', 'aria-label': `${s.label}, phase diagram, ${title}` });
   for (const [x0, x1, y0, y1, c] of QUAD[kind]) {
     svg.append(svgEl('rect', { x: X(x0), y: Y(y1), width: X(x1) - X(x0), height: Y(y0) - Y(y1), fill: c, class: `quad q-${kind}` }));
   }
@@ -407,10 +431,10 @@ function miniSVG(s, kind) {
 
   const g = svgEl('g', { class: 'traj' });
   svg.append(g);
-  const now = svgEl('circle', { r: 4, class: 'now', visibility: 'hidden' });
+  const now = svgEl('circle', { r: big ? 6 : 4, class: 'now', visibility: 'hidden' });
   svg.append(now);
   if (kind === 'b') s.nowB = now; else s.nowU = now;
-  s[`traj_${kind}`] = { g, X, Y, xl, yl };
+  s[`traj_${kind}`] = { g, X, Y, xl, yl, r: big ? 3 : 2 };
   if (ST.built) drawTrajectory(s, kind);
   return svg;
 }
@@ -441,7 +465,7 @@ function drawTrajectory(s, kind) {
   }
   t.g.append(svgEl('path', { d, class: 'path' }));
   for (const p of dots) {
-    t.g.append(svgEl('circle', { cx: p.x.toFixed(1), cy: p.y.toFixed(1), r: 2, fill: p.clipped ? 'none' : p.hex, stroke: p.clipped ? p.hex : '#0d0d0f', class: 'dot' }));
+    t.g.append(svgEl('circle', { cx: p.x.toFixed(1), cy: p.y.toFixed(1), r: t.r, fill: p.clipped ? 'none' : p.hex, stroke: p.clipped ? p.hex : '#0d0d0f', class: 'dot' }));
   }
 }
 

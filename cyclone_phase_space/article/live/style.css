@@ -405,6 +405,8 @@ h1 { font-size: 18px; line-height: 28px; font-weight: 600; letter-spacing: -0.01
 .strip .now { position: absolute; top: -3px; bottom: -3px; width: 1px; margin-left: -0.5px; background: var(--text); }
 .minis { display: flex; gap: 12px; }
 .mini { flex: none; width: 150px; height: 136px; overflow: visible; }
+.minis.big { flex-direction: column; gap: 10px; }
+.minis.big .mini { width: 100%; height: auto; max-width: none; }
 .mini .quad.q-b { opacity: 0.16; }
 .mini .quad.q-u { opacity: 0.11; }
 .mini .frame { fill: none; stroke: rgba(233, 232, 227, 0.3); stroke-width: 1; }
@@ -670,6 +672,7 @@ h1 { font-size: 18px; line-height: 28px; font-weight: 600; letter-spacing: -0.01
   .deep, .storm { margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
   .time-axis { box-shadow: -16px 0 0 var(--panel-solid), 16px 0 0 var(--panel-solid), 0 1px 0 var(--rule); }
   .mini { flex: 1 1 0; width: auto; height: auto; min-width: 0; max-width: 200px; }
+  .minis.big .mini { flex: none; max-width: none; }
   .st-body.pending { height: calc((100vw - 44px) / 2 * 0.9067 + 16px); }
 
   .card-foot { display: none; }

@@ -770,7 +770,11 @@ function setStormsOpen(open) {
   dropInsets();
   document.body.classList.toggle('storms-open', open);
   $('storms-btn').setAttribute('aria-expanded', String(open));
-  if (open && narrow()) closeCard();
+  if (open && narrow()) {  // the sheet replaces the card, but keeps its low selected in the list
+    const keep = typeof ST !== 'undefined' ? ST.selected : null;
+    closeCard();
+    if (keep) selectStorm(keep);
+  }
   basemap?.edges();
 }
 
