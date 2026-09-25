@@ -46,8 +46,10 @@
 #   nested inside it.  A PGEN Line cannot carry a hole, and overlapping closed
 #   contours are how these charts are drawn anyway.
 # * Polygons: the max-wind field is lightly smoothed, optionally zeroed over
-#   the Land edit area, then contoured.  Each closed contour becomes a PGEN
-#   Line with closed="true".
+#   the Land edit area, then contoured.  A contour that comes back on itself
+#   becomes a PGEN Line with closed="true"; one that runs off the edge of the
+#   domain stays OPEN, because closing it would draw a chord straight across
+#   the chart.
 # * pmsl: Lows only, at the times a pmsl grid actually exists.  The
 #   inventory over the selected span decides the plot times - nothing is
 #   forced onto a 6-hourly schedule - and they are then thinned to no closer
@@ -211,6 +213,17 @@ SMOOTH_PASSES = 2
 MIN_POLYGON_POINTS = 4
 MIN_POLYGON_AREA_DEG2 = 1.0
 MAX_POLYGON_POINTS = 60
+
+# A contour that runs off the edge of the domain comes back OPEN.  Closing it
+# would join its two ends with a chord straight across the map, so it is
+# drawn as an open line instead and kept only if it is at least this long,
+# in degrees.
+MIN_OPEN_LINE_DEG = 2.0
+
+# Consecutive contour points further apart than this do not belong to one
+# line - a wrap in the longitudes, say - so the contour is split there
+# rather than drawn across the gap.
+MAX_POINT_JUMP_DEG = 20.0
 
 # The PGEN activity, built the way CreateXML.py builds it:
 #
@@ -511,6 +524,45 @@ def decimatePoints(points, maxPoints=None):
     return points
 
 
+def splitOnJumps(points, maxJump=None):
+    """Split a contour wherever consecutive points jump implausibly far.
+
+    A jump like that is not part of the line - it is a wrap in the
+    longitudes, or two pieces matplotlib handed back joined - and drawing
+    through it puts a stripe across the chart.
+    """
+    if maxJump is None:
+        maxJump = MAX_POINT_JUMP_DEG
+    points = np.asarray(points, dtype=float)
+    if len(points) < 2:
+        return [points]
+    steps = np.hypot(np.diff(points[:, 0]), np.diff(points[:, 1]))
+    breaks = np.nonzero(steps > maxJump)[0]
+    if not len(breaks):
+        return [points]
+    pieces, start = [], 0
+    for b in breaks:
+        pieces.append(points[start:b + 1])
+        start = b + 1
+    pieces.append(points[start:])
+    return [p for p in pieces if len(p) > 1]
+
+
+def isClosedRing(points):
+    """True when the contour comes back to where it started."""
+    points = np.asarray(points, dtype=float)
+    return len(points) > 2 and bool(np.allclose(points[0], points[-1]))
+
+
+def lineLengthDeg(points):
+    """Length of an open line, in degrees."""
+    points = np.asarray(points, dtype=float)
+    if len(points) < 2:
+        return 0.0
+    return float(np.sum(np.hypot(np.diff(points[:, 0]),
+                                 np.diff(points[:, 1]))))
+
+
 def openRing(points):
     """Drop a repeated closing point - PGEN closes the ring itself."""
     points = np.asarray(points, dtype=float)
@@ -530,36 +582,55 @@ def ringAreaDeg2(points):
 
 
 def extractHazardPolygons(lon, lat, grid, level, minPoints=None, minArea=None,
-                          maxPoints=None):
-    """Contour ``grid`` at ``level``, returning ``(polygons, dropped)``.
+                          maxPoints=None, minOpenLength=None):
+    """Contour ``grid`` at ``level``, returning ``(shapes, dropped)``.
 
-    Polygons are (lat, lon) point arrays.  ``dropped`` holds one
-    ``(area, points)`` pair per contour rejected as noise, so the caller can
-    say what was left off the chart instead of losing it silently.
+    Each shape is ``(points, closed)`` - (lat, lon) point arrays, and whether
+    the contour actually came back on itself.  A contour that runs off the
+    edge of the domain does NOT: closing it would draw a chord straight
+    across the chart, so it is emitted as an open line and kept on its length
+    rather than an area that means nothing for an open line.
 
-    Segments that run off the edge of the domain come back open; PGEN's
-    closed="true" joins their ends, which is how a gale area clipped by the
-    domain boundary is drawn on these charts.
+    ``dropped`` holds one ``(area, points)`` pair per contour rejected as
+    noise, so the caller can say what was left off the chart instead of
+    losing it silently.
     """
     if minPoints is None:
         minPoints = MIN_POLYGON_POINTS
     if minArea is None:
         minArea = MIN_POLYGON_AREA_DEG2
+    if minOpenLength is None:
+        minOpenLength = MIN_OPEN_LINE_DEG
 
-    polygons, dropped = [], []
+    shapes, dropped = [], []
     for seg in contourSegments(lon, lat, grid, level):
-        ring = openRing(decimatePoints(seg, maxPoints))
-        if len(ring) < 3:
-            # Degenerate: cannot enclose an area, so there is nothing to
-            # report as having been left off the chart.
-            continue
-        area = ringAreaDeg2(ring)
-        if len(ring) < minPoints or area < minArea:
-            dropped.append((area, len(ring)))
-            continue
-        # contour works in (lon, lat); PGEN wants (lat, lon)
-        polygons.append(np.column_stack([ring[:, 1], ring[:, 0]]))
-    return polygons, dropped
+        for piece in splitOnJumps(seg):
+
+            if len(piece) < 2:
+                # Nothing at all - matplotlib hands back an empty segment
+                # when the field never reaches the level.  Not a drop.
+                continue
+
+            closed = isClosedRing(piece)
+            points = decimatePoints(piece, maxPoints)
+            if closed:
+                points = openRing(points)
+                if len(points) < 3:
+                    # Cannot enclose an area, so nothing was left off.
+                    continue
+                area = ringAreaDeg2(points)
+                if len(points) < minPoints or area < minArea:
+                    dropped.append((area, len(points)))
+                    continue
+            else:
+                if len(points) < 2 or lineLengthDeg(points) < minOpenLength:
+                    dropped.append((0.0, len(points)))
+                    continue
+
+            # contour works in (lon, lat); PGEN wants (lat, lon)
+            shapes.append((np.column_stack([points[:, 1], points[:, 0]]),
+                           closed))
+    return shapes, dropped
 
 
 # ---------------------------------------------------------------------------
@@ -748,7 +819,7 @@ if _IN_GFE:
             de = defaultDe
 
             for band, label, level in WIND_BANDS:
-                polygons, dropped = extractHazardPolygons(lon, lat, wind, level)
+                shapes, dropped = extractHazardPolygons(lon, lat, wind, level)
 
                 # Never lose an area silently - say what was left off.
                 if dropped:
@@ -757,7 +828,7 @@ if _IN_GFE:
                         "NOT drawn (largest %.2f sq deg)"
                         % (period, label, len(dropped), MIN_POLYGON_AREA_DEG2,
                            max(d[0] for d in dropped)), "R")
-                if not polygons:
+                if not shapes:
                     self.statusBarMsg("No %s kt area for %s" % (label, period),
                                       "R")
                     continue
@@ -765,10 +836,17 @@ if _IN_GFE:
                 if de is None:
                     de = XmlUtils.createXmlLayer(product, LAYER_NAMES[period])
                 style = polygonStyle(band, period, colorBy, hatch)
-                for polygon in polygons:
-                    addPolygonToXml(de, polygon, style)
-                self.statusBarMsg("%s %s kt: %d polygon(s)"
-                                  % (period, label, len(polygons)), "R")
+                for points, closed in shapes:
+                    addLineToXml(de, points, style, closed=closed)
+
+                openCount = sum(1 for _, closed in shapes if not closed)
+                if openCount:
+                    self.statusBarMsg(
+                        "%s %s kt: %d area(s) run off the edge of the domain "
+                        "and are drawn as open lines, not closed"
+                        % (period, label, openCount), "R")
+                self.statusBarMsg("%s %s kt: %d shape(s)"
+                                  % (period, label, len(shapes)), "R")
             return de
 
         def _readLowPositions(self, dbase, cycleTime, lon, lat, basin, hours):

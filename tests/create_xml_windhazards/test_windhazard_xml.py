@@ -633,6 +633,11 @@ def test_polygon_extraction():
     gale, _ = m.extractHazardPolygons(lon, lat, wind, 34.0)
     storm, _ = m.extractHazardPolygons(lon, lat, wind, 48.0)
     hurr, _ = m.extractHazardPolygons(lon, lat, wind, 64.0)
+    check("a bullseye inside the domain gives closed rings",
+          all(closed for _, closed in gale + storm + hurr))
+    gale = [pts for pts, _ in gale]
+    storm = [pts for pts, _ in storm]
+    hurr = [pts for pts, _ in hurr]
     check("one gale polygon", len(gale) == 1, str(len(gale)))
     check("one storm polygon", len(storm) == 1, str(len(storm)))
     check("one hurricane polygon", len(hurr) == 1, str(len(hurr)))
@@ -676,6 +681,44 @@ def test_polygon_extraction():
                                                       minArea=0.05)
     check("lowering minArea keeps it", len(keptPolys) == 1, str(len(keptPolys)))
     check("and reports nothing dropped", keptDropped == [], str(keptDropped))
+
+
+def test_contour_off_the_domain_edge():
+    print("\ntest_contour_off_the_domain_edge")
+    # A storm centred on the western edge: its contours run off the domain
+    # and come back OPEN.  Closing them drew a chord clean across the chart -
+    # the long straight lines that showed up in CAVE.
+    _installFakes(datetime(2026, 9, 21, 18))
+    m = loadProcedureModule()
+    lat, lon = latLonGrids()
+    edge = m.smoothGrid(bullseye(80.0, cy=CY, cx=0), m.SMOOTH_PASSES)
+
+    shapes, _ = m.extractHazardPolygons(lon, lat, edge, 34.0)
+    check("the clipped contour is produced", len(shapes) >= 1, str(len(shapes)))
+    check("and is NOT closed", all(not closed for _, closed in shapes),
+          str([closed for _, closed in shapes]))
+
+    # The giveaway for the old bug: the first and last points sit far apart,
+    # so closing them draws a line across the domain.
+    points = shapes[0][0]
+    span = abs(float(points[0][0]) - float(points[-1][0]))
+    check("its ends really are far apart - this is why closing them showed",
+          span > 5.0, "%.1f degrees of latitude" % span)
+
+    # An open line is kept on its length; an area would be meaningless.
+    stub, dropped = m.extractHazardPolygons(lon, lat, edge, 34.0,
+                                            minOpenLength=1000.0)
+    check("a short open line is dropped on length", stub == [], str(stub))
+    check("and reported, not lost silently", len(dropped) >= 1)
+
+    # A contour with a wrap in it is split, never drawn across the gap.
+    jumpy = np.array([[-70.0, 40.0], [-69.0, 41.0], [120.0, 41.0],
+                      [121.0, 42.0]])
+    pieces = m.splitOnJumps(jumpy, 20.0)
+    check("a wrap splits the contour in two", len(pieces) == 2,
+          str(len(pieces)))
+    check("neither piece spans the gap",
+          all(np.max(np.abs(np.diff(p[:, 0]))) < 20.0 for p in pieces))
 
 
 def test_layers_and_period_maximum():
@@ -1130,6 +1173,7 @@ def main():
     test_low_hours()
     test_span_and_thinning()
     test_polygon_extraction()
+    test_contour_off_the_domain_edge()
     test_layers_and_period_maximum()
     test_pgen_line_shape()
     test_color_by_band_vs_period()

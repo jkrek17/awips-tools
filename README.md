@@ -491,8 +491,14 @@ That field is lightly smoothed (`SMOOTH_PASSES`), optionally zeroed over the
 (1 sq deg, roughly a 60 x 40 NM box at high-seas latitudes) or
 `MIN_POLYGON_POINTS` are dropped as noise **and reported**; longer ones are
 decimated to `MAX_POLYGON_POINTS` so the result stays editable in PGEN.
-Polygons are emitted with `closed="true"`, which is also what joins the ends of
-an area clipped by the edge of the domain.
+
+A contour that comes back on itself is emitted `closed="true"`. **One that runs
+off the edge of the domain is not** - closing it would join its two ends with a
+chord straight across the chart, so it is drawn as an open line and kept on its
+length (`MIN_OPEN_LINE_DEG`) rather than an area that means nothing for an open
+line. A contour with an implausible jump in it, such as a wrap in the
+longitudes, is split at the gap rather than drawn across it
+(`MAX_POINT_JUMP_DEG`).
 
 ### The Lows and the track
 

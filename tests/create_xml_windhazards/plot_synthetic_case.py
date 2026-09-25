@@ -207,7 +207,10 @@ def drawPanel(ax, module, layers, lat2d, lon2d, period, startHr, endHr):
     # This period's band polygons, exactly as written to the XML.  Bands are
     # told apart inside the layer by color, so count them that way.
     for line in layers.get(period, {}).get("lines", []):
-        ring = np.vstack([line["points"], line["points"][:1]])
+        # Only a closed contour comes back to its start; one that ran off the
+        # domain edge is drawn open, as PGEN will draw it.
+        ring = (np.vstack([line["points"], line["points"][:1]])
+                if line["closed"] else line["points"])
         ax.plot(ring[:, 0], ring[:, 1], color=line["color"],
                 linewidth=line["width"] * 0.7,
                 linestyle="--" if line["dashed"] else "-",
