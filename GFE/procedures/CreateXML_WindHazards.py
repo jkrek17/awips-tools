@@ -56,10 +56,9 @@
 #   from one plot time to the next.
 # * Activity: named the way CreateXML.py names its own -
 #   "<basin>_HS_Surface(F048)" from ACTIVITY_AREA/_PRODUCT/_FHR - and passed
-#   as both type and subtype, because PGEN cannot deserialize an activity
-#   type its list does not carry.  The file name follows CreateXML.py's six
-#   fields too - basin_area_prod_input_gridstart_fhr.xml - since storeXML is
-#   handed nothing but that path.
+#   as both the type and the name, which is what a real chart's Product
+#   carries.  The file name follows the real charts too:
+#   <Basin>_<Area>_<Product>.<Fhr>.xml.
 # * Output: a single XML with four layers - "F000-024" and "F024-048", each
 #   holding that period's three band polygons; "Lows", holding every 6-hourly
 #   Low with its pressure and forecast hour; and "Track", holding the lines
@@ -78,10 +77,9 @@
 # Two things to check on first run
 # --------------------------------
 # 1. The site's XmlUtils has no polygon writer to borrow, so addLineToXml
-#    below emits the PGEN Line element itself.  Open the first XML this
-#    writes and compare its <Line> against one your existing charts produce
-#    (the Isobars layer is the closest thing); if the element or color
-#    spelling differs, addLineToXml is the only place to change.
+#    below emits the PGEN Line element itself.  It is matched against a real
+#    OPC Isobars Line - <Point Lon Lat> children and a single <Color> - so
+#    if a future PGEN changes that, addLineToXml is the only place to edit.
 # 2. The forecast-hour label beside each Low goes through the site's
 #    XmlUtils.xmladdTextBox, which CreateXML.py only ever calls with the
 #    disclaimer box.  If it wants something other than a plain string, or if
@@ -211,26 +209,24 @@ MAX_POLYGON_POINTS = 60
 #
 #     basin_long + "_" + area + "_" + prod + "(" + fhr_opt + ")"
 #
-# giving "Atlantic_HS_Surface(F048)", passed as BOTH the type and the
-# subtype.  PGEN will not deserialize an activity whose type it does not
-# know - "unable to deserialize PGEN activity. Name is null" - so this has to
-# be a name the site's activity list already carries, which is why it is
-# built from the same pieces as the existing charts rather than from a name
-# of its own.  Point these at whichever registered activity this chart should
-# file under.
+# giving "Atlantic_HS_WindHazards(F048)", passed twice: a real chart's
+# Product carries type and name - no subtype - and both hold that one string.
+#
+#     <Product outputFile="Atlantic_HS_Surface.F000.xml" ... center="OPC"
+#              type="Atlantic_HS_Surface(F000)"
+#              name="Atlantic_HS_Surface(F000)">
+#
+# ACTIVITY_PRODUCT is WindHazards rather than Surface on purpose: an activity
+# is identified by that name, so reusing "Surface" would store this chart
+# over the real one.
 ACTIVITY_AREA = "HS"
-ACTIVITY_PRODUCT = "Surface"
+ACTIVITY_PRODUCT = "WindHazards"
 ACTIVITY_FHR = "F048"
 
-# The output file name follows CreateXML.py's six fields exactly:
+# The output file name follows the real charts' own shape - the forecast
+# hour after a dot, no cycle or database in it:
 #
-#     basin_area_prod_input_gridstart_fhr.xml
-#
-# storeXML is handed nothing but this path, so anything that derives the
-# activity's name from the file name needs those six fields present.
-# FILE_PRODUCT is the third one, kept as WindHazards so these files cannot
-# collide with the site's real Surface charts for the same cycle.
-FILE_PRODUCT = "WindHazards"
+#     <Basin>_<Area>_<Product>.<Fhr>.xml      Atlantic_HS_Surface.F000.xml
 
 # Edit area zeroed out when "Mask land:" is On.
 MASK_EDIT_AREA = "Land"
@@ -575,34 +571,49 @@ def trackStyle():
     """PGEN attributes for a Low track line."""
     return {"color": TRACK_COLOR,
             "pgenType": TRACK_LINE_TYPE,
-            "fillPattern": None,
+            "fillPattern": "SOLID",
             "lineWidth": TRACK_LINE_WIDTH,
             "smoothFactor": SMOOTH_FACTOR,
             "filled": False}
 
 
 def addLineToXml(de, points, style, closed=True):
-    """Append one PGEN Line, closed or open, to a DrawableElement element."""
+    """Append one PGEN Line, closed or open, to a DrawableElement element.
+
+    Matched attribute for attribute against a Line from a real OPC chart:
+
+        <Line flipSide="false" fillPattern="SOLID" filled="false"
+              closed="true" smoothFactor="2" sizeScale="1.0" lineWidth="3.0"
+              pgenCategory="Lines" pgenType="LINE_SOLID">
+          <Color alpha="255" blue="0" green="255" red="255" />
+          <Point Lon="-175.639999" Lat="59.009998" />
+
+    The points are <Point Lon Lat>, not <linePoints>, and the color is a
+    single <Color>, not <colors> - PGEN cannot deserialize an activity whose
+    elements it does not recognize.
+    """
     attrs = {"pgenCategory": "Lines",
              "pgenType": style["pgenType"],
              "closed": "true" if closed else "false",
              "filled": "true" if style["filled"] else "false",
-             "flagColor": "false",
+             "flipSide": "false",
+             # A real unfilled Line still carries fillPattern="SOLID"; the
+             # hatch pattern only applies when the polygon is filled.
+             "fillPattern": ((style["fillPattern"] or "SOLID")
+                             if style["filled"] else "SOLID"),
              "lineWidth": "%.1f" % float(style["lineWidth"]),
              "sizeScale": "1.0",
              "smoothFactor": str(int(style["smoothFactor"]))}
-    if style["filled"]:
-        attrs["fillPattern"] = style["fillPattern"]
 
     line = ET.SubElement(de, "Line", attrs)
     red, green, blue = style["color"]
-    ET.SubElement(line, "colors", {"red": str(int(red)),
-                                   "green": str(int(green)),
-                                   "blue": str(int(blue)),
-                                   "alpha": "255"})
+    ET.SubElement(line, "Color", {"alpha": "255",
+                                  "blue": str(int(blue)),
+                                  "green": str(int(green)),
+                                  "red": str(int(red))})
     for plat, plon in points:
-        ET.SubElement(line, "linePoints", {"Lat": "%.4f" % float(plat),
-                                           "Lon": "%.4f" % float(plon)})
+        ET.SubElement(line, "Point", {"Lon": "%.6f" % float(plon),
+                                      "Lat": "%.6f" % float(plat)})
     return line
 
 
@@ -899,8 +910,7 @@ if _IN_GFE:
             pd = pgenProd_dict[basin]
             basin_long = pd["basin"]
             outputFile = (outDir + basin_long + "_" + ACTIVITY_AREA + "_" +
-                          FILE_PRODUCT + "_" + str(dbase) + "_" + gridstart +
-                          "_" + ACTIVITY_FHR + ".xml")
+                          ACTIVITY_PRODUCT + "." + ACTIVITY_FHR + ".xml")
             typeSubtype = (basin_long + "_" + ACTIVITY_AREA + "_" +
                            ACTIVITY_PRODUCT + "(" + ACTIVITY_FHR + ")")
 

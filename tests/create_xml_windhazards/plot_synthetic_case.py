@@ -168,10 +168,10 @@ def xmlLayers(xmlPath):
         lines, lows = [], []
         for line in layer.iter("Line"):
             pts = np.asarray([(float(p.get("Lon")), float(p.get("Lat")))
-                              for p in line.iter("linePoints")])
+                              for p in line.iter("Point")])
             lines.append({"points": pts,
                           "color": tuple(int(c.get(k)) / 255.0
-                                         for c in line.iter("colors")
+                                         for c in line.iter("Color")
                                          for k in ("red", "green", "blue")),
                           "dashed": "DASH" in (line.get("pgenType") or ""),
                           "closed": line.get("closed") == "true",

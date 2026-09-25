@@ -194,19 +194,26 @@ def _installFakes(cycleTime, overLandOnly=False, missingWindHours=(),
         @staticmethod
         def createXmlProduct(outputFile, useFile, saveLayers, onOff, status,
                              center, fcstr, ptype, psubtype):
+            # Mirrors a real OPC Product: outputFile is the basename, and
+            # the last two arguments land in type and name - there is no
+            # subType attribute on a real one.
             products = ET.Element("Products")
             product = ET.SubElement(products, "Product", {
-                "name": os.path.basename(outputFile),
+                "outputFile": os.path.basename(outputFile),
                 "useFile": str(useFile), "saveLayers": str(saveLayers),
                 "onOff": str(onOff), "status": str(status),
                 "center": str(center), "forecaster": str(fcstr),
-                "type": str(ptype), "subType": str(psubtype)})
+                "type": str(ptype), "name": str(psubtype)})
             return products, product
 
         @staticmethod
         def createXmlLayer(product, name):
-            layer = ET.SubElement(product, "Layer", {"name": name,
-                                                     "onOff": "true"})
+            # As a real one: attributes, a Color child, then the element.
+            layer = ET.SubElement(product, "Layer", {
+                "filled": "false", "monoColor": "true", "onOff": "true",
+                "name": name})
+            ET.SubElement(layer, "Color", {"alpha": "255", "blue": "0",
+                                           "green": "255", "red": "255"})
             return ET.SubElement(layer, "DrawableElement")
 
         @staticmethod
@@ -438,7 +445,7 @@ def linesInLayer(tree, name):
 
 
 def lineColor(line):
-    c = list(line.iter("colors"))[0]
+    c = list(line.iter("Color"))[0]
     return (int(c.get("red")), int(c.get("green")), int(c.get("blue")))
 
 
@@ -450,7 +457,7 @@ def bandLines(module, tree, period, band):
 
 def ringOf(line):
     return np.asarray([(float(p.get("Lon")), float(p.get("Lat")))
-                       for p in line.iter("linePoints")])
+                       for p in line.iter("Point")])
 
 
 # ---------------------------------------------------------------------------
@@ -735,22 +742,42 @@ def test_layers_and_period_maximum():
 
 def test_pgen_line_shape():
     print("\ntest_pgen_line_shape")
+    # Every attribute here comes from a Line in a real OPC chart's XML:
+    #   <Line flipSide="false" fillPattern="SOLID" filled="false"
+    #         closed="true" smoothFactor="2" sizeScale="1.0" lineWidth="3.0"
+    #         pgenCategory="Lines" pgenType="LINE_SOLID">
+    #     <Color alpha="255" blue="0" green="255" red="255" />
+    #     <Point Lon="-175.639999" Lat="59.009998" />
     module, tree = runProcedure(DEFAULT_VARDICT)
     line = bandLines(module, tree, PERIOD1, "Gale")[0]
     check("closed polygon", line.get("closed") == "true")
     check("pgenCategory Lines", line.get("pgenCategory") == "Lines")
     check("not filled with Hatch fill Off", line.get("filled") == "false")
-    check("no fillPattern when unfilled", line.get("fillPattern") is None)
+    check("an unfilled line still carries a fillPattern",
+          line.get("fillPattern") == "SOLID", str(line.get("fillPattern")))
+    check("flipSide is set", line.get("flipSide") == "false")
+    check("no flagColor attribute - real Lines have none",
+          line.get("flagColor") is None)
+    check("sizeScale is set", line.get("sizeScale") == "1.0")
     check("smoothFactor set", line.get("smoothFactor") == str(module.SMOOTH_FACTOR))
-    colors = list(line.iter("colors"))
-    check("one color child", len(colors) == 1)
+
+    colors = list(line.iter("Color"))
+    check("one Color child, not <colors>", len(colors) == 1)
+    check("the Color carries alpha too", colors[0].get("alpha") == "255")
     check("the gale band is warning-convention yellow",
-          colors and (int(colors[0].get("red")), int(colors[0].get("green")),
-                      int(colors[0].get("blue"))) == module.BAND_COLORS["Gale"])
-    pts = list(line.iter("linePoints"))
-    check("has linePoints", len(pts) >= module.MIN_POLYGON_POINTS, str(len(pts)))
-    check("linePoints carry Lat/Lon",
-          all(p.get("Lat") is not None and p.get("Lon") is not None for p in pts))
+          (int(colors[0].get("red")), int(colors[0].get("green")),
+           int(colors[0].get("blue"))) == module.BAND_COLORS["Gale"])
+    check("nothing writes the old <colors> element",
+          list(tree.getroot().iter("colors")) == [])
+
+    pts = list(line.iter("Point"))
+    check("has Point children, not <linePoints>",
+          len(pts) >= module.MIN_POLYGON_POINTS, str(len(pts)))
+    check("each Point carries Lon and Lat",
+          all(p.get("Lat") is not None and p.get("Lon") is not None
+              for p in pts))
+    check("nothing writes the old <linePoints> element",
+          list(tree.getroot().iter("linePoints")) == [])
 
 
 def test_color_by_band_vs_period():
@@ -1029,23 +1056,21 @@ def test_pgen_activity():
     print("\ntest_pgen_activity")
     module, tree = runProcedure(DEFAULT_VARDICT)
     product = list(tree.getroot().iter("Product"))[0]
-    # CreateXML.py's own shape: basin + area + product + (forecast hour),
-    # passed as both type and subtype.  PGEN cannot deserialize an activity
-    # type its list does not carry, so this has to look like the site's
-    # existing ones rather than be a name of its own.
-    check("the activity is named the way CreateXML.py names its own",
-          product.get("type") == "Pacific_HS_Surface(F048)",
+    # A real Product carries type and name - both the same string - and no
+    # subType: <Product ... type="Atlantic_HS_Surface(F000)"
+    #                       name="Atlantic_HS_Surface(F000)">
+    check("the activity is named the way a real chart's is",
+          product.get("type") == "Pacific_HS_WindHazards(F048)",
           str(product.get("type")))
-    check("the subtype is the same string",
-          product.get("subType") == product.get("type"),
-          str(product.get("subType")))
-    # CreateXML.py's six fields: basin_area_prod_input_gridstart_fhr.xml.
-    # storeXML gets nothing but this path, so the shape has to match.
+    check("name carries that same string - a null name is what PGEN rejects",
+          product.get("name") == product.get("type"), str(product.get("name")))
+    check("its own product token, so it cannot store over the real Surface "
+          "activity", "Surface" not in product.get("type"))
+
+    # The real charts' file shape: <Basin>_<Area>_<Product>.<Fhr>.xml
     name = os.path.basename(STORED[-1])
-    check("the file name has CreateXML.py's six fields",
-          len(name[:-4].split("_")) == 6, name)
-    check("and its own product token, clear of the site's Surface charts",
-          name.startswith("Pacific_HS_WindHazards_"), name)
+    check("the file name follows the real charts",
+          name == "Pacific_HS_WindHazards.F048.xml", name)
 
 
 def test_auto_cycle_and_filename():
@@ -1060,9 +1085,10 @@ def test_auto_cycle_and_filename():
     expected = module.resolveCycle(module.utcNow())
     module, tree = runProcedure(varDict, cycleTime=expected)
     name = os.path.basename(STORED[-1])
-    check("filename carries the resolved cycle",
-          expected.strftime("%Y%m%d%H") in name, name)
-    check("filename carries the resolved database", "Official_D2D" in name, name)
+    # The real charts' file name has no cycle or database in it, so this one
+    # does not either - the cycle shows up in the grids that were read.
+    check("filename follows the real charts' shape",
+          name == "Pacific_HS_WindHazards.F048.xml", name)
     check("Auto picked a 00/06/12/18Z hour", expected.hour in module.CYCLE_HOURS,
           str(expected))
     check("grids were read against that cycle",

@@ -532,35 +532,48 @@ touching the logic.
 
 ### The PGEN activity
 
-The activity is named the way `CreateXML.py` names its own -
-`basin_long + "_" + area + "_" + prod + "(" + fhr_opt + ")"`, giving
-`Atlantic_HS_Surface(F048)` - and passed as **both** the type and the subtype.
-
-PGEN will not deserialize an activity type its list does not carry: a name of
-its own (or PGEN's stock `Default`) fails with `unable to deserialize PGEN
-activity. Name is null`. So the activity has to be one the site's list already
-has, which is why it is built from the same pieces as the existing charts.
-`ACTIVITY_AREA`, `ACTIVITY_PRODUCT` and `ACTIVITY_FHR` point it at whichever
-registered activity this chart should file under. The file name still carries
-`<basin>_WindHazards`, so the files stay easy to tell apart on disk.
-
-### One thing to check on the first run
-
-The site's `XmlUtils` has no polygon writer to borrow (`CreateXML.py` only ever
-asks it for contours, barbs, symbols and text), so `addPolygonToXml` emits the
-PGEN `Line` element itself:
+A real OPC chart's `Product` carries **`type` and `name`** - the same string
+in both - and no `subType`:
 
 ```xml
-<Line pgenCategory="Lines" pgenType="LINE_SOLID" closed="true" filled="false"
-      flagColor="false" lineWidth="3.0" sizeScale="1.0" smoothFactor="2">
-  <colors red="255" green="255" blue="0" alpha="255"/>
-  <linePoints Lat="34.9010" Lon="-51.0000"/>
+<Product outputFile="Atlantic_HS_Surface.F000.xml" useFile="false"
+         saveLayers="false" onOff="true" status="UNKNOWN" center="OPC"
+         forecaster="jason.krekeler" type="Atlantic_HS_Surface(F000)"
+         name="Atlantic_HS_Surface(F000)">
+```
+
+So this one builds `basin_long + "_" + ACTIVITY_AREA + "_" +
+ACTIVITY_PRODUCT + "(" + ACTIVITY_FHR + ")"` and passes it twice, giving
+`Atlantic_HS_WindHazards(F048)`. `ACTIVITY_PRODUCT` is `WindHazards` rather
+than `Surface` **on purpose**: an activity is identified by that name, so
+reusing `Surface` would store this chart over the real one.
+
+The output file follows the real charts too - `<Basin>_<Area>_<Product>.<Fhr>.xml`,
+the forecast hour after a dot, with no cycle or database in it.
+
+### The `Line` element
+
+The site's `XmlUtils` has no polygon writer to borrow (`CreateXML.py` only ever
+asks it for contours, barbs, symbols and text), so `addLineToXml` emits the
+PGEN `Line` itself - matched attribute for attribute against a Line from a real
+OPC `Isobars` layer:
+
+```xml
+<Line flipSide="false" fillPattern="SOLID" filled="false" closed="true"
+      smoothFactor="2" sizeScale="1.0" lineWidth="3.0"
+      pgenCategory="Lines" pgenType="LINE_SOLID">
+  <Color alpha="255" blue="0" green="255" red="255"/>
+  <Point Lon="-175.639999" Lat="59.009998"/>
 </Line>
 ```
 
-Compare that against a `Line` from a chart your existing procedures produce
-(the `Isobars` layer is the closest thing). If the element or color spelling
-differs at your site, `addPolygonToXml` is the only place to change.
+Two details matter and are easy to get wrong: the points are `<Point Lon Lat>`,
+**not** `<linePoints>`, and the color is a single `<Color>`, **not** `<colors>`.
+PGEN cannot deserialize an activity holding elements it does not recognize -
+that is what `unable to deserialize PGEN activity. Name is null` means. An
+unfilled Line still carries `fillPattern="SOLID"`; the hatch pattern only
+appears when the polygon is filled. The tests assert every one of those, so a
+regression fails locally rather than in CAVE.
 
 ### Checking it without AWIPS
 
