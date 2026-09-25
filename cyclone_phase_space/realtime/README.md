@@ -559,6 +559,131 @@ cached under `out/cache/<cycle>/fsu/`). Limits:
 - FSU's diagrams remain theirs; they are kept only for comparison, and
   the differences listed in "Comparing with the FSU pages" above apply.
 
+## Live web map data
+
+`export_web.py` turns one GFS cycle into files a static web page can
+load directly: the live global map in `cyclone_phase_space/article/live/`
+reads them from the `cps-live` branch.
+
+    python3 export_web.py [--cycle YYYYMMDDHH] [--hours H [H ...]] [--out DIR] [--cache DIR] [--workers N]
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--cycle` | see below | GFS cycle to export. |
+| `--hours` | 0 to 198 step 6 | Forecast hours; one that cannot be fetched is skipped. |
+| `--out` | `realtime/out/web/<cycle>/` | Output directory (`index.json` and the rest go straight into it). |
+| `--cache` | `realtime/out/cache/<cycle>/` | GRIB cache, shared with the other scripts. |
+| `--workers` | 3 (fewer on smaller machines) | Frames computed in parallel, one process each (about 1 GB each). |
+
+Without `--cycle` the script takes the newest cycle whose f198 index is
+posted (NOMADS, else the AWS bucket), stepping back 6 h at a time for up
+to two days, so a run made before the newest cycle is complete falls
+back to the one before it. Every frame is fetched, decoded and run
+through the module once on the global grid, through `gfs_cps`
+(`get_grib`, `decode`, `compute_products`: executeHartClass, the two
+executeBand3 calls, executeB and executeIndexStd, with the operational
+constants), and the blobs are labeled with `gfs_cps.label_blobs`. The
+GeoJSON and PNG work adds about 1.5 s per frame. The whole run for 34
+frames from the cache takes about 2 min 15 s here with 3 workers (about
+10 s per frame, 3.2 GB of memory at the peak; about 6 min with one
+worker). One cycle's output is about 34 MB (about 1 MB per frame).
+
+**Files.** In the output directory:
+
+- `index.json`:
+
+      {"cycle": "2026092418", "model": "GFS 0.25", "generated": "2026-09-25T15:10:41Z",
+       "hours": [0, 6, ...], "valid": ["2026-09-24T18:00:00Z", ...],
+       "layers": {"class": true, "mslp": true, "hb": true, "hvtl": true, "hvtu": true},
+       "raster": {"bounds": [[-85, -180], [85, 180]], "crs": "EPSG:3857", "width": 2048, "height": 2041},
+       "ranges": {"hb": [-40, 40], "hvtl": [-300, 300], "hvtu": [-300, 300]},
+       "frames": "frames/f{hhh}/", "storms_cycle": "2026092418", "storms": [...]}
+
+  `hours` and `valid` list the frames actually written, in step;
+  `frames` is a template (`{hhh}` is the hour in three digits).
+  `storms` has one entry per storm of the daily collection with status
+  `ok`, taken from the newest `data/<cycle>/` folder on the exported
+  cycle's day (else the newest folder; `storms_cycle` names it, and each
+  storm repeats it as `cycle`, since its forecast hours count from that
+  run): `{"name", "cycle", "fsu": FSU number or null, "points": [{"fhr",
+  "valid", "lat", "lon", "mslp", "cls"}, ...], "phase_png", "compare_png"}`,
+  the points from its `track.csv` (`cls` null where the class is blank)
+  and the two images as raw.githubusercontent.com URLs on main
+  (`compare_png` null when there is none).
+- `legend.json`: `{"classes": [{"code", "name", "hex"}, ...],
+  "stops": {"hb": [[value, "#rrggbb", alpha], ...], "hvtl": ..., "hvtu": ...},
+  "ranges": {...}, "units": {...}, "labels": {...}}`; the stops sample
+  each colormap at 16 evenly spaced values across its range.
+- `history.json`: `{"latest": cycle, "cycles": [{"cycle", "generated",
+  "index"}, ...]}`, newest first, the cycles exported into this
+  directory (`index` relative to it). With the default `--out`,
+  `out/web/history.json` lists every cycle under `out/web/` as well.
+- `frames/fHHH/lows.geojson`: a FeatureCollection. For each closed low,
+  that is each 8-connected blob of HCPSclass, numbered by depth (`id` 1
+  is the deepest of the frame): the blob's outline as a Polygon (or
+  MultiPolygon) feature with `{"kind": "blob", "cls", "id"}`, and a
+  Point at the MSLP minimum inside the blob with `{"kind": "center",
+  "id", "lat", "lon", "mslp", "hvtl", "hvtu", "hb", "idx", "cls",
+  "name"}` (hPa and m to one decimal, a product null where it is
+  blank; `cls` is the class at the minimum, `name` its short name). The
+  outline is the 0.5 filled contour of the blob's own mask (contourpy),
+  simplified with a 0.25 degree tolerance; a blob across the dateline
+  is cut at 180 into two features with the same `id`. Rings follow
+  RFC 7946 (exterior counterclockwise).
+- `frames/fHHH/mslp.geojson`: isobars every 4 hPa as LineString
+  features with `{"level": hPa}`, from contourpy on the global field
+  (the first column repeated at 180 so lines reach the dateline and end
+  there), simplified with a 0.15 degree tolerance. Closed rings less
+  than 1 degree across centered where the surface pressure is below
+  950 hPa are dropped: over high terrain the extrapolated MSLP breaks
+  into many such rings. A file over 400 KB is redone with the
+  tolerance raised in 0.05 degree steps (none of the 34 frames of
+  2026092418 needed it; they are 300 to 350 KB).
+- `frames/fHHH/hb.png`, `hvtl.png`, `hvtu.png`: the field through its
+  colormap (`CPS_Asymmetry`, -40 to 40 m; `CPS_CoreDiverging`, -300 to
+  300 m), with the colormap's own alpha, so values near zero are
+  transparent, and blanks (below ground, no steering flow) fully
+  transparent. `class.png`: HCPSclass in the `CPS_HartClass` colors,
+  transparent outside the blobs. Each is a 2048 by 2041 px indexed PNG
+  (the 64 colormap entries plus one transparent entry, about 200 to
+  260 KB) in Web Mercator (EPSG:3857) covering lon -180 to 180 and
+  lat -85 to 85: rows are evenly spaced in y = ln(tan(pi/4 + lat/2)),
+  and every pixel takes the nearest grid point, so the image goes on
+  the map as a plain image overlay on those bounds.
+
+Longitudes are -180 to 180 and coordinates are rounded to 2 decimals
+throughout.
+
+**Schedule and branch.** The `CPS live map data` workflow
+(`.github/workflows/cps_live.yml`) runs at 03:40, 09:40, 15:40 and
+21:40 UTC, about 3 h 40 min after each cycle, when the 0.25 degree
+f198 is usually posted; if it is not yet, the script falls back to the
+previous cycle. It installs `requirements.txt` (with the pip cache),
+runs `export_web.py` into a temporary directory, and publishes the
+result as the single commit of the orphan branch `cps-live`, under
+`latest/` (`index.json`, `legend.json`, `history.json`, `frames/`),
+committed as `cps-live` with the message `CPS live data <cycle>` and
+force-pushed. The branch is built from nothing in a fresh work tree
+each time, so it never carries more than one cycle (about 34 MB) and
+never grows a history, and main is never touched: committing a few
+hundred binary files four times a day to main would bloat every
+clone. Nothing else runs on that push: the Pages workflow builds only
+on pushes to main, and the branch holds no workflows. The page fetches
+
+    https://raw.githubusercontent.com/jkrek17/awips-tools/cps-live/latest/index.json
+
+and the frame files relative to it; raw.githubusercontent.com answers
+with `Access-Control-Allow-Origin: *` and `Cache-Control: max-age=300`,
+so a new cycle reaches viewers within about five minutes of the push.
+
+**Re-running or backfilling.** Actions > CPS live map data > Run
+workflow, with a cycle (YYYYMMDDHH) to publish that run instead of the
+newest; blank takes the newest complete cycle. The branch then holds
+that cycle until the next scheduled run replaces it. NOMADS keeps about
+10 days; older cycles come from the AWS bucket. Locally,
+`python3 export_web.py --cycle YYYYMMDDHH --out DIR` writes the same
+tree to `DIR`, which a local copy of the page can be pointed at.
+
 ## Lows table
 
 `lows_<region>.csv` has one row per connected blob (8-connected) of the
@@ -614,3 +739,112 @@ captures used the 1000 hPa height detector and this uses MSLP.
   errors are retried 3 times.
 - Only the CPS products are drawn; the captures' 1000-500 hPa thickness
   and surface wind overlays are not.
+
+## A second model: ECMWF open data (`ecmwf_cps.py`)
+
+`ecmwf_cps.py` makes the same four-panel figures, npz and lows table
+from ECMWF's open-data IFS forecasts at 0.25 degree
+(`https://data.ecmwf.int/forecasts/`), for the same 00 and 12 UTC
+cycles GFS runs at. It takes the same four options as `gfs_cps.py`:
+`--cycle`, `--hours`, `--region`, `--out` (default `realtime/out/ecmwf`,
+so frames land in `out/ecmwf/<cycle>/`), and reuses `gfs_cps.py`'s
+`compute_products`, `find_lows`, `region_slices`, `write_lows`,
+`make_cmaps`, `draw_panels`, `plot_frame` and the rest of the plotting
+code by import, unchanged; only the fetch and decode are its own,
+because ECMWF's open data has no NOMADS-style filter endpoint and a
+different index format. Titles say "ECMWF IFS 0.25" in place of "GFS
+0.25 deg".
+
+    python3 ecmwf_cps.py --cycle 2026092500 --hours 0 6 12 --region natl
+
+No new Python package was needed: fetching goes through direct HTTPS
+byte-range GETs against the `.index` sidecars ECMWF publishes next to
+every GRIB2 file (the `ecmwf-opendata` client was the other option
+named for this work, but it does not do anything the existing
+`requests`-based byte-range approach in `gfs_cps.py`'s AWS path does
+not already do), and decoding reuses `pygrib`, already a dependency.
+`requirements.txt` is unchanged.
+
+**Field availability**, checked with real requests against the
+2026092500 cycle (both the fields in doubt, 400 hPa and surface
+pressure, were checked explicitly and are present):
+
+- geopotential height, ECMWF's `gh` parameter, already in geopotential
+  meters (no conversion from geopotential needed, unlike a model that
+  only carries `z`, which ECMWF also carries alongside `gh`), is posted
+  at all six of 925, 850, 700, 500, 400 and 300 hPa, at every 6 h step
+  from 0 to at least 144 h (checked at every step; ECMWF also posts 3 h
+  steps to 144 h and 6 h steps beyond it, out to 240 h at 0.25 degree);
+- u/v wind (`u`, `v`) is posted at 850, 700, 500 and 300 hPa over the
+  same steps;
+- mean sea level pressure (`msl`) is posted at every step;
+- surface pressure (`sp`) is posted at every step checked (f000 and
+  f144, and every 6 h between); no substitute was needed.
+
+**Substitution kept in the code, not triggered by this run.** Because
+ECMWF's product list for a future cycle is not a fixed guarantee the
+way the GFS pgrb2 file's contents are, `ecmwf_cps.py` still degrades
+explicitly if `sp` is ever absent from an hour's `.index`: `psfc`
+becomes a constant 1013 hPa field for that hour instead of a decoded
+message, which only widens the below-ground mask to the model's own
+missing values rather than PRES's terrain mask (a constant field has
+no terrain to mask against). The frame's title and the montage's
+suptitle say "sp not posted: below-ground mask uses a constant 1013
+hPa" when this happens; the console output marks the hour
+`[no sp: psfc=1013 hPa constant]`. This did not happen in the run
+below or in any of the steps checked above.
+
+**Grid order and longitude convention.** ECMWF's own grid is latitude
+descending (90 to -90) with longitude -180 to 179.75, unlike GFS's AWS
+file (latitude descending, longitude 0 to 359.75) or NOMADS subregion
+output (latitude ascending from the box's west edge). `decode()`
+reorders it the same way `gfs_cps.decode()` reorders GFS files, to
+rows increasing northward and columns increasing eastward from the
+fetch box's west edge, reusing `gfs_cps.fetch_box()` unchanged, so a
+region crossing the dateline or the Greenwich meridian works the same
+way. Checked on the 2026092500 f000 natl-plus-margin box, the same
+polar-front B sign check the GFS README runs: of the 14,215 points
+between 35N and 60N with 850 hPa wind over 8 m/s and 925-700 hPa
+thickness falling northward (warm air to the south), B is positive at
+99.9% of them (median 39.1 m), against 98.5% (median 35.6 m) for GFS.
+
+**Run.** `2026092500`, the latest 00 or 12 UTC cycle with an f006
+index at the time this was run (2026-09-25, about 15:00 UTC; the
+12 UTC run of the same day was not yet posted), hours 0, 6, 12,
+region `natl`, cartopy maps, from an empty cache: 112.8 s total (about
+25-30 s per frame for the 17 byte-range GETs and pygrib decode, one
+request per message as with `gfs_cps.py`'s AWS path, plus about 1 s to
+compute and 4-13 s to plot). The lows table at f006:
+
+    cycle,fhr,valid,lat,lon,mslp_hpa,hvtl,hvtu,hb,idx,class
+    2026092500,6,2026-09-25T06:00Z,65.75,-16.0,967.6,139.0,-78.4,15.2,1.11,3
+    2026092500,6,2026-09-25T06:00Z,57.5,-45.5,993.8,-167.3,-249.8,40.5,-2.85,4
+    2026092500,6,2026-09-25T06:00Z,36.0,-70.75,999.6,220.5,-143.8,37.5,1.06,3
+    2026092500,6,2026-09-25T06:00Z,14.5,-21.75,1003.7,48.5,-39.7,-4.1,0.52,1
+    2026092500,6,2026-09-25T06:00Z,39.5,-60.0,1010.2,130.7,-157.0,29.5,0.81,3
+    2026092500,6,2026-09-25T06:00Z,29.5,-42.25,1014.3,47.5,18.3,9.8,1.07,0
+    2026092500,6,2026-09-25T06:00Z,42.5,7.0,1014.3,-170.4,-149.8,43.1,-2.78,4
+    2026092500,6,2026-09-25T06:00Z,41.75,18.25,1014.5,-106.3,-261.9,57.4,-2.56,4
+    2026092500,6,2026-09-25T06:00Z,31.25,-41.75,1016.7,61.0,-33.8,14.4,0.76,3
+    2026092500,6,2026-09-25T06:00Z,43.0,19.75,1019.3,-21.0,-240.2,46.6,-1.4,4
+
+The f006 figure was read and checked by eye: the class blobs' central
+pressures (968, 994, 1014, 1019 mb near Iceland/Scandinavia; 1000,
+1010 mb near Newfoundland; 1017/1014, 1004 mb in the tropics) match the
+lows table, coastlines and MSLP contours are in the right places, the
+HB panel is warm (purple) through most of the midlatitudes with a
+cold-core (teal) center over the low near Iceland, and the HVTL/HVTU
+panels' 850 hPa barbs and 300 hPa arrows both point the right way for
+that low's cyclonic circulation.
+
+**Known differences from `gfs_cps.py`.** No NOMADS-style region filter
+exists for ECMWF open data, so every forecast hour downloads the whole
+0.25 degree grid's wanted messages (17 byte-range GETs, like
+`gfs_cps.py`'s AWS path) regardless of `--region`; the cache is
+therefore keyed only by forecast hour (`out/ecmwf/cache/<cycle>/
+global_f<hhh>.ecmwf.grb2`), not by region, and a natl run and a global
+run of the same cycle and hour share one download. `--source`,
+`--plain`, `--track` and `--hart-bands` are not implemented (ECMWF's
+own file does not carry Hart's 50 hPa levels; adding them would need
+fetching `gh` at ECMWF's own 900, 800, 750, 650, 600, 550 and 450 hPa
+levels, which are posted, the same way).

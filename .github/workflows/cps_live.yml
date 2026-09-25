@@ -1,0 +1,88 @@
+# Data for the live global cyclone phase space web map
+# (cyclone_phase_space/realtime/export_web.py). Four times a day, about
+# 3 h 40 min after each GFS cycle, when the 0.25 degree f198 is usually
+# posted, the newest cycle whose f198 exists (the script probes NOMADS, then
+# the AWS bucket, and falls back to the previous cycle when it is missing) is
+# exported to GeoJSON and Web Mercator PNGs and published as the single
+# commit of the orphan branch cps-live, under latest/:
+#
+#   https://raw.githubusercontent.com/jkrek17/awips-tools/cps-live/latest/index.json
+#
+# The branch is rebuilt from nothing and force-pushed every run, so it never
+# accumulates history (about 35 MB per cycle), and main is never touched.
+# Run it by hand (Actions > CPS live map data > Run workflow) with a cycle to
+# publish a particular run.
+#
+# Nothing else runs on this push: the Pages workflow only watches main, the
+# cps-live tree has no .github/workflows, and pushes made with the workflow's
+# GITHUB_TOKEN do not start other workflows anyway.
+
+name: CPS live map data
+
+on:
+  schedule:
+    - cron: '40 3,9,15,21 * * *'
+  workflow_dispatch:
+    inputs:
+      cycle:
+        description: 'GFS cycle YYYYMMDDHH (blank: the newest cycle whose f198 is posted)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cps-live
+  cancel-in-progress: false
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: cyclone_phase_space/realtime/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r cyclone_phase_space/realtime/requirements.txt
+
+      - name: Export
+        id: export
+        working-directory: cyclone_phase_space/realtime
+        env:
+          CYCLE: ${{ github.event.inputs.cycle }}
+        run: |
+          out="$RUNNER_TEMP/cps-web"
+          rm -rf "$out"
+          args=(--out "$out")
+          if [ -n "$CYCLE" ]; then args+=(--cycle "$CYCLE"); fi
+          python3 export_web.py "${args[@]}"
+          echo "out=$out" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to the cps-live branch
+        env:
+          CYCLE: ${{ steps.export.outputs.cycle }}
+          OUT: ${{ steps.export.outputs.out }}
+          REMOTE: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
+        run: |
+          work="$RUNNER_TEMP/cps-live"
+          rm -rf "$work"
+          mkdir -p "$work/latest"
+          cp -r "$OUT"/. "$work/latest/"
+          cd "$work"
+          git init -q
+          git checkout -q --orphan cps-live
+          git config user.name "cps-live"
+          git config user.email "cps-live@users.noreply.github.com"
+          git add -A
+          git commit -q -m "CPS live data $CYCLE"
+          git remote add origin "$REMOTE"
+          git push --force origin cps-live
