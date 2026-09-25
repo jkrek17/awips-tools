@@ -84,6 +84,7 @@ jobs:
           du -sh "$site"
 
       - name: Push to the public repository
+        if: steps.cfg.outputs.ready == 'true'
         env:
           REPO: ${{ vars.PUBLIC_SITE_REPO }}
           TOKEN: ${{ secrets.WEB_TOKEN }}
