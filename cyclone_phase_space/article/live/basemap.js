@@ -24,12 +24,13 @@ const CPSBasemap = (() => {
   const EDGE_ZOOM = 3;            // graticule edge labels from this zoom
   const OFFSETS = [-360, 0, 360];
 
+  // Neutral grays: land and ocean differ by tone only (ocean is the page's --map-bg).
   const STYLE = {
-    land: { stroke: false, fillColor: '#1c2129', fillOpacity: 1 },
-    lakes: { stroke: false, fillColor: '#0a1120', fillOpacity: 1 },
-    coast: { color: '#a3acba', weight: 0.8, opacity: 0.5, fill: false },
-    borders: { color: '#a3acba', weight: 0.6, opacity: 0.22, fill: false },
-    grat: { color: '#c9d1dd', weight: 0.6, opacity: 0.09, fill: false },
+    land: { stroke: false, fillColor: '#24252a', fillOpacity: 1 },
+    lakes: { stroke: false, fillColor: '#17181b', fillOpacity: 1 },
+    coast: { color: '#a3a39e', weight: 0.8, opacity: 0.5, fill: false },
+    borders: { color: '#a3a39e', weight: 0.6, opacity: 0.22, fill: false },
+    grat: { color: '#d2d2cd', weight: 0.6, opacity: 0.08, fill: false },
   };
 
   const files = new Map();
