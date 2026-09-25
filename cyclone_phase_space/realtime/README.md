@@ -188,7 +188,13 @@ candidate nearest the first guess wins. A minimum of 1018 hPa or more
 is not a candidate (FSU's tracker uses the same limit, and a filled low
 otherwise hands over to any weak minimum nearby), nor is one where the
 surface pressure is under 950 hPa (terrain above about 500 m, where
-MSLP is extrapolated: the Greenland ice cap, Iceland's interior). If
+MSLP is extrapolated: the Greenland ice cap, Iceland's interior). A
+terrain point is masked out before the box-minimum test itself, not
+just dropped from the candidate list afterward, so an artificially deep
+terrain reading cannot sit inside a genuine low's box and hide the
+real, slightly shallower minimum beside it (a low crossing Iceland's
+highlands otherwise loses its box-minimum status to the terrain point
+next to it and the track ends). If
 there is none, the track coasts one frame on the extrapolated motion (that frame is left out of
 the table) and tries again with the larger radius; a second miss ends
 it. An optional FHR1 in the spec (`NAME:LAT,LON:0:96`) stops the track

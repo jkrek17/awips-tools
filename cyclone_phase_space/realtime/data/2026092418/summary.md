@@ -5,7 +5,7 @@ Storm-following phase diagrams from the 18 UTC 2026-09-24 GFS 0.25 degree run, f
 | Storm | FSU | Start position | MSLP (hPa) | Track (h) | Class sequence (h) | Onset std | Completion std | Onset Hart | Completion Hart |
 |---|---|---|---|---|---|---|---|---|---|
 | [EPAC](EPAC/) | [1](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092418/1.html) | 14.8N 156.2W | 995 | 0-198 | - 0, 0 6-30, - 36-54, 0 60-120, 2 126-156, 0 162-192, 2 198 | 132 | none | 144 | none |
-| [GREENLAND](GREENLAND/) | [17](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092418/17.html) | 62.5N 21.4W | 960 | 0-0 | 3 0 | 0 | none | none | none |
+| [GREENLAND](GREENLAND/) | [17](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092418/17.html) | 62.5N 21.4W | 960 | 0-138 | 3 0-18, - 24-48, 3 54, - 60-126, 3 138 | 0 | 96 | 0 | 90 |
 | [LABRADOR](LABRADOR/) | [40](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092418/40.html) | 60.9N 55.4W | 1001 | 0-90 | 4 0-30, - 36, 4 42-72, 3 78-84, - 90 | 0 | 0 | 0 | 0 |
 
 Class codes (HCPSclass at the center): 0 sym deep warm, 1 sym shallow warm, 2 asym deep warm, 3 asym shallow warm, 4 asym cold, 5 sym cold, 6 shallow cold; - no closed low.

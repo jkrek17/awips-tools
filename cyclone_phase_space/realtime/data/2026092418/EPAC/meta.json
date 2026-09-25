@@ -3,11 +3,11 @@
   "name": "EPAC",
   "status": "ok",
   "seed": {
-    "lat": 15.0,
-    "lon": -156.18,
+    "lat": 14.83,
+    "lon": -156.15,
     "fhr0": 0,
     "fhr1": null,
-    "source": "track of 2026092412 at +6 h"
+    "source": "stored seed"
   },
   "start_fhr": 0,
   "end_fhr": 198,

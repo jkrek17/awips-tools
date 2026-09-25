@@ -4,30 +4,30 @@
   "status": "ok",
   "seed": {
     "lat": 62.47,
-    "lon": -21.44,
+    "lon": -21.41,
     "fhr0": 0,
     "fhr1": null,
-    "source": "track of 2026092412 at +6 h"
+    "source": "stored seed"
   },
   "start_fhr": 0,
-  "end_fhr": 0,
-  "fixes": 1,
+  "end_fhr": 138,
+  "fixes": 21,
   "start": {
     "lat": 62.47,
     "lon": -21.41,
     "mslp_hpa": 959.6
   },
   "end": {
-    "lat": 62.47,
-    "lon": -21.41,
-    "mslp_hpa": 959.6
+    "lat": 58.63,
+    "lon": -24.17,
+    "mslp_hpa": 955.0
   },
-  "min_mslp_hpa": 959.6,
+  "min_mslp_hpa": 955.0,
   "onset_standard_h": 0,
-  "completion_standard_h": null,
-  "onset_hart_h": null,
-  "completion_hart_h": null,
-  "class_sequence": "3 0",
+  "completion_standard_h": 96,
+  "onset_hart_h": 0,
+  "completion_hart_h": 90,
+  "class_sequence": "3 0-18, - 24-48, 3 54, - 60-126, 3 138",
   "fsu_number": 17,
   "fsu": {
     "number": 17,

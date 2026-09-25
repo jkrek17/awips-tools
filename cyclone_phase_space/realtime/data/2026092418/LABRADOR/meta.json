@@ -3,11 +3,11 @@
   "name": "LABRADOR",
   "status": "ok",
   "seed": {
-    "lat": 60.73,
-    "lon": -58.55,
+    "lat": 60.94,
+    "lon": -55.35,
     "fhr0": 0,
     "fhr1": 90,
-    "source": "track of 2026092412 at +6 h"
+    "source": "stored seed"
   },
   "start_fhr": 0,
   "end_fhr": 90,
