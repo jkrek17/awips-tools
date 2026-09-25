@@ -414,6 +414,8 @@ h1 { font-size: 18px; line-height: 28px; font-weight: 600; letter-spacing: -0.01
 .mini .tick { stroke: rgba(233, 232, 227, 0.45); stroke-width: 1; }
 .mini .tl { font: 9.5px var(--mono); fill: var(--faint); }
 .mini .ax-t { font: 10px var(--sans); fill: var(--muted); }
+.mini .ql { font: 6.5px var(--sans); fill: var(--text); opacity: 0.55; pointer-events: none; }
+.mini.big .ql { font-size: 9.5px; opacity: 0.6; }
 .mini .ss { font-size: 7.5px; }
 .mini .path { fill: none; stroke: rgba(233, 232, 227, 0.55); stroke-width: 1; stroke-linejoin: round; }
 .mini .dot { stroke-width: 0.75; }

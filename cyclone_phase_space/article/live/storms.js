@@ -23,6 +23,14 @@ const QUAD = {
   u: [[0, 300, 0, 300, '#e34948'], [0, 300, -300, 0, '#eb6834'], [-300, 0, -300, 0, '#2a78d6'], [-300, 0, 0, 300, '#4a3aa7']],
 };
 const SHORT = ['sym deep warm', 'sym shallow warm', 'asym deep warm', 'asym shallow warm', 'asym cold', 'sym cold', 'shallow cold'];
+// Quadrant names as on the article's Figure 1: [corner, full name, short name]
+// with the corner as (0 left / 1 right, 0 top / 1 bottom).
+const QUAD_NAMES = {
+  b: [[0, 0, 'asymmetric cold core', 'asym cold'], [1, 0, 'asymmetric warm core', 'asym warm'],
+      [0, 1, 'symmetric cold core', 'sym cold'], [1, 1, 'symmetric warm core', 'sym warm']],
+  u: [[0, 0, 'shallow cold core', 'shallow cold'], [1, 0, 'deep warm core', 'deep warm'],
+      [0, 1, 'deep cold core', 'deep cold'], [1, 1, 'shallow warm core', 'shallow warm']],
+};
 // Mini diagram geometry, in px at 1:1 (the panel sizes them to 150 px).
 const MW = 150;
 const MH = 136;
@@ -415,6 +423,11 @@ function miniSVG(s, kind, G = SMALL) {
   svg.append(svgEl('line', { x1: X(0), x2: X(0), y1: PY[0], y2: PY[1], class: 'zero' }));
   svg.append(svgEl('line', { x1: PX[0], x2: PX[1], y1: Y(thr), y2: Y(thr), class: 'zero' }));
   svg.append(svgEl('rect', { x: PX[0], y: PY[0], width: PX[1] - PX[0], height: PY[1] - PY[0], class: 'frame' }));
+  for (const [right, bottom, full, short] of QUAD_NAMES[kind]) {
+    const pad = big ? 6 : 3;
+    svg.append(svgEl('text', { x: right ? PX[1] - pad : PX[0] + pad, y: bottom ? PY[1] - pad : PY[0] + pad + (big ? 9 : 6.5),
+      'text-anchor': right ? 'end' : 'start', class: 'ql' }, big ? full : short));
+  }
   // Ticks and labels.
   for (const v of [-300, 0, 300]) {
     svg.append(svgEl('line', { x1: X(v), x2: X(v), y1: PY[1], y2: PY[1] + 3, class: 'tick' }));
