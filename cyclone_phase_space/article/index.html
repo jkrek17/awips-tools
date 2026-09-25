@@ -17,7 +17,9 @@
   <p class="byline">Jason Krekeler, NOAA/NWS Ocean Prediction Center &middot; 2026-09-18</p>
   <p class="meta">Code:
     <a href="https://github.com/jkrek17/awips-tools/tree/main/cyclone_phase_space">github.com/jkrek17/awips-tools</a>
-    (directory <code>cyclone_phase_space/</code>)
+    (directory <code>cyclone_phase_space/</code>).
+    Live map: <a href="live/index.html">the products on the current GFS run</a>,
+    updated every six hours.
   </p>
 
   <div class="abstract">
@@ -1501,11 +1503,17 @@
     (<code>cyclone_phase_space/docs/</code> and
     <code>cyclone_phase_space/README.md</code>); and <code>article/</code>
     is the source for this page, staged to <code>docs/cps/</code> and
-    published by GitHub Pages. The test suite
-    (<code>cyclone_phase_space/tests/cps</code> and
-    <code>cyclone_phase_space/tests/d2d_cps</code>, run with
+    published by GitHub Pages. <code>realtime/</code> computes the same
+    products from public GFS and ECMWF output outside AWIPS: a daily
+    collection follows every Northern Hemisphere low under 980 hPa and
+    pairs it with the Florida State diagrams, and a six-hourly export
+    feeds the <a href="live/index.html">live global map</a> of the
+    products. The test suite
+    (<code>cyclone_phase_space/tests/cps</code>,
+    <code>cyclone_phase_space/tests/d2d_cps</code> and
+    <code>cyclone_phase_space/tests/realtime</code>, run with
     <code>python3 -m pytest cyclone_phase_space/tests -q</code>) counts
-    73 tests, every expected value analytic or from an independent
+    99 tests, every expected value analytic or from an independent
     brute-force comparison. No license is specified.
   </p>
 
