@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Cyclone Phase Space, live</title>
+<meta name="description" content="A live global map of the gridded cyclone phase space products: the Hart class of every closed low, MSLP, and the B, lower and upper thermal wind fields, animated over the latest model cycle.">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<link rel="preconnect" href="https://server.arcgisonline.com">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" integrity="sha512-h9FcoyWjHcOcmEVkxOfTLnmZFWIH0iZhZT1H2TbOq55xssQGEJHEaIm+PgoUaZbRvQTNTluNOEfb1ZRy6D3BOw==" crossorigin="anonymous" referrerpolicy="no-referrer">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" integrity="sha512-puJW3E/qXDqYp9IfhAI54BJEaWIfloJ7JWs7OeD5i6ruC9JZL1gERT1wjtwXFlh7CjE7ZJ+/vcRZRkIYIb6p4g==" crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
+<script src="basemap.js" defer></script>
+<script src="app.js" defer></script>
+</head>
+<body>
+
+<main id="map" aria-label="Map of cyclone phase space products"></main>
+
+<header class="panel masthead">
+  <div class="masthead-top">
+    <h1>Cyclone Phase Space, live</h1>
+    <button type="button" class="icon-btn" id="share" aria-label="Share this view" title="Copy a link to this view">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8.5 11.5a3.5 3.5 0 0 0 5 0l2.5-2.5a3.5 3.5 0 0 0-5-5l-1 1M11.5 8.5a3.5 3.5 0 0 0-5 0L4 11a3.5 3.5 0 0 0 5 5l1-1"/></svg>
+    </button>
+  </div>
+  <p class="meta" id="run-meta">Loading the latest cycle</p>
+  <nav class="links" aria-label="Related pages">
+    <a href="../index.html">Read the article</a>
+    <a href="../figures/phase_space_3d.html">3-D phase space</a>
+  </nav>
+</header>
+
+<div class="chiprow">
+<div class="basins" role="group" aria-label="Fly to a basin">
+  <button type="button" class="chip" data-basin="global">Global</button>
+  <button type="button" class="chip" data-basin="natl"><span class="long">North </span>Atlantic</button>
+  <button type="button" class="chip" data-basin="npac"><span class="long">North </span>Pacific</button>
+  <button type="button" class="chip" data-basin="south">Southern<span class="long"> Ocean</span></button>
+</div>
+<div class="basemaps" role="group" aria-label="Basemap">
+  <button type="button" class="chip" data-base="plain" aria-pressed="true">Plain</button>
+  <button type="button" class="chip" data-base="dark" aria-pressed="false">Dark</button>
+  <button type="button" class="chip" data-base="sat" aria-pressed="false">Satellite</button>
+  <button type="button" class="chip" data-base="night" aria-pressed="false">Night</button>
+</div>
+</div>
+
+<details class="panel legend" id="legend" open>
+  <summary><span id="legend-title">Class at the low center</span></summary>
+  <div class="legend-body">
+    <div id="legend-scale"></div>
+    <p class="legend-help" id="legend-help"></p>
+  </div>
+</details>
+
+<section class="panel bar" id="bar" aria-label="Animation and layer controls">
+  <div class="bar-row time-row">
+    <button type="button" class="icon-btn play" id="play" aria-label="Play" aria-pressed="false">
+      <svg class="i-play" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 4.5v11l9-5.5z"/></svg>
+      <svg class="i-pause" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 4.5h2.8v11H6zM11.2 4.5H14v11h-2.8z"/></svg>
+    </button>
+    <div class="when">
+      <span class="when-valid" id="when-valid">--</span>
+      <span class="when-fhr" id="when-fhr">F---</span>
+    </div>
+    <input type="range" id="frame" min="0" max="0" value="0" step="1" aria-label="Forecast hour">
+  </div>
+  <div class="bar-row layer-row">
+    <fieldset class="fields">
+      <legend class="sr-only">Field</legend>
+      <label class="chip"><input type="radio" name="field" value="class" checked><span>Class only</span></label>
+      <label class="chip"><input type="radio" name="field" value="hb"><span>HB</span></label>
+      <label class="chip"><input type="radio" name="field" value="hvtl"><span>HVTL</span></label>
+      <label class="chip"><input type="radio" name="field" value="hvtu"><span>HVTU</span></label>
+    </fieldset>
+    <label class="opacity" id="opacity-wrap">
+      <span>Opacity</span>
+      <input type="range" id="opacity" min="0.4" max="1" step="0.05" value="0.7">
+    </label>
+    <div class="toggles" role="group" aria-label="Overlays">
+      <label class="toggle"><input type="checkbox" id="t-contours" checked><span>Contours</span></label>
+      <label class="toggle"><input type="checkbox" id="t-blobs" checked><span>Blobs</span></label>
+      <label class="toggle"><input type="checkbox" id="t-tracks" checked><span>Tracks</span></label>
+    </div>
+  </div>
+</section>
+
+<div class="overlay" id="loading" role="status">
+  <div class="spinner" aria-hidden="true"></div>
+  <p>Loading the latest cycle</p>
+</div>
+
+<div class="overlay hidden" id="nodata" role="alert">
+  <div class="panel nodata-card">
+    <h2 id="nodata-title">No live data yet</h2>
+    <p id="nodata-text">The daily run has not published a cycle yet, or it could not be reached.</p>
+    <p class="nodata-actions">
+      <button type="button" class="chip on" id="retry">Try again</button>
+      <a href="../index.html">Read the article</a>
+    </p>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<noscript><p class="panel noscript">This map needs JavaScript. The <a href="../index.html">article</a> explains the products.</p></noscript>
+</body>
+</html>
