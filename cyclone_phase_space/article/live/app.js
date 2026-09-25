@@ -12,6 +12,8 @@ const LOCAL_DATA = 'data/latest/';  // beside the page when served from the web 
 const ARTICLE_URL = 'https://jkrek17.github.io/awips-tools/cps/';
 const SPACE_URL = ARTICLE_URL + 'figures/phase_space_3d.html';
 const LABEL_ZOOM = 4;            // MSLP labels at centers and on contours from this zoom
+const WIDE_CINT = 8;             // below LABEL_ZOOM, isobars thinned to every 8 hPa
+const HALO_ZOOM = 2;             // 200 km circles from this zoom (below it they shrink under the dot)
 const SPEEDS = { slow: 1200, normal: 700, fast: 350 };  // ms per frame
 const MAX_RASTER_FRAMES = 12;    // decoded raster frames kept in memory
 const MATCH_KM = 300;            // center to storm matching radius, for entries without run ids
@@ -76,7 +78,7 @@ const S = {
   speed: 'normal', loop: true, basemap: 'plain', bust: '',
   opacity: { hb: 0.7, hvtl: 0.8, hvtu: 0.8 },
   layers: { contours: true, circles: true, footprint: false, tracks: true, terrain: false },
-  centers: [], offs: OFFSETS, sel: null, follow: null, perf: [], cint: null,
+  centers: [], offs: OFFSETS, sel: null, follow: null, perf: [], cstep: null, cevery: null, ready: false,
 };
 
 /* ---------- small utilities ---------- */
@@ -263,8 +265,17 @@ function initMap(zoom) {
   lowG = L.layerGroup().addTo(map);
   nameG = L.layerGroup().addTo(map);
 
-  const zoomClass = () => map.getContainer().classList.toggle('labels-off', map.getZoom() < LABEL_ZOOM);
-  map.on('zoomend', zoomClass);
+  const zoomClass = () => {
+    const box = map.getContainer().classList;
+    box.toggle('labels-off', map.getZoom() < LABEL_ZOOM);
+    box.toggle('halos-off', map.getZoom() < HALO_ZOOM);
+  };
+  map.on('zoomend', () => {
+    zoomClass();
+    if (!S.ready) return;
+    if (contourEvery() !== S.cevery) drawContours(S.mslp);
+    drawNames();  // label collisions depend on the zoom
+  });
   zoomClass();
   map.on('moveend', () => { checkOffsets(); drawContourLabels(); writeHash(); });
   map.on('dragstart', () => document.querySelectorAll('[data-basin]').forEach((c) => c.removeAttribute('aria-pressed')));
@@ -362,17 +373,30 @@ function setOpacity(v) {
 
 // Contours come as many short LineStrings; draw them as two polylines per
 // world copy (major every 16 hPa, minor between) to keep the frame swap cheap.
+// Below LABEL_ZOOM only every WIDE_CINT hPa is drawn, so a global view stays legible.
+const contourEvery = () => (S.cstep && map.getZoom() < LABEL_ZOOM ? Math.max(S.cstep, WIDE_CINT) : S.cstep);
+
 function drawContours(fc) {
   contourG.clearLayers();
   S.cmids = [];
-  if (!fc || !S.layers.contours) { drawContourLabels(); return; }
-  const lines = { major: [], minor: [] };
+  if (!fc || !S.layers.contours) { S.cevery = null; cintText(); drawContourLabels(); return; }
+  const feats = [];
   const levels = new Set();
   for (const f of fc.features) {
+    if (!f.geometry) continue;
     const lv = Math.round(f.properties?.level);
-    const g = f.geometry;
-    if (!g) continue;
     levels.add(lv);
+    feats.push([lv, f.geometry]);
+  }
+  const lv = [...levels].sort((a, b) => a - b);
+  let step = Infinity;
+  for (let k = 1; k < lv.length; k++) step = Math.min(step, lv[k] - lv[k - 1]);
+  if (Number.isFinite(step)) S.cstep = step;
+  const every = contourEvery();
+  S.cevery = every;
+  const lines = { major: [], minor: [] };
+  for (const [lv, g] of feats) {
+    if (every && lv % every !== 0) continue;
     const parts = g.type === 'MultiLineString' ? g.coordinates : [g.coordinates];
     const major = lv % 16 === 0;
     for (const p of parts) {
@@ -383,13 +407,7 @@ function drawContours(fc) {
       }
     }
   }
-  const lv = [...levels].sort((a, b) => a - b);
-  let step = Infinity;
-  for (let k = 1; k < lv.length; k++) step = Math.min(step, lv[k] - lv[k - 1]);
-  if (Number.isFinite(step) && step !== S.cint) {
-    S.cint = step;
-    $('cint').textContent = `MSLP every ${step} hPa, bold every 16 hPa`;
-  }
+  cintText();
   const style = {
     major: { color: '#dcdcd8', weight: 1.2, opacity: 0.62 },
     minor: { color: '#dcdcd8', weight: 0.8, opacity: 0.3 },
@@ -401,6 +419,21 @@ function drawContours(fc) {
     }
   }
   drawContourLabels();
+}
+
+// The contour note in the bar follows the interval drawn at this zoom.
+function cintText() {
+  const [a, b] = [$('cint-a'), $('cint-b')];
+  if (!S.layers.contours) {
+    a.textContent = 'MSLP contours off';
+    b.textContent = '\u00a0';
+    return;
+  }
+  const every = contourEvery();
+  if (!every) return;
+  a.textContent = `MSLP every ${every} hPa, bold 16`;
+  b.textContent = every > S.cstep ? `every ${S.cstep} hPa zoomed in`
+    : S.cstep < WIDE_CINT ? `every ${WIDE_CINT} hPa zoomed out` : '\u00a0';
 }
 
 // One label per major contour line, at its middle vertex, zoom 4 and up.
@@ -519,6 +552,7 @@ async function show(i) {
   S.lows = val(lows);
   S.mslp = val(mslp);
   S.centers = centersOf(S.lows);
+  S.ready = true;
   drawContours(S.mslp);
   drawFootprints(S.lows);
   drawLows();
@@ -558,7 +592,9 @@ function syncTime() {
   slider.value = S.i;
   slider.setAttribute('aria-valuetext', `${label}, forecast hour ${h}`);
   $('when-valid').textContent = label;
-  $('when-fhr').textContent = `F${pad(h, 3)}, ${h} h after the ${fmtCycle(S.index.cycle)} run`;
+  const c = utc(S.index.cycle);
+  const run = c ? `${c.getUTCDate()} ${MON[c.getUTCMonth()]} ${pad(c.getUTCHours())} UTC ` : '';
+  $('when-fhr').innerHTML = `F${pad(h, 3)}, ${h}&thinsp;h after the <span class="fhr-run">${run}</span>run`;
 }
 
 // Day ticks under the scrubber: a tall tick and label at each 00 UTC frame.
@@ -586,6 +622,26 @@ function buildScrubTicks() {
   box.innerHTML = html;
 }
 
+// The present wall-clock time on the scrubber, when it falls inside the run.
+function placeNow() {
+  const mark = $('now-mark');
+  const desc = $('now-desc');
+  const n = S.index?.hours.length ?? 0;
+  const v0 = n ? validAt(0) : null;
+  const v1 = n ? validAt(n - 1) : null;
+  const now = Date.now();
+  const inside = n > 1 && v0 && v1 && now >= v0.getTime() && now <= v1.getTime();
+  mark.hidden = !inside;
+  if (!inside) { desc.textContent = ''; return; }
+  const f = (now - v0) / (v1 - v0);
+  const d = new Date(now);
+  const hr = (now - v0) / 3600e3 + S.index.hours[0];
+  const text = `Now, ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC, about F${pad(Math.floor(hr), 3)} of this run`;
+  mark.style.left = `calc(6px + (100% - 12px) * ${f.toFixed(4)})`;
+  mark.title = text;
+  desc.textContent = `${text}.`;
+}
+
 function play(on) {
   if (on && !S.loop && S.i >= S.index.hours.length - 1) show(0);
   S.playing = on;
@@ -594,6 +650,7 @@ function play(on) {
   b.setAttribute('aria-label', on ? 'Pause' : 'Play');
   clearTimeout(S.timer);
   if (on) S.timer = setTimeout(tick, SPEEDS[S.speed]);
+  else regroupStorms();  // the panel's order waits for playback to stop
 }
 
 async function tick() {
@@ -694,6 +751,11 @@ async function share() {
   history.replaceState(null, '', viewHash());
   try {
     await navigator.clipboard.writeText(location.href);
+    const b = $('share');
+    b.classList.add('done');
+    b.setAttribute('aria-label', 'Link copied');
+    clearTimeout(share.t);
+    share.t = setTimeout(() => { b.classList.remove('done'); b.setAttribute('aria-label', 'Copy a link to this view'); }, 1800);
     toast('Link to this view copied');
   } catch {
     toast('Link to this view is in the address bar');
@@ -742,8 +804,10 @@ function readInsets() {
   const bar = rect($('bar'));
   const st = document.body.classList.contains('storms-open') ? rect($('storms')) : null;
   const card = rect($('card'));
+  const ctl = rect(document.querySelector('.leaflet-bottom.leaflet-left .leaflet-control-zoom'));
   const wide = !narrow();
   return {
+    ctl: ctl ? innerHeight - ctl.top : 0,
     top: top ? top.bottom : 0,
     bottom: Math.max(bar ? innerHeight - bar.top : 0, !wide && card ? innerHeight - card.top : 0),
     left: wide && card ? card.right : 0,
@@ -753,7 +817,7 @@ function readInsets() {
 
 function chromeInsets() {
   const ins = visibleInsets();
-  return { top: Math.round(ins.top + 4), left: Math.round(ins.top), bottom: Math.round(ins.bottom) };
+  return { top: Math.round(ins.top + 4), left: Math.round(ins.top), bottom: Math.round(Math.max(ins.bottom, ins.ctl)) };
 }
 
 // Keep Leaflet's corner controls and toasts clear of the bottom bar.
@@ -824,8 +888,23 @@ function bindControls() {
 
   // Left and right step frames (captured before Leaflet pans); space plays.
   document.addEventListener('keydown', (e) => {
+    // Escape closes the innermost thing first: a menu, then the readout,
+    // then the phone sheet; focus goes back to what opened it.
     if (e.key === 'Escape') {
-      if (!closePops()) closeCard();
+      if (e.target.id === 'sf-q' && e.target.value) return;  // the filter clears itself first
+      const open = pops.find(([, p]) => !p.hidden);
+      const act = document.activeElement;
+      if (open) {
+        closePops();
+        if (open[1].contains(act)) open[0].focus();
+      } else if (!$('card').hidden) {
+        const inCard = $('card').contains(act);
+        closeCard();
+        if (inCard) map.getContainer().focus({ preventScroll: true });
+      } else if (narrow() && document.body.classList.contains('storms-open')) {
+        setStormsOpen(false);
+        $('storms-btn').focus();
+      }
       return;
     }
     if (!S.index || e.altKey || e.ctrlKey || e.metaKey) return;
@@ -857,6 +936,9 @@ function bindControls() {
   };
   mq.addEventListener('change', placePlayOpts);
   placePlayOpts();
+
+  // The "ago" text, the stale note and the now marker follow the clock.
+  setInterval(() => { if (S.index) { showRunMeta(S.index); placeNow(); } }, 60e3);
 
   const ro = new ResizeObserver(() => { measure(); buildScrubTicks(); });
   ro.observe($('bar'));
@@ -901,6 +983,7 @@ async function boot() {
 
   const ix = S.index;
   showRunMeta(ix);
+  S.ready = false;
   const slider = $('frame');
   slider.max = ix.hours.length - 1;
   slider.disabled = ix.hours.length < 2;
@@ -917,6 +1000,7 @@ async function boot() {
   initStorms();
   drawTracks();
   buildScrubTicks();
+  placeNow();
   await show(S.i);
   document.body.classList.remove('loading');
   measure();
@@ -932,6 +1016,9 @@ function start() {
     $('retry').addEventListener('click', () => location.reload());
     return;
   }
+  // The class legend at once, from the built-in palette, so the bar does not reflow on load.
+  FALLBACK_HEX.forEach((hex, code) => S.classes.set(code, { code, hex, name: CLASS_NAMES[code] }));
+  renderLegend();
   initMap(narrow() ? 2 : innerWidth < 1200 ? 2.5 : 3);
   setBasemap(CPSBasemap.saved());
   setStormsOpen(innerWidth >= 1000);

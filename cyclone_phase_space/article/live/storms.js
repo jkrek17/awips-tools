@@ -12,7 +12,9 @@
    values are read from every frame's lows.geojson when the points lack
    them. The list is long (about 130 entries), so each entry's strip and
    diagrams are drawn only as it nears the visible part of the panel.
-   Uses the globals from app.js. */
+   The lows present at the hour on screen are listed first, each group
+   deepest first; the grouping follows the hour whenever playback is
+   stopped. Uses the globals from app.js. */
 'use strict';
 
 // Figure 1's axis limits (article/figures/diagram_style.py), in m.
@@ -52,7 +54,7 @@ const DEPTHS = ['all', '1000', '980', 'fsu'];
 const HEMIS = ['all', 'N', 'S'];
 
 const ST = {
-  list: [], byKey: new Map(), shown: [], built: false, t0: 0, dt: 216e5, span: 1,
+  list: [], byKey: new Map(), shown: [], built: false, t0: 0, dt: 216e5, span: 1, groupI: -1,
   filter: { q: '', depth: '1000', hemi: 'all' }, hover: null, selected: null, io: null, scrollTo: null,
 };
 
@@ -207,7 +209,7 @@ function renderTimeAxis() {
     if (first) {
       const v0 = validAt(0), v1 = validAt(n - 1);
       const span = v0 && v1 ? `${v0.getUTCDate()} ${MON[v0.getUTCMonth()]} ${String(v0.getUTCHours()).padStart(2, '0')} UTC to ${v1.getUTCDate()} ${MON[v1.getUTCMonth()]} ${String(v1.getUTCHours()).padStart(2, '0')} UTC` : 'this run';
-      $('axis-note').textContent = `Class at each 6 h point against valid time, ${span}; day ticks at 00 UTC. Diagrams in m on the article's Figure 1 axes; the ring marks this hour.`;
+      $('axis-note').textContent = `Lows at the hour on screen come first, each group deepest first. The class strip runs ${span}, with day ticks at 00 UTC. Diagrams in m on the article's Figure 1 axes; the ring on them and the line on the strip mark this hour.`;
     }
     if (x > (mon ? 86 : 94)) continue;
     html += `<span${x < 8 ? ' class="start"' : ''} style="left:${x.toFixed(2)}%">${d}${mon}</span>`;
@@ -236,9 +238,51 @@ function applyFilter() {
   } else if (!ST.shown.length) {
     ol.innerHTML = '<li class="empty-row">No tracked low matches the filter.</li>';
   } else {
-    ol.replaceChildren(...ST.shown.map(entry));
+    renderGroups();
   }
   if (S.index && map) stormsFrame(S.i);
+}
+
+// Two groups: the lows at the hour on screen, then the rest of the run.
+function renderGroups() {
+  const i = S.i;
+  const now = [];
+  const other = [];
+  for (const s of ST.shown) (s.at[i] ? now : other).push(s);
+  ST.shown = [...now, ...other];
+  ST.groupI = i;
+  const head = (label, n) => {
+    const li = document.createElement('li');
+    li.className = 'group-h';
+    li.innerHTML = `${label}<span>${n}</span>`;
+    return li;
+  };
+  const kids = [];
+  if (now.length) kids.push(head('At this hour', now.length), ...now.map(entry));
+  if (other.length) kids.push(head(now.length ? 'Other hours of the run' : 'Not at this hour', other.length), ...other.map(entry));
+  $('storm-list').replaceChildren(...kids);
+}
+
+// Regroup after the hour changed, keeping the reader's place: the
+// selected or followed entry if there is one, else the entry at the top.
+function regroupStorms() {
+  if (!ST.shown.length || ST.groupI === S.i || !S.index) return;
+  const key = S.follow || ST.selected;
+  const next = ST.shown.filter((s) => s.at[S.i]).concat(ST.shown.filter((s) => !s.at[S.i]));
+  const moved = next.some((s, k) => s !== ST.shown[k]);
+  const sizes = next.filter((s) => s.at[S.i]).length !== ST.shown.filter((s) => s.at[ST.groupI]).length;
+  if (!moved && !sizes) { ST.groupI = S.i; return; }
+  const body = $('storms-body');
+  let anchor = null;
+  let off = 0;
+  if (!key && body.scrollTop > 0) {
+    anchor = ST.shown.find((s) => s.el && s.el.offsetTop + s.el.offsetHeight > body.scrollTop);
+    if (anchor) off = anchor.el.offsetTop - body.scrollTop;
+  }
+  renderGroups();
+  for (const s of ST.shown) updateEntry(s, S.i);
+  if (key) reveal(key, false);
+  else if (anchor) body.scrollTop = anchor.el.offsetTop - off;
 }
 
 function setFilter(k, v) {
@@ -355,6 +399,8 @@ function updateEntry(s, i) {
   s.el.classList.toggle('hovered', ST.hover === s.key);
   s.el.classList.toggle('selected', ST.selected === s.key);
   s.hit.setAttribute('aria-pressed', String(on));
+  if (ST.selected === s.key) s.hit.setAttribute('aria-current', 'true');
+  else s.hit.removeAttribute('aria-current');
   const txt = e ? hpa(e.mslp) : 'not at this hour';
   if (s.mslpEl.textContent !== txt) s.mslpEl.textContent = txt;
   if (!s.filled) return;
@@ -509,6 +555,7 @@ async function loadAllLows() {
 /* ---------- per frame ---------- */
 
 function stormsFrame(i) {
+  if (!S.playing) regroupStorms();
   for (const s of ST.shown) updateEntry(s, i);
   drawTails();
   drawNames();
@@ -517,6 +564,7 @@ function stormsFrame(i) {
 
 function renderDeepest() {
   const ol = $('deep-list');
+  if (!S.ready) return;
   const list = S.centers.filter((c) => shown(c) && !blank(c.mslp)).sort((a, b) => a.mslp - b.mslp).slice(0, 5);
   ol.textContent = '';
   if (!list.length) {
@@ -582,7 +630,7 @@ function drawTracks() {
 
 function drawTails() {
   tailG.clearLayers();
-  if (!S.layers.tracks || !S.index) return;
+  if (!S.layers.tracks || !S.index || !S.ready) return;
   const i = S.i;
   const focus = focusKeys();
   const byHex = new Map();
@@ -608,19 +656,60 @@ function drawTails() {
 }
 
 // Names at the storms' positions: the daily collection's names and the
-// followed or hovered storm always; the L numbers only from LABEL_ZOOM.
+// followed, selected or hovered storm always; the L numbers only from
+// LABEL_ZOOM. Names never overlap each other, a low's dot or its pressure:
+// each tries above right, above left, then below right, in order of
+// priority (focus, named, deepest now), and a name with no free place is
+// left out at this zoom. A focused name is always drawn.
+let textCtx = null;
+function labelWidth(text, mono) {
+  textCtx ??= document.createElement('canvas').getContext('2d');
+  textCtx.font = mono ? '500 11px "IBM Plex Mono", monospace' : '600 11px "IBM Plex Sans", sans-serif';
+  return Math.ceil(textCtx.measureText(text).width + (mono ? 0 : text.length * 0.22)) + 2;
+}
+
 function drawNames() {
   nameG.clearLayers();
-  if (!S.layers.tracks || !S.index) return;
+  if (!S.layers.tracks || !S.index || !S.ready) return;
   const focus = focusKeys();
+  const wide = map.getZoom() < LABEL_ZOOM;
+  const taken = [];
+  const pt = (lat, lon) => map.latLngToLayerPoint([lat, lon]);
+  for (const c of S.centers) {
+    if (!shown(c)) continue;
+    for (const o of S.offs) {
+      const p = pt(c.lat, c.lon + o);
+      taken.push([p.x - 6, p.y - 6, p.x + 6, p.y + 6]);
+      if (!wide && !blank(c.mslp)) taken.push([p.x + 17, p.y - 6, p.x + 19 + 7 * String(Math.round(+c.mslp)).length, p.y + 6]);
+    }
+  }
+  const GAP = 4;  // names keep this far apart, so two never read as one
+  const free = (r) => !taken.some((q) => r[0] - GAP < q[2] && r[2] + GAP > q[0] && r[1] < q[3] && r[3] > q[1]);
+  const list = [];
   for (const s of ST.shown) {
     const e = s.at[S.i];
     if (!e) continue;
     const on = focus.includes(s.key);
-    const cl = `storm-name${s.generic && !on ? ' generic' : ''}${on ? ' on' : ''}`;
+    if (wide && s.generic && !on) continue;
+    list.push({ s, e, on, rank: on ? 0 : s.generic ? 2 : 1, p: blank(e.mslp) ? 9999 : +e.mslp });
+  }
+  list.sort((a, b) => a.rank - b.rank || a.p - b.p);
+  for (const { s, e, on } of list) {
+    const generic = s.generic && !on;
+    const w = labelWidth(s.label, generic);
+    const cl = `storm-name${generic ? ' generic' : ''}${on ? ' on' : ''}`;
     for (const o of S.offs) {
+      const p = pt(e.lat, e.lon + o);
+      const spots = [
+        ['', [p.x + 6, p.y - 21, p.x + 6 + w, p.y - 8]],
+        [' pos-l', [p.x - 6 - w, p.y - 21, p.x - 6, p.y - 8]],
+        [' pos-b', [p.x + 6, p.y + 8, p.x + 6 + w, p.y + 21]],
+      ];
+      const spot = spots.find(([, r]) => free(r)) || (on ? spots[0] : null);
+      if (!spot) continue;
+      taken.push(spot[1]);
       nameG.addLayer(L.marker([e.lat, e.lon + o], {
-        icon: L.divIcon({ className: cl, iconSize: [0, 0], html: `<span>${esc(s.label)}</span>` }),
+        icon: L.divIcon({ className: cl + spot[0], iconSize: [0, 0], html: `<span>${esc(s.label)}</span>` }),
         interactive: false, keyboard: false, zIndexOffset: -100,
       }));
     }
