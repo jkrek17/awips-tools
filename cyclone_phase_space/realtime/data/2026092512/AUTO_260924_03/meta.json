@@ -1,0 +1,14 @@
+{
+  "cycle": "2026092512",
+  "name": "AUTO_260924_03",
+  "status": "merged",
+  "reason": "At 0 h of 2026092512 within 0 km of AUTO_260924_02; merged into AUTO_260924_02, marked inactive.",
+  "seed": {
+    "lat": 57.97,
+    "lon": -177.81,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "track of 2026092418 at +18 h"
+  },
+  "fsu_number": null
+}
