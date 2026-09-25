@@ -682,7 +682,8 @@ without guessing.
       {"cycle": "2026092418", "model": "GFS 0.25", "generated": "2026-09-25T15:10:41Z",
        "hours": [0, 6, ...], "valid": ["2026-09-24T18:00:00Z", ...],
        "layers": {"class": true, "mslp": true, "hb": true, "hvtl": true, "hvtu": true},
-       "raster": {"bounds": [[-85, -180], [85, 180]], "crs": "EPSG:3857", "width": 2048, "height": 2041},
+       "raster": {"bounds": [[-85, -180], [85, 180]], "crs": "EPSG:3857", "width": 2048, "height": 2041,
+                  "format": "webp", "mask": "mask.png", "mask_dim": 0.35, "fade": 0.1},
        "ranges": {"hb": [-40, 40], "hvtl": [-300, 300], "hvtu": [-300, 300]},
        "frames": "frames/f{hhh}/", "storms_cycle": "2026092418", "storms": [...]}
 
@@ -758,17 +759,34 @@ without guessing.
   into many such rings. A file over 400 KB is redone with the
   tolerance raised in 0.05 degree steps (none of the 34 frames of
   2026092418 needed it; they are 300 to 350 KB).
-- `frames/fHHH/hb.png`, `hvtl.png`, `hvtu.png`: the field through its
-  colormap (`CPS_Asymmetry`, -40 to 40 m; `CPS_CoreDiverging`, -300 to
-  300 m), with the colormap's own alpha, so values near zero are
-  transparent, and blanks (below ground, no steering flow) fully
-  transparent. `class.png`: HCPSclass in the `CPS_HartClass` colors,
-  transparent outside the blobs. Each is a 2048 by 2041 px indexed PNG
-  (the 64 colormap entries plus one transparent entry, about 200 to
-  260 KB) in Web Mercator (EPSG:3857) covering lon -180 to 180 and
-  lat -85 to 85: rows are evenly spaced in y = ln(tan(pi/4 + lat/2)),
-  and every pixel takes the nearest grid point, so the image goes on
-  the map as a plain image overlay on those bounds.
+- `frames/fHHH/hb.webp`, `hvtl.webp`, `hvtu.webp`: the field through a
+  continuous diverging ramp made for the dark basemap (`WEB_RAMPS`:
+  blue to red for the thermal winds over -300 to 300 m, teal to purple
+  for HB over -40 to 40 m; the CAVE colormaps in `D2D/colormaps` are
+  not used here), 255 entries, with the alpha easing to zero within
+  10 percent of the half range so the cold/warm boundary shows the
+  basemap instead of a hard rim; blanks (below ground, no steering
+  flow) are fully transparent. The field is sampled bilinearly from
+  the four surrounding grid points (finite ones only), so no grid
+  cells show when the browser zooms in. `class.png`: HCPSclass in the
+  `CPS_HartClass` colors, nearest grid point, transparent outside the
+  blobs. The fields are lossy WebP at quality 80 (about 300 KB each;
+  the same image as an indexed PNG is about 1 MB once bilinear
+  sampling makes every pixel distinct), the class raster an indexed
+  PNG. Each is 2048 by 2041 px in Web Mercator (EPSG:3857) covering
+  lon -180 to 180 and lat -85 to 85: rows are evenly spaced in
+  y = ln(tan(pi/4 + lat/2)), so the image goes on the map as a plain
+  image overlay on those bounds. `index.json` gives the fields' file
+  format under `raster.format`.
+- `frames/fHHH/mask.png`: a 1024 by 1020 px gray-plus-alpha PNG whose
+  alpha is a weight for the three fields: 1 inside the closed-low
+  footprints (the HCPSclass blobs), easing to `MASK_DIM` (0.35) about
+  12 grid cells (300 km) outside them. Hart's parameters evaluated at
+  every grid point measure the ambient thermal ridge and trough away
+  from a low, so the page multiplies the field's alpha by this weight
+  to keep the storms in front. `index.json` names the file and the dim
+  level under `raster` (`mask`, `mask_dim`) with the ramp's fade
+  fraction (`fade`).
 
 Longitudes are -180 to 180 and coordinates are rounded to 2 decimals
 throughout.
