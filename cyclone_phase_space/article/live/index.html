@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>Cyclone Phase Space, live</title>
-<meta name="description" content="A live global map of the gridded cyclone phase space products: the Hart class of every closed low, MSLP, and the B, lower and upper thermal wind fields, with the tracked storms and their phase diagrams, animated over the latest model cycle.">
+<meta name="description" content="A live global map of the gridded cyclone phase space products: the Hart class of every closed low, MSLP, and the thermal asymmetry and lower and upper thermal wind fields, with every tracked low and its phase diagrams, animated over the latest model cycle.">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <link rel="preconnect" href="https://server.arcgisonline.com">
@@ -27,7 +27,7 @@
   <p class="run" id="run-meta">Loading the latest cycle</p>
   <div class="top-actions">
     <button type="button" class="btn" id="storms-btn" aria-controls="storms" aria-expanded="true">
-      Storms <span class="count" id="storms-count"></span>
+      Lows <span class="count" id="storms-count"></span>
     </button>
     <div class="pop-wrap">
       <button type="button" class="btn" id="menu-btn" aria-controls="menu" aria-expanded="false">
@@ -57,13 +57,14 @@
           <h2 class="pop-h">Method</h2>
           <p class="methods">Hart (2003) parameters computed on the <span id="methods-model">GFS 0.25</span> degree grid with a 500&nbsp;km window; class at the MSLP minimum. <a href="https://jkrek17.github.io/awips-tools/cps/" data-link="article">Read the article</a>.</p>
           <p class="links"><a href="https://jkrek17.github.io/awips-tools/cps/" data-link="article">Article</a><a href="https://jkrek17.github.io/awips-tools/cps/figures/phase_space_3d.html" data-link="space">3-D phase space</a></p>
+          <p class="cave">CAVE names: HCPSclass, HB (thermal asymmetry), HVTL and HVTU (lower and upper thermal wind).</p>
         </section>
         <section>
           <h2 class="pop-h">Keyboard</h2>
           <dl class="keys">
             <dt><kbd>Space</kbd></dt><dd>play or pause</dd>
             <dt><kbd>&larr;</kbd> <kbd>&rarr;</kbd></dt><dd>step one frame</dd>
-            <dt><kbd>1</kbd> to <kbd>4</kbd></dt><dd>Class, HB, HVTL, HVTU</dd>
+            <dt><kbd>1</kbd> to <kbd>4</kbd></dt><dd>Class, B, &minus;V<sub>T</sub><sup>L</sup>, &minus;V<sub>T</sub><sup>U</sup></dd>
             <dt><kbd>F</kbd></dt><dd>follow or release a storm</dd>
             <dt><kbd>Esc</kbd></dt><dd>close the readout</dd>
           </dl>
@@ -88,21 +89,40 @@
 
 <aside class="panel storms" id="storms" aria-labelledby="storms-h">
   <div class="panel-head">
-    <h2 id="storms-h">Tracked storms</h2>
+    <h2 id="storms-h">Tracked lows</h2>
+    <span class="sf-count" id="sf-count" aria-live="polite"></span>
     <button type="button" class="x" id="storms-close" aria-label="Close the storm panel">
       <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6"/></svg>
     </button>
   </div>
+  <div class="sf" role="search" aria-label="Filter the tracked lows">
+    <input type="search" id="sf-q" class="sf-q" placeholder="Filter by name, id or FSU number" aria-label="Filter by name, id or FSU number" autocomplete="off" spellcheck="false">
+    <div class="sf-row">
+      <div class="seg sf-depth" role="group" aria-label="Minimum depth">
+        <button type="button" data-sf-depth="all" aria-pressed="false" title="Every tracked low">All</button>
+        <button type="button" data-sf-depth="1000" aria-pressed="true" title="Deeper than 1000 hPa at some point">&lt;&thinsp;1000</button>
+        <button type="button" data-sf-depth="980" aria-pressed="false" title="Deeper than 980 hPa at some point">&lt;&thinsp;980</button>
+        <button type="button" data-sf-depth="fsu" aria-pressed="false" title="Only the storms on the FSU page">FSU</button>
+      </div>
+      <div class="seg sf-hemi" role="group" aria-label="Hemisphere">
+        <button type="button" data-sf-hemi="all" aria-pressed="true" title="Both hemispheres">All</button>
+        <button type="button" data-sf-hemi="N" aria-pressed="false" title="Northern Hemisphere">N</button>
+        <button type="button" data-sf-hemi="S" aria-pressed="false" title="Southern Hemisphere">S</button>
+      </div>
+    </div>
+  </div>
   <div class="storms-body" id="storms-body">
-    <p class="axis-note" id="axis-note">Class at each 6&nbsp;h point against valid time (UTC). Diagrams on the article's Figure&nbsp;1 axes; the ring marks this hour.</p>
+    <details class="deep" id="deep">
+      <summary>Deepest lows at this hour</summary>
+      <ol class="deep-list" id="deep-list"></ol>
+    </details>
+    <p class="axis-note" id="axis-note">Class at each 6&nbsp;h point against valid time (UTC). Diagrams in m on the article's Figure&nbsp;1 axes; the ring marks this hour.</p>
     <div class="time-axis" id="time-axis" aria-hidden="true"></div>
     <ol class="storm-list" id="storm-list">
       <li class="storm skel"><span></span><span></span></li>
       <li class="storm skel"><span></span><span></span></li>
       <li class="storm skel"><span></span><span></span></li>
     </ol>
-    <h2 class="sub-h">Deepest lows at this hour</h2>
-    <ol class="deep-list" id="deep-list"></ol>
   </div>
 </aside>
 
@@ -126,10 +146,10 @@
   <div class="row ctl-row">
     <fieldset class="seg fields">
       <legend class="sr-only">Field</legend>
-      <label><input type="radio" name="field" value="class" checked><span>Class</span></label>
-      <label><input type="radio" name="field" value="hb"><span>HB</span></label>
-      <label><input type="radio" name="field" value="hvtl"><span>HVTL</span></label>
-      <label><input type="radio" name="field" value="hvtu"><span>HVTU</span></label>
+      <label title="Hart class at the low center"><input type="radio" name="field" value="class" checked><span>Class</span></label>
+      <label title="Thermal asymmetry (B), 900 to 600 hPa"><input type="radio" name="field" value="hb" aria-label="Thermal asymmetry, B, 900 to 600 hPa"><span class="sym">B</span></label>
+      <label title="Lower thermal wind, 925 to 700 hPa"><input type="radio" name="field" value="hvtl" aria-label="Lower thermal wind, 925 to 700 hPa"><span class="sym">&minus;V<sub>T</sub><sup>L</sup></span></label>
+      <label title="Upper thermal wind, 500 to 300 hPa"><input type="radio" name="field" value="hvtu" aria-label="Upper thermal wind, 500 to 300 hPa"><span class="sym">&minus;V<sub>T</sub><sup>U</sup></span></label>
     </fieldset>
     <div class="pop-wrap legend-wrap">
       <button type="button" class="legend-btn" id="legend-btn" aria-controls="key" aria-expanded="false" aria-label="Legend and reading notes">
@@ -163,7 +183,7 @@
         <label class="check"><input type="checkbox" data-layer="contours" checked><span>MSLP contours</span></label>
         <label class="check"><input type="checkbox" data-layer="circles" checked><span>200 km circles at the lows</span></label>
         <label class="check"><input type="checkbox" data-layer="footprint"><span>Product footprint (as in CAVE)</span></label>
-        <label class="check"><input type="checkbox" data-layer="tracks" checked><span>Storm tracks</span></label>
+        <label class="check"><input type="checkbox" data-layer="tracks" checked><span>Storm tracks and names</span></label>
         <label class="check"><input type="checkbox" data-layer="terrain"><span>Show terrain minima</span></label>
         <div class="range" id="opacity-wrap">
           <span><label for="opacity">Field opacity</label> <output id="opacity-out" for="opacity">0.70</output></span>
