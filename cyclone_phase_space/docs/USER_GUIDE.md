@@ -546,6 +546,20 @@ scatterometer data, never as a stand-in for any of those.
   weakness wherever HB is unreliable or blank. Cross-check against the
   thickness overlay before calling onset or completion from HB or
   HCPSclass alone.
+- **Stalled or looping lows.** The semicircle B takes its direction
+  from the window-mean deep-layer wind standing in for the storm's
+  motion (the steering proxy above). On a low that is stalled or
+  looping, that direction is unrelated to the storm's actual motion,
+  and HB over-reads the asymmetry by about 10 m. Two real cases from
+  the GFS runs of 24 to 25 September 2026, checked against the Florida
+  State page: a 959 hPa Greenland seclusion looping north of Iceland
+  read HB 12 to 25 m and class 3 for two days while B from the track
+  motion, and the FSU page, fell to about 5 m (class 1); a weakening
+  980 hPa eastern Pacific tropical cyclone in weak steering read HB 10
+  to 12 m and flickered between classes 0 and 2 while FSU read 0 to
+  8 m. On a low that is not moving, or is looping, read HVTL and HVTU
+  and set aside the asymmetric/symmetric half of the class; treat an
+  HB of 10 to 20 m there as likely symmetric.
 - **HB is a full field, not masked to lows.** Away from a detected
   low, HB is just the ambient thickness contrast across the flow at
   that point and says nothing about a storm. At a low, HB is Hart's
