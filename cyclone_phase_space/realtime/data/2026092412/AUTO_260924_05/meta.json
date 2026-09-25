@@ -1,0 +1,39 @@
+{
+  "cycle": "2026092412",
+  "name": "AUTO_260924_05",
+  "status": "ok",
+  "seed": {
+    "lat": 16.44,
+    "lon": -125.18,
+    "fhr0": 6,
+    "fhr1": null,
+    "source": "stored seed, +0 h of 2026092418"
+  },
+  "start_fhr": 6,
+  "end_fhr": 198,
+  "fixes": 33,
+  "start": {
+    "lat": 16.42,
+    "lon": -125.21,
+    "mslp_hpa": 979.1
+  },
+  "end": {
+    "lat": 16.29,
+    "lon": -120.29,
+    "mslp_hpa": 1008.3
+  },
+  "min_mslp_hpa": 975.1,
+  "onset_standard_h": 24,
+  "completion_standard_h": null,
+  "onset_hart_h": 36,
+  "completion_hart_h": null,
+  "class_sequence": "0 6, 2 12, 0 18, 2 24-36, 0 42, 2 48-60, 1 66-108, - 114-198",
+  "fsu_number": 4,
+  "fsu": {
+    "number": 4,
+    "lat": 16.23,
+    "lon": -125.81,
+    "distance_km": 67,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/4.html"
+  }
+}

@@ -3,19 +3,19 @@
   "name": "EPAC",
   "status": "ok",
   "seed": {
-    "lat": 15.5,
-    "lon": -155.5,
-    "fhr0": 0,
+    "lat": 14.83,
+    "lon": -156.15,
+    "fhr0": 6,
     "fhr1": null,
-    "source": "stored seed"
+    "source": "stored seed, +0 h of 2026092418"
   },
-  "start_fhr": 0,
+  "start_fhr": 6,
   "end_fhr": 198,
-  "fixes": 34,
+  "fixes": 33,
   "start": {
-    "lat": 14.96,
-    "lon": -156.47,
-    "mslp_hpa": 997.5
+    "lat": 15.0,
+    "lon": -156.18,
+    "mslp_hpa": 995.4
   },
   "end": {
     "lat": 46.92,
@@ -27,13 +27,13 @@
   "completion_standard_h": null,
   "onset_hart_h": 144,
   "completion_hart_h": null,
-  "class_sequence": "- 0-6, 0 12-42, - 48-60, 0 66-126, 2 132-144, 3 150-198",
+  "class_sequence": "- 6, 0 12-42, - 48-60, 0 66-126, 2 132-144, 3 150-198",
   "fsu_number": 1,
   "fsu": {
     "number": 1,
     "lat": 15.23,
     "lon": -156.39,
-    "distance_km": 31,
+    "distance_km": 34,
     "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/1.html"
   }
 }

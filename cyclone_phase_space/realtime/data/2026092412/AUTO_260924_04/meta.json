@@ -1,0 +1,34 @@
+{
+  "cycle": "2026092412",
+  "name": "AUTO_260924_04",
+  "status": "ok",
+  "seed": {
+    "lat": 81.31,
+    "lon": -145.55,
+    "fhr0": 6,
+    "fhr1": null,
+    "source": "stored seed, +0 h of 2026092418"
+  },
+  "start_fhr": 6,
+  "end_fhr": 54,
+  "fixes": 9,
+  "start": {
+    "lat": 81.38,
+    "lon": -143.6,
+    "mslp_hpa": 977.7
+  },
+  "end": {
+    "lat": 84.4,
+    "lon": -115.72,
+    "mslp_hpa": 997.2
+  },
+  "min_mslp_hpa": 977.7,
+  "onset_standard_h": 6,
+  "completion_standard_h": 6,
+  "onset_hart_h": null,
+  "completion_hart_h": 6,
+  "class_sequence": "6 6-12, - 18, 6 24, - 30, 6 36-54",
+  "fsu_number": null,
+  "fsu": null,
+  "track_end": "no minimum within 600 km of 85.3,-110.8 at or below 1009 hPa and within 1080 km of the last fix at +66 h"
+}

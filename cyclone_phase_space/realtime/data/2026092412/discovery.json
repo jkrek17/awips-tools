@@ -1,0 +1,44 @@
+{
+  "cycle": "2026092412",
+  "mslp_below_hpa": 980.0,
+  "lat_above": 0.0,
+  "max_per_day": 6,
+  "lows": [
+    {
+      "lat": 16.62,
+      "lon": -104.12,
+      "mslp_hpa": 952.63,
+      "basin": "TROP",
+      "action": "added",
+      "storm": "AUTO_260924_06"
+    },
+    {
+      "lat": 60.6,
+      "lon": -22.75,
+      "mslp_hpa": 957.98,
+      "basin": "NATL",
+      "action": "cap"
+    },
+    {
+      "lat": 56.71,
+      "lon": 174.4,
+      "mslp_hpa": 960.87,
+      "basin": "NPAC",
+      "action": "cap"
+    },
+    {
+      "lat": 53.7,
+      "lon": -167.31,
+      "mslp_hpa": 973.09,
+      "basin": "NPAC",
+      "action": "cap"
+    },
+    {
+      "lat": 81.72,
+      "lon": -160.38,
+      "mslp_hpa": 978.77,
+      "basin": "NPAC",
+      "action": "cap"
+    }
+  ]
+}

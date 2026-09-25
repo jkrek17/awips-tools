@@ -53,6 +53,9 @@ OUTSIDE_FRAMES = 2  # a track ends after this many consecutive fixes outside the
 MERGE_TRACK_KM = 150.0  # two tracks whose centers are closer than this in a frame: the later one stops
 CLOSED_DEPTH_HPA = 2.0  # the tracker's closed-low test: closed_low_mask with a 2 hPa ring depth
 CLOSED_BLOB_KM = 200.0  # (the product uses 5 hPa, which a broad deep low's 300-500 km ring can miss)
+CLOSED_SEARCH_KM = hc.MIN_RADIUS_KM  # closedness is checked at the deepest MSLP within this of the fix,
+#                    not at the fix itself (the mask's own candidate radius: a secondary minimum whose
+#                    box reaches a deeper center that far away is still judged by that deeper center)
 CLIMB_KM = 0.0  # a fix moves to a deeper candidate this close; 0 turns the step off (it merged two
 #                 adjacent lows in testing); hc.MIN_RADIUS_KM (300 km, the mask's candidate radius) turns it on
 CLIMB_TOL_HPA = hc.DEFAULT_CENTER_TOL_HPA  # ... if deeper by more than this (the mask's center tolerance)
@@ -203,6 +206,33 @@ def closed_mask(f: dict) -> np.ndarray:
                               RADIUS_KM, CLOSED_DEPTH_HPA, CLOSED_BLOB_KM)
 
 
+def closed_at(f: dict, mask: np.ndarray, clat: float, clon: float, wrap: bool) -> bool:
+    """Whether the fix at (clat, clon) counts as inside a closed low: the
+    mask (closed_mask) taken not at the fix itself but at the deepest MSLP
+    within CLOSED_SEARCH_KM of it (terrain and pole masked out, as in
+    find_center). A secondary minimum whose own +/- 300 km candidate box
+    reaches onto the flank of a deeper center that far away fails the
+    mask's candidate test right at the fix; walking to the deepest point
+    within the same radius lands on that flank, close enough to the deeper
+    center to fall inside its mask blob, without moving the tracked
+    position itself (so the 150 km merge rule between tracks never sees
+    it). Where the fix already is the deepest point nearby (the ordinary
+    case, one low with nothing deeper close by) this is identical to
+    testing the mask at the fix."""
+    fi, fj = frac_index(f, clat, clon)
+    rows, cols, _, _ = subgrid(f, fi, fj, CLOSED_SEARCH_KM, wrap)
+    pm = f["pmsl"][np.ix_(rows, cols)] / 100.0
+    ps = f["psfc"][np.ix_(rows, cols)] / 100.0
+    la = f["lat"][rows][:, None]
+    lo = f["lon"][cols][None, :]
+    ok = (ps >= MIN_PSFC_HPA) & (np.abs(la) <= POLE_LAT) & (gc_km(clat, clon, la, lo) <= CLOSED_SEARCH_KM)
+    pm_ok = np.where(ok, pm, np.inf)
+    r, c = np.unravel_index(int(np.argmin(pm_ok)), pm_ok.shape)
+    if not np.isfinite(pm_ok[r, c]):
+        return bool(nearest(mask, fi, fj))
+    return bool(nearest(mask, float(rows[r]), float(cols[c])))
+
+
 def find_center(f: dict, lat: float, lon: float, radius_km: float, wrap: bool, max_mslp: float | None = None,
                 reach: tuple[float, float, float] | None = None):
     """The MSLP minimum nearest (lat, lon) within radius_km: a point that is
@@ -325,7 +355,8 @@ def sample_frame(tr: Track, f: dict, p: dict, fhr: int, wrap: bool) -> None:
     for k in ("hvtl", "hvtu", "hb", "idx", "hvtl_hart", "hvtu_hart"):
         row[k] = bilinear(p[k], fi, fj) if k in p else float("nan")
     row["class"] = nearest(p["cls"], fi, fj)
-    row["closed"] = bool(nearest(p["closed"], fi, fj)) if "closed" in p else bool(np.isfinite(row["class"]))
+    row["closed"] = (closed_at(f, p["closed"], clat, clon, wrap) if "closed" in p
+                     else bool(np.isfinite(row["class"])))
     if not row["closed"]:
         tr.outside += 1
         if tr.outside >= OUTSIDE_FRAMES:  # end at the last fix inside a closed low

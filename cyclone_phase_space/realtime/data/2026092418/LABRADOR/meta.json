@@ -10,24 +10,24 @@
     "source": "stored seed"
   },
   "start_fhr": 0,
-  "end_fhr": 90,
-  "fixes": 16,
+  "end_fhr": 66,
+  "fixes": 12,
   "start": {
     "lat": 60.94,
     "lon": -55.35,
     "mslp_hpa": 1000.9
   },
   "end": {
-    "lat": 69.76,
-    "lon": -8.07,
-    "mslp_hpa": 994.1
+    "lat": 66.49,
+    "lon": -11.42,
+    "mslp_hpa": 986.5
   },
   "min_mslp_hpa": 985.7,
   "onset_standard_h": 0,
   "completion_standard_h": 0,
   "onset_hart_h": 0,
   "completion_hart_h": 0,
-  "class_sequence": "4 0-30, - 36, 4 42-72, 3 78-84, - 90",
+  "class_sequence": "4 0-30, - 36, 4 42-66",
   "fsu_number": 40,
   "fsu": {
     "number": 40,
@@ -36,5 +36,11 @@
     "distance_km": 36,
     "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092418/40.html"
   },
-  "track_end": "FHR1 90 h reached"
+  "track_end": "merged into GREENLAND at +72 h",
+  "merged_into": {
+    "name": "GREENLAND",
+    "fhr": 72,
+    "distance_km": 0
+  },
+  "note": "merged into GREENLAND at +72 h"
 }

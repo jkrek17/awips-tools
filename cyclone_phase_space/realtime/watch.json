@@ -80,6 +80,17 @@
       "fhr1": null,
       "notes": "Found automatically at 0 h of 2026092418: 979.97 hPa, TROP.",
       "active": true
+    },
+    {
+      "name": "AUTO_260924_06",
+      "lat": 16.62,
+      "lon": -104.12,
+      "cycle": "2026092412",
+      "fhr0": 0,
+      "fhr1": null,
+      "notes": "Found automatically at 0 h of 2026092412: 952.63 hPa, TROP. Inactive from 2026092418: merged into AUTO_260924_01.",
+      "active": false,
+      "ended_cycle": "2026092418"
     }
   ]
 }

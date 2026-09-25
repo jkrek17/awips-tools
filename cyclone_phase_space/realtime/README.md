@@ -194,7 +194,11 @@ reach limit below. It is off by default, `CLIMB_KM = 0`; set it to
 `hc.MIN_RADIUS_KM`, 300 km, to turn it on. In testing on 2026092418 it
 moved GREENLAND at +60 h from its own minimum onto LABRADOR's center
 290 km away, so the merge rule stopped LABRADOR at +54 h and the
-LABRADOR low that FSU follows to +96 h was no longer tracked.)
+LABRADOR low that FSU follows to +96 h was no longer tracked. The fix
+below for the closed-low check (`closed_at`) reaches the same deeper
+center without moving the tracked position, so it does not have this
+merge problem; `CLIMB_KM` is kept, off, only as the earlier, rejected
+attempt.)
 Not a candidate:
 
 - a minimum of 1018 hPa or more (FSU's tracker uses the same limit);
@@ -224,21 +228,31 @@ A track ends in four ways:
    the larger radius; a second miss ends it.
 2. *Outside a closed low.* Each fix is checked against the module's own
    closed-low definition, `closed_low_mask` on MSLP, computed once per
-   frame and taken at the grid point nearest the center, with the
-   arguments `executeHartClass` gives it (300 km candidate radius,
-   500 km ring, 200 km blob) except a 2 hPa ring depth
+   frame, with the arguments `executeHartClass` gives it (300 km
+   candidate radius, 500 km ring, 200 km blob) except a 2 hPa ring depth
    (`CLOSED_DEPTH_HPA`) instead of the product's 5 hPa, which a broad
    deep low whose ring is not 5 hPa above its center fails. The mask is
    used rather than a blank HCPSclass because the class is also blank
    where HB is (steering under 2 m/s) or below ground, inside a
-   perfectly good low. The mask's candidate test requires the center to
-   be within 0.6 hPa of the lowest MSLP anywhere in a +/- 300 km box, so
-   a minimum on the flank of a deeper low just beyond 300 km is still
-   outside it. After two
-   consecutive fixes outside the mask (`OUTSIDE_FRAMES`; a coasted
-   frame between them does not reset the count), the track ends at its
-   last fix inside one, which stops a filled low from wandering from one
-   weak minimum to the next. A single fix outside is kept.
+   perfectly good low. The mask's own candidate test requires a point to
+   be within 0.6 hPa of the lowest MSLP anywhere in its own +/- 300 km
+   box, so a secondary minimum whose box reaches onto the flank of a
+   deeper center 300 to 350 km away fails the test right at that point
+   even though the system as a whole is a closed low (`GREENLAND` beside
+   Iceland at +24 h of 2026092412, 320 km from the low's own 970 hPa
+   center: see the example below). `closed_at` therefore checks the mask
+   not at the fix but at the deepest MSLP within `CLOSED_SEARCH_KM`
+   (300 km, the mask's own candidate radius) of it: the search reaches
+   most of the way to a genuinely deeper center in the same system and
+   lands inside its mask blob, while an isolated low (the ordinary case,
+   nothing deeper nearby) has the fix itself as the deepest point in
+   range, so the test is unchanged. The tracked position itself never
+   moves, so, unlike `CLIMB_KM` above, this cannot feed the merge rule
+   below. After two consecutive fixes outside the mask (`OUTSIDE_FRAMES`;
+   a coasted frame between them does not reset the count), the track
+   ends at its last fix inside one, which stops a filled low from
+   wandering from one weak minimum to the next. A single fix outside is
+   kept.
 3. *Same low as another track.* When two tracks of a run choose centers
    within 150 km of each other in a frame (`MERGE_TRACK_KM`), the one
    whose track started later (for the same start, the shallower at that
@@ -359,16 +373,62 @@ behind it). The three lows and their FSU pages for the same run:
 | GREENLAND, 958 hPa low southwest of Iceland at 60.6N 22.75W | 0 to 18 h (970 hPa at 64.4N 15.5W, off east Iceland) | [#19](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/19.html), existing cyclone, through +54 h |
 | LABRADOR, cold-core low at 61.5N 63.1W | 0 to 96 h (its FHR1), deepest 985 hPa (66 h), 996 hPa at 63.9N 15.8W | [#48](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/48.html), picked up as a "future cyclone" from +6 h, through +96 h |
 
-Rerun from the GRIB cache with the tracker rules above. GREENLAND ends
-well before FSU's +54 h because the tracker stays on a secondary
-minimum: at +24 h the candidate nearest its first guess is 64.4N 15.6W
-(975 hPa, beside Iceland), while the low's deeper center is north of
-Iceland at 67.25N 15.75W (970 hPa), 320 km away. The closed-low mask's
-candidate test compares a center with every grid point in a +/- 300 km
-box, which reaches onto the flank of that deeper center, so the +24 h
-and +30 h minima are outside the mask at any ring depth and the track
-ends at +18 h. The move-to-deeper-center step described above would
-keep it on the 970 hPa center, but it is off by default.
+Rerun from the GRIB cache with the tracker rules above. Before the
+`closed_at` fix, GREENLAND ended well before FSU's +54 h because the
+tracker stayed on a secondary minimum: at +24 h the candidate nearest
+its first guess is 64.4N 15.6W (975 hPa, beside Iceland), while the
+low's deeper center is north of Iceland at 67.25N 15.75W (970 hPa),
+320 km away. The closed-low mask's own candidate test compares a center
+with every grid point in its own +/- 300 km box, which reaches onto the
+flank of that deeper center, so the +24 h and +30 h minima were outside
+the mask at any ring depth and the track ended at +18 h. The
+move-to-deeper-center step described above would keep it on the 970 hPa
+center too, but by moving the fix there, not just the closedness check.
+
+**Rerun after the fix.** Checking the mask at the deepest MSLP within
+300 km of the fix (`closed_at`) reaches the 970 hPa center instead,
+inside its own mask blob, without moving the fix; the +24 h and +30 h
+fixes now count as inside a closed low and the track continues. Both
+cycles were rerun from the GRIB cache with `collect_daily.py --force`
+(`watch.json`'s own seeds, close to but not identical to the ones
+above):
+
+| Cycle | Storm | Before | After | End reason after |
+|---|---|---|---|---|
+| 2026092412 | EPAC | 0-198 h | +6-198 h | ran out of requested hours (unaffected; +6 not +0 because `watch.json`'s stored seed has since moved to the 2026092418 cycle, and a backfill of an older cycle uses the seed at the hour it is valid there -- see "Backfilling a cycle" below, unrelated to this fix) |
+| 2026092412 | GREENLAND | 0-18 h | +6-174 h | no candidate within reach near the 85 deg pole limit, after wandering east across the Arctic at a fairly steady 977-992 hPa |
+| 2026092412 | LABRADOR | 0-96 h | +6-96 h | its own FHR1 (unaffected) |
+| 2026092418 | EPAC | 0-198 h | 0-198 h | ran out of requested hours (unaffected) |
+| 2026092418 | GREENLAND | 0-54 h | 0-84 h | outside a closed low at +90, +96 h -- matches FSU cyclone 17's own ending at +84 h |
+| 2026092418 | LABRADOR | 0-90 h | 0-66 h | merged into GREENLAND at +72 h (see below) |
+| 2026092418 | AUTO_260924_02 | 0-6 h | 0-90 h | no candidate within reach of a filling low |
+| 2026092418 | AUTO_260924_03 | 0-90 h | 0-30 h | merged into AUTO_260924_02 at +36 h (see below) |
+
+EPAC and LABRADOR are unaffected at 2026092412 (LABRADOR still stops
+exactly at its own FHR1); at 2026092418, EPAC is unaffected but
+LABRADOR now stops earlier, merged into GREENLAND. GREENLAND was dead
+by +54 h before the fix, so it never competed for this merge; with it
+alive, the two tracks' own independently found centers land within
+150 km of each other (`MERGE_TRACK_KM`) at +72 h, and the existing merge
+rule (unchanged by this fix) keeps the older entry, GREENLAND, and stops
+LABRADOR there. The raw MSLP field at +72 h, 55-75N 30W-5E, has one
+minimum (986.8 hPa near 68N 4-11W), not two: GREENLAND's warm seclusion
+and LABRADOR's cold-core low have genuinely merged into one low in this
+forecast by then, so tracking them as two separate storms past that
+point would be wrong, not merely a tracker quirk. It is also the same
+"hands over to another low" outcome LABRADOR's FHR1 = 90 was already
+chosen to preempt (previously expected near +96 h from crossing
+Iceland's terrain, per `watch.json`'s own note on the entry); with
+GREENLAND's early end fixed, the handover happens 24 h sooner because
+GREENLAND is no longer missing from contention, not because of a new
+defect. AUTO_260924_03 stopping when AUTO_260924_02 (previously dead by
++6 h) catches up to it at +36 h is the same effect between two
+automatically discovered lows. Every fix in both reruns stayed within
+the tracker's own reach limit, and no track's MSLP or position changed
+by more than 12 hPa or 540 km between consecutive fixes anywhere in
+either rerun (the largest were GREENLAND's 533 km step and 9.6 hPa step,
+both at 2026092412, both under the limits) -- neither rerun shows a
+track running away onto an unrelated low.
 
 With the standard bands the EPAC storm reaches B = 10 m (24 h mean) at
 +132 h, with Hart's bands and the track-motion B at +144 h; the lower

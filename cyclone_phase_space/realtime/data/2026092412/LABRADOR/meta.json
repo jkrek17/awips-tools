@@ -3,19 +3,19 @@
   "name": "LABRADOR",
   "status": "ok",
   "seed": {
-    "lat": 61.5,
-    "lon": -63.0,
-    "fhr0": 0,
+    "lat": 60.94,
+    "lon": -55.35,
+    "fhr0": 6,
     "fhr1": 96,
-    "source": "stored seed"
+    "source": "stored seed, +0 h of 2026092418"
   },
-  "start_fhr": 0,
+  "start_fhr": 6,
   "end_fhr": 96,
-  "fixes": 17,
+  "fixes": 16,
   "start": {
-    "lat": 61.52,
-    "lon": -63.12,
-    "mslp_hpa": 1001.8
+    "lat": 60.73,
+    "lon": -58.55,
+    "mslp_hpa": 999.8
   },
   "end": {
     "lat": 63.87,
@@ -23,17 +23,18 @@
     "mslp_hpa": 995.9
   },
   "min_mslp_hpa": 985.4,
-  "onset_standard_h": 0,
-  "completion_standard_h": 0,
-  "onset_hart_h": 0,
-  "completion_hart_h": 0,
-  "class_sequence": "4 0-30, 3 36, 4 42-84, - 90-96",
+  "onset_standard_h": 6,
+  "completion_standard_h": 6,
+  "onset_hart_h": 6,
+  "completion_hart_h": 6,
+  "class_sequence": "4 6-30, 3 36, 4 42-84, - 90-96",
   "fsu_number": 48,
   "fsu": {
     "number": 48,
     "lat": 60.6,
     "lon": -60.0,
-    "distance_km": 197,
+    "distance_km": 80,
     "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/48.html"
-  }
+  },
+  "track_end": "FHR1 96 h reached"
 }
