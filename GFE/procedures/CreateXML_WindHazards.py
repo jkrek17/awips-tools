@@ -54,9 +54,10 @@
 #   than LOW_INTERVAL_HRS so an hourly database does not put 49 Lows on the
 #   chart.  The Lows are joined into track lines by nearest-neighbor matching
 #   from one plot time to the next.
-# * Activity: stored as PGEN's stock "Default" type and subtype
-#   (ACTIVITY_TYPE), so nothing has to be added to the site's PGEN activity
-#   list.  The file name still carries <basin>_WindHazards.
+# * Activity: named the way CreateXML.py names its own -
+#   "<basin>_HS_Surface(F048)" from ACTIVITY_AREA/_PRODUCT/_FHR - and passed
+#   as both type and subtype, because PGEN cannot deserialize an activity
+#   type its list does not carry.  The file name keeps <basin>_WindHazards.
 # * Output: a single XML with four layers - "F000-024" and "F024-048", each
 #   holding that period's three band polygons; "Lows", holding every 6-hourly
 #   Low with its pressure and forecast hour; and "Track", holding the lines
@@ -204,17 +205,20 @@ MIN_POLYGON_POINTS = 4
 MIN_POLYGON_AREA_DEG2 = 1.0
 MAX_POLYGON_POINTS = 60
 
-# The PGEN activity this is stored as.  "Default" is the stock activity
-# type, so nothing has to be registered in the site's PGEN activity list -
-# unlike a name of its own, which PGEN would not know.
+# The PGEN activity, built the way CreateXML.py builds it:
 #
-# PGEN resolves an activity by type AND subtype, so an unregistered subtype
-# fails to deserialize ("Name is null") even when the type is fine.
-# ACTIVITY_SUBTYPE None therefore passes the type as the subtype too - the
-# same string twice, which is the shape CreateXML.py uses.  Put a descriptive
-# label here only if the site's activity list has that subtype registered.
-ACTIVITY_TYPE = "Default"
-ACTIVITY_SUBTYPE = None
+#     basin_long + "_" + area + "_" + prod + "(" + fhr_opt + ")"
+#
+# giving "Atlantic_HS_Surface(F048)", passed as BOTH the type and the
+# subtype.  PGEN will not deserialize an activity whose type it does not
+# know - "unable to deserialize PGEN activity. Name is null" - so this has to
+# be a name the site's activity list already carries, which is why it is
+# built from the same pieces as the existing charts rather than from a name
+# of its own.  Point these at whichever registered activity this chart should
+# file under.
+ACTIVITY_AREA = "HS"
+ACTIVITY_PRODUCT = "Surface"
+ACTIVITY_FHR = "F048"
 
 # Edit area zeroed out when "Mask land:" is On.
 MASK_EDIT_AREA = "Land"
@@ -884,13 +888,12 @@ if _IN_GFE:
             basin_long = pd["basin"]
             outputFile = (outDir + basin_long + "_WindHazards_" + str(dbase) +
                           "_" + gridstart + ".xml")
-            subtype = ACTIVITY_SUBTYPE
-            if subtype is None:
-                subtype = ACTIVITY_TYPE
+            typeSubtype = (basin_long + "_" + ACTIVITY_AREA + "_" +
+                           ACTIVITY_PRODUCT + "(" + ACTIVITY_FHR + ")")
 
             products, product = XmlUtils.createXmlProduct(
                 outputFile, pd["useFile"], pd["saveLayers"], pd["onOff"],
-                pd["status"], pd["center"], fcstr, ACTIVITY_TYPE, subtype)
+                pd["status"], pd["center"], fcstr, typeSubtype, typeSubtype)
 
             # Set layer name to Default if saveLayers is false
             saveLayers = str(pd["saveLayers"]).lower() == "true"

@@ -1029,13 +1029,16 @@ def test_pgen_activity():
     print("\ntest_pgen_activity")
     module, tree = runProcedure(DEFAULT_VARDICT)
     product = list(tree.getroot().iter("Product"))[0]
-    check("stored as the stock Default activity type",
-          product.get("type") == "Default", str(product.get("type")))
-    # PGEN resolves an activity by type AND subtype, so an unregistered
-    # subtype fails to deserialize even with a valid type: the same string
-    # goes in both, the way CreateXML.py does it.
-    check("the subtype matches the type",
-          product.get("subType") == "Default", str(product.get("subType")))
+    # CreateXML.py's own shape: basin + area + product + (forecast hour),
+    # passed as both type and subtype.  PGEN cannot deserialize an activity
+    # type its list does not carry, so this has to look like the site's
+    # existing ones rather than be a name of its own.
+    check("the activity is named the way CreateXML.py names its own",
+          product.get("type") == "Pacific_HS_Surface(F048)",
+          str(product.get("type")))
+    check("the subtype is the same string",
+          product.get("subType") == product.get("type"),
+          str(product.get("subType")))
     check("the file name carries the same name",
           os.path.basename(STORED[-1]).startswith("Pacific_WindHazards_"),
           os.path.basename(STORED[-1]))
