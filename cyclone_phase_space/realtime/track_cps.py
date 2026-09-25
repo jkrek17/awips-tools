@@ -40,12 +40,22 @@ sys.path.insert(0, str(g.CPS_ROOT / "article" / "figures"))
 import diagram_style as ds  # noqa: E402  (Hart's quadrant colors, labels and limits)
 
 # ------------------------------------------------------------------ settings
-SPEED_KMH = 60.0  # search radius grows at this rate with the hours since the last fix
-CAP_KM = 700.0  # ... up to this radius
+SPEED_KMH = 90.0  # search radius grows at this rate with the hours since the last fix, and no
+#                   candidate may lie farther from the last fix than this rate allows (no cap)
+CAP_KM = 600.0  # ... up to this radius
 SEED_KM = 400.0  # search radius around the seed position at FHR0
 LOCAL_MIN_HALF = 4  # a candidate center is the minimum of its (2k+1) x (2k+1) box (k = 4: +/- 1 degree)
 MAX_MSLP_HPA = 1018.0  # a minimum at or above this is not a center (FSU's tracker limit)
 MIN_PSFC_HPA = 950.0  # nor is one where the surface is higher than about 500 m (MSLP extrapolated)
+POLE_LAT = 85.0  # nor is one poleward of this latitude (the pole row is one repeated value)
+MAX_RISE_HPA = 12.0  # nor one more than this above the previous fix (a handover, not a filling low)
+OUTSIDE_FRAMES = 2  # a track ends after this many consecutive fixes outside the closed-low mask
+MERGE_TRACK_KM = 150.0  # two tracks whose centers are closer than this in a frame: the later one stops
+CLOSED_DEPTH_HPA = 2.0  # the tracker's closed-low test: closed_low_mask with a 2 hPa ring depth
+CLOSED_BLOB_KM = 200.0  # (the product uses 5 hPa, which a broad deep low's 300-500 km ring can miss)
+CLIMB_KM = 0.0  # a fix moves to a deeper candidate this close; 0 turns the step off (it merged two
+#                 adjacent lows in testing); hc.MIN_RADIUS_KM (300 km, the mask's candidate radius) turns it on
+CLIMB_TOL_HPA = hc.DEFAULT_CENTER_TOL_HPA  # ... if deeper by more than this (the mask's center tolerance)
 SUB_KM = 1000.0  # half width of the subgrid kept around each center for B with the track motion
 RADIUS_KM = 500.0
 LAYER_SCALE = 1.4548  # 925-700 hPa thickness rescaled to 900-600 hPa, as in the D2D XML
@@ -162,10 +172,51 @@ def parabolic(a: float, b: float, c: float) -> float:
     return float(np.clip(0.5 * (a - c) / den, -0.5, 0.5)) if den > 0 else 0.0
 
 
-def find_center(f: dict, lat: float, lon: float, radius_km: float, wrap: bool):
+def all_centers(f: dict, wrap: bool) -> list[tuple[int, int, float]]:
+    """Every point of the whole grid that find_center would accept as a
+    center: terrain (surface pressure below MIN_PSFC_HPA) masked before the
+    +/- LOCAL_MIN_HALF box-minimum test, MSLP below MAX_MSLP_HPA, latitude
+    within POLE_LAT. On the
+    global grid the box wraps across the seam. Returns [(i, j, mslp_hpa)]."""
+    k = LOCAL_MIN_HALF
+    pm = f["pmsl"] / 100.0
+    pm_ok = np.where(f["psfc"] / 100.0 >= MIN_PSFC_HPA, pm, np.inf)
+    if wrap:
+        ext = np.concatenate([pm_ok[:, -k:], pm_ok, pm_ok[:, :k]], axis=1)
+        ismin = local_minima(ext, k)[:, k:-k]
+    else:
+        ismin = local_minima(pm_ok, k)
+    ismin &= (pm_ok < MAX_MSLP_HPA) & (np.abs(f["lat"]) <= POLE_LAT)[:, None]
+    return [(int(i), int(j), float(pm[i, j])) for i, j in np.argwhere(ismin)]
+
+
+def closed_mask(f: dict) -> np.ndarray:
+    """The tracker's closed-low test: the module's closed_low_mask on MSLP
+    with the arguments executeHartClass passes it except a ring depth of
+    CLOSED_DEPTH_HPA (2 hPa) instead of the product's 5 hPa, which a broad
+    deep low (its 300 to 500 km ring not 5 hPa above the center) fails.
+    Unlike a blank HCPSclass, it does not depend on B or the band levels,
+    so a slow storm (HB blank under MIN_STEERING_MS) or one over low
+    terrain still counts as a closed low."""
+    dx, dy, _ = g.grid_metrics(f["lat"], f["lon"].size)
+    return hc.closed_low_mask(hc.pmsl_input_hpa(f["pmsl"], hc.PMSL_KIND_PRESSURE), dx, dy, hc.MIN_RADIUS_KM,
+                              RADIUS_KM, CLOSED_DEPTH_HPA, CLOSED_BLOB_KM)
+
+
+def find_center(f: dict, lat: float, lon: float, radius_km: float, wrap: bool, max_mslp: float | None = None,
+                reach: tuple[float, float, float] | None = None):
     """The MSLP minimum nearest (lat, lon) within radius_km: a point that is
-    the lowest of its +/- LOCAL_MIN_HALF box, below MAX_MSLP_HPA, where the
-    surface pressure is at least MIN_PSFC_HPA. Returns (fi, fj, mslp_hpa) on
+    the lowest of its +/- LOCAL_MIN_HALF box, below MAX_MSLP_HPA (and not
+    above max_mslp, if given), where the surface pressure is at least
+    MIN_PSFC_HPA, no more than POLE_LAT from the equator, and, if reach =
+    (lat0, lon0, km) is given, within km of (lat0, lon0). If CLIMB_KM is
+    above 0 (it is 0, off, by default) and a candidate more than
+    CLIMB_TOL_HPA deeper (by the same tests, not limited to
+    radius_km but still within reach) lies within CLIMB_KM of the chosen
+    one, the fix moves to the deepest such candidate, repeatedly, until
+    none is: the center closed_low_mask's candidate test recognizes,
+    rather than a secondary minimum beside it; minima within the mask's
+    own 0.6 hPa center tolerance are left alone. Returns (fi, fj, mslp_hpa) on
     the full grid, refined to a fraction of a cell by a parabola through the
     minimum and its neighbors along each axis, or None.
 
@@ -177,7 +228,7 @@ def find_center(f: dict, lat: float, lon: float, radius_km: float, wrap: bool):
     since the real, slightly shallower minimum beside the terrain then no
     longer looks like the lowest point of its own box."""
     fi, fj = frac_index(f, lat, lon)
-    rows, cols, _, _ = subgrid(f, fi, fj, radius_km + 150.0, wrap)
+    rows, cols, _, _ = subgrid(f, fi, fj, radius_km + CLIMB_KM + 150.0, wrap)
     pm = f["pmsl"][np.ix_(rows, cols)] / 100.0
     la = f["lat"][rows][:, None]
     lo = f["lon"][cols][None, :]
@@ -185,10 +236,22 @@ def find_center(f: dict, lat: float, lon: float, radius_km: float, wrap: bool):
     pm_ok = np.where(ps >= MIN_PSFC_HPA, pm, np.inf)
     ismin = local_minima(pm_ok, LOCAL_MIN_HALF)
     dist = gc_km(lat, lon, la, lo)
-    cand = np.argwhere(ismin & (dist <= radius_km) & (pm_ok < MAX_MSLP_HPA))
+    ok = ismin & (pm_ok < MAX_MSLP_HPA) & (np.abs(la) <= POLE_LAT)
+    if max_mslp is not None:
+        ok &= pm_ok <= max_mslp
+    if reach is not None:
+        ok &= gc_km(reach[0], reach[1], la, lo) <= reach[2]
+    cand = np.argwhere(ok & (dist <= radius_km))
     if cand.size == 0:
         return None
     r, c = min(cand, key=lambda rc: dist[rc[0], rc[1]])
+    every = np.argwhere(ok) if CLIMB_KM > 0 else np.empty((0, 2), dtype=int)
+    while every.size:  # climb to the deepest candidate within CLIMB_KM (off when CLIMB_KM is 0)
+        near = gc_km(la[r, 0], lo[0, c], la[every[:, 0], 0], lo[0, every[:, 1]]) <= CLIMB_KM
+        deeper = [(pm_ok[a, b], a, b) for a, b in every[near] if pm_ok[a, b] < pm_ok[r, c] - CLIMB_TOL_HPA]
+        if not deeper:
+            break
+        _, r, c = min(deeper)
     i, j = rows[r], cols[c]
     full = f["pmsl"] / 100.0
     ny, nx = full.shape
@@ -205,11 +268,16 @@ class Track:
         self.__dict__.update(parse_track(spec))
         self.fixes: list[dict] = []
         self.missed = 0
+        self.outside = 0  # consecutive fixes outside the closed-low mask
         self.done = False
+        self.end_reason = ""
+        self.merged: tuple[str, int, float] | None = None  # (other track, hour, km) when it stopped for it
 
     def guess(self, fhr: int) -> tuple[float, float, float]:
         """(lat, lon, radius_km): the seed, or the last fix moved on by the
-        last 6 h motion over the hours since it, and the search radius."""
+        last motion over the hours since it (half of that after a coasted
+        frame, so a wrong motion does not carry the search away), and the
+        search radius."""
         if not self.fixes:
             return self.lat, self.lon, SEED_KM
         last = self.fixes[-1]
@@ -217,7 +285,7 @@ class Track:
         lat, lon = last["lat"], last["lon"]
         if len(self.fixes) > 1:
             prev = self.fixes[-2]
-            rate = hours / (last["fhr"] - prev["fhr"])
+            rate = hours / (last["fhr"] - prev["fhr"]) * (0.5 if self.missed else 1.0)
             lat += (last["lat"] - prev["lat"]) * rate
             lon += float(wrap180(last["lon"] - prev["lon"])) * rate
         return float(np.clip(lat, -89.0, 89.0)), float(wrap180(lon)), min(SPEED_KMH * hours, CAP_KM)
@@ -226,20 +294,28 @@ class Track:
 def sample_frame(tr: Track, f: dict, p: dict, fhr: int, wrap: bool) -> None:
     """Advance one track by one frame: find the center, sample the products
     there, and keep the subgrid B needs once the track motion is known."""
-    if fhr > tr.fhr1:
+    if fhr > tr.fhr1 and not tr.done:
         tr.done = True
+        tr.end_reason = f"FHR1 {tr.fhr1} h reached"
     if tr.done or fhr < tr.fhr0:
         return
     lat, lon, rad = tr.guess(fhr)
-    hit = find_center(f, lat, lon, rad, wrap)
+    cap = reach = None
+    if tr.fixes:
+        last = tr.fixes[-1]
+        cap = last["mslp_hpa"] + MAX_RISE_HPA
+        reach = (last["lat"], last["lon"], SPEED_KMH * (fhr - last["fhr"]))
+    hit = find_center(f, lat, lon, rad, wrap, cap, reach)
     if hit is None:
+        what = f"no minimum within {rad:.0f} km of {lat:.1f},{lon:.1f}" + (
+            f" at or below {cap:.0f} hPa and within {reach[2]:.0f} km of the last fix" if cap else "")
         if tr.fixes and tr.missed == 0:
             tr.missed = 1
-            print(f"  {tr.name} f{fhr:03d}: no minimum within {rad:.0f} km of {lat:.1f},{lon:.1f}; "
-                  "extrapolating one frame")
+            print(f"  {tr.name} f{fhr:03d}: {what}; extrapolating one frame")
         else:
             tr.done = True
-            print(f"  {tr.name} f{fhr:03d}: no minimum within {rad:.0f} km of {lat:.1f},{lon:.1f}; track ends")
+            tr.end_reason = f"{what} at +{fhr} h"
+            print(f"  {tr.name} f{fhr:03d}: {what}; track ends")
         return
     tr.missed = 0
     fi, fj, pmin = hit
@@ -249,6 +325,20 @@ def sample_frame(tr: Track, f: dict, p: dict, fhr: int, wrap: bool) -> None:
     for k in ("hvtl", "hvtu", "hb", "idx", "hvtl_hart", "hvtu_hart"):
         row[k] = bilinear(p[k], fi, fj) if k in p else float("nan")
     row["class"] = nearest(p["cls"], fi, fj)
+    row["closed"] = bool(nearest(p["closed"], fi, fj)) if "closed" in p else bool(np.isfinite(row["class"]))
+    if not row["closed"]:
+        tr.outside += 1
+        if tr.outside >= OUTSIDE_FRAMES:  # end at the last fix inside a closed low
+            out = [fx["fhr"] for fx in tr.fixes if not fx["closed"]][-(OUTSIDE_FRAMES - 1):] + [fhr]
+            while len(tr.fixes) > 1 and not tr.fixes[-1]["closed"]:
+                tr.fixes.pop()
+            tr.done = True
+            tr.end_reason = (f"outside a closed low at +{', +'.join(str(h) for h in out)} h "
+                             f"({pmin:.0f} hPa at +{fhr} h)")
+            print(f"  {tr.name} f{fhr:03d}: {tr.end_reason}; track ends at +{tr.fixes[-1]['fhr']} h")
+            return
+    else:
+        tr.outside = 0
     # Subgrid around the center: thickness for B, and the module's steering proxy.
     rows, cols, li, lj = subgrid(f, fi, fj, SUB_KM, wrap)
     cut = np.ix_(rows, cols)
@@ -271,6 +361,32 @@ def sample_frame(tr: Track, f: dict, p: dict, fhr: int, wrap: bool) -> None:
     row["hb_sub_check"] = bilinear(b_sub, li, lj)
     row["sub"] = sub
     tr.fixes.append(row)
+
+
+def merge_close(tracks: list[Track], fhr: int, km: float | None = None) -> list[tuple[Track, Track, float]]:
+    """Two tracks that chose centers within km of each other at this frame
+    follow the same low: the one whose track started later (for the same
+    start the shallower here, then the later in the list) stops at its
+    previous fix (km defaults to MERGE_TRACK_KM). Returns [(stopped, kept, distance_km), ...]."""
+    km = MERGE_TRACK_KM if km is None else km
+    here = [(t.fixes[0]["fhr"], t.fixes[-1]["mslp_hpa"], k, t) for k, t in enumerate(tracks)
+            if t.fixes and t.fixes[-1]["fhr"] == fhr and t.merged is None]
+    kept: list[Track] = []
+    out = []
+    for *_, t in sorted(here, key=lambda r: r[:3]):
+        fx = t.fixes[-1]
+        near = min(((float(gc_km(fx["lat"], fx["lon"], k.fixes[-1]["lat"], k.fixes[-1]["lon"])), k) for k in kept),
+                   default=None, key=lambda r: r[0])
+        if near is None or near[0] >= km:
+            kept.append(t)
+            continue
+        t.fixes.pop()
+        t.done = True
+        t.merged = (near[1].name, fhr, near[0])
+        t.end_reason = f"merged into {near[1].name} at +{fhr} h"
+        print(f"  {t.name} f{fhr:03d}: {near[0]:.0f} km from {near[1].name}; {t.end_reason}")
+        out.append((t, near[1], near[0]))
+    return out
 
 
 def track_motion(fixes: list[dict]) -> None:
@@ -593,15 +709,18 @@ def run(cycle: str, hours: list[int], region: str, outdir: Path, source: str, sp
             p = g.compute_products(f)
             if hart:
                 p.update(g.compute_hart_bands(f))
+            p["closed"] = closed_mask(f)
             for tr in tracks:
                 sample_frame(tr, f, p, fhr, wrap)
+            merge_close(tracks, fhr)
             where = "; ".join(f"{t.name} {t.fixes[-1]['lat']:.1f},{t.fixes[-1]['lon']:.1f} "
                               f"{t.fixes[-1]['mslp_hpa']:.0f}" for t in tracks
                               if t.fixes and t.fixes[-1]["fhr"] == fhr)
             print(f"  f{fhr:03d}: wait+decode {t2 - t1:.1f} s, compute+track {time.time() - t2:.1f} s   {where}")
     for tr in tracks:
         if not tr.fixes:
-            print(f"{tr.name}: no low found near {tr.lat},{tr.lon} at f{tr.fhr0:03d}; nothing written")
+            why = tr.end_reason if tr.merged else f"no low found near {tr.lat},{tr.lon} at f{tr.fhr0:03d}"
+            print(f"{tr.name}: {why}; nothing written")
             continue
         track_motion(tr.fixes)
         b_with_track_motion(tr.fixes)

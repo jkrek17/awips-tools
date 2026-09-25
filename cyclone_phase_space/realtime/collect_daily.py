@@ -16,6 +16,13 @@ moves every tracked storm's seed in watch.json to its first fix of this
 cycle. A storm with no closed low within 400 km of its seed is marked
 inactive. See README.md, "Daily collection".
 
+At the 0 h frame, every closed low deeper than AUTO_MSLP_HPA north of
+AUTO_LAT_MIN that no watched storm covers is added to watch.json as
+AUTO_<YYMMDD>_<NN> (at most AUTO_MAX_PER_DAY a day) and tracked in the
+same run; of two active storms within MERGE_KM at 0 h the newer entry
+ends as merged, and an AUTO storm above FILL_HPA at 0 h for FILL_CYCLES
+collected cycles ends as filled. See README.md, "Automatic discovery".
+
 A rerun for a cycle already collected reuses what is there (no GFS work
 for storms whose meta.json says ok, cached FSU files, no duplicate log
 lines); it only retries the FSU match where there was none. --force
@@ -51,6 +58,18 @@ OUT = HERE / "out"  # GRIB cache and full-size working outputs (gitignored)
 REGION = "global"
 DEFAULT_HOURS = list(range(0, 199, 6))
 PROBE_DAYS = 4  # default cycle: today's 12 UTC run or up to this many days back
+
+# Automatic discovery of deep lows at 0 h (README, "Automatic discovery").
+AUTO_PREFIX = "AUTO_"
+AUTO_MSLP_HPA = 980.0  # a closed low at 0 h below this MSLP is added ...
+AUTO_LAT_MIN = 0.0  # ... if it lies north of this latitude (northern hemisphere only)
+AUTO_MAX_PER_DAY = 6  # at most this many AUTO_<YYMMDD>_NN storms per day (deepest first)
+AUTO_SYSTEM_KM = 500.0  # minima within this of a deeper one belong to the same system
+AUTO_KNOWN_KM = 500.0  # no new storm within this of a watched storm's 0 h position
+MERGE_KM = 300.0  # two active storms closer than this at 0 h: the newer entry ends
+FILL_HPA = 1000.0  # an AUTO storm whose 0 h MSLP is above this ...
+FILL_CYCLES = 2  # ... for this many consecutive collected cycles ends as filled
+NEXT_CYCLE_H = 24  # a storm merged into another by this hour has no seed for the next daily cycle
 
 PHASE_WIDTH = 1600  # phase.png kept in the repository, downscaled from 2400 px
 COMPARE_WIDTH = 2048  # compare.png: two 1024 px FSU diagrams over our diagram
@@ -169,26 +188,117 @@ def derive_seed(st: dict, cycle: str, data_dir: Path) -> dict:
     return dict(seed, fhr0=0, source=note)
 
 
+# ------------------------------------------------------------------ discovery
+def basin(lat: float, lon: float) -> str:
+    """NATL (100W to 20E), NPAC (west of 100W or east of 100E) north of 20N,
+    TROP south of 20N, else the position."""
+    if lat < 20.0:
+        return "TROP"
+    if -100.0 <= lon <= 20.0:
+        return "NATL"
+    if lon < -100.0 or lon > 100.0:
+        return "NPAC"
+    return fmt_pos(lat, lon)
+
+
+def deep_lows(f: dict) -> list[dict]:
+    """Closed lows of the frame below AUTO_MSLP_HPA north of AUTO_LAT_MIN, one
+    per system: the tracker's candidate centers (tc.all_centers), deepest
+    first, dropping any within AUTO_SYSTEM_KM of a deeper one kept. Positions
+    are refined to a fraction of a cell as the tracker does."""
+    cands = sorted((m, i, j) for i, j, m in tc.all_centers(f, True)
+                   if m < AUTO_MSLP_HPA and f["lat"][i] > AUTO_LAT_MIN)
+    kept: list[dict] = []
+    for m, i, j in cands:
+        lat, lon = float(f["lat"][i]), float(tc.wrap180(f["lon"][j]))
+        if any(tc.gc_km(lat, lon, k["lat"], k["lon"]) < AUTO_SYSTEM_KM for k in kept):
+            continue
+        hit = tc.find_center(f, lat, lon, 30.0, True)
+        if hit is not None:
+            fi, fj, m = hit
+            lat = float(f["lat"][0] + fi * g.RES_DEG)
+            lon = float(tc.wrap180(f["lon"][0] + fj * g.RES_DEG))
+        kept.append(dict(lat=round(lat, 2), lon=round(lon, 2), mslp_hpa=round(m, 2), basin=basin(lat, lon)))
+    return kept
+
+
+def pos_zero(meta: dict | None) -> tuple[float, float] | None:
+    """A collected storm's position at 0 h from its meta.json: its first fix
+    if that is at 0 h, else its seed if the seed was for 0 h (a lost or
+    merged storm)."""
+    if not meta:
+        return None
+    if meta.get("status") == "ok":
+        return (meta["start"]["lat"], meta["start"]["lon"]) if meta.get("start_fhr") == 0 else None
+    s = meta.get("seed") or {}
+    return (s["lat"], s["lon"]) if s.get("fhr0") == 0 and "lat" in s else None
+
+
+def read_meta(path: Path) -> dict | None:
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def earlier_metas(data_dir: Path, cycle: str, name: str) -> list[dict]:
+    """The storm's meta.json of the collected cycles before this one, newest first."""
+    out = []
+    if data_dir.exists():
+        for c in sorted((p.name for p in data_dir.iterdir() if re.fullmatch(r"\d{10}", p.name) and p.name < cycle),
+                        reverse=True):
+            m = read_meta(data_dir / c / name / "meta.json")
+            if m:
+                out.append(m)
+    return out
+
+
+def filled(data_dir: Path, cycle: str, name: str, mslp0: float) -> bool:
+    """True for an AUTO storm whose 0 h MSLP is above FILL_HPA in this cycle
+    and in the FILL_CYCLES - 1 collected cycles before it."""
+    if not name.startswith(AUTO_PREFIX) or mslp0 <= FILL_HPA:
+        return False
+    prev = earlier_metas(data_dir, cycle, name)[:FILL_CYCLES - 1]
+    return len(prev) == FILL_CYCLES - 1 and all(
+        m.get("status") == "ok" and m.get("start_fhr") == 0 and m["start"]["mslp_hpa"] > FILL_HPA for m in prev)
+
+
+def end_note(st: dict, cycle: str, text: str) -> None:
+    st["active"] = False
+    st["ended_cycle"] = cycle
+    st["notes"] = (st.get("notes", "") + f" Inactive from {cycle}: {text}.").strip()
+
+
 # ------------------------------------------------------------------ tracking
-def track_storms(cycle: str, hours: list[int], jobs: list[dict], workdir: Path) -> set[int]:
-    """Follow every job's low through the run with track_cps's tracker (the
-    frames are shared); sets job['track'] and job['events'], writes
-    track_<NAME>.csv and phase_<NAME>.png (2400 px) to workdir. Returns the
-    hours whose frame could not be fetched."""
+def make_track(job: dict) -> tc.Track:
+    s = job["seed"]
+    spec = f"{job['name']}:{s['lat']},{s['lon']}:{s['fhr0']}" + (f":{s['fhr1']}" if s["fhr1"] is not None else "")
+    return tc.Track(spec)
+
+
+def track_storms(cycle: str, hours: list[int], jobs: list[dict], workdir: Path, at_zero=None) -> set[int]:
+    """Follow every job's low through the run with track_cps's tracker. Each
+    frame is fetched, decoded and run through the module (and Hart's bands,
+    and the closed-low mask) once, and every track samples that one set of
+    fields; two tracks on the same low in a frame are resolved there
+    (tc.merge_close). at_zero, if given,
+    is called as at_zero(f, p, jobs) once the tracks have sampled the 0 h
+    frame; it may mark jobs merged and returns new jobs, which are sampled
+    at 0 h and followed with the rest. Sets job['track'] and job['events'],
+    writes track_<NAME>.csv and phase_<NAME>.png (2400 px) to workdir.
+    Returns the hours whose frame could not be fetched."""
     workdir.mkdir(parents=True, exist_ok=True)
     cache = OUT / "cache" / cycle
     for j in jobs:
-        s = j["seed"]
-        spec = f"{j['name']}:{s['lat']},{s['lon']}:{s['fhr0']}" + (f":{s['fhr1']}" if s["fhr1"] is not None else "")
-        j["track"] = tc.Track(spec)
-    tracks = [j["track"] for j in jobs]
+        j["track"] = make_track(j)
     skipped: set[int] = set()
     t0 = time.time()
-    log(f"tracking {', '.join(j['name'] for j in jobs)} through {len(hours)} frames of {cycle}")
+    pending = at_zero is not None and 0 in hours
+    log(f"tracking {', '.join(j['name'] for j in jobs) or 'no storm yet'} through {len(hours)} frames of {cycle}")
     with ThreadPoolExecutor(max_workers=2) as pool:
         futs = {h: pool.submit(g.get_grib, cycle, h, REGION, cache, "nomads", True) for h in hours}
         for fhr in hours:
-            if all(t.done for t in tracks):
+            if not pending and all(j["track"].done for j in jobs):
                 for fu in futs.values():
                     fu.cancel()
                 break
@@ -197,25 +307,40 @@ def track_storms(cycle: str, hours: list[int], jobs: list[dict], workdir: Path) 
             except Exception as exc:  # a late hour may not be posted yet
                 log(f"  f{fhr:03d}: skipped ({exc})")
                 skipped.add(fhr)
+                if fhr == 0:
+                    pending = False
                 continue
+            t1 = time.time()
             f = g.decode(grib, REGION, True)
             p = g.compute_products(f)
             p.update(g.compute_hart_bands(f))
-            for t in tracks:
-                tc.sample_frame(t, f, p, fhr, True)
+            p["closed"] = tc.closed_mask(f)
+            t2 = time.time()
+            for j in jobs:
+                tc.sample_frame(j["track"], f, p, fhr, True)
+            if pending and fhr == 0:
+                pending = False
+                for nj in at_zero(f, p, jobs):
+                    nj["track"] = make_track(nj)
+                    tc.sample_frame(nj["track"], f, p, fhr, True)
+                    jobs.append(nj)
+            tc.merge_close([j["track"] for j in jobs if not j.get("merged_into")], fhr)
+            tracks = [j["track"] for j in jobs if not j.get("merged_into")]
             where = "; ".join(f"{t.name} {t.fixes[-1]['lat']:.1f},{t.fixes[-1]['lon']:.1f} "
                               f"{t.fixes[-1]['mslp_hpa']:.0f}" for t in tracks if t.fixes and t.fixes[-1]["fhr"] == fhr)
-            log(f"  f{fhr:03d}: {time.time() - t0:.0f} s   {where}")
+            log(f"  f{fhr:03d}: {time.time() - t0:.0f} s (fields {t2 - t1:.1f} s, {len(tracks)} tracks "
+                f"{time.time() - t2:.1f} s)   {where}")
+    t3 = time.time()
     for j in jobs:
         t = j["track"]
         j["events"] = {}
-        if not t.fixes:
+        if not t.fixes or j.get("merged_into"):
             continue
         tc.track_motion(t.fixes)
         tc.b_with_track_motion(t.fixes)
         tc.write_csv(workdir / f"track_{t.name}.csv", t.fixes)
         j["events"] = tc.plot_phase(workdir / f"phase_{t.name}.png", t.name, cycle, t.fixes, True)
-    log(f"tracking done in {time.time() - t0:.0f} s")
+    log(f"tracking done in {time.time() - t0:.0f} s ({time.time() - t3:.0f} s of it for B and the diagrams)")
     return skipped
 
 
@@ -488,8 +613,31 @@ def write_summary(cycle: str, cdir: Path) -> None:
                      f"{hstr(m['onset_hart_h'])} | {hstr(m['completion_hart_h'])} |")
     lines += ["", "Class codes (HCPSclass at the center): "
               + ", ".join(f"{k} {n}" for k, n in enumerate(tc.CLASS_SHORT)) + "; - no closed low."]
+    for m in metas:
+        if m.get("note"):
+            lines += ["", f"{m['name']}: {m['note']}; its track stops at +{m['end_fhr']} h."]
+        if m.get("ended"):
+            lines += ["", f"{m['name']}: {m['ended']}."]
     for m in lost:
         lines += ["", f"{m['name']}: {m['status']}. {m.get('reason', '')}".rstrip()]
+    disc = read_meta(cdir / "discovery.json")
+    if disc:
+        lows = disc.get("lows", [])
+        lines += ["", "## Automatic discovery", "",
+                  f"Closed lows at 0 h below {disc['mslp_below_hpa']:.0f} hPa north of {disc['lat_above']:g}N, one "
+                  f"per system (minima within {AUTO_SYSTEM_KM:.0f} km of a deeper one dropped), not within "
+                  f"{AUTO_KNOWN_KM:.0f} km of a watched storm; at most {disc['max_per_day']} new storms per day."]
+        if not lows:
+            lines += ["", "No such low this cycle."]
+        else:
+            lines += ["", "| Position | MSLP (hPa) | Basin | Result |", "|---|---|---|---|"]
+            for low in lows:
+                act = low.get("action")
+                res = {"added": f"added as {low.get('storm')}",
+                       "known": f"skipped, {low.get('distance_km')} km from {low.get('storm')}",
+                       "cap": f"skipped, daily cap of {disc['max_per_day']} reached"}.get(act, act)
+                lines.append(f"| {fmt_pos(low['lat'], low['lon'])} | {low['mslp_hpa']:.2f} | {low['basin']} | "
+                             f"{res} |")
     text = "\n".join(lines) + "\n"
     p = cdir / "summary.md"
     if not p.exists() or p.read_text() != text:
@@ -552,18 +700,137 @@ def main(argv=None) -> int:
             + (f" to +{seed['fhr1']} h" if seed["fhr1"] is not None else "") + f" ({seed['source']})")
         jobs.append(dict(name=st["name"], seed=seed, entry=st))
 
+    disc_path = cdir / "discovery.json"
+    discover = 0 in hours and (a.force or not disc_path.exists())
+    if 0 not in hours:
+        log("no 0 h frame requested; no automatic discovery")
+    elif not discover:
+        log(f"automatic discovery already done for {cycle} ({disc_path.name}; --force redoes it)")
+    disc: dict | None = None
+    merged_done: dict[str, tuple[str, float]] = {}
+
+    def at_zero(f: dict, p: dict, jobs_now: list[dict]) -> list[dict]:
+        """At the 0 h frame: end the newer of two active storms within MERGE_KM,
+        then add the deep lows no watched storm covers."""
+        nonlocal disc
+        by_name = {j["name"]: j for j in jobs_now}
+        done_names = {st["name"] for st in done}
+        active, known = [], []  # (name, lat, lon)
+        for st in storms:
+            name = st["name"]
+            if name in by_name:
+                j = by_name[name]
+                fx = j["track"].fixes
+                if fx and fx[0]["fhr"] == 0:
+                    active.append((name, fx[0]["lat"], fx[0]["lon"]))
+                elif j["seed"]["fhr0"] == 0:  # lost at 0 h: inactive from this cycle
+                    known.append((name, j["seed"]["lat"], j["seed"]["lon"]))
+            elif name in done_names:
+                pz = pos_zero(read_meta(cdir / name / "meta.json"))
+                if pz:
+                    active.append((name, *pz))
+            elif st.get("ended_cycle") == cycle:
+                pz = pos_zero(read_meta(cdir / name / "meta.json"))
+                if pz is None and st.get("cycle") == cycle and int(st.get("fhr0") or 0) == 0:
+                    pz = (float(st["lat"]), float(st["lon"]))
+                if pz:
+                    known.append((name, *pz))
+            elif not st.get("active", True) and not st.get("ended_cycle"):
+                # stopped by hand: keep its low from coming back while its last track covers this time
+                sd = derive_seed(st, cycle, data_dir)
+                if sd["source"].startswith("track of") and sd["fhr0"] == 0:
+                    known.append((name, sd["lat"], sd["lon"]))
+        merged: set[str] = set()
+        for k, (name, la, lo) in enumerate(active):
+            for older, la0, lo0 in active[:k]:
+                d = float(tc.gc_km(la, lo, la0, lo0))
+                if older in merged or d >= MERGE_KM:
+                    continue
+                merged.add(name)
+                log(f"{name}: at 0 h {d:.0f} km from {older} ({fmt_pos(la0, lo0)}); merged into {older}")
+                if name in by_name:
+                    by_name[name]["merged_into"] = (older, d)
+                    by_name[name]["track"].done = True
+                else:
+                    merged_done[name] = (older, d)
+                break
+        known += active
+        if not discover:
+            return []
+        day = cycle[2:8]
+        taken = [int(m.group(1)) for st in storms
+                 if (m := re.fullmatch(rf"{AUTO_PREFIX}{day}_(\d+)", st["name"]))]
+        room = max(AUTO_MAX_PER_DAY - len(taken), 0)
+        serial = max(taken, default=0)
+        lows = deep_lows(f)
+        prev = read_meta(disc_path) or {}  # a --force rerun: storms this cycle's discovery added before
+        prev_added = {low.get("storm") for low in prev.get("lows", []) if low.get("action") == "added"}
+        new_jobs = []
+        for low in lows:
+            near = min(((float(tc.gc_km(low["lat"], low["lon"], la, lo)), n) for n, la, lo in known), default=None)
+            where = f"{fmt_pos(low['lat'], low['lon'])} {low['mslp_hpa']:.2f} hPa ({low['basin']})"
+            if near and near[0] < AUTO_KNOWN_KM and near[1] in prev_added:
+                low.update(action="added", storm=near[1])
+                log(f"discovery: {where}: added as {near[1]} by an earlier run of {cycle}")
+                continue
+            if near and near[0] < AUTO_KNOWN_KM:
+                low.update(action="known", storm=near[1], distance_km=round(near[0]))
+                log(f"discovery: {where}: {near[0]:.0f} km from {near[1]}; not added")
+                continue
+            if room == 0:
+                low.update(action="cap")
+                log(f"discovery: {where}: not added, {AUTO_MAX_PER_DAY} AUTO storms for {day} reached")
+                continue
+            serial += 1
+            room -= 1
+            name = f"{AUTO_PREFIX}{day}_{serial:02d}"
+            low.update(action="added", storm=name)
+            st = {"name": name, "lat": low["lat"], "lon": low["lon"], "cycle": cycle, "fhr0": 0, "fhr1": None,
+                  "notes": f"Found automatically at 0 h of {cycle}: {low['mslp_hpa']:.2f} hPa, {low['basin']}.",
+                  "active": True}
+            storms.append(st)
+            known.append((name, low["lat"], low["lon"]))
+            seed = dict(lat=low["lat"], lon=low["lon"], fhr0=0, fhr1=None, fhr1_expired=False,
+                        source=f"automatic discovery at 0 h of {cycle}")
+            new_jobs.append(dict(name=name, seed=seed, entry=st, auto=low))
+            log(f"discovery: {where}: added as {name}")
+        disc = {"cycle": cycle, "mslp_below_hpa": AUTO_MSLP_HPA, "lat_above": AUTO_LAT_MIN,
+                "max_per_day": AUTO_MAX_PER_DAY, "lows": lows}
+        log(f"discovery: {len(lows)} closed lows below {AUTO_MSLP_HPA:.0f} hPa north of {AUTO_LAT_MIN:g}N, "
+            f"{len(new_jobs)} added")
+        return new_jobs
+
     skipped: set[int] = set()
-    if jobs:
-        skipped = track_storms(cycle, hours, jobs, workdir)
+    if jobs or discover:
+        skipped = track_storms(cycle, hours, jobs, workdir, at_zero)
         if len(skipped) == len(hours):
             log(f"no frame of {cycle} could be fetched; nothing written")
             return 1
+    if disc is not None:
+        cdir.mkdir(parents=True, exist_ok=True)
+        write_json(disc_path, disc)
 
     log_rows = []
     metas: dict[str, tuple[dict, Path]] = {}
     for j in jobs:
         st, s, name = j["entry"], j["seed"], j["name"]
         sdir = cdir / name
+        current = hours_between(st["cycle"], cycle) >= 0  # not a backfill behind the entry's cycle
+        tm = j["track"].merged
+        if tm and not j["track"].fixes:  # stopped for another track at its first frame
+            j["merged_into"] = (tm[0], tm[2])
+        if j.get("merged_into"):
+            older, d = j["merged_into"]
+            at = f"+{tm[1]} h" if tm else "0 h"
+            reason = f"At {at} of {cycle} within {d:.0f} km of {older}; merged into {older}, marked inactive."
+            sdir.mkdir(parents=True, exist_ok=True)
+            write_json(sdir / "meta.json", {"cycle": cycle, "name": name, "status": "merged", "reason": reason,
+                                            "seed": {k: s[k] for k in ("lat", "lon", "fhr0", "fhr1", "source")},
+                                            "fsu_number": None})
+            if current:
+                end_note(st, cycle, f"merged into {older}" + (f" at {at}" if tm else ""))
+            log_rows.append((cycle, name, None, "merged"))
+            continue
         if not j["track"].fixes:
             if s["fhr0"] in skipped:
                 log(f"{name}: the frame at +{s['fhr0']} h could not be fetched; left active")
@@ -576,26 +843,51 @@ def main(argv=None) -> int:
             write_json(sdir / "meta.json", {"cycle": cycle, "name": name, "status": "lost", "reason": reason,
                                             "seed": {k: s[k] for k in ("lat", "lon", "fhr0", "fhr1", "source")},
                                             "fsu_number": None})
-            if hours_between(st["cycle"], cycle) >= 0:
-                st["active"] = False
-                st["ended_cycle"] = cycle
-                st["notes"] = (st.get("notes", "") + f" Inactive from {cycle}: no closed low within "
-                               f"{tc.SEED_KM:.0f} km of the seed.").strip()
+            if current:
+                end_note(st, cycle, f"no closed low within {tc.SEED_KM:.0f} km of the seed")
             log_rows.append((cycle, name, None, "lost"))
             continue
         sdir.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(workdir / f"track_{name}.csv", sdir / "track.csv")
         save_phase(workdir / f"phase_{name}.png", sdir / "phase.png")
         meta = build_meta(cycle, j)
+        if j["track"].end_reason:
+            meta["track_end"] = j["track"].end_reason
+        if tm:
+            meta["merged_into"] = {"name": tm[0], "fhr": tm[1], "distance_km": round(tm[2])}
+            meta["note"] = f"merged into {tm[0]} at +{tm[1]} h"
+            log(f"{name}: {meta['note']}")
+            if current and tm[1] <= NEXT_CYCLE_H:
+                end_note(st, cycle, meta["note"])
+        found = j.get("auto") or next((low for low in (disc or read_meta(disc_path) or {}).get("lows", [])
+                                       if low.get("action") == "added" and low.get("storm") == name), None)
+        if found:
+            meta["discovered"] = {k: found[k] for k in ("lat", "lon", "mslp_hpa", "basin")}
         metas[name] = (meta, workdir / f"phase_{name}.png")
-        if hours_between(st["cycle"], cycle) >= 0:
-            fx = j["track"].fixes[0]
+        fx = j["track"].fixes[0]
+        if current:
             st.update(lat=round(fx["lat"], 2), lon=round(fx["lon"], 2), cycle=cycle, fhr0=fx["fhr"], fhr1=s["fhr1"])
             if s["fhr1_expired"]:
                 st["notes"] = (st.get("notes", "") + f" fhr1 cap passed by {cycle}; tracked to the end.").strip()
+            if st.get("active", True) and fx["fhr"] == 0 and filled(data_dir, cycle, name, fx["mslp_hpa"]):
+                meta["ended"] = (f"filled: 0 h MSLP above {FILL_HPA:.0f} hPa in {FILL_CYCLES} consecutive "
+                                 "cycles; marked inactive")
+                log(f"{name}: {meta['ended']}")
+                end_note(st, cycle, "filled")
     for st in done:
-        mp = cdir / st["name"] / "meta.json"
-        metas[st["name"]] = (json.loads(mp.read_text()), workdir / f"phase_{st['name']}.png")
+        name = st["name"]
+        mp = cdir / name / "meta.json"
+        meta = json.loads(mp.read_text())
+        if name in merged_done:
+            older, d = merged_done[name]
+            meta.update(status="merged", reason=f"At 0 h of {cycle} within {d:.0f} km of {older}; merged into "
+                                                f"{older}, marked inactive.")
+            write_json(mp, meta)
+            if hours_between(st["cycle"], cycle) >= 0:
+                end_note(st, cycle, f"merged into {older}")
+            log_rows.append((cycle, name, None, "merged"))
+            continue
+        metas[name] = (meta, workdir / f"phase_{name}.png")
 
     cyclones = None
     for name, (meta, full_phase) in metas.items():
@@ -614,7 +906,7 @@ def main(argv=None) -> int:
             except Exception as exc:
                 log(f"{name}: FSU matching failed ({type(exc).__name__}: {exc}); continuing")
         write_json(sdir / "meta.json", meta)
-        log_rows.append((cycle, name, meta.get("fsu_number"), "ok"))
+        log_rows.append((cycle, name, meta.get("fsu_number"), "merged" if meta.get("merged_into") else "ok"))
     log(f"FSU: {FSU.requests} requests this run")
 
     write_json(a.watch, watch)

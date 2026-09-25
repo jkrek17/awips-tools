@@ -10,24 +10,24 @@
     "source": "stored seed"
   },
   "start_fhr": 0,
-  "end_fhr": 138,
-  "fixes": 21,
+  "end_fhr": 54,
+  "fixes": 10,
   "start": {
     "lat": 62.47,
     "lon": -21.41,
     "mslp_hpa": 959.6
   },
   "end": {
-    "lat": 58.63,
-    "lon": -24.17,
-    "mslp_hpa": 955.0
+    "lat": 67.3,
+    "lon": -14.6,
+    "mslp_hpa": 987.0
   },
-  "min_mslp_hpa": 955.0,
+  "min_mslp_hpa": 959.6,
   "onset_standard_h": 0,
-  "completion_standard_h": 96,
+  "completion_standard_h": null,
   "onset_hart_h": 0,
-  "completion_hart_h": 90,
-  "class_sequence": "3 0-18, - 24-48, 3 54, - 60-126, 3 138",
+  "completion_hart_h": null,
+  "class_sequence": "3 0-18, - 24-48, 3 54",
   "fsu_number": 17,
   "fsu": {
     "number": 17,
@@ -35,5 +35,6 @@
     "lon": -21.29,
     "distance_km": 14,
     "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092418/17.html"
-  }
+  },
+  "track_end": "outside a closed low at +60, +66 h (988 hPa at +66 h)"
 }
