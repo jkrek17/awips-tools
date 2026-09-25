@@ -1,6 +1,6 @@
 /* Cyclone Phase Space, live: reading the values.
-   The readout card at a selected low (class, MSLP, the three CPS terms as
-   bars on the colormaps' own ranges, the index), the hover tooltip, and
+   The readout card at a selected low (class, MSLP, the three Hart terms
+   as bars on the colormaps' own ranges, the index), the hover tooltip, and
    the field legends drawn from legend.json's colormap stops. Uses the
    globals from app.js. */
 'use strict';
@@ -65,7 +65,7 @@ function renderLegend() {
   const inline = $('legend-inline');
   const units = S.legend?.units?.[f] || 'm';
   const cmap = /\((CPS_[A-Za-z]+)\)/.exec(S.legend?.labels?.[f] || '')?.[1];
-  $('key-title').textContent = TITLES[f];
+  $('key-title').innerHTML = TITLES[f];
   $('key-help').textContent = HELP[f];
   if (f === 'class') {
     const list = [...S.classes.values()];
@@ -84,7 +84,8 @@ function renderLegend() {
   const real = want.filter((w) => stops?.some(([v]) => Math.abs(v - w) < 0.01));
   const full = real.length === want.length ? real
     : (stops || []).filter((_, k) => k % 2 === 0).map(([v]) => +v.toFixed(1));
-  inline.innerHTML = `<span class="ramp-wrap">${rampHTML(f, short)}</span><span class="ramp-unit">${esc(units)}</span>`;
+  inline.innerHTML = `<span class="legend-field"><span class="legend-name">${termHTML(f)}</span>` +
+    `<span class="ramp-wrap">${rampHTML(f, short)}</span></span><span class="ramp-unit">${esc(units)}</span>`;
   $('key-scale').innerHTML = `<div class="ramp-wrap big">${rampHTML(f, full)}</div>
     <p class="ramp-ends"><span>${MINUS} ${ENDS[f][0]}</span><span>${ENDS[f][1]} +</span></p>
     <p class="ramp-note">${fmt(lo)} to ${fmt(hi, 0, '', true)} ${esc(units)}${cmap ? ` on ${cmap}` : ''}; a tick at every colormap stop${f === 'hb' ? '; the bar marks Hart\'s 10 m onset line' : ''}.</p>`;
@@ -94,17 +95,19 @@ function renderLegend() {
 
 function lowTip(c) {
   const k = cls(c.cls);
+  const s = stormOf(c, S.i);
+  const term = (f, d) => `<span class="tip-t"><span>${TERM[f].sym}</span><b>${fmt(c[f], d, '', true)}</b></span>`;
   return `<span class="tip-cls"><i style="--c:${k.hex}"></i>${esc(k.name)}</span>
-    <span class="tip-row"><b>${hpa(c.mslp)}</b><span>MSLP</span></span>
-    <span class="tip-row"><b>${fmt(c.hb, 1, 'm', true)}</b><span>B</span></span>` +
+    <span class="tip-row"><b>${hpa(c.mslp)}</b>${s ? `<span class="tip-name">${esc(s.label)}${s.fsu != null ? `, FSU ${esc(s.fsu)}` : ''}</span>` : ''}</span>
+    <span class="tip-terms">${term('hvtl', 0)}${term('hvtu', 0)}${term('hb', 1)}<span class="tip-u">m</span></span>` +
     (c.terrain ? `<span class="tip-note">Terrain minimum${blank(c.psfc) ? '' : `, surface ${fmt(c.psfc, 0, 'hPa')}`}</span>` : '');
 }
 
 /* ---------- card ---------- */
 
 function selectLow(c, { center = false, zoom } = {}) {
-  const s = matchStorm(c, S.i);
-  if (S.follow && (!s || s.name !== S.follow)) unfollow();
+  const s = stormOf(c, S.i);
+  if (S.follow && (!s || s.key !== S.follow)) unfollow();
   S.sel = { lat: c.lat, lon: c.lon, c };
   if (narrow()) setStormsOpen(false);
   renderCard(c, s);
@@ -115,9 +118,9 @@ function selectLow(c, { center = false, zoom } = {}) {
 // On a new frame: the followed storm's center, or the low nearest the last one.
 function refreshCard() {
   if (S.follow) {
-    const s = ST.byName.get(S.follow);
+    const s = findStorm(S.follow);
     const e = s?.at[S.i];
-    const c = e ? nearest(S.centers, e.lat, e.lon, MATCH_KM) : null;
+    const c = e ? centerOf(s, e) : null;
     if (e) Object.assign(S.sel ??= {}, { lat: e.lat, lon: e.lon });
     if (S.sel) S.sel.c = c;
     renderCard(c, s, !e);
@@ -127,7 +130,7 @@ function refreshCard() {
   const c = nearest(S.centers.filter(shown), S.sel.lat, S.sel.lon, 2 * MATCH_KM);
   S.sel.c = c;
   if (c) { S.sel.lat = c.lat; S.sel.lon = c.lon; }
-  renderCard(c, c ? matchStorm(c, S.i) : null);
+  renderCard(c, c ? stormOf(c, S.i) : null);
 }
 
 function closeCard() {
@@ -140,7 +143,7 @@ function closeCard() {
   basemap?.edges();
 }
 
-function barHTML(key, label, v, axis = true) {
+function barHTML(key, v, axis = true) {
   const b = BARS[key];
   const pct = (x) => ((x - b.lo) / (b.hi - b.lo)) * 100;
   const z = pct(0);
@@ -157,8 +160,11 @@ function barHTML(key, label, v, axis = true) {
   const labs = axis ? b.ticks.filter((t) => key !== 'idx' || t % 3 === 0)
     .map((t) => `<span style="left:${pct(t).toFixed(2)}%">${fmt(t)}</span>`).join('') : '';
   const unit = key === 'idx' ? '' : 'm';
-  return `<div class="brow">
-      <span class="blab">${label}</span>
+  const label = TERM[key]
+    ? `<span class="bname">${TERM[key].name} (</span>${TERM[key].sym}<span class="bname">)</span>`
+    : 'Index';
+  return `<div class="brow${axis ? ' axis' : ''}">
+      <span class="blab"${TERM[key] ? ` title="${TERM[key].name}, ${TERM[key].band}"` : ''}>${label}</span>
       <span class="btrack">${ticks}${fill}${clip}</span>
       <span class="bval">${fmt(v, b.d, unit, true)}</span>
       ${axis ? `<span class="bticks">${labs}</span>` : ''}
@@ -175,8 +181,8 @@ function renderCard(c, s, absent = false) {
     ? `<span class="cls-chip"><i style="--c:${k.hex}"></i><span class="code">${k.code ?? ''}</span>${esc(k.name)}</span>`
     : `<span class="cls-chip muted">${absent ? 'Not tracked at this hour' : 'No closed low here at this hour'}</span>`;
   const storm = s
-    ? `<p class="card-name"><b></b><span>${s.fsu != null ? `FSU ${esc(s.fsu)}` : 'not on the FSU page'}</span>
-      <button type="button" class="btn small" id="card-follow" aria-pressed="${S.follow === s.name}">${S.follow === s.name ? 'Following' : 'Follow'}</button></p>`
+    ? `<p class="card-name"><b></b>${s.fsu != null ? `<span class="tag">FSU ${esc(s.fsu)}</span>` : ''}<span class="sub">${esc(s.generic ? s.sub : s.fsu != null ? '' : 'not on the FSU page')}</span>
+      <button type="button" class="btn small" id="card-follow" aria-pressed="${S.follow === s.key}">${S.follow === s.key ? 'Following' : 'Follow'}</button></p>`
     : `<p class="card-name"><span>${c ? 'Untracked low' : ''}</span></p>`;
   const body = c ? `
     <div class="card-main">
@@ -185,12 +191,12 @@ function renderCard(c, s, absent = false) {
     </div>
     ${c.terrain ? `<p class="card-warn">Terrain minimum: surface pressure ${blank(c.psfc) ? 'under 850 hPa' : fmt(c.psfc, 0, 'hPa')}; a false low over high ground.</p>` : ''}
     <div class="bars">
-      ${barHTML('hvtl', 'HVTL', c.hvtl, false)}
-      ${barHTML('hvtu', 'HVTU', c.hvtu)}
-      ${barHTML('hb', 'HB', c.hb)}
-      ${barHTML('idx', 'Index', c.idx)}
+      ${barHTML('hvtl', c.hvtl, false)}
+      ${barHTML('hvtu', c.hvtu)}
+      ${barHTML('hb', c.hb)}
+      ${barHTML('idx', c.idx)}
     </div>
-    <p class="card-foot">HVTL, HVTU: ${MINUS}V<sub>T</sub><sup>L</sup>, ${MINUS}V<sub>T</sub><sup>U</sup>, warm positive. HB: B, onset at 10 m.</p>`
+    <p class="card-foot">Thermal winds warm positive, lower ${TERM.hvtl.band}, upper ${TERM.hvtu.band}. Thermal asymmetry over ${TERM.hb.band}; Hart's onset at 10 m.</p>`
     : `<p class="card-empty">${absent ? `${esc(s?.label)} has no tracked point at ${when}.` : `Nothing within ${2 * MATCH_KM} km of the last position at ${when}.`}</p>`;
   const links = s && (s.phase || s.compare) ? `<p class="card-links">${link(s.phase, 'Phase diagram')}${link(s.compare, 'Compare with FSU')}</p>` : '';
   card.innerHTML = `<div class="card-head">${head}
@@ -198,7 +204,7 @@ function renderCard(c, s, absent = false) {
     </div>${storm}${body}${links}`;
   if (s) card.querySelector('.card-name b').textContent = s.label;
   card.querySelector('#card-close').addEventListener('click', closeCard);
-  card.querySelector('#card-follow')?.addEventListener('click', () => (S.follow === s.name ? unfollow() : follow(s.name)));
+  card.querySelector('#card-follow')?.addEventListener('click', () => (S.follow === s.key ? unfollow() : follow(s.key)));
   const was = card.hidden;
   card.hidden = false;
   if (was || narrow()) dropInsets();

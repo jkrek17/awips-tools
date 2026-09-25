@@ -1,6 +1,7 @@
 /* Cyclone Phase Space, live: the map, frames, timeline and controls.
-   The low centers, MSLP contours, the HB / HVTL / HVTU rasters and the
-   storm tracks, animated over the forecast hours of the latest cycle.
+   The low centers, MSLP contours, the thermal asymmetry and thermal wind
+   rasters and the storm tracks, animated over the forecast hours of the
+   latest cycle.
    storms.js (storm panel, follow mode) and card.js (readout at a low) use
    the globals defined here; this file loads last and starts the page.
    Plain ES2020, no build step. */
@@ -13,7 +14,7 @@ const SPACE_URL = ARTICLE_URL + 'figures/phase_space_3d.html';
 const LABEL_ZOOM = 4;            // MSLP labels at centers and on contours from this zoom
 const SPEEDS = { slow: 1200, normal: 700, fast: 350 };  // ms per frame
 const MAX_RASTER_FRAMES = 12;    // decoded raster frames kept in memory
-const MATCH_KM = 300;            // center to tracked storm matching radius
+const MATCH_KM = 300;            // center to storm matching radius, for entries without run ids
 const HALO_KM = 200;             // radius of the circle drawn at each low
 const DEEP_HPA = 980;            // lows below this get a larger dot
 const TERRAIN_HPA = 850;         // surface pressure below this: a false low over high ground
@@ -31,11 +32,22 @@ const CLASS_NAMES = [
 ];
 const FALLBACK_HEX = ['#d92626', '#cc33bf', '#fad91a', '#33ad40', '#2680e6', '#5938b8', '#b8b8b2'];
 
+const MINUS = '−';
+
+// The three Hart terms: a plain name, the symbol (HTML), and the layer.
+const TERM = {
+  hb: { name: 'Thermal asymmetry', sym: 'B', band: '900 to 600 hPa' },
+  hvtl: { name: 'Lower thermal wind', sym: `${MINUS}V<sub>T</sub><sup>L</sup>`, band: '925 to 700 hPa' },
+  hvtu: { name: 'Upper thermal wind', sym: `${MINUS}V<sub>T</sub><sup>U</sup>`, band: '500 to 300 hPa' },
+};
+const termHTML = (f) => `${TERM[f].name} (${TERM[f].sym})`;
+
+// Legend titles (HTML).
 const TITLES = {
-  class: 'HCPSclass, the class at the low center',
-  hb: 'HB, thickness asymmetry B, 900 to 600 hPa',
-  hvtl: 'HVTL, lower thermal wind, 925 to 700 hPa',
-  hvtu: 'HVTU, upper thermal wind, 500 to 300 hPa',
+  class: 'Hart class at the low center',
+  hb: `${termHTML('hb')}, ${TERM.hb.band}`,
+  hvtl: `${termHTML('hvtl')}, ${TERM.hvtl.band}`,
+  hvtu: `${termHTML('hvtu')}, ${TERM.hvtu.band}`,
 };
 const ENDS = {
   hb: ['warm air left', 'warm air right'],
@@ -52,7 +64,6 @@ const HELP = {
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const MINUS = '−';
 
 const $ = (id) => document.getElementById(id);
 const pad = (n, w = 2) => String(n).padStart(w, '0');
@@ -214,8 +225,8 @@ function toast(msg) {
 
 /* ---------- map ---------- */
 
-let map, basemap, contourG, clabelG, haloG, footG, lowG, nameG, selG, trackG;
-let contourR, haloR, footR, trackR;
+let map, basemap, contourG, clabelG, haloG, footG, lowG, nameG, selG, trackG, tailG;
+let contourR, haloR, footR, trackR, tailR;
 
 function initMap(zoom) {
   map = L.map('map', {
@@ -241,10 +252,12 @@ function initMap(zoom) {
   footR = L.svg({ pane: 'footprints', padding: 0.3 });
   haloR = L.svg({ pane: 'halos', padding: 0.3 });
   trackR = L.svg({ pane: 'tracks', padding: 0.3 });
+  tailR = L.canvas({ pane: 'tracks', padding: 0.3 });
   contourG = L.layerGroup().addTo(map);
   clabelG = L.layerGroup().addTo(map);
   footG = L.layerGroup().addTo(map);
   haloG = L.layerGroup().addTo(map);
+  tailG = L.layerGroup().addTo(map);
   trackG = L.layerGroup().addTo(map);
   selG = L.layerGroup().addTo(map);
   lowG = L.layerGroup().addTo(map);
@@ -276,6 +289,8 @@ function checkOffsets() {
   drawFootprints(S.lows);
   drawLows();
   drawSelection();
+  drawTails();
+  drawNames();
 }
 
 // Center a point in the part of the map not covered by panels, without
@@ -453,6 +468,8 @@ function drawLows() {
       });
       m.bindTooltip(() => lowTip(c), { direction: 'top', offset: [0, -8], className: 'low-tip', opacity: 1 });
       m.on('click', () => selectLow(c));
+      m.on('mouseover', () => hoverStorm(stormOf(c)?.key ?? null, true));
+      m.on('mouseout', () => hoverStorm(null));
       lowG.addLayer(m);
     }
   }
@@ -668,7 +685,7 @@ function viewHash() {
   const c = map.getCenter().wrap();
   const l = Object.entries(LAYER_KEYS).filter(([k]) => S.layers[k]).map(([, v]) => v).join('');
   return `#t=${S.index.hours[S.i]}&f=${S.field}&b=${S.basemap}&v=${c.lat.toFixed(2)},${c.lng.toFixed(2)},${map.getZoom()}` +
-    `&l=${l || '-'}${S.follow ? `&s=${encodeURIComponent(S.follow)}` : ''}`;
+    `&l=${l || '-'}${S.follow ? `&s=${encodeURIComponent(followShare())}` : ''}`;
 }
 
 async function share() {
@@ -792,6 +809,7 @@ function bindControls() {
   $('storms-btn').addEventListener('click', () => setStormsOpen(!document.body.classList.contains('storms-open')));
   $('storms-close').addEventListener('click', () => setStormsOpen(false));
   $('unfollow').addEventListener('click', () => unfollow());
+  bindStormFilter();
 
   popover($('menu-btn'), $('menu'));
   popover($('layers-btn'), $('layers'));
@@ -808,7 +826,7 @@ function bindControls() {
     }
     if (!S.index || e.altKey || e.ctrlKey || e.metaKey) return;
     const t = e.target;
-    if (t.matches?.('input[type="range"], input[type="text"], textarea')) return;
+    if (t.matches?.('input[type="range"], input[type="text"], input[type="search"], textarea')) return;
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
       e.preventDefault();
       e.stopPropagation();

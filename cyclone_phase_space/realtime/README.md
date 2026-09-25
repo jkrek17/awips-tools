@@ -635,6 +635,14 @@ reads them from the `cps-live` branch.
 | `--cache` | `realtime/out/cache/<cycle>/` | GRIB cache, shared with the other scripts. |
 | `--workers` | 3 (fewer on smaller machines) | Frames computed in parallel, one process each (about 1 GB each). |
 
+`--relink DIR` skips the fetch, decode and compute step entirely: it
+reads `DIR/index.json` for the cycle and the hours and valid times
+already exported, re-links `DIR/frames/*/lows.geojson` into tracks
+(below), rebuilds `storms` from them and the daily collection, and
+rewrites `index.json` and the frames' `"track"` properties in place,
+without downloading anything. Use it after a tracker constant changes,
+or to pick up a collection storm added after the frames were exported.
+
 Without `--cycle` the script takes the newest cycle whose f198 index is
 posted (NOMADS, else the AWS bucket), stepping back 6 h at a time for up
 to two days, so a run made before the newest cycle is complete falls
@@ -647,6 +655,25 @@ GeoJSON and PNG work adds about 1.5 s per frame. The whole run for 34
 frames from the cache takes about 2 min 15 s here with 3 workers (about
 10 s per frame, 3.2 GB of memory at the peak; about 6 min with one
 worker). One cycle's output is about 34 MB (about 1 MB per frame).
+
+**Tracks.** Every closed low of a frame, the center of an HCPSclass
+blob that is not flagged as a terrain artifact, is linked to the
+closest such center of the next frame within 600 km per 6 h elapsed,
+predicting each position first from half the low's last motion so a
+fast mover is not missed; a low absent from one frame is bridged, with
+the reach scaled to the elapsed time, but absent from two frames in a
+row ends the track, and a low that reappears later starts a new one. A
+track is kept once its low has stayed closed for 24 h (five frames).
+The kept tracks are listed deepest first (lowest MSLP reached) as
+`T01`, `T02`, ..., named `L01`, `L02`, ... unless a storm of the day's
+collection shares at least two of the same valid hours, and at least
+half of the hours both cover, within 300 km of the track, in which
+case the track takes that storm's name, FSU number and phase and
+compare diagrams instead. Collection storms that no track matches
+follow as `C01`, `C02`, .... Every center feature of `lows.geojson`
+that ends up on a track carries a `"track"` property naming it, so the
+page can join a map mark to the matching `storms[].points` entry
+without guessing.
 
 **Files.** In the output directory:
 
@@ -661,20 +688,30 @@ worker). One cycle's output is about 34 MB (about 1 MB per frame).
 
   `hours` and `valid` list the frames actually written, in step;
   `frames` is a template (`{hhh}` is the hour in three digits).
-  `storms` has one entry per storm of the daily collection with status
-  `ok`, taken from the newest `data/<cycle>/` folder on the exported
-  cycle's day (else the newest folder; `storms_cycle` names it, and each
-  storm repeats it as `cycle`, since its forecast hours count from that
-  run): `{"name", "cycle", "fsu": FSU number or null, "points": [{"fhr",
-  "valid", "lat", "lon", "mslp", "cls", "hvtl", "hvtu", "hb"}, ...],
-  "cls_seq", "phase_png", "compare_png"}`, the points from its
+  `storms` lists the run's cyclones, deepest first: the tracks built
+  from the frames themselves (see **Tracks** above) come first, each
+  `{"id": "T01", "name", "source": "track", "fsu": FSU number or null,
+  "min_mslp", "points": [{"fhr", "valid", "id", "lat", "lon", "mslp",
+  "cls", "hvtl", "hvtu", "hb", "idx"}, ...], "cls_seq", "phase_png",
+  "compare_png"}` (a point's `id` is the matching center's `id` in that
+  frame's `lows.geojson`); then whichever storms of the day's
+  collection no track matched, `{"id": "C01", "source": "collection",
+  "min_mslp", "name", "cycle", "fsu", "points": [{"fhr", "valid",
+  "lat", "lon", "mslp", "cls", "hvtl", "hvtu", "hb"}, ...], "cls_seq",
+  "phase_png", "compare_png"}`, the points from that storm's
   `track.csv` (`cls` an int or null where the class is blank; `hvtl`,
-  `hvtu`, `hb` to one decimal, null where blank); `cls_seq` is the same
-  `cls` values pulled out in point order, for a quick look at a storm's
-  full life cycle without walking `points`. The two images are paths
-  relative to `index.json`'s own directory, `../storms/<cycle>/<name>/
-  phase.png` and `.../compare.png` (`compare_png` null when there is
-  none); see **Assets layout** below for what has to sit next to them.
+  `hvtu`, `hb` to one decimal, null where blank). `storms_cycle` names
+  the `data/<cycle>/` folder the collection storms with status `ok`
+  came from, the newest on the exported cycle's day, else the newest
+  folder; a collection storm repeats it as its own `cycle`, since its
+  forecast hours count from that run (a track has no `cycle`: its
+  hours are this export's). `cls_seq` is the same `cls` values pulled
+  out in point order, for a quick look at a storm's full life cycle
+  without walking `points`. The two images are paths relative to
+  `index.json`'s own directory, `../storms/<cycle>/<name>/phase.png`
+  and `.../compare.png` (`compare_png` null when there is none, and
+  both null for a track with no matching name); see **Assets layout**
+  below for what has to sit next to them.
 - `legend.json`: `{"classes": [{"code", "name", "hex"}, ...],
   "class_full": [...], "stops": {"hb": [[value, "#rrggbb", alpha], ...],
   "hvtl": ..., "hvtu": ...}, "ranges": {...}, "units": {...},
@@ -708,7 +745,10 @@ worker). One cycle's output is about 34 MB (about 1 MB per frame).
   contour of the blob's own mask (contourpy), simplified with a 0.25
   degree tolerance; a blob across the dateline
   is cut at 180 into two features with the same `id`. Rings follow
-  RFC 7946 (exterior counterclockwise).
+  RFC 7946 (exterior counterclockwise). Once tracks are linked, a
+  center that ends up on one also gets `"track"`, that track's `id`
+  in `storms` (see **Tracks** above); a center whose low was dropped
+  (too short-lived, or over terrain) has no `"track"` property.
 - `frames/fHHH/mslp.geojson`: isobars every 4 hPa as LineString
   features with `{"level": hPa}`, from contourpy on the global field
   (the first column repeated at 180 so lines reach the dateline and end
