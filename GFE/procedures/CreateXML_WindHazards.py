@@ -37,9 +37,11 @@
 #   occurrence of that hour at or before now (18z asked for at 05Z means
 #   yesterday's 18Z).
 # * Wind: each period's polygons come from the per-gridpoint MAXIMUM Wind
-#   magnitude over whatever grids exist in the window - one ranged getGrids
-#   call, so the cadence is whatever the grids actually have - and a polygon
-#   covers anywhere reaching that force at any point in the period.
+#   magnitude over whatever grids the inventory holds in the window, read one
+#   at a time and taking wind[0] explicitly the way CreateXML.py does - a
+#   vector read is (magnitude, direction), and a direction in the contours
+#   reads as hurricane force everywhere.  A polygon covers anywhere reaching
+#   that force at any point in the period.
 # * Bands: 34-47, 48-63 and 64+ kt.  Each band's polygon is the closed
 #   contour at its LOWER bound, so the bands overlap - the gale polygon is
 #   the whole gale-or-greater area with the storm and hurricane polygons
@@ -255,6 +257,12 @@ ACTIVITY_FHR = "F048"
 # being set.
 FORECASTER = ""
 
+# A tripwire, not a limit: no marine wind grid holds a value like this, so
+# anything above it means the wrong half of a vector grid is being read - a
+# direction, which runs to 360 - and the run says so rather than drawing
+# hurricane force over the whole basin.
+MAX_PLAUSIBLE_WIND_KT = 250.0
+
 # Edit area zeroed out when "Mask land:" is On.
 MASK_EDIT_AREA = "Land"
 
@@ -454,19 +462,28 @@ def scalarGrid(result):
     return grid
 
 
-def magnitudeGrid(result):
-    """Wind magnitude from a getGrids result, taking the max if it is a list."""
+def vectorMagnitude(result):
+    """The MAGNITUDE half of a vector getGrids result, never the direction.
+
+    A vector read is (magnitude, direction).  Direction runs to 360, so
+    anything that maxes across that pair - or mistakes a (2, ny, nx) array
+    for two separate grids - reports a hurricane-force wind at every
+    gridpoint.  CreateXML.py takes wind[0] explicitly for exactly this
+    reason, and so does this.
+    """
     if result is None:
         return None
+    if isinstance(result, tuple):
+        return np.asarray(result[0], dtype=float)
     if isinstance(result, list):
-        mags = [magnitudeGrid(item) for item in result]
+        mags = [vectorMagnitude(item) for item in result]
         mags = [m for m in mags if m is not None]
         if not mags:
             return None
         return np.maximum.reduce(mags)
-    if isinstance(result, tuple):
-        return np.asarray(result[0], dtype=float)
     grid = np.asarray(result, dtype=float)
+    if grid.ndim == 3 and grid.shape[0] == 2:
+        return grid[0]              # (magnitude, direction)
     if grid.ndim == 3:
         return np.maximum.reduce([g for g in grid])
     return grid
@@ -733,21 +750,45 @@ if _IN_GFE:
         def _readMaxWind(self, dbase, cycleTime, startHr, endHr):
             """Per-gridpoint max Wind magnitude over one forecast period.
 
-            One ranged read, so the grids in the window set their own
-            cadence: however many there are, and whatever hours they sit on,
-            all of them go into the maximum.
+            One grid at a time, at the hours the inventory actually holds, so
+            each read is a plain (magnitude, direction) pair and the
+            magnitude can be taken explicitly - the way CreateXML.py does it.
+            A ranged read returns those pairs wrapped in ways that are easy
+            to mistake for a stack of scalar grids, and mistaking them puts
+            the direction into the contours.
             """
-            timeRange = makeTimeRange(cycleTime + timedelta(hours=startHr),
-                                      endHr - startHr)
-            result = self.getGrids(dbase, "Wind", "SFC", timeRange,
-                                   noDataError=0)
-            mag = magnitudeGrid(result)
-            if mag is None:
+            hours = self._inventoryHours(dbase, "Wind", cycleTime, startHr,
+                                         endHr)
+            if not hours:
+                hours = list(range(int(startHr), int(endHr) + 1,
+                                   WIND_GRID_INTERVAL_HRS))
+
+            mags = []
+            for hr in hours:
+                timeRange = makeTimeRange(cycleTime + timedelta(hours=hr))
+                result = self.getGrids(dbase, "Wind", "SFC", timeRange,
+                                       noDataError=0)
+                mag = vectorMagnitude(result)
+                if mag is None:
+                    continue
+                mags.append(mag)
+
+            if not mags:
                 return None
-            count = len(result) if isinstance(result, list) else 1
+            maxWind = maxOverGrids(mags)
+            peak = float(np.max(maxWind))
+
+            if peak > MAX_PLAUSIBLE_WIND_KT:
+                self.statusBarMsg(
+                    "ERROR: F%03d-%03d peaks at %.0f - that is not a wind "
+                    "speed.  The direction half of the Wind grid is being "
+                    "read, so every band would be wrong.  Nothing drawn."
+                    % (startHr, endHr, peak), "S")
+                return None
+
             self.statusBarMsg("F%03d-%03d: max wind %.0f kt from %d grid(s)"
-                              % (startHr, endHr, np.max(mag), count), "R")
-            return mag
+                              % (startHr, endHr, peak, len(mags)), "R")
+            return maxWind
 
         def _inventoryHours(self, dbase, element, cycleTime, startHr, endHr):
             """Forecast hours where a grid for ``element`` actually exists.

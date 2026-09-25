@@ -477,9 +477,17 @@ read.
 ### The bands
 
 Each period's polygons come from the **per-gridpoint maximum** Wind magnitude
-over whatever grids exist in the window - one ranged read, so the grids set
-their own cadence - and a polygon covers anywhere reaching that force at any
-point in the period.
+over whatever grids the inventory holds in the window, so the grids set their
+own cadence, and a polygon covers anywhere reaching that force at any point in
+the period.
+
+Grids are read **one at a time**, taking `wind[0]` explicitly the way
+`CreateXML.py` does. A vector read is `(magnitude, direction)`, and direction
+runs to 360 - so anything that maxes across that pair, or mistakes a
+`(2, ny, nx)` array for two scalar grids, puts a direction into the contours
+and reports hurricane force at every gridpoint. `MAX_PLAUSIBLE_WIND_KT` is a
+tripwire for exactly that: a period peaking above it draws nothing and says so,
+rather than banding the whole basin.
 
 A band's polygon is the closed contour at its **lower** bound, so **the bands
 overlap**: the 34-48 polygon is the whole gale-or-greater area, with the 48-64

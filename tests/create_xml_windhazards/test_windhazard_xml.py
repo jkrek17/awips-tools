@@ -156,7 +156,8 @@ class FakeGridInfo(object):
 def _installFakes(cycleTime, overLandOnly=False, missingWindHours=(),
                   missingPmslHours=(), saveLayers="true", windFn=None,
                   pmslFn=None, landFn=None, domain=None, gridInterval=6,
-                  noGridInfo=False, stringValues=False):
+                  noGridInfo=False, stringValues=False, windAsArray=False,
+                  windScale=1.0):
     """Install fake AWIPS/A2Graphics modules into sys.modules.
 
     ``windFn(hr, lat, lon)``, ``pmslFn(hr, lat, lon)``, ``landFn(lat, lon)``
@@ -170,7 +171,10 @@ def _installFakes(cycleTime, overLandOnly=False, missingWindHours=(),
     list of them.  ``noGridInfo`` makes ``getGridInfo`` raise, to exercise
     the fallback when a site's inventory call is unavailable, and
     ``stringValues`` makes plotPeakPressureLocations hand back formatted
-    strings the way some sites' does.
+    strings the way some sites' does.  ``windAsArray`` returns the Wind grid
+    as a (2, ny, nx) array rather than a (mag, dir) tuple, and ``windScale``
+    multiplies the magnitudes - both to prove the direction can never end up
+    in the contours.
     """
     del CALLS[:]
     del INVENTORY_CALLS[:]
@@ -336,8 +340,15 @@ def _installFakes(cycleTime, overLandOnly=False, missingWindHours=(),
         def _grid(self, field, hr):
             if field == "Wind":
                 if windFn is not None:
-                    return windFn(hr, self.lat, self.lon)
-                return windAtHour(hr, overLandOnly)
+                    wind = windFn(hr, self.lat, self.lon)
+                else:
+                    wind = windAtHour(hr, overLandOnly)
+                if windScale != 1.0:
+                    wind = (wind[0] * windScale, wind[1])
+                if windAsArray:
+                    # Some getGrids hand a vector back as one array.
+                    return np.asarray([wind[0], wind[1]])
+                return wind
             if pmslFn is not None:
                 return pmslFn(hr, self.lat, self.lon)
             return pmslAtHour(hr)
@@ -683,6 +694,47 @@ def test_polygon_extraction():
     check("and reports nothing dropped", keptDropped == [], str(keptDropped))
 
 
+def test_vector_magnitude_only():
+    print("\ntest_vector_magnitude_only")
+    # The direction half runs to 360.  If it reaches the contours, every
+    # gridpoint reads as hurricane force - red polygons where there is no
+    # hurricane-force wind at all.
+    _installFakes(datetime(2026, 9, 21, 18))
+    m = loadProcedureModule()
+    mag, direc = windAtHour(12)
+
+    check("a (mag, dir) tuple gives the magnitude",
+          bool(np.array_equal(m.vectorMagnitude((mag, direc)), mag)))
+    check("a (2, ny, nx) array gives the magnitude, not the pair's max",
+          bool(np.array_equal(m.vectorMagnitude(np.asarray([mag, direc])),
+                              mag)))
+    check("a list of pairs maxes the magnitudes only",
+          bool(np.array_equal(
+              m.vectorMagnitude([(mag, direc), (mag * 0.5, direc)]), mag)))
+    check("a plain grid passes straight through",
+          bool(np.array_equal(m.vectorMagnitude(mag), mag)))
+
+    # End to end: the array form must produce the same chart as the tuple.
+    module, tupleTree = runProcedure(DEFAULT_VARDICT)
+    module, arrayTree = runProcedure(DEFAULT_VARDICT, windAsArray=True)
+    check("the array form gives the same layers",
+          layerNames(arrayTree) == layerNames(tupleTree),
+          str(layerNames(arrayTree)))
+    check("and no 64+ polygon appears in the first period",
+          bandLines(module, arrayTree, PERIOD1, "Hurricane") == [])
+    check("with the same number of lines as the tuple form",
+          len(linesInLayer(arrayTree, PERIOD1)) ==
+          len(linesInLayer(tupleTree, PERIOD1)))
+
+    # The tripwire: a "wind" no marine grid holds means the wrong half is
+    # being read, so nothing is drawn rather than banding the whole basin.
+    module, tree = runProcedure(DEFAULT_VARDICT, windScale=10.0)
+    names = layerNames(tree)
+    check("an implausible wind draws no wind layers at all",
+          PERIOD1 not in names and PERIOD2 not in names, str(names))
+    check("and the Lows still go out", LOWS in names, str(names))
+
+
 def test_contour_off_the_domain_edge():
     print("\ntest_contour_off_the_domain_edge")
     # A storm centred on the western edge: its contours run off the domain
@@ -744,9 +796,14 @@ def test_layers_and_period_maximum():
     check("the second period has its 64+ polygon",
           len(bandLines(module, tree, PERIOD2, "Hurricane")) == 1)
 
-    windRanges = sorted([(a, b) for field, a, b in CALLS if field == "Wind"])
-    check("one ranged Wind read per period, covering the whole window",
-          windRanges == [(0, 24), (24, 48)], str(windRanges))
+    # One grid at a time, at the hours the inventory holds, so each read is
+    # a plain (magnitude, direction) pair.  F024 belongs to both periods.
+    windHours = sorted([a for field, a, b in CALLS if field == "Wind"])
+    check("every Wind grid the inventory holds was read, one at a time",
+          windHours == [0, 6, 12, 18, 24, 24, 30, 36, 42, 48], str(windHours))
+    check("the Wind inventory was consulted for each period",
+          [span for f, span in INVENTORY_CALLS if f == "Wind"] ==
+          [(0, 24), (24, 48)], str(INVENTORY_CALLS))
 
     pmslHours = sorted([a for field, a, b in CALLS if field == "pmsl"])
     check("a pmsl grid read at each plot time the inventory offered",
@@ -878,9 +935,9 @@ def test_single_period_selection():
     check("only the selected period is built",
           all("F000-024" not in n for n in names), str(names))
     check("selected period is built", PERIOD2 in names, str(names))
-    windRanges = sorted([(a, b) for field, a, b in CALLS if field == "Wind"])
-    check("only that period's window was read", windRanges == [(24, 48)],
-          str(windRanges))
+    windHours = sorted([a for field, a, b in CALLS if field == "Wind"])
+    check("only that period's Wind grids were read",
+          windHours == [24, 30, 36, 42, 48], str(windHours))
     check("Lows only within that period's span",
           sorted([a for field, a, b in CALLS if field == "pmsl"]) ==
           [24, 30, 36, 42, 48],
@@ -1028,9 +1085,9 @@ def test_inventory_drives_the_plot_times():
           boxes == ["F000", "F012", "F024", "F036", "F048"], str(boxes))
     check("the track follows them",
           len(ringOf(linesInLayer(tree, TRACK)[0])) == 5)
-    check("the wind read is still one range per period",
-          sorted((a, b) for field, a, b in CALLS if field == "Wind") ==
-          [(0, 24), (24, 48)])
+    check("the Wind grids follow that database's cadence too",
+          sorted(set(a for field, a, b in CALLS if field == "Wind")) ==
+          [0, 12, 24, 36, 48])
 
     # An hourly database: thinned to the 6 h minimum rather than 49 Lows.
     module, tree = runProcedure(DEFAULT_VARDICT, gridInterval=1)
@@ -1157,8 +1214,8 @@ def test_auto_cycle_and_filename():
     check("Auto picked a 00/06/12/18Z hour", expected.hour in module.CYCLE_HOURS,
           str(expected))
     check("grids were read against that cycle",
-          sorted((a, b) for field, a, b in CALLS if field == "Wind") ==
-          [(0, 24), (24, 48)])
+          sorted(set(a for field, a, b in CALLS if field == "Wind")) ==
+          [0, 6, 12, 18, 24, 30, 36, 42, 48])
 
 
 def main():
@@ -1173,6 +1230,7 @@ def main():
     test_low_hours()
     test_span_and_thinning()
     test_polygon_extraction()
+    test_vector_magnitude_only()
     test_contour_off_the_domain_edge()
     test_layers_and_period_maximum()
     test_pgen_line_shape()
