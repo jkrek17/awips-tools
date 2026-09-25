@@ -1072,6 +1072,18 @@ def test_pgen_activity():
     check("the file name follows the real charts",
           name == "Pacific_HS_WindHazards.F048.xml", name)
 
+    # Blank is fine, and nothing depends on $USER being set.
+    check("the forecaster field is blank by default",
+          product.get("forecaster") == "", repr(product.get("forecaster")))
+
+    saved = os.environ.pop("USER", None)
+    try:
+        module2, tree2 = runProcedure(DEFAULT_VARDICT)
+        check("the run does not need $USER at all", tree2 is not None)
+    finally:
+        if saved is not None:
+            os.environ["USER"] = saved
+
 
 def test_auto_cycle_and_filename():
     print("\ntest_auto_cycle_and_filename")

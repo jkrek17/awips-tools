@@ -228,6 +228,13 @@ ACTIVITY_FHR = "F048"
 #
 #     <Basin>_<Area>_<Product>.<Fhr>.xml      Atlantic_HS_Surface.F000.xml
 
+# The Product's forecaster field.  "" leaves it blank, which PGEN accepts.
+# None fills it from $USER in the form a real chart's XML carries -
+# "jason.krekeler", the whole user name; CreateXML.py instead keeps the last
+# name in capitals ("KREKELER").  Either way nothing here depends on $USER
+# being set.
+FORECASTER = ""
+
 # Edit area zeroed out when "Mask land:" is On.
 MASK_EDIT_AREA = "Land"
 
@@ -894,7 +901,9 @@ if _IN_GFE:
 
             # --- Set other variables based on environment ---
             basin = self.getSiteID()
-            fcstr = os.environ["USER"].split('.')[-1].upper()
+            fcstr = FORECASTER
+            if fcstr is None:
+                fcstr = os.environ.get("USER", "")
             dbase = inputOpt
             if dbase != "Fcst":
                 dbase = self.findDatabase(dbase, 0)
