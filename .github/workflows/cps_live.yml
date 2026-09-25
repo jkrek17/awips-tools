@@ -4,7 +4,8 @@
 # posted, the newest cycle whose f198 exists (the script probes NOMADS, then
 # the AWS bucket, and falls back to the previous cycle when it is missing) is
 # exported to GeoJSON and Web Mercator PNGs and published as the single
-# commit of the orphan branch cps-live, under latest/:
+# commit of the orphan branch cps-live, under latest/ (with the daily
+# collection's storm diagrams under storms/<cycle>/<NAME>/):
 #
 #   https://raw.githubusercontent.com/jkrek17/awips-tools/cps-live/latest/index.json
 #
@@ -75,8 +76,22 @@ jobs:
         run: |
           work="$RUNNER_TEMP/cps-live"
           rm -rf "$work"
-          mkdir -p "$work/latest"
+          mkdir -p "$work/latest" "$work/storms"
           cp -r "$OUT"/. "$work/latest/"
+          # Storm assets from the daily collection, so index.json's relative
+          # links (../storms/<cycle>/<NAME>/phase.png) resolve beside latest/.
+          for d in cyclone_phase_space/realtime/data/2*/; do
+            cyc=$(basename "$d")
+            for s in "$d"*/; do
+              [ -d "$s" ] || continue
+              name=$(basename "$s")
+              mkdir -p "$work/storms/$cyc/$name"
+              for f in phase.png compare.png meta.json track.csv; do
+                [ -f "$s$f" ] && cp "$s$f" "$work/storms/$cyc/$name/"
+              done
+            done
+            [ -f "$d"summary.md ] && cp "$d"summary.md "$work/storms/$cyc/"
+          done
           cd "$work"
           git init -q
           git checkout -q --orphan cps-live

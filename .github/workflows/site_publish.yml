@@ -1,0 +1,105 @@
+# Publishes the public web site to the separate public repository (the
+# repository variable PUBLIC_SITE_REPO, for example jkrek17/web) so that this
+# repository can be private. The site is assembled from the live map page
+# (cyclone_phase_space/article/live/), the newest live data (the latest/ and
+# storms/ trees of the cps-live branch) and nothing else; it is pushed as the
+# single commit of the public repository's main branch with the deploy key in
+# the secret WEB_DEPLOY_KEY (a private SSH key whose public half is a deploy
+# key with write access on the public repository). The public repository
+# serves it with GitHub Pages from main at the root.
+#
+# Runs after every live data export and daily collection, on a push that
+# changes the page, and by hand. Skips quietly when the variable or the
+# secret is not set, so the repository works before the public one exists.
+
+name: Publish public site
+
+on:
+  workflow_run:
+    workflows: ["CPS live map data", "CPS daily collection"]
+    types: [completed]
+  push:
+    branches: [main]
+    paths:
+      - 'cyclone_phase_space/article/live/**'
+      - '.github/workflows/site_publish.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: site-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Check configuration
+        id: cfg
+        env:
+          REPO: ${{ vars.PUBLIC_SITE_REPO }}
+          KEY: ${{ secrets.WEB_DEPLOY_KEY }}
+        run: |
+          if [ -z "$REPO" ] || [ -z "$KEY" ]; then
+            echo "PUBLIC_SITE_REPO or WEB_DEPLOY_KEY not set; nothing to publish."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.cfg.outputs.ready == 'true'
+        with:
+          ref: main
+
+      - name: Fetch the live data branch
+        if: steps.cfg.outputs.ready == 'true'
+        run: |
+          git fetch --depth 1 origin cps-live || echo "no cps-live branch yet"
+          rm -rf "$RUNNER_TEMP/live"
+          mkdir -p "$RUNNER_TEMP/live"
+          if git rev-parse --verify -q origin/cps-live >/dev/null; then
+            git --work-tree="$RUNNER_TEMP/live" checkout origin/cps-live -- . 2>/dev/null || true
+            git reset -q
+          fi
+
+      - name: Assemble the site
+        if: steps.cfg.outputs.ready == 'true'
+        run: |
+          site="$RUNNER_TEMP/site"
+          rm -rf "$site"
+          mkdir -p "$site/data"
+          cp -r cyclone_phase_space/article/live/. "$site/"
+          if [ -d "$RUNNER_TEMP/live/latest" ]; then
+            cp -r "$RUNNER_TEMP/live/latest" "$site/data/latest"
+          fi
+          if [ -d "$RUNNER_TEMP/live/storms" ]; then
+            cp -r "$RUNNER_TEMP/live/storms" "$site/data/storms"
+          fi
+          touch "$site/.nojekyll"
+          du -sh "$site"
+
+      - name: Push to the public repository
+        if: steps.cfg.outputs.ready == 'true'
+        env:
+          REPO: ${{ vars.PUBLIC_SITE_REPO }}
+          KEY: ${{ secrets.WEB_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -t ed25519,rsa github.com >> ~/.ssh/known_hosts 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes"
+          cd "$RUNNER_TEMP/site"
+          git init -q
+          git checkout -q --orphan main
+          git config user.name "site-publish"
+          git config user.email "site-publish@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Publish site $(date -u +%Y-%m-%dT%H:%MZ)"
+          git remote add origin "git@github.com:$REPO.git"
+          git push --force origin main
