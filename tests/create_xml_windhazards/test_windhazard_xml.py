@@ -1031,9 +1031,11 @@ def test_pgen_activity():
     product = list(tree.getroot().iter("Product"))[0]
     check("stored as the stock Default activity type",
           product.get("type") == "Default", str(product.get("type")))
-    check("the subtype still identifies the product",
-          product.get("subType") == "Pacific_WindHazards",
-          str(product.get("subType")))
+    # PGEN resolves an activity by type AND subtype, so an unregistered
+    # subtype fails to deserialize even with a valid type: the same string
+    # goes in both, the way CreateXML.py does it.
+    check("the subtype matches the type",
+          product.get("subType") == "Default", str(product.get("subType")))
     check("the file name carries the same name",
           os.path.basename(STORED[-1]).startswith("Pacific_WindHazards_"),
           os.path.basename(STORED[-1]))

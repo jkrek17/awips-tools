@@ -534,10 +534,12 @@ touching the logic.
 
 The XML is stored as PGEN's stock **`Default`** activity type
 (`ACTIVITY_TYPE`), so nothing has to be registered in the site's PGEN activity
-list. The subtype carries the label - `Pacific_WindHazards` - so the activity
-stays identifiable among other `Default` ones. Both are constants at the top
-of the file; set `ACTIVITY_SUBTYPE` to `""` or `"Default"` if the site's PGEN
-wants a registered subtype as well.
+list. PGEN resolves an activity by type **and** subtype, and an unregistered
+subtype fails to deserialize (`unable to deserialize PGEN activity. Name is
+null`) even when the type is fine - so the same string goes in both, the way
+`CreateXML.py` does it. Put a descriptive label in `ACTIVITY_SUBTYPE` only if
+your activity list has that subtype registered; the file name carries
+`<basin>_WindHazards` either way.
 
 ### One thing to check on the first run
 
