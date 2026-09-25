@@ -316,6 +316,20 @@ def lowHours(selected, periods=None, interval=None):
     return hours
 
 
+def asFloat(value, default=None):
+    """Coerce a value that may arrive as an already-formatted string.
+
+    plotPeakPressureLocations is the site's own, and some sites hand back
+    formatted strings ("968") rather than numbers.  Anything this procedure
+    compares or measures goes through here first; what gets handed back to
+    XmlUtils stays exactly as the site produced it, so labels are unchanged.
+    """
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def rangeNm(lat1, lon1, lat2, lon2):
     """Range in nautical miles, flat-earth, and safe across the dateline."""
     dLat = (lat2 - lat1) * 60.0
@@ -768,9 +782,25 @@ if _IN_GFE:
 
         def _trackLayer(self, product, defaultDe, positions):
             """Add a line through the Lows that track from one hour to the next."""
-            trackable = [(hr, [low for low in lows
-                               if low[2] <= TRACK_MAX_PRESSURE])
-                         for hr, lows in positions]
+            # The site's plotPeakPressureLocations may hand back formatted
+            # strings, so coerce before comparing or measuring anything.
+            trackable, unusable = [], 0
+            for hr, lows in positions:
+                kept = []
+                for lat, lon, value in lows:
+                    fLat = asFloat(lat)
+                    fLon = asFloat(lon)
+                    fValue = asFloat(value)
+                    if fLat is None or fLon is None or fValue is None:
+                        unusable += 1
+                        continue
+                    if fValue <= TRACK_MAX_PRESSURE:
+                        kept.append((fLat, fLon, fValue))
+                trackable.append((hr, kept))
+            if unusable:
+                self.statusBarMsg("%d low(s) had no usable position or "
+                                  "pressure - not tracked" % unusable, "R")
+
             tracks = buildTracks(trackable)
             if not tracks:
                 self.statusBarMsg("No Low tracked across two or more hours",

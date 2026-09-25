@@ -560,7 +560,7 @@ differs at your site, `addPolygonToXml` is the only place to change.
 ### Checking it without AWIPS
 
 ```bash
-python3 tests/create_xml_windhazards/test_windhazard_xml.py     # 115 checks
+python3 tests/create_xml_windhazards/test_windhazard_xml.py     # 123 checks
 python3 tests/create_xml_windhazards/plot_synthetic_case.py     # writes a PNG
 ```
 

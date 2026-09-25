@@ -71,6 +71,9 @@ check. The High the field also carries must appear nowhere at all.
   no Lows and no Track layer, and a site without `getGridInfo` falling back.
 - The track being an open line, in the track color, with a vertex on every
   plotted Low.
+- A site whose `plotPeakPressureLocations` hands back formatted strings
+  (`"968"`, not `968.0`) rather than numbers - which used to break the
+  track's pressure filter with a `TypeError`.
 - The PGEN `Line` element's attributes, color child and `linePoints`.
 - `Color by:` Threshold vs Period, and `Hatch fill:` On.
 - The `Land` mask on and off, `saveLayers` false collapsing to one `Default`

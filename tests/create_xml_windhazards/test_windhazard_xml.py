@@ -156,7 +156,7 @@ class FakeGridInfo(object):
 def _installFakes(cycleTime, overLandOnly=False, missingWindHours=(),
                   missingPmslHours=(), saveLayers="true", windFn=None,
                   pmslFn=None, landFn=None, domain=None, gridInterval=6,
-                  noGridInfo=False):
+                  noGridInfo=False, stringValues=False):
     """Install fake AWIPS/A2Graphics modules into sys.modules.
 
     ``windFn(hr, lat, lon)``, ``pmslFn(hr, lat, lon)``, ``landFn(lat, lon)``
@@ -168,7 +168,9 @@ def _installFakes(cycleTime, overLandOnly=False, missingWindHours=(),
     ``missing*Hours``, and answers like GFE does: ``getGridInfo`` lists what
     is there, and ``getGrids`` over a range spanning several grids returns a
     list of them.  ``noGridInfo`` makes ``getGridInfo`` raise, to exercise
-    the fallback when a site's inventory call is unavailable.
+    the fallback when a site's inventory call is unavailable, and
+    ``stringValues`` makes plotPeakPressureLocations hand back formatted
+    strings the way some sites' does.
     """
     del CALLS[:]
     del INVENTORY_CALLS[:]
@@ -209,6 +211,11 @@ def _installFakes(cycleTime, overLandOnly=False, missingWindHours=(),
 
         @staticmethod
         def plotPeakPressureLocations(lons, lats, vals, basin):
+            if stringValues:
+                # Some sites' plotPeakPressureLocations formats as it goes,
+                # handing back strings rather than numbers.
+                return ([str(v) for v in lons], [str(v) for v in lats],
+                        ["%d" % round(float(v)) for v in vals])
             return lons, lats, vals
 
         @staticmethod
@@ -216,22 +223,23 @@ def _installFakes(cycleTime, overLandOnly=False, missingWindHours=(),
             for val, plat, plon in zip(vals, lats, lons):
                 ET.SubElement(de, "SymbolAttribute", {
                     "pgenType": str(attr), "color": str(color),
-                    "Lat": "%.2f" % plat, "Lon": "%.2f" % plon,
-                    "value": "%.1f" % val})
+                    "Lat": "%.2f" % float(plat), "Lon": "%.2f" % float(plon),
+                    "value": "%.1f" % float(val)})
 
         @staticmethod
         def xmladdPressureExtremaLabel(vals, lats, lons, de, attr, color):
             for val, plat, plon in zip(vals, lats, lons):
                 ET.SubElement(de, "TextAttribute", {
                     "pgenType": str(attr), "color": str(color),
-                    "Lat": "%.2f" % plat, "Lon": "%.2f" % plon,
-                    "text": "%d" % round(val)})
+                    "Lat": "%.2f" % float(plat), "Lon": "%.2f" % float(plon),
+                    "text": "%d" % round(float(val))})
 
         @staticmethod
         def xmladdTextBox(text, plat, plon, de, attr, color):
             ET.SubElement(de, "TextBox", {
                 "pgenType": str(attr), "color": str(color),
-                "Lat": "%.2f" % plat, "Lon": "%.2f" % plon, "text": str(text)})
+                "Lat": "%.2f" % float(plat), "Lon": "%.2f" % float(plon),
+                "text": str(text)})
 
         @staticmethod
         def writeXML(products, outputFile):
@@ -966,6 +974,30 @@ def test_inventory_drives_the_plot_times():
           names == [PERIOD1, PERIOD2], str(names))
 
 
+def test_string_valued_extrema():
+    print("\ntest_string_valued_extrema")
+    # A site whose plotPeakPressureLocations returns "968" rather than 968.0
+    # used to break the track's pressure filter with a TypeError.
+    module, tree = runProcedure(DEFAULT_VARDICT, stringValues=True)
+    names = layerNames(tree)
+    check("the run completes with string positions and pressures",
+          names == [PERIOD1, PERIOD2, LOWS, TRACK], str(names))
+
+    lows = [el for el in tree.getroot().iter("Layer")
+            if el.get("name") == LOWS][0]
+    check("every Low is still plotted",
+          len(list(lows.iter("SymbolAttribute"))) == 9,
+          str(len(list(lows.iter("SymbolAttribute")))))
+    check("the pressures are unchanged",
+          sorted(int(l.get("text")) for l in lows.iter("TextAttribute")) ==
+          sorted(int(round(960.0 - hr)) for hr in range(0, 49, 6)))
+
+    track = linesInLayer(tree, TRACK)
+    check("the track is still built", len(track) == 1, str(len(track)))
+    check("with every position on it", len(ringOf(track[0])) == 9,
+          str(len(ringOf(track[0]))))
+
+
 def test_no_period_selected():
     print("\ntest_no_period_selected")
     _installFakes(datetime(2026, 9, 21, 18))
@@ -1050,6 +1082,7 @@ def main():
     test_land_mask()
     test_inventory_drives_the_plot_times()
     test_missing_grids()
+    test_string_valued_extrema()
     test_no_period_selected()
     test_default_layer_when_savelayers_false()
     test_pgen_activity()
