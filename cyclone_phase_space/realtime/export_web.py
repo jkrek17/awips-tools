@@ -314,13 +314,14 @@ def box_mean(a: np.ndarray, r: int) -> np.ndarray:
 
 
 def fade_mask(cls: np.ndarray, dim: float = MASK_DIM, cells: int = MASK_CELLS) -> np.ndarray:
-    """Alpha weight on the grid: 1 inside the closed-low footprints, easing
-    to dim about `cells` grid cells outside them (two box means of the
-    footprint, a smooth bell about 2*cells wide)."""
+    """Alpha weight on the grid: 1 inside the closed-low footprints and just
+    outside them, easing smoothly to dim by about `cells` grid cells out."""
     inside = np.isfinite(np.asarray(cls, dtype=float)).astype(float)
     r = max(1, cells // 2)
-    ease = np.clip(box_mean(box_mean(inside, r), r) * 2.0, 0.0, 1.0)  # 1 well inside, 0 far outside
-    ease = np.maximum(ease, inside)
+    # Two box means make a smooth bell of the footprint; the gain of 3 keeps
+    # it at 1 up to the footprint's edge and a little beyond (about 5 cells),
+    # then it falls to 0 by 2r cells, with no step at the edge.
+    ease = np.clip(box_mean(box_mean(inside, r), r) * 3.0, 0.0, 1.0)
     return dim + (1.0 - dim) * ease
 
 

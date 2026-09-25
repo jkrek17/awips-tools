@@ -780,8 +780,8 @@ without guessing.
   format under `raster.format`.
 - `frames/fHHH/mask.png`: a 1024 by 1020 px gray-plus-alpha PNG whose
   alpha is a weight for the three fields: 1 inside the closed-low
-  footprints (the HCPSclass blobs), easing to `MASK_DIM` (0.35) about
-  12 grid cells (300 km) outside them. Hart's parameters evaluated at
+  footprints (the HCPSclass blobs) and just outside them, easing
+  smoothly to `MASK_DIM` (0.35) by about 12 grid cells (300 km) out. Hart's parameters evaluated at
   every grid point measure the ambient thermal ridge and trough away
   from a low, so the page multiplies the field's alpha by this weight
   to keep the storms in front. `index.json` names the file and the dim

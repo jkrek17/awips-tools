@@ -86,8 +86,9 @@ sup { vertical-align: 0.6em; margin-left: 0.5px; }
 .gl-lat { left: 8px; transform: translateY(-50%); }
 .gl-lon { transform: translateX(-50%); }
 
-/* Rasters crossfade over 150 ms; Leaflet's own zoom transform is kept. */
-.leaflet-rasters-pane .raster { transition: opacity 150ms linear; }
+/* Rasters crossfade over 150 ms; Leaflet's own zoom transform is kept.
+   The fields are smooth, so the browser interpolates them when zoomed in. */
+.leaflet-rasters-pane .raster { transition: opacity 150ms linear; image-rendering: auto; }
 .leaflet-zoom-anim .leaflet-rasters-pane .raster { transition: opacity 150ms linear, transform 0.25s cubic-bezier(0, 0, 0.25, 1); }
 /* Over a raster, a thin dark casing keeps the isobars legible. */
 .raster-on .leaflet-contours-pane canvas { filter: drop-shadow(0 0 0.75px rgba(0, 0, 0, 0.9)); }
@@ -304,9 +305,12 @@ h1 { font-size: 18px; line-height: 28px; font-weight: 600; letter-spacing: -0.01
 .layers { gap: 4px; }
 .layers .pop-h { margin-bottom: 4px; }
 .range { display: grid; gap: 4px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--rule); }
-.range span { display: flex; justify-content: space-between; color: var(--text); }
+.range-row { display: flex; justify-content: space-between; color: var(--text); }
 .range output { color: var(--muted); }
 .range.off { opacity: 0.4; }
+.range .check { margin-bottom: 4px; }
+.check:has(input:disabled) { cursor: default; color: var(--muted); }
+.range.off .check:has(input:disabled) { color: var(--text); }  /* the whole group is dimmed already */
 .marks-h { margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--rule); }
 .layers .marks-h { margin-bottom: 4px; }
 .marks { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 11px; line-height: 16px; color: var(--muted); }
@@ -616,9 +620,12 @@ h1 { font-size: 18px; line-height: 28px; font-weight: 600; letter-spacing: -0.01
 .ramp-ticks { position: absolute; left: 0; right: 0; top: 12px; height: 3px; }
 .ramp-wrap.big .ramp-ticks { top: 16px; }
 .ramp-ticks i { position: absolute; top: 0; width: 1px; height: 3px; margin-left: -0.5px; background: var(--faint); }
+.ramp-ticks i.z { height: 4px; background: var(--muted); }
 .ramp-labels { position: absolute; left: 0; right: 0; top: 15px; height: 16px; font: 10px/16px var(--mono); color: var(--muted); }
 .ramp-wrap.big .ramp-labels { top: 19px; }
 .ramp-labels span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.ramp-labels span.lo { transform: none; }
+.ramp-labels span.hi { transform: translateX(-100%); }
 .ramp-unit { font-size: 11px; color: var(--muted); align-self: flex-start; padding-top: 2px; }
 .cint { display: grid; font-size: 11px; line-height: 16px; color: var(--muted); white-space: nowrap; }
 #cint-b { color: var(--faint); }

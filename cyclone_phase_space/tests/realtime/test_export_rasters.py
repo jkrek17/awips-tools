@@ -80,10 +80,12 @@ def test_fade_mask_is_one_inside_and_dim_far_away():
     assert m.max() == pytest.approx(1.0)
     assert m[100, 210] == pytest.approx(1.0)
     assert m[10, 10] == pytest.approx(ew.MASK_DIM)
-    # eases outward: closer to the footprint means heavier
+    # no step at the edge: the cell just outside is still (nearly) full weight
+    assert m[110, 210] > 0.97 and m[112, 210] > 0.9
+    # eases outward: closer to the footprint means heavier, dim by 12 cells out
     row = m[110:130, 210]
     assert np.all(np.diff(row) <= 1e-12)
-    assert m[130, 210] == pytest.approx(ew.MASK_DIM, abs=0.02)
+    assert m[122, 210] == pytest.approx(ew.MASK_DIM, abs=0.02)
 
 
 def test_box_mean_of_a_constant_is_the_constant():
