@@ -1039,9 +1039,13 @@ def test_pgen_activity():
     check("the subtype is the same string",
           product.get("subType") == product.get("type"),
           str(product.get("subType")))
-    check("the file name carries the same name",
-          os.path.basename(STORED[-1]).startswith("Pacific_WindHazards_"),
-          os.path.basename(STORED[-1]))
+    # CreateXML.py's six fields: basin_area_prod_input_gridstart_fhr.xml.
+    # storeXML gets nothing but this path, so the shape has to match.
+    name = os.path.basename(STORED[-1])
+    check("the file name has CreateXML.py's six fields",
+          len(name[:-4].split("_")) == 6, name)
+    check("and its own product token, clear of the site's Surface charts",
+          name.startswith("Pacific_HS_WindHazards_"), name)
 
 
 def test_auto_cycle_and_filename():

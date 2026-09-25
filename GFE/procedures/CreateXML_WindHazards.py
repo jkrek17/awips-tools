@@ -57,7 +57,9 @@
 # * Activity: named the way CreateXML.py names its own -
 #   "<basin>_HS_Surface(F048)" from ACTIVITY_AREA/_PRODUCT/_FHR - and passed
 #   as both type and subtype, because PGEN cannot deserialize an activity
-#   type its list does not carry.  The file name keeps <basin>_WindHazards.
+#   type its list does not carry.  The file name follows CreateXML.py's six
+#   fields too - basin_area_prod_input_gridstart_fhr.xml - since storeXML is
+#   handed nothing but that path.
 # * Output: a single XML with four layers - "F000-024" and "F024-048", each
 #   holding that period's three band polygons; "Lows", holding every 6-hourly
 #   Low with its pressure and forecast hour; and "Track", holding the lines
@@ -219,6 +221,16 @@ MAX_POLYGON_POINTS = 60
 ACTIVITY_AREA = "HS"
 ACTIVITY_PRODUCT = "Surface"
 ACTIVITY_FHR = "F048"
+
+# The output file name follows CreateXML.py's six fields exactly:
+#
+#     basin_area_prod_input_gridstart_fhr.xml
+#
+# storeXML is handed nothing but this path, so anything that derives the
+# activity's name from the file name needs those six fields present.
+# FILE_PRODUCT is the third one, kept as WindHazards so these files cannot
+# collide with the site's real Surface charts for the same cycle.
+FILE_PRODUCT = "WindHazards"
 
 # Edit area zeroed out when "Mask land:" is On.
 MASK_EDIT_AREA = "Land"
@@ -886,8 +898,9 @@ if _IN_GFE:
             # --- Create the XML product ---
             pd = pgenProd_dict[basin]
             basin_long = pd["basin"]
-            outputFile = (outDir + basin_long + "_WindHazards_" + str(dbase) +
-                          "_" + gridstart + ".xml")
+            outputFile = (outDir + basin_long + "_" + ACTIVITY_AREA + "_" +
+                          FILE_PRODUCT + "_" + str(dbase) + "_" + gridstart +
+                          "_" + ACTIVITY_FHR + ".xml")
             typeSubtype = (basin_long + "_" + ACTIVITY_AREA + "_" +
                            ACTIVITY_PRODUCT + "(" + ACTIVITY_FHR + ")")
 
