@@ -518,6 +518,14 @@ of a run of "missing grid" warnings. They are then thinned to no closer than
 chart. If a site has no working `getGridInfo`, it falls back to every 6 hours.
 Highs are not plotted.
 
+Three dialog options control what reaches the chart. **`Lows every:`** thins the
+plotted Low *symbols* to 6, 12 or 24 h apart, or `Off` drops the Lows and track
+entirely; **`Hour labels:`** drops the `F0xx` text beside each mark; and
+**`Low track:`** drops the line while keeping the marks. The track is always
+built from every position read (`TRACK_INTERVAL_HRS`), so drawing a mark once a
+day still leaves a complete line through the low rather than three points in 48
+hours.
+
 The Lows are joined into **tracks** by nearest-neighbor matching from one plot
 time to the next: shortest distance first, so two tracks never claim the same
 Low, and anything unmatched starts a track of its own. A Low may move
@@ -558,7 +566,11 @@ in both - and no `subType`:
 
 So this one builds `basin_long + "_" + ACTIVITY_AREA + "_" +
 ACTIVITY_PRODUCT + "(" + ACTIVITY_FHR + ")"` and passes it twice, giving
-`Atlantic_HS_WindHazards(F048)`. `ACTIVITY_PRODUCT` is `WindHazards` rather
+`Atlantic_HS_WindHazards(F048)`. **`ACTIVITY_NAME` overrides that** - it is
+`"Default"` at the moment, so the chart lands in PGEN's stock activity with
+nothing to register while testing; set it to `None` to use the built name once
+that activity exists in your list. Either way the run prints the activity it
+used on the status bar. `ACTIVITY_PRODUCT` is `WindHazards` rather
 than `Surface` **on purpose**: an activity is identified by that name, so
 reusing `Surface` would store this chart over the real one.
 
