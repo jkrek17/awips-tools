@@ -3,9 +3,9 @@
   "storms": [
     {
       "name": "EPAC",
-      "lat": 14.96,
-      "lon": -156.47,
-      "cycle": "2026092412",
+      "lat": 14.83,
+      "lon": -156.15,
+      "cycle": "2026092418",
       "fhr0": 0,
       "fhr1": null,
       "notes": "Eastern Pacific tropical cyclone; FSU cyclone 1 of the 2026092412 run.",
@@ -13,9 +13,9 @@
     },
     {
       "name": "GREENLAND",
-      "lat": 60.6,
-      "lon": -22.75,
-      "cycle": "2026092412",
+      "lat": 62.47,
+      "lon": -21.41,
+      "cycle": "2026092418",
       "fhr0": 0,
       "fhr1": null,
       "notes": "Warm seclusion southwest of Iceland; may dissipate within days.",
@@ -23,11 +23,11 @@
     },
     {
       "name": "LABRADOR",
-      "lat": 61.52,
-      "lon": -63.12,
-      "cycle": "2026092412",
+      "lat": 60.94,
+      "lon": -55.35,
+      "cycle": "2026092418",
       "fhr0": 0,
-      "fhr1": 96,
+      "fhr1": 90,
       "notes": "Cold-core low over Labrador; crosses Iceland's terrain after 96 h, where the tracker would hand over to another low.",
       "active": true
     }
