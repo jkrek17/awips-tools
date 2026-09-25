@@ -1,0 +1,98 @@
+# Daily collection of storm-following cyclone phase diagrams from the 12 UTC
+# GFS (cyclone_phase_space/realtime/collect_daily.py). Tracks every active
+# storm in cyclone_phase_space/realtime/watch.json, matches it to the Florida
+# State University page of the same run, and commits the results under
+# cyclone_phase_space/realtime/data/ together with the updated watch list.
+#
+# 20:00 UTC: the 12 UTC GFS is complete on NOMADS by about 16:30 UTC and the
+# FSU page for the run is up by evening. Run it by hand (Actions > CPS daily
+# collection > Run workflow) with a cycle to backfill or redo one day.
+#
+# The push is made with the workflow's GITHUB_TOKEN, and pushes made with that
+# token do not start other workflows; the Pages workflow's path filters do not
+# include cyclone_phase_space/realtime/ either.
+
+name: CPS daily collection
+
+on:
+  schedule:
+    - cron: '0 20 * * *'
+  workflow_dispatch:
+    inputs:
+      cycle:
+        description: 'GFS cycle YYYYMMDDHH (blank: today''s 12 UTC run, or the newest complete one)'
+        required: false
+        default: ''
+      force:
+        description: 'Recompute storms already collected for the cycle'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cps-daily
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: cyclone_phase_space/realtime/requirements.txt
+
+      # pygrib's manylinux wheel bundles ecCodes and cartopy's wheel bundles
+      # GEOS/PROJ, so no system packages are needed. The tracking path draws no
+      # maps, so cartopy never downloads Natural Earth data here (no cache).
+      - name: Install dependencies
+        run: pip install -r cyclone_phase_space/realtime/requirements.txt
+
+      - name: Collect
+        id: collect
+        working-directory: cyclone_phase_space/realtime
+        env:
+          CYCLE: ${{ github.event.inputs.cycle }}
+          FORCE: ${{ github.event.inputs.force }}
+        run: |
+          args=()
+          if [ -n "$CYCLE" ]; then args+=(--cycle "$CYCLE"); fi
+          if [ "$FORCE" = "true" ]; then args+=(--force); fi
+          python3 collect_daily.py "${args[@]}"
+
+      - name: Commit and push
+        env:
+          CYCLE: ${{ steps.collect.outputs.cycle }}
+        run: |
+          git config user.name "cps-daily"
+          git config user.email "cps-daily@users.noreply.github.com"
+          git add cyclone_phase_space/realtime/data cyclone_phase_space/realtime/watch.json
+          if git diff --cached --quiet; then
+            echo "Nothing changed for $CYCLE; no commit."
+            exit 0
+          fi
+          git commit -m "CPS daily collection $CYCLE"
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            echo "Push rejected (attempt $attempt); rebasing on origin/main and retrying."
+            git fetch origin main
+            if ! git rebase origin/main; then
+              git rebase --abort
+              echo "::error::Rebase on origin/main failed (conflicting edit to the data or watch.json)."
+              exit 1
+            fi
+            sleep $((attempt * 5))
+          done
+          echo "::error::Could not push after 5 attempts."
+          exit 1

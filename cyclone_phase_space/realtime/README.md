@@ -312,6 +312,132 @@ term stays warm (100 to 130 m) to the end, so there is no completion
 within 198 h in either, as on FSU's diagram (B crosses 10 m near its
 00Z 1 October label, about +156 h, and the lower term stays warm).
 
+## Daily collection
+
+`collect_daily.py` runs the storm tracking every day on the 12 UTC GFS
+for the storms listed in `watch.json`, keeps the results in `data/`,
+and matches each storm to its Florida State University cyclone of the
+same run so the two sets of diagrams can be compared day by day.
+
+    python3 collect_daily.py [--cycle YYYYMMDDHH] [--hours H [H ...]] [--data-dir DIR]
+                             [--watch FILE] [--force] [--no-fsu]
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--cycle` | see below | GFS cycle to collect. |
+| `--hours` | 0 to 198 step 6 | Forecast hours. |
+| `--data-dir` | `realtime/data` | Collection root. |
+| `--watch` | `realtime/watch.json` | Watch list. |
+| `--force` | off | Recompute storms already collected for the cycle. |
+| `--no-fsu` | off | Skip the FSU matching. |
+
+**What runs, when.** The `CPS daily collection` workflow
+(`.github/workflows/cps_daily.yml`) runs at 20:00 UTC every day: the
+12 UTC GFS is complete on NOMADS by about 16:30 UTC and FSU's page for
+the run is up by evening. Without `--cycle` the script takes today's
+(UTC) 12 UTC run if its last hour (f198) is posted, otherwise the newest
+12 UTC run that has it, probing back four days (NOMADS first, then the
+AWS bucket). The workflow installs `requirements.txt`, runs the script,
+and commits `data/` and `watch.json` to main as `cps-daily` with the
+message `CPS daily collection <cycle>`; nothing is committed when
+nothing changed, and a rejected push is rebased and retried. The GFS
+work runs through `gfs_cps` and `track_cps` functions (global grid,
+Hart's bands; about 6 minutes of computation for 34 frames plus the
+downloads, about 600 MB from NOMADS). The tracking path draws no maps,
+so cartopy never downloads its Natural Earth data there and nothing is
+cached between runs.
+
+**Where data lands.** `data/<cycle>/<NAME>/` holds `track.csv`,
+`phase.png` (downscaled to 1600 px; it and `compare.png` are saved
+with a 256-color palette to keep the repository small, about 0.8 MB
+per storm and day with FSU's images), `meta.json` and, for a storm
+matched to FSU, `fsu_phase1.png`, `fsu_phase2.png`, `fsu_track.png` and
+`compare.png`; `data/<cycle>/summary.md` tabulates the run (FSU number,
+start position and MSLP, class sequence, onset and completion by both
+band sets) and `data/log.csv` gets one row per cycle and storm
+(`cycle, storm, fsu_number, status`). `data/README.md` describes the
+layout. The full-size outputs and the GRIB cache stay in `out/`, which
+git ignores.
+
+**Seeds.** Each `watch.json` entry has `name`, a seed `lat`, `lon`
+(west negative), the `cycle` the seed is valid for, optional `fhr0`
+(the hour of that cycle the seed is valid at, default 0) and `fhr1`
+(the last hour to track, for a low known to be lost or replaced after
+it), `notes` and `active`. For a new cycle the seed is:
+
+1. the stored seed, if its cycle is this cycle (or its `fhr0` is still
+   ahead of this cycle);
+2. otherwise the position in the newest earlier collected `track.csv` of
+   the storm at the forecast hour valid now (normally +24 h of
+   yesterday's run);
+3. otherwise the stored seed (for example after a missed day, or when
+   yesterday's track ended before +24 h).
+
+The tracker then looks for the MSLP minimum nearest the seed within
+400 km, as with `--track`. After a successful run the entry's seed
+becomes the track's first position of this cycle and its `cycle` this
+cycle; `fhr1` counts down by the hours since its cycle and is dropped
+(with a note) once it has passed. If there is no closed low within
+400 km of the seed, the storm is marked `"active": false` with
+`ended_cycle` and a note, and its folder gets only a `meta.json` with
+status `lost`. A backfill of a cycle older than an entry's `cycle` does
+not move the entry's seed; there the stored seed is used at the hour it
+is valid in the older run (for example +24 h of the day before), unless
+an earlier collected track covers that time.
+
+**Adding a storm.** Add an entry to `watch.json` with a name (it
+becomes the folder name), the low's position at the analysis time of a
+12 UTC cycle, that cycle, and `"active": true`, and commit it to main;
+the next daily run picks it up. For a low that forms later in the run,
+give its position at `fhr0` of that cycle. To stop following a storm set
+`active` to false. Example:
+
+    {"name": "NATL1", "lat": 35.0, "lon": -60.0, "cycle": "2026092512", "fhr0": 0,
+     "fhr1": null, "notes": "", "active": true}
+
+**Backfilling a cycle.** Actions > CPS daily collection > Run workflow,
+with `cycle` set to a 12 UTC cycle (YYYYMMDD12); NOMADS keeps about ten
+days, older cycles come from the AWS bucket. `force` recomputes storms
+already collected for that cycle. Locally:
+`python3 collect_daily.py --cycle 2026092412`. A rerun for a collected
+cycle does no GFS work for storms whose `meta.json` says `ok`, reuses the
+FSU files already downloaded, and replaces rather than repeats its rows
+in `log.csv`; it does retry the FSU match of a storm that has none (for
+example when the FSU page was not up yet).
+
+**FSU matching.** The FSU page of a GFS cycle is
+`http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/YYMMDDHH/index.html`
+(https is tried first, then plain http). Its `alltrack.png` is a plate
+carree map (30E to 390E, 80S to 80N) with an HTML image map: one
+16 px `<area>` square per cyclone, linking to `N.html`. `fsu_cyclones()`
+turns the center of each square into a position with a fixed
+calibration on the map's axis labels and ticks, set so that cyclone 1 of
+26092412 lands at 15.2N 156.3W (about 0.35 degree longitude and 0.33
+degree latitude per pixel); the colored frame of `alltrack.png` is
+checked and the calibration rescaled if the frame has moved. Each of our
+storms is matched to the nearest FSU cyclone within 400 km of our first
+fix, whose `N.phase1.zoom.png`, `N.phase2.zoom.png` and `N.track.png` are
+downloaded; `compare.png` puts FSU's two diagrams side by side (1024 px
+each) above our `phase.png` scaled to 2048 px. The requests to FSU carry
+a User-Agent naming this repository, are spaced at least one second
+apart, and files already downloaded are reused (the index and map are
+cached under `out/cache/<cycle>/fsu/`). Limits:
+
+- An existing cyclone's square sits at its analysis position, a future
+  cyclone's where FSU first finds it (LABRADOR of 2026092412 matches #48,
+  first found at +6 h); a storm far from both, or one FSU does not
+  track (MSLP 1018 hPa or more, under 24 h), gets no match.
+- Two lows within 400 km of each other can be confused; the match takes
+  the nearest square, and the pixel positions are good to about 40 km.
+- If FSU changes the page (no `<area>` elements, or a different map),
+  the match is skipped with a message; the run never fails for FSU, and
+  a later rerun of the cycle retries it.
+- The FSU page for a run appears in the evening; a run made before that
+  (a backfill before 20 UTC, for instance) collects without FSU and
+  picks it up on a rerun.
+- FSU's diagrams remain theirs; they are kept only for comparison, and
+  the differences listed in "Comparing with the FSU pages" above apply.
+
 ## Lows table
 
 `lows_<region>.csv` has one row per connected blob (8-connected) of the

@@ -1,0 +1,35 @@
+{
+  "about": "Storms followed by collect_daily.py. Each seed (lat, lon; west negative) is valid at forecast hour fhr0 of cycle (YYYYMMDDHH); fhr1, when set, is the last hour to track in that cycle. The daily job moves every active seed to its 0 h position of the newest processed cycle. See README.md, Daily collection.",
+  "storms": [
+    {
+      "name": "EPAC",
+      "lat": 14.96,
+      "lon": -156.47,
+      "cycle": "2026092412",
+      "fhr0": 0,
+      "fhr1": null,
+      "notes": "Eastern Pacific tropical cyclone; FSU cyclone 1 of the 2026092412 run.",
+      "active": true
+    },
+    {
+      "name": "GREENLAND",
+      "lat": 60.6,
+      "lon": -22.75,
+      "cycle": "2026092412",
+      "fhr0": 0,
+      "fhr1": null,
+      "notes": "Warm seclusion southwest of Iceland; may dissipate within days.",
+      "active": true
+    },
+    {
+      "name": "LABRADOR",
+      "lat": 61.52,
+      "lon": -63.12,
+      "cycle": "2026092412",
+      "fhr0": 0,
+      "fhr1": 96,
+      "notes": "Cold-core low over Labrador; crosses Iceland's terrain after 96 h, where the tracker would hand over to another low.",
+      "active": true
+    }
+  ]
+}
