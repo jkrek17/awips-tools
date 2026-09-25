@@ -46,18 +46,69 @@ function rampColor(f, v) {
   return `rgb(${ch(16)},${ch(8)},${ch(0)})`;
 }
 
-// A ramp with a tick at every colormap stop and labels at chosen stops.
-// The stops' own alpha is kept, so the transparent band reads as the panel.
+// The fade band of the colormaps since the WebP fields (index.json
+// raster.fade, a fraction of the half range): clear within 0.3 of it of
+// zero, full color from its edge. Null for older exports, whose stops carry
+// their own transparent band.
+function fadeBand(f) {
+  const fade = +S.index?.raster?.fade;
+  if (!(fade > 0)) return null;
+  const { range: [lo, hi] } = stopsOf(f);
+  const half = (hi - lo) / 2;
+  return { clear: 0.3 * fade * half, full: fade * half };
+}
+
+// The ramp as drawn: every stop with its own alpha, and, where the fade
+// band applies, its clear and full-color edges added, since the sixteen
+// stops straddle zero and a gradient between them would tint the band.
+function drawnStops(f) {
+  const { stops } = stopsOf(f);
+  if (!stops) return null;
+  const out = stops.map(([v, hex, a]) => [v, rgba(hex, a ?? 1)]);
+  const band = fadeBand(f);
+  if (!band) return out;
+  const side = (sgn) => stops.filter(([v]) => v * sgn > 0).sort((x, y) => Math.abs(x[0]) - Math.abs(y[0]));
+  for (const sgn of [-1, 1]) {
+    const inner = side(sgn)[0];
+    if (!inner) continue;
+    const full = sgn * band.full;
+    const c = rampColor(f, full).replace(/^rgb\((.*)\)$/, 'rgba($1,1)');
+    out.push([full, c], [sgn * band.clear, rgba(inner[1], 0)]);
+  }
+  const keep = out.filter(([v]) => Math.abs(v) >= band.clear - 1e-9);
+  return keep.sort((x, y) => x[0] - y[0]);
+}
+
+// A ramp with a tick at every colormap stop, a longer one at zero, and
+// labels at the given values. The stops' own alpha is kept over the panel
+// color, so the clear band at zero reads as the map does.
 function rampHTML(f, labels) {
   const { stops, range: [lo, hi] } = stopsOf(f);
   if (!stops) return '';
   const pct = (v) => (((v - lo) / (hi - lo)) * 100).toFixed(2);
-  const grad = stops.map(([v, hex, a]) => `${rgba(hex, a ?? 1)} ${pct(v)}%`).join(', ');
-  const ticks = stops.map(([v]) => `<i style="left:${pct(v)}%"></i>`).join('');
-  const lab = labels.map((v) => `<span style="left:${pct(v)}%">${fmt(v, Number.isInteger(v) ? 0 : 1)}</span>`).join('');
+  const grad = drawnStops(f).map(([v, c]) => `${c} ${pct(v)}%`).join(', ');
+  const ticks = stops.map(([v]) => `<i style="left:${pct(v)}%"></i>`).join('') +
+    (lo < 0 && hi > 0 ? `<i class="z" style="left:${pct(0)}%"></i>` : '');
+  const end = (v) => (v <= lo ? ' class="lo"' : v >= hi ? ' class="hi"' : '');  // the end values sit inside the bar's ends
+  const lab = labels.map((v) => `<span${end(v)} style="left:${pct(v)}%">${fmt(v, Number.isInteger(v) ? 0 : 1)}</span>`).join('');
   const onset = f === 'hb' ? `<b class="onset" style="left:${pct(10)}%"></b>` : '';
   return `<span class="ramp"><span class="ramp-fill" style="background:linear-gradient(to right, ${grad})"></span>${onset}</span>` +
     `<span class="ramp-ticks">${ticks}</span><span class="ramp-labels">${lab}</span>`;
+}
+
+// Labels on the ramps: in the bar, the ends, zero and the reading
+// thresholds; in the key, even steps.
+const RAMP_LABELS = {
+  short: { hb: [-40, 0, 10, 40], hvtl: [-300, -100, 0, 100, 300], hvtu: [-300, -100, 0, 100, 300] },
+  full: { hb: [-40, -30, -20, -10, 0, 10, 20, 30, 40], hvtl: [-300, -200, -100, 0, 100, 200, 300], hvtu: [-300, -200, -100, 0, 100, 200, 300] },
+};
+
+// The clear band in words, from the fade band or the older exports' own.
+function clearText(f) {
+  const band = fadeBand(f);
+  if (!band) return CLEAR_OLD[f];
+  const m = (v) => fmt(v, Number.isInteger(+v.toFixed(1)) ? 0 : 1, 'm');
+  return `Clear within ${m(band.clear)} of zero, full color from ${m(band.full)}.`;
 }
 
 function renderLegend() {
@@ -66,7 +117,7 @@ function renderLegend() {
   const units = S.legend?.units?.[f] || 'm';
   const cmap = /\((CPS_[A-Za-z]+)\)/.exec(S.legend?.labels?.[f] || '')?.[1];
   $('key-title').innerHTML = TITLES[f];
-  $('key-help').textContent = HELP[f];
+  $('key-help').textContent = f === 'class' ? HELP[f] : `${HELP[f]} ${clearText(f)}`;
   if (f === 'class') {
     const list = [...S.classes.values()];
     inline.innerHTML = `<span class="classes-inline">${list.map((c) =>
@@ -75,20 +126,14 @@ function renderLegend() {
       `<li><i style="--c:${c.hex}"></i><span class="code">${c.code}</span>${esc(c.name)}</li>`).join('')}</ul>`;
     return;
   }
-  const { stops, range: [lo, hi] } = stopsOf(f);
-  // Inline: the ends, the first fully opaque stops and zero; the key: every other stop.
-  const solid = stops?.find(([v, , a]) => v > 0 && (a ?? 1) >= 1)?.[0];
-  const short = f === 'hb' ? [lo, 0, 10, hi] : [lo, solid ? -solid : -100, 0, solid || 100, hi];
-  // The key labels symmetric pairs of real stops (every other stop if the colormap differs).
-  const want = f === 'hb' ? [-40, -24, -8, 8, 24, 40] : [-300, -180, -100, -20, 20, 100, 180, 300];
-  const real = want.filter((w) => stops?.some(([v]) => Math.abs(v - w) < 0.01));
-  const full = real.length === want.length ? real
-    : (stops || []).filter((_, k) => k % 2 === 0).map(([v]) => +v.toFixed(1));
+  const { range: [lo, hi] } = stopsOf(f);
+  const dim = +S.index?.raster?.mask_dim;
+  const fade = fadeOn() ? `<p class="ramp-note">Faded to ${Math.round((dim > 0 ? dim : 0.35) * 100)}% beyond about 300&nbsp;km from the lows (Layers).</p>` : '';
   inline.innerHTML = `<span class="legend-field"><span class="legend-name">${termHTML(f)}</span>` +
-    `<span class="ramp-wrap">${rampHTML(f, short)}</span></span><span class="ramp-unit">${esc(units)}</span>`;
-  $('key-scale').innerHTML = `<div class="ramp-wrap big">${rampHTML(f, full)}</div>
+    `<span class="ramp-wrap">${rampHTML(f, RAMP_LABELS.short[f])}</span></span><span class="ramp-unit">${esc(units)}</span>`;
+  $('key-scale').innerHTML = `<div class="ramp-wrap big">${rampHTML(f, RAMP_LABELS.full[f])}</div>
     <p class="ramp-ends"><span>${MINUS} ${ENDS[f][0]}</span><span>${ENDS[f][1]} +</span></p>
-    <p class="ramp-note">${fmt(lo)} to ${fmt(hi, 0, '', true)} ${esc(units)}${cmap ? ` on ${cmap}` : ''}; a tick at every colormap stop${f === 'hb' ? '; the bar marks Hart\'s 10 m onset line' : ''}.</p>`;
+    <p class="ramp-note">${fmt(lo)} to ${fmt(hi, 0, '', true)} ${esc(units)}${cmap ? ` on ${cmap}` : ''}; a tick at every colormap stop${f === 'hb' ? '; the bar marks Hart\'s 10 m onset line' : ''}.</p>${fade}`;
 }
 
 /* ---------- tooltip ---------- */

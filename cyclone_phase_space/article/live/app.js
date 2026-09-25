@@ -24,7 +24,10 @@ const STALE_H = 12;              // hours before the data is called stale
 const OFFSETS = [-360, 0, 360];  // world copies, so overlays wrap the dateline
 const RASTERS = ['hb', 'hvtl', 'hvtu'];
 const FIELDS = ['class', ...RASTERS];
-const LAYER_KEYS = { contours: 'c', circles: 'h', footprint: 'p', tracks: 'k', terrain: 'g' };
+const LAYER_KEYS = { contours: 'c', circles: 'h', footprint: 'p', tracks: 'k', terrain: 'g', fade: 'x' };
+// Letters in the hash's l= list name the layers that are on, except the
+// fade, whose letter means off, so links written before it existed keep it on.
+const INVERTED_KEYS = new Set(['fade']);
 
 // Display names for the class codes; hex always comes from legend.json.
 const CLASS_NAMES = [
@@ -56,12 +59,18 @@ const ENDS = {
   hvtl: ['cold core', 'warm core'],
   hvtu: ['cold aloft', 'warm aloft'],
 };
-// Reading notes per field, from the user guide.
+// Reading notes per field, from the user guide; the clear band at zero is
+// added from the export (card.js, clearText), else CLEAR_OLD.
 const HELP = {
   class: 'Read the class at the center dot, never the footprint edge. A transition runs red, yellow, green, blue (codes 0, 2, 3, 4).',
-  hb: 'Magenta: warm air to the right of the deep-layer flow, the frontal geometry; teal: warm air on the left. More than 10 m at a low center is asymmetric (Hart\'s onset line, marked). Transparent within 5 m of zero.',
-  hvtl: 'Red is a warm lower core, blue a cold one. A hurricane reads +100 to +300 m; a center falling below 0 marks transition complete. Transparent within about 37 m of zero.',
-  hvtu: 'Red is a warm upper core, blue is cold aloft. The upper core usually turns blue first as a transition gets under way. Transparent within about 37 m of zero.',
+  hb: 'Magenta: warm air to the right of the deep-layer flow, the frontal geometry; teal: warm air on the left. More than 10 m at a low center is asymmetric (Hart\'s onset line, marked).',
+  hvtl: 'Red is a warm lower core, blue a cold one. A hurricane reads +100 to +300 m; a center falling below 0 marks transition complete.',
+  hvtu: 'Red is a warm upper core, blue is cold aloft. The upper core usually turns blue first as a transition gets under way.',
+};
+const CLEAR_OLD = {
+  hb: 'Transparent within 5 m of zero.',
+  hvtl: 'Transparent within about 37 m of zero.',
+  hvtu: 'Transparent within about 37 m of zero.',
 };
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -76,8 +85,8 @@ const S = {
   base: null, index: null, legend: null, classes: new Map(),
   i: 0, field: 'class', playing: false, timer: 0, token: 0,
   speed: 'normal', loop: true, basemap: 'plain', bust: '',
-  opacity: { hb: 0.7, hvtl: 0.8, hvtu: 0.8 },
-  layers: { contours: true, circles: true, footprint: false, tracks: true, terrain: false },
+  opacity: { hb: 0.7, hvtl: 0.7, hvtu: 0.7 },  // the ramps are opaque from 10% of the half range
+  layers: { contours: true, circles: true, footprint: false, tracks: true, terrain: false, fade: true },
   centers: [], offs: OFFSETS, sel: null, follow: null, perf: [], cstep: null, cevery: null, ready: false,
 };
 
@@ -125,11 +134,33 @@ function getJSON(url) {
 }
 
 // Preloaded raster images, evicted by frame beyond MAX_RASTER_FRAMES.
+// Each entry is { h, p, drop }: p resolves to the URL to display, and
+// drop() frees what the entry holds when its frame is evicted.
 const imgCache = new Map();
 const imgFrames = [];
-function loadImg(url, h) {
-  let e = imgCache.get(url);
+function cached(key, h, make) {
+  let e = imgCache.get(key);
   if (!e) {
+    e = make();
+    e.h = h;
+    imgCache.set(key, e);
+    const mine = e;
+    e.p.catch(() => { if (imgCache.get(key) === mine) imgCache.delete(key); });
+  }
+  const k = imgFrames.indexOf(h);
+  if (k >= 0) imgFrames.splice(k, 1);
+  imgFrames.push(h);
+  while (imgFrames.length > MAX_RASTER_FRAMES) {
+    const old = imgFrames.shift();
+    for (const [u, v] of imgCache) {
+      if (v.h === old) { imgCache.delete(u); v.drop?.(); }
+    }
+  }
+  return e.p;
+}
+
+function loadImg(url, h) {
+  return cached(url, h, () => {
     const im = new Image();
     im.decoding = 'async';
     const p = new Promise((res, rej) => {
@@ -137,18 +168,94 @@ function loadImg(url, h) {
       im.onerror = () => rej(new Error(`image ${url}`));
     });
     im.src = url;
-    e = { h, im, p };
-    imgCache.set(url, e);
-    p.catch(() => imgCache.delete(url));
+    return { im, p };
+  });
+}
+
+/* The fade: a field's alpha multiplied by the frame's mask.png (1 inside
+   the closed-low footprints, raster.mask_dim far from them). The field is
+   drawn on a canvas at its own size, the mask scaled over it with
+   "destination-in", and the result encoded to a blob URL that the overlays
+   load like any image. Decoding is createImageBitmap's (off the main
+   thread), the canvas an OffscreenCanvas where there is one, the encoding
+   asynchronous; each (frame, field) is composited once and cached with
+   the plain images, its blob URL revoked when the frame is evicted. */
+const fadeOn = () => S.layers.fade && !!S.index?.raster?.mask;
+
+async function fetchBlob(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`${r.status} ${url}`);
+  return r.blob();
+}
+
+async function decodeBlob(blob) {
+  if (typeof createImageBitmap === 'function') return createImageBitmap(blob);
+  const u = URL.createObjectURL(blob);
+  const im = new Image();
+  im.src = u;
+  try { await im.decode(); } finally { URL.revokeObjectURL(u); }
+  return im;
+}
+
+function newCanvas(w, h) {
+  if (typeof OffscreenCanvas === 'function') {
+    const c = new OffscreenCanvas(w, h);
+    if (c.getContext('2d')) return c;
   }
-  const k = imgFrames.indexOf(h);
-  if (k >= 0) imgFrames.splice(k, 1);
-  imgFrames.push(h);
-  while (imgFrames.length > MAX_RASTER_FRAMES) {
-    const old = imgFrames.shift();
-    for (const [u, v] of imgCache) if (v.h === old) imgCache.delete(u);
-  }
-  return e.p;
+  return Object.assign(document.createElement('canvas'), { width: w, height: h });
+}
+
+// PNG: lossless and several times faster to encode than WebP (about 0.1 s
+// against 0.7 s for a field); the blob stays in memory, never on the wire.
+function canvasBlob(c) {
+  if (c.convertToBlob) return c.convertToBlob({ type: 'image/png' });
+  return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('canvas encode'))), 'image/png'));
+}
+
+// The mask's bytes, once per frame (a small PNG, decoded per use).
+function maskBlob(h) {
+  const url = fileUrl(h, S.index.raster.mask);
+  return cached(url, h, () => ({ p: fetchBlob(url) }));
+}
+
+function fadedImg(h, f) {
+  const url = rasterUrl(h, f);
+  return cached(`${url}#fade`, h, () => {
+    const e = { url: null, im: null, gone: false };
+    e.drop = () => {
+      e.gone = true;
+      if (e.url && e.url !== RS.url) URL.revokeObjectURL(e.url);
+    };
+    e.p = (async () => {
+      const [field, mask] = await Promise.all([fetchBlob(url).then(decodeBlob), maskBlob(h).then(decodeBlob)]);
+      const w = field.width;
+      const ht = field.height;
+      const c = newCanvas(w, ht);
+      const ctx = c.getContext('2d');
+      ctx.drawImage(field, 0, 0, w, ht);
+      ctx.globalCompositeOperation = 'destination-in';
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(mask, 0, 0, w, ht);
+      field.close?.();
+      mask.close?.();
+      const blob = await canvasBlob(c);
+      e.url = URL.createObjectURL(blob);
+      if (e.gone) { URL.revokeObjectURL(e.url); throw new Error('evicted'); }
+      // Decode it now, as the plain images are, so the swap does not wait.
+      e.im = new Image();
+      e.im.src = e.url;
+      await e.im.decode().catch(() => {});
+      return e.url;
+    })();
+    return e;
+  });
+}
+
+// The image to display for a field at a frame: faded when the option is on
+// and the export has a mask, else the plain file (also if compositing fails).
+function fieldImg(h, f) {
+  if (!fadeOn()) return loadImg(rasterUrl(h, f), h);
+  return fadedImg(h, f).catch(() => loadImg(rasterUrl(h, f), h));
 }
 
 function frameDir(h) {
@@ -159,7 +266,7 @@ function frameDir(h) {
   return new URL(dir, S.base).href;
 }
 const fileUrl = (h, name) => frameDir(h) + name + S.bust;
-const rasterUrl = (h, f) => fileUrl(h, `${f}.png`);
+const rasterUrl = (h, f) => fileUrl(h, `${f}.${S.index.raster?.format || 'png'}`);  // the class raster is not loaded
 const lowsUrl = (h) => fileUrl(h, 'lows.geojson');
 
 function km(lat1, lon1, lat2, lon2) {
@@ -541,7 +648,7 @@ async function show(i) {
   const h = hours[S.i];
   syncTime();
   const tok = ++S.token;
-  const raster = S.field === 'class' ? Promise.resolve(null) : loadImg(rasterUrl(h, S.field), h);
+  const raster = S.field === 'class' ? Promise.resolve(null) : fieldImg(h, S.field);
   const [lows, mslp, img] = await Promise.allSettled(
     [getJSON(lowsUrl(h)), getJSON(fileUrl(h, 'mslp.geojson')), raster]);
   if (tok !== S.token) return true;  // a newer frame was asked for
@@ -579,7 +686,7 @@ function prefetch(i) {
   const quiet = (p) => p.catch(() => {});
   quiet(getJSON(lowsUrl(h)));
   quiet(getJSON(fileUrl(h, 'mslp.geojson')));
-  if (S.field !== 'class') quiet(loadImg(rasterUrl(h, S.field), h));
+  if (S.field !== 'class') quiet(fieldImg(h, S.field));
 }
 
 /* ---------- timeline ---------- */
@@ -682,8 +789,18 @@ function setField(f, redraw = true) {
     $('opacity-out').textContent = S.opacity[f].toFixed(2);
   }
   document.body.classList.toggle('raster-on', raster);
+  syncFadeBox();
   renderLegend();
   if (redraw) show(S.i);
+}
+
+// The fade option applies to the three fields, and only when the export has a mask.
+function syncFadeBox() {
+  const box = document.querySelector('[data-layer="fade"]');
+  if (!box) return;
+  const has = !S.index || !!S.index.raster?.mask;
+  box.disabled = S.field === 'class' || !has;
+  box.closest('label').title = has ? '' : 'This cycle was exported without the fade mask';
 }
 
 function setLayer(k, on) {
@@ -696,6 +813,7 @@ function setLayer(k, on) {
   if (k === 'footprint') drawFootprints(S.lows);
   if (k === 'circles' || k === 'terrain') { drawLows(); stormsFrame(S.i); }
   if (k === 'tracks') drawTracks();
+  if (k === 'fade') { renderLegend(); if (S.ready && S.field !== 'class') show(S.i); }
   writeHash();
 }
 
@@ -740,7 +858,7 @@ function writeHash() {
 
 function viewHash() {
   const c = map.getCenter().wrap();
-  const l = Object.entries(LAYER_KEYS).filter(([k]) => S.layers[k]).map(([, v]) => v).join('');
+  const l = Object.entries(LAYER_KEYS).filter(([k]) => (INVERTED_KEYS.has(k) ? !S.layers[k] : S.layers[k])).map(([, v]) => v).join('');
   return `#t=${S.index.hours[S.i]}&f=${S.field}&b=${S.basemap}&v=${c.lat.toFixed(2)},${c.lng.toFixed(2)},${map.getZoom()}` +
     `&l=${l || '-'}${S.follow ? `&s=${encodeURIComponent(followShare())}` : ''}`;
 }
@@ -992,7 +1110,7 @@ async function boot() {
   const want = readHash();
   if (want.view) map.setView([want.view[0], want.view[1]], want.view[2], { animate: false });
   if (want.layers) {
-    for (const [k, v] of Object.entries(LAYER_KEYS)) setLayer(k, want.layers.includes(v));
+    for (const [k, v] of Object.entries(LAYER_KEYS)) setLayer(k, INVERTED_KEYS.has(k) ? !want.layers.includes(v) : want.layers.includes(v));
   }
   const hi = ix.hours.indexOf(want.hour);
   S.i = hi >= 0 ? hi : 0;

@@ -16,7 +16,9 @@ load directly:
     DIR/history.json              the cycles exported to DIR
     DIR/frames/fHHH/lows.geojson  one polygon per closed low (HCPSclass blob) and its center
     DIR/frames/fHHH/mslp.geojson  MSLP every 4 hPa
-    DIR/frames/fHHH/{hb,hvtl,hvtu,class}.png   Web Mercator rasters, lon -180..180, lat -85..85
+    DIR/frames/fHHH/{hb,hvtl,hvtu}.webp        Web Mercator rasters, lon -180..180, lat -85..85
+    DIR/frames/fHHH/class.png     the class raster, same geometry
+    DIR/frames/fHHH/mask.png      alpha weight of the fields: 1 near the closed lows, MASK_DIM far away
 
 Without --cycle the newest cycle whose f198 is posted (NOMADS, else the AWS
 bucket) is used, probing back two days in 6 h steps. Without --out the files
@@ -66,12 +68,39 @@ TRACK_MATCH_KM = 300.0  # a collected storm and a track are the same low when th
 # Rasters: Web Mercator (EPSG:3857) image covering lon -180..180, lat -85..85.
 LAT_MAX = 85.0
 WIDTH = 2048
-RASTERS = {  # key -> (colormap file, range, units, label)
-    "hb": ("CPS_Asymmetry", (-40.0, 40.0), "m", "HB, storm-relative 900-600 hPa thickness asymmetry"),
-    "hvtl": ("CPS_CoreDiverging", (-300.0, 300.0), "m", "HVTL, lower thermal wind 925-700 hPa"),
-    "hvtu": ("CPS_CoreDiverging", (-300.0, 300.0), "m", "HVTU, upper thermal wind 500-300 hPa"),
+RASTERS = {  # key -> (web ramp, range, units, label)
+    "hb": ("asymmetry", (-40.0, 40.0), "m", "HB, storm-relative 900-600 hPa thickness asymmetry"),
+    "hvtl": ("core", (-300.0, 300.0), "m", "HVTL, lower thermal wind 925-700 hPa"),
+    "hvtu": ("core", (-300.0, 300.0), "m", "HVTU, upper thermal wind 500-300 hPa"),
 }
 LEGEND_STOPS = 16
+# Web ramps: continuous diverging colors for a dark basemap, RAMP_N entries
+# from the most negative to the most positive value, anchors from zero
+# outward on each side. Values within RAMP_FADE of the half range fade to
+# transparent at zero (alpha 0 inside 0.3 of the fade, rising to 1 at its
+# edge), so the cold/warm boundary shows the basemap instead of a hard rim.
+# (The CAVE colormaps in D2D/colormaps stay as they are for CAVE.)
+RAMP_N = 255  # palette entries; entry 255 is the transparent one for NaN
+RAMP_FADE = 0.10
+WEB_RAMPS = {  # name -> (negative anchors, positive anchors), each from zero outward
+    "core": (["#7fb4ff", "#3d7fe0", "#1d47a8", "#0e1f66"], ["#ffb27a", "#f07a3a", "#c8341f", "#6e0f12"]),
+    "asymmetry": (["#7fe0dc", "#2aa8a4", "#0b6b6a"], ["#e9a4e6", "#c45cc1", "#7c1a85", "#3d0a4a"]),
+}
+# Fade mask: the fields are Hart's parameters evaluated at every grid point,
+# so away from a low they measure the ambient thermal ridge and trough. The
+# page multiplies each field's alpha by mask.png: 1 inside the closed-low
+# footprints (HCPSclass blobs), easing to MASK_DIM about MASK_CELLS grid
+# cells (300 km at 0.25 degrees) outside them.
+MASK_DIM = 0.35
+MASK_CELLS = 12
+MASK_WIDTH = 1024
+# The three continuous fields go out as lossy WebP (alpha kept exact):
+# bilinear sampling through a 255-step ramp makes every pixel distinct, and
+# as an indexed PNG that is about 1 MB per field; WebP at this quality is
+# about 300 KB with no visible loss on these smooth fields. The class
+# raster (7 colors) and the mask stay PNG.
+FIELD_FORMAT = "webp"
+WEBP_QUALITY = 80
 
 # Vectors.
 BLOB_TOL_DEG = 0.25  # blob polygon simplification
@@ -146,11 +175,32 @@ def default_cycle(now: dt.datetime | None = None) -> str:
 
 
 # ------------------------------------------------------------------ colormaps
+def hex_rgb(h: str) -> np.ndarray:
+    return np.array([int(h[k:k + 2], 16) for k in (1, 3, 5)], dtype=float)
+
+
+def ramp_rgba(name: str, n: int = RAMP_N, fade: float = RAMP_FADE) -> np.ndarray:
+    """The web ramp as rgba uint8 (n, 4): entry k stands for x = -1 + 2k/(n-1)."""
+    neg, pos = WEB_RAMPS[name]
+    x = -1.0 + 2.0 * np.arange(n) / (n - 1)
+    out = np.zeros((n, 4))
+    for side, anchors in ((-1, neg), (1, pos)):
+        sel = (x < 0) if side < 0 else (x >= 0)
+        t = np.abs(x[sel]) * (len(anchors) - 1)  # position along the anchors, 0 at zero
+        k0 = np.minimum(np.floor(t).astype(int), len(anchors) - 2)
+        w = (t - k0)[:, None]
+        cols = np.array([hex_rgb(a) for a in anchors])
+        out[sel, :3] = cols[k0] * (1 - w) + cols[k0 + 1] * w
+    a = np.abs(x)
+    out[:, 3] = np.where(a < fade, np.clip((a - 0.3 * fade) / (0.7 * fade), 0, 1), 1.0) * 255
+    return np.round(out).astype(np.uint8)
+
+
 def palettes() -> dict:
     """Per raster key: (rgba uint8 (N, 4), lo, hi); 'class' has the 7 class colors."""
     out = {}
     for key, (name, (lo, hi), _, _) in RASTERS.items():
-        out[key] = (np.round(g.load_cmap_rgba(g.CMAP_DIR / f"{name}.cmap") * 255).astype(np.uint8), lo, hi)
+        out[key] = (ramp_rgba(name), lo, hi)
     out["class"] = (np.round(g.load_cmap_rgba(g.CMAP_DIR / "CPS_HartClass.cmap") * 255).astype(np.uint8), -0.5, 6.5)
     return out
 
@@ -164,7 +214,7 @@ def cmap_index(v: np.ndarray, n: int, lo: float, hi: float) -> np.ndarray:
     Normalize(lo, hi) picks it (ends clipped); n (the transparent entry) for NaN."""
     with np.errstate(invalid="ignore"):
         k = np.floor((v - lo) / (hi - lo) * n)
-    k = np.clip(np.nan_to_num(k, nan=n), 0, n)
+    k = np.clip(np.nan_to_num(k, nan=0), 0, n - 1)  # v == hi (and beyond) takes the last entry
     k[~np.isfinite(v)] = n
     return k.astype(np.uint8)
 
@@ -179,7 +229,7 @@ def legend(pal: dict) -> dict:
         stops[key] = [[round(float(v), 2), hexcol(rgba[i]), round(rgba[i][3] / 255.0, 3)] for v, i in zip(vals, idx)]
         ranges[key] = [lo, hi]
         units[key] = unit
-        labels[key] = f"{label} ({cmap})"
+        labels[key] = label
     cls = pal["class"][0]
     return {
         "classes": [{"code": k, "name": tc.CLASS_SHORT[k], "hex": hexcol(cls[k])} for k in range(len(cls))],
@@ -199,11 +249,13 @@ def mercator_height(width: int = WIDTH, lat_max: float = LAT_MAX) -> int:
 
 class Sampler:
     """Maps the 0.25 degree lat/lon grid (rows northward, lon from -180) onto
-    the Web Mercator image by nearest grid point: the latitude of each output
-    row from the inverse of y = ln(tan(pi/4 + lat/2)), rows spaced evenly in
-    y from lat_max at the top down to -lat_max, columns evenly in longitude
-    from -180, wrapping at the seam. (Bilinear sampling of the continuous
-    fields looked no better at this size and made the PNGs about 70% larger.)"""
+    the Web Mercator image: the latitude of each output row from the inverse
+    of y = ln(tan(pi/4 + lat/2)), rows spaced evenly in y from lat_max at the
+    top down to -lat_max, columns evenly in longitude from -180, wrapping at
+    the seam. `nearest` picks the nearest grid point (the class field);
+    calling the sampler interpolates bilinearly between the four surrounding
+    points, weighting only the finite ones, so a continuous field shows no
+    grid cells when the browser zooms in."""
 
     def __init__(self, lat: np.ndarray, lon: np.ndarray, width: int = WIDTH, lat_max: float = LAT_MAX):
         self.width, self.height = width, mercator_height(width, lat_max)
@@ -215,9 +267,31 @@ class Sampler:
         fj = (lon_out - lon[0]) / (lon[1] - lon[0])
         self.ir = np.clip(np.rint(fi).astype(int), 0, lat.size - 1)
         self.jr = np.rint(fj).astype(int) % lon.size
+        fi = np.clip(fi, 0, lat.size - 1)
+        self.i0 = np.minimum(np.floor(fi).astype(int), lat.size - 2)
+        self.wi = (fi - self.i0)[:, None]
+        self.j0 = np.floor(fj).astype(int) % lon.size
+        self.wj = (fj - np.floor(fj))[None, :]
+        self.j1 = (self.j0 + 1) % lon.size
+
+    def nearest(self, a: np.ndarray) -> np.ndarray:
+        return np.asarray(a, dtype=float)[np.ix_(self.ir, self.jr)]
 
     def __call__(self, a: np.ndarray) -> np.ndarray:
-        return np.asarray(a, dtype=float)[np.ix_(self.ir, self.jr)]
+        a = np.asarray(a, dtype=float)
+        num = np.zeros((self.height, self.width))
+        den = np.zeros_like(num)
+        for rows, wr in ((self.i0, 1 - self.wi), (self.i0 + 1, self.wi)):
+            for cols, wc in ((self.j0, 1 - self.wj), (self.j1, self.wj)):
+                v = a[np.ix_(rows, cols)]
+                ok = np.isfinite(v)
+                w = wr * wc * ok
+                num += np.where(ok, v, 0.0) * w
+                den += w
+        with np.errstate(invalid="ignore", divide="ignore"):
+            out = num / den
+        out[den <= 0] = np.nan
+        return out
 
 
 def save_palette_png(idx: np.ndarray, rgba: np.ndarray, path: Path) -> int:
@@ -229,14 +303,53 @@ def save_palette_png(idx: np.ndarray, rgba: np.ndarray, path: Path) -> int:
     return path.stat().st_size
 
 
-def write_rasters(p: dict, smp: Sampler, pal: dict, fdir: Path) -> dict:
+def box_mean(a: np.ndarray, r: int) -> np.ndarray:
+    """Mean over a (2r+1) square window, edges clamped in latitude and wrapped in longitude."""
+    pad = np.pad(a, ((r, r), (0, 0)), mode="edge")
+    pad = np.concatenate([pad[:, -r:], pad, pad[:, :r]], axis=1)
+    c = np.cumsum(np.cumsum(pad, axis=0), axis=1)
+    c = np.pad(c, ((1, 0), (1, 0)))
+    n = 2 * r + 1
+    return (c[n:, n:] - c[:-n, n:] - c[n:, :-n] + c[:-n, :-n]) / (n * n)
+
+
+def fade_mask(cls: np.ndarray, dim: float = MASK_DIM, cells: int = MASK_CELLS) -> np.ndarray:
+    """Alpha weight on the grid: 1 inside the closed-low footprints and just
+    outside them, easing smoothly to dim by about `cells` grid cells out."""
+    inside = np.isfinite(np.asarray(cls, dtype=float)).astype(float)
+    r = max(1, cells // 2)
+    # Two box means make a smooth bell of the footprint; the gain of 3 keeps
+    # it at 1 up to the footprint's edge and a little beyond (about 5 cells),
+    # then it falls to 0 by 2r cells, with no step at the edge.
+    ease = np.clip(box_mean(box_mean(inside, r), r) * 3.0, 0.0, 1.0)
+    return dim + (1.0 - dim) * ease
+
+
+def save_mask_png(w: np.ndarray, path: Path) -> int:
+    """Grayscale-with-alpha PNG whose alpha is the weight (0..1); the gray is 0."""
+    a = np.clip(np.nan_to_num(w, nan=0.0) * 255, 0, 255).astype(np.uint8)
+    la = np.dstack([np.zeros_like(a), a])
+    Image.fromarray(la, mode="LA").save(path, optimize=True)
+    return path.stat().st_size
+
+
+def save_field_webp(idx: np.ndarray, rgba: np.ndarray, path: Path) -> int:
+    """Lossy WebP of the colormapped field; entry N (NaN) is transparent."""
+    pal = np.vstack([rgba, [[0, 0, 0, 0]]]).astype(np.uint8)
+    Image.fromarray(pal[idx], mode="RGBA").save(path, "WEBP", quality=WEBP_QUALITY, method=4)
+    return path.stat().st_size
+
+
+def write_rasters(p: dict, smp: Sampler, pal: dict, fdir: Path, mask_smp: "Sampler | None" = None) -> dict:
     sizes = {}
     for key in RASTERS:
         rgba, lo, hi = pal[key]
         v = smp(p[key])
-        sizes[key] = save_palette_png(cmap_index(v, len(rgba), lo, hi), rgba, fdir / f"{key}.png")
+        sizes[key] = save_field_webp(cmap_index(v, len(rgba), lo, hi), rgba, fdir / f"{key}.{FIELD_FORMAT}")
+    if mask_smp is not None:
+        sizes["mask"] = save_mask_png(mask_smp(fade_mask(p["cls"])), fdir / "mask.png")
     rgba = pal["class"][0]
-    c = smp(p["cls"])
+    c = smp.nearest(p["cls"])
     k = np.where(np.isfinite(c), np.clip(np.rint(np.nan_to_num(c)), 0, len(rgba) - 1), len(rgba)).astype(np.uint8)
     sizes["class"] = save_palette_png(k, rgba, fdir / "class.png")
     return sizes
@@ -408,7 +521,7 @@ def export_frame(cycle: str, fhr: int, out: Path, cache: Path) -> dict:
     sizes["mslp"] = len(s)
     t3 = time.time()
     smp = Sampler(f["lat"], f["lon"])
-    sizes.update(write_rasters(p, smp, palettes(), fdir))
+    sizes.update(write_rasters(p, smp, palettes(), fdir, Sampler(f["lat"], f["lon"], MASK_WIDTH)))
     t4 = time.time()
     n = sum(1 for ft in lows if ft["properties"]["kind"] == "center")
     return dict(fhr=fhr, valid=iso(f["valid"]), lows=n, mslp_tol=tol, sizes=sizes, height=smp.height,
@@ -621,7 +734,7 @@ def main(argv=None) -> int:
             log(f"  f{h:03d}: {time.time() - t0:5.0f} s  fetch+decode {r['t_fetch']:.1f} s, compute "
                 f"{r['t_compute']:.1f} s, geojson {r['t_vec']:.1f} s, png {r['t_png']:.1f} s; {r['lows']} lows; "
                 f"lows {sz['lows'] / 1e3:.0f} KB, mslp {sz['mslp'] / 1e3:.0f} KB (tol {r['mslp_tol']}), "
-                + ", ".join(f"{k} {sz[k] / 1e3:.0f} KB" for k in ("hb", "hvtl", "hvtu", "class")))
+                + ", ".join(f"{k} {sz[k] / 1e3:.0f} KB" for k in ("hb", "hvtl", "hvtu", "class", "mask")))
     if not done:
         log("no frame could be exported")
         return 1
@@ -639,7 +752,8 @@ def main(argv=None) -> int:
         "valid": [r["valid"] for r in done],
         "layers": {"class": True, "mslp": True, "hb": True, "hvtl": True, "hvtu": True},
         "raster": {"bounds": [[-LAT_MAX, -180], [LAT_MAX, 180]], "crs": "EPSG:3857", "width": WIDTH,
-                   "height": done[0]["height"]},
+                   "height": done[0]["height"], "format": FIELD_FORMAT, "mask": "mask.png",
+                   "mask_dim": MASK_DIM, "fade": RAMP_FADE},
         "ranges": leg["ranges"],
         "frames": "frames/f{hhh}/",
         "storms_cycle": storms_cycle,
