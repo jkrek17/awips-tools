@@ -378,6 +378,7 @@ h1 { font-size: 18px; line-height: 28px; font-weight: 600; letter-spacing: -0.01
 .storm-list, .deep-list { list-style: none; margin: 0; padding: 0; }
 .storm { padding: 8px 12px 12px; margin: 0 -12px; border-bottom: 1px solid var(--rule); }
 .storm.hovered { background: rgba(233, 232, 227, 0.06); box-shadow: inset 2px 0 0 var(--rule-strong); }
+.storm.selected { background: rgba(233, 232, 227, 0.08); box-shadow: inset 2px 0 0 var(--text); }
 .storm.following { background: rgba(127, 176, 238, 0.07); box-shadow: inset 2px 0 0 var(--accent); }
 .storm-hit {
   display: grid; gap: 0; width: 100%; min-width: 0;

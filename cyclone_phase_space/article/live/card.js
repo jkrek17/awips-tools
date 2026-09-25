@@ -112,6 +112,7 @@ function selectLow(c, { center = false, zoom } = {}) {
   if (narrow()) setStormsOpen(false);
   renderCard(c, s);
   drawSelection();
+  selectStorm(s ? s.key : null);
   if (center) centerOn(c.lat, c.lon, zoom);
 }
 
@@ -130,7 +131,9 @@ function refreshCard() {
   const c = nearest(S.centers.filter(shown), S.sel.lat, S.sel.lon, 2 * MATCH_KM);
   S.sel.c = c;
   if (c) { S.sel.lat = c.lat; S.sel.lon = c.lon; }
-  renderCard(c, c ? stormOf(c, S.i) : null);
+  const s = c ? stormOf(c, S.i) : null;
+  if (s) selectStorm(s.key, { show: false });
+  renderCard(c, s);
 }
 
 function closeCard() {
@@ -139,6 +142,7 @@ function closeCard() {
   dropInsets();
   S.sel = null;
   unfollow();
+  selectStorm(null);
   drawSelection();
   basemap?.edges();
 }

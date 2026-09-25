@@ -35,7 +35,7 @@ const HEMIS = ['all', 'N', 'S'];
 
 const ST = {
   list: [], byKey: new Map(), shown: [], built: false, t0: 0, dt: 216e5, span: 1,
-  filter: { q: '', depth: '1000', hemi: 'all' }, hover: null, io: null, scrollTo: null,
+  filter: { q: '', depth: '1000', hemi: 'all' }, hover: null, selected: null, io: null, scrollTo: null,
 };
 
 function stormLabel(name) {
@@ -202,7 +202,7 @@ function renderTimeAxis() {
 
 function passes(s) {
   const f = ST.filter;
-  if (S.follow === s.key) return true;
+  if (S.follow === s.key || ST.selected === s.key) return true;
   if (f.depth === 'fsu' ? s.fsu == null : f.depth !== 'all' && !(s.min < +f.depth)) return false;
   if (f.hemi !== 'all' && s.hemi !== f.hemi) return false;
   const q = f.q.trim().toLowerCase().replace(/[\s_]+/g, ' ');
@@ -323,6 +323,7 @@ function updateEntry(s, i) {
   s.el.classList.toggle('absent', !e);
   s.el.classList.toggle('following', on);
   s.el.classList.toggle('hovered', ST.hover === s.key);
+  s.el.classList.toggle('selected', ST.selected === s.key);
   s.hit.setAttribute('aria-pressed', String(on));
   const txt = e ? hpa(e.mslp) : 'not at this hour';
   if (s.mslpEl.textContent !== txt) s.mslpEl.textContent = txt;
@@ -501,10 +502,11 @@ function renderDeepest() {
 
 /* ---------- tracks on the map ---------- */
 
-// The followed and the hovered storm get the whole track, colored by
-// class with a dot at each point; every other listed storm present at
-// this hour gets only its last 24 h, thin and faint, as a motion cue.
-const focusKeys = () => [S.follow, ST.hover].filter(Boolean);
+// The followed, the selected (clicked) and the hovered storm get the
+// whole track, colored by class with a dot at each point; every other
+// listed storm present at this hour gets only its last 24 h, thin and
+// faint, as a motion cue.
+const focusKeys = () => [S.follow, ST.selected, ST.hover].filter(Boolean);
 
 function unwrap(pts) {
   for (let k = 1; k < pts.length; k++) {
@@ -597,7 +599,29 @@ function hoverStorm(key, fromMap = false) {
     if (s) updateEntry(s, S.i);
   }
   drawTracks();
-  if (key && fromMap) reveal(key);
+  if (key && fromMap && !ST.selected) reveal(key);  // a selection keeps the panel where it is
+}
+
+// A click on a low selects its storm: the whole track on the map, and
+// its entry highlighted and scrolled into view in the panel (opened on a
+// wide screen). The selection moves with the card as frames advance and
+// clears with it.
+function selectStorm(key, { show: reveal_ = true } = {}) {
+  const was = ST.selected;
+  if (key !== was) {
+    ST.selected = key;
+    const s = findStorm(key);
+    if (s && !ST.shown.includes(s)) applyFilter();
+    else if (!key && was && findStorm(was) && !passes(findStorm(was))) applyFilter();
+    for (const k of [was, key]) {
+      const t = findStorm(k);
+      if (t) updateEntry(t, S.i);
+    }
+    drawTracks();
+  }
+  if (!key || !reveal_) return;
+  if (!narrow() && !document.body.classList.contains('storms-open')) setStormsOpen(true);
+  requestAnimationFrame(() => reveal(key));
 }
 
 /* ---------- follow mode ---------- */
