@@ -441,7 +441,10 @@ DEFAULT_VARDICT = {"Cycle:": "18z",
                    "Input Grid:": "Fcst",
                    "Color by:": "Band",
                    "Hatch fill:": "Off",
-                   "Mask land:": "Off"}
+                   "Mask land:": "Off",
+                   "Lows every:": "6 h",
+                   "Hour labels:": "On",
+                   "Low track:": "On"}
 
 
 def layerNames(tree):
@@ -1135,6 +1138,75 @@ def test_string_valued_extrema():
           str(len(ringOf(track[0]))))
 
 
+def test_low_dialog_options():
+    print("\ntest_low_dialog_options")
+
+    def boxes(tree):
+        return [b.get("text") for b in tree.getroot().iter("TextBox")]
+
+    def lowCount(tree):
+        return len(list(tree.getroot().iter("SymbolAttribute")))
+
+    # Every 24 h thins the SYMBOLS only - the track still runs through all
+    # nine positions, so one mark a day still leaves a complete line.
+    varDict = dict(DEFAULT_VARDICT)
+    varDict["Lows every:"] = "24 h"
+    module, tree = runProcedure(varDict)
+    check("24 h draws Lows at F000, F024 and F048 only",
+          boxes(tree) == ["F000", "F024", "F048"], str(boxes(tree)))
+    check("three symbols, not nine", lowCount(tree) == 3, str(lowCount(tree)))
+    check("but the track keeps every position it read",
+          len(ringOf(linesInLayer(tree, TRACK)[0])) == 9,
+          str(len(ringOf(linesInLayer(tree, TRACK)[0]))))
+    check("and pmsl was still read every 6 h to build it",
+          sorted(a for field, a, b in CALLS if field == "pmsl") ==
+          [0, 6, 12, 18, 24, 30, 36, 42, 48])
+
+    varDict["Lows every:"] = "12 h"
+    module, tree = runProcedure(varDict)
+    check("12 h draws every other one",
+          boxes(tree) == ["F000", "F012", "F024", "F036", "F048"],
+          str(boxes(tree)))
+    check("the track is still complete",
+          len(ringOf(linesInLayer(tree, TRACK)[0])) == 9)
+
+    # Off: no Lows, no track, and the wind layers are untouched.
+    varDict["Lows every:"] = "Off"
+    module, tree = runProcedure(varDict)
+    names = layerNames(tree)
+    check("Off leaves only the wind layers", names == [PERIOD1, PERIOD2],
+          str(names))
+    check("and reads no pmsl at all",
+          [a for field, a, b in CALLS if field == "pmsl"] == [])
+
+    # Hour labels off: the marks and pressures stay, the F0xx text goes.
+    varDict = dict(DEFAULT_VARDICT)
+    varDict["Hour labels:"] = "Off"
+    module, tree = runProcedure(varDict)
+    check("no hour labels when switched off", boxes(tree) == [])
+    check("the Lows themselves are still there", lowCount(tree) == 9,
+          str(lowCount(tree)))
+    check("and so are their pressures",
+          len(list(tree.getroot().iter("TextAttribute"))) == 9)
+
+    # Track off: Lows stay, the Track layer is not written.
+    varDict = dict(DEFAULT_VARDICT)
+    varDict["Low track:"] = "Off"
+    module, tree = runProcedure(varDict)
+    names = layerNames(tree)
+    check("no Track layer when switched off", TRACK not in names, str(names))
+    check("but the Lows layer is still written", LOWS in names, str(names))
+
+    # An older dialog with none of these keys still runs.
+    varDict = dict(DEFAULT_VARDICT)
+    for key in ("Lows every:", "Hour labels:", "Low track:"):
+        del varDict[key]
+    module, tree = runProcedure(varDict)
+    check("a dialog without the new options falls back to the defaults",
+          layerNames(tree) == [PERIOD1, PERIOD2, LOWS, TRACK],
+          str(layerNames(tree)))
+
+
 def test_no_period_selected():
     print("\ntest_no_period_selected")
     _installFakes(datetime(2026, 9, 21, 18))
@@ -1169,13 +1241,25 @@ def test_pgen_activity():
     # A real Product carries type and name - both the same string - and no
     # subType: <Product ... type="Atlantic_HS_Surface(F000)"
     #                       name="Atlantic_HS_Surface(F000)">
-    check("the activity is named the way a real chart's is",
-          product.get("type") == "Pacific_HS_WindHazards(F048)",
+    check("the activity is ACTIVITY_NAME when one is set",
+          product.get("type") == module.ACTIVITY_NAME,
           str(product.get("type")))
     check("name carries that same string - a null name is what PGEN rejects",
           product.get("name") == product.get("type"), str(product.get("name")))
-    check("its own product token, so it cannot store over the real Surface "
-          "activity", "Surface" not in product.get("type"))
+
+    # With no override it is built the way a real chart's is, and never with
+    # "Surface" in it: an activity is identified by that name, so it would
+    # store this chart over the real one.
+    _installFakes(mostRecentCycle(18))
+    built = loadProcedureModule()
+    built.ACTIVITY_NAME = None
+    built.Procedure(None).execute(dict(DEFAULT_VARDICT))
+    builtProduct = list(ET.parse(STORED[-1]).getroot().iter("Product"))[0]
+    check("without an override it is built from the pieces",
+          builtProduct.get("type") == "Pacific_HS_WindHazards(F048)",
+          str(builtProduct.get("type")))
+    check("and still cannot land on the real Surface activity",
+          "Surface" not in builtProduct.get("type"))
 
     # The real charts' file shape: <Basin>_<Area>_<Product>.<Fhr>.xml
     name = os.path.basename(STORED[-1])
@@ -1242,6 +1326,7 @@ def main():
     test_inventory_drives_the_plot_times()
     test_missing_grids()
     test_string_valued_extrema()
+    test_low_dialog_options()
     test_no_period_selected()
     test_default_layer_when_savelayers_false()
     test_pgen_activity()

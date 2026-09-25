@@ -58,10 +58,10 @@
 #   than LOW_INTERVAL_HRS so an hourly database does not put 49 Lows on the
 #   chart.  The Lows are joined into track lines by nearest-neighbor matching
 #   from one plot time to the next.
-# * Activity: named the way CreateXML.py names its own -
-#   "<basin>_HS_Surface(F048)" from ACTIVITY_AREA/_PRODUCT/_FHR - and passed
-#   as both the type and the name, which is what a real chart's Product
-#   carries.  The file name follows the real charts too:
+# * Activity: ACTIVITY_NAME, "Default" while testing, or the name built
+#   from ACTIVITY_AREA/_PRODUCT/_FHR the way CreateXML.py builds its own.  It
+#   goes into both the type and the name, which is what a real chart's
+#   Product carries.  The file name follows the real charts either way:
 #   <Basin>_<Area>_<Product>.<Fhr>.xml.
 # * Output: a single XML with four layers - "F000-024" and "F024-048", each
 #   holding that period's three band polygons; "Lows", holding every 6-hourly
@@ -77,6 +77,16 @@
 #            carried by line width (LINE_WIDTH).
 # "Hatch fill:" On additionally fills each polygon with the period's hatch
 # pattern (PERIOD_FILL_PATTERNS) instead of leaving it as an outline.
+#
+# The Lows
+# --------
+# "Lows every:" thins the plotted Low SYMBOLS to 6, 12 or 24 hours apart, or
+# takes them off the chart entirely along with the track.  The track is
+# always built from every position read (TRACK_INTERVAL_HRS), so drawing a
+# mark once a day still leaves a complete line through the low.  "Hour
+# labels:" drops the F0xx text beside each mark, and "Low track:" drops the
+# line while keeping the marks.  The positions still come from the pmsl
+# inventory, so these only ever thin what is there.
 #
 # Two things to check on first run
 # --------------------------------
@@ -101,7 +111,10 @@ VariableList = [("Cycle:", "Auto", "radio", ["Auto", "00z", "06z", "12z", "18z"]
                 ("Input Grid:", "Fcst", "radio", ["Fcst", "Official"]),
                 ("Color by:", "Band", "radio", ["Band", "Period"]),
                 ("Hatch fill:", "Off", "radio", ["Off", "On"]),
-                ("Mask land:", "On", "radio", ["On", "Off"])]
+                ("Mask land:", "On", "radio", ["On", "Off"]),
+                ("Lows every:", "6 h", "radio", ["6 h", "12 h", "24 h", "Off"]),
+                ("Hour labels:", "On", "radio", ["On", "Off"]),
+                ("Low track:", "On", "radio", ["On", "Off"])]
 
 import calendar
 import os
@@ -143,10 +156,17 @@ PERIODS = [("F000-024", 0, 24), ("F024-048", 24, 48)]
 CYCLE_HOURS = [0, 6, 12, 18]
 WIND_GRID_INTERVAL_HRS = 6
 
-# The closest two plotted Lows may be.  The plot times come from the pmsl
-# inventory over the selected span, so a sparser database simply gives fewer
-# Lows; this only stops a denser one from crowding the chart.  It is also
-# the fallback cadence if the inventory cannot be read at all.
+# The cadence the TRACK is built from.  The track wants every position it
+# can get - a line through three marks in 48 hours is not a track - while the
+# symbols on the chart want thinning, so the two are separate: "Lows every:"
+# thins the symbols only, and the line through them stays complete.
+TRACK_INTERVAL_HRS = 6
+
+# The default for "Lows every:", and the closest two plotted Lows may be.
+# The plot times come from the pmsl inventory over the selected span, so a
+# sparser database simply gives fewer Lows; this only stops a denser one from
+# crowding the chart.  It is also the fallback cadence if the inventory
+# cannot be read at all.  The dialog overrides it per run.
 LOW_INTERVAL_HRS = 6
 
 # The four layers.  The wind bands share one layer per period, so a period
@@ -244,6 +264,13 @@ MAX_POINT_JUMP_DEG = 20.0
 ACTIVITY_AREA = "HS"
 ACTIVITY_PRODUCT = "WindHazards"
 ACTIVITY_FHR = "F048"
+
+# Set this to use a name of its own instead of the one built above; it goes
+# into both type and name.  "Default" while testing, so the chart lands in
+# PGEN's stock activity and nothing has to be registered.  None builds
+# <basin>_HS_WindHazards(F048) from the three pieces above, which is what to
+# use once that activity exists in the site's list.
+ACTIVITY_NAME = "Default"
 
 # The output file name follows the real charts' own shape - the forecast
 # hour after a dot, no cycle or database in it:
@@ -816,8 +843,10 @@ if _IN_GFE:
                     hours.append(hr)
             return sorted(set(hours))
 
-        def _lowPlotHours(self, dbase, cycleTime, selected):
+        def _lowPlotHours(self, dbase, cycleTime, selected, interval=None):
             """When to plot Lows: the pmsl grids there are, thinned."""
+            if interval is None:
+                interval = LOW_INTERVAL_HRS
             span = periodSpan(selected)
             if span is None:
                 return []
@@ -826,16 +855,18 @@ if _IN_GFE:
             hours = self._inventoryHours(dbase, "pmsl", cycleTime, startHr,
                                          endHr)
             if hours is None:
-                return lowHours(selected)
+                return lowHours(selected, interval=interval)
             if not hours:
                 self.statusBarMsg("No pmsl grids between F%03d and F%03d - no "
                                   "Lows and no track" % (startHr, endHr), "S")
                 return []
 
-            thinned = thinHours(hours, LOW_INTERVAL_HRS)
+            thinned = thinHours(hours, interval)
             self.statusBarMsg("pmsl grids at %d time(s) between F%03d and "
-                              "F%03d; plotting %d of them"
-                              % (len(hours), startHr, endHr, len(thinned)), "R")
+                              "F%03d; plotting %d of them, no closer than "
+                              "%d h apart"
+                              % (len(hours), startHr, endHr, len(thinned),
+                                 interval), "R")
             return thinned
 
         def _readPmsl(self, dbase, cycleTime, hr):
@@ -912,8 +943,10 @@ if _IN_GFE:
                                        in zip(xLat, xLon, xVal)]))
             return positions
 
-        def _lowsLayer(self, product, defaultDe, positions):
+        def _lowsLayer(self, product, defaultDe, positions, labelHours=None):
             """Add every plotted Low, with its pressure and forecast hour."""
+            if labelHours is None:
+                labelHours = LABEL_LOW_HOURS
             pa = pgenAttr_dict["Features"]
             de = defaultDe
             total = 0
@@ -931,7 +964,7 @@ if _IN_GFE:
                 XmlUtils.xmladdPressureExtremaLabel(values, lats, lons, de,
                                                     pa["text_attr"],
                                                     pa["text_color"])
-                if LABEL_LOW_HOURS:
+                if labelHours:
                     for plat, plon in zip(lats, lons):
                         labelLat = asFloat(plat)
                         if labelLat is None:
@@ -948,8 +981,18 @@ if _IN_GFE:
                               "R")
             return de
 
-        def _trackLayer(self, product, defaultDe, positions):
-            """Add a line through the Lows that track from one hour to the next."""
+        def _trackLayer(self, product, defaultDe, positions, interval=None):
+            """Add a line through the Lows that track from one hour to the next.
+
+            ``interval`` is the cadence the Lows were plotted at.  The gap a
+            track may survive has to follow it: at 24 h apart, every mark
+            would otherwise look like a broken track against the 12 h
+            default.  The distance a low may move is scaled by the gap
+            against LOW_INTERVAL_HRS, so a day between marks already allows
+            four times the movement of six hours.
+            """
+            if interval is None:
+                interval = LOW_INTERVAL_HRS
             # The site's plotPeakPressureLocations may hand back formatted
             # strings, so coerce before comparing or measuring anything.
             trackable, unusable = [], 0
@@ -969,7 +1012,9 @@ if _IN_GFE:
                 self.statusBarMsg("%d low(s) had no usable position or "
                                   "pressure - not tracked" % unusable, "R")
 
-            tracks = buildTracks(trackable)
+            tracks = buildTracks(trackable,
+                                 maxGapHrs=max(TRACK_MAX_GAP_HRS,
+                                               2 * int(interval)))
             if not tracks:
                 self.statusBarMsg("No Low tracked across two or more hours",
                                   "R")
@@ -1019,6 +1064,11 @@ if _IN_GFE:
             hatch = varDict["Hatch fill:"] == "On"
             maskLand = varDict["Mask land:"] == "On"
 
+            # Defaulted with .get so an older dialog still runs.
+            lowEvery = varDict.get("Lows every:", "%d h" % LOW_INTERVAL_HRS)
+            labelHours = varDict.get("Hour labels:", "On") == "On"
+            wantTrack = varDict.get("Low track:", "On") == "On"
+
             if not selected:
                 self.statusBarMsg("ERROR: no forecast period selected", "S")
                 return
@@ -1051,8 +1101,11 @@ if _IN_GFE:
             basin_long = pd["basin"]
             outputFile = (outDir + basin_long + "_" + ACTIVITY_AREA + "_" +
                           ACTIVITY_PRODUCT + "." + ACTIVITY_FHR + ".xml")
-            typeSubtype = (basin_long + "_" + ACTIVITY_AREA + "_" +
-                           ACTIVITY_PRODUCT + "(" + ACTIVITY_FHR + ")")
+            typeSubtype = ACTIVITY_NAME
+            if typeSubtype is None:
+                typeSubtype = (basin_long + "_" + ACTIVITY_AREA + "_" +
+                               ACTIVITY_PRODUCT + "(" + ACTIVITY_FHR + ")")
+            self.statusBarMsg("PGEN activity: " + typeSubtype, "R")
 
             products, product = XmlUtils.createXmlProduct(
                 outputFile, pd["useFile"], pd["saveLayers"], pd["onOff"],
@@ -1082,13 +1135,37 @@ if _IN_GFE:
                 self._windLayer(product, defaultDe, wind, lon, lat, period,
                                 colorBy, hatch)
 
-            # --- Lows every LOW_INTERVAL_HRS, and the track through them ---
-            positions = self._readLowPositions(
-                dbase, cycleTime, lon, lat, basin,
-                self._lowPlotHours(dbase, cycleTime, selected))
+            # --- Lows at the chosen cadence, and the track through them ---
+            positions = []
+            interval = LOW_INTERVAL_HRS
+            if lowEvery == "Off":
+                self.statusBarMsg("Lows and track switched off", "R")
+            else:
+                interval = int(str(lowEvery).split()[0])
+                # Read every position the track can use, whatever cadence the
+                # symbols end up being drawn at.
+                positions = self._readLowPositions(
+                    dbase, cycleTime, lon, lat, basin,
+                    self._lowPlotHours(dbase, cycleTime, selected,
+                                       TRACK_INTERVAL_HRS))
+
             if positions:
-                self._lowsLayer(product, defaultDe, positions)
-                self._trackLayer(product, defaultDe, positions)
+                # Symbols thinned to the chosen cadence; the track keeps every
+                # position, so it stays complete however few marks are drawn.
+                plotHours = set(thinHours([hr for hr, _ in positions],
+                                          interval))
+                plotted = [(hr, lows) for hr, lows in positions
+                           if hr in plotHours]
+                self.statusBarMsg("Lows drawn at %d of the %d position(s) "
+                                  "read; the track uses all of them"
+                                  % (len(plotted), len(positions)), "R")
+
+                self._lowsLayer(product, defaultDe, plotted, labelHours)
+                if wantTrack:
+                    self._trackLayer(product, defaultDe, positions,
+                                     TRACK_INTERVAL_HRS)
+                else:
+                    self.statusBarMsg("Track switched off", "R")
 
             # --- Write XML to a file, then store it to the PGEN database ---
             XmlUtils.writeXML(products, outputFile)
