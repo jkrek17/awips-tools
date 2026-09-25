@@ -9,6 +9,28 @@ band, the B-versus-scale panel was added to Figure 19, and eight
 references were added. This file lists the second part: the items that
 need CAVE, real model data, or a decision, in the order they matter.
 
+## Real-case comparisons so far
+
+Nine comparisons against the Florida State page were run on 24
+September, across the 1200 and 1800 UTC cycles:
+
+- Thermal structure agreed in all eight usable cases.
+- Cold-core terms read 30 to 80 m more negative than FSU.
+- Warm cores ran 15 to 25 percent high on the standard bands, close to
+  FSU on Hart's own bands.
+- B matched FSU within a few meters on moving storms.
+- The steering proxy over-read B by about 10 m on stalled or looping
+  lows, which changed the class call in three cases.
+- The upper band went cold about a day earlier than FSU's 600 to
+  300 hPa band on a weakening tropical cyclone.
+- One comparison was unusable because the tracker ended at 6 h.
+- The Labrador 1800 UTC late-track B gap (30 m against FSU's 13 m) is
+  unexplained.
+
+Follow-up: use track-motion B, not the steering proxy, for the
+collection's class; add the tracker's secondary-minimum rule; and
+write the paper's validation section once more days are in.
+
 ## Needs CAVE or real data
 
 1. **Check the class field on the remaining models.** Revision 3 is

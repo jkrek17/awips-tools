@@ -80,6 +80,9 @@ warm air wrapped into the center, so the front near the center is a
 bent-back warm front around the poleward side and the cold front is
 fractured to the east, not a spiral. That geometry is judged from
 satellite and thickness by eye today; the class gives it a number.
+If the low is stalled or looping rather than translating, check the
+"Stalled or looping lows" caution in section 5 before trusting the
+asymmetric/symmetric half of that call.
 
 ### 3.2 The post-tropical handoff
 
@@ -304,10 +307,27 @@ learn the signatures, not the magnitudes.
 - **Flicker.** The class alternates between neighboring codes when a
   low sits on a threshold. Read the trend over frames and read the
   numbers underneath.
+- **Stalled or looping lows.** HB takes its direction from the
+  window-mean deep-layer wind, standing in for the storm's motion (the
+  steering proxy of section 1). On a low that is stalled or looping,
+  that direction is unrelated to the storm's real motion, and HB
+  over-reads the asymmetry by about 10 m. Real GFS cases checked
+  against the Florida State page on 24 to 25 September 2026: a 959 hPa
+  Greenland seclusion looping north of Iceland read HB 12 to 25 m and
+  class 3 for two days while B from the track motion and the FSU page
+  fell to about 5 m (class 1); a weakening 980 hPa eastern Pacific
+  tropical cyclone in weak steering read HB 10 to 12 m and flickered
+  between classes 0 and 2 while FSU had 0 to 8 m. On a low that is not
+  moving, or is looping, read HVTL and HVTU and ignore the
+  asymmetric/symmetric half of the class; treat an HB of 10 to 20 m
+  there as likely symmetric. This is what most often confuses the
+  class 1 seclusion call of section 3.1.
 
 ---
 
-## 6. Worked example
+## 6. Worked examples
+
+### Worked example 1: a western Pacific typhoon transition, 20 September 2026
 
 The 2026 September 20 0600 UTC GFS carried a western Pacific typhoon
 through its transition, sampled at the center each day.
@@ -327,6 +347,60 @@ completion rule, and the 96 h frame is the Shapiro-Keyser call: the
 front near the center is drawn bent back around the poleward side,
 not spiraled in. The Florida State diagrams for this run trace the
 same path.
+
+### Worked example 2: a coastal hybrid low, 25 September 2026
+
+The 2026 September 25 0600 UTC GFS carried a coastal low off Cape
+Hatteras. Figure 13 is the drawn analysis at 7 h against GOES-19
+visible: a 995 hPa low with a short occlusion, a warm front running
+east to a 1009 hPa low near 40N 63W, and a cold front trailing south
+into Florida. Figure 14 is the CPS four-panel at 6 h (class, HB, HVTL,
+HVTU) for the same run.
+
+![GOES-19 visible satellite at 1240 UTC with the GFS 0600 UTC run's 7 h MSLP and 1000 to 500 hPa thickness, and a drawn surface analysis: a 995 hPa low off Cape Hatteras with a short occlusion, a warm front running east to a 1009 hPa low near 40N 63W, and a cold front trailing south into Florida](../article/figures/fig_guide_25sep_analysis.jpg)
+*Figure 13. The drawn surface analysis against GOES-19 visible and the GFS MSLP and thickness, 7 h of the 2026 September 25 0600 UTC run.*
+
+![Four-panel CPS display for the same run and hour: class top left, HB top right, HVTL bottom left, HVTU bottom right, over the same domain](../article/figures/fig_guide_25sep_cps.jpg)
+*Figure 14. The CPS four-panel, 6 h of the 2026 September 25 0600 UTC run: class, HB, HVTL, HVTU.*
+
+At the low center, HVTL reads +170 m, HVTU minus 112 m, HB +43 m,
+class 3, an asymmetric shallow warm core. The HB field splits right at
+the low: teal to the northwest along the coast, where northerly flow
+puts cold land on its right, and magenta to the east along the warm
+front. That split supports the triple point sitting at the low.
+
+The warm lower core matters for the geometry, not just the label. A
+B of 43 m with HVTL still at +170 m means the warm sector reaches the
+center, so the warm front should be drawn running into the low, and
+if an occlusion is drawn at all it stays short; the thermal structure
+does not support wrapping much cold air around the center yet.
+
+The cold front is supported near the low: the teal HB band and a red
+HVTL cool-wedge signature line up along the coast behind it. But from
+about 33N to 28N offshore, HB and HVTL show no contrast across the
+line, which says that stretch is a trough, or a front that has
+weakened past keeping, not a front worth the solid line. Farther
+south, over Florida and the Bahamas, a faint subtropical band gives
+the southern end of the front a little contrast again, enough to keep
+a weak front there but not to extend the strong analysis offshore.
+
+The 1009 hPa low near 40N 63W is class 3 as well, with a magenta
+fringe: a wave riding the front, not yet its own separate system. At
+lower right, the tropical cyclone reads class 0; its square block on
+the four-panel is the shape of the 500 km window, not the storm's own
+size, and should not be measured as if it were the vortex. The blue
+HVTL band along about 44 to 48N east of Nova Scotia, well north of
+both drawn fronts, is the main low-level baroclinic zone for this
+setup; it is where the polar front sits, not a signature of either
+drawn low.
+
+What to watch going forward: if HB at the Hatteras low's center falls
+toward 10 m while HVTL stays warm, the low is secluding and the short
+occlusion drawn here becomes the right call, with a bent-back warm
+front to follow. If HB instead holds high, the low stays an open wave
+riding the front rather than seclusion, and the front geometry drawn
+in Figure 13 should be kept as is on the next frames rather than
+converted to a seclusion early.
 
 ---
 
