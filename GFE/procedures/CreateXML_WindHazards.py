@@ -82,9 +82,10 @@
 #    if a future PGEN changes that, addLineToXml is the only place to edit.
 # 2. The forecast-hour label beside each Low goes through the site's
 #    XmlUtils.xmladdTextBox, which CreateXML.py only ever calls with the
-#    disclaimer box.  If it wants something other than a plain string, or if
-#    the label lands on top of the pressure value, set LABEL_LOW_HOURS to
-#    False and the hours come off - the Low symbols and pressures stay.
+#    disclaimer box.  It is offset LOW_HOUR_LABEL_OFFSET_DEG degrees of
+#    latitude from the Low so it does not land on the symbol and its
+#    pressure; widen that if it still crowds them, or set LABEL_LOW_HOURS to
+#    False and the hours come off entirely - symbols and pressures stay.
 # ----------------------------------------------------------------------------
 
 # The MenuItems list defines the GFE menu item(s) under which the
@@ -166,7 +167,13 @@ TRACK_LINE_TYPE = "LINE_SOLID"
 TRACK_LINE_WIDTH = 2.0
 
 # Label each plotted Low with its forecast hour.  See note 2 in the header.
+# The site's xmladdPressureSymbol and xmladdPressureExtremaLabel both draw at
+# the Low's exact position, so the hour is offset in degrees of latitude
+# (negative is south) to keep it off the symbol and its pressure.  One degree
+# of latitude is 60 NM everywhere, so the offset reads the same at any
+# latitude.
 LABEL_LOW_HOURS = True
+LOW_HOUR_LABEL_OFFSET_DEG = -2.0
 
 # Color by band: the band carries the color, the period carries the pattern.
 # The usual marine warning convention - yellow, orange, red.
@@ -807,8 +814,13 @@ if _IN_GFE:
                                                     pa["text_color"])
                 if LABEL_LOW_HOURS:
                     for plat, plon in zip(lats, lons):
-                        XmlUtils.xmladdTextBox("F%03d" % hr, plat, plon, de,
-                                               pa["text_attr"],
+                        labelLat = asFloat(plat)
+                        if labelLat is None:
+                            labelLat = plat          # leave it where it was
+                        else:
+                            labelLat = labelLat + LOW_HOUR_LABEL_OFFSET_DEG
+                        XmlUtils.xmladdTextBox("F%03d" % hr, labelLat, plon,
+                                               de, pa["text_attr"],
                                                pa["text_color"])
                 total += len(lows)
 

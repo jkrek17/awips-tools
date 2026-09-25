@@ -871,6 +871,16 @@ def test_lows_and_track():
           sorted(int(l.get("text")) for l in labels) ==
           sorted(int(round(960.0 - hr)) for hr in hours),
           str(sorted(int(l.get("text")) for l in labels)))
+    # The symbol, its pressure and the hour all used to land on one point.
+    symbolLats = sorted(float(sym.get("Lat")) for sym in symbols)
+    boxLats = sorted(float(b.get("Lat")) for b in boxes)
+    check("the hour label is offset clear of the Low it belongs to",
+          all(abs((b - s) - module.LOW_HOUR_LABEL_OFFSET_DEG) < 0.01
+              for b, s in zip(boxLats, symbolLats)),
+          "%s vs %s" % (boxLats[:3], symbolLats[:3]))
+    check("and the pressure label stays on the Low",
+          sorted(float(l.get("Lat")) for l in labels) == symbolLats)
+
     check("the hour labels are F000 through F048",
           sorted(b.get("text") for b in boxes) ==
           sorted("F%03d" % hr for hr in hours),
