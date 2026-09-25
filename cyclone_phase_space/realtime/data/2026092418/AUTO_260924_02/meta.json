@@ -7,27 +7,27 @@
     "lon": 175.04,
     "fhr0": 0,
     "fhr1": null,
-    "source": "automatic discovery at 0 h of 2026092418"
+    "source": "stored seed"
   },
   "start_fhr": 0,
-  "end_fhr": 6,
-  "fixes": 2,
+  "end_fhr": 90,
+  "fixes": 16,
   "start": {
     "lat": 55.23,
     "lon": 175.04,
     "mslp_hpa": 964.3
   },
   "end": {
-    "lat": 54.95,
-    "lon": -178.72,
-    "mslp_hpa": 969.1
+    "lat": 56.71,
+    "lon": -157.42,
+    "mslp_hpa": 991.3
   },
   "min_mslp_hpa": 964.3,
   "onset_standard_h": null,
-  "completion_standard_h": null,
+  "completion_standard_h": 36,
   "onset_hart_h": null,
-  "completion_hart_h": 0,
-  "class_sequence": "1 0-6",
+  "completion_hart_h": 30,
+  "class_sequence": "1 0-6, - 12-30, 5 36-54, 1 60-90",
   "fsu_number": 8,
   "fsu": {
     "number": 8,
@@ -36,7 +36,7 @@
     "distance_km": 9,
     "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092418/8.html"
   },
-  "track_end": "outside a closed low at +12, +18 h (974 hPa at +18 h)",
+  "track_end": "no minimum within 600 km of 55.6,-156.5 at or below 1003 hPa and within 1080 km of the last fix at +102 h",
   "discovered": {
     "lat": 55.23,
     "lon": 175.04,

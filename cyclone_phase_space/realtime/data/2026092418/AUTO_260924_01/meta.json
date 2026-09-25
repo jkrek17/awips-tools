@@ -7,7 +7,7 @@
     "lon": -105.02,
     "fhr0": 0,
     "fhr1": null,
-    "source": "automatic discovery at 0 h of 2026092418"
+    "source": "stored seed"
   },
   "start_fhr": 0,
   "end_fhr": 126,
