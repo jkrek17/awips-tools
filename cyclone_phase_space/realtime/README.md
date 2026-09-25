@@ -666,14 +666,23 @@ worker). One cycle's output is about 34 MB (about 1 MB per frame).
   cycle's day (else the newest folder; `storms_cycle` names it, and each
   storm repeats it as `cycle`, since its forecast hours count from that
   run): `{"name", "cycle", "fsu": FSU number or null, "points": [{"fhr",
-  "valid", "lat", "lon", "mslp", "cls"}, ...], "phase_png", "compare_png"}`,
-  the points from its `track.csv` (`cls` null where the class is blank)
-  and the two images as raw.githubusercontent.com URLs on main
-  (`compare_png` null when there is none).
+  "valid", "lat", "lon", "mslp", "cls", "hvtl", "hvtu", "hb"}, ...],
+  "cls_seq", "phase_png", "compare_png"}`, the points from its
+  `track.csv` (`cls` an int or null where the class is blank; `hvtl`,
+  `hvtu`, `hb` to one decimal, null where blank); `cls_seq` is the same
+  `cls` values pulled out in point order, for a quick look at a storm's
+  full life cycle without walking `points`. The two images are paths
+  relative to `index.json`'s own directory, `../storms/<cycle>/<name>/
+  phase.png` and `.../compare.png` (`compare_png` null when there is
+  none); see **Assets layout** below for what has to sit next to them.
 - `legend.json`: `{"classes": [{"code", "name", "hex"}, ...],
-  "stops": {"hb": [[value, "#rrggbb", alpha], ...], "hvtl": ..., "hvtu": ...},
-  "ranges": {...}, "units": {...}, "labels": {...}}`; the stops sample
-  each colormap at 16 evenly spaced values across its range.
+  "class_full": [...], "stops": {"hb": [[value, "#rrggbb", alpha], ...],
+  "hvtl": ..., "hvtu": ...}, "ranges": {...}, "units": {...},
+  "labels": {...}}`; the stops sample each colormap at 16 evenly spaced
+  values across its range. `class_full` gives the seven classes' full
+  names (code order, matching `classes`), spelled out as the class
+  table does, e.g. "symmetric deep warm core", where `classes[].name`
+  gives the short form, e.g. "sym deep warm".
 - `history.json`: `{"latest": cycle, "cycles": [{"cycle", "generated",
   "index"}, ...]}`, newest first, the cycles exported into this
   directory (`index` relative to it). With the default `--out`,
@@ -684,10 +693,20 @@ worker). One cycle's output is about 34 MB (about 1 MB per frame).
   MultiPolygon) feature with `{"kind": "blob", "cls", "id"}`, and a
   Point at the MSLP minimum inside the blob with `{"kind": "center",
   "id", "lat", "lon", "mslp", "hvtl", "hvtu", "hb", "idx", "cls",
-  "name"}` (hPa and m to one decimal, a product null where it is
-  blank; `cls` is the class at the minimum, `name` its short name). The
-  outline is the 0.5 filled contour of the blob's own mask (contourpy),
-  simplified with a 0.25 degree tolerance; a blob across the dateline
+  "name", "psfc", "terrain", "radius_km"}` (hPa and m to one decimal, a
+  product null where it is blank; `cls` is the class at the minimum,
+  `name` its short name). `psfc` is the surface pressure at that same
+  point (hPa, one decimal); `terrain` is true when it is under 925 hPa
+  (roughly 770 m), flagging a center that is likely a spurious
+  extrapolated-MSLP artifact over high ground rather than a real low.
+  This is a display default for the page, not a rule the product
+  itself applies: 925 hPa trips over the Iranian and Mexican plateaus,
+  Mongolia and the Andes foothills, but not the Great Plains.
+  `radius_km` is the dilation radius (200) the low-finder used to
+  build the blob, so a page can draw a halo of that size around a
+  center without a lookup elsewhere. The outline is the 0.5 filled
+  contour of the blob's own mask (contourpy), simplified with a 0.25
+  degree tolerance; a blob across the dateline
   is cut at 180 into two features with the same `id`. Rings follow
   RFC 7946 (exterior counterclockwise).
 - `frames/fHHH/mslp.geojson`: isobars every 4 hPa as LineString
@@ -713,6 +732,21 @@ worker). One cycle's output is about 34 MB (about 1 MB per frame).
 
 Longitudes are -180 to 180 and coordinates are rounded to 2 decimals
 throughout.
+
+**Assets layout.** `export_web.py` itself only ever writes the
+`index.json`/`legend.json`/`history.json`/`frames/` tree above; it
+does not write or copy any storm assets. Where it is published,
+`data/latest/` holds that tree (so `index.json` lands at
+`data/latest/index.json`) and, one level up from it,
+`data/storms/<cycle>/<name>/` holds that storm's `phase.png`,
+`compare.png`, `meta.json` and `track.csv`, copied there from this
+repo's own `data/<cycle>/<name>/` by whatever publishes the run. The
+`phase_png`/`compare_png` paths in `index.json` are relative to
+`data/latest/` on that assumption, so `../storms/<cycle>/<name>/
+phase.png` resolves to `data/storms/<cycle>/<name>/phase.png`. A local
+run for testing needs that same `storms/` sibling directory next to
+its output directory, populated by hand from this repo's `data/`, for
+the relative links to resolve.
 
 **Schedule and branch.** The `CPS live map data` workflow
 (`.github/workflows/cps_live.yml`) runs at 03:40, 09:40, 15:40 and

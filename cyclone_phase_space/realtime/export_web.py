@@ -55,7 +55,7 @@ DEFAULT_HOURS = list(range(0, 199, 6))
 LAST_FHR = 198
 PROBE_CYCLES = 8  # default cycle: the newest with f198, probing back this many 6 h steps
 DATA = HERE / "data"
-RAW = "https://raw.githubusercontent.com/jkrek17/awips-tools/main/cyclone_phase_space/realtime/data"
+STORMS_REL = "../storms"  # storm assets, relative to index.json's directory: STORMS_REL/<cycle>/<NAME>/...
 
 # Rasters: Web Mercator (EPSG:3857) image covering lon -180..180, lat -85..85.
 LAT_MAX = 85.0
@@ -75,6 +75,13 @@ MSLP_STEP_HPA = 4.0
 TERRAIN_RING_DEG = 1.0  # closed isobars smaller than this over high terrain are dropped
 MIN_PART_DEG = 0.2  # a dateline piece narrower than this is the half-cell pad, not part of the blob
 NDIG = 2
+BLOB_RADIUS_KM = 200  # the dilation radius the low-finder uses to build each blob (track_cps.CLOSED_BLOB_KM)
+TERRAIN_PSFC_HPA = 925.0  # display default (not a product rule): a center this far below the surface, roughly
+#                          770 m, is flagged as a terrain artifact rather than a real low; trips over the
+#                          Iranian and Mexican plateaus, Mongolia and the Andes foothills, not the Great Plains
+
+CLASS_FULL = ["symmetric deep warm core", "symmetric shallow warm core", "asymmetric deep warm core",
+              "asymmetric shallow warm core", "asymmetric cold core", "symmetric cold core", "shallow cold core"]
 
 
 def log(msg: str) -> None:
@@ -89,6 +96,12 @@ def r1(v) -> float | None:
     """One decimal, or None for NaN."""
     v = float(v)
     return round(v, 1) if math.isfinite(v) else None
+
+
+def track_val(row: dict, key: str) -> float | None:
+    """One decimal from a track.csv field, or None if blank or the column is missing."""
+    v = row.get(key, "")
+    return round(float(v), 1) if v not in ("", None) else None
 
 
 def write_json(path: Path, obj) -> int:
@@ -164,6 +177,7 @@ def legend(pal: dict) -> dict:
     cls = pal["class"][0]
     return {
         "classes": [{"code": k, "name": tc.CLASS_SHORT[k], "hex": hexcol(cls[k])} for k in range(len(cls))],
+        "class_full": CLASS_FULL,
         "stops": stops,
         "ranges": ranges,
         "units": units,
@@ -288,6 +302,7 @@ def lows_features(f: dict, p: dict) -> list[dict]:
     MultiPolygon features (two, same id, for a blob across the dateline)."""
     lat, lon = f["lat"], f["lon"]
     pm = f["pmsl"] / 100.0
+    ps = f["psfc"] / 100.0
     cls = np.asarray(p["cls"], dtype=float)
     blobs = g.label_blobs(np.isfinite(cls), wrap=True)
     centers = []
@@ -312,10 +327,13 @@ def lows_features(f: dict, p: dict) -> list[dict]:
             feats.append({"type": "Feature", "properties": {"kind": "blob", "cls": c, "id": n},
                           "geometry": {"type": gj["type"], "coordinates": rnd(gj["coordinates"])}})
         la, lo = round(float(lat[i]), NDIG), round((float(lon[j]) + 180.0) % 360.0 - 180.0, NDIG)
+        psfc = r1(ps[i, j])
         points.append({"type": "Feature",
                        "properties": {"kind": "center", "id": n, "lat": la, "lon": lo, "mslp": round(mslp, 1),
                                       "hvtl": r1(p["hvtl"][i, j]), "hvtu": r1(p["hvtu"][i, j]),
                                       "hb": r1(p["hb"][i, j]), "idx": r1(p["idx"][i, j]), "cls": c,
+                                      "psfc": psfc, "terrain": psfc is not None and psfc < TERRAIN_PSFC_HPA,
+                                      "radius_km": BLOB_RADIUS_KM,
                                       "name": tc.CLASS_SHORT[c] if 0 <= c < len(tc.CLASS_SHORT) else str(c)},
                        "geometry": {"type": "Point", "coordinates": [lo, la]}})
     return feats + points
@@ -419,12 +437,15 @@ def storms_for(cycle: str, data_dir: Path = DATA) -> tuple[str | None, list[dict
                 pts.append({"fhr": int(row["fhr"]), "valid": row["valid"].replace("Z", ":00Z"),
                             "lat": round(float(row["lat"]), 2), "lon": round(float(row["lon"]), 2),
                             "mslp": round(float(row["mslp_hpa"]), 1),
-                            "cls": int(round(float(c))) if c not in ("", None) else None})
+                            "cls": int(round(float(c))) if c not in ("", None) else None,
+                            "hvtl": track_val(row, "hvtl"), "hvtu": track_val(row, "hvtu"),
+                            "hb": track_val(row, "hb")})
         fsu = meta.get("fsu_number")
         storms.append({"name": sdir.name, "cycle": pick, "fsu": int(fsu) if fsu is not None else None,
-                       "points": pts, "phase_png": f"{RAW}/{pick}/{sdir.name}/phase.png",
-                       "compare_png": f"{RAW}/{pick}/{sdir.name}/compare.png" if (sdir / "compare.png").exists()
-                       else None})
+                       "points": pts, "cls_seq": [pt["cls"] for pt in pts],
+                       "phase_png": f"{STORMS_REL}/{pick}/{sdir.name}/phase.png",
+                       "compare_png": f"{STORMS_REL}/{pick}/{sdir.name}/compare.png"
+                       if (sdir / "compare.png").exists() else None})
     return pick, storms
 
 
