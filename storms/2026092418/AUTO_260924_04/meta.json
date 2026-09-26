@@ -1,0 +1,40 @@
+{
+  "cycle": "2026092418",
+  "name": "AUTO_260924_04",
+  "status": "ok",
+  "seed": {
+    "lat": 81.31,
+    "lon": -145.55,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "stored seed"
+  },
+  "start_fhr": 0,
+  "end_fhr": 48,
+  "fixes": 9,
+  "start": {
+    "lat": 81.31,
+    "lon": -145.55,
+    "mslp_hpa": 978.5
+  },
+  "end": {
+    "lat": 84.68,
+    "lon": -117.89,
+    "mslp_hpa": 996.1
+  },
+  "min_mslp_hpa": 978.5,
+  "onset_standard_h": 0,
+  "completion_standard_h": 0,
+  "onset_hart_h": null,
+  "completion_hart_h": 0,
+  "class_sequence": "6 0-6, - 12-18, 6 24-48",
+  "fsu_number": null,
+  "fsu": null,
+  "track_end": "no minimum within 600 km of 85.6,-113.5 at or below 1008 hPa and within 1080 km of the last fix at +60 h",
+  "discovered": {
+    "lat": 81.31,
+    "lon": -145.55,
+    "mslp_hpa": 978.46,
+    "basin": "NPAC"
+  }
+}

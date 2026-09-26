@@ -1,0 +1,46 @@
+{
+  "cycle": "2026092418",
+  "name": "AUTO_260924_05",
+  "status": "ok",
+  "seed": {
+    "lat": 16.44,
+    "lon": -125.18,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "stored seed"
+  },
+  "start_fhr": 0,
+  "end_fhr": 144,
+  "fixes": 25,
+  "start": {
+    "lat": 16.44,
+    "lon": -125.18,
+    "mslp_hpa": 980.0
+  },
+  "end": {
+    "lat": 18.62,
+    "lon": -125.46,
+    "mslp_hpa": 1007.8
+  },
+  "min_mslp_hpa": 976.7,
+  "onset_standard_h": 18,
+  "completion_standard_h": null,
+  "onset_hart_h": 36,
+  "completion_hart_h": null,
+  "class_sequence": "0 0, 2 6, 0 12, 2 18-30, 0 36, 2 42-48, 3 54-72, 1 78-102, - 108-144",
+  "fsu_number": 4,
+  "fsu": {
+    "number": 4,
+    "lat": 16.89,
+    "lon": -125.03,
+    "distance_km": 53,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092418/4.html"
+  },
+  "track_end": "outside a closed low at +150, +156 h (1008 hPa at +156 h)",
+  "discovered": {
+    "lat": 16.44,
+    "lon": -125.18,
+    "mslp_hpa": 979.97,
+    "basin": "TROP"
+  }
+}

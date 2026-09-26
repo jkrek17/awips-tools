@@ -1,0 +1,46 @@
+{
+  "cycle": "2026092418",
+  "name": "AUTO_260924_03",
+  "status": "ok",
+  "seed": {
+    "lat": 57.26,
+    "lon": -170.99,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "stored seed"
+  },
+  "start_fhr": 0,
+  "end_fhr": 30,
+  "fixes": 6,
+  "start": {
+    "lat": 57.26,
+    "lon": -170.99,
+    "mslp_hpa": 968.3
+  },
+  "end": {
+    "lat": 56.24,
+    "lon": -176.15,
+    "mslp_hpa": 970.7
+  },
+  "min_mslp_hpa": 962.5,
+  "onset_standard_h": 0,
+  "completion_standard_h": null,
+  "onset_hart_h": null,
+  "completion_hart_h": 30,
+  "class_sequence": "3 0-6, 1 12-18, 6 24, 5 30",
+  "fsu_number": null,
+  "fsu": null,
+  "track_end": "merged into AUTO_260924_02 at +36 h",
+  "merged_into": {
+    "name": "AUTO_260924_02",
+    "fhr": 36,
+    "distance_km": 0
+  },
+  "note": "merged into AUTO_260924_02 at +36 h",
+  "discovered": {
+    "lat": 57.26,
+    "lon": -170.99,
+    "mslp_hpa": 968.3,
+    "basin": "NPAC"
+  }
+}
