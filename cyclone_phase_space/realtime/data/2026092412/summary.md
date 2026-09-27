@@ -4,14 +4,14 @@ Storm-following phase diagrams from the 12 UTC 2026-09-24 GFS 0.25 degree run, f
 
 | Storm | FSU | Start position | MSLP (hPa) | Track (h) | Class sequence (h) | Onset std | Completion std | Onset Hart | Completion Hart |
 |---|---|---|---|---|---|---|---|---|---|
-| [AUTO_260924_02](AUTO_260924_02/) | [8](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/8.html) | 55.1N 174.9E (+6 h) | 964 | 6-18 | 5 6, 1 12, - 18 | none | none | none | none |
-| [AUTO_260924_03](AUTO_260924_03/) | none | 57.2N 170.9W (+6 h) | 968 | 6-126 | 3 6-12, 1 18-24, 6 30, 4 36, 5 42, 1 48, 5 54, 1 60-72, 5 78-96, - 102, 5 108, 1 114, - 120-126 | 6 | 42 | 18 | 36 |
-| [AUTO_260924_04](AUTO_260924_04/) | none | 81.4N 143.6W (+6 h) | 978 | 6-54 | 6 6-12, - 18, 6 24, - 30, 6 36-54 | 6 | 6 | none | 6 |
+| [AUTO_260924_02](AUTO_260924_02/) | [8](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/8.html) | 55.1N 174.9E (+6 h) | 964 | 6-18 | 1 6, 5 12, - 18 | none | none | none | none |
+| [AUTO_260924_03](AUTO_260924_03/) | none | 57.2N 170.9W (+6 h) | 968 | 6-126 | 3 6-12, 1 18-24, 6 30, 4 36, 1 42-90, - 96-126 | 6 | 114 | 18 | 42 |
+| [AUTO_260924_04](AUTO_260924_04/) | none | 81.4N 143.6W (+6 h) | 978 | 6-54 | 0 6, 6 12, - 18, 6 24, - 30, 6 36-54 | 6 | 12 | none | 6 |
 | [AUTO_260924_05](AUTO_260924_05/) | [4](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/4.html) | 16.4N 125.2W (+6 h) | 979 | 6-198 | 0 6, 2 12, 0 18, 2 24-36, 0 42, 2 48-60, 1 66-108, - 114-198 | 24 | none | 36 | none |
-| [AUTO_260924_06](AUTO_260924_06/) | [5](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/5.html) | 16.6N 104.1W | 953 | 0-120 | - 0, 0 6, - 12, 0 18-78, 2 84, 0 90-120 | none | none | none | none |
-| [EPAC](EPAC/) | [1](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/1.html) | 15.0N 156.2W (+6 h) | 995 | 6-198 | - 6, 0 12-42, - 48-60, 0 66-126, 2 132-144, 3 150-198 | 132 | none | 144 | none |
-| [GREENLAND](GREENLAND/) | [19](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/19.html) | 62.5N 21.4W (+6 h) | 959 | 6-174 | 3 6, 1 12, - 18-42, 3 48-72, - 78, 3 84-96, - 102, 4 108-132, 3 138-150, 4 156-168, 5 174 | 54 | 102 | 78 | 96 |
-| [LABRADOR](LABRADOR/) | [48](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/48.html) | 60.7N 58.5W (+6 h) | 1000 | 6-96 | 4 6-30, 3 36, 4 42-84, - 90-96 | 6 | 6 | 6 | 6 |
+| [AUTO_260924_06](AUTO_260924_06/) | [5](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/5.html) | 16.6N 104.1W | 953 | 0-120 | 0 0-78, 2 84, 0 90-120 | none | none | none | none |
+| [EPAC](EPAC/) | [1](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/1.html) | 15.0N 156.2W (+6 h) | 995 | 6-198 | - 6, 0 12-42, - 48-60, 0 66-126, 2 132-150, 3 156-180, 2 186, 3 192-198 | 132 | none | 144 | none |
+| [GREENLAND](GREENLAND/) | [19](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/19.html) | 62.5N 21.4W (+6 h) | 959 | 6-174 | 3 6, 1 12, - 18-48, 3 54-72, 1 78, 3 84, - 90, 3 96, - 102, 4 108, 3 114-150, 4 156-168, 6 174 | 54 | 162 | 78 | 96 |
+| [LABRADOR](LABRADOR/) | [48](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/48.html) | 60.7N 58.5W (+6 h) | 1000 | 6-96 | 4 6-30, 3 36-48, 4 54-84, - 90-96 | 6 | 6 | 6 | 6 |
 
 Class codes (HCPSclass at the center): 0 sym deep warm, 1 sym shallow warm, 2 asym deep warm, 3 asym shallow warm, 4 asym cold, 5 sym cold, 6 shallow cold; - no closed low.
 

@@ -27,7 +27,7 @@
   "completion_standard_h": 0,
   "onset_hart_h": null,
   "completion_hart_h": 0,
-  "class_sequence": "6 0-6, - 12-18, 6 24-48",
+  "class_sequence": "2 0, 6 6, - 12-18, 6 24-48",
   "fsu_number": null,
   "fsu": null,
   "track_end": "no minimum within 600 km of 85.6,-113.5 at or below 1008 hPa and within 1080 km of the last fix at +60 h",

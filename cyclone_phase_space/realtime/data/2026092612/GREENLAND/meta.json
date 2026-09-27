@@ -7,7 +7,7 @@
     "lon": -17.43,
     "fhr0": 0,
     "fhr1": null,
-    "source": "track of 2026092512 at +24 h"
+    "source": "stored seed"
   },
   "start_fhr": 0,
   "end_fhr": 48,
@@ -23,11 +23,11 @@
     "mslp_hpa": 995.5
   },
   "min_mslp_hpa": 984.6,
-  "onset_standard_h": 42,
+  "onset_standard_h": null,
   "completion_standard_h": null,
   "onset_hart_h": null,
   "completion_hart_h": null,
-  "class_sequence": "- 0-6, 1 12, - 18-36, 3 42, 4 48",
+  "class_sequence": "- 0-6, 1 12, - 18-48",
   "fsu_number": 9,
   "fsu": {
     "number": 9,

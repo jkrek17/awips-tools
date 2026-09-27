@@ -7,7 +7,7 @@
     "lon": -55.35,
     "fhr0": 6,
     "fhr1": 96,
-    "source": "stored seed, +0 h of 2026092418"
+    "source": "stored seed"
   },
   "start_fhr": 6,
   "end_fhr": 96,
@@ -27,7 +27,7 @@
   "completion_standard_h": 6,
   "onset_hart_h": 6,
   "completion_hart_h": 6,
-  "class_sequence": "4 6-30, 3 36, 4 42-84, - 90-96",
+  "class_sequence": "4 6-30, 3 36-48, 4 54-84, - 90-96",
   "fsu_number": 48,
   "fsu": {
     "number": 48,

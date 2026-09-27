@@ -7,7 +7,7 @@
     "lon": -108.12,
     "fhr0": 0,
     "fhr1": null,
-    "source": "track of 2026092418 at +18 h"
+    "source": "stored seed"
   },
   "start_fhr": 0,
   "end_fhr": 96,
@@ -27,7 +27,7 @@
   "completion_standard_h": null,
   "onset_hart_h": null,
   "completion_hart_h": null,
-  "class_sequence": "0 0-54, 2 60, 0 66-90, 1 96",
+  "class_sequence": "0 0-54, 2 60, 0 66-96",
   "fsu_number": 5,
   "fsu": {
     "number": 5,
