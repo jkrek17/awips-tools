@@ -177,11 +177,10 @@ diagram; HCPSclass gives you a map per forecast hour, and you recover
 the trajectory by animating and reading the class at the low center (or
 by sampling HVTL, HVTU, and HB there directly). The FSU page uses
 Hart's own 500 km circle and true half-circle motion; this package uses
-the 500 km window (a square of 500 km half-width, 1000 km across)
-rather than a circle, because a square
-runs fast enough to compute at every grid point on every frame (section
-7 has the trade-off), and the deep-layer steering wind averaged over
-that window in place of a tracked heading, so HB and HCPSclass are
+the same 500 km circle, re-centered on every grid point (earlier
+versions used a square of 500 km half-width, which read cold cores
+about 50 m more negative; section 7), and the deep-layer steering wind
+averaged over that circle in place of a tracked heading, so HB and HCPSclass are
 unreliable for a storm moving against its own steering flow or one
 that is nearly stationary (steering under 2 m/s leaves HB, and so
 HCPSclass, blank). Both are memoryless at any single time; both
@@ -303,7 +302,7 @@ frame before it.
 
 A blob appears only where the model has a closed low that clears the
 depth test (roughly 5 hPa for a compact low; section 7 has the exact
-rule and its exceptions). The blob is a square about 400 km across
+rule and its exceptions). The blob is a disk about 400 km across
 around the center, and its pixels are not one class from edge to edge;
 never read the blob's color as the answer. Always sample the class at
 the MSLP center. Open ocean stays blank. Very weak lows get no blob;
@@ -375,15 +374,16 @@ because the 925 to 700 hPa band sits lower than Hart's 900 to 600 hPa
 layer; a synthetic test put the overstatement at 60 to 80 m for those
 profiles and showed that a deeper band would lose the signal instead.
 With about 5 m of height noise the terms at a center scatter by about
-15 m (HVTL) and 9 m (HVTU) and B by under 1 m, so expect the class to
+16 m (HVTL) and 9 m (HVTU) and B by under 1 m, so expect the class to
 flicker when a term is within about 15 m of zero or B within a meter
 of 10 m; the continuous fields show the trend through such a stretch.
 
-The raw HVTL, HVTU, and HB images paint a square about 1000 km across
+The raw HVTL, HVTU, and HB images paint a disk about 1000 km across
 around each low; that is the shape of the 500 km window, not a
 feature of the storm, and
-its pixels are not one value from edge to edge. See section 7 for why
-the window is a square. Always sample the value at the MSLP center,
+its pixels are not one value from edge to edge (screen captures made
+before 2026-09-27 show squares; see section 7). Always sample the value
+at the MSLP center,
 never read the blob's color or footprint. Within a few hundred
 kilometers of Greenland or Iceland, a level whose window is mostly
 below ground goes blank (NaN) rather than being fit through sparse
@@ -520,17 +520,19 @@ scatterometer data, never as a stand-in for any of those.
 
 - **It classifies the model's storm.** A confident-looking class on a
   bad model track is a confident wrong answer. Compare models.
-- **The 500 km window is a square, by design.** HVTL, HVTU, and HB are
-  computed over the 500 km window (a square of 500 km half-width,
-  1000 km across), not a circle, because a square sliding max/min runs
-  fast enough to compute at every grid point on every frame; a
-  circular filter would cost several times more per frame for a bias
-  this package's tests found small on an isolated storm. The trade-off
-  is an extra, direction-dependent share of the background gradient.
+- **The 500 km window is Hart's circle.** HVTL, HVTU, and HB are
+  computed over a circle of 500 km radius around every grid point, the
+  window Hart's diagrams use. Earlier versions used a square of 500 km
+  half-width (1000 km across), whose corners reach 707 km; on a GFS
+  forecast it read cold cores about 50 m too cold and warm cores within
+  about 10 m of the circle. Values you sampled or captured before 2026-09-27 came from
+  the square. The square is still selectable in `cps_HartCPS.py`
+  (`WINDOW_SHAPE`), for comparison only.
   Be aware that the background gradient itself, which Hart's method
   also includes, lowers both terms for any storm in a baroclinic zone:
   in a synthetic test a moderate jet-entrance environment took a deep
-  warm core's upper term from +191 m to about zero. Some of the upper
+  warm core's upper term from +191 m to +67 to +79 m, and twice that
+  gradient took it to -68 to -90 m. Some of the upper
   warm core loss you see as a typhoon enters the westerlies is the
   environment the storm has entered, which is exactly what the phase
   space is built to read; Hart's diagnostic behaves the same way, and
@@ -579,7 +581,7 @@ scatterometer data, never as a stand-in for any of those.
   sparse data. Both are correct behavior, not missing data.
 - **Weak lows and broad lows are not classified.** The closed-low test
   is 5 hPa of mean sea level pressure rise between the center and the
-  square 300 to 500 km ring around it, read from the same MSLP field
+  300 to 500 km ring around it, read from the same MSLP field
   you contour; a compact 300 km low clears
   it around 6 hPa deep, but a broad, flat low needs more than 5 hPa of
   true depth to clear the same test and can go unclassified. The
@@ -630,9 +632,9 @@ checking drawn fronts against HB, see `ANALYSIS_GUIDE.md`.
   seclusion typically runs 4 to 3, or 4 to 1 if B also falls at or
   below 10 m. Read both crossings from the animation, and cross-check
   against 1000 to 850 hPa thickness.
-- The 500 km window (a square of 500 km half-width, 1000 km across) is
-  why the raw fields paint a square footprint; the fast square filter
-  is the trade-off documented in section 7.
+- The 500 km circle is why the raw fields paint a round footprint about
+  1000 km across (a square one in captures made before 2026-09-27;
+  section 7).
 - Always overlay MSLP and thickness; never compare HB or HVTL
   magnitudes between models or resolutions, only crossing hours and
   trends.

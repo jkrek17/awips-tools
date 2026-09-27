@@ -47,6 +47,11 @@ all reproduced independent calculations to machine precision.
    equally, so the sign is preserved but magnitudes are not. Fix:
    restate with the measured numbers and the regime, add the scale
    sensitivity to the limitations, tighten the test.
+   *Resolved 2026-09-27:* the windows are now Hart's circle
+   (`WINDOW_SHAPE = "circle"`); the gridded disk matches `cps.hart`'s
+   circle to a relative 3.6e-7 at 150 km and within 0.2 percent at 250
+   and 400 km, where the square, kept as an option, measures 1.02 and
+   1.22 (`test_square_vs_circle_scale_sensitivity`).
 6. **No longitude wrap** (1, 2). On a global grid the window is
    clipped at the seam, halving ΔZ in the first and last 500 km of
    columns, and `cells_per_row` explodes on the pole row. Fix: wrap
@@ -76,6 +81,13 @@ all reproduced independent calculations to machine precision.
     degrees, 27 percent averaged). Fix: claim only that ΔZ needs no
     sign convention and is hemisphere independent; note the anisotropy
     and that no projected grid has been tested.
+    *Resolved 2026-09-27:* the sliding windows are now Hart's 500 km
+    circle, so the orientation-invariance point is met up to the grid's
+    discretization of the disk: on the synthetic background-gradient
+    test the circle's remaining axis-versus-45-degree difference is
+    reproduced by `cps.hart`'s own circle on the same fields and belongs
+    to the test field. The square is kept only as an option
+    (`WINDOW_SHAPE = "square"`). No projected grid has been tested.
 11. **The 24 h running mean is attributed to Hart (2003) without a
     source** (1). Fix: attribute to the real-time Florida State page,
     which states it, or delete.
@@ -105,7 +117,8 @@ all reproduced independent calculations to machine precision.
 16. **Closed-low criterion** (1, 2, 3). It is 40 m of rise between
     the center and the 300 to 500 km ring, a scale test, not "a closed
     low at least 5 hPa deep"; the effective floor is about 6 hPa for a
-    300 km low and higher for broader lows; the ring is square. Fix
+    300 km low and higher for broader lows; the ring is square (circular
+    since 2026-09-27). Fix
     the wording and add tests on a trough, a col and a broad flat low.
 17. **Neighboring lows within 1000 km share windows** (3), and the
     200 km dilation can merge two blobs. Undocumented. Fix: caution in
@@ -122,7 +135,8 @@ all reproduced independent calculations to machine precision.
 
 19. Weak-low fallback to raw HVTL/HVTU at a rejected low returns the
     baroclinic zone, not the wave; unsafe as written (3).
-20. The blob is a 400 km square whose pixels are not one class;
+20. The blob is a 400 km square (a 400 km disk since 2026-09-27) whose
+    pixels are not one class;
     sample at the MSLP center, never the blob color (2, 3, 4).
 21. The hybrid and post-tropical claim holds for HVTL, HVTU and
     HCPSidx; the frontal half of HCPSclass is least tested on exactly

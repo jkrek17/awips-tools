@@ -15,9 +15,10 @@ Writes two files next to this one:
 - figE_lifecycle_storyboard.png (300 dpi): 6 rows (hour 0, 60, 90, 120, 144,
   168 -- the life cycle's six gridded classes 0, 2, 3, 4, 5, 1) by 5 columns:
   (a) 1000 hPa height and 1000-500 hPa thickness, (b) the gridded HCPSclass
-  field, (c) 900-600 hPa thickness with the 500 km Hart circle, the 1000 km
-  gridded square, and the motion arrow, (d) B versus -V_T^L, (e) -V_T^U
-  versus -V_T^L, the last two drawn up to each row's own hour.
+  field, (c) 900-600 hPa thickness with the 500 km circle (Hart's window,
+  which the gridded module also uses) and the motion arrow, (d) B versus
+  -V_T^L, (e) -V_T^U versus -V_T^L, the last two drawn up to each row's
+  own hour.
 - lifecycle_storyboard.gif: the same five panels in one row, one frame per
   6 h (29 frames total), 500 ms per frame.
 """
@@ -65,18 +66,6 @@ def km_circle(clat, clon, radius_km, n=73):
     dlat = (radius_km / KM_PER_DEG_LAT) * np.cos(ang)
     dlon = (radius_km / (KM_PER_DEG_LAT * np.cos(np.radians(clat)))) * np.sin(ang)
     return clon + dlon, clat + dlat
-
-
-def km_square(clat, clon, half_km):
-    """(lons, lats) tracing a square of half-width half_km (so side
-    2*half_km) around (clat, clon) -- the gridded module's own square
-    analysis window, matching RADIUS_KM as its half-width.
-    """
-    dlat = half_km / KM_PER_DEG_LAT
-    dlon = half_km / (KM_PER_DEG_LAT * np.cos(np.radians(clat)))
-    lons = [clon - dlon, clon + dlon, clon + dlon, clon - dlon, clon - dlon]
-    lats = [clat - dlat, clat - dlat, clat + dlat, clat + dlat, clat - dlat]
-    return lons, lats
 
 
 def motion_arrow_tip(clat, clon, heading_deg, length_km=400.0):
@@ -206,8 +195,8 @@ def draw_panel_c(ax, d, i, fs=7):
     2. Thin, unlabeled gray contour lines of the full thickness every 20 m,
        so the environmental gradient still reads as line spacing.
 
-    Plus the 500 km Hart circle, the 1000 km gridded square, and the
-    motion arrow.
+    Plus the 500 km circle (Hart's window, and the gridded module's since
+    cps_HartCPS.WINDOW_SHAPE became "circle") and the motion arrow.
     """
     m = d["maps"][i]
     clat, clon = d["lats"][i], d["lons"][i]
@@ -220,8 +209,6 @@ def draw_panel_c(ax, d, i, fs=7):
 
     circ_lon, circ_lat = km_circle(clat, clon, RADIUS_KM)
     ax.plot(circ_lon, circ_lat, "-", color="k", lw=1.1, zorder=4)
-    sq_lon, sq_lat = km_square(clat, clon, RADIUS_KM)
-    ax.plot(sq_lon, sq_lat, "--", color="k", lw=1.1, zorder=4)
     tip_lon, tip_lat = motion_arrow_tip(clat, clon, d["headings"][i])
     ax.annotate("", xy=(tip_lon, tip_lat), xytext=(clon, clat),
                 arrowprops=dict(arrowstyle="-|>", color="k", lw=1.3), zorder=5)

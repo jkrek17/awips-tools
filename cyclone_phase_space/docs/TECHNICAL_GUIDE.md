@@ -68,50 +68,75 @@ of hemisphere because dZ is positive definite.
 
 ### 2.2 Gridded form
 
-The point definition is evaluated at every grid point by replacing "the
-500 km circle around the storm" with "the 500 km window around this
-point" (a square of 500 km half-width, 1000 km across). The window is a
-square, not a circle, because a
-square sliding max and min is separable and runs in a handful of passes
-per level (section 3). Corners reach 707 km. For an isolated compact vortex the
-max and min are the far field and the center either way, so the
-difference from a circle is small; the test suite checks agreement with
-the circular point implementation in `cyclone_phase_space/cps/hart.py` to within 2 percent
-on an isolated synthetic vortex. On a background height gradient the
-square sees up to 41 percent more of the gradient's contribution to
-dZ than the circle does. The environmental gradient itself is not a
-small contribution: it enters Hart's circle as well, and because it
-grows with height in a baroclinic zone it lowers both terms of any
-storm embedded in one. On a synthetic deep warm core (true terms
-191 m) a background gradient of 5 m per degree at 1000 hPa growing to
-14 m per degree at 300 hPa lowers the upper term to 70 m along a grid
-axis and to about 0 at 45 degrees; at twice that gradient the upper
-term is -85 and -193 m (`cyclone_phase_space/article/figures/experiments_extensions.py`).
-That response is by design: the phase space describes the cyclone
-together with the baroclinic zone it has entered, and the fall of the
-upper term as a storm meets a trough is the transition signal itself,
-in Hart's formulation and in this one. The synthetic case only shows
-how early the signal appears, since the storm's own core never
-changed. The square adds a direction-dependent share on top of
-Hart's, and that share is the only part that is a bias relative to
-his circle. The square is the main
-methodological difference from Hart, kept because it supports the fast
-separable sliding-extrema filter in section 3.1; a circular filter
-would cost several times more per frame for the extra share on an
-isolated vortex. See section 7 for the full trade-off.
+The point definition is evaluated at every grid point by re-centering
+the same 500 km circle on each point (`WINDOW_SHAPE = "circle"`, the
+default). The disk is laid on the grid row by row: for each row offset
+`j` with `|j dy| <= 500 km`, the chord on source row `i` spans
+`floor(sqrt(R^2 - (j dy)^2) / dx(i))` cells either side of the center
+column, so a point is inside when its planar offset, with x counted in
+its own row's spacing, is within 500 km. This is the same disk the
+half-disk means of parameter B use (section 4.1). On a 0.25 degree grid
+the disk reaches 17 cells (473 km) along each axis at the equator, and
+more cells east and west toward the poles. The test suite checks the
+gridded terms against the circular point implementation in
+`cyclone_phase_space/cps/hart.py`: a relative difference of about
+4e-7 on a 150 km synthetic vortex and within 0.2 percent at 250 and
+400 km scale.
+
+The environmental gradient is not a small contribution: it enters
+Hart's circle by definition, and because it grows with height in a
+baroclinic zone it lowers both terms of any storm embedded in one. On a
+synthetic deep warm core (true terms 191 m) a background gradient of
+5 m per degree at 1000 hPa growing to 14 m per degree at 300 hPa lowers
+the upper term to 79 m along a grid axis and to 67 m at 45 degrees; at
+twice that gradient the upper term is -68 and -90 m
+(`cyclone_phase_space/article/figures/experiments_extensions.py`).
+`cps.hart`'s own circle gives 69 and -87 m at 45 degrees on the same
+fields, so the remaining difference between the two directions belongs
+to the test field (its tilted plane is defined in degrees, not km), not
+to the window. That response is by design: the phase space describes
+the cyclone together with the baroclinic zone it has entered, and the
+fall of the upper term as a storm meets a trough is the transition
+signal itself, in Hart's formulation and in this one. The synthetic
+case only shows how early the signal appears, since the storm's own
+core never changed.
+
+**The former square window.** Earlier versions took every sliding
+max/min and sum over a square of 500 km half-width (1000 km across),
+chosen because a square sliding max and min separates into two passes
+along the grid axes. Its corners reach 707 km, 41 percent beyond Hart's
+radius. Where the height field keeps changing beyond 500 km the corners
+find more extreme heights than the circle, more so at upper levels,
+whose height gradients are larger, so the square read cold cores too
+cold. On a GFS 0.25 degree global forecast (25 September 2026 12 UTC
+run, f096), inside the closed-low footprints, points the square put
+below -50 m read on average 54 m (lower band) and 43 m (upper band)
+less negative with the circle, while points above +50 m moved by 1 m
+and 10 m; B changed by a few meters, the footprints cover 0.72 of their
+former area, and the class changed at 10 percent of the footprint
+points the two shared. The cold-core shift has the size and sign of the
+difference found against the Florida State (circular) computation,
+where cold cores read 30 to 80 m more negative. On the synthetic vortex
+the square read the lower term high by factors of 1.02 at 250 km and
+1.22 at 400 km. The circle costs about what the square did (section
+3.2). `WINDOW_SHAPE = "square"` (or `shape="square"` on the window
+functions) restores the square and reproduces the earlier numbers bit
+for bit; the AWIPS entry points take no shape argument and follow the
+module constant.
 
 On a global lat/lon grid, `window_extreme_2d` and `window_sum_2d` wrap
 the 500 km window across the longitude seam instead of clipping it
 there, so a point near 180 degrees longitude sees the same window size
 on both sides; a regional grid has no seam and is unchanged. Global
-grid detection and the pole rows (where a fixed km half-width would
+grid detection and the pole rows (where a fixed km radius would
 otherwise span an implausible number of columns) are handled in the
 same pass.
 
 A consequence worth knowing: around a compact low, every point whose
 window contains the low center sees roughly the same dZ, so the raw
-HVTL and HVTU images paint a plateau the size of the window, a 1000 km
-square. This is cosmetic. The class and index products are masked to a
+HVTL and HVTU images paint a plateau the size of the window, a disk
+about 1000 km across (a 1000 km square with the former square window).
+This is cosmetic. The class and index products are masked to a
 blob around the center and do not show it.
 
 ### 2.3 Level bands
@@ -207,15 +232,15 @@ a low center when both hold:
 
 A uniform gradient fails the depth test because the annulus mean equals
 the point's own value on a slope. Detected centers are dilated by
-`blobKm` (200 km) for display. The annulus (a square ring, the
-difference of two square box sums, not a circular one) mean is
-computed from two NaN-aware box sums. Terrain blanking of the class
+`blobKm` (200 km) for display. The annulus mean is the difference of
+two NaN-aware disk sums, at 500 and 300 km (a square ring, the
+difference of two box sums, with the former square window). Terrain blanking of the class
 and index comes from the band levels: a point whose 925 hPa height is
 below ground has a NaN `HVTL` (2.4), hence a NaN class and index,
 whatever the mask says.
 
 **In forecaster terms**, the depth test is 5 hPa of pressure rise
-between the center and the square 300 to 500 km ring around it, not
+between the center and the 300 to 500 km ring around it, not
 literally "a closed low at least 5 hPa deep". For a compact 300 km low
 the effective floor works out closer to 6 hPa once the ring mean is
 folded in; a broader, flatter low needs more than 5 hPa of true depth
@@ -236,14 +261,17 @@ low inside a blob's footprint before treating it as a single system.
 
 Detector sensitivity (synthetic Gaussian MSLP lows on a 0.25 degree
 grid at 45 N, the `experiments.py` setup rerun on MSLP): with the
-shipped 5 hPa ring test a 5 hPa deep low is never detected; 6 hPa is
-detected out to a 300 km e-folding scale, 7 hPa out to 400 km, 10 hPa
-out to 500 km, 12 hPa out to 600 km, and an 800 km scale low is missed
-even at 15 hPa. The effective floor is therefore about 6 hPa for a
-compact low and 10 to 12 hPa for a broad one. An open trough with a
-5 hPa per 1000 km cross-trough gradient produces no detection; a
-flat-centered 10 hPa low and an elongated 700 by 150 km low are both
-detected. The earlier 1000 hPa height detector (40 m ring test) gave
+shipped 5 hPa ring test and the circular ring a 5 hPa deep low is
+never detected; 6.25 and 7.5 hPa are detected out to a 300 km e-folding
+scale, 10 hPa out to 400 km, 12.5 hPa out to 500 km, 15 hPa out to
+600 km, and an 800 km scale low is missed even at 15 hPa. The effective
+floor is therefore about 6 hPa for a compact low and 12.5 to 15 hPa for
+a broad one. An open trough with a 5 hPa per 1000 km cross-trough
+gradient produces no detection; an elongated 700 by 150 km 10 hPa low
+is detected, and a 10 hPa low with a flat 300 km center is not. The
+former square ring, whose corners reach higher pressure, detected the
+7.5, 10 and 12.5 hPa lows one scale further out and the flat-centered
+low as well. The earlier 1000 hPa height detector (40 m ring test) gave
 the same pattern at about 8 m per hPa.
 
 ### 2.6 Joint classification
@@ -355,7 +383,8 @@ reduces to the older `(8 radiusKm/(3 pi))` times the projected
 window-mean gradient, kept as `parameter_b_grid_gradient`) and a
 storm-scale dipole alike. On a 400 km dipole inside the 500 km circle
 it matches a brute-force semicircle difference to well within 1%, where
-the gradient form reads about 55%. What it misses is the odd harmonics
+the gradient form reads about 72% with the disk window mean (about 55%
+with the square window mean it was written with). What it misses is the odd harmonics
 `k >= 3`, weighted at most `(4/pi)/k` (0.42 for `k = 3`); a sharply
 folded warm-seclusion tongue can carry some of that. The grid's
 whole-cell disk costs well under 1% at 0.25 degree spacing and a few
@@ -413,14 +442,14 @@ worth keeping straight when comparing the two:
    package's product is a map per forecast hour. The trajectory is
    recovered by animating and reading the class at the center, or by
    sampling HVTL, HVTU, and HB there frame by frame.
-3. Hart uses a 500 km circle; this package uses the 500 km window, a
-   square 1000 km across, kept
-   deliberately for speed (section 7). On a strong background gradient
-   the square overstates the height range by up to 41 percent of the
-   gradient's own contribution, on top of the share Hart's circle
-   carries by definition; in a strong baroclinic zone the environment
-   can move the upper term across zero in either formulation
-   (section 2.2).
+3. Both use a 500 km circle: Hart's by great-circle distance from the
+   tracked center, this package's laid on the grid as whole cells row
+   by row, which matches his to within 0.2 percent on synthetic
+   vortices of 150 to 400 km scale. Earlier versions used a square of
+   500 km half-width, which read cold cores about 50 m more negative on
+   a GFS forecast and is kept only as an option (section 2.2). In a
+   strong baroclinic zone the environment can move the upper term
+   across zero in either formulation.
 4. Hart regresses over 900-600 hPa and 600-300 hPa at 50 hPa spacing;
    this package uses 925, 850, 700 hPa and 500, 400, 300 hPa.
    Magnitudes come out near Hart's but not equal; sign, the zero
@@ -462,18 +491,24 @@ the track); the gridded method is this module on the standard levels
 with the deep-layer wind set equal to the track motion. Results (with
 the semicircle-mean B; closed-low mask on MSLP made from the synthetic
 1000 hPa height at 8 m per hPa): both walk classes 0, 2, 3, 4, 5, 1;
-gridded onset 42 h, the same frame as Hart's, completion 114 h against
-108 h, B back under 10 m at 138 h for both; the gridded lower term is
-12 percent above Hart's in the deep warm core phase (square window,
-150 to 200 km vortex) and 109 m against 41 m at the seclusion (band
-effect, section 2.3); rms differences over the life cycle are 15 m
-(upper term), 49 m (lower term) and 1.3 m (B). Hart's B peaks at
+gridded onset 42 h and completion 108 h, the same frames as Hart's,
+B back under 10 m at 138 h for both; the gridded lower term is
+12 percent above Hart's in the deep warm core phase (150 to 200 km
+vortex; the band, not the window: on `cps.hart`'s own circle the
+standard levels give the same 11.4 percent at 0 h, and the gridded disk
+differs from that circle by 0.1 percent or less through 48 h) and 94 m
+against 41 m at the seclusion (band effect, section 2.3); rms
+differences over the life cycle are 15 m (upper term), 45 m (lower
+term) and 1.3 m (B). With the former square window the gridded
+completion came one frame later (114 h) and the seclusion read 109 m. Hart's B peaks at
 39.9 m and the gridded at 40.3 m (Hart's semicircle difference on the
 same 925-700 hPa layer with lambda gives 39.8 m). The earlier
 first-order form of B (window-mean gradient times 8R/(3 pi)) peaked at
-24 m on the same case, put the gridded onset at 54 h, and had a 10 m
-rms difference in B: the whole gap was that approximation on an
-asymmetry that reverses inside the window, not the layer.
+30 m on the same case with the disk window mean (24 m with the square
+window mean it was used with), put the gridded onset at 48 h (54 h),
+and had a 6 m (10 m) rms difference in B: the whole gap was that
+approximation on an asymmetry that reverses inside the window, not the
+layer.
 
 ---
 
@@ -481,26 +516,35 @@ asymmetry that reverses inside the window, not the layer.
 
 ### 3.1 Sliding extrema
 
-`running_extreme_1d` computes a sliding max or min over a window of
-length 2w+1 along one axis in O(N log w): pad with sentinels, build
-power-of-two window extrema by repeated combination, then cover the
-window with two overlapping power-of-two blocks. `np.fmax` and `np.fmin`
-ignore NaN, and all-sentinel results are converted back to NaN so edges
-shrink rather than wrap.
+`window_extreme_2d` takes the max or min over the disk
+(`_disk_extreme_2d`). For each row it builds one sparse table: level
+`k` holds the extreme of `2**k` consecutive columns, built by doubling,
+and a sliding window of any length `n` is the combination of two
+overlapping level `floor(log2(n))` windows. For each row offset `j`
+the x pass along the chord (width `2 w_j(i) + 1`, set by the source
+row's own `dx`) is read from those tables, shifted by `j` rows and
+combined into the result; `+j` and `-j` share one x pass. `np.fmax` and
+`np.fmin` ignore NaN, and all-missing results come back NaN so edges
+shrink rather than wrap. `window_geometry` builds the chords (and the
+clamps near the poles) once per grid and radius and caches them.
 
-`window_extreme_2d` runs the x pass with a per-row half-width, because
-500 km is more grid cells at high latitude on a lat/lon grid, then the
-y pass with one half-width. Rows are grouped by half-width and each
-group processed at once. On projected grids dx varies in two
+With `shape="square"` the former square is computed exactly as before
+(`_square_extreme_2d`): `running_extreme_1d`, a sliding max or min of
+length 2w+1 along one axis in O(N log w), runs the x pass with a
+per-row half-width, because 500 km is more grid cells at high latitude
+on a lat/lon grid, then the y pass with one half-width, rows grouped by
+half-width. On projected grids dx varies in two
 dimensions; the per-row nanmean is used, which is an approximation.
 On a detected global lat/lon grid, the x pass wraps the 500 km window
 across the longitude seam instead of clipping it, and the per-row
-half-width is clamped near the poles so it does not expand to an
+chord is clamped near the poles so it does not expand to an
 implausible number of columns; a regional grid has no seam and takes
 neither path.
 
-`window_sum_2d` does the same for NaN-aware sums and counts using
-cumulative sums, for the annulus mean.
+`window_sum_2d` does the same for NaN-aware sums and counts, with the
+same chords on cumulative sums along x (`_disk_sum_2d`), for the
+annulus mean, the valid-cell count behind the `MIN_VALID_FRACTION`
+guard and `window_mean`.
 
 `half_disk_means` builds the four half-disk means for B (section 2.7)
 from one cumulative sum along x per field: for each row offset it
@@ -517,7 +561,8 @@ Measured on a 721 by 1440 grid (0.25 degree global) in the test suite:
 | Call | Time |
 | :--- | :--- |
 | `thermal_wind_grid`, three levels | about 0.8 s |
-| `executeHartClass`, six levels, B, and MSLP mask | about 3 s per forecast hour on a 0.25 degree global grid (about 2.6 s with the earlier first-order B) |
+| `executeBand3`, three levels | about 0.6 s (0.75 s with the former square window) |
+| `executeHartClass`, six levels, B, and MSLP mask | about 2.8 s per forecast hour on a 0.25 degree global grid (3.1 s with the former square window) |
 | `half_disk_means` alone | about 0.4 s |
 
 CAVE computes per frame on load, so a 41-frame loop costs about a
@@ -572,7 +617,7 @@ CAVE; no Python change is needed.
 
 What each does:
 
-- `radiusKm`: window half-width. Hart's 500. Larger integrates more of
+- `radiusKm`: window radius. Hart's 500. Larger integrates more of
   a tilted system; smaller sharpens compact storms.
 - `depthHpa`: minimum MSLP rise from a low's center to its 300 to
   500 km ring for classification. 5 hPa is an effective floor of about
@@ -755,10 +800,11 @@ parallel products that would leave Hart's parameters as the reference:
   bears on how long hurricane-force core winds persist. It would be a
   separate wind-structure diagnostic, never shown in place of HVTL and
   HVTU.
-- Storm-scaled radius: at a fixed 500 km half-width the lower term
-  falls to 77 percent of its true value for a 600 km e-folding scale
-  vortex; a half-width of 2.5 times the scale holds 100 percent across
-  all sizes tested, at the cost of admitting more environment.
+- Storm-scaled radius: at a fixed 500 km radius the lower term falls
+  to 80 percent of its true value for a 400 km e-folding scale vortex
+  and 51 percent at 600 km; a radius of 2.5 times the scale holds
+  100 percent up to 400 km and 95 percent at 600 km, where the radius is
+  clipped at 1000 km, at the cost of admitting more environment.
 - Vector asymmetry: for a uniform thickness gradient B is its
   cross-track projection. For a 40 m per 1000 km gradient (25 m in Hart's units) B is
   0 when the storm moves straight toward colder air and passes 10 m only
@@ -774,15 +820,13 @@ forecast hour) uses the method unchanged and needs only ensemble input.
 
 ## 7. Known limitations and future work
 
-**The square analysis window (2026-09-18).** HVTL, HVTU, and HB use
-the square 500 km window rather than Hart's circle because a square
-sliding max/min is separable and runs in a handful of passes per level
-(section 3.1); a circular filter would cost several times more per
-frame at the grid sizes and frame counts this package targets. The
-trade-off is the direction-dependent extra share of the background
-gradient (section 2.2). Revisiting the choice would mean re-measuring that cost
-and that bias together on real cases, not treating either number alone
-as a reason to change it.
+**The analysis window is Hart's circle.** Every sliding window in the
+module is the 500 km disk (`WINDOW_SHAPE = "circle"`), at about the
+cost of the square it replaced (section 3.2). The square of 500 km
+half-width used from 2026-09-18 read cold cores about 50 m more
+negative on a GFS forecast (section 2.2) and is kept only as an option
+(`WINDOW_SHAPE = "square"`). The real-case values sampled in CAVE so
+far were read with the square and are to be re-sampled.
 
 - Standard-level bands differ from Hart's. A GFS-only seven-level
   definition is a small addition (4.4).
@@ -802,7 +846,9 @@ as a reason to change it.
   (at most `(4/pi)/k` of their amplitude, 0.42 for `k = 3`) are not
   captured. The earlier first-order gradient form, which lost about
   40 percent of a storm-scale asymmetry and delayed onset by two 6 h
-  frames in the synthetic life cycle of section 2.8, is kept only as
+  frames in the synthetic life cycle of section 2.8 with the square
+  window mean it was used with (25 percent and one frame with the disk
+  mean), is kept only as
   `parameter_b_grid_gradient` for comparison.
 - `HCPSclass` flickers between adjacent codes when a storm sits on one
   of Hart's strict lines (B at 10 m, or a thermal wind term at 0) from

@@ -35,11 +35,12 @@ against; see "Tests" below.
 
 `cps_HartCPS.py` computes Hart's actual quantity: at every grid point,
 `dZ(level) = max(Z) - min(Z)` of geopotential height over the 500 km
-window (a square of 500 km half-width, 1000 km across) centered on
-that point (Hart's own analysis radius, evaluated at every point
-instead of only at one storm's moving center -- see `cps_HartCPS.py`'s
-module docstring for why a square window is used instead of Hart's
-circle, and why the difference is small in practice), then `-V_T` is
+circle centered on that point (Hart's own analysis window, evaluated at
+every point instead of only at one storm's moving center -- see
+`cps_HartCPS.py`'s module docstring, "The circular window", for how the
+disk is laid on the grid and for the square of 500 km half-width that
+earlier versions used, still selectable with `WINDOW_SHAPE =
+"square"`), then `-V_T` is
 the least-squares slope of `dZ` against `ln(pressure)` over a band of
 levels. This uses **geopotential height only** -- no wind field, no
 vorticity, no smoothing choice. On a global lat/lon grid the 500 km
@@ -51,8 +52,8 @@ hPa)` -- plain meters. Warm cores read positive (order +100 m and
 above for a mature tropical cyclone) and cold cores negative. These
 are **not** the published Hart (2003) or FSU values for the same
 storm: the lower band (925-700 hPa) lies entirely below Hart's 900-600
-hPa layer, the upper band omits 600-500 hPa, and the square window
-inflates dZ for broad anomalies. On plausible core profiles the lower
+hPa layer and the upper band omits 600-500 hPa. On plausible core
+profiles the lower
 term can differ from Hart's by tens of percent, and the size of the
 difference on real storms has not been measured. Do not report
 HVTL/HVTU numbers as if they were the FSU diagnostic for a storm; read
@@ -112,45 +113,47 @@ with the operational code on synthetic fields:
    in use calls completion slightly late (about 3 h on a 48 h
    transition); the deeper band would call it about 6 h early.
 2. Closed-low detector (rerun on MSLP with the shipped 5 hPa ring
-   test). A Gaussian MSLP low of 5 hPa central depth is never detected;
-   6 hPa is detected out to a 300 km e-folding scale, 7 hPa out to
-   400 km, 10 hPa out to 500 km, 12 hPa out to 600 km, and an 800 km
-   scale low is missed even at 15 hPa. The effective floor is therefore
-   about 6 hPa for a compact low and 10 to 12 hPa for a broad one. An
-   open trough with a 5 hPa per 1000 km cross-trough gradient produces
-   no detection; a flat-centered 10 hPa low and an elongated 700 by
-   150 km low are both detected. (The same experiment on the earlier
-   1000 hPa height detector, 40 m ring test, gave the same pattern at
-   about 8 m per hPa; figure figB_detector.png is from that version.)
+   test and the circular ring). A Gaussian MSLP low of 5 hPa central
+   depth is never detected; 6.25 and 7.5 hPa are detected out to a
+   300 km e-folding scale, 10 hPa out to 400 km, 12.5 hPa out to 500 km,
+   15 hPa out to 600 km, and an 800 km scale low is missed even at
+   15 hPa. The effective floor is therefore about 6 hPa for a compact
+   low and 12.5 to 15 hPa for a broad one. An open trough with a 5 hPa
+   per 1000 km cross-trough gradient produces no detection; an
+   elongated 700 by 150 km 10 hPa low is detected, and a 10 hPa low
+   with a flat 300 km center is not. The former square ring detected
+   the 7.5, 10 and 12.5 hPa lows one scale further out and the
+   flat-centered low as well. Figure figB_detector.png is from the
+   circular ring.
 3. Resolution. The same vortex on 0.25, 0.5 and 1.0 degree grids gives
-   the same lower term to 0.1 m at 150 km scale and within 1.4 percent
-   at 400 km scale.
+   the same lower term to 0.1 m at both 150 km and 400 km scale (the
+   former square differed by 1.4 percent at 400 km).
 4. Steering. With 20 and 40 percent wavenumber-one asymmetry in the
    vortex, the window-averaged proxy still returns the imposed 8 m/s
-   westerly exactly at the center, while the pointwise wind one degree
+   westerly at the center (7.99 m/s, within 0.1 degree of heading), while the pointwise wind one degree
    away reads 44 to 55 m/s. The area mean of the geostrophic wind over
    a window depends only on the height on the window boundary, so any
    vortex whose perturbation vanishes at the boundary contributes
    nothing, symmetric or not.
 5. Noise. With 5 m of uncorrelated height noise on every level, the
-   terms at a storm center scatter with standard deviations of 15 m
-   (HVTL), 9 m (HVTU) and 0.6 m (HB) over 60 realizations. A class can
+   terms at a storm center scatter with standard deviations of 16 m
+   (HVTL), 9 m (HVTU) and 0.5 m (HB) over 60 realizations. A class can
    flicker when a thermal wind term is within about 15 m of zero or B
    within about 1 m of 10 m.
 
 `cyclone_phase_space/article/figures/experiments_extensions.py` tests four candidate
 extensions (see the technical guide, "Candidate extensions"): the
 unmodified terms of a deep warm core fall to zero or below in a
-moderate baroclinic zone (upper term +191 m to +70 m along a grid axis
-and to about 0 at 45 degrees for a 5 m per degree gradient growing
-with height; -85 and -193 m at 10 m per degree), which is the
+moderate baroclinic zone (upper term +191 m to +79 m along a grid axis
+and +67 m at 45 degrees for a 5 m per degree gradient growing with
+height; -68 and -90 m at 10 m per degree), which is the
 transition signal the phase space is built to read, and subtracting
 the background plane restores the isolated-vortex terms exactly, a
 storm-only core diagnostic for wind structure rather than a phase
-parameter; a window half-width of
-2.5 times the vortex scale holds the lower term at 100 percent of its
-true value where the fixed 500 km half-width falls to 77 percent at
-600 km scale; Hart's B reads 0 for a storm moving straight toward
+parameter; a window radius of 2.5 times the vortex scale holds the
+lower term at 100 percent of its true value up to 400 km scale and
+95 percent at 600 km (clipped at 1000 km), where the fixed 500 km
+radius falls to 80 and 51 percent; Hart's B reads 0 for a storm moving straight toward
 colder air across a 25 m gradient and passes 10 m only 24 degrees off
 it; and the seven standard levels place the warm-core top at 700 hPa
 for the seclusion and transition profiles.
@@ -159,15 +162,16 @@ for the seclusion and transition profiles.
 (`cyclone_phase_space/cps/hart.py`: 500 km circle, 50 hPa levels, semicircle B) and this
 module side by side on one synthetic 168 h transition with the same
 motion vector. Both walk classes 0, 2, 3, 4, 5, 1; the gridded onset
-falls on the same frame as Hart's (42 h) and the gridded completion
-trails Hart's by 6 h; the gridded lower term runs 12 percent high in
-the deep warm core (square window) and 109 m against 41 m at the
-seclusion (band); Hart's B peaks at 39.9 m and the gridded at 40.3 m
+falls on the same frame as Hart's (42 h) and so does the gridded
+completion (108 h; 114 h, one frame later, with the former square
+window); the gridded lower term runs 12 percent high in the deep warm
+core (band, not window) and 94 m against 41 m at the seclusion (band); Hart's B peaks at 39.9 m and the gridded at 40.3 m
 (Hart's semicircle difference on the same 925-700 hPa layer with lambda
 gives 39.8 m), so HB now reads storm-scale asymmetry at Hart's
 magnitude. The earlier first-order form of HB (the window-mean
-thickness gradient times 8R/(3 pi)) peaked at 24 m on the same case and
-put the gridded onset 12 h after Hart's. See the technical guide,
+thickness gradient times 8R/(3 pi)) peaked at 24 m on the same case
+with the square window mean it was used with and put the gridded onset
+12 h after Hart's (30 m and 6 h with the disk window mean). See the technical guide,
 section 2.8.
 
 `cyclone_phase_space/article/figures/phase_space_3d.py` draws the same life cycle in
@@ -211,17 +215,18 @@ therefore uses two tests a monotonic slope cannot satisfy together:
 
 1. **Candidate test**: the point is within `center_tol_hpa` (default
    **0.6 hPa**, `DEFAULT_CENTER_TOL_HPA` -- deliberately tight) of the
-   local minimum MSLP found within a `minRadiusKm` search box (module
+   local minimum MSLP found within a `minRadiusKm` search radius (module
    default `MIN_RADIUS_KM`, 300 km, fixed, not a `<ConstantField>` --
    "how big a box finds a low's own local minimum", not something meant
    to be tuned per case).
-2. **Depth test**: the mean MSLP of the **annulus** (a square ring,
-   the difference of two square box sums, not a circular one) between
+2. **Depth test**: the mean MSLP of the **annulus** (a circular ring,
+   the difference of two disk sums; a square ring with the former
+   square window) between
    `minRadiusKm` and `radiusKm` (the same 500 km `<ConstantField>` used
    for HVTL/HVTU) exceeds the point's own MSLP by at least `depthHpa`
    (default 5 hPa, `DEFAULT_DEPTH_HPA`). The annulus mean is a difference
-   of two NaN-aware box sums (`cps_HartCPS.window_sum_2d`, called once
-   for the outer `radiusKm` box and once for the inner `minRadiusKm` box,
+   of two NaN-aware disk sums (`cps_HartCPS.window_sum_2d`, called once
+   for the outer `radiusKm` disk and once for the inner `minRadiusKm` disk,
    then `(sum_outer - sum_inner) / (count_outer - count_inner)`). On a
    real closed low the surrounding annulus sits in higher pressure and
    this comes back close to the low's true depth; on a uniform slope the
@@ -230,7 +235,7 @@ therefore uses two tests a monotonic slope cannot satisfy together:
    correctly rejects it.
 
 **In forecaster terms**, the depth test is 5 hPa of pressure rise
-between the center and the square 300 to 500 km ring around it, not a
+between the center and the 300 to 500 km ring around it, not a
 literal "closed low at least 5 hPa deep" statement. For a compact
 300 km low the effective floor works out closer to 6 hPa once the ring
 mean is folded in; a broader, flatter low needs more than 5 hPa of true
@@ -735,8 +740,9 @@ trick against a brute-force reference, the closed-form band-slope
 formula, `closed_low_mask` on MSLP (Pa or hPa), the
 classification/index entry points, a direct numerical comparison
 against `cps.hart.thermal_wind` on a synthetic warm/cold-core vortex
-(within 2%, per the square-vs-circle window difference discussed
-above), `gradient_2d`'s orientation modes on a plane field,
+(to a relative 1e-5; about 4e-7 measured with the circle, and within
+0.2% at 250 and 400 km scale, where the former square reads 1.02 and
+1.22), `gradient_2d`'s orientation modes on a plane field,
 `half_disk_means` against a brute-force loop (both row orientations,
 with and without the longitude wrap), `parameter_b_grid` on a uniform
 thickness gradient (the `8R/(3 pi)` value within 1% at several
@@ -797,7 +803,9 @@ with B at 46 m, and the seclusion forms by 96 h (lower term back to
 +241 m, upper still -295 m, B 0.5 m, class 1). The cold-phase upper
 term (-284 to -295 m) matches the FSU diagram's -300 m; the seclusion
 lower term (+241 m) is about twice the FSU value, which is the expected
-direction for the 925-700 band and the square window on a broad low.
+direction for the 925-700 band. These values were read with the former
+square window, which read cold cores about 50 m more negative than the
+circle and moved warm cores by 1 to 10 m on a GFS forecast.
 The index equals its definition at every sampled point (for example
 2 tanh(0.22) + tanh(-2.84) = -0.56 at 72 h). The 120 h class 6 has
 HVTU = +3 m, zero for practical purposes: a threshold artifact, read as
@@ -862,6 +870,7 @@ seclusion case; a subtropical storm case; a false-positive count on
 weak frontal waves that are not tropical or subtropical systems at
 all; and a comparison of gridded `B` against storm-centered `B`
 computed from finite-differenced storm centers on a tracked case.
-Known limitations: the raw HVTL/HVTU fields paint a square footprint
-around each low (the window shape, cosmetic); style rules did not
+Known limitations: the raw HVTL/HVTU fields paint a round footprint
+around each low (the window shape, cosmetic; square in captures made
+before the circular window); style rules did not
 auto-apply on the OPC build, so colors come from a saved procedure.

@@ -269,8 +269,8 @@ def make_png(d, events):
                frameon=False, title="HCPSclass cells (B = 10 m, $-V_T^L$ = 0, $-V_T^U$ = 0)", title_fontsize=8,
                handlelength=1.4, columnspacing=1.2)
     traj_handles = [
-        Line2D([0], [0], marker="o", color="0.4", lw=1.0, markersize=5, label="Hart, circular window"),
-        Line2D([0], [0], marker="s", color=GRID_LINE, lw=1.0, markersize=5, label="gridded, square window"),
+        Line2D([0], [0], marker="o", color="0.4", lw=1.0, markersize=5, label="Hart, 50 hPa levels"),
+        Line2D([0], [0], marker="s", color=GRID_LINE, lw=1.0, markersize=5, label="gridded, standard levels"),
         Line2D([0], [0], marker="x", color=ds.TEXT_DARK, lw=0, markersize=6, markeredgewidth=1.4,
                label="gridded onset (B > 10 m), completion ($-V_T^L$ < 0)"),
     ]
@@ -382,8 +382,8 @@ def make_html(d, events, lims):
                 f"<br>gridded class {_cls_label(d['CLS_grid'][i])}<br>Hart class {_cls_label(d['CLS_hart'][i])}")
 
     for method, label, line_color, ramp, symbol in (
-            ("hart", "Hart, circular window", HART_LINE, HART_RAMP, "circle"),
-            ("grid", "gridded, square window", GRID_LINE, GRID_RAMP, "square")):
+            ("hart", "Hart, 50 hPa levels", HART_LINE, HART_RAMP, "circle"),
+            ("grid", "gridded, standard levels", GRID_LINE, GRID_RAMP, "square")):
         def d_r(k, i, m=method):
             return f"{d[f'{k}_{m}'][i]:.1f}"
         traces.append(dict(

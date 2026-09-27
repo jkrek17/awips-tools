@@ -304,7 +304,9 @@ def save_palette_png(idx: np.ndarray, rgba: np.ndarray, path: Path) -> int:
 
 
 def box_mean(a: np.ndarray, r: int) -> np.ndarray:
-    """Mean over a (2r+1) square window, edges clamped in latitude and wrapped in longitude."""
+    """Mean over a (2r+1) square box of grid cells, edges clamped in latitude and
+    wrapped in longitude. A display fade only; the thermal wind, B and class
+    fields themselves come from cps_HartCPS.py's circular windows."""
     pad = np.pad(a, ((r, r), (0, 0)), mode="edge")
     pad = np.concatenate([pad[:, -r:], pad, pad[:, :r]], axis=1)
     c = np.cumsum(np.cumsum(pad, axis=0), axis=1)
