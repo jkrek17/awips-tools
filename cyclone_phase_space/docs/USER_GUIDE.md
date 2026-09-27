@@ -164,8 +164,8 @@ storm is in right now. Onset and completion are read from HB and HVTL
 directly, not from HCPSclass (see "Reading the class" in section 5 and
 section 6).
 
-![Hart's three numbers as one three-dimensional space, cut into seven colored boxes, one per HCPSclass code, with the synthetic life cycle's path running through them](../article/figures/figJ_phase_space_3d.png)
-*The class is simply which box of this three-number space the storm sits in; the two classic diagrams are what you see looking at the space from two of its sides ([rotatable version](../article/figures/phase_space_3d.html)).*
+![Hart's three numbers as one three-dimensional space, cut into seven colored boxes, one per HCPSclass code, in six small panels, each with the path of one synthetic storm type running through the boxes](../article/figures/figJ_phase_space_3d.png)
+*The class is simply which box of this three-number space the storm sits in; the two classic diagrams are what you see looking at the space from two of its sides. The six panels are synthetic storm types and the boxes each one passes through: (a) extratropical transition, (b) a tropical cyclone that weakens without transition, (c) a warm seclusion, (d) an occluding cold low, (e) tropical transition of a subtropical storm, (f) a hybrid hovering near B = 10 m ([rotatable version, with a button per storm type](../article/figures/phase_space_3d.html)).*
 
 ### How this differs from the FSU page
 
