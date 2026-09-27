@@ -540,7 +540,8 @@
     is the cell of this space that its (<i>B</i>,
     &minus;V<sub>T</sub><sup>L</sup>, &minus;V<sub>T</sub><sup>U</sup>)
     triple falls in, and the two classic diagrams are the projections of
-    that space onto two of its faces (Figure 7). The
+    that space onto two of its faces (Figure 7, which also follows six
+    synthetic life cycles from cell to cell). The
     colors form three groups so that onset and completion read as
     abrupt shifts: reds for a symmetric warm core, yellow and green for
     a storm in transition, blues for a cold core:
@@ -565,7 +566,12 @@
     the upper core stays cold, so &minus;V<sub>T</sub><sup>L</sup> turns
     positive again: class 4 to 3 while the bent-back front keeps <i>B</i>
     above 10&nbsp;m, and 4 to 1 if <i>B</i> also falls (Hart et al.
-    2006). <code>HCPSclass</code> reports a state, not an event. Onset
+    2006). Figure 7 traces both paths, together with a tropical cyclone
+    that decays without transition (0 throughout), a cold-core low that
+    occludes (4 to 5), the tropical transition of a subtropical storm
+    (4, 3, 1, 0) and a hybrid that swings between 1 and 3 across the
+    <i>B</i> plane, each computed frame by frame from synthetic height
+    fields. <code>HCPSclass</code> reports a state, not an event. Onset
     and completion are crossings, and a storm whose <i>B</i> passes
     10&nbsp;m in the same frame that &minus;V<sub>T</sub><sup>L</sup>
     passes zero moves from 0 to 4 without visiting 2 or 3. The Evans and
@@ -615,29 +621,57 @@
   </figure>
   <figure id="fig7">
     <img src="figures/figJ_phase_space_3d.png"
-         alt="Two perspective views of one three-dimensional box whose axes are the lower thermal wind, parameter B and the upper thermal wind, all in meters. Planes at B equals 10 meters and at zero on both thermal wind axes cut the box into cells, drawn as translucent boxes in the seven class colors: red, magenta, yellow, green, blue and indigo cells on either side of the B plane, and one gray cell spanning both sides where the lower core is cold and the upper warm. Two trajectories of the same synthetic life cycle thread through the cells, Hart's in gray and the gridded method's in red, each with markers shading from light to dark by forecast hour, running from the symmetric deep warm core cell through the asymmetric warm cells to the asymmetric cold cell, then the symmetric cold cell and back into the symmetric shallow warm cell, with the gridded onset and completion points marked.">
+         alt="Six small perspective views, in two rows of three, of the same three-dimensional box seen from the same angle, whose axes are the lower thermal wind, parameter B and the upper thermal wind, all in meters. In every panel, planes at B equals 10 meters and at zero on both thermal wind axes cut the box into cells, drawn as translucent boxes in the seven class colors and numbered 0 to 6, with the gray class 6 cell spanning both sides of the B plane where the lower core is cold and the upper warm. Each panel traces one synthetic 168 hour life cycle, the gridded path as squares and line segments colored by class and Hart's path as a thin gray line with small circles, the start circled, the end boxed and hours labeled every 24 hours. Panel a, extratropical transition: from the symmetric deep warm core cell through the asymmetric warm cells to the asymmetric cold cell, then the symmetric cold cell and the symmetric shallow warm cell, with onset at 42 hours and completion at 108 hours marked with crosses. Panel b, tropical cyclone decay: a short straight path that stays in the symmetric deep warm core cell, moving toward the origin. Panel c, warm seclusion: from the asymmetric cold cell into the asymmetric shallow warm cell, the symmetric shallow warm cell and finally the symmetric cold cell. Panel d, cold-core occlusion: from the asymmetric cold cell into the symmetric cold cell. Panel e, tropical transition: from the asymmetric cold cell through the asymmetric and symmetric shallow warm cells into the symmetric deep warm core cell. Panel f, hybrid: a zigzag that crosses the B equals 10 meter plane back and forth between the symmetric and asymmetric shallow warm cells. A legend below names the seven classes and the path symbols.">
     <figcaption><strong>Figure 7.</strong> Hart's phase space as the
       one three-dimensional space the two diagrams of Figure 1 project,
       with &minus;V<sub>T</sub><sup>L</sup>, <i>B</i> and
-      &minus;V<sub>T</sub><sup>U</sup> on the three axes, all in meters.
+      &minus;V<sub>T</sub><sup>U</sup> on the three axes, all in meters,
+      and six <em>synthetic</em> life cycles traced through it.
       The planes <i>B</i> = 10&nbsp;m, &minus;V<sub>T</sub><sup>L</sup> = 0
       and &minus;V<sub>T</sub><sup>U</sup> = 0 cut it into the cells of
       <code>HCPSclass</code>, drawn as translucent boxes in the colors of
       the class table above and labeled with their codes; class 6 (lower cold, upper warm) is one box
       spanning both halves of the <i>B</i> plane, which is why eight cells
-      give seven classes. The two trajectories are the
-      <em>synthetic</em> life cycle of Section 6 (Figure 13), evaluated
-      with Hart's method (gray circles) and the gridded method (red
-      squares), markers light to dark by forecast hour from 0 to
-      168&nbsp;h, with the gridded onset (42&nbsp;h) and completion
-      (108&nbsp;h) marked with an &times;. <strong>(a)</strong> and
-      <strong>(b)</strong> The same space from two viewing angles. The class of a storm is the
-      box its point sits in; dropping the &minus;V<sub>T</sub><sup>U</sup>
+      give seven classes. Each panel is one 168&nbsp;h archetype built
+      from the ingredients of the life cycle of Section 6: a vortex whose
+      height perturbation is prescribed level by level, its radius, a
+      storm-attached thickness dipole across the track, the background
+      gradient of a baroclinic zone, and a track. Every 6&nbsp;h frame is
+      evaluated by the gridded method (squares and path colored by the
+      class it assigns) and by Hart's method (gray circles); hours are
+      labeled every 24&nbsp;h, the start is circled and the end boxed,
+      and an &times; marks the gridded onset (the first frame with
+      <i>B</i> above 10&nbsp;m) and completion (the first with
+      &minus;V<sub>T</sub><sup>L</sup> below zero) of a storm that did not
+      start past those planes.
+      <strong>(a)</strong> Extratropical transition, the life cycle of
+      Figure 13: classes 0, 2, 3, 4, 5, 1, onset at 42&nbsp;h and
+      completion at 108&nbsp;h.
+      <strong>(b)</strong> A tropical cyclone that weakens over cooler
+      water without transition: class 0 throughout, both thermal wind
+      terms shrinking toward zero.
+      <strong>(c)</strong> Warm seclusion of a frontal low
+      (Shapiro&ndash;Keyser): asymmetric cold core (4), a shallow warm core
+      forming at 66&nbsp;h (3), the core symmetric from 96&nbsp;h (1), and
+      cold again as it fills from 144&nbsp;h (5).
+      <strong>(d)</strong> A cold-core low that occludes: 4 to 5 at
+      72&nbsp;h as the frontal dipole decays.
+      <strong>(e)</strong> Tropical transition of a subtropical storm: a
+      weakly asymmetric cold low (4) builds a lower-tropospheric warm core
+      (3 at 42&nbsp;h), loses its asymmetry (1 at 72&nbsp;h) and deepens
+      its warm core through the column (0 at 120&nbsp;h).
+      <strong>(f)</strong> A hybrid whose dipole pulses with a
+      56&nbsp;h period while it slowly deepens: <i>B</i> crosses 10&nbsp;m
+      seven times, alternating between classes 1 and 3 (the first
+      crossing, at 6&nbsp;h, is marked as onset).
+      Hart's method passes through the same classes in the same order in
+      every panel, within two frames. All six panels share one viewing
+      angle and one set of axis ranges. The class of a storm is the box its point sits in; dropping the &minus;V<sub>T</sub><sup>U</sup>
       axis gives the diagram of Figure 1a and dropping <i>B</i> gives
       Figure 1b. (<a href="#src-fig7">Appendix A</a>)</figcaption>
   </figure>
-  <p>An interactive version of this figure, which can be rotated and read by hovering, is at <a href="figures/phase_space_3d.html">figures/phase_space_3d.html</a>.</p>
-  <iframe class="interactive" src="figures/phase_space_3d.html" title="Interactive cyclone phase space" loading="lazy"></iframe>
+  <p>An interactive version of this figure is at <a href="figures/phase_space_3d.html">figures/phase_space_3d.html</a>: one life cycle at a time, chosen with the buttons above the plot, which can be rotated and read by hovering, with the view kept when switching from one life cycle to another.</p>
+  <iframe class="interactive" src="figures/phase_space_3d.html" title="Interactive cyclone phase space with six synthetic life cycles" loading="lazy"></iframe>
 
   <h3>Relation to the storm-centered diagrams</h3>
   <p>
@@ -1708,24 +1742,44 @@
     <dt id="src-fig7">Figure 7</dt>
     <dd><code>phase_space_3d.py</code>
       (<code>figJ_phase_space_3d.png</code>). Both implementations, as
-      for Figure 13: the script runs the per-frame loop of
-      <code>lifecycle_comparison.py</code> on that script's own functions
-      (<code>make_hours</code>, <code>build_track_and_motion</code>,
-      <code>build_grid</code>, <code>env_fields</code>,
-      <code>compute_frame</code>), so the trajectories are the arrays
-      behind Figure 13, Hart's from the storm-centered
-      reference <code>cps.hart</code> and the gridded from the
-      operational <code>cps_HartCPS.py</code>. The cell
+      for Figure 13. The six life cycles are the named scenarios of
+      <code>lifecycle_comparison.py</code>
+      (<code>SCENARIOS</code>, one <code>scenario_*</code> function each,
+      whose docstring describes its fields): the extratropical transition
+      of Figure 13, unchanged and the default everywhere, a tropical
+      cyclone that decays without transition, a warm seclusion, a
+      cold-core low that occludes, the tropical transition of a
+      subtropical storm and a hybrid near <i>B</i> = 10&nbsp;m. Each
+      scenario sets the same ingredients as a function of the hour: the
+      vortex height perturbation at the eight anchor levels, the vortex
+      radius, the amplitude of the storm-attached thickness dipole, the
+      strength of the background gradient and the track (start, speed and
+      heading). The script runs each through <code>run_scenario</code>,
+      the per-frame loop of that script's <code>main()</code> on its own
+      functions (<code>make_hours</code>,
+      <code>build_track_and_motion</code>, <code>build_grid</code>,
+      <code>env_fields</code>, <code>compute_frame</code>), so the
+      trajectories of panel (a) are the arrays behind Figure 13 and every
+      path is Hart's from the storm-centered reference
+      <code>cps.hart</code> and the gridded from the operational
+      <code>cps_HartCPS.py</code>, not a drawn curve. The script prints
+      each life cycle's class sequence for both methods, its onset and
+      completion hours and its plane crossings
+      (<code>python3 lifecycle_comparison.py --scenarios</code> prints the
+      same without drawing). The cell
       boundaries are the thresholds of the class table in Section 2, <i>B</i> against 10&nbsp;m
       (<code>cps_HartCPS.B_THRESHOLD_M</code>) and both thermal wind
       terms against 0, and the cell colors are those of the shipped
       <code>CPS_HartClass</code> colormap; the static figure is drawn with
-      matplotlib's <code>mplot3d</code>. The same script writes the
+      matplotlib's <code>mplot3d</code>, all panels from one viewing
+      angle (elevation 20&deg;, azimuth &minus;40&deg;). The same script writes the
       interactive version,
       <a href="figures/phase_space_3d.html"><code>figures/phase_space_3d.html</code></a>,
       a self-contained page that loads Plotly from
       <code>cdn.jsdelivr.net</code> and shows the same cells and
-      trajectories, rotatable and read by hovering.</dd>
+      trajectories, one life cycle at a time behind a row of buttons that
+      switch the visible traces without moving the camera, rotatable and
+      read by hovering.</dd>
 
     <dt id="src-fig8">Figure 8</dt>
     <dd><code>make_figures.py</code> (<code>make_fig4</code>,

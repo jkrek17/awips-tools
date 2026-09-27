@@ -22,8 +22,11 @@ against; see "Tests" below.
   troubleshooting, tests, limitations.
 - `cyclone_phase_space/article/figures/phase_space_3d.html`: an interactive,
   rotatable view of Hart's three-dimensional phase space with the seven
-  HCPSclass cells and a synthetic life cycle, the class read as the box
-  a storm's (B, -VTL, -VTU) point falls in.
+  HCPSclass cells and six synthetic life cycles selectable by button
+  (extratropical transition, tropical cyclone decay, warm seclusion,
+  cold-core occlusion, tropical transition and a hybrid near the
+  B = 10 m plane), the class read as the box a storm's (B, -VTL, -VTU)
+  point falls in.
 - `cyclone_phase_space/realtime/`: `gfs_cps.py` builds the four-panel
   images and a table of every detected low from public GFS output
   (NOMADS or the NOAA AWS bucket) with the unchanged operational
@@ -174,13 +177,19 @@ with the square window mean it was used with and put the gridded onset
 12 h after Hart's (30 m and 6 h with the disk window mean). See the technical guide,
 section 2.8.
 
-`cyclone_phase_space/article/figures/phase_space_3d.py` draws the same life cycle in
-Hart's three-dimensional phase space (-VTL, B, -VTU), with the seven
-HCPSclass cells as colored boxes cut by B = 10 m, -VTL = 0 and
--VTU = 0: `figJ_phase_space_3d.png` (article Figure 7, two viewing
-angles) and the interactive `phase_space_3d.html`. It reuses the
-functions of `lifecycle_comparison.py`, so the trajectories are the
-same arrays. Run it from its own directory.
+`cyclone_phase_space/article/figures/phase_space_3d.py` draws six synthetic
+life cycles in Hart's three-dimensional phase space (-VTL, B, -VTU),
+with the seven HCPSclass cells as colored boxes cut by B = 10 m,
+-VTL = 0 and -VTU = 0: `figJ_phase_space_3d.png` (article Figure 7,
+one panel per life cycle from one viewing angle) and the interactive
+`phase_space_3d.html`, whose buttons switch the plotted example. The
+life cycles are the named scenarios of `lifecycle_comparison.py` (the
+extratropical transition first and unchanged, then tropical cyclone
+decay, warm seclusion, cold-core occlusion, tropical transition and a
+hybrid near the B = 10 m plane), each run through the same per-frame
+loop and module functions, so the trajectories are the same arrays.
+`python3 lifecycle_comparison.py --scenarios` prints their class
+sequences and crossings. Run both from their own directory.
 
 ## Closed-low mask
 

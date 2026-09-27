@@ -2,7 +2,8 @@
    The low centers, MSLP contours, the thermal asymmetry and thermal wind
    rasters and the storm tracks, animated over the forecast hours of the
    latest cycle.
-   storms.js (storm panel, follow mode) and card.js (readout at a low) use
+   storms.js (storm panel, follow mode), space3d.js (the 3-D phase space)
+   and card.js (readout at a low) use
    the globals defined here; this file loads last and starts the page.
    Plain ES2020, no build step. */
 'use strict';
@@ -1028,6 +1029,7 @@ function bindControls() {
     if (!S.index || e.altKey || e.ctrlKey || e.metaKey) return;
     const t = e.target;
     if (t.matches?.('input[type="range"], input[type="text"], input[type="search"], textarea')) return;
+    if (e.key.startsWith('Arrow') && t.closest?.('.s3d-canvas')) return;  // the 3-D view rotates with them
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
       e.preventDefault();
       e.stopPropagation();

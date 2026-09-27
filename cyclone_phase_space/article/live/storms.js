@@ -1,7 +1,8 @@
 /* Cyclone Phase Space, live: the storm panel.
    Every tracked low of the run from index.json, each with its class strip
    on the cycle's time axis and two small phase diagrams on the article's
-   Figure 1 axes; a filter by name, depth and hemisphere; the five deepest
+   Figure 1 axes (the selected low's also as a 3-D phase space, space3d.js);
+   a filter by name, depth and hemisphere; the five deepest
    lows of the frame; tracks and names on the map; and follow mode.
 
    Track entries (source "track") carry the run's own center id at every
@@ -53,9 +54,17 @@ const TAIL_STEPS = 4;            // map tail: the last 24 h, at 6 h steps
 const DEPTHS = ['all', '1000', '980', 'fsu'];
 const HEMIS = ['all', 'N', 'S'];
 
+// The selected entry's view: the two 2-D diagrams, or the 3-D phase space
+// (space3d.js); remembered for the session.
+const DIM_KEY = 'cps-live-dim';
+function savedDim() {
+  try { return sessionStorage.getItem(DIM_KEY) === '3' ? '3' : '2'; } catch { return '2'; }
+}
+
 const ST = {
   list: [], byKey: new Map(), shown: [], built: false, t0: 0, dt: 216e5, span: 1, groupI: -1,
   filter: { q: '', depth: '1000', hemi: 'all' }, hover: null, selected: null, io: null, scrollTo: null,
+  dim: savedDim(),
 };
 
 function stormLabel(name) {
@@ -367,14 +376,56 @@ function fill(s) {
 }
 
 // The selected storm's diagrams are rebuilt at the panel width, one
-// above the other; deselecting restores the small pair.
+// above the other, under a 2-D | 3-D switch; in 3-D one square view of
+// the phase space replaces them. Deselecting restores the small pair.
 function resize(s, big) {
   if (!s.filled || !!s.big === big) return;
   s.big = big;
+  diagrams(s);
+}
+
+function diagrams(s) {
+  const big = !!s.big;
+  const three = big && ST.dim === '3' && typeof Space3D !== 'undefined';
   const m = s.body.querySelector('.minis');
+  s.view3d?.destroy();
+  s.view3d = null;
+  let seg = s.body.querySelector('.dim-seg');
+  if (big && !seg) {
+    seg = document.createElement('div');
+    seg.className = 'seg dim-seg';
+    seg.setAttribute('role', 'group');
+    seg.setAttribute('aria-label', 'Phase diagrams');
+    seg.innerHTML = '<button type="button" data-dim="2" title="The two phase diagrams, Figure 1 axes">2-D</button>' +
+      '<button type="button" data-dim="3" title="The three-dimensional phase space with the class cells">3-D</button>';
+    seg.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => setDim(b.dataset.dim)));
+    m.before(seg);
+  } else if (!big && seg) {
+    seg.remove();
+    seg = null;
+  }
+  seg?.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.dim === (three ? '3' : '2'))));
   m.classList.toggle('big', big);
+  m.classList.toggle('three', three);
+  if (three) {
+    m.replaceChildren();
+    s.view3d = Space3D.create(m, s);
+    return;
+  }
   const G = big ? bigGeom(Math.max(240, m.clientWidth || BIG_W)) : SMALL;
   m.replaceChildren(miniSVG(s, 'b', G), miniSVG(s, 'u', G));
+  updateEntry(s, S.i);
+}
+
+function setDim(d) {
+  if (d === ST.dim) return;
+  ST.dim = d;
+  try { sessionStorage.setItem(DIM_KEY, d); } catch { /* private mode: this page view only */ }
+  const s = findStorm(ST.selected);
+  if (s?.big) {
+    diagrams(s);
+    s.body.querySelector(`.dim-seg [data-dim="${d}"]`)?.focus();
+  }
 }
 
 function stripHTML(s) {
@@ -406,6 +457,7 @@ function updateEntry(s, i) {
   if (!s.filled) return;
   const cur = validAt(i);
   s.nowLine.style.left = `${(cur ? xPct(cur.getTime()) : 0).toFixed(2)}%`;
+  s.view3d?.frame();
   for (const [kind, ring] of [['b', s.nowB], ['u', s.nowU]]) {
     const p = ST.built && e ? pointXY(s, kind, e) : null;
     ring.setAttribute('visibility', p ? 'visible' : 'hidden');
@@ -546,6 +598,7 @@ async function loadAllLows() {
     for (const s of ST.list) {
       if (s.traj_b) drawTrajectory(s, 'b');
       if (s.traj_u) drawTrajectory(s, 'u');
+      s.view3d?.frame();
     }
     document.body.classList.add('storms-built');
   }

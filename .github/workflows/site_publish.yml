@@ -84,7 +84,7 @@ jobs:
           # browser holding a cached index.html never pairs it with stale
           # files (Pages serves everything with a 10 minute max-age).
           v="${GITHUB_SHA::8}"
-          sed -i -E "s/(href|src)=\"(style\.css|basemap\.js|card\.js|storms\.js|app\.js)\"/\1=\"\2?v=$v\"/g" "$site/index.html"
+          sed -i -E "s/(href|src)=\"(style\.css|basemap\.js|card\.js|storms\.js|space3d\.js|app\.js)\"/\1=\"\2?v=$v\"/g" "$site/index.html"
           grep -c "?v=$v" "$site/index.html"
           touch "$site/.nojekyll"
           du -sh "$site"
