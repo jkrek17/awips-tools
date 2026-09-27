@@ -387,8 +387,10 @@ a weak front there but not to extend the strong analysis offshore.
 The 1009 hPa low near 40N 63W is class 3 as well, with a magenta
 fringe: a wave riding the front, not yet its own separate system. At
 lower right, the tropical cyclone reads class 0; its square block on
-the four-panel is the shape of the 500 km window, not the storm's own
-size, and should not be measured as if it were the vortex. The blue
+the four-panel is the shape of the 500 km window as it was when the
+capture was made (the former square; the shipped module paints a round
+block), not the storm's own size, and should not be measured as if it
+were the vortex. The blue
 HVTL band along about 44 to 48N east of Nova Scotia, well north of
 both drawn fronts, is the main low-level baroclinic zone for this
 setup; it is where the polar front sits, not a signature of either

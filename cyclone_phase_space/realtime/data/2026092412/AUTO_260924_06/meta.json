@@ -7,7 +7,7 @@
     "lon": -104.12,
     "fhr0": 0,
     "fhr1": null,
-    "source": "automatic discovery at 0 h of 2026092412"
+    "source": "stored seed"
   },
   "start_fhr": 0,
   "end_fhr": 120,
@@ -27,7 +27,7 @@
   "completion_standard_h": null,
   "onset_hart_h": null,
   "completion_hart_h": null,
-  "class_sequence": "- 0, 0 6, - 12, 0 18-78, 2 84, 0 90-120",
+  "class_sequence": "0 0-78, 2 84, 0 90-120",
   "fsu_number": 5,
   "fsu": {
     "number": 5,

@@ -403,7 +403,7 @@ FIGG_TARGETS = [
     dict(vtl=(None, -37.5), vtu=None, b=(10, 30)),
     dict(vtl=None, vtu=(None, -37.5), b=(0.0, None)),
     dict(vtl=(None, 0), vtu=(None, 0), b=(10, 30)),
-    dict(vtl=(40.0, 100.0), vtu=(None, 0), b=(10.0, 25.0)),
+    dict(vtl=(37.5, 100.0), vtu=(None, 0), b=(10.0, 25.0)),  # lower bound at the colormap's clear-band edge
     dict(vtl=(0, None), vtu=(-37.5, 37.5), b=(-5.0, 5.0)),
     dict(vtl=(-131.25, -37.5), vtu=(-131.25, -37.5), b=(-5.0, 5.0)),
     dict(vtl=(None, 0), vtu=(None, 0), b=None),

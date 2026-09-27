@@ -84,9 +84,9 @@ diagnostic inside D2D, on every model we run, for any low we point at.
 
 We reformulated the parameters as gridded fields and implemented them
 as AWIPS derived parameters. At every grid point the code evaluates the
-height range inside a 500 kilometer window at each level and regresses
+height range inside a 500 kilometer circle at each level and regresses
 it against log pressure: Hart's own definition, evaluated everywhere
-instead of at one tracked center. The square window and standard
+instead of at one tracked center. The circle is his; the standard
 levels keep the magnitudes close to his, not identical. It needs
 geopotential height on standard levels, surface pressure and sea level
 pressure; the asymmetric term also needs winds at four levels. That
@@ -141,23 +141,24 @@ half a meter, symmetric shallow warm core, class 1, at 976 millibars.
 Hart's own diagrams for this storm trace the same path, and the
 cold-phase upper term, minus 290, matches his minus 300. The
 seclusion's lower term is about twice his, in the direction our bands
-and window predict. One frame at 120 hours reads class 6 with an upper
+predict. One frame at 120 hours reads class 6 with an upper
 term of plus 3 meters, which is zero for practical purposes: a
-threshold artifact, and the honest reading is class 4. Those B values
-were sampled with the earlier first-order form of B and are to be
-re-sampled with the semicircle version. Compute cost is about 2.7
-seconds per forecast hour on the full global grid, the median of four
-runs, ranging 2.5 to 2.9 seconds.
+threshold artifact, and the honest reading is class 4. Those values
+were sampled with the earlier first-order form of B and the earlier
+square window, and are to be re-sampled with the semicircle means and
+the circle. Compute cost is about 2.4 seconds per forecast hour on the
+full global grid, the median of four runs, ranging 2.3 to 2.7 seconds.
 
 **[Slide 10, limits and next] 6:33**
 
 Honest limits: we use standard levels, not Hart's 50 hectopascal
 spacing, so magnitudes are near his but not identical: the standard
 level band reads a deep warm core about 12 percent high and a warm
-seclusion two to three times his value, while the square window adds
-almost nothing for compact storms. B is now computed from true
-semicircle means and matches Hart's within one percent on a synthetic
-life cycle, with onset at the same hour, but it has not yet been
+seclusion two to three times his value. The window is now Hart's own
+circle; the square we used before read cold cores about 50 meters too
+cold. B is now computed from true semicircle means and matches Hart's
+within one percent on a synthetic life cycle, with onset and completion
+at the same hours, but it has not yet been
 validated on a real storm. And it's a handful of cases, not a season.
 
 Next is a season of use, a model-comparison product for transition

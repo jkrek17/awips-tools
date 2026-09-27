@@ -347,9 +347,13 @@ differences:
   standard trace here uses 925-850-700 and 500-400-300 hPa. The dashed
   Hart-band trace is the one to compare. Where 900 hPa is below ground
   (Greenland, Labrador, high terrain) the bands are masked differently.
-- FSU computes over a 500 km radius circle; the module's thermal wind
-  terms use a square 500 km window (more area, corners farther out), so
-  the height range, and hence $-V_T$, is larger in magnitude.
+- FSU computes over a 500 km radius circle, and so does the module
+  (`WINDOW_SHAPE = "circle"`), laid on the grid as whole cells. Cycles
+  processed before 2026-09-27 used the module's former square 500 km
+  window (more area, corners out to 707 km), which read cold cores
+  about 50 m more negative than the circle does (30 to 80 m more
+  negative than FSU); compare those cycles' cold-core terms with that
+  in mind.
 - FSU's B takes the motion from its tracker; the standard B here uses
   the module's steering proxy. `hb_track` (dotted, and on the dashed
   trace of (a)) uses the track's own motion, which is closer to FSU.

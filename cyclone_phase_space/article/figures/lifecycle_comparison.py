@@ -16,9 +16,11 @@ VTU) are computed two ways at the storm's own center grid point:
    grid point nearest the storm center.
 
 Both methods are handed the same storm motion (finite difference of the
-track, via `cps.track_motion`), so any difference between them is the
-circle-vs-square window and the 900-600/500 hPa lower-band difference,
-not a difference in motion.
+track, via `cps.track_motion`), and both take the max/min over the same
+500 km circle (the gridded module's WINDOW_SHAPE "circle"), so any
+difference between their thermal wind terms is the standard-level versus
+50 hPa band difference (and the grid's discretization of the disk), not
+a difference in motion or window.
 
 The height field is the sum of an axisymmetric vortex (which the storm
 center itself sees as flat, contributing nothing to B there) plus a
@@ -375,7 +377,7 @@ def compute_frame(t, clat, clon, heading_deg, speed_ms, lat2d, lon2d, lat_vals, 
                    return_fields=False):
     """Both methods' B/VTL/VTU/class at one frame: the storm-centered Hart
     scalars (circular window, `cps.hart`) and the gridded fields sampled at
-    the grid point nearest (clat, clon) (square window, `cps_HartCPS`).
+    the grid point nearest (clat, clon) (circular window, `cps_HartCPS`).
 
     Returns a dict with the nine scalars (`VTL_hart`, `VTU_hart`, `B_hart`,
     `CLS_hart`, `VTL_grid`, `VTU_grid`, `B_grid`, `CLS_grid`, `B_grid_former`)
@@ -406,7 +408,7 @@ def compute_frame(t, clat, clon, heading_deg, speed_ms, lat2d, lon2d, lat_vals, 
         np.array([b_hart]), np.array([vtl_hart]), np.array([vtu_hart]), np.array([True]), hc.B_THRESHOLD_M,
     )[0]
 
-    # -- gridded: square window, pointwise, standard levels
+    # -- gridded: circular window (WINDOW_SHAPE), pointwise, standard levels
     u_arr = np.full(lat2d.shape, speed_ms * np.sin(np.radians(heading_deg)))
     v_arr = np.full(lat2d.shape, speed_ms * np.cos(np.radians(heading_deg)))
     vtl_full = hc.executeBand3(z[925], z[850], z[700], psfc, dx, dy, RADIUS_KM, 925.0, 850.0, 700.0)
@@ -692,8 +694,8 @@ def make_figure(hours, lats, lons, B_hart, VTL_hart, VTU_hart, B_grid, VTL_grid,
     ax.grid(True, color=ds.GRID_COLOR, linewidth=0.5, zorder=0.2)
 
     handles = [
-        Line2D([0], [0], marker="o", color="0.4", lw=1.0, markersize=6, label="Hart, circular window"),
-        Line2D([0], [0], marker="s", color=RED, lw=1.0, markersize=6, label="gridded, square window"),
+        Line2D([0], [0], marker="o", color="0.4", lw=1.0, markersize=6, label="Hart, 50 hPa levels"),
+        Line2D([0], [0], marker="s", color=RED, lw=1.0, markersize=6, label="gridded, standard levels"),
         Line2D([0], [0], ls=":", color=RED, alpha=0.55, lw=1.4,
                label="gridded, first-order gradient (former)"),
     ]

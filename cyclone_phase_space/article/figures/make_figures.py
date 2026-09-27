@@ -151,7 +151,7 @@ import cps_HartCPS  # noqa: E402
 # reference implementation of Hart (2003) itself -- Hart's own 900-600/
 # 600-300 hPa, 50 hPa-spaced bands and a circular window -- rather than
 # cps_HartCPS.py's operational, standard-level approximation (925/850/700 and
-# 500/400/300 hPa, a square window) used by every other figure in this
+# 500/400/300 hPa, the same 500 km circle) used by every other figure in this
 # script. tests/cps/synthetic.py's make_grid/warm_core_heights (a second,
 # independently written implementation of the same offset geometry, per its
 # own module docstring) builds the small lat/lon grid these three figures
@@ -583,18 +583,23 @@ def make_fig2(lat_vals, lon_vals, lat2d, lon2d, dx2d, dy_m, z_std_stack):
     cbar.set_label("Z925 (m)", fontsize=8)
     cbar.ax.tick_params(labelsize=7.5)
 
-    ax_b.add_patch(Rectangle((-500, -500), 1000, 1000, facecolor="none", edgecolor=TEXT_DARK, linewidth=1.5, zorder=6))
-    circle = Circle((0, 0), 500, facecolor="none", edgecolor=TEXT_DARK, linewidth=1.5, linestyle="--", zorder=6)
+    # The analysis window is Hart's 500 km circle (cps_HartCPS.WINDOW_SHAPE
+    # "circle"), laid on the grid as the module lays it: a point is inside
+    # when its planar offset, with x counted in its own row's cos(latitude)
+    # spacing, is within 500 km of the center.
+    circle = Circle((0, 0), 500, facecolor="none", edgecolor=TEXT_DARK, linewidth=1.5, zorder=6)
     ax_b.add_patch(circle)
-    ax_b.text(495, 460, "1000 km square", fontsize=7.5, color=TEXT_DARK, ha="right", va="top")
-    ax_b.text(0, -560, "Hart's 500 km circle", fontsize=7.5, color=TEXT_DARK, ha="center", va="top", style="italic")
+    ax_b.text(0, -560, "500 km circle (Hart's window)", fontsize=7.5, color=TEXT_DARK, ha="center", va="top", style="italic")
 
-    win_mask = (np.abs(x_km) <= 500.0) & (np.abs(y_km) <= 500.0)
+    x_row_km = (EARTH_RADIUS_KM * np.cos(np.radians(lat2d)) * np.radians(dlon_deg))[r0:r1, c0:c1]
+    win_mask = x_row_km ** 2 + y_km ** 2 <= 500.0 ** 2 + 1e-6
     z_win = np.where(win_mask, z_sub, np.nan)
     i_max = np.unravel_index(np.nanargmax(z_win), z_win.shape)
     i_min = np.unravel_index(np.nanargmin(z_win), z_win.shape)
     ax_b.plot(x_km[i_max], y_km[i_max], marker="^", markersize=8, markerfacecolor="white", markeredgecolor=TEXT_DARK, markeredgewidth=1.2, zorder=7)
-    ax_b.annotate(f"max {z_sub[i_max]:.0f} m", (x_km[i_max], y_km[i_max]), textcoords="offset points", xytext=(6, 6), fontsize=7.5, color=TEXT_DARK)
+    # Left of the marker: the maximum sits on the circle, and a
+    # label above-right of it would run along the circle's own line.
+    ax_b.annotate(f"max {z_sub[i_max]:.0f} m", (x_km[i_max], y_km[i_max]), textcoords="offset points", xytext=(-9, 0), ha="right", va="center", fontsize=7.5, color=TEXT_DARK)
     ax_b.plot(x_km[i_min], y_km[i_min], marker="v", markersize=8, markerfacecolor="white", markeredgecolor=TEXT_DARK, markeredgewidth=1.2, zorder=7)
     ax_b.annotate(f"min {z_sub[i_min]:.0f} m", (x_km[i_min], y_km[i_min]), textcoords="offset points", xytext=(6, -12), fontsize=7.5, color=TEXT_DARK)
 

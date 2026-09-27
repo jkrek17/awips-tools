@@ -61,8 +61,9 @@ def _brute_extreme_1d(a: np.ndarray, half_width: int, axis: int, kind: str) -> n
 def _brute_window_sum_2d(field, half_x_per_row, half_y):
     """Naive nested-loop two-pass (row then column) box sum/count, NaN
     treated as missing -- independent of cps_HartCPS.window_sum_2d's
-    cumulative-sum implementation, matching only its two-pass
-    definition (per-row x half-width, then a scalar y half-width).
+    cumulative-sum implementation, matching only the square window's
+    two-pass definition (per-row x half-width, then a scalar y
+    half-width).
     """
     field = np.asarray(field, dtype=float)
     ny, nx = field.shape
@@ -90,10 +91,10 @@ def _brute_window_sum_2d(field, half_x_per_row, half_y):
 
 def _brute_window_extreme_2d(field, half_x_per_row, half_y, kind) -> np.ndarray:
     """Naive nested-loop two-pass (row then column) sliding extreme,
-    matching window_extreme_2d's own definition (per-row x half-width,
-    then a scalar y half-width) but with no vectorization or doubling
-    trick at all -- independent of cps_HartCPS.window_extreme_2d's
-    grouped-rows-plus-running_extreme_1d implementation.
+    matching the square window's definition (window_extreme_2d with
+    shape="square": per-row x half-width, then a scalar y half-width)
+    but with no vectorization or doubling trick at all -- independent of
+    cps_HartCPS's grouped-rows-plus-running_extreme_1d implementation.
     """
     field = np.asarray(field, dtype=float)
     ny, nx = field.shape
@@ -118,6 +119,46 @@ def _brute_window_extreme_2d(field, half_x_per_row, half_y, kind) -> np.ndarray:
                 warnings.simplefilter("ignore", category=RuntimeWarning)
                 out[i, j] = reducer(out_x[lo : hi + 1, j])
     return out
+
+
+def _brute_ellipse_offsets(half_x_row, half_y):
+    """Offsets (dj, dk) of the ellipse window_extreme_2d/window_sum_2d use
+    for shape="circle" when given only cell counts: the ellipse inscribed
+    in the square, semi-axes half_x_row (the source row's own count) and
+    half_y, boundary included -- tested in exact integer arithmetic,
+    dk**2 * half_y**2 + dj**2 * half_x_row**2 <= half_x_row**2 * half_y**2.
+    """
+    offsets = []
+    for dj in range(-half_y, half_y + 1):
+        for dk in range(-half_x_row, half_x_row + 1):
+            if dk * dk * half_y * half_y + dj * dj * half_x_row * half_x_row <= half_x_row ** 2 * half_y ** 2:
+                offsets.append((dj, dk))
+    return offsets
+
+
+def _brute_ellipse_window(field, half_x_per_row, half_y):
+    """Per point, the list of in-grid values of the inscribed-ellipse
+    window (see _brute_ellipse_offsets), edges clipped, no wrap; the
+    chord of each row offset uses the half-width of the row it sits on.
+    """
+    ny, nx = field.shape
+    windows = {}
+    for i in range(ny):
+        for c in range(nx):
+            vals = []
+            for dj in range(-half_y, half_y + 1):
+                r = i + dj
+                if r < 0 or r >= ny:
+                    continue
+                hx = int(half_x_per_row[r])
+                for dj2, dk in _brute_ellipse_offsets(hx, half_y):
+                    if dj2 != dj:
+                        continue
+                    cc = c + dk
+                    if 0 <= cc < nx:
+                        vals.append(field[r, cc])
+            windows[(i, c)] = np.array(vals)
+    return windows
 
 
 # ---------------------------------------------------------------------------
@@ -175,10 +216,23 @@ def test_window_extreme_2d_matches_brute_force_varying_half_widths():
     assert half_x_per_row.shape == (ny,)
     half_y = 2
 
+    # The square: the two-pass box.
     for kind in ("max", "min"):
-        got = hc.window_extreme_2d(field, half_x_per_row, half_y, kind)
+        got = hc.window_extreme_2d(field, half_x_per_row, half_y, kind, shape="square")
         expected = _brute_window_extreme_2d(field, half_x_per_row, half_y, kind)
         np.testing.assert_allclose(got, expected, equal_nan=True, err_msg=kind)
+
+    # The default (circle), given only cell counts: the inscribed ellipse.
+    windows = _brute_ellipse_window(field, half_x_per_row, half_y)
+    for kind in ("max", "min"):
+        got = hc.window_extreme_2d(field, half_x_per_row, half_y, kind)
+        reducer = np.nanmax if kind == "max" else np.nanmin
+        for (i, c), vals in windows.items():
+            finite = vals[np.isfinite(vals)]
+            if finite.size:
+                assert got[i, c] == reducer(finite), (kind, i, c)
+            else:
+                assert np.isnan(got[i, c]), (kind, i, c)
 
 
 def test_window_sum_2d_matches_brute_force_varying_half_widths():
@@ -191,17 +245,25 @@ def test_window_sum_2d_matches_brute_force_varying_half_widths():
     half_x_per_row = np.array([1, 2, 3, 1, 2, 3, 1, 2, 3])
     half_y = 2
 
-    got_sum, got_cnt = hc.window_sum_2d(field, half_x_per_row, half_y)
+    got_sum, got_cnt = hc.window_sum_2d(field, half_x_per_row, half_y, shape="square")
     expected_sum, expected_cnt = _brute_window_sum_2d(field, half_x_per_row, half_y)
     np.testing.assert_allclose(got_sum, expected_sum)
     np.testing.assert_allclose(got_cnt, expected_cnt)
 
+    # The default (circle), given only cell counts: the inscribed ellipse.
+    got_sum, got_cnt = hc.window_sum_2d(field, half_x_per_row, half_y)
+    for (i, c), vals in _brute_ellipse_window(field, half_x_per_row, half_y).items():
+        finite = vals[np.isfinite(vals)]
+        assert got_sum[i, c] == pytest.approx(float(np.sum(finite)), abs=1e-12)
+        assert got_cnt[i, c] == finite.size
+
 
 def test_window_sum_2d_all_nan_window_is_zero_count():
     field = np.full((5, 5), np.nan)
-    s, c = hc.window_sum_2d(field, np.full(5, 1), 1)
-    np.testing.assert_allclose(s, 0.0)
-    np.testing.assert_allclose(c, 0.0)
+    for shape in ("circle", "square"):
+        s, c = hc.window_sum_2d(field, np.full(5, 1), 1, shape=shape)
+        np.testing.assert_allclose(s, 0.0)
+        np.testing.assert_allclose(c, 0.0)
 
 
 def test_window_extreme_2d_clamps_half_width():
@@ -214,15 +276,18 @@ def test_window_extreme_2d_clamps_half_width():
     # (n-1)//2 (an earlier, too-tight clamp that left the window short of
     # the whole axis near either edge -- see window_extreme_2d's own
     # docstring).
+    # The circle (the ellipse inscribed in a 1000-cell square) covers the
+    # whole grid from every point just the same.
     field = np.arange(20.0).reshape(4, 5)
     half_x_per_row = np.full(4, 1000)
     clamped_x = np.full(4, field.shape[1] - 1)
     clamped_y = field.shape[0] - 1
 
-    for kind in ("max", "min"):
-        got = hc.window_extreme_2d(field, half_x_per_row, 1000, kind)
-        expected = _brute_window_extreme_2d(field, clamped_x, clamped_y, kind)
-        np.testing.assert_allclose(got, expected, err_msg=kind)
+    for shape in ("square", "circle"):
+        for kind in ("max", "min"):
+            got = hc.window_extreme_2d(field, half_x_per_row, 1000, kind, shape=shape)
+            expected = _brute_window_extreme_2d(field, clamped_x, clamped_y, kind)
+            np.testing.assert_allclose(got, expected, err_msg=f"{shape} {kind}")
 
 
 # ---------------------------------------------------------------------------
@@ -344,8 +409,10 @@ def test_delta_z_regional_grid_matches_brute_force_reference():
     longitude-wrap machinery added for global grids: `is_global_lon`
     must say False for it, and `delta_z`'s result (auto-detecting, the
     default) must match an independent brute-force max-minus-min
-    reference built with `_brute_window_extreme_2d` and no wrap at all
-    -- exactly the pre-wrap behavior.
+    reference with no wrap at all -- exactly the pre-wrap behavior. The
+    square is checked against `_brute_window_extreme_2d`; the default
+    circle against every point within the radius (on this uniform grid
+    the offset (dj, dk) is dj*dy north and dk*dx east).
     """
     rng = np.random.default_rng(20260918)
     ny, nx = 15, 21
@@ -355,7 +422,7 @@ def test_delta_z_regional_grid_matches_brute_force_reference():
 
     assert not hc.is_global_lon(nx, dy_m)
 
-    dz = hc.delta_z(field, dx_m, dy_m, hc.RADIUS_KM)
+    dz = hc.delta_z(field, dx_m, dy_m, hc.RADIUS_KM, shape="square")
 
     half_x = hc.cells_per_row(hc.RADIUS_KM, dx_m, ny, nx)
     half_y = hc.cells_y(hc.RADIUS_KM, dy_m)
@@ -365,6 +432,19 @@ def test_delta_z_regional_grid_matches_brute_force_reference():
 
     np.testing.assert_allclose(dz, dz_ref, rtol=1e-10)
 
+    dz_circle = hc.delta_z(field, dx_m, dy_m, hc.RADIUS_KM)
+    radius_m = hc.RADIUS_KM * 1000.0
+    reach = int(radius_m // min(dx_m, dy_m))
+    for i in range(ny):
+        for c in range(nx):
+            vals = [
+                field[i + dj, c + dk]
+                for dj in range(-reach, reach + 1)
+                for dk in range(-reach, reach + 1)
+                if 0 <= i + dj < ny and 0 <= c + dk < nx and (dj * dy_m) ** 2 + (dk * dx_m) ** 2 <= radius_m ** 2
+            ]
+            assert dz_circle[i, c] == max(vals) - min(vals), (i, c)
+
 
 def test_delta_z_min_valid_fraction_blanks_mostly_missing_windows():
     """A window that is mostly below ground (modeled here as a NaN
@@ -373,24 +453,27 @@ def test_delta_z_min_valid_fraction_blanks_mostly_missing_windows():
     survived -- REVIEW_PANEL.md item 15.
     """
     ny, nx = 25, 25
-    dx_m, dy_m = 100000.0, 100000.0  # half_x = half_y = 5 -> an 11x11 = 121-cell window
+    # 100 km cells, R = 500 km: the disk has chords of 5, 4, 4, 4, 3, 0
+    # cells at row offsets 0..5, 81 cells in all (the square: 11x11 = 121).
+    dx_m, dy_m = 100000.0, 100000.0
     radius_km = hc.RADIUS_KM
     ci, cj = 12, 12
     rng = np.random.default_rng(3)
 
-    # ~73% of the center point's window is NaN (8 of its 11 window rows,
-    # all 11 window columns): valid fraction ~27%, below MIN_VALID_FRACTION.
+    # The center point's window rows 7..14 (offsets -5..+2) are NaN across
+    # the whole window: 64 of the disk's 81 cells (79%; the square's
+    # 88 of 121, 73%), a valid fraction below MIN_VALID_FRACTION.
     z_mostly_missing = 5000.0 + rng.standard_normal((ny, nx)) * 10.0
     z_mostly_missing[7:15, 7:18] = np.nan
-    dz_mostly_missing = hc.delta_z(z_mostly_missing, dx_m, dy_m, radius_km)
-    assert np.isnan(dz_mostly_missing[ci, cj])
-
-    # ~27% of the same window is NaN (3 of its 11 window rows): valid
-    # fraction ~73%, at or above MIN_VALID_FRACTION -- not blanked.
+    # Rows 7..9 only (offsets -5..-3): 17 of 81 cells NaN (21%; the
+    # square's 33 of 121, 27%) -- a valid fraction above it, not blanked.
     z_mostly_valid = 5000.0 + rng.standard_normal((ny, nx)) * 10.0
     z_mostly_valid[7:10, 7:18] = np.nan
-    dz_mostly_valid = hc.delta_z(z_mostly_valid, dx_m, dy_m, radius_km)
-    assert np.isfinite(dz_mostly_valid[ci, cj])
+    for shape in ("circle", "square"):
+        dz_mostly_missing = hc.delta_z(z_mostly_missing, dx_m, dy_m, radius_km, shape=shape)
+        assert np.isnan(dz_mostly_missing[ci, cj]), shape
+        dz_mostly_valid = hc.delta_z(z_mostly_valid, dx_m, dy_m, radius_km, shape=shape)
+        assert np.isfinite(dz_mostly_valid[ci, cj]), shape
 
     # A low whose own window never touches the NaN block at all is
     # completely unaffected -- same dZ with or without the block present.
@@ -427,8 +510,8 @@ def _standard_level_hart_reference(lat2d, lon2d, clat, clon, z_stack, levels):
     (cps.hart._band_slope, called directly rather than through
     thermal_wind()'s built-in LOWER_LEVELS/UPPER_LEVELS bands, which do
     not line up with cps_HartCPS's standard-level bands) over LOWER_BAND and
-    UPPER_BAND -- the reference this module's square-window
-    thermal_wind_grid is compared against.
+    UPPER_BAND -- the reference this module's thermal_wind_grid (a disk of
+    the same radius, by default) is compared against.
     """
     hart_result = cps.thermal_wind(levels, z_stack, lat2d, lon2d, clat, clon, radius_km=hc.RADIUS_KM)
     dz_by_level = hart_result["dz_by_level"]
@@ -456,16 +539,15 @@ def test_thermal_wind_grid_matches_hart_reference_warm_core():
 
     vtl_ref, vtu_ref = _standard_level_hart_reference(lat2d, lon2d, clat, clon, z_stack, levels)
 
-    # Square (this module) vs circle (cps.hart) window: the agreement at
-    # this 150 km test scale is measured (see
-    # test_square_vs_circle_scale_sensitivity below) at about 1.5e-5
-    # relative -- tightened here to what the code actually achieves
-    # (rel=1e-3), not the much looser "within 2%" that was really just
-    # the test's own tolerance, not a measurement (see the module
-    # docstring's "Square window versus Hart's circle" section and
-    # REVIEW_PANEL.md item 5).
-    assert vtl_grid[ci, cj] == pytest.approx(vtl_ref, rel=1e-3)
-    assert vtu_grid[ci, cj] == pytest.approx(vtu_ref, rel=1e-3)
+    # This module's disk (planar offsets, whole grid cells) vs cps.hart's
+    # circle (great-circle distance): at this 150 km test scale they agree
+    # to about 4e-7 relative (the square window this module used before
+    # agreed to about 1.5e-5; see test_square_vs_circle_scale_sensitivity
+    # below and the module docstring's "The circular window" section).
+    # rel=1e-5 is what the disk achieves with a margin, and more than the
+    # square could meet at larger scales.
+    assert vtl_grid[ci, cj] == pytest.approx(vtl_ref, rel=1e-5)
+    assert vtu_grid[ci, cj] == pytest.approx(vtu_ref, rel=1e-5)
 
     # Warm core: both positive.
     assert vtl_grid[ci, cj] > 0
@@ -493,9 +575,9 @@ def test_thermal_wind_grid_matches_hart_reference_cold_core():
     vtl_ref, vtu_ref = _standard_level_hart_reference(lat2d, lon2d, clat, clon, z_stack, levels)
 
     # See test_thermal_wind_grid_matches_hart_reference_warm_core's own
-    # comment for why rel=1e-3, not the old "within 2%".
-    assert vtl_grid[ci, cj] == pytest.approx(vtl_ref, rel=1e-3)
-    assert vtu_grid[ci, cj] == pytest.approx(vtu_ref, rel=1e-3)
+    # comment for why rel=1e-5.
+    assert vtl_grid[ci, cj] == pytest.approx(vtl_ref, rel=1e-5)
+    assert vtu_grid[ci, cj] == pytest.approx(vtu_ref, rel=1e-5)
 
     # Cold core: both negative.
     assert vtl_grid[ci, cj] < 0
@@ -504,13 +586,16 @@ def test_thermal_wind_grid_matches_hart_reference_cold_core():
 
 
 def test_square_vs_circle_scale_sensitivity():
-    """The square-window/circle-window agreement is scale dependent, not
-    a fixed "within 2%" (REVIEW_PANEL.md item 5): this documents the
-    measured ratio (this module's square-window VTL over cps.hart's own
-    circle-window VTL, at the grid center) at two more vortex scales
-    (250 km, 400 km) than the 150 km scale the other two reference
-    tests use, and pins down the 400 km number the article's limitations
-    section relies on.
+    """How well the gridded thermal wind reproduces cps.hart's own
+    circle-window VTL (ratio at the grid center) as the vortex grows
+    from the 150 km scale of the two reference tests above to 250 km and
+    400 km (REVIEW_PANEL.md item 5). The disk (the default) stays within
+    0.2% of Hart's circle at every scale: what is left is the planar
+    offsets and whole grid cells against cps.hart's great-circle
+    distances. The square (shape="square") drifts high with scale, as
+    this test recorded before the disk became the default: about 2% at
+    250 km and about 22% at 400 km, where the height field still changes
+    between the circle's edge and the square's corners.
     """
     clat, clon = 20.0, 0.0
     lat2d, lon2d, dx2d, dy_m = _grid_and_dx_dy(clat, clon, half_width_deg=8.0, dlat=0.25)
@@ -523,26 +608,23 @@ def test_square_vs_circle_scale_sensitivity():
 
     levels = hc.LOWER_BAND + hc.UPPER_BAND
 
-    def _ratio_at_scale(scale_km):
+    def _ratio_at_scale(scale_km, shape):
         z_stack = synthetic.warm_core_heights(lat2d, lon2d, clat, clon, levels, warm_amp, scale_km=scale_km)
         z_by_level = {p: z_stack[i] for i, p in enumerate(levels)}
         vtl_grid = hc.thermal_wind_grid(
-            [z_by_level[p] for p in hc.LOWER_BAND], hc.LOWER_BAND, dx2d, dy_m, hc.RADIUS_KM
+            [z_by_level[p] for p in hc.LOWER_BAND], hc.LOWER_BAND, dx2d, dy_m, hc.RADIUS_KM, shape=shape,
         )
         vtl_ref, _ = _standard_level_hart_reference(lat2d, lon2d, clat, clon, z_stack, levels)
         return float(vtl_grid[ci, cj]) / float(vtl_ref)
 
-    ratio_250 = _ratio_at_scale(250.0)
-    ratio_400 = _ratio_at_scale(400.0)
+    # The disk: measured 1 - 1.6e-4 at 250 km and 1 - 8.8e-4 at 400 km.
+    assert _ratio_at_scale(250.0, None) == pytest.approx(1.0, abs=2e-3)
+    assert _ratio_at_scale(400.0, None) == pytest.approx(1.0, abs=2e-3)
 
-    # Recorded, not just asserted in a narrow band: at the time this test
-    # was written, ratio_250 measured about 1.02 (about 2% high, matching
-    # REVIEW_PANEL.md's "1.9 percent at 250 km") and ratio_400 measured
-    # about 1.22 (about 22% high, matching its "21 percent at 400 km").
+    # The square, kept as an option: measured about 1.02 and 1.22.
+    ratio_250 = _ratio_at_scale(250.0, "square")
+    ratio_400 = _ratio_at_scale(400.0, "square")
     assert 1.0 < ratio_250 < 1.10
-    # The number the article's limitations section states and this test
-    # enforces: at 400 km the square window overestimates the circle's
-    # own VTL by between 15% and 30%.
     assert 1.15 < ratio_400 < 1.30
 
 
@@ -550,18 +632,18 @@ def test_square_vs_circle_scale_sensitivity():
 # (e) closed_low_mask -- candidate-plus-annulus-depth detector
 # ---------------------------------------------------------------------------
 
-# closed_low_mask's dilation step uses a *square* window (like everything
-# else in this file), whose corners reach sqrt(2) times its half-width --
-# see the module docstring's "Square window versus Hart's circle" section.
-# The tight (0.6 hPa) candidate test around a smooth 150 km-scale Gaussian
-# low also has some spatial extent of its own (the pressure only needs to
-# rise 0.6 hPa from the true minimum, which for a gentle 150 km-scale bowl reaches
-# several tens of km out), so the dilated blob's true reach from the exact
-# center is a bit more than DEFAULT_BLOB_RADIUS_KM: this bound is a generous
-# but finite envelope for both effects together, used instead of a tight
-# "blob_radius + one grid spacing" bound that assumes a circular dilation
-# and a single-pixel candidate.
-_BLOB_REACH_BOUND_KM = math.sqrt(2.0) * hc.DEFAULT_BLOB_RADIUS_KM + 75.0
+# closed_low_mask's dilation step uses a disk of radius
+# DEFAULT_BLOB_RADIUS_KM (see the module docstring's "The circular window"
+# section). The tight (0.6 hPa) candidate test around a smooth 150 km-scale
+# Gaussian low also has some spatial extent of its own (the pressure only
+# needs to rise 0.6 hPa from the true minimum, which for a gentle 150
+# km-scale bowl reaches several tens of km out), so the dilated blob's true
+# reach from the exact center is a bit more than DEFAULT_BLOB_RADIUS_KM:
+# this bound is a generous but finite envelope for both effects together.
+# The square dilation this module used before reached sqrt(2) times the
+# blob radius in its corners, and this bound was sqrt(2) * 200 + 75 km
+# then; see test_hart_cps_circle.py for the round footprint itself.
+_BLOB_REACH_BOUND_KM = hc.DEFAULT_BLOB_RADIUS_KM + 75.0
 
 
 def _big_grid(clat=20.0, clon=0.0, half_width_deg=None, dlat=0.25):
@@ -1252,7 +1334,9 @@ def test_parameter_b_grid_storm_scale_dipole_matches_semicircles(capsys, hart_st
     wavenumber-one dipole inside Hart's 500 km circle. The semicircle-mean
     B matches an explicit brute-force half-disk difference to within 2%
     (and the continuum value to within 1%) at every heading, while
-    parameter_b_grid_gradient reads only about 55% of it.
+    parameter_b_grid_gradient reads only about 72% of it with the
+    default disk window mean of the gradient (about 54% with the square
+    window mean it used before).
     """
     x_km, y_km, c, spacing_m = _flat_grid()
     continuum = _dipole_continuum_b()
@@ -1268,7 +1352,10 @@ def test_parameter_b_grid_storm_scale_dipole_matches_semicircles(capsys, hart_st
         assert brute > 0  # thick to the right of motion in the NH reads positive
         assert b_new == pytest.approx(brute, rel=0.02), heading
         assert b_new == pytest.approx(continuum, rel=0.01), heading
-        assert 0.45 < b_old / brute < 0.70, heading
+        assert 0.65 < b_old / brute < 0.78, heading
+        b_old_square = hc.parameter_b_grid_gradient(thickness, u, v, spacing_m, spacing_m, 1.0, hc.RADIUS_KM, 1.0,
+                                                    shape="square")[c, c]
+        assert 0.45 < b_old_square / brute < 0.62, heading
     with capsys.disabled():
         print("\nParameter B on the L = 400 km dipole (A = 30 m, R = 500 km, 25 km grid):")
         for line in lines:

@@ -699,8 +699,8 @@ def plot_phase(path: Path, name: str, cycle: str, fixes: list[dict], hart: bool)
     fig.legend(handles=cls, loc="lower left", bbox_to_anchor=(0.66, 0.03), ncol=4, fontsize=10.5,
                title="HCPSclass at the center", title_fontsize=11, frameon=False)
     fig.text(0.045, 0.012, "NOTE: A 24hr running mean smoother is applied to the CPS trajectory in (a) and (b). "
-             "Day of month at 00Z. Gridded products of cps_HartCPS.py on the GFS 0.25 degree grid, 500 km "
-             "square-window thermal wind, semicircle B, sampled bilinearly at the tracked MSLP minimum.",
+             "Day of month at 00Z. Gridded products of cps_HartCPS.py on the GFS 0.25 degree grid, thermal "
+             "wind over a 500 km circle, semicircle B, sampled bilinearly at the tracked MSLP minimum.",
              fontsize=11, color="0.5", va="bottom")
     fig.savefig(path, dpi=100)
     plt.close(fig)

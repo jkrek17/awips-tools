@@ -13,8 +13,8 @@ implementation on its own 0.25 degree grid.
    again after the domain-wide background plane is subtracted from every
    level before the range is taken.
 2. Storm-scaled radius. The lower term for vortices of 100 to 600 km
-   e-folding scale at fixed window half-widths of 300, 500 and 700 km,
-   and at a half-width scaled to 2.5 times the vortex scale (clipped to
+   e-folding scale at fixed window radii of 300, 500 and 700 km,
+   and at a radius scaled to 2.5 times the vortex scale (clipped to
    250 to 1000 km), each as a fraction of the profile's true slope.
 3. Warm-core top from the vertical profile. For the five archetype
    profiles, the layer-by-layer slope of dZ against ln p on the seven
@@ -125,7 +125,7 @@ def test_radius():
     amp = linear_amp(250.0, 20.0)
     scales = [100, 200, 300, 400, 600]
     radii = [300, 500, 700]
-    print("\n2. Lower term as a fraction of the true slope, by vortex e-folding scale (rows) and window half-width (columns)")
+    print("\n2. Lower term as a fraction of the true slope, by vortex e-folding scale (rows) and window radius (columns)")
     print("   scale   " + "".join(f"{r:>8d}" for r in radii) + "   scaled (2.5x)")
     table = []
     for s in scales:
@@ -247,8 +247,8 @@ def main():
 
     ax = axes[1]
     for k, R in enumerate((300, 500, 700)):
-        ax.plot([t[0] for t in rad], [t[1][k] for t in rad], "o-", label=f"half-width {R} km")
-    ax.plot([t[0] for t in rad], [t[3] for t in rad], "k^--", label="half-width 2.5 x scale")
+        ax.plot([t[0] for t in rad], [t[1][k] for t in rad], "o-", label=f"radius {R} km")
+    ax.plot([t[0] for t in rad], [t[3] for t in rad], "k^--", label="radius 2.5 x scale")
     ax.axhline(1.0, color="k", lw=0.8)
     ax.set_xlabel("vortex e-folding scale (km)")
     ax.set_ylabel("lower term / true slope")

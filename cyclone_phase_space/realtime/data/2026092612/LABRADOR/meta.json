@@ -7,7 +7,7 @@
     "lon": -25.95,
     "fhr0": 0,
     "fhr1": 48,
-    "source": "track of 2026092512 at +24 h"
+    "source": "stored seed"
   },
   "start_fhr": 0,
   "end_fhr": 48,
@@ -23,11 +23,11 @@
     "mslp_hpa": 991.5
   },
   "min_mslp_hpa": 984.1,
-  "onset_standard_h": 24,
+  "onset_standard_h": 30,
   "completion_standard_h": 36,
   "onset_hart_h": 0,
-  "completion_hart_h": 0,
-  "class_sequence": "4 0, 1 12, - 18, 3 24, 4 30-42, 3 48",
+  "completion_hart_h": 36,
+  "class_sequence": "4 0, - 12-18, 3 24, - 30-36, 4 42, 3 48",
   "fsu_number": 17,
   "fsu": {
     "number": 17,
