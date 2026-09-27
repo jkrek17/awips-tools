@@ -24,11 +24,12 @@ over a band of levels. A D2D derived parameter has no notion of "the
 storm's center" -- it runs pointwise over the whole model grid -- so
 this module re-centers that same circle on *every* grid point instead
 of on one storm: `dZ(level)` at grid point `(i, j)` is `max(Z) - min(Z)`
-over a window of half-width `RADIUS_KM` centered on `(i, j)`, and the
+over the disk of radius `RADIUS_KM` centered on `(i, j)`, and the
 thermal wind at `(i, j)` is the least-squares slope of that pointwise
 `dZ` against `ln(pressure)` over a band of levels. This is exactly
 Hart's formula, just evaluated at every point instead of at one moving
-storm center.
+storm center (see "The circular window" below for how the disk is laid
+on the grid).
 
 Sign convention: identical to `cps.hart.thermal_wind` -- **positive
 means warm core**. A tropical cyclone has more low-level thickness
@@ -69,36 +70,84 @@ is supported by `executeBand7` below and needs only a new XML
 definition (no Python change) once a site confirms its grid actually
 carries every 50 hPa level from 900 to 300.
 
-Square window versus Hart's circle
------------------------------------
+The circular window
+-------------------
 
-Hart's `max`/`min` is taken over a *circle* of radius `RADIUS_KM`. This
-module instead uses a *square* window of half-width `RADIUS_KM` (i.e.
-`window_extreme_2d`'s sliding-window max/min), because a square window
-along grid axes can be computed with a fast doubling/sparse-table
-sliding-window algorithm, while an arbitrarily-oriented circular
-window on a lat/lon grid cannot be done nearly as cheaply pointwise
-for every grid cell. The square's corners reach `sqrt(2) * RADIUS_KM`
-(~1.41x Hart's true radius) from the center, so the square window is
-mildly larger than Hart's circle along the diagonals. In practice this
-makes little difference: for a smooth, roughly axisymmetric height
-field around a vortex (or a smoothly varying background field away
-from one), the window's `max` is attained at or very near the center
-point itself and the window's `min` is attained somewhere out in the
-smooth far field, and the far field's value changes little between
-`RADIUS_KM` and `1.41 * RADIUS_KM` out -- so the extra reach of the
-square's corners rarely changes which value gets picked, or changes it
-only slightly. See `tests/d2d_cps/test_hart_cps.py` for a direct
-numerical comparison against `cps.hart.thermal_wind` on a synthetic
-warm-core vortex.
+Hart's `max`/`min` is taken over a *circle* of radius `RADIUS_KM`, and
+so is every sliding window in this module (`WINDOW_SHAPE = "circle"`,
+the default): the max/min behind `dZ` (`delta_z`, via
+`window_extreme_2d`), the valid-cell count behind its
+`MIN_VALID_FRACTION` guard, `window_mean` (and so the window-averaged
+steering flow of parameter B), and `closed_low_mask`'s local minimum,
+ring-mean depth test and blob dilation (`window_sum_2d`,
+`window_extreme_2d`).
+
+Geometry. The disk is the one `half_disk_means` uses for parameter B,
+cell for cell, so the disk B is averaged over and the disk the thermal
+winds take their max/min over are the same: every grid point whose
+local planar offset `(x, y)` from the center satisfies `x**2 + y**2 <=
+R**2`, with `y = j * dy` for row offset `j` and `x` counted in the
+*source* row's own `dx` (the row the point sits on, so the cos-latitude
+narrowing of the cells is followed row by row). For each row offset
+with `|j * dy| <= R`, the chord on source row `i` spans `w_j(i) =
+floor(sqrt(R**2 - (j*dy)**2) / dx(i))` cells either side of the center
+column. A point on the circle is inside it. On a 0.25 degree grid
+(27.8 km) with R = 500 km the disk reaches 17 cells (473 km) north,
+south, east and west at the equator, and more cells east and west
+toward the poles as `dx` shrinks (where the square reached
+`round(R / spacing)`, 18 cells); `WindowGeometry` holds these chords
+(and the clamps near the poles), and `window_geometry` builds and
+caches it per grid and radius.
+
+Extremes (`_disk_extreme_2d`). For each row offset, the x pass is a
+sliding max/min whose width `2*w_j(i) + 1` depends on the row, and all
+of them come from one sparse table per row: level `k` holds the
+extreme of `2**k` consecutive columns, built by doubling, and a window
+of any length `n` is the combination of two overlapping level
+`floor(log2(n))` windows. Each row offset's x pass is then shifted by
+`j` rows and combined into the result (`+j` and `-j` share one x pass,
+since the chord depends on `|j|` only). Sums (`_disk_sum_2d`) use the
+same chords on cumulative sums along x, as `half_disk_means` does for
+its half-disks.
+
+Why the circle, and what changed. The square window this module used
+before (half-width `RADIUS_KM` along both axes) reaches `sqrt(2) *
+RADIUS_KM`, 1.41 times Hart's radius, in its corners. Where the height
+field keeps changing beyond `RADIUS_KM` the corners find more extreme
+heights than Hart's circle, and they do so more at upper levels, whose
+height gradients are larger (the thermal wind itself), so the square
+read cold cores too cold. On a GFS 0.25 degree global forecast (f096),
+inside the closed-low footprints, points the square put below -50 m
+read on average 54 m (lower band) and 43 m (upper band) less negative
+with the circle, while points above +50 m moved by 1 m and 10 m: cold
+cores about 50 m less negative, warm cores essentially unchanged (a
+compact warm core's max and min are both found well inside the
+circle). On a synthetic Gaussian warm-core vortex the circle matches
+`cps.hart.thermal_wind`'s own circle to within 0.1% from a 150 km to a
+400 km vortex scale, where the square read 2% (250 km) and 22%
+(400 km) high. Closed-low footprints are round instead of square (and
+cover about pi/4 of the area they did). The disk costs about what the
+square did: on a 721 x 1440 grid in the test sandbox, 0.6 s against
+0.75 s for `executeBand3` and 2.8 s against 3.1 s for
+`executeHartClass`.
+
+The square, kept as an option. `WINDOW_SHAPE = "square"` (or
+`shape="square"` on `window_extreme_2d`, `window_sum_2d`, `delta_z`,
+`thermal_wind_grid`, `window_mean`, `steering_window_mean` and
+`closed_low_mask`) restores the square window (per-row half-width
+`cells_per_row`, one y half-width `cells_y`, computed exactly as before
+by `_square_extreme_2d`/`_square_sum_2d`), which reproduces numbers
+computed before the change bit for bit. The AWIPS entry points take no
+shape argument (their XML definitions are unchanged); they follow the
+module constant.
 
 Longitude wrap on global grids
 --------------------------------
 
 `window_extreme_2d`/`window_sum_2d` (and, through them, `delta_z`,
-`window_mean`, and `closed_low_mask`), and `half_disk_means`, slide
-their x-direction pass
-along axis 1 of the field array. On a regional grid that is exactly
+`window_mean`, and `closed_low_mask`), and `half_disk_means`, run
+their x-direction pass (the chords of the disk, or the rows of the
+square) along axis 1 of the field array. On a regional grid that is exactly
 right: there is real "off the edge of the grid" on both sides, and the
 window should shrink there rather than wrap. On a *global* lat/lon
 grid, axis 1 is longitude running all the way around the planet, so
@@ -117,11 +166,17 @@ how many columns happen to fit the same test. `delta_z`, `window_mean`,
 `global_lon` keyword
 (`None`, the default, means "decide with `is_global_lon`"; `True`/
 `False` forces the decision either way, mainly so a test can exercise
-both code paths on the same grid) and pass the resulting `wrap_x` flag
-down to `window_extreme_2d`/`window_sum_2d`, which cyclically pad the
-columns (by the largest per-row half-width actually needed, clamped to
-`nx // 2`) before the x pass and crop the padding back off afterward
-(`half_disk_means` pads the same way, internally).
+both code paths on the same grid); the decision travels in the
+`WindowGeometry` (`window_geometry`) down to `window_extreme_2d`/
+`window_sum_2d`, which cyclically pad the columns (by the widest chord
+actually needed, at most `nx // 2`) before the x pass, so a chord
+continues across the seam (`half_disk_means` pads the same way,
+internally). Near the poles a chord can be wider than the whole
+latitude circle: it is clamped to `nx // 2` cells either side for the
+extremes (every column reached; one met twice does not change a max)
+and to `(nx - 1) // 2` for the sums, as `half_disk_means` does (no
+column counted twice). Rows past the first and last row are never
+wrapped: the window is clipped at the poles.
 
 Closed-low mask
 ----------------
@@ -199,8 +254,8 @@ unaffected. `executeHartClass`/`executeIndexStd`/`executeBand3`/
 `capHpa` constant (default `BELOW_GROUND_CAP_HPA`) and apply the mask
 to every height argument (`executeB` does the same for its two). The
 MSLP argument of `executeHartClass`/`executeIndexStd` is not masked (see
-"Closed-low mask" above). Because the sliding window extrema
-(`window_extreme_2d`), box sums (`window_sum_2d`) and half-disk means
+"Closed-low mask" above). Because the disk extrema
+(`window_extreme_2d`), disk sums (`window_sum_2d`) and half-disk means
 (`half_disk_means`) this module uses are already NaN-aware, a
 below-ground point's neighbors just see one fewer valid sample in
 their own window -- no
@@ -250,10 +305,11 @@ about the point. That covers a uniform thickness gradient, for which it
 reduces to the older first-order form `(8*R/(3*pi))` times the
 window-mean gradient projected on the right-hand normal of motion (kept
 as `parameter_b_grid_gradient` for comparison; see `b_geometry_km`), and
-it covers the storm-scale dipole that the first-order form reads at only
-about 55-60%: for a thickness dipole `A*(x_R/L)*exp(-r**2/(2*L**2))`
-with `L = 400 km` and `R = 500 km` the semicircle means recover Hart's
-difference to well within 1%, the gradient form about 0.55 of it (see
+it covers the storm-scale dipole that the first-order form under-reads:
+for a thickness dipole `A*(x_R/L)*exp(-r**2/(2*L**2))` with `L = 400 km`
+and `R = 500 km` the semicircle means recover Hart's difference to well
+within 1%, the gradient form about 0.72 of it with the disk window mean
+(0.54 with the square window mean it was written with; see
 `tests/d2d_cps/test_hart_cps.py`). What the interpolation does not
 capture is the odd harmonics `k >= 3` of the thickness field about the
 point, whose weight in Hart's semicircle difference is at most `(4/pi)/k`
@@ -381,6 +437,8 @@ import numpy as np
 
 __all__ = [
     "RADIUS_KM",
+    "WINDOW_SHAPE",
+    "WINDOW_SHAPES",
     "MISSING_THRESHOLD",
     "MIN_RADIUS_KM",
     "DEFAULT_DEPTH_HPA",
@@ -402,6 +460,8 @@ __all__ = [
     "is_global_lon",
     "window_extreme_2d",
     "window_sum_2d",
+    "WindowGeometry",
+    "window_geometry",
     "cells_per_row",
     "cells_y",
     "delta_z",
@@ -429,23 +489,42 @@ __all__ = [
 # Constants
 # ---------------------------------------------------------------------------
 
-#: Half-width (km) of the max-minus-min analysis window, matching Hart's
-#: (2003) 500 km analysis circle radius -- see the module docstring for why
-#: this module uses a square window of this half-width instead of a circle
-#: of this radius.
+#: Radius (km) of the max-minus-min analysis window, Hart's (2003) 500 km
+#: analysis circle -- see the module docstring's "The circular window"
+#: section (and `WINDOW_SHAPE` for the square of this half-width kept as
+#: an option).
 RADIUS_KM = 500.0
+
+#: Shape of every sliding window in this module: the max/min behind
+#: `delta_z`, the sums behind its valid-fraction guard, `window_mean` (and
+#: so the window-averaged steering flow) and `closed_low_mask`'s local
+#: minimum, ring test and blob dilation. `"circle"` (the default) is
+#: Hart's disk of radius `RADIUS_KM`, the same disk `half_disk_means`
+#: uses for parameter B; `"square"` is the earlier square of half-width
+#: `RADIUS_KM`, kept selectable so that numbers computed before the
+#: change can be reproduced bit for bit. Read at call time by
+#: `window_extreme_2d`/`window_sum_2d` whenever their `shape` argument is
+#: `None` (which is what every caller in this module passes unless told
+#: otherwise), so editing this line, or setting
+#: `cps_HartCPS.WINDOW_SHAPE = "square"` from a script, switches every
+#: product at once without touching the AWIPS entry points. See the
+#: module docstring's "The circular window" section.
+WINDOW_SHAPE = "circle"
+
+#: The values `WINDOW_SHAPE` and every `shape` argument accept.
+WINDOW_SHAPES = ("circle", "square")
 
 #: AWIPS may hand us -999999 (or similar) fill values for missing data.
 #: Anything below this threshold, or non-finite (NaN/Inf), is treated as
 #: missing.
 MISSING_THRESHOLD = -99990.0
 
-#: Half-width (km) of the small window closed_low_mask() uses for its
+#: Radius (km) of the small window closed_low_mask() uses for its
 #: "is this point (about) the minimum of its own neighborhood" candidate
 #: test, and the inner edge of the annulus its ring-mean depth test is
 #: measured over. Deliberately smaller than RING_RADIUS_KM/RADIUS_KM (Hart's
-#: analysis window) -- this is "how big a box finds a low's own local
-#: minimum", not the same thing as "how big a box the thermal wind or the
+#: analysis window) -- this is "how big a disk finds a low's own local
+#: minimum", not the same thing as "how big a disk the thermal wind or the
 #: depth test integrates over".
 MIN_RADIUS_KM = 300.0
 
@@ -459,11 +538,11 @@ MIN_RADIUS_KM = 300.0
 #: height-based version of this test used (about 8 m per hPa).
 DEFAULT_DEPTH_HPA = 5.0
 
-#: Half-width (km) closed_low_mask() dilates its raw (candidate-and-deep)
-#: point detections by, so the mask paints a blob of about this radius
-#: around each detected low's center instead of a single pixel -- meant to
-#: read as "the low is here", not to imply the low's own true physical
-#: radius.
+#: Radius (km) of the disk closed_low_mask() dilates its raw
+#: (candidate-and-deep) point detections by, so the mask paints a blob of
+#: about this radius around each detected low's center instead of a single
+#: pixel -- meant to read as "the low is here", not to imply the low's own
+#: true physical radius.
 DEFAULT_BLOB_RADIUS_KM = 200.0
 
 #: hPa; closed_low_mask() requires a point's own MSLP to be within this
@@ -804,75 +883,138 @@ def running_extreme_1d(a: np.ndarray, half_width: int, axis: int, kind: str) -> 
     return np.moveaxis(result, 0, axis)
 
 
-def window_extreme_2d(
-    field: np.ndarray,
-    half_x_cells_per_row: np.ndarray,
-    half_y_cells: int,
-    kind: str,
-    wrap_x: bool = False,
-) -> np.ndarray:
-    """2D sliding-window max or min, with a per-row half-width along x.
-
-    On a lat/lon grid the number of grid cells spanned by a fixed
-    distance (e.g. 500 km) along the x (longitude) direction grows with
-    latitude, since the physical spacing `dx` shrinks toward the poles
-    (`dx ~ cos(lat)`). `half_x_cells_per_row` is therefore a 1D integer
-    array, one entry per row (per axis-0 index), giving that row's
-    half-width in grid cells for the x-direction window; `half_y_cells`
-    is a single scalar half-width for the y-direction window, since the
-    y (latitude) spacing does not vary across a regular lat/lon grid.
-
-    On a non-lat/lon (projected) grid, `dx` can vary in both directions
-    at once (not just row-to-row), which this function cannot represent
-    exactly with a single half-width per row: the caller (`cells_per_row`)
-    reduces each row to its own `nanmean` of `dx`, an approximation that
-    is exact on a regular lat/lon grid and only approximate elsewhere.
-
-    `wrap_x` (default `False`): if `True`, the x-direction pass treats
-    axis 1 as cyclic (column 0's left neighbor is the last column, and
-    vice versa) instead of clipping at the array edge -- the caller
-    (`delta_z`/`window_mean`/`closed_low_mask`, via `is_global_lon`) sets
-    this on a genuinely global lat/lon grid, where axis 1 really is a
-    full circle of longitude; see the module docstring's "Longitude wrap
-    on global grids" section. Implemented by cyclically padding the
-    columns -- by the largest half-width actually needed among the rows
-    processed in a given group, clamped to `nx // 2` (padding any more
-    than half the grid width cannot reach any column that padding by
-    `nx // 2` does not already reach) -- before that group's
-    `running_extreme_1d` call, then cropping the padding back off. The
-    y-direction pass is never wrapped (poles are not a wraparound case).
-
-    Rows are grouped by their (post-clamp) half-width value and processed
-    together: for each distinct half-width, the matching rows are pulled
-    out with fancy indexing, `running_extreme_1d` is run once along axis
-    1 for that whole group, and the result is written back into those
-    rows -- so the number of `running_extreme_1d` calls along axis 1 is
-    the number of *distinct* half-width values, not the number of rows.
-    A second `running_extreme_1d` call along axis 0 (with the single
-    scalar `half_y_cells`) then does the y-direction pass over the whole
-    array at once.
-
-    Any half-width -- x or y -- is clamped to at most `n - 1` for its own
-    axis (length-`n`): a half-width of `n - 1` already makes every
-    position's clipped window span the whole axis (`lo = max(0, j -
-    (n-1))` is 0 and `hi = min(n-1, j + (n-1))` is `n-1` for every valid
-    `j`), so nothing larger can mean anything different. `(n-1)//2` (an
-    earlier version of this clamp) is too tight: with a window `w = 2*
-    half_width+1`, `half_width = (n-1)//2` gives `w` short of `2*n-1`,
-    the window length needed for every position's clip to reach both
-    edges, so it silently returned a *smaller*, off-center window at a
-    row/column near either edge instead of "the whole axis" as intended.
+def _resolve_shape(shape) -> str:
+    """`shape` itself if it is `"circle"` or `"square"`; `WINDOW_SHAPE`
+    (read from the module at call time, so a monkeypatch or a site's
+    edit of the constant takes effect everywhere) if it is `None`.
+    Anything else raises `ValueError`.
     """
-    if kind not in ("max", "min"):
-        raise ValueError(f"kind must be 'max' or 'min'; got {kind!r}")
+    if shape is None:
+        shape = WINDOW_SHAPE
+    shape = str(shape).lower()
+    if shape not in WINDOW_SHAPES:
+        raise ValueError(f"shape must be one of {WINDOW_SHAPES}; got {shape!r}")
+    return shape
+
+
+def _window_arguments(field, half_x_cells_per_row, half_y_cells, wrap_x, geometry):
+    """Shared argument handling for `window_extreme_2d`/`window_sum_2d`:
+    returns `(field, half_x, half_y, wrap_x, geometry)` with `field` a 2D
+    float array, `half_x`/`half_y` the square's per-row and y half-widths
+    in cells (unclamped, from `geometry` when it is given), and
+    `geometry` a `WindowGeometry` for the disk (the caller's own, or one
+    built from the cell counts with `WindowGeometry.from_cells`).
+    """
     field = np.asarray(field, dtype=float)
     if field.ndim != 2:
         raise ValueError("field must be 2D")
     ny, nx = field.shape
-
+    if geometry is not None:
+        if (geometry.ny, geometry.nx) != (ny, nx):
+            raise ValueError(f"geometry is for a {geometry.ny}x{geometry.nx} grid; field is {ny}x{nx}")
+        return field, geometry.half_x, geometry.half_y, geometry.wrap, geometry
+    if half_x_cells_per_row is None or half_y_cells is None:
+        raise ValueError("give either geometry or both half_x_cells_per_row and half_y_cells")
     half_x = np.asarray(half_x_cells_per_row).astype(int)
     if half_x.shape != (ny,):
         raise ValueError(f"half_x_cells_per_row must have shape ({ny},); got {half_x.shape}")
+    geometry = WindowGeometry.from_cells(half_x, int(half_y_cells), nx, wrap_x)
+    return field, half_x, int(half_y_cells), bool(wrap_x), geometry
+
+
+def window_extreme_2d(
+    field: np.ndarray,
+    half_x_cells_per_row: np.ndarray = None,
+    half_y_cells: int = None,
+    kind: str = None,
+    wrap_x: bool = False,
+    shape: str = None,
+    geometry: "WindowGeometry" = None,
+) -> np.ndarray:
+    """2D sliding-window max or min over a disk (the default) or a
+    square, NaN-ignoring, edges clipped (or wrapped in longitude).
+
+    `kind` is `"max"` or `"min"`. `shape` is `"circle"` or `"square"`;
+    `None` (the default) means `WINDOW_SHAPE`, read at call time. See
+    the module docstring's "The circular window" section for why the
+    disk is the default and what the square is kept for.
+
+    The window is described either by `geometry`, a `WindowGeometry`
+    (from `window_geometry`, which is what `delta_z` and
+    `closed_low_mask` pass: it carries the radius, the per-row `dx`, `dy`
+    and the longitude-wrap decision, and both the disk's chords and the
+    square's cell counts), or, as before the disk existed, by
+    `half_x_cells_per_row`/`half_y_cells`/`wrap_x`. When `geometry` is
+    given it takes precedence and the other three are ignored.
+
+    **Circle** (`_disk_extreme_2d`): the extreme over every grid point
+    whose planar offset `(x, y)` satisfies `x**2 + y**2 <= R**2`, with
+    `y = j * dy` for row offset `j` and `x` in the source row's own `dx`
+    -- the disk `half_disk_means` uses for parameter B, point for point
+    (see `WindowGeometry`). Given only cell counts, the disk is the
+    ellipse inscribed in the square those counts describe (semi-axes
+    `half_x_cells_per_row[i]` cells in x on source row `i` and
+    `half_y_cells` cells in y; see `WindowGeometry.from_cells`), which
+    on a grid with `dx == dy` and a count of `round(R / dx)` is the disk
+    of that radius up to the rounding of the count.
+
+    **Square** (`_square_extreme_2d`): the earlier window, reproduced
+    bit for bit: per-row half-width along x (a 1D integer array, one
+    entry per row, since the number of cells a fixed distance spans
+    grows toward the poles as `dx ~ cos(lat)` shrinks) and one scalar
+    half-width along y, computed as a sliding extreme along x for each
+    group of rows sharing a half-width (`running_extreme_1d`), then one
+    along y. Any half-width is clamped to at most `n - 1` for its own
+    axis (a half-width of `n - 1` already makes every position's clipped
+    window span the whole axis; `(n-1)//2`, an earlier clamp, was too
+    tight: it left windows near either edge short of the whole axis).
+    On a projected grid, `dx` can vary along a row as well; each row
+    uses its own `nanmean` of `dx` (see `cells_per_row`), exact on a
+    regular lat/lon grid and approximate elsewhere. Both shapes share
+    that approximation.
+
+    `wrap_x` (or `geometry.wrap`): if true, axis 1 is cyclic (column 0's
+    west neighbor is the last column), for a genuinely global lat/lon
+    grid (see `is_global_lon` and the module docstring's "Longitude wrap
+    on global grids" section); the columns are cyclically padded before
+    the x pass and the padding cropped off afterward. Otherwise the
+    window is clipped at the array edge. The y direction is never
+    wrapped: rows past the first or last row are simply absent (the
+    window shrinks at the poles or the regional edge, never reflects).
+
+    NaN (or anything the caller has already made NaN) is ignored; a
+    point whose whole window is NaN comes back NaN.
+    """
+    if kind not in ("max", "min"):
+        raise ValueError(f"kind must be 'max' or 'min'; got {kind!r}")
+    shape = _resolve_shape(shape)
+    field, half_x, half_y, wrap_x, geometry = _window_arguments(
+        field, half_x_cells_per_row, half_y_cells, wrap_x, geometry,
+    )
+    if shape == "circle":
+        return _disk_extreme_2d(field, geometry, kind)
+    return _square_extreme_2d(field, half_x, half_y, kind, wrap_x)
+
+
+def _square_extreme_2d(field, half_x_cells_per_row, half_y_cells, kind, wrap_x):
+    """The square window of `window_extreme_2d` (`shape="square"`),
+    unchanged from the version before the disk became the default, so
+    that it reproduces earlier results bit for bit.
+
+    Rows are grouped by their (post-clamp) half-width and processed
+    together: for each distinct half-width, the matching rows are pulled
+    out with fancy indexing, `running_extreme_1d` is run once along axis
+    1 for that whole group, and the result is written back into those
+    rows, so the number of `running_extreme_1d` calls along axis 1 is
+    the number of *distinct* half-widths, not the number of rows. With
+    `wrap_x`, the columns are first cyclically padded by the largest
+    half-width needed, clamped to `nx // 2` (padding by more than half
+    the grid width reaches no column that `nx // 2` does not). One more
+    `running_extreme_1d` call along axis 0 with the scalar `half_y_cells`
+    does the y pass over the whole array at once.
+    """
+    ny, nx = field.shape
+    half_x = np.asarray(half_x_cells_per_row).astype(int)
     max_half_x = max(nx - 1, 0)
     half_x = np.clip(half_x, 0, max_half_x)
 
@@ -906,8 +1048,9 @@ def _box_sum_1d(values: np.ndarray, counts: np.ndarray, half_width: int, axis: i
     length `2*half_width+1` along `axis`, edges clipped (the window
     shrinks at the domain boundary, exactly like `running_extreme_1d`).
     `values` must already have missing/NaN entries replaced by 0 and
-    `counts` must be the matching 0/1 validity mask -- see `window_sum_2d`,
-    the only caller. `half_width == 0` returns both inputs unchanged.
+    `counts` must be the matching 0/1 validity mask -- see
+    `_square_sum_2d`, the only caller. `half_width == 0` returns both
+    inputs unchanged.
 
     Implemented with a cumulative sum along `axis` (a leading zero
     prepended so `windowsum[i] = cumsum[hi] - cumsum[lo]`, `lo`/`hi`
@@ -936,52 +1079,69 @@ def _box_sum_1d(values: np.ndarray, counts: np.ndarray, half_width: int, axis: i
 
 def window_sum_2d(
     field: np.ndarray,
-    half_x_cells_per_row: np.ndarray,
-    half_y_cells: int,
+    half_x_cells_per_row: np.ndarray = None,
+    half_y_cells: int = None,
     wrap_x: bool = False,
+    shape: str = None,
+    geometry: "WindowGeometry" = None,
 ):
-    """2D sliding-window sum and valid-point count, with the same
-    per-row half-width along x (and clamping) that `window_extreme_2d`
-    uses -- the box-sum analogue needed for `closed_low_mask`'s ring-mean
-    depth test (a box mean over an annulus is a difference of two box
-    sums divided by a difference of two box counts, computed by calling
-    this function twice with different radii and letting the caller take
-    that difference -- see `closed_low_mask`).
+    """2D sliding-window sum and valid-point count over a disk (the
+    default) or a square: the sum analogue of `window_extreme_2d`, with
+    the same `shape`, `geometry`, `half_x_cells_per_row`/`half_y_cells`
+    and `wrap_x` arguments and the same window (see its docstring). Used
+    for `delta_z`'s valid-fraction guard, `window_mean`, and
+    `closed_low_mask`'s ring-mean depth test (the mean over an annulus
+    is a difference of two disk sums divided by a difference of two disk
+    counts: the caller calls this twice with two radii and takes the
+    difference).
 
-    NaN (or otherwise missing, per whatever the caller has already done
-    to `field`) entries are excluded from both the sum and the count:
-    they contribute 0 to the sum and 0 to the count, so a window's mean
-    (`sum / count`, left to the caller) is the mean of only the valid
-    points in it, and a window that is entirely missing comes back with
-    `count == 0` (the caller must guard the division).
+    NaN entries are excluded from both the sum and the count (they
+    contribute 0 to each), so `sum / count` (left to the caller) is the
+    mean of only the valid points in the window, and a window with no
+    valid point comes back with `count == 0` (the caller must guard the
+    division). Every valid cell counts once, unweighted by its area;
+    `half_disk_means` is the area-weighted counterpart.
 
-    `wrap_x` (default `False`): same cyclic-column meaning as
-    `window_extreme_2d`'s own `wrap_x` -- set on a genuinely global
-    lat/lon grid (see the module docstring's "Longitude wrap on global
-    grids" section), implemented the same way (cyclic padding by the
-    group's needed half-width, clamped to `nx // 2`, cropped back off
-    after the box-sum pass). The y-direction pass is never wrapped.
+    **Circle** (`_disk_sum_2d`): for each row offset `j`, the chord sum
+    of every source row, `cumsum[x + w + 1] - cumsum[x - w]` along x
+    with the chord half-width `w = w_j(i)` of that row, is shifted by
+    `j` rows into the result, from one cumulative sum of the values (NaN
+    as 0) and one of the valid-cell indicator, computed once. This is
+    exactly how `half_disk_means` builds its half-disks, with the same
+    chords and the same clamp: at most `(nx - 1) // 2` cells when
+    wrapping (a chord never counts a column twice) and `nx - 1`
+    otherwise.
 
-    Rows are grouped by their (post-clamp) half-width value exactly as
-    `window_extreme_2d` groups them (same fancy-indexing pass, same
-    number of `_box_sum_1d` calls along axis 1 as there are distinct
-    half-width values), then a single `_box_sum_1d` call along axis 0
-    with the scalar `half_y_cells` finishes the box sum/count over the
-    full 2D window. Edges are clipped (unless `wrap_x`), like
-    `window_extreme_2d`; any half-width is clamped to at most `n - 1`
-    for its own axis, matching `window_extreme_2d`'s own corrected
-    clamp (see its docstring for why `(n-1)//2` is too tight).
+    **Square** (`_square_sum_2d`): the earlier box sum, reproduced bit
+    for bit: rows grouped by their (clamped) x half-width, one
+    `_box_sum_1d` call along axis 1 per distinct half-width, then one
+    along axis 0 with the scalar `half_y_cells`, any half-width clamped
+    to at most `n - 1` for its own axis.
+
+    Edges are clipped (the window shrinks), except along x when
+    wrapping; the y direction is never wrapped.
 
     Returns `(sum_field, count)`, two arrays the same shape as `field`.
     """
-    field = np.asarray(field, dtype=float)
-    if field.ndim != 2:
-        raise ValueError("field must be 2D")
-    ny, nx = field.shape
+    shape = _resolve_shape(shape)
+    field, half_x, half_y, wrap_x, geometry = _window_arguments(
+        field, half_x_cells_per_row, half_y_cells, wrap_x, geometry,
+    )
+    if shape == "circle":
+        return _disk_sum_2d(field, geometry)
+    return _square_sum_2d(field, half_x, half_y, wrap_x)
 
+
+def _square_sum_2d(field, half_x_cells_per_row, half_y_cells, wrap_x):
+    """The square window of `window_sum_2d` (`shape="square"`),
+    unchanged from the version before the disk became the default, so
+    that it reproduces earlier results bit for bit: rows grouped by
+    their (clamped) half-width exactly as `_square_extreme_2d` groups
+    them, with the same cyclic padding when wrapping, then a single
+    `_box_sum_1d` call along axis 0.
+    """
+    ny, nx = field.shape
     half_x = np.asarray(half_x_cells_per_row).astype(int)
-    if half_x.shape != (ny,):
-        raise ValueError(f"half_x_cells_per_row must have shape ({ny},); got {half_x.shape}")
     max_half_x = max(nx - 1, 0)
     half_x = np.clip(half_x, 0, max_half_x)
 
@@ -1043,7 +1203,11 @@ def _row_spacing_m(dx: np.ndarray, ny: int, nx: int) -> np.ndarray:
 
 
 def cells_per_row(radius_km: float, dx: np.ndarray, ny: int, nx: int) -> np.ndarray:
-    """Per-row half-width (grid cells) for a `radius_km` window along x.
+    """Per-row half-width (grid cells) for a `radius_km` window along x:
+    the square window's (`shape="square"`; see the module docstring's
+    "The circular window" section). The disk does not round the radius
+    to cells: its chords come from the unrounded radius and spacings
+    (`WindowGeometry`).
 
     `dx` (meters) may be a scalar (every row gets the same half-width) or
     a 2D array of shape `(ny, nx)` (AWIPS supplies `dx` as a pseudo-field
@@ -1074,7 +1238,8 @@ def cells_per_row(radius_km: float, dx: np.ndarray, ny: int, nx: int) -> np.ndar
 
 
 def cells_y(radius_km: float, dy: np.ndarray) -> int:
-    """Scalar half-width (grid cells) for a `radius_km` window along y.
+    """Scalar half-width (grid cells) for a `radius_km` window along y:
+    the square window's, like `cells_per_row`.
 
     `dy` (meters) may be a scalar or an array of any shape; the whole
     array's `nanmean` is used (the y spacing does not vary across a
@@ -1121,6 +1286,410 @@ def is_global_lon(nx: int, dy_m: float) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Circular (disk) windows
+# ---------------------------------------------------------------------------
+
+
+def _disk_half_widths(radius_m: float, row_dx: np.ndarray, dy_m: float, nx: int, cap: int):
+    """The disk's chord half-widths in whole cells: returns `(j_max,
+    half)`, `half` an integer array of shape `(j_max + 1, ny)` whose
+    entry `[j, i]` is the half-width `floor(sqrt(R**2 - (j*dy)**2) /
+    row_dx[i])` of the chord at row offset `+j` or `-j`, measured on
+    source row `i` in that row's own `dx`, clamped to `[0, cap]`.
+    `j_max = floor(R / dy)`, at most `ny - 1`. Shared by
+    `half_disk_means` (parameter B) and the disk windows
+    (`WindowGeometry`), so all of them use the same disk.
+
+    A row whose `dx` is not finite and positive gets half-width 0 (the
+    point itself, in that row); a non-finite or non-positive `dy_m`
+    gives `j_max = 0` (the center row only). The `1e-9` added before
+    each `floor` keeps a chord that is a whole number of cells in exact
+    arithmetic from losing a cell to rounding.
+    """
+    row_dx = np.asarray(row_dx, dtype=float)
+    ny = row_dx.size
+    good_dx = np.isfinite(row_dx) & (row_dx > 0)
+    if np.isfinite(dy_m) and dy_m > 0 and radius_m > 0:
+        j_max = min(int(math.floor(radius_m / dy_m + 1e-9)), ny - 1)
+    else:
+        j_max = 0
+    safe_dx = np.where(good_dx, row_dx, 1.0)
+    offsets_m = np.arange(j_max + 1) * (dy_m if j_max > 0 else 0.0)
+    chord_m = np.sqrt(np.maximum(radius_m ** 2 - offsets_m ** 2, 0.0))
+    half = np.floor(chord_m[:, np.newaxis] / safe_dx[np.newaxis, :] + 1e-9)
+    half = np.where(good_dx[np.newaxis, :], half, 0.0)
+    half = np.clip(half, 0, cap).astype(np.intp)
+    return j_max, half
+
+
+def _padded_cumsum(values: np.ndarray, pad: int, wrap: bool) -> np.ndarray:
+    """Cumulative sum along x of `values` (`(ny, nx)`, missing entries
+    already 0), after padding the columns by `pad` on each side:
+    cyclically when `wrap` (a global grid), with zeros (no value, which
+    is what clips a window at the edge) otherwise. The result has a
+    leading zero column, shape `(ny, nx + 2*pad + 1)`, so the sum over
+    padded columns `[a, b)` of row `i` is `cs[i, b] - cs[i, a]`. Shared by
+    `half_disk_means` and `_disk_chord_sums`.
+    """
+    ny, nx = values.shape
+    if pad > 0:
+        if wrap:
+            values_p = np.concatenate([values[:, nx - pad :], values, values[:, :pad]], axis=1)
+        else:
+            zeros = np.zeros((ny, pad))
+            values_p = np.concatenate([zeros, values, zeros], axis=1)
+    else:
+        values_p = values
+    cs = np.zeros((ny, values_p.shape[1] + 1))
+    np.cumsum(values_p, axis=1, out=cs[:, 1:])
+    return cs
+
+
+def _row_runs(widths: np.ndarray):
+    """Runs of consecutive rows sharing one chord half-width: a list of
+    `(r0, r1, w)`, rows `r0:r1` (relative to the start of `widths`) all
+    with half-width `w`, covering every row in order. Chord widths change
+    slowly from row to row (with latitude), so a run is usually many rows
+    long and is processed with one slice."""
+    widths = np.asarray(widths)
+    cut = (np.flatnonzero(np.diff(widths)) + 1).tolist()
+    starts = [0] + cut
+    ends = cut + [int(widths.size)]
+    return [(r0, r1, int(widths[r0])) for r0, r1 in zip(starts, ends)]
+
+
+#: Rows per block in `_disk_extreme_2d`: each block of source rows gets
+#: its own sparse table, padded only as wide as that block's widest
+#: chord, so memory stays at a few tens of MB on a 0.25 degree global
+#: grid instead of a whole-grid table as wide as the polar rows need.
+_DISK_BLOCK_ROWS = 64
+
+
+class WindowGeometry(object):
+    """The analysis window on one grid: everything `window_extreme_2d`
+    and `window_sum_2d` need to know about it, for either shape, computed
+    once and reused (see `window_geometry`, which builds and caches it).
+
+    Attributes (read-only by convention):
+
+    `radius_m`: the radius (half-width for the square), meters.
+    `row_dx`: `(ny,)` x spacing of each row, meters (`_row_spacing_m`:
+    the `nanmean` of that row of the `dx` pseudo-field).
+    `dy_m`: the y spacing, meters (the `nanmean` of `dy`).
+    `ny`, `nx`: the grid shape.
+    `wrap`: whether axis 1 is cyclic (a global grid; see `is_global_lon`).
+    `half_x`, `half_y`: the square's half-widths in cells, per row along
+    x and one along y (`cells_per_row`, `cells_y`), for `shape="square"`.
+
+    The disk is the set of grid points whose planar offset `(x, y)` from
+    the center satisfies `x**2 + y**2 <= radius_m**2`, with `y = j * dy_m`
+    for row offset `j` and `x` counted in the *source* row's own `dx`
+    (`_disk_half_widths`: the chord half-width on source row `i` at row
+    offset `j` is `floor(sqrt(R**2 - (j*dy)**2) / row_dx[i])`), the
+    discretization `half_disk_means` uses for parameter B, so the disk
+    B is averaged over and the disk the thermal winds take their
+    max/min over are the same points. Chord half-widths are clamped to
+    `nx // 2` for the extremes when wrapping (enough to reach every
+    column; a column met twice does not change a max), to `(nx - 1) //
+    2` for the sums when wrapping (as `half_disk_means` does, so no
+    column is counted twice; the two differ only by the antipodal
+    column of a row whose chord already spans the whole latitude
+    circle, within about 1.4 degrees of a pole at 0.25 degree spacing
+    for a 500 km radius), and to `nx - 1` otherwise.
+
+    The chord tables (`disk_half_widths`), the work plans of the
+    extremes and the sums (`extreme_plan`, `sum_plan`) and the disk's
+    cell counts (`disk_cell_counts`) are computed the first time they
+    are needed and kept.
+    """
+
+    def __init__(self, radius_m, row_dx, dy_m, nx, wrap, half_x, half_y):
+        self.radius_m = float(radius_m)
+        self.row_dx = np.asarray(row_dx, dtype=float)
+        self.ny = int(self.row_dx.size)
+        self.nx = int(nx)
+        self.dy_m = float(dy_m)
+        self.wrap = bool(wrap)
+        self.half_x = np.asarray(half_x).astype(int)
+        self.half_y = int(half_y)
+        self._half = {}
+        self._plan = None
+        self._sum_plan = None
+        self._cell_counts = None
+
+    @classmethod
+    def from_cells(cls, half_x_cells_per_row, half_y_cells, nx, wrap):
+        """A geometry from cell counts alone, for a caller of
+        `window_extreme_2d`/`window_sum_2d` that passes only
+        `half_x_cells_per_row`/`half_y_cells`: the disk is then the
+        ellipse inscribed in that square, measured in cells (radius 1,
+        `row_dx[i] = 1 / half_x[i]`, `dy = 1 / half_y`), so a row with
+        half-width `h` in the square has chord half-width `floor(h *
+        sqrt(1 - (j / half_y)**2))` at row offset `j`. The square's own
+        half-widths are the counts given.
+        """
+        half_x = np.asarray(half_x_cells_per_row).astype(int)
+        half_y = int(half_y_cells)
+        with np.errstate(divide="ignore"):
+            row_dx = np.where(half_x > 0, 1.0 / np.maximum(half_x, 1), np.inf)
+        dy_m = 1.0 / half_y if half_y > 0 else np.inf
+        return cls(1.0, row_dx, dy_m, nx, wrap, half_x, half_y)
+
+    def disk_half_widths(self, for_sum: bool):
+        """`(j_max, half)` from `_disk_half_widths` with this grid's
+        clamp for the sums (`for_sum=True`) or the extremes (see the
+        class docstring), computed once and kept."""
+        key = bool(for_sum)
+        if key not in self._half:
+            nx = self.nx
+            if self.wrap:
+                cap = max((nx - 1) // 2, 0) if for_sum else max(nx // 2, 0)
+            else:
+                cap = max(nx - 1, 0)
+            self._half[key] = _disk_half_widths(self.radius_m, self.row_dx, self.dy_m, nx, cap)
+        return self._half[key]
+
+    def sum_plan(self):
+        """The work plan of `_disk_chord_sums`, computed once and kept:
+        `(j_max, pad, runs)`, the column padding (the widest chord of
+        the sums) and, for each row offset `j = 0..j_max`, the runs
+        `(r0, r1, w)` of consecutive rows sharing chord half-width `w`
+        (`_row_runs`, with the sums' clamp; see the class docstring)."""
+        if self._sum_plan is None:
+            j_max, half = self.disk_half_widths(for_sum=True)
+            pad = int(half.max()) if half.size else 0
+            self._sum_plan = (j_max, pad, [_row_runs(half[j]) for j in range(j_max + 1)])
+        return self._sum_plan
+
+    def disk_cell_counts(self) -> np.ndarray:
+        """`(ny, nx)` number of grid cells in the disk centered on every
+        point (the part inside the grid), computed once and kept: the
+        count `_disk_sum_2d` returns for a field with no missing value."""
+        if self._cell_counts is None:
+            self._cell_counts = _disk_chord_sums(np.ones((self.ny, self.nx)), self)
+        return self._cell_counts
+
+    def extreme_plan(self):
+        """The work plan of `_disk_extreme_2d`, computed once and kept:
+        `(j_max, blocks)`, one entry of `blocks` per block of
+        `_DISK_BLOCK_ROWS` source rows, `(b0, b1, pad, k_max, runs)`:
+        rows `b0:b1`, the column padding the block needs (its widest
+        chord), the deepest sparse-table level it needs, and for each row
+        offset `j = 0..j_max` the runs `(r0, r1, w)` of consecutive rows
+        (block-relative) sharing chord half-width `w` (`_row_runs`).
+        """
+        if self._plan is None:
+            j_max, half = self.disk_half_widths(for_sum=False)
+            blocks = []
+            for b0 in range(0, self.ny, _DISK_BLOCK_ROWS):
+                b1 = min(b0 + _DISK_BLOCK_ROWS, self.ny)
+                hb = half[:, b0:b1]
+                pad = int(hb.max()) if hb.size else 0
+                k_max = (2 * pad + 1).bit_length() - 1
+                runs = [_row_runs(hb[j]) for j in range(j_max + 1)]
+                blocks.append((b0, b1, pad, k_max, runs))
+            self._plan = (j_max, blocks)
+        return self._plan
+
+
+#: Most recently used geometries, keyed by everything they depend on;
+#: `delta_z` is called once per level with the same grid and radius, and
+#: `executeHartClass` uses three radii, so a handful covers a whole call.
+_GEOMETRY_CACHE = {}
+_GEOMETRY_CACHE_SIZE = 8
+
+
+def window_geometry(
+    radius_km: float,
+    dx: np.ndarray,
+    dy: np.ndarray,
+    ny: int,
+    nx: int,
+    global_lon: bool | None = None,
+) -> WindowGeometry:
+    """The `WindowGeometry` of a `radius_km` window on a `(ny, nx)` grid
+    with spacing pseudo-fields `dx`, `dy` (meters; scalars or arrays, as
+    `cells_per_row`/`cells_y` accept them). `global_lon` is the
+    longitude-wrap decision (`None` auto-detects with `is_global_lon`;
+    see the module docstring's "Longitude wrap on global grids"
+    section). Geometries are cached by radius, per-row `dx`, `dy`, grid
+    shape and wrap (the last `_GEOMETRY_CACHE_SIZE` used), so the chord
+    tables are built once per grid and radius, not once per level.
+    """
+    ny, nx = int(ny), int(nx)
+    row_dx = _row_spacing_m(dx, ny, nx)
+    dy_m = float(np.nanmean(np.asarray(dy, dtype=float)))
+    wrap = is_global_lon(nx, dy_m) if global_lon is None else bool(global_lon)
+    key = (float(radius_km), row_dx.tobytes(), dy_m, ny, nx, wrap)
+    geometry = _GEOMETRY_CACHE.pop(key, None)
+    if geometry is None:
+        geometry = WindowGeometry(
+            float(radius_km) * 1000.0, row_dx, dy_m, nx, wrap,
+            cells_per_row(radius_km, dx, ny, nx), cells_y(radius_km, dy),
+        )
+    _GEOMETRY_CACHE[key] = geometry  # (re)inserted last: most recently used
+    while len(_GEOMETRY_CACHE) > _GEOMETRY_CACHE_SIZE:
+        try:
+            del _GEOMETRY_CACHE[next(iter(_GEOMETRY_CACHE))]
+        except (KeyError, RuntimeError, StopIteration):
+            break  # another thread got there first; the cache is only an optimization
+    return geometry
+
+
+def _disk_extreme_2d(field: np.ndarray, geometry: WindowGeometry, kind: str) -> np.ndarray:
+    """Max or min of `field` over the disk of `geometry` centered on every
+    grid point (`window_extreme_2d` with `shape="circle"`).
+
+    Decomposition. The disk is a stack of chords, one per row offset
+    `j = -j_max..j_max`; the chord at offset `j` sits on source row `i +
+    j` of output row `i` and spans columns `x - w .. x + w`, `w =
+    w_j(i + j)` measured in that source row's `dx` (see
+    `WindowGeometry`). So for each `j` the x pass is a sliding extreme of
+    width `2*w + 1` along every source row, with a width that depends
+    on the row, and the result is that x pass shifted by `j` rows and
+    combined (`np.fmax`/`np.fmin`) into the output. The chord depends on
+    `|j|` only, so offsets `+j` and `-j` share one x pass.
+
+    Sliding extremes of any width, from one sparse table per row. Level
+    `k` of the table holds the extreme of `2**k` consecutive columns,
+    `L[k][x] = op(L[k-1][x], L[k-1][x + 2**(k-1)])` (the doubling of
+    `running_extreme_1d`, but keeping every level); the extreme over a
+    window of length `n = 2*w + 1` starting at column `s` is then
+    `op(L[k][s], L[k][s + n - 2**k])` with `k = floor(log2(n))`, two
+    overlapping power-of-two windows that together cover it exactly.
+    Building the table costs `log2` of the widest window times the grid,
+    and every chord is then answered with one combine, whatever its
+    width. Consecutive rows sharing a chord width (the usual case: the
+    width changes only every few rows as `cos(lat)` changes) are
+    answered together with one slice. The table is built once per call,
+    by blocks of `_DISK_BLOCK_ROWS` source rows, each padded only as
+    wide as its own widest chord, which keeps memory small (the polar
+    rows of a global grid need the whole latitude circle, the tropical
+    ones a few dozen columns).
+
+    Edges. The columns are padded before the table: cyclically on a
+    global grid (`geometry.wrap`), so a chord continues across the
+    longitude seam, and with the sentinel (`-inf` for max, `+inf` for
+    min) otherwise, so a chord is clipped at the grid edge. Rows beyond
+    the first or last row do not exist and are not combined: the disk
+    is clipped there, never reflected or wrapped over the pole.
+
+    Missing data. NaN is replaced by the sentinel before the table, so
+    it is never the extreme of anything; a point whose disk holds no
+    finite value ends at the sentinel and is returned as NaN (every
+    non-finite result is).
+
+    Cost: `j_max + 1` x passes (18 on a 0.25 degree grid with R = 500
+    km) and `2*j_max + 1` row-offset combines over the grid, plus the
+    table, about what the square's two `running_extreme_1d` passes cost
+    (on 721 x 1440, about 0.1 s per call in the test sandbox; see the
+    module docstring's "The circular window" section).
+    """
+    op = np.fmax if kind == "max" else np.fmin
+    sentinel = -np.inf if kind == "max" else np.inf
+    ny, nx = field.shape
+    j_max, blocks = geometry.extreme_plan()
+
+    clean = np.where(np.isnan(field), sentinel, field)
+    out = np.full((ny, nx), sentinel)
+    src_buffer = np.empty((min(_DISK_BLOCK_ROWS, ny), nx))
+
+    for b0, b1, pad, k_max, runs in blocks:
+        nb = b1 - b0
+        block = clean[b0:b1]
+        if pad > 0:
+            if geometry.wrap:
+                left, right = block[:, nx - pad :], block[:, :pad]
+            else:
+                left = right = np.full((nb, pad), sentinel)
+            table = [np.concatenate([left, block, right], axis=1)]
+        else:
+            table = [block]
+        total = nx + 2 * pad
+        size = 1
+        for _ in range(k_max):
+            keep = total - 2 * size + 1
+            prev = table[-1]
+            table.append(op(prev[:, :keep], prev[:, size : size + keep]))
+            size *= 2
+
+        src = src_buffer[:nb]
+        for j in range(j_max + 1):
+            for r0, r1, w in runs[j]:
+                length = 2 * w + 1
+                k = length.bit_length() - 1
+                first = pad - w
+                second = first + length - (1 << k)
+                level = table[k]
+                op(level[r0:r1, first : first + nx], level[r0:r1, second : second + nx], out=src[r0:r1])
+            # Source row r is the chord at offset -j of output row r + j
+            # and at offset +j of output row r - j.
+            lo, hi = max(b0 - j, 0), max(b1 - j, 0)
+            if hi > lo:
+                op(out[lo:hi], src[lo + j - b0 : hi + j - b0], out=out[lo:hi])
+            if j > 0:
+                lo, hi = min(b0 + j, ny), min(b1 + j, ny)
+                if hi > lo:
+                    op(out[lo:hi], src[lo - j - b0 : hi - j - b0], out=out[lo:hi])
+
+    out[~np.isfinite(out)] = np.nan
+    return out
+
+
+def _disk_chord_sums(values: np.ndarray, geometry: WindowGeometry) -> np.ndarray:
+    """Sum of `values` (finite everywhere: missing entries already 0) over
+    the disk of `geometry` centered on every grid point, clipped at the
+    grid edges (wrapped in longitude on a global grid).
+
+    Same chords as `_disk_extreme_2d`, summed instead of maxed: one
+    cumulative sum along x, over columns padded cyclically on a global
+    grid or with zeros otherwise (`_padded_cumsum`), gives the chord of
+    half-width `w` centered on column `x` of a source row as `cs[x + w +
+    1] - cs[x - w]`, which for a whole run of rows sharing `w` is one
+    difference of two column-shifted slices. For each row offset `j` the
+    chord sums of all source rows are added into the result shifted by
+    `+j` and `-j` rows; rows beyond the grid are not added (the disk is
+    clipped at the poles or the regional edge). This is
+    `half_disk_means`'s construction for its half-disks, on the whole
+    disk and without area weights. Cost: `j_max + 1` passes over the
+    grid (18 on a 0.25 degree grid with R = 500 km), independent of the
+    chord widths.
+    """
+    ny, nx = values.shape
+    j_max, pad, runs = geometry.sum_plan()
+    cs = _padded_cumsum(values, pad, geometry.wrap)
+    total = np.zeros((ny, nx))
+    chord = np.empty((ny, nx))
+    for j in range(j_max + 1):
+        for r0, r1, w in runs[j]:
+            np.subtract(cs[r0:r1, pad + w + 1 : pad + w + 1 + nx], cs[r0:r1, pad - w : pad - w + nx], out=chord[r0:r1])
+        if j == 0:
+            total += chord
+            continue
+        # Output row i takes source rows i + j and i - j.
+        total[: ny - j] += chord[j:]
+        total[j:] += chord[: ny - j]
+    return total
+
+
+def _disk_sum_2d(field: np.ndarray, geometry: WindowGeometry):
+    """Sum of the valid (finite) values of `field` and their count over
+    the disk of `geometry` centered on every grid point
+    (`window_sum_2d` with `shape="circle"`); returns `(sum, count)`.
+
+    Both are `_disk_chord_sums`: of the values with NaN as 0, and of the
+    0/1 valid-cell indicator. When nothing is missing, the count is the
+    number of disk cells inside the grid, which depends only on the
+    geometry and is computed once per geometry (`disk_cell_counts`).
+    """
+    valid = np.isfinite(field)
+    if valid.all():
+        return _disk_chord_sums(field, geometry), geometry.disk_cell_counts().copy()
+    values = np.where(valid, field, 0.0)
+    return _disk_chord_sums(values, geometry), _disk_chord_sums(valid.astype(float), geometry)
+
+
+# ---------------------------------------------------------------------------
 # dZ and the band slope
 # ---------------------------------------------------------------------------
 
@@ -1131,9 +1700,16 @@ def delta_z(
     dy: np.ndarray,
     radius_km: float,
     global_lon: bool | None = None,
+    shape: str = None,
 ) -> np.ndarray:
-    """`window_max(z) - window_min(z)`, half-width `radius_km`, at every
-    grid point -- the pointwise analogue of Hart's per-level `dZ`.
+    """`window_max(z) - window_min(z)` over the disk of radius
+    `radius_km` centered on every grid point -- the pointwise analogue
+    of Hart's per-level `dZ`, over the same circle Hart uses (see the
+    module docstring's "The circular window" section). `shape` (`None`,
+    the default, means `WINDOW_SHAPE`) selects `"circle"` or the earlier
+    `"square"` of half-width `radius_km`; the window's geometry comes
+    from `window_geometry` and is shared by the max, the min and the
+    valid-fraction sum below.
 
     Missing input (see `_missing_mask`) is replaced with NaN before
     computing the window extremes (so a bad point cannot masquerade as a
@@ -1159,8 +1735,10 @@ def delta_z(
     `z` -- computed as a valid-cell count and a total-cell count, both
     from a single `window_sum_2d` call on a 0/1 valid-cell indicator (an
     indicator array has no NaN of its own, so the sum it returns is the
-    valid-cell count and the count it returns is the total cell count the
-    window covers, including cells shrunk off by the domain edge). This
+    valid-cell count and the count it returns is the number of cells the
+    window covers inside the grid, the part clipped off at the domain
+    edge not included). When no point of `z` is missing the fraction is 1
+    everywhere and the sum is skipped. This
     guards a window that is mostly below ground or otherwise missing
     (e.g. within `RADIUS_KM` of the Greenland ice sheet or the Iceland
     highlands) from returning a max-minus-min computed from whatever
@@ -1173,21 +1751,18 @@ def delta_z(
     bad = _missing_mask(z_arr)
     z_clean = np.where(bad, np.nan, z_arr)
 
-    half_x = cells_per_row(radius_km, dx, ny, nx)
-    half_y = cells_y(radius_km, dy)
+    geometry = window_geometry(radius_km, dx, dy, ny, nx, global_lon)
 
-    dy_m = float(np.nanmean(np.asarray(dy, dtype=float)))
-    wrap = is_global_lon(nx, dy_m) if global_lon is None else bool(global_lon)
-
-    z_max = window_extreme_2d(z_clean, half_x, half_y, "max", wrap_x=wrap)
-    z_min = window_extreme_2d(z_clean, half_x, half_y, "min", wrap_x=wrap)
+    z_max = window_extreme_2d(z_clean, kind="max", shape=shape, geometry=geometry)
+    z_min = window_extreme_2d(z_clean, kind="min", shape=shape, geometry=geometry)
     dz = z_max - z_min
 
-    valid_indicator = np.where(bad, 0.0, 1.0)
-    valid_count, total_count = window_sum_2d(valid_indicator, half_x, half_y, wrap_x=wrap)
-    with np.errstate(invalid="ignore", divide="ignore"):
-        valid_fraction = np.where(total_count > 0, valid_count / total_count, 0.0)
-    dz = np.where(valid_fraction < MIN_VALID_FRACTION, np.nan, dz)
+    if np.any(bad):
+        valid_indicator = np.where(bad, 0.0, 1.0)
+        valid_count, total_count = window_sum_2d(valid_indicator, shape=shape, geometry=geometry)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            valid_fraction = np.where(total_count > 0, valid_count / total_count, 0.0)
+        dz = np.where(valid_fraction < MIN_VALID_FRACTION, np.nan, dz)
 
     return np.where(bad, np.nan, dz)
 
@@ -1237,6 +1812,7 @@ def thermal_wind_grid(
     radius_km: float = RADIUS_KM,
     psfc_hpa: np.ndarray = None,
     cap_hpa: float = BELOW_GROUND_CAP_HPA,
+    shape: str = None,
 ) -> np.ndarray:
     """`band_slope` of `delta_z` at every level in `z_levels` -- the full
     pointwise Hart thermal-wind computation for one band. `z_levels` is a
@@ -1251,10 +1827,14 @@ def thermal_wind_grid(
     "Below-ground masking" section. `psfc_hpa=None` (the default) skips
     this entirely -- the pre-below-ground-masking behavior, for callers
     with no terrain to mask.
+
+    `shape` is passed to `delta_z` (`None`, the default, means
+    `WINDOW_SHAPE`: the disk, unless the module constant says
+    otherwise).
     """
     if psfc_hpa is not None:
         z_levels = [mask_below_ground(z, psfc_hpa, p, cap_hpa) for z, p in zip(z_levels, pressures)]
-    dz_list = [delta_z(z, dx, dy, radius_km) for z in z_levels]
+    dz_list = [delta_z(z, dx, dy, radius_km, shape=shape) for z in z_levels]
     return band_slope(dz_list, pressures).astype(np.float64)
 
 
@@ -1273,6 +1853,7 @@ def closed_low_mask(
     blob_radius_km: float = DEFAULT_BLOB_RADIUS_KM,
     center_tol_hpa: float = DEFAULT_CENTER_TOL_HPA,
     global_lon: bool | None = None,
+    shape: str = None,
 ) -> np.ndarray:
     """Boolean mask: True within `blob_radius_km` of a real closed low's
     center in the mean sea level pressure field `pmsl` (passed by
@@ -1291,15 +1872,15 @@ def closed_low_mask(
     from their thermal-wind band levels, which are NaN below ground
     (see `mask_below_ground`), not from the mask itself.
 
-    A plain "is this point close to the local minimum of a box that also
-    has a big max-minus-min" test (an earlier version of this function)
+    A plain "is this point close to the local minimum of a window that
+    also has a big max-minus-min" test (an earlier version of this function)
     turns out to accept far more than closed lows: on a *uniform slope*
     (no low at all -- e.g. a steady 5-8 hPa per 1000 km pressure gradient
     across a front) every point is, to within a fraction of a hPa,
     already the minimum of its own neighborhood in the single direction
     the slope descends, and the same window's max-minus-min is large
     simply because the slope has covered a lot of pressure by the time
-    it reaches the far edge of a 500 km box -- so both tests passed
+    it reaches the far edge of a 500 km window -- so both tests passed
     *everywhere*, not just at an actual low. This function instead uses
     two tests that a monotonic slope cannot satisfy simultaneously:
 
@@ -1310,9 +1891,10 @@ def closed_low_mask(
        this alone is a weak filter, not a claim of "this is a low".
     2. **Depth test**: `ring_mean - p >= depth_hpa`, where `ring_mean`
        is the mean MSLP of the *annulus* between `min_radius_km` and
-       `ring_radius_km` around the point (computed from two box sums via
-       `window_sum_2d`: `(sum_outer - sum_inner) / (count_outer -
-       count_inner)`). On a closed low, the annulus sits in the
+       `ring_radius_km` around the point (computed from two disk sums
+       via `window_sum_2d`: `(sum_outer - sum_inner) / (count_outer -
+       count_inner)`; the inner disk's chords are never longer than the
+       outer disk's, so the annulus is well defined cell by cell). On a closed low, the annulus sits in the
        surrounding higher pressure and exceeds the center by roughly the
        low's depth. On a uniform slope, the annulus is centered on the
        same point as the candidate itself, so its mean pressure equals
@@ -1324,8 +1906,9 @@ def closed_low_mask(
     Points passing both tests are `raw` detections (typically a single
     pixel, or a couple, right at each low's true minimum); the returned
     mask is `raw` dilated by `window_extreme_2d(..., kind="max")` over a
-    `blob_radius_km` half-width, so each detected low paints a blob of
-    about that radius on the map instead of a single point (this radius
+    disk of radius `blob_radius_km`, so each detected low paints a round
+    blob of about that radius on the map instead of a single point (the
+    square window used before painted squares; this radius
     is about "how big to paint the low", unrelated to the low's own true
     physical size).
 
@@ -1339,30 +1922,30 @@ def closed_low_mask(
     `is_global_lon(nx, dy)`, `True`/`False` forces it -- see the module
     docstring's "Longitude wrap on global grids" section. The one
     decision is made once and used for every sliding-window call this
-    function makes (the candidate/local-min pass, both box sums of the
+    function makes (the candidate/local-min pass, both disk sums of the
     ring-mean depth test, and the final dilation), so a low near the
     seam of a global grid is found and painted consistently on both
     sides of it.
+
+    `shape` (`None`, the default, means `WINDOW_SHAPE`) selects the disk
+    or the earlier square for all of these windows at once; see the
+    module docstring's "The circular window" section. The three radii
+    each get their own `window_geometry`.
     """
     p_arr = mslp_hpa(pmsl)
     ny, nx = p_arr.shape
     bad = _missing_mask(p_arr)
     p_clean = np.where(bad, np.nan, p_arr)
 
-    dy_m = float(np.nanmean(np.asarray(dy, dtype=float)))
-    wrap = is_global_lon(nx, dy_m) if global_lon is None else bool(global_lon)
-
-    half_x_min = cells_per_row(min_radius_km, dx, ny, nx)
-    half_y_min = cells_y(min_radius_km, dy)
-    local_min = window_extreme_2d(p_clean, half_x_min, half_y_min, "min", wrap_x=wrap)
+    inner = window_geometry(min_radius_km, dx, dy, ny, nx, global_lon)
+    local_min = window_extreme_2d(p_clean, kind="min", shape=shape, geometry=inner)
 
     with np.errstate(invalid="ignore"):
         candidate = (p_clean - local_min) <= float(center_tol_hpa)
 
-    half_x_ring = cells_per_row(ring_radius_km, dx, ny, nx)
-    half_y_ring = cells_y(ring_radius_km, dy)
-    sum_outer, count_outer = window_sum_2d(p_clean, half_x_ring, half_y_ring, wrap_x=wrap)
-    sum_inner, count_inner = window_sum_2d(p_clean, half_x_min, half_y_min, wrap_x=wrap)
+    outer = window_geometry(ring_radius_km, dx, dy, ny, nx, global_lon)
+    sum_outer, count_outer = window_sum_2d(p_clean, shape=shape, geometry=outer)
+    sum_inner, count_inner = window_sum_2d(p_clean, shape=shape, geometry=inner)
 
     ring_sum = sum_outer - sum_inner
     ring_count = count_outer - count_inner
@@ -1373,9 +1956,8 @@ def closed_low_mask(
     valid = ~bad & np.isfinite(local_min) & np.isfinite(ring_mean)
     raw = (candidate & depth_ok & valid).astype(float)
 
-    half_x_blob = cells_per_row(blob_radius_km, dx, ny, nx)
-    half_y_blob = cells_y(blob_radius_km, dy)
-    dilated = window_extreme_2d(raw, half_x_blob, half_y_blob, "max", wrap_x=wrap)
+    blob = window_geometry(blob_radius_km, dx, dy, ny, nx, global_lon)
+    dilated = window_extreme_2d(raw, kind="max", shape=shape, geometry=blob)
     return dilated > 0.5
 
 
@@ -1471,12 +2053,16 @@ def window_mean(
     dy: np.ndarray,
     radius_km: float,
     global_lon: bool | None = None,
+    shape: str = None,
 ) -> np.ndarray:
-    """NaN-aware box mean of `field`, half-width `radius_km`, at every
-    grid point -- `window_sum_2d`'s sum divided by its count, using the
-    same per-row `dx`/scalar `dy` half-width conversion (`cells_per_row`,
-    `cells_y`) `delta_z`/`closed_low_mask` use. NaN where the window's
-    valid-point count is 0 (every point in it was missing).
+    """NaN-aware mean of `field` over the disk of radius `radius_km`
+    centered on every grid point -- `window_sum_2d`'s sum divided by its
+    count, over the same window (`window_geometry`) `delta_z`/
+    `closed_low_mask` use. Every valid cell counts once (no area
+    weighting; `half_disk_means` is the area-weighted counterpart). NaN
+    where the window's valid-point count is 0 (every point in it was
+    missing). `shape` (`None` means `WINDOW_SHAPE`) selects `"circle"`
+    or the earlier `"square"` of half-width `radius_km`.
 
     `global_lon` (default `None`) is the same longitude-wrap decision
     `delta_z` takes: `None` auto-detects with `is_global_lon(nx, dy)`,
@@ -1485,11 +2071,8 @@ def window_mean(
     """
     field = np.asarray(field, dtype=float)
     ny, nx = field.shape
-    half_x = cells_per_row(radius_km, dx, ny, nx)
-    half_y = cells_y(radius_km, dy)
-    dy_m = float(np.nanmean(np.asarray(dy, dtype=float)))
-    wrap = is_global_lon(nx, dy_m) if global_lon is None else bool(global_lon)
-    total, count = window_sum_2d(field, half_x, half_y, wrap_x=wrap)
+    geometry = window_geometry(radius_km, dx, dy, ny, nx, global_lon)
+    total, count = window_sum_2d(field, shape=shape, geometry=geometry)
     with np.errstate(invalid="ignore", divide="ignore"):
         mean = np.where(count > 0, total / count, np.nan)
     return mean
@@ -1523,7 +2106,10 @@ def half_disk_means(
     every row as `floor(w_j / row_dx)` with the same per-row `dx`
     (`nanmean` of that row of `dx`, so the cos-latitude growth of the
     cell count toward the poles is followed exactly as `cells_per_row`
-    follows it). The x-direction box sum of that half-width, and the
+    follows it). This is the same disk `delta_z`, `window_mean` and
+    `closed_low_mask` use by default (`_disk_half_widths` is shared; see
+    `WindowGeometry` and the module docstring's "The circular window"
+    section). The x-direction chord sum of that half-width, and the
     partial sums from the center column to `+w_j` (east) and from
     `-w_j` to the center (west), all come from a single cumulative sum
     along x computed once; each row offset then only gathers from it
@@ -1607,40 +2193,18 @@ def half_disk_means(
         dy_m = float(np.nanmean(dy_arr))
     wrap = is_global_lon(nx, dy_m) if global_lon is None else bool(global_lon)
 
-    radius_m = float(radius_km) * 1000.0
-    if np.isfinite(dy_m) and dy_m > 0 and radius_m > 0:
-        j_max = min(int(math.floor(radius_m / dy_m + 1e-9)), ny - 1)
-    else:
-        j_max = 0
-
-    # Per-row x half-width (cells) for every row offset 0..j_max.
+    # Per-row x half-width (cells) for every row offset 0..j_max, shape
+    # (j_max+1, ny): the disk the thermal winds' windows also use.
     half_cap = max((nx - 1) // 2, 0) if wrap else max(nx - 1, 0)
-    safe_dx = np.where(good_dx, row_dx, 1.0)
-    offsets_m = np.arange(j_max + 1) * (dy_m if j_max > 0 else 0.0)
-    chord_m = np.sqrt(np.maximum(radius_m ** 2 - offsets_m ** 2, 0.0))
-    half = np.floor(chord_m[:, np.newaxis] / safe_dx[np.newaxis, :] + 1e-9)
-    half = np.where(good_dx[np.newaxis, :], half, 0.0)
-    half = np.clip(half, 0, half_cap).astype(np.intp)  # shape (j_max+1, ny)
+    j_max, half = _disk_half_widths(float(radius_km) * 1000.0, row_dx, dy_m, nx, half_cap)
 
     # Pad the columns once by the largest half-width needed: cyclically
     # on a global grid, with zeros (no value, no count) otherwise, so
     # every gather below is in bounds and clipping falls out for free.
     pad = int(half.max()) if half.size else 0
-    if pad > 0:
-        if wrap:
-            values_p = np.concatenate([values[:, nx - pad :], values, values[:, :pad]], axis=1)
-            counts_p = np.concatenate([counts[:, nx - pad :], counts, counts[:, :pad]], axis=1)
-        else:
-            zeros = np.zeros((ny, pad))
-            values_p = np.concatenate([zeros, values, zeros], axis=1)
-            counts_p = np.concatenate([zeros, counts, zeros], axis=1)
-    else:
-        values_p, counts_p = values, counts
-    width = values_p.shape[1] + 1
-    cs_v = np.zeros((ny, width))
-    cs_c = np.zeros((ny, width))
-    np.cumsum(values_p, axis=1, out=cs_v[:, 1:])
-    np.cumsum(counts_p, axis=1, out=cs_c[:, 1:])
+    cs_v = _padded_cumsum(values, pad, wrap)
+    cs_c = _padded_cumsum(counts, pad, wrap)
+    width = cs_v.shape[1]
     flat_v = cs_v.ravel()
     flat_c = cs_c.ravel()
 
@@ -1772,6 +2336,7 @@ def steering_window_mean(
     dy: np.ndarray,
     radius_km: float,
     global_lon: bool | None = None,
+    shape: str = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Area-average `steering`'s pointwise `(u_s, v_s)` output over a
     `radius_km` window (via `window_mean`), one component at a time --
@@ -1794,14 +2359,15 @@ def steering_window_mean(
     computation uses (`executeB`/`executeHartClass` both pass the same
     `radiusKm` here as they pass to `parameter_b_grid`), so the motion
     proxy and the thickness half-disks agree on what "the analysis
-    window" means. `global_lon` is passed straight through to
-    `window_mean` (see its own docstring and the module docstring's
-    "Longitude wrap on global grids" section).
+    window" means. `global_lon` and `shape` are passed straight through
+    to `window_mean` (see its own docstring and the module docstring's
+    "Longitude wrap on global grids" and "The circular window"
+    sections).
 
     Returns `(u_s_mean, v_s_mean)`, each the same shape as the input.
     """
-    u_mean = window_mean(u_s, dx, dy, radius_km, global_lon=global_lon)
-    v_mean = window_mean(v_s, dx, dy, radius_km, global_lon=global_lon)
+    u_mean = window_mean(u_s, dx, dy, radius_km, global_lon=global_lon, shape=shape)
+    v_mean = window_mean(v_s, dx, dy, radius_km, global_lon=global_lon, shape=shape)
     return u_mean, v_mean
 
 
@@ -1914,6 +2480,7 @@ def parameter_b_grid_gradient(
     radius_km: float,
     layer_scale: float,
     min_speed: float = MIN_STEERING_MS,
+    shape: str = None,
 ) -> np.ndarray:
     """The earlier, first-order form of gridded parameter B, kept for
     comparison with `parameter_b_grid` (same signature, same motion,
@@ -1921,15 +2488,18 @@ def parameter_b_grid_gradient(
     Hart's semicircle difference with `(8*R/(3*pi))` times the
     window-mean thickness gradient projected on the right-hand normal of
     motion. That is exact for a uniform thickness gradient but reads a
-    storm-scale wavenumber-one asymmetry at only about 60% of Hart's
-    semicircle difference (the gradient at and near the point
-    under-represents structure that peaks a few hundred km out); see the
-    module docstring's "Parameter B and the joint class" section.
-    `executeB` and `executeHartClass` use `parameter_b_grid`, not this.
+    storm-scale wavenumber-one asymmetry at only about 72% of Hart's
+    semicircle difference with the default disk window mean (about 54%
+    with the square window mean it used before; the gradient near the
+    point under-represents structure that peaks a few hundred km out);
+    see the module docstring's "Parameter B and the joint class"
+    section. `executeB` and `executeHartClass` use `parameter_b_grid`,
+    not this. `shape` selects the window of that mean (`None` means
+    `WINDOW_SHAPE`; see `window_mean`).
 
     `thickness` is a layer thickness field (meters, e.g. 700 hPa height
     minus 925 hPa height). Its gradient (`gradient_2d`) is computed once,
-    then each component is box-averaged (`window_mean`) over a
+    then each component is averaged (`window_mean`) over the
     `radius_km` window -- computing the gradient first and then
     window-meaning each component, rather than differencing a
     window-meaned thickness, so a locally noisy `thickness` is smoothed
@@ -1959,8 +2529,8 @@ def parameter_b_grid_gradient(
     thickness_clean = np.where(_missing_mask(thickness), np.nan, thickness)
 
     gx_point, gy_point = gradient_2d(thickness_clean, dx, dy)
-    gx = window_mean(gx_point, dx, dy, radius_km)
-    gy = window_mean(gy_point, dx, dy, radius_km)
+    gx = window_mean(gx_point, dx, dy, radius_km, shape=shape)
+    gy = window_mean(gy_point, dx, dy, radius_km, shape=shape)
 
     u_s_arr = np.asarray(u_s, dtype=float)
     v_s_arr = np.asarray(v_s, dtype=float)
