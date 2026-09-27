@@ -476,6 +476,40 @@ h1 { font-size: 18px; line-height: 28px; font-weight: 600; letter-spacing: -0.01
 .mini .path { fill: none; stroke: rgba(233, 232, 227, 0.55); stroke-width: 1; stroke-linejoin: round; }
 .mini .dot { stroke-width: 0.75; }
 .mini .now { stroke: var(--text); stroke-width: 1.25; }
+/* The selected entry's switch and the 3-D phase space (space3d.js). */
+.dim-seg { justify-self: start; }
+.dim-seg > button { height: 24px; padding: 0 10px; font: 500 11px/1 var(--mono); }
+.minis.three { display: block; }
+.s3d { display: grid; gap: 4px; min-width: 0; }
+.s3d-read {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: 0 10px;
+  min-height: 32px; margin: 0; font-size: 11px; line-height: 16px; color: var(--muted);
+}
+.s3d-h { font: 500 11px/16px var(--mono); color: var(--text); }
+.s3d-at { font: 11px/16px var(--sans); color: var(--faint); }
+.s3d-c { display: inline-flex; align-items: center; gap: 4px; min-width: 0; white-space: nowrap; }
+.s3d-c i, .s3d-key i { flex: none; width: 8px; height: 8px; border-radius: 1px; background: var(--c); }
+.s3d-v { grid-column: 1 / -1; display: flex; gap: 12px; white-space: nowrap; }
+.s3d-t b { font: 11px/16px var(--mono); color: var(--text); font-weight: 400; }
+.s3d-t sub, .s3d-t sup { font-size: 8px; }
+.s3d-u { color: var(--faint); }
+.s3d-canvas {
+  display: block; width: 100%; aspect-ratio: 1; border-radius: 2px;
+  touch-action: none; cursor: grab; -webkit-user-select: none; user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.s3d-canvas.grabbing { cursor: grabbing; }
+.s3d-canvas.on-dot { cursor: pointer; }
+.s3d-canvas:focus-visible { outline-offset: -2px; }
+.s3d-key {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px;
+  margin: 0; padding: 0; list-style: none; font-size: 11px; line-height: 16px; color: var(--muted);
+}
+.s3d-key li { display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
+.s3d-key b { font: 500 11px/16px var(--mono); color: var(--text); }
+.s3d-note { margin: 4px 0 0; font-size: 11px; line-height: 16px; color: var(--faint); }
+.s3d-note sub, .s3d-note sup { font-size: 8px; }
+
 .storms-built .storm.skel { display: none; }
 .storm.skel span { display: block; height: 12px; margin: 4px 0; border-radius: 2px; background: var(--raise); }
 .storm.skel span + span { height: 136px; width: 312px; max-width: 100%; }
@@ -733,6 +767,7 @@ h1 { font-size: 18px; line-height: 28px; font-weight: 600; letter-spacing: -0.01
   .btn, .seg > button, .seg > label, .x, .deep summary, .axis-note summary { position: relative; }
   .btn::after, .seg > button::after, .seg > label::after { content: ""; position: absolute; left: 0; right: 0; top: -4px; bottom: -4px; }
   .sf .seg > button { height: 32px; padding: 0 10px; font-size: 13px; }
+  .dim-seg > button { height: 32px; padding: 0 14px; font-size: 13px; }
   .panel-head .x, .card-head .x, .note .x { width: 40px; height: 40px; margin: -8px -8px -8px 0; }
   .storm-hit { min-height: 40px; }
   .deep-row { height: 40px; }
