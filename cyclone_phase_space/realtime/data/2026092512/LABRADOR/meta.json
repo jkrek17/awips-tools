@@ -1,0 +1,46 @@
+{
+  "cycle": "2026092512",
+  "name": "LABRADOR",
+  "status": "ok",
+  "seed": {
+    "lat": 56.75,
+    "lon": -42.0,
+    "fhr0": 0,
+    "fhr1": 72,
+    "source": "track of 2026092418 at +18 h"
+  },
+  "start_fhr": 0,
+  "end_fhr": 66,
+  "fixes": 11,
+  "start": {
+    "lat": 56.76,
+    "lon": -41.62,
+    "mslp_hpa": 991.8
+  },
+  "end": {
+    "lat": 64.57,
+    "lon": -13.1,
+    "mslp_hpa": 992.1
+  },
+  "min_mslp_hpa": 983.6,
+  "onset_standard_h": 0,
+  "completion_standard_h": 0,
+  "onset_hart_h": 0,
+  "completion_hart_h": 0,
+  "class_sequence": "4 0, 3 6, 4 12-36, 3 42, 4 48-54, - 60-66",
+  "fsu_number": 29,
+  "fsu": {
+    "number": 29,
+    "lat": 57.28,
+    "lon": -41.42,
+    "distance_km": 59,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092512/29.html"
+  },
+  "track_end": "merged into GREENLAND at +72 h",
+  "merged_into": {
+    "name": "GREENLAND",
+    "fhr": 72,
+    "distance_km": 0
+  },
+  "note": "merged into GREENLAND at +72 h"
+}

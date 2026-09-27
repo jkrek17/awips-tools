@@ -1,0 +1,40 @@
+{
+  "cycle": "2026092512",
+  "name": "GREENLAND",
+  "status": "ok",
+  "seed": {
+    "lat": 67.08,
+    "lon": -15.86,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "track of 2026092418 at +18 h"
+  },
+  "start_fhr": 0,
+  "end_fhr": 78,
+  "fixes": 14,
+  "start": {
+    "lat": 66.95,
+    "lon": -15.61,
+    "mslp_hpa": 972.0
+  },
+  "end": {
+    "lat": 67.74,
+    "lon": -11.19,
+    "mslp_hpa": 997.8
+  },
+  "min_mslp_hpa": 972.0,
+  "onset_standard_h": 0,
+  "completion_standard_h": 72,
+  "onset_hart_h": 42,
+  "completion_hart_h": 54,
+  "class_sequence": "2 0, - 6-42, 3 48-54, 4 60-66, - 72, 4 78",
+  "fsu_number": 13,
+  "fsu": {
+    "number": 13,
+    "lat": 67.22,
+    "lon": -15.48,
+    "distance_km": 31,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092512/13.html"
+  },
+  "track_end": "outside a closed low at +84, +90 h (1008 hPa at +90 h)"
+}
