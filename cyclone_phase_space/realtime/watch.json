@@ -3,9 +3,9 @@
   "storms": [
     {
       "name": "EPAC",
-      "lat": 16.35,
-      "lon": -157.81,
-      "cycle": "2026092712",
+      "lat": 16.75,
+      "lon": -161.89,
+      "cycle": "2026092812",
       "fhr0": 0,
       "fhr1": null,
       "notes": "Eastern Pacific tropical cyclone; FSU cyclone 1 of the 2026092412 run.",
@@ -18,8 +18,9 @@
       "cycle": "2026092712",
       "fhr0": 0,
       "fhr1": null,
-      "notes": "Warm seclusion southwest of Iceland; may dissipate within days.",
-      "active": true
+      "notes": "Warm seclusion southwest of Iceland; may dissipate within days. Inactive from 2026092812: no closed low within 400 km of the seed.",
+      "active": false,
+      "ended_cycle": "2026092812"
     },
     {
       "name": "LABRADOR",
@@ -34,9 +35,9 @@
     },
     {
       "name": "AUTO_260924_01",
-      "lat": 20.75,
-      "lon": -113.64,
-      "cycle": "2026092712",
+      "lat": 23.91,
+      "lon": -113.92,
+      "cycle": "2026092812",
       "fhr0": 0,
       "fhr1": null,
       "notes": "Found automatically at 0 h of 2026092418: 953.45 hPa, TROP.",
@@ -44,9 +45,9 @@
     },
     {
       "name": "AUTO_260924_02",
-      "lat": 58.73,
-      "lon": -159.78,
-      "cycle": "2026092712",
+      "lat": 58.57,
+      "lon": -147.33,
+      "cycle": "2026092812",
       "fhr0": 0,
       "fhr1": null,
       "notes": "Found automatically at 0 h of 2026092418: 964.27 hPa, NPAC.",
@@ -76,9 +77,9 @@
     },
     {
       "name": "AUTO_260924_05",
-      "lat": 22.45,
-      "lon": -123.33,
-      "cycle": "2026092712",
+      "lat": 23.22,
+      "lon": -123.37,
+      "cycle": "2026092812",
       "fhr0": 0,
       "fhr1": null,
       "notes": "Found automatically at 0 h of 2026092418: 979.97 hPa, TROP.",
@@ -102,8 +103,9 @@
       "cycle": "2026092712",
       "fhr0": 0,
       "fhr1": null,
-      "notes": "Found automatically at 0 h of 2026092612: 972.74 hPa, NPAC.",
-      "active": true
+      "notes": "Found automatically at 0 h of 2026092612: 972.74 hPa, NPAC. Inactive from 2026092812: no closed low within 400 km of the seed.",
+      "active": false,
+      "ended_cycle": "2026092812"
     }
   ]
 }
