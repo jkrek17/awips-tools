@@ -1,0 +1,40 @@
+{
+  "cycle": "2026092912",
+  "name": "AUTO_260929_01",
+  "status": "ok",
+  "seed": {
+    "lat": 53.42,
+    "lon": -18.46,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "automatic discovery at 0 h of 2026092912"
+  },
+  "start_fhr": 0,
+  "end_fhr": 96,
+  "fixes": 17,
+  "start": {
+    "lat": 53.42,
+    "lon": -18.46,
+    "mslp_hpa": 974.0
+  },
+  "end": {
+    "lat": 66.57,
+    "lon": -24.39,
+    "mslp_hpa": 989.4
+  },
+  "min_mslp_hpa": 950.0,
+  "onset_standard_h": 0,
+  "completion_standard_h": null,
+  "onset_hart_h": 0,
+  "completion_hart_h": 0,
+  "class_sequence": "4 0-6, 3 12, 1 18, 0 24-30, 1 36-42, 3 48-54, - 60, 1 66-84, 4 90, - 96",
+  "fsu_number": null,
+  "fsu": null,
+  "track_end": "outside a closed low at +102, +108 h (1004 hPa at +108 h)",
+  "discovered": {
+    "lat": 53.42,
+    "lon": -18.46,
+    "mslp_hpa": 974.04,
+    "basin": "NATL"
+  }
+}

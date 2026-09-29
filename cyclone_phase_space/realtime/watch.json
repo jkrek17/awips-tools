@@ -3,9 +3,9 @@
   "storms": [
     {
       "name": "EPAC",
-      "lat": 16.75,
-      "lon": -161.89,
-      "cycle": "2026092812",
+      "lat": 20.19,
+      "lon": -164.41,
+      "cycle": "2026092912",
       "fhr0": 0,
       "fhr1": null,
       "notes": "Eastern Pacific tropical cyclone; FSU cyclone 1 of the 2026092412 run.",
@@ -35,9 +35,9 @@
     },
     {
       "name": "AUTO_260924_01",
-      "lat": 23.91,
-      "lon": -113.92,
-      "cycle": "2026092812",
+      "lat": 26.81,
+      "lon": -111.64,
+      "cycle": "2026092912",
       "fhr0": 0,
       "fhr1": null,
       "notes": "Found automatically at 0 h of 2026092418: 953.45 hPa, TROP.",
@@ -45,9 +45,9 @@
     },
     {
       "name": "AUTO_260924_02",
-      "lat": 58.57,
-      "lon": -147.33,
-      "cycle": "2026092812",
+      "lat": 57.83,
+      "lon": -140.58,
+      "cycle": "2026092912",
       "fhr0": 0,
       "fhr1": null,
       "notes": "Found automatically at 0 h of 2026092418: 964.27 hPa, NPAC.",
@@ -77,13 +77,14 @@
     },
     {
       "name": "AUTO_260924_05",
-      "lat": 23.22,
-      "lon": -123.37,
-      "cycle": "2026092812",
+      "lat": 20.9,
+      "lon": -123.3,
+      "cycle": "2026092912",
       "fhr0": 0,
       "fhr1": null,
-      "notes": "Found automatically at 0 h of 2026092418: 979.97 hPa, TROP.",
-      "active": true
+      "notes": "Found automatically at 0 h of 2026092418: 979.97 hPa, TROP. Inactive from 2026092912: filled.",
+      "active": false,
+      "ended_cycle": "2026092912"
     },
     {
       "name": "AUTO_260924_06",
@@ -106,6 +107,26 @@
       "notes": "Found automatically at 0 h of 2026092612: 972.74 hPa, NPAC. Inactive from 2026092812: no closed low within 400 km of the seed.",
       "active": false,
       "ended_cycle": "2026092812"
+    },
+    {
+      "name": "AUTO_260929_01",
+      "lat": 53.42,
+      "lon": -18.46,
+      "cycle": "2026092912",
+      "fhr0": 0,
+      "fhr1": null,
+      "notes": "Found automatically at 0 h of 2026092912: 974.04 hPa, NATL.",
+      "active": true
+    },
+    {
+      "name": "AUTO_260929_02",
+      "lat": 83.66,
+      "lon": -172.52,
+      "cycle": "2026092912",
+      "fhr0": 0,
+      "fhr1": null,
+      "notes": "Found automatically at 0 h of 2026092912: 979.12 hPa, NPAC.",
+      "active": true
     }
   ]
 }
