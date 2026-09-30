@@ -12,7 +12,13 @@ index.html, style.css, app.js, basemap.js, basemap/   the map page
 data/latest/     index.json, legend.json, history.json, frames/f{hhh}/...
 data/storms/<cycle>/<NAME>/   phase.png, compare.png, meta.json, track.csv
 .nojekyll
+phillies/        kept: published by jkrek17/codex, copied forward on each push
 ```
+
+Each publish replaces the whole branch, so folders other projects put in
+the public repository are listed in `KEEP_FOLDERS` in the workflow and
+copied forward from the current public `main` before the push. To add
+another, add its folder name there.
 
 The page finds its data at `data/latest/` when served this way, falls
 back to the `cps-live` branch of this repository if that is public, and
