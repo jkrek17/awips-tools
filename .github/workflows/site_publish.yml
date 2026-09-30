@@ -8,6 +8,11 @@
 # repository with Contents: read and write). The public repository serves it
 # with GitHub Pages from main at the root.
 #
+# Other projects may publish their own folders to the public repository
+# (listed in KEEP_FOLDERS, for example phillies/ from jkrek17/codex). Because
+# the push replaces the whole branch, those folders are copied forward from
+# the current public main before each push.
+#
 # Runs after every live data export and daily collection, on a push that
 # changes the page, and by hand. Skips quietly when the variable or the
 # secret is not set, so the repository works before the public one exists.
@@ -88,6 +93,30 @@ jobs:
           grep -c "?v=$v" "$site/index.html"
           touch "$site/.nojekyll"
           du -sh "$site"
+
+      - name: Keep other projects' folders
+        if: steps.cfg.outputs.ready == 'true'
+        env:
+          REPO: ${{ vars.PUBLIC_SITE_REPO }}
+          TOKEN: ${{ secrets.WEB_TOKEN }}
+          KEEP_FOLDERS: phillies
+        run: |
+          current="$RUNNER_TEMP/current"
+          rm -rf "$current"
+          # Sparse and blobless, so only the kept folders are downloaded,
+          # not the storm frames.
+          if ! git clone -q --depth 1 --filter=blob:none --sparse \
+              "https://x-access-token:${TOKEN}@github.com/${REPO}.git" "$current" \
+              || ! git -C "$current" sparse-checkout set --no-cone $(printf '/%s/ ' $KEEP_FOLDERS); then
+            echo "Could not read the current public site; publishing without kept folders."
+            exit 0
+          fi
+          for folder in $KEEP_FOLDERS; do
+            if [ -d "$current/$folder" ]; then
+              cp -r "$current/$folder" "$RUNNER_TEMP/site/$folder"
+              echo "Kept $folder/"
+            fi
+          done
 
       - name: Push to the public repository
         if: steps.cfg.outputs.ready == 'true'
