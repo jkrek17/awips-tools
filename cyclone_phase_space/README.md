@@ -13,6 +13,10 @@ against; see "Tests" below.
 
 ## Guides
 
+- `cyclone_phase_space/article/forecasters/index.html`: a plain-language explainer
+  for forecasters, about a ten-minute read: the three numbers, the seven
+  classes, reading the maps, a worked real case, and where the products
+  mislead. Published beside the article.
 - `cyclone_phase_space/docs/USER_GUIDE.md`: for forecasters, how to load and read the
   products and where they mislead.
 - `cyclone_phase_space/docs/ANALYSIS_GUIDE.md`: for analysts, using HB and the

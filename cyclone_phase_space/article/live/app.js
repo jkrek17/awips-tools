@@ -12,6 +12,7 @@ const FALLBACK_DATA = 'https://raw.githubusercontent.com/jkrek17/awips-tools/cps
 const LOCAL_DATA = 'data/latest/';  // beside the page when served from the web repository
 const ARTICLE_URL = 'https://jkrek17.github.io/awips-tools/cps/';
 const SPACE_URL = ARTICLE_URL + 'figures/phase_space_3d.html';
+const GUIDE_URL = ARTICLE_URL + 'forecasters/';
 const LABEL_ZOOM = 4;            // MSLP labels at centers and on contours from this zoom
 const WIDE_CINT = 8;             // below LABEL_ZOOM, isobars thinned to every 8 hPa
 const HALO_ZOOM = 2;             // 200 km circles from this zoom (below it they shrink under the dot)
@@ -1129,7 +1130,7 @@ async function boot() {
 
 function start() {
   document.querySelectorAll('[data-link]').forEach((a) => {
-    a.href = { article: ARTICLE_URL, space: SPACE_URL }[a.dataset.link];
+    a.href = { article: ARTICLE_URL, space: SPACE_URL, guide: GUIDE_URL }[a.dataset.link];
   });
   if (!window.L) {
     noData('The map could not start', `The map library could not be loaded. Check the connection, or read the <a href="${ARTICLE_URL}">article</a> in the meantime.`);
