@@ -5,7 +5,7 @@
 <title>Cyclone Phase Space for the Forecast Desk</title>
 <meta name="description" content="A plain-language guide to the gridded cyclone phase space products in AWIPS D2D: what the three numbers mean, how to read the class map, a worked real case, and where the products mislead.">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="style.css">
 <style>
   .lead { font-size: 1.08em; }
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(14em, 1fr)); gap: 0.9em; margin: 1.2em 0 1.6em; }
@@ -29,12 +29,11 @@
 <body>
 <div class="page">
 
-  <p class="top-links"><a href="../">The article</a> &middot; <a href="../live/index.html">Live map</a> &middot; <a href="../figures/phase_space_3d.html">3-D phase space</a></p>
+  <p class="top-links"><a href="https://jkrek17.github.io/web/">Live map</a></p>
 
   <h1>Cyclone Phase Space for the Forecast Desk</h1>
   <p class="byline">A plain-language guide to the gridded CPS products in AWIPS D2D</p>
-  <p class="meta">Jason Krekeler, NOAA/NWS Ocean Prediction Center &middot; October 2026 &middot;
-    Companion to the <a href="../">full article</a>, the <a href="https://github.com/jkrek17/awips-tools/blob/main/cyclone_phase_space/docs/USER_GUIDE.md">User Guide</a> and the <a href="https://github.com/jkrek17/awips-tools/blob/main/cyclone_phase_space/docs/ANALYSIS_GUIDE.md">Analysis Guide</a>. About a ten-minute read.</p>
+  <p class="meta">Jason Krekeler, NOAA/NWS Ocean Prediction Center &middot; October 2026 &middot; About a ten-minute read.</p>
 
   <div class="abstract forecasters">
     <h2>In one paragraph</h2>
@@ -87,7 +86,7 @@
   </div>
 
   <figure>
-    <img src="../figures/fig8_thermal_wind_concept.png"
+    <img src="figures/fig8_thermal_wind_concept.png"
          alt="Three-panel figure: cross-sections of a warm core and a cold core showing how the dip of each pressure surface over the low changes with height, and a plot of that dip against height with the lower and upper bands marked.">
     <figcaption><strong>The thermal wind terms.</strong> Picture a cross-section
       through a low. Each pressure surface dips over the centre. In a warm core
@@ -98,7 +97,7 @@
   </figure>
 
   <figure>
-    <img src="../figures/fig9_b_concept.png"
+    <img src="figures/fig9_b_concept.png"
          alt="Two plan views of a low with its 500 km circle split by the direction of motion: a symmetric case with B near zero and a frontal case on a thickness gradient with B above 10 metres.">
     <figcaption><strong>The asymmetry term.</strong> Split the 500 km circle
       along the low's direction of motion and compare the 900 to 600 hPa
@@ -142,7 +141,7 @@
   </p>
 
   <figure>
-    <img src="../figures/fig10_two_diagrams.png"
+    <img src="figures/fig10_two_diagrams.png"
          alt="Hart's two cyclone phase space diagrams, B against the lower thermal wind and the upper against the lower thermal wind, with the quadrants labelled and one schematic transition trajectory.">
     <figcaption><strong>Hart's two diagrams.</strong> These are the plots on the
       FSU pages. The left diagram is B against the lower thermal wind, with the
@@ -176,18 +175,18 @@
   <p>
     The four-panel layout that works on shift: class with 1000 to 850 hPa
     thickness, HVTL with 850 hPa temperature, HVTU with 300 hPa wind, HB with
-    thickness. The User Guide has the loading steps and colour tables.
+    thickness.
   </p>
 
   <h2>4. A real case: the coastal low of 25 September 2026</h2>
   <div class="twocol">
     <figure>
-      <img src="../figures/fig_guide_25sep_analysis.jpg"
+      <img src="figures/fig_guide_25sep_analysis.jpg"
            alt="GOES-19 visible satellite with the GFS MSLP and thickness and a drawn surface analysis: a 995 hPa low off Cape Hatteras with a short occlusion, a warm front east to a 1009 hPa low, and a cold front trailing south into Florida.">
       <figcaption>The drawn analysis against GOES-19 visible, 7 h of the 06 UTC GFS.</figcaption>
     </figure>
     <figure>
-      <img src="../figures/fig_guide_25sep_cps.jpg"
+      <img src="figures/fig_guide_25sep_cps.jpg"
            alt="Four-panel CPS display for the same run: class top left, HB top right, HVTL bottom left, HVTU bottom right.">
       <figcaption>The CPS four-panel at 6 h: class, HB, HVTL, HVTU.</figcaption>
     </figure>
@@ -282,22 +281,7 @@
       mean symmetric; a tight gradient across it means asymmetric.</li>
   </ol>
 
-  <h2>Where to look</h2>
-  <ul>
-    <li><a href="../live/index.html">The live map</a>: the products on the
-      current GFS run, updated four times a day, with the two diagrams and a
-      3-D view for every tracked low, and FSU numbers where the storms match.</li>
-    <li><a href="http://moe.met.fsu.edu/cyclonephase/">The FSU cyclone phase
-      pages</a>: the original, for tracked storms, every 50 hPa.</li>
-    <li><a href="../">The article</a>: how the products are computed and how
-      well they agree with Hart's method and with FSU.</li>
-    <li>The <a href="https://github.com/jkrek17/awips-tools/blob/main/cyclone_phase_space/docs/USER_GUIDE.md">User Guide</a>
-      (loading, colour tables, cautions) and the
-      <a href="https://github.com/jkrek17/awips-tools/blob/main/cyclone_phase_space/docs/ANALYSIS_GUIDE.md">Analysis Guide</a>
-      (fronts, the post-tropical handoff, worked examples).</li>
-  </ul>
-
-  <footer>Hart, R. E., 2003: A cyclone phase space derived from thermal wind and thermal asymmetry. Mon. Wea. Rev., 131, 585 to 616. Products, code and this page: <a href="https://github.com/jkrek17/awips-tools/tree/main/cyclone_phase_space">github.com/jkrek17/awips-tools</a>.</footer>
+  <footer>Hart, R. E., 2003: A cyclone phase space derived from thermal wind and thermal asymmetry. Mon. Wea. Rev., 131, 585 to 616. The products on the current run: <a href="https://jkrek17.github.io/web/">the live map</a>.</footer>
 
 </div>
 </body>
