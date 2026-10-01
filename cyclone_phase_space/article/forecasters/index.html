@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Cyclone Phase Space for the Forecast Desk</title>
+<meta name="description" content="A plain-language guide to the gridded cyclone phase space products in AWIPS D2D: what the three numbers mean, how to read the class map, a worked real case, and where the products mislead.">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="../style.css">
+<style>
+  .lead { font-size: 1.08em; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(14em, 1fr)); gap: 0.9em; margin: 1.2em 0 1.6em; }
+  .card { background: var(--fig-bg); border: 1px solid var(--rule); border-radius: 4px; padding: 0.9em 1em; }
+  .card h3 { margin: 0 0 0.35em; font-size: 1em; }
+  .card p { margin: 0; font-size: 0.95em; }
+  .swatch { display: inline-block; width: 0.8em; height: 0.8em; border-radius: 2px; vertical-align: -0.05em; margin-right: 0.35em; border: 1px solid rgba(0,0,0,0.25); }
+  .c0 { background: #d92626; }
+  .c1 { background: #cc33bf; }
+  .c2 { background: #fad91a; }
+  .c3 { background: #33ad40; }
+  .c4 { background: #2680e6; }
+  .c5 { background: #5938b8; }
+  .c6 { background: #b8b8b2; }
+  .checklist li { margin-bottom: 0.45em; }
+  .table-wrap { overflow-x: auto; }
+  .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 1em; }
+  @media (max-width: 600px) { .twocol { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <p class="top-links"><a href="../">The article</a> &middot; <a href="../live/index.html">Live map</a> &middot; <a href="../figures/phase_space_3d.html">3-D phase space</a></p>
+
+  <h1>Cyclone Phase Space for the Forecast Desk</h1>
+  <p class="byline">A plain-language guide to the gridded CPS products in AWIPS D2D</p>
+  <p class="meta">Jason Krekeler, NOAA/NWS Ocean Prediction Center &middot; October 2026 &middot;
+    Companion to the <a href="../">full article</a>, the <a href="https://github.com/jkrek17/awips-tools/blob/main/cyclone_phase_space/docs/USER_GUIDE.md">User Guide</a> and the <a href="https://github.com/jkrek17/awips-tools/blob/main/cyclone_phase_space/docs/ANALYSIS_GUIDE.md">Analysis Guide</a>. About a ten-minute read.</p>
+
+  <div class="abstract forecasters">
+    <h2>In one paragraph</h2>
+    <p class="lead">
+      Cyclone phase space answers one question about a low: what is it made of?
+      It reads three numbers off the model, two that say whether the core is
+      warmer or colder than its surroundings in the lower and in the upper
+      troposphere, and one that says whether warm and cold air sit on
+      opposite sides of the low, which is what a front looks like to the
+      model. Those three numbers sort every low into one of seven classes:
+      hurricane, subtropical storm, storm in transition, extratropical low,
+      occluded low, and two in-between cases. The products in D2D compute
+      the numbers at every grid point of every model, so every closed low on
+      the chart carries its class on every frame, with no tracker and no
+      advisory required. Use them to type a low before you draw fronts
+      through it, to time a tropical cyclone's transition, and to decide
+      whether a low is still a tropical system, a hybrid, or an extratropical
+      low that merely used to be one.
+    </p>
+  </div>
+
+  <h2>1. The three numbers</h2>
+  <p>
+    Everything on these maps comes from three quantities, each evaluated
+    inside a 500 km circle around a point and each in metres. They are the
+    quantities Robert Hart defined in 2003, and the FSU cyclone phase pages
+    you may already use plot the same three for tracked storms.
+  </p>
+
+  <div class="cards">
+    <div class="card">
+      <h3>Lower thermal wind, &minus;V<sub>T</sub><sup>L</sup> (HVTL)</h3>
+      <p>Is the core warmer or colder than its surroundings between 925 and
+      700 hPa? Positive is warm, negative is cold. A hurricane reads a few
+      hundred metres warm; a mature extratropical low a hundred or more cold.</p>
+    </div>
+    <div class="card">
+      <h3>Upper thermal wind, &minus;V<sub>T</sub><sup>U</sup> (HVTU)</h3>
+      <p>The same question between 500 and 300 hPa. A deep warm core
+      (hurricane) is warm in both layers. A subtropical storm or a warm
+      seclusion is warm below and cold above.</p>
+    </div>
+    <div class="card">
+      <h3>Thermal asymmetry, B (HB)</h3>
+      <p>Is there warm air on one side of the low's motion and cold air on
+      the other? Below 10 m the low is symmetric, a vortex sitting in air of
+      one temperature. Above 10 m it is asymmetric: it has a frontal
+      structure. Hart's word for frontal is asymmetric.</p>
+    </div>
+  </div>
+
+  <figure>
+    <img src="../figures/fig8_thermal_wind_concept.png"
+         alt="Three-panel figure: cross-sections of a warm core and a cold core showing how the dip of each pressure surface over the low changes with height, and a plot of that dip against height with the lower and upper bands marked.">
+    <figcaption><strong>The thermal wind terms.</strong> Picture a cross-section
+      through a low. Each pressure surface dips over the centre. In a warm core
+      the dip shrinks with height (the warm column is thick, so the upper
+      surfaces are nearly flat); in a cold core the dip grows with height. The
+      lower term measures that change between 925 and 700 hPa, the upper term
+      between 500 and 300 hPa. Warm is positive.</figcaption>
+  </figure>
+
+  <figure>
+    <img src="../figures/fig9_b_concept.png"
+         alt="Two plan views of a low with its 500 km circle split by the direction of motion: a symmetric case with B near zero and a frontal case on a thickness gradient with B above 10 metres.">
+    <figcaption><strong>The asymmetry term.</strong> Split the 500 km circle
+      along the low's direction of motion and compare the 900 to 600 hPa
+      thickness on the right half with the left half. A warm sector to the
+      right and cold air to the left is a front, and B is large. A vortex in
+      uniform air gives B near zero. The direction of motion comes from the
+      model's own deep-layer steering flow, which is the one weak spot of the
+      method (see section 6).</figcaption>
+  </figure>
+
+  <h2>2. The seven classes</h2>
+  <p>
+    Three numbers, each on one side of a line (10 m for B, zero for the two
+    thermal winds), give eight boxes. One pair is merged, leaving seven
+    classes. The class map in D2D is simply which box the low's centre falls
+    in.
+  </p>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th scope="col">Code</th><th scope="col">Name</th><th scope="col">B</th><th scope="col">Lower</th><th scope="col">Upper</th><th scope="col">What it usually is</th></tr></thead>
+    <tbody>
+      <tr><td><span class="swatch c0"></span>0</td><td>symmetric deep warm core</td><td>&le; 10</td><td>warm</td><td>warm</td><td>hurricane, typhoon</td></tr>
+      <tr><td><span class="swatch c1"></span>1</td><td>symmetric shallow warm core</td><td>&le; 10</td><td>warm</td><td>cold</td><td>subtropical storm, or a warm seclusion</td></tr>
+      <tr><td><span class="swatch c2"></span>2</td><td>asymmetric deep warm core</td><td>&gt; 10</td><td>warm</td><td>warm</td><td>hurricane meeting a trough; transition beginning</td></tr>
+      <tr><td><span class="swatch c3"></span>3</td><td>asymmetric shallow warm core</td><td>&gt; 10</td><td>warm</td><td>cold</td><td>transition under way; coastal hybrid lows</td></tr>
+      <tr><td><span class="swatch c4"></span>4</td><td>asymmetric cold core</td><td>&gt; 10</td><td>cold</td><td>cold</td><td>ordinary extratropical low; transition complete</td></tr>
+      <tr><td><span class="swatch c5"></span>5</td><td>symmetric cold core</td><td>&le; 10</td><td>cold</td><td>cold</td><td>occluded or cut-off cold low</td></tr>
+      <tr><td><span class="swatch c6"></span>6</td><td>shallow cold core</td><td>any</td><td>cold</td><td>warm</td><td>rare; a mid-level perturbation</td></tr>
+      <tr><td>blank</td><td colspan="5">not a closed low (no 5 hPa ring), below ground, or the steering flow too weak to define B</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>
+    The colours are grouped so the big events jump out: reds for a symmetric
+    warm core, yellow and green for a storm in transition, blues for a cold
+    core. A classic extratropical transition walks 0, 2, 3, 4. A warm
+    seclusion re-forms a shallow warm core after the transition and walks
+    back from 4 to 3, or to 1 once the bent-back front wraps up and B falls.
+  </p>
+
+  <figure>
+    <img src="../figures/fig10_two_diagrams.png"
+         alt="Hart's two cyclone phase space diagrams, B against the lower thermal wind and the upper against the lower thermal wind, with the quadrants labelled and one schematic transition trajectory.">
+    <figcaption><strong>Hart's two diagrams.</strong> These are the plots on the
+      FSU pages. The left diagram is B against the lower thermal wind, with the
+      10 m onset line; the right is upper against lower thermal wind. The
+      quadrant names are the class names above. The live map draws these two
+      diagrams for every tracked low, and a 3-D view of all three numbers at
+      once.</figcaption>
+  </figure>
+
+  <h2>3. Reading the maps in D2D</h2>
+  <p>
+    Load <code>HCPSclass</code> as an image with MSLP contours. Three things
+    to know about what you see:
+  </p>
+  <ul>
+    <li><strong>A coloured blob appears only at a closed low.</strong> The
+      detector needs a 5 hPa closed ring in MSLP; the blob extends 200 km
+      around the centre so it is easy to see. The colour is the class at the
+      low's pressure minimum. If a low you can see has no blob, it is not
+      closed by 5 hPa in that model at that hour.</li>
+    <li><strong>The thermal wind and B maps are computed everywhere, but only
+      mean something at a low.</strong> Away from lows they show the ambient
+      thermal ridge and trough (a blue swath along the polar front, red over
+      the subtropical ridge). Read them at the low's centre, and treat the
+      rest as context. The live web map fades them away from the lows for
+      this reason.</li>
+    <li><strong>Blanks are information.</strong> The lower term goes blank
+      over high terrain (925 hPa is below ground); B goes blank where the
+      steering flow is under 2 m/s. A blank is not zero.</li>
+  </ul>
+  <p>
+    The four-panel layout that works on shift: class with 1000 to 850 hPa
+    thickness, HVTL with 850 hPa temperature, HVTU with 300 hPa wind, HB with
+    thickness. The User Guide has the loading steps and colour tables.
+  </p>
+
+  <h2>4. A real case: the coastal low of 25 September 2026</h2>
+  <div class="twocol">
+    <figure>
+      <img src="../figures/fig_guide_25sep_analysis.jpg"
+           alt="GOES-19 visible satellite with the GFS MSLP and thickness and a drawn surface analysis: a 995 hPa low off Cape Hatteras with a short occlusion, a warm front east to a 1009 hPa low, and a cold front trailing south into Florida.">
+      <figcaption>The drawn analysis against GOES-19 visible, 7 h of the 06 UTC GFS.</figcaption>
+    </figure>
+    <figure>
+      <img src="../figures/fig_guide_25sep_cps.jpg"
+           alt="Four-panel CPS display for the same run: class top left, HB top right, HVTL bottom left, HVTU bottom right.">
+      <figcaption>The CPS four-panel at 6 h: class, HB, HVTL, HVTU.</figcaption>
+    </figure>
+  </div>
+  <p>
+    At the low's centre the lower thermal wind read +170 m, the upper
+    &minus;112 m and B +43 m: class 3, an asymmetric shallow warm core. In
+    words, a frontal low with a warm lower core and a cold upper core, which
+    is a hybrid, not a tropical system and not yet an ordinary extratropical
+    low either.
+  </p>
+  <p>
+    That reading settles the front geometry. B of 43 m with the lower term
+    still strongly warm means the warm sector reaches the centre, so the warm
+    front is drawn running into the low and the occlusion, if any, stays
+    short. The HB map splits right at the low, teal to the northwest where
+    northerly flow puts cold land on its right, magenta to the east along the
+    warm front, which places the triple point at the low. Behind the low the
+    cold front is supported near the coast by matching HB and HVTL contrast,
+    but from about 33N to 28N offshore the fields show no contrast across the
+    drawn line: that stretch is a trough or a spent front, not a solid line.
+  </p>
+  <p>
+    What to watch next tells you which way the analysis should go. If B at
+    the centre falls toward 10 m while the lower term stays warm, the low is
+    secluding (class 3 to 1) and a bent-back warm front follows. If B holds
+    high, it stays an open wave on the front and the geometry is kept. In
+    this case the 12 UTC run that day took it to class 1 briefly and then
+    cold (4) as it drifted north, which is the seclusion path.
+  </p>
+
+  <h2>5. Where it earns its keep</h2>
+  <ul>
+    <li><strong>Timing a transition.</strong> Onset is the first frame B
+      crosses 10 m; completion is the first frame the lower term turns
+      negative. Read the crossings from the HB and HVTL maps or the live map's
+      diagrams, not from the colour changing, because a storm can jump 0 to 4
+      in one frame if both lines are crossed at once.</li>
+    <li><strong>The post-tropical handoff.</strong> Class 4 with a cold lower
+      core is an extratropical low whatever its history; class 2 or 3 is a
+      system still carrying its warm core into the westerlies, with the wind
+      field to match.</li>
+    <li><strong>Typing a low before drawing fronts.</strong> Symmetric (B
+      under 10 m) says no front through the centre. Asymmetric says a front,
+      and the HB sign pattern around the low says where the warm sector is.</li>
+    <li><strong>Subtropical and hybrid lows.</strong> Class 1 off the
+      southeast coast or over the Gulf is the model saying shallow warm core
+      and no front: the structure of a subtropical storm, worth a second look
+      at the wind field and convection.</li>
+    <li><strong>Every low on every model.</strong> GFS and ECMWF side by side,
+      and the lows nobody is writing advisories on.</li>
+  </ul>
+
+  <h2>6. Where it misleads</h2>
+  <ul>
+    <li><strong>Stalled and looping lows.</strong> B needs a direction of
+      motion, and the products take it from the model's steering flow. A low
+      drifting against or across its steering flow can read 10 to 20 m too
+      asymmetric, enough to change its class. When a low is nearly
+      stationary, trust the two thermal winds and your own thickness
+      overlay over B.</li>
+    <li><strong>Warm cores read a little strong.</strong> These products use
+      the standard levels (925, 850, 700 and 500, 400, 300 hPa); FSU uses
+      every 50 hPa. On a deep warm core the lower term reads about 15 to 25
+      percent higher than the FSU page. Cold cores agree with FSU to within
+      about 20 m. The class is unaffected; the numbers are not interchangeable
+      with FSU's.</li>
+    <li><strong>A class is a state, not an event.</strong> Two adjacent frames
+      can straddle a line by a metre. Look at the trend over several hours and
+      at the numbers, not the colour alone.</li>
+    <li><strong>Terrain.</strong> Near the Rockies, Greenland or the Andes the
+      lower term is blank or thin and the class may be missing. Nothing is
+      wrong; there is no 925 hPa air there.</li>
+    <li><strong>The low must be closed.</strong> An open wave or a trough gets
+      no class. That is by design, and it means a weak coastal low may appear
+      and disappear between frames as the model closes and opens it.</li>
+    <li><strong>It is the model's storm.</strong> Everything here is the
+      model's structure. A model with the wrong intensity or track gives the
+      right class for the wrong storm.</li>
+  </ul>
+
+  <h2>7. The five-second checklist</h2>
+  <ol class="checklist">
+    <li>Is there a blob? If not, the low is not closed by 5 hPa.</li>
+    <li>What colour, and is it changing frame to frame? Red or magenta: no
+      front through the centre. Yellow or green: warm core with a front,
+      transition under way. Blue or indigo: cold core.</li>
+    <li>Where does HB change sign around the low? That is where the warm
+      sector is, and the triple point.</li>
+    <li>Is the low moving with its steering flow? If not, discount B.</li>
+    <li>Does the thickness overlay agree? Closed contours around the low
+      mean symmetric; a tight gradient across it means asymmetric.</li>
+  </ol>
+
+  <h2>Where to look</h2>
+  <ul>
+    <li><a href="../live/index.html">The live map</a>: the products on the
+      current GFS run, updated four times a day, with the two diagrams and a
+      3-D view for every tracked low, and FSU numbers where the storms match.</li>
+    <li><a href="http://moe.met.fsu.edu/cyclonephase/">The FSU cyclone phase
+      pages</a>: the original, for tracked storms, every 50 hPa.</li>
+    <li><a href="../">The article</a>: how the products are computed and how
+      well they agree with Hart's method and with FSU.</li>
+    <li>The <a href="https://github.com/jkrek17/awips-tools/blob/main/cyclone_phase_space/docs/USER_GUIDE.md">User Guide</a>
+      (loading, colour tables, cautions) and the
+      <a href="https://github.com/jkrek17/awips-tools/blob/main/cyclone_phase_space/docs/ANALYSIS_GUIDE.md">Analysis Guide</a>
+      (fronts, the post-tropical handoff, worked examples).</li>
+  </ul>
+
+  <footer>Hart, R. E., 2003: A cyclone phase space derived from thermal wind and thermal asymmetry. Mon. Wea. Rev., 131, 585 to 616. Products, code and this page: <a href="https://github.com/jkrek17/awips-tools/tree/main/cyclone_phase_space">github.com/jkrek17/awips-tools</a>.</footer>
+
+</div>
+</body>
+</html>
