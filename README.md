@@ -835,6 +835,11 @@ grid has the storm at the warning position, too.
 
 ### Installing
 
+`python3 tools/export_createxml.py` builds
+`dist/CreateXML_GapFill_<date>.zip`: the four files below, `INSTALL.md`, and
+`CreateXML_changes.diff` - every change against the CreateXML.py the site
+uploaded, which is what the repo's copy started from.
+
 1. Put `PressureGapFill.py` and `TCPressure.py` next to
    `A2GraphicsFunctions.py`, in the GFE `userPython/utilities` tree.
 2. `TCWind_JTWC.py` must be installed as a procedure: `TCPressure` uses its
