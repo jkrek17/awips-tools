@@ -1382,6 +1382,110 @@ def case_extratropical_fit_honors_lopsided_radii():
     return fails, None
 
 
+# ---------------------------------------------------------------------------
+# Basins: a checklist, and one storm warned on in two basins
+# ---------------------------------------------------------------------------
+
+def _runBasins(texts, basins, extra=None):
+    taus = _krovanhTaus()
+    t0 = taus[0].epoch
+    latGrid, lonGrid = _mesh()
+    proc = tc.Procedure(dbss=None)
+    proc.configure(texts=texts, now_epoch=t0 + 3 * 3600, inv_start=t0,
+                   inv_end=taus[-1].epoch + 3 * 3600, lat=latGrid,
+                   lon=lonGrid)
+    varDict = {"Write to:": "Preview grid",
+               "Run over selected time range only?": "No"}
+    if basins is not None:
+        varDict[tc.BASINS_LABEL] = basins
+    varDict.update(extra or {})
+    proc.execute(None, None, varDict)
+    return proc
+
+
+def case_basins_checklist():
+    fails = []
+    pick = tc.selectedBasins
+    for given, want in (({tc.BASINS_LABEL: ["Central Pac", "West Pac"]},
+                         ["West Pac", "Central Pac"]),
+                        ({tc.BASINS_LABEL: "East Pac"}, ["East Pac"]),
+                        ({tc.BASINS_LABEL: []}, []),
+                        ({tc.BASINS_LABEL: ["Mars"]}, []),
+                        ({"Basin:": "Atlantic"}, ["Atlantic"]),
+                        ({}, [])):
+        if pick(given) != want:
+            fails.append("selectedBasins(%r) = %r" % (given, pick(given)))
+
+    del FakePVL.calls[:]
+    tc.Procedure(dbss=None)._buildVarDict()
+    row = [v for v in FakePVL.calls[-1][1] if v[0] == tc.BASINS_LABEL]
+    if not row or row[0][1] != [] or row[0][2] != "check" or \
+            row[0][3] != tc.BASIN_LABELS:
+        fails.append("dialog row is %r, want an unticked checklist" % row)
+
+    text = _load_fixture(KROVANH)
+    proc = _runBasins({"NFDTCPWP1": text}, [])
+    if proc.created or "No basin selected" not in _final_status(proc):
+        fails.append("nothing ticked did not refuse: %r"
+                     % _final_status(proc))
+    proc = _runBasins({"NFDTCPWP1": text}, None)
+    if proc.created:
+        fails.append("no basin key at all still wrote grids")
+    # Each ticked basin's slots are read, and only those.
+    proc = _runBasins({"HFOTCMCP2": text}, ["West Pac", "Central Pac"])
+    if not proc.created or "HFOTCMCP2" not in _final_status(proc):
+        fails.append("Central Pac slot not read with both ticked: %r"
+                     % _final_status(proc))
+    proc = _runBasins({"HFOTCMCP2": text}, ["West Pac"])
+    if proc.created:
+        fails.append("Central Pac slot read with only West Pac ticked")
+    return fails, proc
+
+
+def case_one_storm_in_two_basins():
+    """The same storm in a CPHC slot and a JTWC slot - as during a dateline
+    crossing - is inserted once, from the newer bulletin."""
+    fails = []
+    text = _load_fixture(KROVANH)
+    proc = _runBasins({"NFDTCPWP1": text, "HFOTCMCP1": text},
+                      ["West Pac", "Central Pac"])
+    msg = _final_status(proc)
+    if "same storm" not in msg:
+        fails.append("duplicate not reported: %r" % msg)
+    if msg.count("(KROVANH) warning 5 (") != 1:
+        fails.append("storm inserted twice: %r" % msg)
+
+    taus, header, _ = tc.parseBulletin(text)
+
+    def storm(pil, dHours=0.0, dLat=0.0, name="KROVANH"):
+        ts = tc.parseBulletin(text)[0]
+        for t in ts:
+            t.epoch += int(dHours * 3600)
+            t.lat += dLat
+        h = dict(header)
+        h["stormName"] = name
+        return {"pil": pil, "taus": ts, "header": h}
+
+    old, new = storm("HFOTCMCP1", -6), storm("NFDTCPWP1")
+    kept, notes = tc.dropDuplicateStorms([old, new])
+    if [k["pil"] for k in kept] != ["NFDTCPWP1"] or len(notes) != 1:
+        fails.append("same name: kept %r" % [k["pil"] for k in kept])
+    kept, _ = tc.dropDuplicateStorms([storm("A", 0, 0.5, "ONE"),
+                                      storm("B", 0, 0.0, "TWO")])
+    if len(kept) != 2:
+        fails.append("two differently named storms 30 nm apart merged")
+    kept, _ = tc.dropDuplicateStorms([storm("A", 0, 0.5, ""),
+                                      storm("B", -6, 0.0, "")])
+    if [k["pil"] for k in kept] != ["A"]:
+        fails.append("unnamed, 30 nm apart: kept %r"
+                     % [k["pil"] for k in kept])
+    kept, _ = tc.dropDuplicateStorms([storm("A", 0, 3.0, ""),
+                                      storm("B", 0, 0.0, "")])
+    if len(kept) != 2:
+        fails.append("unnamed storms 180 nm apart merged")
+    return fails, proc
+
+
 def main():
     cases = [
         ("krovanh_full_span_3_hourly", case_krovanh_full_span_3_hourly),
@@ -1414,6 +1518,8 @@ def main():
          case_extratropical_follows_the_radio),
         ("extratropical_fit_honors_lopsided_radii",
          case_extratropical_fit_honors_lopsided_radii),
+        ("basins_checklist", case_basins_checklist),
+        ("one_storm_in_two_basins", case_one_storm_in_two_basins),
     ]
 
     failed = 0

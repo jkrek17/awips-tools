@@ -330,6 +330,13 @@ def test_warnings_to_storms():
           [w["name"] for w in warnings] == ["TESTER"] and len(notes) == 1,
           "%s %s" % ([w["name"] for w in warnings], notes))
 
+    twice = {"NFDTCPWP1": text["NFDTCPWP1"], "HFOTCMCP1": text["NFDTCPWP1"]}
+    both, twinNotes = P.readWarnings(nowSecs=t0 + 4 * 3600, tools=W,
+                                     retrieve=twice.get)
+    check("the same storm in two basins' slots is read once",
+          len(both) == 1 and any("same storm" in n for n in twinNotes),
+          str(twinNotes))
+
     storms, notes = P.stormsAt(warnings, t0 + 6 * 3600, W)
     check("one storm at the chart time", len(storms) == 1 and not notes,
           str(notes))

@@ -78,6 +78,11 @@ BASIN_PILS = dict(BASINS)
 BASIN_LABELS = [label for label, _ in BASINS]
 DEFAULT_BASIN = BASIN_LABELS[0]
 
+# [doc 53]
+# Basins are a checklist, nothing ticked by default: one run can cover
+# West Pac and Central Pac together, for a storm crossing 180.
+BASINS_LABEL = "Basins:"
+
 # [doc 4]
 
 # Locations of the command-line textdb, tried in order for the fallback.
@@ -339,7 +344,7 @@ REQUIRE_ACKNOWLEDGEMENT = True
 
 # Shown in the dialog title and the status bar.  Bump it on every install so
 # there is never any doubt about which copy GFE actually loaded.
-VERSION = "2026-10-02b"
+VERSION = "2026-10-02c"
 
 # [doc 19]
 MAX_BULLETIN_AGE_HOURS = 12.0
@@ -1612,6 +1617,82 @@ def insertVortex(vMag, vDir, bMag, bDir, r, r34, maxRadiusFactor=3.0,
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
+# Basins, and the same storm in two of them
+# ---------------------------------------------------------------------------
+
+def selectedBasins(varDict):
+    """The basins ticked in the dialog, in the dialog's order.
+
+    Reads the "Basins:" checklist; a varDict from before it existed, with
+    the old single "Basin:" radio, still works.  Unknown names are ignored.
+    """
+    picked = varDict.get(BASINS_LABEL)
+    if picked is None:
+        old = varDict.get("Basin:")
+        picked = [old] if old else []
+    if isinstance(picked, str):
+        picked = [picked]
+    return [b for b in BASIN_LABELS if b in picked]
+
+
+# A storm crossing a basin boundary is warned on by both centers for a
+# while - CPHC's last advisory and JTWC's first warning both sit in textdb -
+# and two bulletins for one storm would put two vortices on the grid.
+DUPLICATE_SAME_NAME_NM = 300.0
+DUPLICATE_UNNAMED_NM = 60.0
+
+
+def _gcDistanceNm(lat1, lon1, lat2, lon2):
+    p1, p2 = np.radians(lat1), np.radians(lat2)
+    dl = np.radians(lon2 - lon1)
+    c = (np.sin(p1) * np.sin(p2) + np.cos(p1) * np.cos(p2) * np.cos(dl))
+    return float(np.degrees(np.arccos(np.clip(c, -1.0, 1.0))) * 60.0)
+
+
+def dropDuplicateStorms(storms):
+    """Keep one bulletin per storm.  Returns (kept, notes).
+
+    Two bulletins are the same storm when, at the newer one's initial time,
+    the older one's track puts it within DUPLICATE_SAME_NAME_NM and they
+    carry the same name - or, when either has no name, within
+    DUPLICATE_UNNAMED_NM.  Two named storms with different names are never
+    merged, however close (a Fujiwhara pair).  The newer bulletin wins; at
+    the same initial time, the one that runs further out.
+    """
+    def newness(s):
+        return (s["taus"][0].epoch, s["taus"][-1].epoch)
+
+    def name(s):
+        return (s["header"].get("stormName") or "").strip().upper()
+
+    kept, notes = [], []
+    for s in sorted(storms, key=newness, reverse=True):
+        twin = None
+        for k in kept:
+            when = k["taus"][0].epoch
+            if when > s["taus"][-1].epoch + 12 * 3600:
+                continue
+            snap = interpolateTrack(s["taus"], when)
+            ref = interpolateTrack(k["taus"], when)
+            d = _gcDistanceNm(snap.lat, snap.lon, ref.lat, ref.lon)
+            if name(s) and name(k):
+                same = name(s) == name(k) and d <= DUPLICATE_SAME_NAME_NM
+            else:
+                same = d <= DUPLICATE_UNNAMED_NM
+            if same:
+                twin = k
+                break
+        if twin is None:
+            kept.append(s)
+        else:
+            notes.append("%s %s is the same storm as %s, newer" % (
+                s.get("pil", "?"), describeStorm(s["header"]),
+                twin.get("pil", "?")))
+    kept.sort(key=lambda s: storms.index(s))
+    return kept, notes
+
+
+# ---------------------------------------------------------------------------
 # Forecaster points past the warning (days 6-7)
 # ---------------------------------------------------------------------------
 
@@ -1877,9 +1958,9 @@ if _IN_GFE:
 
             # [doc 52]
             VariableList += [
-                ("Select the basin to process:", "", "label"),
+                ("Select the basins to process (at least one):", "", "label"),
                 # [doc 53]
-                ("Basin:", DEFAULT_BASIN, "radio", basinList),
+                (BASINS_LABEL, [], "check", basinList),
                 ("  ", "", "label"),
                 ("Choose where to write the output:", "", "label"),
                 ("Write to:", "Preview grid", "radio",
@@ -2307,14 +2388,15 @@ if _IN_GFE:
 
             testCase = varDict.get(TEST_CASE_LABEL, "No") == "Yes"
 
-            # One basin per run.  An unrecognised or missing value falls
-            # back to the default rather than silently reading nothing.
-            basin = varDict.get("Basin:") or DEFAULT_BASIN
-            pils = list(BASIN_PILS.get(basin, BASIN_PILS[DEFAULT_BASIN]))
+            basins = selectedBasins(varDict)
+            pils = []
+            for basin in basins:
+                pils.extend(BASIN_PILS[basin])
 
             # [doc 55]
             if not pils and not testCase:
-                self.statusBarMsg("No bulletins selected.", "S")
+                self.statusBarMsg("No basin selected. Tick at least one "
+                                  "basin and run again.", "S")
                 return
 
             preview = varDict.get("Write to:", "Preview grid") == "Preview grid"
@@ -2414,6 +2496,11 @@ if _IN_GFE:
                         continue
 
                     storms.append({"pil": pil, "taus": taus, "header": header})
+
+            # [doc 72]
+            if not testCase:
+                storms, twins = dropDuplicateStorms(storms)
+                stale.extend(twins)
 
             if not storms:
                 msg = "No live bulletins found in %s." % ", ".join(pils)

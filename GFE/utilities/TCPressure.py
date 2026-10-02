@@ -233,6 +233,11 @@ def readWarnings(script=None, nowSecs=None, tools=None, pils=None,
             continue                    # a dissipated storm's last warning
         warnings.append({"pil": pil, "name": shortName(header),
                          "taus": taus, "header": header})
+    # Every basin is read, so a storm crossing a basin boundary can be in
+    # two of them at once: keep the newer bulletin.
+    if hasattr(tools, "dropDuplicateStorms"):
+        warnings, twins = tools.dropDuplicateStorms(warnings)
+        notes.extend(twins)
     return warnings, notes
 
 

@@ -261,8 +261,11 @@ testing here is done.
 
 ## Step 2.5: run the built-in test case (optional, but recommended first)
 
-The **Basin:** radio picks one ocean per run - Atlantic, East Pac, West Pac
-or Central Pac - and all five storm slots in it are read. Atlantic and East
+The **Basins:** checklist picks one or more oceans per run - Atlantic,
+East Pac, West Pac, Central Pac - and all five storm slots in each are
+read. Nothing is ticked by default, and a run with none ticked stops with
+a message; tick West Pac and Central Pac together for a storm crossing
+180 (if both centers have it, the newer bulletin is used). Atlantic and East
 Pac come from NHC, Central Pac from CPHC, West Pac from JTWC; the tool works
 out which product format it is holding from the text itself, not from the
 bin it arrived in.
@@ -273,7 +276,7 @@ and no dependence on what JTWC has (or has not) issued today.
 
 From the **Populate** menu, run **TCWind_JTWC**. In the dialog, set
 **Run test case (no live storm needed):** to **Yes**, and leave everything
-else at its default (the **Basin:** radio is ignored in this mode - the test
+else at its default (the **Basins:** checklist is ignored in this mode - the test
 case uses its own bundled storm, never the text database). Run it.
 
 **What the status bar should say**, roughly:

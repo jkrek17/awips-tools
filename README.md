@@ -253,8 +253,10 @@ downstream is shared and knows nothing about which product produced it.
 `parseBulletin()` chooses the parser by inspecting the text, not by trusting
 the bin the bulletin arrived in — an office can put anything in any PIL, and a
 wrong guess would yield a confident parse of the wrong shape rather than an
-error. The dialog has a basin row and a per-slot row; a PIL runs only if both
-agree.
+error. The dialog's **Basins:** checklist starts with nothing ticked; tick
+one or more, and every slot in each is read. A storm crossing between
+basins is often in both centers' bulletins for a while; the newer one is
+used and the status bar says so.
 
 JTWC's WestPac is the case with no gridded alternative and the reason this
 tool exists. **NHC and CPHC do publish a gridded TCM**, and AWIPS already

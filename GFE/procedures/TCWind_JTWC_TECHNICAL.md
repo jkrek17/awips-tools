@@ -11,7 +11,7 @@ marker pointing at the matching numbered note below.
 | | |
 |---|---|
 | Procedure | `GFE/procedures/TCWind_JTWC.py` |
-| Version | `2026-10-02b` (the `VERSION` tunable; the status bar prints it) |
+| Version | `2026-10-02c` (the `VERSION` tunable; the status bar prints it) |
 | Install | `/awips2/edex/data/utility/common_static/site/<SITE>/gfe/userPython/procedures/` |
 | Install test | `AWIPS_TEST.md`, and `selfcheck/run_selfcheck.sh` in the export bundle |
 
@@ -38,8 +38,9 @@ Two products, four basins:
 For the three TCM basins this is a text-only fallback and cross-check, not a
 replacement for the real gridded product.
 
-The dialog's **Basin:** radio picks one ocean per run and all five storm slots
-in it are read; empty and stale slots are skipped. `parseBulletin()` chooses
+The dialog's **Basins:** checklist picks one or more oceans per run (none
+ticked by default) and all five storm slots in each are read; empty and stale
+slots are skipped, and a storm in two basins' bulletins is kept once. `parseBulletin()` chooses
 the parser by inspecting the text, not by trusting the PIL — an office can
 store anything in any bin, and a misroute would not raise, it would return a
 confident parse of the wrong shape.
@@ -195,7 +196,7 @@ NHC and CPHC issue the TCM ("Forecast/Advisory"), the structural equivalent of J
 
 *module level*
 
-One run, one basin.  The dialog is a radio, so this list is both the option list and the label-to-PIL lookup, and its order is the order the forecaster sees.  The labels are deliberately the ocean names rather than ATCF codes or office ids - "Atlantic", not "AT - NHC".
+One or more basins per run.  The dialog is a checklist, so this list is both the option list and the label-to-PIL lookup, and its order is the order the forecaster sees.  The labels are deliberately the ocean names rather than ATCF codes or office ids - "Atlantic", not "AT - NHC".
 
 #### 4.  NOTE on what this does NOT claim.  NHC and CPHC already distribute a
 
@@ -422,7 +423,7 @@ Section headers and blank spacer rows are plain "label" rows too, so each one st
 
 *`_buildVarDict()`*
 
-One radio, not a list of every PIL in every basin. All five slots in the chosen basin are read; an empty or stale slot is skipped already, so there is nothing for a per-slot checkbox to save anyone.
+A checklist of basins, not of every PIL in every basin, and nothing ticked by default.  A storm crossing 180 is warned on from both sides, so West Pac and Central Pac often need to run together; ticking nothing is refused rather than guessed at.  All five slots in each ticked basin are read; an empty or stale slot is skipped already, so there is nothing for a per-slot checkbox to save anyone.  A varDict with the old single "Basin:" radio still works (selectedBasins()).
 
 #### 54.  JTWC keeps issuing position and intensity forecasts through
 
@@ -434,7 +435,7 @@ JTWC keeps issuing position and intensity forecasts through subtropical status a
 
 *`execute()`*
 
-Test case mode uses its own bundled storm, not textdb, so the basin radio does not apply to it and the empty guard below is skipped.  With a radio the list can only be empty if BASINS itself is, which would be a code error rather than a choice, but the guard is kept: a silent no-op run is worse than a message saying nothing was selected.
+Test case mode uses its own bundled storm, not textdb, so the basins do not apply to it and the empty guard below is skipped.  Otherwise a run with no basin ticked stops with a message saying so: a silent no-op run is worse.
 
 #### 56.  Safety property, enforced in code rather than only by dialog
 
@@ -789,6 +790,21 @@ transition, so "Subtropical / extratropical systems: Skip" leaves it out of
 Wind, and pmsl now follows the same choice: with Include, the storm is
 moved in pmsl at those times as well, where before the pmsl step always
 left a flagged storm as the model had it.
+
+#### 72.  One storm, two basins
+
+*`dropDuplicateStorms()`*
+
+With more than one basin ticked, a storm crossing a basin boundary can be
+in both: CPHC's last advisory and JTWC's first warning sit in textdb
+together for a while, and two bulletins for one storm would put two
+vortices on the grid.  At the newer bulletin's initial time, the older one's
+track is compared with it: the same name within 300 nm, or - when either is
+unnamed - within 60 nm, is the same storm, and the older bulletin is
+dropped and named on the status bar.  Two named storms with different names
+are never merged, however close, so a Fujiwhara pair survives.
+`TCPressure.readWarnings()`, which reads every basin for CreateXML's gap
+fill, uses the same function.
 
 ### Extended docstrings
 
