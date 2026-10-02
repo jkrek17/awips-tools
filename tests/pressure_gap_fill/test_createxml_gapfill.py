@@ -460,6 +460,56 @@ def test_typhoon_follows_the_warning():
     TCPressure.now = time.time
 
 
+def test_typhoon_through_the_forecast():
+    """F024-F096 from one warning: every chart's Low is at the warning
+    position for its valid time - including F024, where the storm is at
+    17.6N, inside the 1 degree the gap drops near its south edge as
+    contouring artifacts."""
+    print("\ntest_typhoon_through_the_forecast")
+    global FHR, VALID, installFakes
+    sys.path.insert(0, os.path.join(HERE, "..", "tc_pressure"))
+    from synth_warning import jtwcWarning
+    import TCPressure
+    import TCWind_JTWC as W
+    base = calendar.timegm((2026, 10, 2, 12, 0, 0))
+    tau0 = base - 6 * 3600
+    track = [(0, 15.0, 140.0, 90, 140), (24, 17.0, 137.5, 100, 150),
+             (48, 19.5, 135.0, 110, 160), (72, 22.5, 132.5, 105, 170),
+             (96, 26.0, 131.0, 95, 190), (120, 30.5, 131.5, 80, 220)]
+    text = jtwcWarning(tau0, track, 955)
+    taus = W.parseBulletin(text, tau0)[0]
+    TCPressure.now = lambda: tau0 + 3 * 3600
+    lat, lon = T.gfeGrid(120.0, 200.0)
+    saved = (FHR, VALID, installFakes)
+    try:
+        for fhr in (24, 48, 72, 96):
+            FHR, VALID = fhr, base + fhr * 3600
+
+            def fakes(a, b, c, _f=fhr):
+                saved[2](a, b, c)
+                sys.modules["A2GraphicsConfig"].prod_list = {
+                    "OPC": ["12z_HS_Surface_F%03d" % _f]}
+            installFakes = fakes
+            snap = W.interpolateTrack(taus, VALID)
+            # The model has it 1.5 degrees NE and 30 mb deep.
+            field = T.typhoon(snap.lat + 1.5, snap.lon + 1.5, 30.0)
+            TEXT.clear()
+            TEXT["NFDTCPWP1"] = text
+            tree = runChart(lat, lon, T.gfsField(lon, lat),
+                            {"gfs0p25": model(field)},
+                            {"Gap models:": ["GFS"]})
+            lows = [x for x in symbols(tree) if x[0] == "LOW" and x[1] < 30.0]
+            check("F%03d: one Low, at the warning position" % fhr,
+                  len(lows) == 1 and abs(lows[0][1] - snap.lat) <= 0.3 and
+                  abs(lows[0][2] - snap.lon) <= 0.3,
+                  "%s vs %.1fN %.1fE" % ([x[1:3] for x in lows], snap.lat,
+                                          snap.lon))
+    finally:
+        FHR, VALID, installFakes = saved
+        TEXT.clear()
+        TCPressure.now = time.time
+
+
 def main():
     os.environ["TZ"] = "UTC"
     time.tzset()
@@ -468,6 +518,7 @@ def main():
     test_switched_off_or_unavailable()
     test_pacific_typhoon_on_the_dateline()
     test_typhoon_follows_the_warning()
+    test_typhoon_through_the_forecast()
     print("")
     if FAILURES:
         print("FAILED: %d check(s): %s" % (len(FAILURES), ", ".join(FAILURES)))

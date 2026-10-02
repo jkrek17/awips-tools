@@ -63,4 +63,7 @@ that a typhoon on the dateline is one Low with isobars on both sides. With a
 warning in the fake text database, the gap's Low is drawn at the warning
 position at its central pressure and the status bar says what was moved.
 With `Match TC warnings: Off`, the same chart keeps the model's Low and says
-nothing about warnings.
+nothing about warnings. One warning drives F024, F048, F072 and F096 charts in turn, and
+each has its Low at the warning position for its valid time - F024's at
+17.6N, inside the margin where edge artifacts are dropped (the check fails
+without the exemption for warned storms).

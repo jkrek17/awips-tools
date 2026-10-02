@@ -825,7 +825,8 @@ grid has the storm at the warning position, too.
 - **The seam.** A High or Low within `SEAM_MARGIN_DEG` (1 degree) of the grid
   edge is left to the GFE grid, so no center is drawn twice. One within
   `EDGE_MARGIN_DEG` of the gap's other edges is an edge artifact, not a center,
-  and is dropped.
+  and is dropped - except a warned storm's own center: a typhoon at 17.5N,
+  half a degree inside the chart's edge, keeps its L.
 - **Parameter names differ between models.** `PMSL`, `PRMSL`, `MSLP`, `MSL` and
   `MSLMA` are tried in that order, at `0.0MSL` then `0.0SFC`. Whichever the DAL
   offers first is used, and Pa are converted to mb.

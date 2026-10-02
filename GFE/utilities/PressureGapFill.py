@@ -99,6 +99,10 @@ TC_REACH_DEG = (TCPressure.SEARCH_RADIUS_NM +
                 max(TCPressure.REMOVE_RADIUS_NM,
                     TCPressure.R_OUT_LIMITS_NM[1])) / 60.0
 
+# A Low within this many degrees of a storm the gap placed from its warning
+# is that storm's center, and is kept even within EDGE_MARGIN_DEG of an edge.
+TC_CENTER_MATCH_DEG = 0.75
+
 PMSL_PARAMETERS = ("PMSL", "PRMSL", "MSLP", "MSL", "MSLMA")
 PMSL_LEVELS = ("0.0MSL", "0.0SFC")
 
@@ -505,13 +509,20 @@ class GapField(object):
         keepLon, keepLat, keepVal = [], [], []
         east = self._west + GAP_RES_DEG * (len(self._edgeLat) - 1) \
             if self._edgeLat is not None else None
+        # A warned storm the gap placed itself is never an edge artifact,
+        # however close to the chart's edge: a typhoon at 17.5N keeps its L.
+        storms = [(e["lat"], float(toFrame(float(e["lon"]), self._use360)))
+                  for e in self.tcReport if e.get("inGap")]
         for lon, lat, value in zip(lons, lats, values):
             if not self.isInGap(lat, lon):
                 continue
             lonF = float(toFrame(float(lon), self._use360))
-            if lonF < self._west + EDGE_MARGIN_DEG or \
-                    lonF > east - EDGE_MARGIN_DEG or \
-                    float(lat) < self.south + EDGE_MARGIN_DEG:
+            warned = any(abs(float(lat) - sLat) <= TC_CENTER_MATCH_DEG and
+                         abs(lonF - sLon) <= TC_CENTER_MATCH_DEG
+                         for sLat, sLon in storms)
+            if not warned and (lonF < self._west + EDGE_MARGIN_DEG or
+                               lonF > east - EDGE_MARGIN_DEG or
+                               float(lat) < self.south + EDGE_MARGIN_DEG):
                 continue
             keepLon.append(float(self.toGiven(lonF)))
             keepLat.append(float(lat))
