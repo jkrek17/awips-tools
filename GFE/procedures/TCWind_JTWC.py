@@ -27,8 +27,10 @@
 # ----------------------------------------------------------------------------
 MenuItems = ["Populate"]
 
+import os
 import re
 import sys
+import json
 import time
 import calendar
 import subprocess
@@ -287,6 +289,26 @@ SMOOTH_FACTOR = 2
 # Keep inserting once JTWC flags subtropical or extratropical transition.
 INSERT_AFTER_SUBTROPICAL = True
 
+# [doc 67]
+# Forecaster points past the end of a warning - days 6 and 7 - entered in a
+# second dialog, appended to the warning's own track, and saved so the next
+# run pre-fills them.  Rows are offered at these hours after the warning's
+# initial time.  EXTENSION_STORE should be a directory every forecaster's
+# account can read and write if the points are to survive a shift change.
+EXTENSION_LABEL = "Forecaster points past the warning (days 6-7):"
+EXTENSION_HOURS = (132, 144, 156, 168)
+EXTENSION_STORE = os.path.join(os.path.expanduser("~"),
+                               ".TCWind_JTWC_extensions.json")
+EXTENSION_KEEP_DAYS = 10.0
+
+# [doc 68]
+# An extratropical point's wind field is lopsided in a way the tropical fit
+# refuses on purpose: its asymmetry is searched this far from the motion
+# vector, and capped at this fraction of the max wind instead of 1.5 times
+# the motion-derived value.
+ET_ASYM_MAX_DEV_KT = 30.0
+ET_ASYM_CAP_FRACTION = 0.45
+
 # 1.0 keeps JTWC's 1-minute sustained winds; 0.88 converts to 10-minute.
 WIND_AVERAGING_FACTOR = 1.0
 
@@ -317,7 +339,7 @@ REQUIRE_ACKNOWLEDGEMENT = True
 
 # Shown in the dialog title and the status bar.  Bump it on every install so
 # there is never any doubt about which copy GFE actually loaded.
-VERSION = "2026-10-02a"
+VERSION = "2026-10-02b"
 
 # [doc 19]
 MAX_BULLETIN_AGE_HOURS = 12.0
@@ -398,6 +420,10 @@ class Tau(object):
         self.motionSpd = None       # kt
         self.conf = CONF_TROPICAL
         self.fit = None             # cache: fitGTCM(self), set by _fitTau()
+        # Forecaster points (extendTrack) only.
+        self.synthetic = False
+        self.extratropical = False
+        self.pressureMb = None
 
     def quad(self, threshold):
         """Radii dict for a threshold, zeros if the threshold is absent."""
@@ -1250,10 +1276,13 @@ def fitGTCM(snapshot):
 
     # [doc 38]
     asymCap = max(1.5 * a, GTCM_ASYM_MIN_CAP_KT)
+    maxDev = GTCM_ASYM_MAX_DEV_KT
+    if getattr(snapshot, "extratropical", False):
+        asymCap = max(asymCap, ET_ASYM_CAP_FRACTION * vmax)
+        maxDev = ET_ASYM_MAX_DEV_KT
     asymCap2 = asymCap * asymCap
     best = (err(rm, x1, x2, ax0, ay0), float(ax0), float(ay0))
-    grid = np.linspace(-GTCM_ASYM_MAX_DEV_KT, GTCM_ASYM_MAX_DEV_KT,
-                       GTCM_ASYM_STEPS)
+    grid = np.linspace(-maxDev, maxDev, GTCM_ASYM_STEPS)
     for dx in grid:
         for dy in grid:
             axc, ayc = ax0 + dx, ay0 + dy
@@ -1264,7 +1293,7 @@ def fitGTCM(snapshot):
                 best = (e, float(axc), float(ayc))
     def asymObj(p):
         dx, dy = p[0] - ax0, p[1] - ay0
-        if dx * dx + dy * dy > GTCM_ASYM_MAX_DEV_KT ** 2:
+        if dx * dx + dy * dy > maxDev ** 2:
             return 1e12
         if p[0] * p[0] + p[1] * p[1] > asymCap2:
             return 1e12
@@ -1582,6 +1611,235 @@ def insertVortex(vMag, vDir, bMag, bDir, r, r34, maxRadiusFactor=3.0,
 # GFE Procedure
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Forecaster points past the warning (days 6-7)
+# ---------------------------------------------------------------------------
+
+def parseCoord(text, kind):
+    """Latitude or longitude from what a forecaster types.
+
+    "38.5N", "38.5", "-12S"... and "165E", "165.0W", "-165", "195" (east of
+    the dateline in 0..360).  Returns degrees (longitude in -180..180), or
+    None for a blank box; raises ValueError for anything unreadable.
+    """
+    t = (text or "").strip().upper().replace(" ", "")
+    if not t:
+        return None
+    hemi = t[-1] if t[-1] in "NSEW" else ""
+    if hemi:
+        t = t[:-1]
+    value = float(t)
+    if kind == "lat":
+        if hemi in ("E", "W"):
+            raise ValueError("latitude ends in %s" % hemi)
+        if hemi == "S":
+            value = -abs(value)
+        if not -90.0 <= value <= 90.0:
+            raise ValueError("latitude %s out of range" % text.strip())
+        return value
+    if hemi in ("N", "S"):
+        raise ValueError("longitude ends in %s" % hemi)
+    if hemi == "W":
+        value = -abs(value)
+    if not -360.0 <= value <= 360.0:
+        raise ValueError("longitude %s out of range" % text.strip())
+    return ((value + 180.0) % 360.0) - 180.0
+
+
+def formatCoord(value, kind):
+    if kind == "lat":
+        return "%.1f%s" % (abs(value), "N" if value >= 0 else "S")
+    return "%.1f%s" % (abs(value), "E" if value >= 0 else "W")
+
+
+def parseRadii(text):
+    """Four quadrant radii, NE SE SW NW, from "300 250 60 40" (commas or
+    slashes too).  One number means the same in every quadrant.  Blank is
+    None.  Raises ValueError otherwise."""
+    t = re.sub(r"[,/;]", " ", (text or "")).split()
+    if not t:
+        return None
+    vals = [float(v) for v in t]
+    if len(vals) == 1:
+        vals = vals * 4
+    if len(vals) != 4:
+        raise ValueError("give four radii, NE SE SW NW (got %d)" % len(vals))
+    if any(v < 0.0 or v > 1500.0 for v in vals):
+        raise ValueError("radii must be 0-1500 nm")
+    return dict(zip(QUADS, vals))
+
+
+def parseValidTime(text, refEpoch):
+    """A DDHHMM / DDHH group, with or without Z, as unix seconds, resolved
+    against the warning's initial time for the month."""
+    t = (text or "").strip().upper().rstrip("Z")
+    if not re.match(r"^\d{4}(\d{2})?$", t):
+        raise ValueError("valid time %r is not DDHH or DDHHMM" % text)
+    if len(t) == 4:
+        t += "00"
+    ref = time.gmtime(refEpoch)
+    return _dtg_to_epoch(t, ref.tm_mday, ref.tm_mon, ref.tm_year)
+
+
+def TCPressureName(header):
+    """The storm's name as status lines give it."""
+    return header.get("stormName") or header.get("stormId") or "unnamed"
+
+
+def stormKey(header, pil=None):
+    """What a saved extension is filed under: the storm's ID ("22W",
+    "AL13"), which survives the 6-hourly warnings and a name change."""
+    return (header.get("stormId") or header.get("stormName") or pil or
+            "unknown")
+
+
+def loadExtensions(path=None):
+    """{stormKey: {"name", "saved", "points": [...]}} - empty when there is
+    no file yet or it cannot be read."""
+    path = path or EXTENSION_STORE
+    try:
+        with open(path) as fh:
+            data = json.load(fh)
+    except (IOError, OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def saveExtensions(data, path=None, nowSecs=None):
+    """Write the store, dropping storms not touched for EXTENSION_KEEP_DAYS.
+    Returns None, or why it could not be written."""
+    path = path or EXTENSION_STORE
+    nowSecs = time.time() if nowSecs is None else nowSecs
+    keep = dict((k, v) for k, v in data.items()
+                if v.get("points") and
+                nowSecs - v.get("saved", nowSecs) <=
+                EXTENSION_KEEP_DAYS * 86400.0)
+    try:
+        tmp = path + ".tmp"
+        with open(tmp, "w") as fh:
+            json.dump(keep, fh, indent=1, sort_keys=True)
+        os.rename(tmp, path)
+    except (IOError, OSError) as exc:
+        return "could not save the points to %s (%s)" % (path, exc)
+    return None
+
+
+def extendTrack(taus, points):
+    """The warning's taus with the forecaster's points appended.
+
+    Returns (taus, used, dropped): points at or before the warning's last
+    time are covered by the warning and dropped.  An extratropical point is
+    flagged the way the parser flags the warning's own transition, so the
+    "Subtropical / extratropical" choice governs it, and once flagged the
+    track stays flagged.  Motion is recomputed across the join.
+    """
+    taus = list(taus)
+    last = taus[-1]
+    used, dropped = [], []
+    for p in sorted(points, key=lambda q: q["epoch"]):
+        if p["epoch"] <= taus[-1].epoch:
+            dropped.append(p)
+            continue
+        t = Tau(int(round((p["epoch"] - taus[0].epoch) / 3600.0)))
+        t.epoch = int(p["epoch"])
+        t.lat, t.lon = float(p["lat"]), float(p["lon"])
+        t.vmax = float(p["vmax"])
+        if p.get("r34") and max(p["r34"].values()) > 0.0:
+            t.radii = {34: dict((q, float(p["r34"][q])) for q in QUADS)}
+        t.synthetic = True
+        t.extratropical = bool(p.get("extratropical"))
+        t.pressureMb = p.get("pressureMb")
+        t.conf = min(taus[-1].conf,
+                     CONF_SUBTROPICAL if t.extratropical else CONF_TROPICAL)
+        taus.append(t)
+        used.append(p)
+    if used:
+        start = taus.index(last)
+        for i in range(start, len(taus)):
+            if i + 1 < len(taus):
+                taus[i].motionDir, taus[i].motionSpd = \
+                    _bearing_speed(taus[i], taus[i + 1])
+            else:
+                taus[i].motionDir = taus[i - 1].motionDir
+                taus[i].motionSpd = taus[i - 1].motionSpd
+            if taus[i].synthetic:
+                taus[i].fit = None
+    return taus, used, dropped
+
+
+def pressureTargetAt(taus, epoch):
+    """The forecaster's central pressure at `epoch`, and how much it counts.
+
+    Returns (mb, weight) or None.  Between two points with a pressure it is
+    interpolated at full weight; from the warning's last time (pressure from
+    the winds) to the first point with one, its weight ramps from 0 to 1, so
+    the depth hands over from the warning's to the forecaster's smoothly.
+    """
+    for i in range(len(taus) - 1):
+        lo, hi = taus[i], taus[i + 1]
+        if not lo.epoch <= epoch <= hi.epoch:
+            continue
+        f = (epoch - lo.epoch) / float(max(hi.epoch - lo.epoch, 1))
+        pLo = lo.pressureMb if lo.synthetic else None
+        pHi = hi.pressureMb if hi.synthetic else None
+        if pLo and pHi:
+            return pLo + f * (pHi - pLo), 1.0
+        if pHi:
+            return float(pHi), f
+        if pLo:
+            return float(pLo), 1.0 - f
+        return None
+    t = taus[-1]
+    if t.synthetic and t.pressureMb and abs(epoch - t.epoch) < 1:
+        return float(t.pressureMb), 1.0
+    return None
+
+
+def extensionRowsFromVarDict(varDict, nRows, refEpoch):
+    """The dialog's rows as points.  Returns (points, problems); a row
+    with no latitude is an empty row, not a problem."""
+    points, problems = [], []
+    for k in range(1, nRows + 1):
+        get = lambda name: str(varDict.get(EXT_FIELDS[name] % k, "") or "")
+        if not get("lat").strip():
+            continue
+        try:
+            p = {"epoch": parseValidTime(get("valid"), refEpoch),
+                 "lat": parseCoord(get("lat"), "lat"),
+                 "lon": parseCoord(get("lon"), "lon"),
+                 "vmax": float(get("vmax")),
+                 "r34": parseRadii(get("r34")),
+                 "extratropical": get("et").strip() == "Yes"}
+            if p["lon"] is None:
+                raise ValueError("no longitude")
+            pressure = get("pressure").strip()
+            p["pressureMb"] = float(pressure) if pressure else None
+            if p["pressureMb"] is not None and \
+                    not 850.0 <= p["pressureMb"] <= 1050.0:
+                raise ValueError("pressure %s mb out of range" % pressure)
+            if not 0.0 <= p["vmax"] <= 200.0:
+                raise ValueError("max wind %s kt out of range"
+                                 % get("vmax"))
+        except ValueError as exc:
+            problems.append("point %d: %s" % (k, exc))
+            continue
+        points.append(p)
+    return points, problems
+
+
+# Dialog labels for one row; varDict is keyed by label, so each carries the
+# row number.
+EXT_FIELDS = {
+    "valid": "%d  valid DDHHMM Z:",
+    "lat": "%d  lat (38.5N):",
+    "lon": "%d  lon (165.0E / 170.0W):",
+    "vmax": "%d  max wind kt:",
+    "pressure": "%d  central pressure mb (optional):",
+    "r34": "%d  34 kt radii NE SE SW NW nm:",
+    "et": "%d  extratropical:",
+}
+
+
 if _IN_GFE:
 
     class Procedure(SmartScript.SmartScript):
@@ -1634,6 +1892,9 @@ if _IN_GFE:
                  ["Include", "Skip"]),
                 # pmsl goes where Wind goes: preview or Fcst.
                 (PMSL_LABEL, "Yes", "radio", ["Yes", "No"]),
+                # [doc 67]
+                (EXTENSION_LABEL, "Use saved", "radio",
+                 ["Use saved", "Edit", "Off"]),
             ]
 
             if EXPERIMENTAL and REQUIRE_ACKNOWLEDGEMENT:
@@ -1778,6 +2039,114 @@ if _IN_GFE:
             smoothed = self._smooth(fp, int(factor))
             return (smoothed < 1.0) & (smoothed > 0.0) & (~coreMask)
 
+        # [doc 69]
+        def _askExtension(self, storm, saved):
+            """The days 6-7 dialog for one storm.
+
+            Returns (points, problems), or None if the forecaster cancelled.
+            Rows are pre-filled with the saved points still past the
+            warning, then offered at EXTENSION_HOURS after its initial time;
+            a row left without a latitude is no point.
+            """
+            taus = storm["taus"]
+            t0, last = taus[0].epoch, taus[-1].epoch
+            nRows = len(EXTENSION_HOURS)
+            rows = [p for p in sorted(saved, key=lambda q: q["epoch"])
+                    if p["epoch"] > last][:nRows]
+            taken = set(p["epoch"] for p in rows)
+            for h in EXTENSION_HOURS:
+                if len(rows) >= nRows:
+                    break
+                when = t0 + h * 3600
+                if when > last and when not in taken:
+                    rows.append({"epoch": when})
+            rows.sort(key=lambda q: q["epoch"])
+
+            VariableList = [
+                ("%s - warning ends %s" % (
+                    describeStorm(storm["header"]),
+                    time.strftime("%d/%H%MZ", time.gmtime(last))), "",
+                 "label"),
+                ("Leave a row's latitude blank to drop that point.", "",
+                 "label"),
+            ]
+            for k, p in enumerate(rows, 1):
+                fill = lambda key, fmt: fmt(p[key]) \
+                    if p.get(key) is not None else ""
+                VariableList += [
+                    (" " * k, "", "label"),
+                    (EXT_FIELDS["valid"] % k,
+                     time.strftime("%d%H%M", time.gmtime(p["epoch"])),
+                     "alphaNumeric"),
+                    (EXT_FIELDS["lat"] % k,
+                     fill("lat", lambda v: formatCoord(v, "lat")),
+                     "alphaNumeric"),
+                    (EXT_FIELDS["lon"] % k,
+                     fill("lon", lambda v: formatCoord(v, "lon")),
+                     "alphaNumeric"),
+                    (EXT_FIELDS["vmax"] % k, fill("vmax", "%.0f".__mod__),
+                     "alphaNumeric"),
+                    (EXT_FIELDS["pressure"] % k,
+                     fill("pressureMb", "%.0f".__mod__), "alphaNumeric"),
+                    (EXT_FIELDS["r34"] % k,
+                     fill("r34", lambda r: " ".join(
+                         "%.0f" % r[q] for q in QUADS)), "alphaNumeric"),
+                    (EXT_FIELDS["et"] % k,
+                     "Yes" if p.get("extratropical") else "No", "radio",
+                     ["No", "Yes"]),
+                ]
+            answers = {}
+            pvl = ProcessVariableList.ProcessVariableList(
+                "Days 6-7: %s" % describeStorm(storm["header"]),
+                VariableList, answers, None)
+            if pvl.status() != "OK":
+                return None
+            return extensionRowsFromVarDict(answers, len(rows), t0)
+
+        def _extendStorms(self, storms, mode, nowSecs):
+            """Append the forecaster's points to each live storm's track.
+
+            Returns (summary, cancelled).  "Use saved" applies what is on
+            file; "Edit" shows the dialog per storm and saves what comes
+            back.  Points the warning now covers are dropped from the file.
+            """
+            store = loadExtensions()
+            notes, changed = [], False
+            for s in storms:
+                key = stormKey(s["header"], s["pil"])
+                entry = store.get(key) or {}
+                saved = entry.get("points") or []
+                if mode == "Edit":
+                    asked = self._askExtension(s, saved)
+                    if asked is None:
+                        return "", True
+                    saved, problems = asked
+                    for problem in problems:
+                        notes.append("%s %s - skipped" % (key, problem))
+                    changed = True
+                if not saved:
+                    continue
+                taus, used, dropped = extendTrack(s["taus"], saved)
+                if dropped:
+                    changed = True
+                if used:
+                    s["taus"] = taus
+                    et = sum(1 for p in used if p.get("extratropical"))
+                    notes.append("%s extended to %s with %d forecaster "
+                                 "point(s)%s" % (
+                                     key, time.strftime(
+                                         "%d/%HZ",
+                                         time.gmtime(taus[-1].epoch)),
+                                     len(used), ", %d extratropical" % et
+                                     if et else ""))
+                store[key] = {"name": TCPressureName(s["header"]),
+                              "saved": nowSecs, "points": used}
+            if changed or mode == "Edit":
+                problem = saveExtensions(store, nowSecs=nowSecs)
+                if problem:
+                    notes.append(problem)
+            return ("; ".join(notes) + ".") if notes else "", False
+
         def _storePmsl(self, data, tr, preview):
             """Write a pmsl grid, to a temporary parm if previewing."""
             if preview:
@@ -1816,6 +2185,7 @@ if _IN_GFE:
             warnings = [{"pil": s["pil"], "name": TCPressure.shortName(
                 s["header"]), "taus": s["taus"], "header": s["header"]}
                 for s in storms]
+            tausByName = dict((w["name"], w["taus"]) for w in warnings)
 
             lo, hi = self._trBounds(activeTR)
             lo, hi = max(lo, spanStart), min(hi, spanEnd + 1)
@@ -1835,8 +2205,8 @@ if _IN_GFE:
             scales = {}
             for tr in inventory:
                 when = self._trBounds(tr)[0]
-                candidates, _notes = TCPressure.stormsAt(warnings, when,
-                                                         module)
+                candidates, _notes = TCPressure.stormsAt(
+                    warnings, when, module, includeSubtropical=insertST)
                 moving = []
                 for storm in candidates:
                     if storm["vmax"] < 34.0:
@@ -1854,6 +2224,11 @@ if _IN_GFE:
                     if storm["name"] in scales:
                         storm["scale"], storm["scaleNote"] = \
                             scales[storm["name"]]
+                    # [doc 70]
+                    target = pressureTargetAt(tausByName[storm["name"]],
+                                              when)
+                    if target is not None:
+                        storm["pressureTarget"] = target
 
                 pmsl = self.getGrids("Fcst", "pmsl", "SFC", tr,
                                      mode="First", noDataError=0)
@@ -2049,6 +2424,22 @@ if _IN_GFE:
                 self.statusBarMsg(msg, "S")
                 return
 
+            # [doc 71]
+            # Forecaster points past the warnings.  Missing from an older
+            # saved varDict means off.  Never for the test case, which is
+            # not a real storm to file points under.
+            extensionMsg = ""
+            extensionMode = varDict.get(EXTENSION_LABEL, "Off")
+            if extensionMode != "Off" and not testCase:
+                extensionMsg, cancelled = self._extendStorms(
+                    storms, extensionMode, nowSecs)
+                if cancelled:
+                    self.statusBarMsg("Cancelled at the days 6-7 dialog; "
+                                      "nothing written.", "S")
+                    return
+                if extensionMsg:
+                    extensionMsg = " " + extensionMsg
+
             # Run the full length of the bulletins, whatever that is.  JTWC
             # products carry 96 or 120 hour groups depending on the system,
             # and each storm gets its own span.
@@ -2183,7 +2574,7 @@ if _IN_GFE:
                       "fell inside their valid periods." % len(storms)
                 if testCase:
                     msg = "TEST CASE (not a live storm). " + msg
-                self.statusBarMsg(msg + pmslMsg, "S")
+                self.statusBarMsg(msg + extensionMsg + pmslMsg, "S")
                 return
 
             parts = []
@@ -2220,7 +2611,7 @@ if _IN_GFE:
                 msg += " Skipped stale: " + "; ".join(stale) + "."
             if problems:
                 msg += " Problems: " + "; ".join(problems) + "."
-            self.statusBarMsg(msg + pmslMsg, "R")
+            self.statusBarMsg(msg + extensionMsg + pmslMsg, "R")
 
 
 # ---------------------------------------------------------------------------

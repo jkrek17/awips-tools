@@ -404,6 +404,29 @@ With the pmsl option on, the same Fcst run also writes **Fcst pmsl**, in
 place, for the grids it previewed as `pmslJTWC`. Set the option to **No**
 to write Fcst Wind alone.
 
+## Step 7: days 6-7, past the warning
+
+Set **Forecaster points past the warning (days 6-7):** to **Edit**. After
+the main dialog, a second one opens for each live storm with four rows
+past the warning's last time. Fill one or two: valid time (DDHHMM),
+latitude (e.g. 38.5N), longitude (165.0E or 170.0W), max wind, the four
+34 kt radii NE SE SW NW, optionally a central pressure, and whether it is
+extratropical. Leave a row's latitude blank to skip it.
+
+Check, in the preview grids:
+
+| Check | Expected result |
+|---|---|
+| Last `WindJTWC` grid | At your last point's time |
+| `pmslJTWC` low at a point with a pressure | At your position, within a mb or two of your pressure |
+| Between 120 h and your first point | Track and winds change smoothly; no jump at 120 h |
+| Next run, on **Use saved** | Same extension without the dialog; the status bar says "extended to" |
+| An extratropical point with a one-sided gale field | Lopsided toward the strong side, though the weak side stays larger than you entered |
+
+The points are saved in `~/.TCWind_JTWC_extensions.json`. Note whether a
+colleague on the next shift can see them - that tells us whether the file
+needs to move to a shared directory.
+
 ## What to report back
 
 Whether the self-check passed or failed, and its full output if it

@@ -75,6 +75,11 @@ P_ENV_REF_MB = 1010.0
 # with the bulletin or the fit, and an unscaled vortex is the safer error.
 ANCHOR_LIMITS = (0.5, 2.0)
 
+# A forecaster's central pressure (TCWind_JTWC's days 6-7 points) is reached
+# by scaling the vortex too, within these wider limits: an extratropical
+# storm's pressure fall is often far from what its winds balance.
+TARGET_LIMITS = (0.3, 3.0)
+
 # The implanted vortex reaches out to R_OUT: R34_TO_R_OUT times the mean
 # 34 kt radius, clamped between these, and its winds taper smoothly to zero
 # from TAPER_FROM of the way out, so the isobars have no kink at its edge.
@@ -231,13 +236,14 @@ def readWarnings(script=None, nowSecs=None, tools=None, pils=None,
     return warnings, notes
 
 
-def stormsAt(warnings, epoch, tools=None):
+def stormsAt(warnings, epoch, tools=None, includeSubtropical=False):
     """The storms valid at ``epoch``, each anchored to its tau-0 pressure.
 
     Returns (storms, notes).  A chart time outside a warning's span leaves
     that storm out rather than extrapolating it, and so does a storm the
-    warning has already flagged subtropical: a symmetric tropical vortex is
-    the wrong shape for it.
+    warning has already flagged subtropical or extratropical - unless
+    ``includeSubtropical``, which TCWind_JTWC passes when its "Subtropical /
+    extratropical systems" choice is Include.
     """
     if tools is None:
         tools = trackTools()
@@ -253,7 +259,8 @@ def stormsAt(warnings, epoch, tools=None):
                                                    time.gmtime(epoch))))
             continue
         snap = tools.interpolateTrack(taus, epoch)
-        if getattr(snap, "conf", 1.0) <= subtropical + 1e-6:
+        if not includeSubtropical and \
+                getattr(snap, "conf", 1.0) <= subtropical + 1e-6:
             notes.append("%s: subtropical by then - left as the models "
                          "have it" % w["name"])
             continue
@@ -626,7 +633,9 @@ def relocateStorms(pmsl, lat, lon, storms):
     bulletin's.  A storm carrying ``"scale"`` uses that instead: a caller
     working through a forecast fixes the scale at its earliest time and
     carries it, so that later times do not re-anchor against a different
-    environment.  Returns (new pmsl, report): one dict per storm with where
+    environment.  A storm carrying ``"pressureTarget": (mb, weight)`` - a
+    forecaster's central pressure - has its scale moved that far toward the
+    one that reaches it.  Returns (new pmsl, report): one dict per storm with where
     the background had it, how far off that was, what was removed, the
     environment, the anchor, and the central pressure implanted.  Background
     lows are matched one per storm, so two nearby storms never share one.
@@ -673,8 +682,19 @@ def relocateStorms(pmsl, lat, lon, storms):
             tau0Storm, bulletinMb = storm["anchor"]
             scale, note = anchorScale(tau0Storm, bulletinMb, pEnv=env)
 
-        out = implantVortex(out, lat, lon, storm, scale)
         _, deficit = pressureDeficit(storm)
+        target = storm.get("pressureTarget")
+        if target and deficit[0] > 0.0:
+            targetMb, weight = target
+            wanted = (env - float(targetMb)) / deficit[0]
+            lo, hi = TARGET_LIMITS
+            if lo <= wanted <= hi:
+                scale = (1.0 - weight) * scale + weight * wanted
+                note += "; toward the forecaster's %.0f mb" % targetMb
+            else:
+                note += ("; forecaster's %.0f mb out of reach (scale %.2f)"
+                         % (targetMb, wanted))
+        out = implantVortex(out, lat, lon, storm, scale)
         entry["envMb"] = env
         entry["scale"] = scale
         entry["anchorNote"] = note

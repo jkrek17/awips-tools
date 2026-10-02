@@ -104,11 +104,24 @@ def _install_fake_awips_modules():
     pvl_mod = types.ModuleType("ProcessVariableList")
 
     class _FakeProcessVariableList(object):
-        def __init__(self, *args, **kwargs):
-            pass
+        """Records every dialog; answers from `answers` in turn, where a
+        dict fills varDict and "CANCEL" cancels."""
+        answers = []
+        calls = []
+
+        def __init__(self, title=None, variableList=None, varDict=None,
+                     *args, **kwargs):
+            _FakeProcessVariableList.calls.append((title, variableList))
+            self._status = "OK"
+            if _FakeProcessVariableList.answers:
+                answer = _FakeProcessVariableList.answers.pop(0)
+                if answer == "CANCEL":
+                    self._status = "Cancel"
+                elif varDict is not None:
+                    varDict.update(answer)
 
         def status(self):
-            return "OK"
+            return self._status
 
     pvl_mod.ProcessVariableList = _FakeProcessVariableList
     sys.modules["ProcessVariableList"] = pvl_mod
@@ -863,7 +876,7 @@ def _modelPmsl(taus, offsetDeg=(1.5, 1.5), depth=8.0):
 
 
 def _run_pmsl(pmsl_fn, write_to="Preview grid", ack="No", label="Yes",
-              block_hours=6):
+              block_hours=6, extra=None, pmsl_until_hours=None):
     """Krovanh, with a Fcst pmsl inventory of `block_hours` blocks over
     the warning's span and `pmsl_fn` behind it."""
     text = _load_fixture(KROVANH)
@@ -875,6 +888,8 @@ def _run_pmsl(pmsl_fn, write_to="Preview grid", ack="No", label="Yes",
                    inv_start=t0, inv_end=t1 + 3 * 3600,
                    lat=latGrid, lon=lonGrid)
     step = block_hours * 3600
+    if pmsl_until_hours is not None:
+        t1 = t0 + pmsl_until_hours * 3600
     proc.pmsl_blocks = [(w, w + step) for w in range(t0, t1 + 1, step)]
     proc.pmsl_fn = pmsl_fn
     varDict = {
@@ -886,6 +901,7 @@ def _run_pmsl(pmsl_fn, write_to="Preview grid", ack="No", label="Yes",
     }
     if label is not None:
         varDict[tc.PMSL_LABEL] = label
+    varDict.update(extra or {})
     proc.execute(None, None, varDict)
     return proc, taus, header, latGrid, lonGrid
 
@@ -1049,6 +1065,323 @@ def case_pmsl_grids_outside_the_span():
     return fails, proc
 
 
+# ---------------------------------------------------------------------------
+# Forecaster points past the warning (days 6-7), and extratropical storms
+# ---------------------------------------------------------------------------
+
+import tempfile                                                 # noqa: E402
+
+FakePVL = sys.modules["ProcessVariableList"].ProcessVariableList
+
+
+def _krovanhTaus():
+    return tc.parseBulletin(_load_fixture(KROVANH))[0]
+
+
+def _withStore(points=None, key="22W"):
+    """A fresh temporary store, optionally holding `points` for KROVANH."""
+    fd, path = tempfile.mkstemp(suffix=".json")
+    os.close(fd)
+    os.remove(path)
+    tc.EXTENSION_STORE = path
+    if points is not None:
+        tc.saveExtensions({key: {"name": "KROVANH", "saved": time.time(),
+                                 "points": points}}, path)
+    return path
+
+
+def _extPoints(taus, et=False, pressure=None):
+    t0 = taus[0].epoch
+    return [{"epoch": t0 + 144 * 3600, "lat": 30.0, "lon": 131.0,
+             "vmax": 45.0, "pressureMb": None,
+             "r34": {"NE": 200.0, "SE": 180.0, "SW": 90.0, "NW": 120.0},
+             "extratropical": False},
+            {"epoch": t0 + 168 * 3600, "lat": 34.0, "lon": 136.0,
+             "vmax": 50.0, "pressureMb": pressure,
+             "r34": {"NE": 300.0, "SE": 260.0, "SW": 80.0, "NW": 60.0},
+             "extratropical": et}]
+
+
+def case_extension_parsing():
+    fails = []
+    P = tc.parseCoord
+    for text, kind, want in (("38.5N", "lat", 38.5), ("12S", "lat", -12.0),
+                             ("-12", "lat", -12.0), ("165.0E", "lon", 165.0),
+                             ("170W", "lon", -170.0), ("195", "lon", -165.0),
+                             (" 140.5 e ", "lon", 140.5), ("", "lat", None)):
+        got = P(text, kind)
+        if got != want:
+            fails.append("parseCoord(%r) = %r, want %r" % (text, got, want))
+    for bad, kind in (("95N", "lat"), ("40E", "lat"), ("abc", "lon")):
+        try:
+            P(bad, kind)
+            fails.append("parseCoord(%r) did not refuse" % bad)
+        except ValueError:
+            pass
+    if tc.parseRadii("300 250, 60/40") != {"NE": 300.0, "SE": 250.0,
+                                           "SW": 60.0, "NW": 40.0}:
+        fails.append("parseRadii mixed separators")
+    if tc.parseRadii("120") != dict((q, 120.0) for q in tc.QUADS):
+        fails.append("parseRadii one value")
+    if tc.parseRadii("  ") is not None:
+        fails.append("parseRadii blank")
+    try:
+        tc.parseRadii("100 200 300")
+        fails.append("parseRadii took three radii")
+    except ValueError:
+        pass
+    ref = 1790812800                     # 2026-10-01 00Z
+    if tc.parseValidTime("071800", ref) != ref + 6 * 86400 + 18 * 3600:
+        fails.append("parseValidTime DDHHMM")
+    if tc.parseValidTime("0718Z", ref) != ref + 6 * 86400 + 18 * 3600:
+        fails.append("parseValidTime DDHHZ")
+    late = 1792540800                    # 2026-10-21 00Z
+    if time.gmtime(tc.parseValidTime("021200", late)).tm_mon != 11:
+        fails.append("parseValidTime month rollover")
+    return fails, None
+
+
+def case_extension_track_and_pressure():
+    fails = []
+    taus = _krovanhTaus()
+    t0, last = taus[0].epoch, taus[-1].epoch
+    covered = {"epoch": last - 6 * 3600, "lat": 1, "lon": 1, "vmax": 40}
+    points = _extPoints(taus, et=True, pressure=990.0) + [covered]
+    ext, used, dropped = tc.extendTrack(taus, points)
+    if len(ext) != len(taus) + 2 or dropped != [covered]:
+        fails.append("extendTrack: %d taus, %d dropped"
+                     % (len(ext), len(dropped)))
+    if ext[-1].tau != 168 or not ext[-1].synthetic:
+        fails.append("last tau %r synthetic %r" % (ext[-1].tau,
+                                                   ext[-1].synthetic))
+    if ext[-1].conf != tc.CONF_SUBTROPICAL or ext[-2].conf != 1.0:
+        fails.append("ET point not flagged, or the flag leaked backward")
+    if ext[-1].radii[34]["SW"] != 80.0 or ext[-1].motionSpd is None:
+        fails.append("radii or motion missing on the new point")
+    if abs(ext[len(taus) - 1].motionDir -
+           tc._bearing_speed(ext[len(taus) - 1], ext[len(taus)])[0]) > 1e-6:
+        fails.append("motion at the warning's last time not recomputed "
+                     "toward the first new point")
+    if len(taus) != len(_krovanhTaus()):
+        fails.append("extendTrack changed the caller's list")
+    snap = tc.interpolateTrack(ext, t0 + 156 * 3600)
+    if abs(snap.lat - 32.0) > 1e-6 or abs(snap.vmax - 47.5) > 1e-6:
+        fails.append("interpolation between the new points: %.2f %.1f"
+                     % (snap.lat, snap.vmax))
+
+    # Pressure: none at the 144 h point, 990 at 168 h.
+    target = tc.pressureTargetAt(ext, t0 + 156 * 3600)
+    if target is None or target[0] != 990.0 or abs(target[1] - 0.5) > 1e-9:
+        fails.append("pressure target half way to the 990 point: %r"
+                     % (target,))
+    if tc.pressureTargetAt(ext, t0 + 168 * 3600) != (990.0, 1.0):
+        fails.append("pressure target at the 990 point")
+    if tc.pressureTargetAt(ext, t0 + 48 * 3600) is not None:
+        fails.append("pressure target inside the warning")
+    return fails, None
+
+
+def case_extension_store():
+    fails = []
+    path = _withStore()
+    if tc.loadExtensions(path) != {}:
+        fails.append("a missing store is not empty")
+    with open(path, "w") as fh:
+        fh.write("{not json")
+    if tc.loadExtensions(path) != {}:
+        fails.append("a corrupt store is not empty")
+    now = time.time()
+    problem = tc.saveExtensions({
+        "A": {"saved": now, "points": [{"epoch": 1}]},
+        "OLD": {"saved": now - 11 * 86400, "points": [{"epoch": 1}]},
+        "EMPTY": {"saved": now, "points": []}}, path, nowSecs=now)
+    if problem or sorted(tc.loadExtensions(path)) != ["A"]:
+        fails.append("store keeps %r (%s)"
+                     % (sorted(tc.loadExtensions(path)), problem))
+    if not tc.saveExtensions({"A": {"saved": now, "points": [{}]}},
+                             "/nonexistent-dir/x.json"):
+        fails.append("an unwritable store did not say so")
+    os.remove(path)
+    return fails, None
+
+
+def case_extension_use_saved_wind_and_pmsl():
+    """Saved points carry KROVANH to 168 h: Wind grids every 3 h to the
+    last point, pmsl moved there too, at the forecaster's 990 mb."""
+    fails = []
+    taus = _krovanhTaus()
+    t0 = taus[0].epoch
+    path = _withStore(_extPoints(taus, pressure=990.0))
+    proc, _, _, lat, lon = _run_pmsl(
+        _modelPmsl(taus), extra={tc.EXTENSION_LABEL: "Use saved"},
+        pmsl_until_hours=168)
+    winds = sorted(a[4].startTime().unixTime() for a, _ in proc.created
+                   if a[2] == "VECTOR")
+    if not winds or winds[-1] != t0 + 168 * 3600:
+        fails.append("Wind grids end at %s, not 168 h"
+                     % (winds and (winds[-1] - t0) // 3600))
+    writes = _pmslWrites(proc)
+    end = t0 + 168 * 3600
+    if end not in writes:
+        fails.append("no pmsl grid moved at 168 h")
+    else:
+        field = writes[end][1]
+        i, j = np.unravel_index(np.argmin(field), field.shape)
+        if abs(lat[i, j] - 34.0) > 0.3 or abs(lon[i, j] - 136.0) > 0.3:
+            fails.append("168 h low at %.2f %.2f, point is 34.0 136.0"
+                         % (lat[i, j], lon[i, j]))
+        if abs(field[i, j] - 990.0) > 1.5:
+            fails.append("168 h central %.1f, forecaster said 990"
+                         % field[i, j])
+    msg = _final_status(proc)
+    if "extended to" not in msg or "2 forecaster point" not in msg:
+        fails.append("status does not report the extension: %r" % msg)
+    os.remove(path)
+    return fails, proc
+
+
+def case_extension_off_by_default():
+    fails = []
+    taus = _krovanhTaus()
+    path = _withStore(_extPoints(taus))
+    proc, _, _, _, _ = _run_pmsl(_modelPmsl(taus), pmsl_until_hours=168)
+    last = max(a[4].startTime().unixTime() for a, _ in proc.created)
+    if last > taus[-1].epoch:
+        fails.append("a run without the option used the saved points")
+    proc, _, _, _, _ = _run_pmsl(_modelPmsl(taus),
+                                 extra={tc.EXTENSION_LABEL: "Off"},
+                                 pmsl_until_hours=168)
+    last = max(a[4].startTime().unixTime() for a, _ in proc.created)
+    if last > taus[-1].epoch:
+        fails.append("Off used the saved points")
+    os.remove(path)
+    return fails, proc
+
+
+def case_extension_edit_dialog():
+    """Edit pre-fills the saved points, takes the forecaster's changes,
+    files them, and Cancel stops the run."""
+    fails = []
+    taus = _krovanhTaus()
+    t0 = taus[0].epoch
+    path = _withStore(_extPoints(taus, pressure=990.0))
+    F = tc.EXT_FIELDS
+    del FakePVL.calls[:]
+    FakePVL.answers[:] = [{
+        F["valid"] % 1: time.strftime("%d%H%M", time.gmtime(
+            t0 + 144 * 3600)),
+        F["lat"] % 1: "31.0N", F["lon"] % 1: "132.0E",
+        F["vmax"] % 1: "45", F["pressure"] % 1: "",
+        F["r34"] % 1: "200 180 90 120", F["et"] % 1: "No",
+        F["valid"] % 2: time.strftime("%d%H", time.gmtime(t0 + 168 * 3600)),
+        F["lat"] % 2: "35N", F["lon"] % 2: "138E", F["vmax"] % 2: "55",
+        F["pressure"] % 2: "985", F["r34"] % 2: "350 300 90 60",
+        F["et"] % 2: "Yes",
+        F["lat"] % 3: "", F["lat"] % 4: "bogus", F["lon"] % 4: "1",
+        F["vmax"] % 4: "1", F["valid"] % 4: "010000"}]
+    proc, _, _, _, _ = _run_pmsl(_modelPmsl(taus),
+                                 extra={tc.EXTENSION_LABEL: "Edit"},
+                                 pmsl_until_hours=168)
+    if len(FakePVL.calls) != 1:
+        fails.append("%d dialogs shown, expected one per storm"
+                     % len(FakePVL.calls))
+    else:
+        title, vlist = FakePVL.calls[0]
+        defaults = dict((v[0], v[1]) for v in vlist)
+        # Rows run in time order: blank rows at 132 and 156 h interleave
+        # with the saved 144 and 168 h points.
+        times = [defaults.get(F["valid"] % k) for k in range(1, 5)]
+        want = [time.strftime("%d%H%M", time.gmtime(t0 + h * 3600))
+                for h in (132, 144, 156, 168)]
+        if times != want:
+            fails.append("row times %r, want %r" % (times, want))
+        if defaults.get(F["pressure"] % 4) != "990" or \
+                defaults.get(F["lat"] % 4) != "34.0N" or \
+                defaults.get(F["r34"] % 4) != "300 260 80 60" or \
+                defaults.get(F["et"] % 4) != "No" or \
+                defaults.get(F["lat"] % 3) != "":
+            fails.append("saved point not pre-filled: %r"
+                         % [(k, defaults.get(F[k] % 4)) for k in
+                            ("lat", "pressure", "r34")])
+        if len([v for v in vlist if v[0].endswith("lat (38.5N):")]) != 4:
+            fails.append("not four rows")
+        if any(len(v) > 2 and v[2] not in ("label", "alphaNumeric", "radio")
+               for v in vlist):
+            fails.append("unexpected dialog widget types")
+    saved = tc.loadExtensions(path).get("22W", {}).get("points", [])
+    if [(p["lat"], p.get("pressureMb"), p["extratropical"]) for p in saved] \
+            != [(31.0, None, False), (35.0, 985.0, True)]:
+        fails.append("store holds %r" % [(p["lat"], p.get("pressureMb"),
+                                          p["extratropical"])
+                                         for p in saved])
+    msg = _final_status(proc)
+    if "point 4" not in msg or "extended to" not in msg:
+        fails.append("bad row not reported, or no extension: %r" % msg)
+
+    FakePVL.answers[:] = ["CANCEL"]
+    proc, _, _, _, _ = _run_pmsl(_modelPmsl(taus),
+                                 extra={tc.EXTENSION_LABEL: "Edit"})
+    if proc.created or "Cancelled" not in _final_status(proc):
+        fails.append("Cancel did not stop the run")
+    FakePVL.answers[:] = []
+    os.remove(path)
+    return fails, proc
+
+
+def case_extension_covered_points_dropped():
+    fails = []
+    taus = _krovanhTaus()
+    pts = _extPoints(taus)
+    pts[0]["epoch"] = taus[-1].epoch - 3600      # now inside the warning
+    path = _withStore(pts)
+    _run_pmsl(_modelPmsl(taus), extra={tc.EXTENSION_LABEL: "Use saved"})
+    saved = tc.loadExtensions(path).get("22W", {}).get("points", [])
+    if len(saved) != 1 or saved[0]["epoch"] != pts[1]["epoch"]:
+        fails.append("store after a covered point: %d points" % len(saved))
+    os.remove(path)
+    return fails, None
+
+
+def case_extratropical_follows_the_radio():
+    """An extratropical point is moved in Wind and pmsl with Include, and
+    left alone in both with Skip."""
+    fails = []
+    taus = _krovanhTaus()
+    end = taus[0].epoch + 168 * 3600
+    for choice, want in (("Include", True), ("Skip", False)):
+        path = _withStore(_extPoints(taus, et=True, pressure=990.0))
+        proc, _, _, _, _ = _run_pmsl(
+            _modelPmsl(taus), pmsl_until_hours=168,
+            extra={tc.EXTENSION_LABEL: "Use saved",
+                   "Subtropical / extratropical systems:": choice})
+        wind = any(a[2] == "VECTOR" and a[4].startTime().unixTime() == end
+                   for a, _ in proc.created)
+        pmsl = end in _pmslWrites(proc)
+        if wind != want or pmsl != want:
+            fails.append("%s: wind %r pmsl %r at the ET point"
+                         % (choice, wind, pmsl))
+        os.remove(path)
+    return fails, None
+
+
+def case_extratropical_fit_honors_lopsided_radii():
+    """A slow storm with gales on one side: the extratropical fit reaches
+    much closer to the radii than the tropical cap allows."""
+    fails = []
+    out = {}
+    for et in (False, True):
+        t = tc.Tau(144)
+        t.epoch, t.lat, t.lon, t.vmax = 0, 40.0, 165.0, 55.0
+        t.radii = {34: {"NE": 300.0, "SE": 250.0, "SW": 60.0, "NW": 40.0}}
+        t.motionDir, t.motionSpd = 45.0, 5.0
+        t.extratropical = et
+        out[et] = tc.fitGTCM(t)
+    if not out[True]["rms"] < 0.5 * out[False]["rms"]:
+        fails.append("ET fit rms %.1f vs tropical %.1f kt"
+                     % (out[True]["rms"], out[False]["rms"]))
+    return fails, None
+
+
 def main():
     cases = [
         ("krovanh_full_span_3_hourly", case_krovanh_full_span_3_hourly),
@@ -1068,6 +1401,19 @@ def main():
         ("pmsl_run_twice_is_stable", case_pmsl_run_twice_is_stable),
         ("pmsl_without_tcpressure", case_pmsl_without_tcpressure),
         ("pmsl_grids_outside_the_span", case_pmsl_grids_outside_the_span),
+        ("extension_parsing", case_extension_parsing),
+        ("extension_track_and_pressure", case_extension_track_and_pressure),
+        ("extension_store", case_extension_store),
+        ("extension_use_saved_wind_and_pmsl",
+         case_extension_use_saved_wind_and_pmsl),
+        ("extension_off_by_default", case_extension_off_by_default),
+        ("extension_edit_dialog", case_extension_edit_dialog),
+        ("extension_covered_points_dropped",
+         case_extension_covered_points_dropped),
+        ("extratropical_follows_the_radio",
+         case_extratropical_follows_the_radio),
+        ("extratropical_fit_honors_lopsided_radii",
+         case_extratropical_fit_honors_lopsided_radii),
     ]
 
     failed = 0

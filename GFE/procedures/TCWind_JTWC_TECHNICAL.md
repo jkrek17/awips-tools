@@ -11,7 +11,7 @@ marker pointing at the matching numbered note below.
 | | |
 |---|---|
 | Procedure | `GFE/procedures/TCWind_JTWC.py` |
-| Version | `2026-10-02a` (the `VERSION` tunable; the status bar prints it) |
+| Version | `2026-10-02b` (the `VERSION` tunable; the status bar prints it) |
 | Install | `/awips2/edex/data/utility/common_static/site/<SITE>/gfe/userPython/procedures/` |
 | Install test | `AWIPS_TEST.md`, and `selfcheck/run_selfcheck.sh` in the export bundle |
 
@@ -715,6 +715,80 @@ The dialog offers the pmsl option, set to Yes.  A varDict without the key -
 one saved before the option existed, or built by a caller that never offered
 it - leaves pmsl alone: a run that never showed the choice must never touch
 a second weather element.
+
+### Forecaster points past the warning (days 6-7)
+
+#### 67.  Extending a warning to day 7
+
+*module level*
+
+Warnings stop at 120 h; the forecast runs to 168 h.  The forecaster gives
+points past the warning's end - valid time, position, max wind, the four
+34 kt radii, optionally a central pressure, and an extratropical flag - and
+they are appended to the warning's own track, so everything downstream
+(Wind, pmsl, the 3-hourly series) runs to the last point with nothing else
+changed.  The run window already reaches 175 h.  Points are filed by storm
+ID in `EXTENSION_STORE` (JSON) and pre-filled next run; a point the
+warning now covers is dropped from the file, and a storm untouched for
+`EXTENSION_KEEP_DAYS` is forgotten.  The default store is in the
+forecaster's home directory: point it at a shared directory for the points
+to survive a shift change.  The main-dialog choice is "Use saved" (apply
+what is on file), "Edit" (the per-storm dialog), or "Off"; a varDict
+without the key is Off.
+
+#### 68.  Extratropical points: the asymmetry cap lifted
+
+*module level, `fitGTCM()`*
+
+The tropical fit caps the asymmetry vector at 1.5 times the motion-derived
+value and searches within 10 kt of it, on purpose (note 38): a one-sided
+report should not swing a tropical storm's field.  An extratropical storm's
+gale field is one-sided by nature.  For a point flagged extratropical the
+search reaches 30 kt from the motion vector and the cap rises to 0.45 times
+the max wind.  On a slow storm with 34 kt radii of 300/250/60/40 nm this
+takes the fit error from 4.4 kt to 1.2 kt and the strong side from about
+245 nm to 320 nm.  The weak side still comes out larger than reported
+(about 115/80 nm for 60/40): a symmetric profile plus one uniform vector
+cannot make gales vanish on one side.  For a fast storm the motion vector
+already supplies the asymmetry and nothing changes.
+
+The wind fit's known limit for broad weak systems applies with full force
+to extratropical storms: a 35-45 kt storm whose gales reach far out cannot
+be fit (the profile would need an exponent below GTCM_X_MIN), and its 34 kt
+extent comes out well short of the reported radii.
+
+#### 69.  `_askExtension()`: the days 6-7 dialog
+
+*`_askExtension()`*
+
+One dialog per live storm, four rows, in time order: saved points still
+past the warning, then empty rows at EXTENSION_HOURS after the warning's
+initial time.  All entries are text boxes parsed here, so "38.5N", "165E",
+"170W", "300 250 60 40" are all accepted; a row whose latitude is blank is
+no point, so blanking it deletes a saved point.  A row that cannot be read
+is skipped and named on the status bar; Cancel stops the run.
+
+#### 70.  The forecaster's central pressure
+
+*`_movePmsl()`, `TCPressure.relocateStorms()`*
+
+Between two points with a pressure, the target is interpolated at full
+weight.  From the warning's last time - depth from the winds through the
+tau-0 scale - to the first point with a pressure, the target's weight ramps
+from 0 to 1, so the depth hands over smoothly.  The vortex keeps its shape
+from the wind profile and is scaled to reach the target, within 0.3-3.0
+(an extratropical storm's pressure fall is often far from what its winds
+balance); a target out of reach is reported and the warning's depth kept.
+
+#### 71.  Extratropical storm-times follow the radio, in pmsl too
+
+*`execute()`*
+
+An extratropical point is flagged the way the parser flags a warning's own
+transition, so "Subtropical / extratropical systems: Skip" leaves it out of
+Wind, and pmsl now follows the same choice: with Include, the storm is
+moved in pmsl at those times as well, where before the pmsl step always
+left a flagged storm as the model had it.
 
 ### Extended docstrings
 

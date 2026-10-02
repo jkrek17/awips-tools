@@ -323,6 +323,40 @@ Things to know:
   Wind grids are built as before and the status bar says pmsl was left
   alone. The AWIPS export bundle ships it.
 
+#### Days 6-7: forecaster points past the warning
+
+![Days 6-7 extension](docs/img/tcwind_days67_extension.png)
+
+*The real KROVANH warning ends at 120 h. Two forecaster points carry it to
+168 h, the last extratropical at 985 mb with gales mostly east of the
+center. The Wind and pmsl preview grids follow; the gale areas fall short
+of the entered radii (see below).*
+
+Warnings stop at 120 h. With **Forecaster points past the warning
+(days 6-7):** set to **Edit**, a second dialog per storm takes up to four
+points after the warning's end: valid time, position, max wind, the four
+34 kt radii, an optional central pressure, and an **extratropical** flag.
+They are appended to the warning's track, so the Wind and pmsl grids run to
+the last point. They are saved per storm and pre-filled next time; **Use
+saved** (the default) applies them without the dialog, and a point a newer
+warning covers is dropped.
+
+- **Central pressure** sets the pmsl depth at that point. From the warning's
+  end it takes over gradually, so the depth does not jump.
+- **Extratropical** lets the wind fit follow a one-sided gale field much
+  further than a tropical storm's fit is allowed to. It still cannot make
+  gales vanish on the weak side. It also flags the point the way a
+  warning's own transition is flagged, so **Subtropical / extratropical
+  systems: Skip** leaves it out, and **Include** (the default) now moves
+  such storms in pmsl too, not just Wind.
+- **Broad, weak gale fields come out too small.** This is a limit of the
+  wind fit, not of the extension: a 35-45 kt storm whose gales reach far
+  out cannot be fit, and its 34 kt extent falls well short (KROVANH at
+  35 kt: 120 nm reported, about 40 nm built). Extratropical storms are
+  often exactly this.
+- The points live in `~/.TCWind_JTWC_extensions.json` by default; set
+  `EXTENSION_STORE` to a shared directory so they survive a shift change.
+
 #### The web app
 
 Three pages, served from one Apps Script deployment:
