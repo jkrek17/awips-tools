@@ -276,6 +276,13 @@ bundled real bulletin, translated onto the office's own grid and rebased onto
 live storm in the text database (outside NW Pacific season, or between
 storms). It always writes to the preview grid only, never Fcst Wind.
 
+**Your background is left alone.** Inside a storm's 34 kt radius the
+warning's winds replace the Fcst Wind. Outside it they fade to nothing by
+1.5 times that radius and only raise the wind where yours is weaker - a
+front's gales next to the storm, or another gale area, come through
+exactly as you drew them. (An earlier version capped every wind of 30 kt
+or more to 30 kt out to five times the 34 kt radius.)
+
 #### pmsl: the storm where the warning has it
 
 With **Also move the storms in pmsl to the warnings:** on (the dialog

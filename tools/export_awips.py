@@ -358,6 +358,7 @@ storm you test, note whether it matches the expected result.
 | Overall shape | One smooth storm. No seams or kinks at the NE/SE/SW/NW quadrant boundaries. |
 | Stepping through 3-hourly blocks | Core size and peak wind change smoothly from one block to the next. No sudden jumps. |
 | Footprint edge | Blends into the background wind field. No sharp ring or halo at the edge of the insert. |
+| Background winds away from the storm | Unchanged. Beyond 1.5 x the 34 kt radius the grid is exactly your Fcst Wind, and outside the 34 kt radius nothing is ever lowered - a front's gales next to the storm stay as you drew them. |
 | A storm below 34 kt (e.g. a tropical depression) | Leaves the background wind completely untouched at that time. |
 | Runtime | Under about a minute for one storm's full forecast period. Note the actual time it took. |
 | CAVE log | No Python traceback. Check `~/caveData/logs` on the workstation after the run. |

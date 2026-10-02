@@ -11,7 +11,7 @@ marker pointing at the matching numbered note below.
 | | |
 |---|---|
 | Procedure | `GFE/procedures/TCWind_JTWC.py` |
-| Version | `2026-10-02c` (the `VERSION` tunable; the status bar prints it) |
+| Version | `2026-10-02d` (the `VERSION` tunable; the status bar prints it) |
 | Install | `/awips2/edex/data/utility/common_static/site/<SITE>/gfe/userPython/procedures/` |
 | Install test | `AWIPS_TEST.md`, and `selfcheck/run_selfcheck.sh` in the export bundle |
 
@@ -806,6 +806,28 @@ are never merged, however close, so a Fujiwhara pair survives.
 `TCPressure.readWarnings()`, which reads every basin for CreateXML's gap
 fill, uses the same function.
 
+### The background outside the storm
+
+#### 73.  Outside R34 the background is only ever raised
+
+*module level, `insertStorms()`, `execute()`*
+
+The background Wind is the forecaster's, set before the tool runs; the tool
+puts the warning in and nothing else.  Inside the storm's 34 kt radius the
+warning's winds replace the background.  Outside it they fade to nothing
+by MAX_INSERT_RADIUS_FACTOR (1.5) x R34, with a cos^2 taper, and go in only
+where they beat the background.  On LEE at tau 0: +24 kt just outside R34
+on a 10 kt background, +3 kt by 1.4 x R34, nothing past 1.5 x.
+
+Two things that used to lower it are gone.  A 30 kt background cap out to
+5 x R34 was meant to flatten a model's misplaced copy of the storm, and
+flattened any front or other gale area in that ring with it - a 40 kt band
+400 nm from LEE came out at 30 kt.  BACKGROUND_CAP_KT is now None.  And the
+edge smoothing averaged across the seam, both sides: it now smooths only
+the storm's side, and never takes a point below the background, since
+averaging winds that point different ways cancels speed.  The harness
+holds this end to end, with a front's 45 kt band beside LEE.
+
 ### Extended docstrings
 
 Each function keeps its one-paragraph summary in the source.
@@ -889,7 +911,7 @@ Two deliberate departures from the guide, both documented rather than silent:
 
 #### `insertStorms()`
 
-No blending.  Inside its R34 each warning wins outright, so the 34, 50 and 64 kt contours land on JTWC's reported radii.  Between R34 and the outer limit a vortex is inserted only where it is stronger than what is already there, which puts each seam where the two fields are equal and keeps the speed continuous without averaging anything.
+No blending.  Inside its R34 each warning wins outright, so the 34, 50 and 64 kt contours land on JTWC's reported radii.  Between R34 and the outer limit (1.5 x R34) the storm's winds fade to nothing and go in only where they are stronger than what is already there, which puts each seam where the two fields are equal and keeps the speed continuous without averaging anything.  Outside R34 the background is never lowered (note 73).
 
 Storms are applied outer-first, then cores, so a core always survives a neighbouring storm's tail.  Where two storms genuinely overlap, the stronger wind wins rather than the last one processed.
 

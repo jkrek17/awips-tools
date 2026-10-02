@@ -164,6 +164,9 @@ class _FakeSmartScriptBase(object):
         self._inv_blocks = None
         self._lat = None
         self._lon = None
+        # Background Wind: a callable (lat, lon, startEpoch) -> (mag, dir);
+        # None = 10 kt westerlies everywhere.
+        self.wind_fn = None
         # pmsl: a callable (lat, lon, startEpoch) -> field, and the Fcst
         # pmsl inventory as (start, end) tuples.  None = no pmsl grids.
         self.pmsl_fn = None
@@ -241,6 +244,11 @@ class _FakeSmartScriptBase(object):
                 return None
             return self.pmsl_fn(self._lat, self._lon,
                                 tr.startTime().unixTime()).astype(np.float32)
+        if self.wind_fn is not None:
+            mag, direc = self.wind_fn(self._lat, self._lon,
+                                      tr.startTime().unixTime())
+            return (np.asarray(mag, dtype=np.float32),
+                    np.asarray(direc, dtype=np.float32))
         # 10 kt westerlies (wind FROM the west -> direction 270, met
         # convention, matching magDirToUV()'s -sin/-cos construction).
         shape = self._lat.shape
@@ -1486,6 +1494,73 @@ def case_one_storm_in_two_basins():
     return fails, proc
 
 
+# ---------------------------------------------------------------------------
+# The background outside R34 is the forecaster's
+# ---------------------------------------------------------------------------
+
+def case_background_outside_r34_untouched():
+    """A front's 45 kt band just north of LEE and a 40 kt band far away:
+    outside the 34 kt radii nothing is ever lowered - the edge smoothing
+    included - and beyond 1.5 x the largest radius nothing changes at
+    all."""
+    fails = []
+    text = _load_fixture("real_2023-09-10_wtnt23_lee.txt")
+    taus, header, _ = tc.parseBulletin(text)
+    latGrid, lonGrid = _mesh(basin="Atlantic")
+
+    def wind(lat, lon, epoch):
+        snap = tc.interpolateTrack(taus, epoch)
+        mag = np.full(lat.shape, 10.0)
+        # A front 2.5-3.5 degrees north of the storm, and a gale band to
+        # the south-east 6 degrees out.
+        dLat = lat - snap.lat
+        mag[(dLat > 2.5) & (dLat < 3.5)] = 45.0
+        far = np.hypot(lat - (snap.lat - 4.0), lon - (snap.lon + 5.0)) < 1.0
+        mag[far] = 40.0
+        return mag, np.full(lat.shape, 250.0)
+
+    proc = tc.Procedure(dbss=None)
+    t0 = taus[0].epoch
+    proc.configure(texts={"MIATCMAT3": text}, now_epoch=t0 + 3 * 3600,
+                   inv_start=t0, inv_end=taus[-1].epoch + 3 * 3600,
+                   lat=latGrid, lon=lonGrid)
+    proc.wind_fn = wind
+    proc.execute(None, None, {tc.BASINS_LABEL: ["Atlantic"],
+                              "Write to:": "Preview grid",
+                              "Run over selected time range only?": "No"})
+    checked = 0
+    for args, _ in proc.created:
+        if args[2] != "VECTOR":
+            continue
+        when = args[4].startTime().unixTime()
+        snap = tc.interpolateTrack(taus, when)
+        if when > taus[-1].epoch or 34 not in snap.radii:
+            continue
+        rMax = max(snap.radii[34].values())
+        bg = wind(latGrid, lonGrid, when)[0]
+        out = np.asarray(args[3][0], dtype=float)
+        dist = np.vectorize(tc._gcDistanceNm)(latGrid, lonGrid, snap.lat,
+                                              snap.lon)
+        # Inside its 34 kt radius the warning defines the wind, by design;
+        # the fitted radius can land a few nm past the reported one.
+        lowered = (out < bg - 0.05) & (dist > 1.05 * rMax)
+        if lowered.any():
+            fails.append("%s: wind lowered %d gridpoints outside R34 "
+                         "(max %.1f kt)" % (
+                             time.strftime("%d/%HZ", time.gmtime(when)),
+                             lowered.sum(), (bg - out)[lowered].max()))
+            break
+        beyond = dist > 1.5 * rMax
+        if np.abs(out - bg)[beyond].max() > 0.05:
+            fails.append("%s: wind changed beyond 1.5 x R34"
+                         % time.strftime("%d/%HZ", time.gmtime(when)))
+            break
+        checked += 1
+    if not checked:
+        fails.append("no grids checked")
+    return fails, proc
+
+
 def main():
     cases = [
         ("krovanh_full_span_3_hourly", case_krovanh_full_span_3_hourly),
@@ -1520,6 +1595,8 @@ def main():
          case_extratropical_fit_honors_lopsided_radii),
         ("basins_checklist", case_basins_checklist),
         ("one_storm_in_two_basins", case_one_storm_in_two_basins),
+        ("background_outside_r34_untouched",
+         case_background_outside_r34_untouched),
     ]
 
     failed = 0

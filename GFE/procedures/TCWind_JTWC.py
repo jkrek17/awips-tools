@@ -276,15 +276,18 @@ RMAX_OVERRIDE_NM = 0.0
 OUTER_DECAY_FACTOR = 1.0
 MIN_OUTER_DECAY_NM = 30.0
 
-# Hard outer bound on the edit, as a multiple of R34.  With the taper above
-# the field self-terminates well inside this, so it is a backstop rather than
-# the thing defining the footprint.
-MAX_INSERT_RADIUS_FACTOR = 5.0
+# [doc 73]
+# Beyond the storm's 34 kt radius its winds fade to nothing by this multiple
+# of it, and go in only where they are stronger than the background: the
+# background is the forecaster's, and outside R34 it is only ever raised.
+MAX_INSERT_RADIUS_FACTOR = 1.5
 
-# Background wind is capped to this inside the footprint before the insert,
-# so a model's own copy of the cyclone cannot leave a stronger blob beside
-# the analytic one.  None disables it.
-BACKGROUND_CAP_KT = 30.0
+# No background cap.  It used to cut every background wind of 30 kt or more
+# to 30 kt out to 5 x R34, to flatten a model's misplaced copy of the storm
+# - and with it any front or other gale area in that ring.  The background
+# is the forecaster's to set before the tool runs; set a value here only to
+# bring the old behavior back.
+BACKGROUND_CAP_KT = None
 
 # Seam smoothing.  Applies only to the ring at the edge of the footprint and
 # never inside any storm's R34.  Factor 1 means no smoothing.
@@ -344,7 +347,7 @@ REQUIRE_ACKNOWLEDGEMENT = True
 
 # Shown in the dialog title and the status bar.  Bump it on every install so
 # there is never any doubt about which copy GFE actually loaded.
-VERSION = "2026-10-02c"
+VERSION = "2026-10-02d"
 
 # [doc 19]
 MAX_BULLETIN_AGE_HOURS = 12.0
@@ -1576,12 +1579,17 @@ def insertStorms(bMag, bDir, storms, capKt=None):
         capMask = (mag >= capKt) & withinAny
         mag[capMask] = capKt
 
-    # Outer envelopes: strongest wins.
+    # Outer envelopes: the storm's winds fade to nothing between R34 and the
+    # limit radius, and raise the background only where they beat it.
     for s in storms:
+        limit = _limitRadius(s)
+        span = np.maximum(limit - s["r34"], 1e-6)
+        x = np.clip((s["r"] - s["r34"]) / span, 0.0, 1.0)
+        faded = s["vMag"] * np.cos(0.5 * np.pi * x) ** 2
         outer = ((s["r"] > s["r34"])
-                 & (s["r"] <= _limitRadius(s))
-                 & (s["vMag"] > mag))
-        mag = np.where(outer, s["vMag"], mag)
+                 & (s["r"] <= limit)
+                 & (faded > mag))
+        mag = np.where(outer, faded, mag)
         direc = np.where(outer, s["vDir"], direc)
         applied |= outer
 
@@ -2614,14 +2622,23 @@ if _IN_GFE:
                     return 0.0
 
                 if SMOOTH_SEAM and int(SMOOTH_FACTOR) > 1:
-                    ring = self._seamMask(footprint, coreMask, SMOOTH_FACTOR)
+                    # Only the storm's side of the seam: outside what the
+                    # insert touched, the grid stays exactly the forecaster's.
+                    ring = self._seamMask(footprint, coreMask,
+                                          SMOOTH_FACTOR) & footprint
                     if ring.any():
                         u, v = magDirToUV(mag, direc)
                         us = self._smooth(u, int(SMOOTH_FACTOR))
                         vs = self._smooth(v, int(SMOOTH_FACTOR))
                         u[ring] = us[ring]
                         v[ring] = vs[ring]
-                        mag, direc = uvToMagDir(u, v)
+                        sMag, sDir = uvToMagDir(u, v)
+                        # Averaging vectors that point different ways
+                        # cancels speed: never let the seam fall below the
+                        # forecaster's background.
+                        keep = ring & (sMag < bMag)
+                        mag = np.where(keep, mag, sMag)
+                        direc = np.where(keep, direc, sDir)
 
                 self._storeGrid(targetElement,
                                 (mag.astype(np.float32),
