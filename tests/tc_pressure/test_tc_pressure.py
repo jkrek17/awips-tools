@@ -289,6 +289,79 @@ def test_dateline():
           report[0]["offsetNm"] < 200.0, str(report[0]["background"]))
 
 
+def test_warnings_to_storms():
+    print("\ntest_warnings_to_storms")
+    import calendar
+    from synth_warning import jtwcWarning
+    W = P.trackTools()
+    check("TCWind_JTWC is found for its parser", W is not None)
+    if W is None:
+        return
+    t0 = calendar.timegm((2026, 10, 2, 18, 0, 0))
+    track = [(0, 19.0, 138.0, 100, 150), (12, 20.0, 137.0, 110, 160),
+             (24, 21.0, 136.0, 110, 160), (48, 23.0, 134.0, 95, 180)]
+    text = {"NFDTCPWP1": jtwcWarning(t0, track, 948),
+            "NFDTCPWP2": "WTPN32 PGTW 021500\nnothing a parser can use\n",
+            "NFDTCPWP3": jtwcWarning(t0 - 30 * 3600, track, 990, "OLDONE")}
+    warnings, notes = P.readWarnings(nowSecs=t0 + 4 * 3600, tools=W,
+                                     retrieve=text.get)
+    check("one live warning; the old one dropped, the bad one noted",
+          [w["name"] for w in warnings] == ["TESTER"] and len(notes) == 1,
+          "%s %s" % ([w["name"] for w in warnings], notes))
+
+    storms, notes = P.stormsAt(warnings, t0 + 6 * 3600, W)
+    check("one storm at the chart time", len(storms) == 1 and not notes,
+          str(notes))
+    if storms:
+        s = storms[0]
+        check("interpolated along the track to the chart time",
+              abs(s["lat"] - 19.5) < 1e-6 and abs(s["lon"] - 137.5) < 1e-6
+              and abs(s["vmax"] - 105.0) < 1e-6,
+              "%.2f %.2f %.1f" % (s["lat"], s["lon"], s["vmax"]))
+        check("anchored to the tau-0 storm and its pressure",
+              s.get("anchor") and s["anchor"][1] == 948.0 and
+              abs(s["anchor"][0]["lat"] - 19.0) < 1e-6)
+    storms, notes = P.stormsAt(warnings, t0 - 6 * 3600, W)
+    check("a chart before the warning starts is left out, and said so",
+          not storms and len(notes) == 1 and "does not cover" in notes[0],
+          str(notes))
+    storms, notes = P.stormsAt(warnings, t0 + 49 * 3600, W)
+    check("and so is one after it ends", not storms and len(notes) == 1)
+
+    noPressure = {"X": jtwcWarning(t0, track, None)}
+    warnings, _ = P.readWarnings(nowSecs=t0, tools=W, pils=["X"],
+                                 retrieve=noPressure.get)
+    storms, _ = P.stormsAt(warnings, t0, W)
+    check("no bulletin pressure: still placed, just unanchored",
+          len(storms) == 1 and "anchor" not in storms[0])
+
+    original = P.trackTools
+    P.trackTools = lambda: None
+    try:
+        warnings, notes = P.readWarnings(nowSecs=t0, retrieve=text.get)
+    finally:
+        P.trackTools = original
+    check("without TCWind_JTWC: nothing moved, and the reason given",
+          warnings == [] and len(notes) == 1 and "not installed" in notes[0],
+          str(notes))
+
+    entry = {"name": "TESTER", "lat": 19.5, "lon": 137.5,
+             "background": (21.5, 140.5), "offsetNm": 212.0,
+             "centralMb": 949.6, "anchorNote": "anchored to 948 mb",
+             "inGap": True}
+    line = P.describeRelocation(entry)
+    check("status line says where, how deep, and how far the model was off",
+          "19.5N 137.5E" in line and "950 mb" in line and "212 nm" in line
+          and "21.5N 140.5E" in line, line)
+    entry.update(background=None, inGap=False, lon=-178.0,
+                 anchorNote="anchor 2.40 outside 0.5-2.0 - unanchored")
+    line = P.describeRelocation(entry)
+    check("and says when it found no model low, the center is in the grid, "
+          "or the anchor was refused",
+          "no model low" in line and "GFE grid" in line and
+          "178.0W" in line and "unanchored" in line, line)
+
+
 def main():
     test_profile()
     test_anchor_on_real_warnings()
@@ -299,6 +372,7 @@ def main():
     test_partial_low_on_the_edge()
     test_two_storms()
     test_dateline()
+    test_warnings_to_storms()
     print("")
     if FAILURES:
         print("FAILED: %d check(s): %s" % (len(FAILURES), ", ".join(FAILURES)))

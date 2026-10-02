@@ -33,6 +33,7 @@ for candidate in (os.path.join(HERE, "..", "..", "GFE", "procedures"),
                   os.path.join(HERE, "..")):
     if os.path.isfile(os.path.join(candidate, "CreateXML.py")):
         PROC = os.path.join(candidate, "CreateXML.py")
+        sys.path.insert(0, candidate)       # TCWind_JTWC, as in GFE
         break
 
 import test_pressure_gap_fill as T                             # noqa: E402
@@ -45,6 +46,7 @@ VALID = calendar.timegm((datetime(2026, 10, 2, 12) +
 STATUS = []
 STORED = []
 FAILURES = []
+TEXT = {}               # the text database: PIL -> bulletin
 
 
 def check(label, condition, detail=""):
@@ -183,6 +185,9 @@ def installFakes(gfeLat, gfeLon, gfePmsl):
 
         def getSiteID(self):
             return "OPC"
+
+        def getTextProductFromDB(self, pil):
+            return TEXT.get(pil)
 
         def getLatLonGrids(self):
             return gfeLat, gfeLon
@@ -409,6 +414,52 @@ def test_pacific_typhoon_on_the_dateline():
               for pts in gapLines))
 
 
+def test_typhoon_follows_the_warning():
+    print("\ntest_typhoon_follows_the_warning")
+    sys.path.insert(0, os.path.join(HERE, "..", "tc_pressure"))
+    from synth_warning import jtwcWarning
+    import TCPressure
+    # The models have a 40 mb typhoon at 21.5N 140.5E at the chart time; the
+    # warning, issued 6 h before it, has it at 19.5N 137.5E by then, 950 mb
+    # at its initial time.
+    tau0 = VALID - 6 * 3600
+    TEXT.clear()
+    TEXT["NFDTCPWP2"] = jtwcWarning(
+        tau0, [(0, 19.0, 138.0, 100, 150), (12, 20.0, 137.0, 100, 150),
+               (24, 21.0, 136.0, 95, 160)], 950)
+    TCPressure.now = lambda: tau0 + 3 * 3600
+    lat, lon = T.gfeGrid(130.0, 250.0)
+    models = {"gfs0p25": model(T.typhoon(21.5, 140.5, 40.0))}
+
+    del STATUS[:]
+    tree = runChart(lat, lon, T.gfsField(lon, lat), models,
+                    {"Gap models:": ["GFS"]})
+    lows = [s for s in symbols(tree) if s[0] == "LOW" and s[1] < 30.0]
+    check("one Low in the gap", len(lows) == 1, str(lows))
+    if lows:
+        _, la, lo, v = lows[0]
+        check("at the warning position for the chart time, not the model's",
+              abs(la - 19.5) <= 0.3 and abs(lo - 137.5) <= 0.3,
+              "%.2fN %.2fE" % (la, lo))
+        check("near the warning's central pressure", abs(v - 950.0) < 4.0,
+              "%.1f" % v)
+    said = [m for _, m in STATUS if "TC TESTER" in m]
+    check("the status bar says what was moved", len(said) == 1 and
+          "F024" in said[0] and "nm off" in said[0], str(said))
+
+    del STATUS[:]
+    tree = runChart(lat, lon, T.gfsField(lon, lat), models,
+                    {"Gap models:": ["GFS"], "Match TC warnings:": "Off"})
+    lows = [s for s in symbols(tree) if s[0] == "LOW" and s[1] < 30.0]
+    check("switched off: the Low stays where the model put it",
+          len(lows) == 1 and abs(lows[0][1] - 21.5) <= 0.3 and
+          abs(lows[0][2] - 140.5) <= 0.3, str(lows))
+    check("and nothing is said about warnings",
+          not any("TC" in m for _, m in STATUS))
+    TEXT.clear()
+    TCPressure.now = time.time
+
+
 def main():
     os.environ["TZ"] = "UTC"
     time.tzset()
@@ -416,6 +467,7 @@ def main():
     test_the_hurricane_gets_its_low()
     test_switched_off_or_unavailable()
     test_pacific_typhoon_on_the_dateline()
+    test_typhoon_follows_the_warning()
     print("")
     if FAILURES:
         print("FAILED: %d check(s): %s" % (len(FAILURES), ", ".join(FAILURES)))

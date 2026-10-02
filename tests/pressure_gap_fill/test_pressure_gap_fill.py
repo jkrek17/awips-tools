@@ -191,6 +191,38 @@ def test_regrid_and_blend():
     check("nowhere covered stays NaN", bool(np.isnan(blended[1, 0])))
 
 
+def test_regrid_both_kinds_of_grid():
+    print("\ntest_regrid_both_kinds_of_grid")
+    plane = lambda x, y: 1000.0 + 0.3 * x + 0.2 * y
+    tLon, tLat = np.meshgrid(np.arange(125.0, 155.0, 0.7),
+                             np.arange(12.0, 28.0, 0.7))
+    y, x = np.mgrid[10.0:30.01:0.25, 120.0:160.01:0.25]
+    check("a lat/lon grid goes the fast way",
+          G._onLatLonGrid(x.ravel(), y.ravel(), plane(x, y).ravel())
+          is not None)
+    err = np.nanmax(np.abs(G.regrid(x, y, plane(x, y), tLon, tLat) -
+                           plane(tLon, tLat)))
+    check("and is exact on a plane", err < 1e-9, "%.2g" % err)
+    # Two envelopes meeting at the dateline both carry the 180 column.
+    west = (x <= 140.0)
+    east = (x >= 140.0)
+    lon2 = np.concatenate([x[west], x[east]])
+    lat2 = np.concatenate([y[west], y[east]])
+    err = np.nanmax(np.abs(G.regrid(lon2, lat2, plane(lon2, lat2), tLon,
+                                    tLat) - plane(tLon, tLat)))
+    check("a column shared where two envelopes meet is fine", err < 1e-9)
+    skew = x + 0.4 * np.sin(np.radians(y * 20.0))
+    check("a projected grid is not mistaken for one",
+          G._onLatLonGrid(skew.ravel(), y.ravel(), plane(skew, y).ravel())
+          is None)
+    err = np.nanmax(np.abs(G.regrid(skew, y, plane(skew, y), tLon, tLat) -
+                           plane(tLon, tLat)))
+    check("and still interpolates, by triangulation", err < 1e-9)
+    out = G.regrid(x, y, plane(x, y), np.array([170.0, 140.0]),
+                   np.array([20.0, 40.0]))
+    check("outside the source is NaN", np.isnan(out).all())
+
+
 def test_southern_edge_and_seam():
     print("\ntest_southern_edge_and_seam")
     lat, lon = gfeGrid(-80.0, -20.0)
@@ -424,8 +456,117 @@ def test_nothing_breaks_the_chart():
     check("no models picked: no gap", not gap.hasGap())
 
 
+def warningStorm(lat, lon, vmax=100.0, anchorMb=None, name="TESTER"):
+    """A storm dict as TCPressure.stormsAt hands them over."""
+    storm = {"lat": lat, "lon": lon, "vmax": vmax, "a": 5.0, "rm": 18.0,
+             "ri": 60.0, "x1": 0.6, "x2": 0.5, "r34": 140.0, "name": name}
+    if anchorMb:
+        storm["anchor"] = (dict(storm), anchorMb)
+    return storm
+
+
+def test_typhoon_moved_to_the_warning():
+    print("\ntest_typhoon_moved_to_the_warning")
+    # The models have a 40 mb typhoon at 21.5N 140.5E; the warning says
+    # 19.5N 137.5E, 950 mb.
+    lat, lon = gfeGrid(130.0, 250.0)
+    pmsl = gfsField(lon, lat)
+    wrong = model(typhoon(21.5, 140.5, 40.0))
+    storm = warningStorm(19.5, 137.5, anchorMb=950.0)
+    gap = G.buildGapPressure(lat, lon, pmsl, VALID, ["GFS"],
+                             dal=FakeDAL({"gfs0p25": wrong}), storms=[storm])
+    piece = gap.pieces[0]
+    i, j = np.unravel_index(np.argmin(piece.filled), piece.filled.shape)
+    check("the gap's low is where the warning has it",
+          abs(piece.lat[i, j] - 19.5) <= 0.25 and
+          abs(piece.lon[i, j] - 137.5) <= 0.25,
+          "%.2fN %.2fE" % (piece.lat[i, j], piece.lon[i, j]))
+    check("as deep as the warning says",
+          abs(piece.filled[i, j] - 950.0) < 1.5, "%.1f" % piece.filled[i, j])
+
+    # The same storm put into a model with no typhoon of its own: whatever
+    # differs is what the removal left behind.
+    clean = G.buildGapPressure(lat, lon, pmsl, VALID, ["GFS"],
+                               dal=FakeDAL({"gfs0p25": model(gfsField)}),
+                               storms=[storm])
+    left = np.abs(piece.filled - clean.pieces[0].filled).max()
+    check("nothing of the model's typhoon is left", left < 0.5,
+          "%.2f mb" % left)
+
+    report = gap.tcReport
+    check("one storm reported", len(report) == 1, str(report))
+    if report:
+        e = report[0]
+        check("the model's low found where the model had it",
+              e["background"] is not None and
+              abs(e["background"][0] - 21.5) <= 0.3 and
+              abs(e["background"][1] - 140.5) <= 0.3, str(e["background"]))
+        check("with the distance it was off", 180.0 < e["offsetNm"] < 230.0,
+              "%.0f nm" % e["offsetNm"])
+        check("and the storm itself in the gap", e["inGap"] is True)
+        check("a status line for it", "TESTER" in gap.tcLines()[0],
+              gap.tcLines()[0])
+
+    edgeRow = piece.filled[-1]
+    check("still matched to the GFE grid at the seam",
+          np.abs(edgeRow - gfsField(piece.lon[-1], piece.lat[-1])).max()
+          < 0.1)
+
+    far = G.buildGapPressure(lat, lon, pmsl, VALID, ["GFS"],
+                             dal=FakeDAL({"gfs0p25": wrong}),
+                             storms=[warningStorm(50.0, 160.0)])
+    none = G.buildGapPressure(lat, lon, pmsl, VALID, ["GFS"],
+                              dal=FakeDAL({"gfs0p25": wrong}))
+    check("a storm far north of the gap changes nothing",
+          far.tcReport == [] and
+          np.array_equal(far.pieces[0].filled, none.pieces[0].filled))
+
+    # A storm at 33N is the GFE grid's: the grid carries it already, at the
+    # warning position.  Its outer isobars reach the gap, and with the
+    # models moved to match, the gap meets the grid with almost nothing for
+    # the seam to correct.
+    import TCPressure
+    inGrid = warningStorm(33.0, 150.0)
+    gridded, _ = TCPressure.relocateStorms(pmsl, lat, lon, [inGrid])
+    north = G.buildGapPressure(lat, lon, gridded, VALID, ["GFS"],
+                               dal=FakeDAL({"gfs0p25": model(gfsField)}),
+                               storms=[inGrid])
+    unmoved = G.buildGapPressure(lat, lon, gridded, VALID, ["GFS"],
+                                 dal=FakeDAL({"gfs0p25": model(gfsField)}))
+    check("a storm in the GFE grid just north is reported as such",
+          len(north.tcReport) == 1 and north.tcReport[0]["inGap"] is False)
+    k = np.argmin(np.abs(north.pieces[0].lon[0] - 150.0))
+    seamFix = np.abs(north.seamCorrection[k - 8:k + 9]).max()
+    unmovedFix = np.abs(unmoved.seamCorrection[k - 8:k + 9]).max()
+    check("its outer isobars carry on into the gap, so the seam has "
+          "almost nothing to correct",
+          seamFix < 0.3 and unmovedFix > 1.5,
+          "%.2f mb, vs %.2f without" % (seamFix, unmovedFix))
+
+
+def test_typhoon_moved_across_the_dateline():
+    print("\ntest_typhoon_moved_across_the_dateline")
+    # Grid in -180..180; the model has it at 21N 179E, the warning at
+    # 22N 178W - given in -180..180 as TCWind_JTWC hands them.
+    lat, lon = gfeGrid(130.0, 250.0)
+    gap = G.buildGapPressure(lat, lon, gfsField(lon, lat), VALID, ["GFS"],
+                             dal=FakeDAL({"gfs0p25":
+                                          model(typhoon(21.0, 179.0, 35.0))}),
+                             storms=[warningStorm(22.0, -178.0, 90.0)])
+    w = gap.whole
+    i, j = np.unravel_index(np.argmin(w.filled), w.filled.shape)
+    check("the low is at the warning position, east of the dateline",
+          abs(w.lat[i, j] - 22.0) <= 0.25 and abs(w.lon[i, j] + 178.0) <= 0.25,
+          "%.2f %.2f" % (w.lat[i, j], w.lon[i, j]))
+    e = gap.tcReport[0] if gap.tcReport else {}
+    check("reported in the warning's own longitudes",
+          e.get("lon") == -178.0 and e.get("background") and
+          abs(e["background"][1] - 179.0) <= 0.3, str(e.get("background")))
+
+
 def main():
     test_regrid_and_blend()
+    test_regrid_both_kinds_of_grid()
     test_southern_edge_and_seam()
     test_atlantic_gap_blend()
     test_pacific_dateline()
@@ -434,6 +575,8 @@ def main():
     test_extrema_across_the_dateline()
     test_dal_details()
     test_nothing_breaks_the_chart()
+    test_typhoon_moved_to_the_warning()
+    test_typhoon_moved_across_the_dateline()
     print("")
     if FAILURES:
         print("FAILED: %d check(s): %s" % (len(FAILURES), ", ".join(FAILURES)))

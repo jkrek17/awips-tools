@@ -11,6 +11,8 @@
 # 4/25/26 by S.Williamson, updated to add Isobars and Features layers
 # 10/2/26 fill isobars and Highs/Lows south of the GFE grid (17N to the grid
 #         edge) from a seam-matched blend of global models - PressureGapFill
+# 10/2/26 tropical cyclones in that fill moved to the warning's position and
+#         central pressure (TCM/JTWC warnings) - TCPressure
 # ----------------------------------------------------------------------------
 
 # The MenuItems list defines the GFE menu item(s) under which the
@@ -29,7 +31,8 @@ VariableList = [("Cycle:","00z","radio",["00z","06z","12z","18z"]),
                 ("Input Grid:", "Fcst","radio",["Fcst","Official"]),#,"GFSwave"]),
                 # --- Gap fill: south of the GFE grid (PressureGapFill) ---
                 ("Fill south of grid:", "On", "radio", ["On", "Off"]),
-                ("Gap models:", ["GFS", "ECMWF"], "check", ["GFS", "ECMWF", "CMC", "GEFS"])]
+                ("Gap models:", ["GFS", "ECMWF"], "check", ["GFS", "ECMWF", "CMC", "GEFS"]),
+                ("Match TC warnings:", "On", "radio", ["On", "Off"])]
 
 # Import python packages
 import LogStream, time
@@ -46,6 +49,7 @@ from A2GraphicsFunctions import XmlUtils as XmlUtils
 import numpy as np
 import calendar
 import PressureGapFill
+import TCPressure
 from xml.dom import minidom
 from xml.etree import ElementTree as ET
 
@@ -73,6 +77,16 @@ class Procedure (A2GraphicsFunctions.A2GraphicsFunctions):
         # --- Gap fill: defaulted with .get so an older dialog still runs ---
         fill_gap   = varDict.get("Fill south of grid:", "On") == "On"
         gap_models = varDict.get("Gap models:", PressureGapFill.DEFAULT_GAP_MODELS)
+        match_tc   = varDict.get("Match TC warnings:", "On") == "On"
+        
+        # --- TC warnings: read once, used for every forecast hour ---
+        # Each chart's gap puts the storms where the warnings have them at
+        # that chart's valid time, as deep as the warning says.
+        tc_warnings = []
+        if fill_gap and match_tc:
+            tc_warnings, tc_notes = TCPressure.readWarnings(self)
+            for tc_note in tc_notes:
+                self.statusBarMsg("TC warnings: " + tc_note, "S")
         
         # Set other variables based on environment
         basin = self.getSiteID()
@@ -171,14 +185,20 @@ class Procedure (A2GraphicsFunctions.A2GraphicsFunctions):
             # none, the chart goes out exactly as it did before.
             gap = None
             if fill_gap and "pmsl" in gfe_fields:
+                valid_epoch = calendar.timegm(start_time.timetuple())
+                tc_storms, tc_notes = TCPressure.stormsAt(tc_warnings, valid_epoch)
+                for tc_note in tc_notes:
+                    self.statusBarMsg("TC " + fhr_opt + ": " + tc_note, "R")
                 gap = PressureGapFill.buildGapPressure(
-                    lat, lon, pmsl, calendar.timegm(start_time.timetuple()),
-                    gap_models)
+                    lat, lon, pmsl, valid_epoch, gap_models, storms=tc_storms)
                 for gap_model, gap_run in gap.used:
                     self.statusBarMsg("gap fill: " + gap_model + " run " +
                                       time.strftime("%Y%m%d %HZ", time.gmtime(gap_run)), "R")
                 for gap_model, gap_reason in gap.skipped:
                     self.statusBarMsg("gap fill: " + gap_model + " skipped - " + gap_reason, "S")
+                if gap.used:
+                    for tc_line in gap.tcLines():
+                        self.statusBarMsg(fhr_opt + " " + tc_line, "R")
 
             #self.statusBarMsg("max wind first "+str(np.max(wind_mag)), "R")
             # Set generic XML information based on product

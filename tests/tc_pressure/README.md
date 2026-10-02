@@ -27,3 +27,11 @@ come from real fits, not invented numbers.
 - **Edge cases**: no background low (implant only), a low cut off by the
   field's edge (not removed half-way), two storms (each takes its own
   background low), and a storm on the dateline in a `-180..180` grid.
+- **From the text database to the storms**: a live warning is read, an old
+  one dropped and an unparseable one noted; the storm at a chart time is
+  interpolated along the track and anchored to the tau-0 storm and its
+  pressure; a chart time outside the warning's span leaves it out and says
+  so; with no bulletin pressure, the storm is placed unanchored; without
+  `TCWind_JTWC`, nothing moves and the reason is given. `synth_warning.py`
+  writes the warnings in the real JTWC layout, dated to whatever chart is
+  being tested.

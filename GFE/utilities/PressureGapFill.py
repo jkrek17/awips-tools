@@ -36,6 +36,8 @@ import calendar
 
 import numpy as np
 
+import TCPressure
+
 try:
     from ufpy.dataaccess import DataAccessLayer
 except ImportError:
@@ -88,6 +90,15 @@ DEFAULT_GAP_MODELS = ["GFS", "ECMWF"]
 
 # Parameter and level names are tried in order; the first the DAL actually
 # offers for that model is used, since naming differs between models.
+# Tropical cyclones: a storm whose warning puts it within TC_REACH_DEG of the
+# gap is moved to the warning's position and strength (TCPressure).  The
+# models' own vortex can sit up to SEARCH_RADIUS_NM from the warning and is
+# removed out to REMOVE_RADIUS_NM, so the field is worked on this far beyond
+# the gap on every side, then cut back to the gap before seam matching.
+TC_REACH_DEG = (TCPressure.SEARCH_RADIUS_NM +
+                max(TCPressure.REMOVE_RADIUS_NM,
+                    TCPressure.R_OUT_LIMITS_NM[1])) / 60.0
+
 PMSL_PARAMETERS = ("PMSL", "PRMSL", "MSLP", "MSL", "MSLMA")
 PMSL_LEVELS = ("0.0MSL", "0.0SFC")
 
@@ -139,21 +150,61 @@ def envelopes(west, east, use360):
 # Grid work
 # ---------------------------------------------------------------------------
 
+def _onLatLonGrid(lon, lat, val):
+    """The points as a full lat/lon grid, or None if they are not one.
+
+    Returns (lon1d, lat1d, values[lat, lon]), both axes ascending.  Points
+    repeated where envelopes meet (the dateline column) are fine.
+    """
+    ulon = np.unique(np.round(lon, 6))
+    ulat = np.unique(np.round(lat, 6))
+    if len(ulon) < 2 or len(ulat) < 2 or len(ulon) * len(ulat) > len(lon):
+        return None
+    grid = np.full((len(ulat), len(ulon)), np.nan)
+    grid[np.searchsorted(ulat, np.round(lat, 6)),
+         np.searchsorted(ulon, np.round(lon, 6))] = val
+    if not np.isfinite(grid).all():
+        return None
+    return ulon, ulat, grid
+
+
+def _bilinear(lon1d, lat1d, grid, tgtLon, tgtLat):
+    """Bilinear interpolation on a lat/lon grid; NaN outside it."""
+    x = np.asarray(tgtLon, dtype=float)
+    y = np.asarray(tgtLat, dtype=float)
+    i = np.clip(np.searchsorted(lon1d, x) - 1, 0, len(lon1d) - 2)
+    j = np.clip(np.searchsorted(lat1d, y) - 1, 0, len(lat1d) - 2)
+    fx = (x - lon1d[i]) / (lon1d[i + 1] - lon1d[i])
+    fy = (y - lat1d[j]) / (lat1d[j + 1] - lat1d[j])
+    out = ((1.0 - fy) * ((1.0 - fx) * grid[j, i] + fx * grid[j, i + 1]) +
+           fy * ((1.0 - fx) * grid[j + 1, i] + fx * grid[j + 1, i + 1]))
+    eps = 1e-6
+    inside = ((x >= lon1d[0] - eps) & (x <= lon1d[-1] + eps) &
+              (y >= lat1d[0] - eps) & (y <= lat1d[-1] + eps))
+    return np.where(inside, out, np.nan)
+
+
 def regrid(srcLon, srcLat, srcVal, tgtLon, tgtLat):
     """Linear interpolation from any source grid onto target points.
 
-    matplotlib's triangulation handles regular and curvilinear source grids
-    alike, with no scipy needed.  Target points outside the source come back
-    NaN.
+    A source on a plain lat/lon grid - GFS, ECMWF, GEFS - is interpolated
+    bilinearly, which is fast.  Anything else (a projected grid) goes
+    through matplotlib's triangulation, which handles curvilinear grids with
+    no scipy needed but is slow on a big box.  Target points outside the
+    source come back NaN either way.
     """
-    import matplotlib.tri as mtri
-
     srcLon = np.asarray(srcLon, dtype=float).ravel()
     srcLat = np.asarray(srcLat, dtype=float).ravel()
     srcVal = np.asarray(srcVal, dtype=float).ravel()
     ok = np.isfinite(srcLon) & np.isfinite(srcLat) & np.isfinite(srcVal)
     if ok.sum() < 3:
         return np.full(np.shape(tgtLon), np.nan)
+
+    onGrid = _onLatLonGrid(srcLon[ok], srcLat[ok], srcVal[ok])
+    if onGrid is not None:
+        return _bilinear(onGrid[0], onGrid[1], onGrid[2], tgtLon, tgtLat)
+
+    import matplotlib.tri as mtri
     tri = mtri.Triangulation(srcLon[ok], srcLat[ok])
     interp = mtri.LinearTriInterpolator(tri, srcVal[ok])
     out = interp(np.asarray(tgtLon, dtype=float),
@@ -400,11 +451,16 @@ class GapField(object):
         self.used = []          # (model, run epoch)
         self.skipped = []       # (model, reason)
         self.seamCorrection = None
+        self.tcReport = []      # TCPressure.relocateStorms report, per storm
         self.south = GAP_SOUTH_LAT
         self._west = None
         self._edgeLat = None
         self._use360 = False
         self._given360 = False
+
+    def tcLines(self):
+        """One status line per storm moved, for the status bar."""
+        return [TCPressure.describeRelocation(e) for e in self.tcReport]
 
     def toGiven(self, lonFrame):
         """Working-frame longitudes back in the GFE grid's own convention."""
@@ -463,13 +519,36 @@ class GapField(object):
         return np.array(keepLon), np.array(keepLat), np.array(keepVal)
 
 
+def stormsNearGap(storms, west, east, south, north, use360, reach=None):
+    """The storms close enough to the gap to change it, longitudes moved into
+    the gap's frame.  The caller's dicts are left alone."""
+    if reach is None:
+        reach = TC_REACH_DEG
+    near = []
+    for storm in storms or ():
+        lonF = float(toFrame(np.array([storm["lon"]]), use360)[0])
+        if (south - reach <= storm["lat"] <= north + reach and
+                west - reach <= lonF <= east + reach):
+            moved = dict(storm)
+            moved["givenLon"] = storm["lon"]
+            moved["lon"] = lonF
+            near.append(moved)
+    return near
+
+
 def buildGapPressure(gfeLat, gfeLon, gfePmsl, wantEpoch, models,
-                     dal=None, south=None, fetch=None):
+                     dal=None, south=None, fetch=None, storms=None):
     """Blend, seam-match and cut the gap pmsl for one valid time.
 
     ``models`` are dialog names from GAP_MODELS.  A model that cannot supply
     the field is skipped with its reason recorded, never fatal: an empty
     GapField simply means the chart goes out as it always has.
+
+    ``storms`` are TCPressure storm dicts valid at ``wantEpoch`` (see
+    TCPressure.stormsAt).  Those near enough to the gap are moved, in the
+    model blend, to the warning's position and strength before the seam is
+    matched - so the gap's isobars and Low follow the warning, not the
+    models, and still meet the GFE grid at its edge.
     """
     if south is None:
         south = GAP_SOUTH_LAT
@@ -500,6 +579,15 @@ def buildGapPressure(gfeLat, gfeLon, gfePmsl, wantEpoch, models,
     tgtLat1d = tgtLat1d[tgtLat1d <= north + 1e-6]
     tgtLon2d, tgtLat2d = np.meshgrid(tgtLon1d, tgtLat1d)
 
+    # With a storm near the gap, the models are worked on a pad beyond it on
+    # every side, so the whole of both vortices - the models' and the
+    # warning's - is in view; the pad is cut off again before seam matching.
+    near = stormsNearGap(storms, west, east, gap.south, north, use360)
+    pad = int(np.ceil(TC_REACH_DEG / res)) if near else 0
+    workLon1d = west + res * np.arange(-pad, len(tgtLon1d) + pad)
+    workLat1d = gap.south + res * np.arange(-pad, len(tgtLat1d) + pad)
+    workLon2d, workLat2d = np.meshgrid(workLon1d, workLat1d)
+
     locations = dict(GAP_MODELS)
     fields = []
     for name in models:
@@ -510,8 +598,10 @@ def buildGapPressure(gfeLat, gfeLon, gfePmsl, wantEpoch, models,
         try:
             sLon, sLat, sVal, run = fetch(
                 location, wantEpoch,
-                west - FETCH_MARGIN_DEG, east + FETCH_MARGIN_DEG,
-                gap.south - FETCH_MARGIN_DEG, north + FETCH_MARGIN_DEG,
+                workLon1d[0] - FETCH_MARGIN_DEG,
+                workLon1d[-1] + FETCH_MARGIN_DEG,
+                workLat1d[0] - FETCH_MARGIN_DEG,
+                workLat1d[-1] + FETCH_MARGIN_DEG,
                 use360, dal=dal)
         except GapFillError as exc:
             gap.skipped.append((name, str(exc)))
@@ -519,8 +609,12 @@ def buildGapPressure(gfeLat, gfeLon, gfePmsl, wantEpoch, models,
         except Exception as exc:
             gap.skipped.append((name, "%s: %s" % (type(exc).__name__, exc)))
             continue
-        field = regrid(sLon, sLat, sVal, tgtLon2d, tgtLat2d)
-        if not np.isfinite(field).any():
+        field = regrid(sLon, sLat, sVal, workLon2d, workLat2d)
+        if pad:
+            inGap = field[pad:pad + len(tgtLat1d), pad:pad + len(tgtLon1d)]
+        else:
+            inGap = field
+        if not np.isfinite(inGap).any():
             gap.skipped.append((name, "no data over the gap"))
             continue
         fields.append(field)
@@ -530,6 +624,24 @@ def buildGapPressure(gfeLat, gfeLon, gfePmsl, wantEpoch, models,
         return gap
 
     blended = blendFields(fields)
+    if near:
+        # The vortex removal needs a field with no holes in it.
+        for i in range(blended.shape[0]):
+            blended[i] = fillAlong(blended[i])
+        blended, gap.tcReport = TCPressure.relocateStorms(
+            blended, workLat2d, workLon2d, near)
+        for entry, storm in zip(gap.tcReport, near):
+            # Positions back as the warning gave them, and whether the storm
+            # itself is in the gap or north of it in the GFE grid.
+            col = int(round((storm["lon"] - west) / res))
+            entry["lon"] = storm["givenLon"]
+            entry["inGap"] = bool(0 <= col < len(tgtLon1d) and
+                                  gap.south <= storm["lat"] <= edgeLat[col])
+            if entry["background"] is not None:
+                bLat, bLon = entry["background"]
+                entry["background"] = (bLat, ((bLon + 180.0) % 360.0) - 180.0)
+        blended = blended[pad:pad + len(tgtLat1d), pad:pad + len(tgtLon1d)]
+
     matched, gap.seamCorrection = seamMatch(blended, tgtLat1d, edgeLat,
                                             edgePmsl)
 

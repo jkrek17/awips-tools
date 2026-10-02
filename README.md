@@ -655,18 +655,76 @@ layer. So the gap comes out in exactly the schema the rest of the chart uses.
 |---|---|
 | `Fill south of grid:` | `On` (default) or `Off`, which draws the chart exactly as before |
 | `Gap models:` | any of GFS, ECMWF, CMC, GEFS; default GFS + ECMWF, blended with equal weight |
+| `Match TC warnings:` | `On` (default): tropical cyclones go where the JTWC / NHC / CPHC warnings have them, as deep as the warning says. `Off`: as the models have them |
 
 A model that cannot supply the field is skipped, with the reason on the status
 bar - no run valid at that time, no pmsl parameter, nothing over the gap. With
 none left, the chart goes out unchanged. The models actually used, and their
 run times, are on the status bar too.
 
+### Tropical cyclones: matched to the warning
+
+The models rarely have a typhoon where the warning puts it, or as deep, and
+it was the forecaster who had to make the isobars agree with the TCM. With
+`Match TC warnings:` on, each chart's gap carries every warned storm at **the
+warning's position for that chart's valid time, at the warning's central
+pressure**.
+
+![TC match](docs/img/createxml_tc_match.png)
+
+*Synthetic case, drawn from the XML the procedure wrote. The models put a
+40 mb typhoon 200 nm from the warning position. Left: as the models have it.
+Right: matched - the model's vortex is gone and the warning's is in its place,
+949 mb against the bulletin's 950.*
+
+`GFE/utilities/TCPressure.py` does the work, in three steps:
+
+1. **Read the warnings** from the text database - every warning slot
+   `TCWind_JTWC` knows, in every basin - with `TCWind_JTWC`'s own parser.
+   Warnings more than 12 hours old are dissipated storms and are skipped.
+   Each warning's track is interpolated to the chart's valid time. A chart
+   outside a warning's span leaves that storm out rather than extrapolating
+   it, and so does a storm the warning has already flagged subtropical.
+2. **Remove the models' vortex.** Its center is found within 360 nm of the
+   warning position, and the symmetric part of its pressure anomaly is taken
+   out, leaving the environment - the ridge, a monsoon trough - in place.
+3. **Implant the warning's vortex** at the warning position. Its pressure
+   profile is built, through gradient-wind balance, from the same wind
+   profile `TCWind_JTWC` fits to the warning's wind radii, so the isobars and
+   `TCWind_JTWC`'s Wind grids agree. Warnings give a central pressure only at
+   tau 0; one scale per storm, set there, makes the tau-0 central pressure the
+   bulletin's and carries through the forecast.
+
+All of this happens on the model blend, worked on a margin of about 12
+degrees beyond the gap so both vortices are whole, **before** the seam is
+matched. So the matched storm still meets the GFE grid without a jog.
+
+The status bar says what was done for each chart, for example:
+
+```
+F024 TC TESTER at 19.5N 137.5E, 949 mb - model low 207 nm off (21.5N 140.5E), moved
+```
+
+It also says when no model low was found near the warning (the vortex is
+added to the background as it stands), when a storm's center is in the GFE
+grid rather than the gap, and when the bulletin's pressure gave an anchor
+outside the sane range, so the vortex went in unanchored.
+
+**A storm north of the grid's edge is the grid's.** CreateXML still moves it
+in the model field, so its outer isobars in the gap follow the warning, but
+it does not edit the GFE grid. The isobars meet cleanly at the seam when the
+grid has the storm at the warning position, too.
+
 ### Details worth knowing
 
 - **Blending and tropical cyclones.** Averaging models that place a TC 100 NM
-  apart gives a broader, shallower low than any one of them. That is fine for
-  the synoptic isobars but under-draws a compact typhoon. Tick a single model
-  when one matters.
+  apart gives a broader, shallower low than any one of them. With
+  `Match TC warnings:` on, that no longer matters for a warned storm: its
+  vortex is replaced. It still applies to a low with no warning.
+- **Speed.** GFS, ECMWF and GEFS come on plain lat/lon grids and are
+  interpolated bilinearly, in a fraction of a second. CMC's `Canadian-NH` is a
+  projected grid and goes through a triangulation, which takes a few seconds
+  more with a storm to move.
 - **The dateline.** The gap follows the longitude convention of the GFE grid
   it is given. A grid in `0..360` gets a `0..360` gap in one piece. A grid in
   `-180..180` gets `-180..180`, split at the dateline into two pieces that
@@ -684,13 +742,19 @@ run times, are on the status bar too.
 
 ### Installing
 
-1. Put `PressureGapFill.py` next to `A2GraphicsFunctions.py`, in the GFE
-   `userPython/utilities` tree.
-2. Carry the `CreateXML.py` change into your production copy. The file here
-   was committed as uploaded first, so `git show` on the gap-fill commit is the
-   exact diff: seven small hunks, five of them marked `# --- Gap fill`, plus
-   two import lines and a line in the modification history. The file keeps its
-   CRLF line endings.
+1. Put `PressureGapFill.py` and `TCPressure.py` next to
+   `A2GraphicsFunctions.py`, in the GFE `userPython/utilities` tree.
+2. `TCWind_JTWC.py` must be installed as a procedure: `TCPressure` uses its
+   parser. Without it, the gap is still filled, the storms stay where the
+   models have them, and the status bar says why.
+3. Carry the `CreateXML.py` change into your production copy. The file here
+   was committed as uploaded first, so `git show` on the gap-fill commit and
+   then on the TC-matching commit gives the exact diff. The gap-fill commit
+   has seven small hunks, five of them marked `# --- Gap fill`, plus two
+   import lines and a line in the modification history. The TC commit adds a
+   dialog row, an import, the warning read before the forecast-hour loop,
+   and the storms passed to `buildGapPressure`. The file keeps its CRLF line
+   endings.
 
 ### Checking it without AWIPS
 
@@ -698,6 +762,8 @@ run times, are on the status bar too.
 python3 tests/pressure_gap_fill/test_pressure_gap_fill.py
 python3 tests/pressure_gap_fill/test_createxml_gapfill.py
 python3 tests/pressure_gap_fill/plot_gap_fill.py
+python3 tests/pressure_gap_fill/plot_tc_match.py
+python3 tests/tc_pressure/test_tc_pressure.py
 ```
 
 See `tests/pressure_gap_fill/README.md`.

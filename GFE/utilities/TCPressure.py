@@ -45,8 +45,13 @@
 #     {"lat", "lon", "vmax" (kt), "a" (asymmetry kt), "rm", "ri" (nm),
 #      "x1", "x2", "r34" (mean 34 kt radius nm, or None), "name"}
 #
-# stormFromSnapshot() builds one from a TCWind_JTWC Snapshot.
+# stormFromSnapshot() builds one from a TCWind_JTWC Snapshot, and
+# readWarnings() / stormsAt() go from the text database to the storms valid
+# at a chart time, using TCWind_JTWC's own parser and track interpolation.
 # ----------------------------------------------------------------------------
+
+import subprocess
+import time
 
 import numpy as np
 
@@ -96,6 +101,14 @@ RING_PER_SPACING = 1.5
 RING_SECTORS = 8
 REMOVE_TAPER_FROM = 0.85
 
+# Warnings whose initial time is older than this, hours, are left out:
+# textdb keeps whatever was last stored under a PIL, dissipated storms too.
+MAX_WARNING_AGE_HOURS = 12.0
+
+# Command-line textdb locations, tried in order when the in-process text
+# database has nothing - the same fallback TCWind_JTWC uses.
+TEXTDB_PATHS = ["/awips/fxa/bin/textdb", "/awips2/fxa/bin/textdb", "textdb"]
+
 NM_TO_M = 1852.0
 KT_TO_MS = 0.514444
 OMEGA = 7.2921e-5
@@ -120,6 +133,137 @@ def stormFromSnapshot(snapshot, name=None):
             "rm": float(fit["rm"]), "ri": float(fit["ri"]),
             "x1": float(fit["x1"]), "x2": float(fit["x2"]),
             "r34": r34, "name": name}
+
+
+def shortName(header):
+    """Storm name for a status line: 'GUCHOL', else the storm ID."""
+    return (header.get("stormName") or header.get("stormId") or
+            "unnamed storm")
+
+
+# ---------------------------------------------------------------------------
+# Warnings
+# ---------------------------------------------------------------------------
+
+def now():
+    """Wall-clock epoch seconds - a seam for tests to fix the clock."""
+    return time.time()
+
+
+def trackTools():
+    """TCWind_JTWC's module - its parser, track interpolation and wind fit -
+    or None when it is not installed alongside."""
+    try:
+        import TCWind_JTWC
+    except Exception:
+        return None
+    return TCWind_JTWC
+
+
+def warningPils(tools):
+    """Every warning slot in every basin TCWind_JTWC knows."""
+    pils = []
+    for _label, basinPils in tools.BASINS:
+        pils.extend(basinPils)
+    return pils
+
+
+def retrieveBulletin(pil, script=None):
+    """Bulletin text: the in-process text database first, then textdb."""
+    if script is not None:
+        try:
+            raw = script.getTextProductFromDB(pil)
+        except Exception:
+            raw = None
+        if raw:
+            return raw
+    for exe in TEXTDB_PATHS:
+        try:
+            proc = subprocess.run([exe, "-r", pil], stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE,
+                                  universal_newlines=True, timeout=30)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            continue
+        if proc.returncode == 0 and proc.stdout.strip():
+            return proc.stdout
+    return None
+
+
+def readWarnings(script=None, nowSecs=None, tools=None, pils=None,
+                 retrieve=None):
+    """Every live warning in the text database.
+
+    Returns (warnings, notes): each warning a dict with "pil", "name",
+    "taus" and "header"; notes say why a slot that had text was left out.
+    An empty slot is normal and says nothing.
+    """
+    if tools is None:
+        tools = trackTools()
+    if tools is None:
+        return [], ["TCWind_JTWC is not installed - storms left as the "
+                    "models have them"]
+    if nowSecs is None:
+        nowSecs = now()
+    if pils is None:
+        pils = warningPils(tools)
+    if retrieve is None:
+        retrieve = lambda pil: retrieveBulletin(pil, script)
+
+    warnings, notes = [], []
+    for pil in pils:
+        raw = retrieve(pil)
+        if not raw:
+            continue
+        try:
+            taus, header, _kind = tools.parseBulletin(raw, nowSecs)
+        except Exception as exc:
+            notes.append("%s: %s" % (pil, exc))
+            continue
+        if not taus:
+            notes.append("%s: no usable forecast times" % pil)
+            continue
+        ageHours = (nowSecs - taus[0].epoch) / 3600.0
+        if ageHours > MAX_WARNING_AGE_HOURS:
+            continue                    # a dissipated storm's last warning
+        warnings.append({"pil": pil, "name": shortName(header),
+                         "taus": taus, "header": header})
+    return warnings, notes
+
+
+def stormsAt(warnings, epoch, tools=None):
+    """The storms valid at ``epoch``, each anchored to its tau-0 pressure.
+
+    Returns (storms, notes).  A chart time outside a warning's span leaves
+    that storm out rather than extrapolating it, and so does a storm the
+    warning has already flagged subtropical: a symmetric tropical vortex is
+    the wrong shape for it.
+    """
+    if tools is None:
+        tools = trackTools()
+    storms, notes = [], []
+    if tools is None:
+        return storms, notes
+    subtropical = getattr(tools, "CONF_SUBTROPICAL", 0.25)
+    for w in warnings:
+        taus = w["taus"]
+        if not taus[0].epoch <= epoch <= taus[-1].epoch:
+            notes.append("%s: warning does not cover %s" %
+                         (w["name"], time.strftime("%d/%HZ",
+                                                   time.gmtime(epoch))))
+            continue
+        snap = tools.interpolateTrack(taus, epoch)
+        if getattr(snap, "conf", 1.0) <= subtropical + 1e-6:
+            notes.append("%s: subtropical by then - left as the models "
+                         "have it" % w["name"])
+            continue
+        storm = stormFromSnapshot(snap, w["name"])
+        bulletinMb = w["header"].get("pressureMb")
+        if bulletinMb:
+            tau0 = stormFromSnapshot(
+                tools.interpolateTrack(taus, taus[0].epoch), w["name"])
+            storm["anchor"] = (tau0, float(bulletinMb))
+        storms.append(storm)
+    return storms, notes
 
 
 def symmetricWind(r_nm, storm):
@@ -454,3 +598,26 @@ def relocateStorms(pmsl, lat, lon, storms):
         entry["centralMb"] = float(out[k])
         entry["onField"] = bool(dist[k] <= 60.0)
     return out, report
+
+
+def _latLon(lat, lon):
+    return "%.1f%s %.1f%s" % (abs(lat), "N" if lat >= 0.0 else "S",
+                              abs(lon), "E" if lon >= 0.0 else "W")
+
+
+def describeRelocation(entry):
+    """One status-bar line for a relocateStorms report entry."""
+    name = entry.get("name") or "storm"
+    line = "TC %s at %s, %.0f mb" % (name, _latLon(entry["lat"], entry["lon"]),
+                                     entry.get("centralMb", float("nan")))
+    if entry.get("background") is None:
+        line += " - no model low found near it, vortex added"
+    else:
+        line += " - model low %.0f nm off (%s), moved" % (
+            entry["offsetNm"], _latLon(*entry["background"]))
+    if entry.get("inGap") is False:
+        line += "; center is in the GFE grid, so only its outer isobars " \
+                "here follow the warning"
+    if "unanchored" in (entry.get("anchorNote") or ""):
+        line += " (%s)" % entry["anchorNote"]
+    return line
