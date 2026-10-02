@@ -851,8 +851,10 @@ uploaded, which is what the repo's copy started from.
    has seven small hunks, five of them marked `# --- Gap fill`, plus two
    import lines and a line in the modification history. The TC commit adds a
    dialog row, an import, the warning read before the forecast-hour loop,
-   and the storms passed to `buildGapPressure`. The file keeps its CRLF line
-   endings.
+   and the storms passed to `buildGapPressure`. The uploaded copy had
+   Windows line endings from its trip through email; the file now has Unix
+   ones, so diff with `git diff --ignore-cr-at-eol` to see only the real
+   changes.
 
 ### Checking it without AWIPS
 

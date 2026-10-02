@@ -37,8 +37,9 @@ FILES = [
 INSTALL = """# CreateXML: isobars and typhoons south of the GFE grid
 
 Built %(date)s.  CreateXML.py here is your original, with the changes in
-`CreateXML_changes.diff` and nothing else (77 lines added, 1 changed; the
-file keeps its CRLF line endings).
+`CreateXML_changes.diff` and nothing else (77 lines added, 1 changed), and
+Unix line endings - the Windows ones came from the copy's trip through
+email.
 
 ## What it does
 
@@ -122,9 +123,11 @@ def main():
 
     for src, dst in FILES:
         shutil.copyfile(os.path.join(REPO, src), os.path.join(out, dst))
+    # The baseline came by email with Windows line endings; the shipped file
+    # has Unix ones.  Show only the real changes.
     diff = subprocess.check_output(
-        ["git", "diff", BASELINE, "--", "GFE/procedures/CreateXML.py"],
-        cwd=REPO)
+        ["git", "diff", "--ignore-cr-at-eol", BASELINE, "--",
+         "GFE/procedures/CreateXML.py"], cwd=REPO)
     if not diff.strip():
         raise SystemExit("error: no changes against the baseline")
     with open(os.path.join(out, "CreateXML_changes.diff"), "wb") as fh:
