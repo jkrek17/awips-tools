@@ -43,10 +43,17 @@ import diagram_style as ds  # noqa: E402  (Hart's quadrant colors, labels and li
 SPEED_KMH = 90.0  # search radius grows at this rate with the hours since the last fix, and no
 #                   candidate may lie farther from the last fix than this rate allows (no cap)
 CAP_KM = 600.0  # ... up to this radius
+FAST_FACTOR = 1.5  # a storm whose last 6 h motion was faster than SPEED_KMH / FAST_FACTOR is allowed
+#                    FAST_FACTOR times that speed instead (rate and cap both scale): a recurving typhoon
+#                    in the westerlies covers 700 km in 6 h, which the fixed 540 km reach refused
 SEED_KM = 400.0  # search radius around the seed position at FHR0
 LOCAL_MIN_HALF = 4  # a candidate center is the minimum of its (2k+1) x (2k+1) box (k = 4: +/- 1 degree)
 MAX_MSLP_HPA = 1018.0  # a minimum at or above this is not a center (FSU's tracker limit)
-MIN_PSFC_HPA = 950.0  # nor is one where the surface is higher than about 500 m (MSLP extrapolated)
+TERRAIN_DEFICIT_HPA = 60.0  # nor is one over terrain: where MSLP exceeds the surface pressure by more than
+#                             this (about 500 m of elevation, where MSLP is extrapolated). The test is relative,
+#                             not an absolute surface pressure: a 930 hPa low at sea level has a 930 hPa surface
+#                             pressure, and an absolute floor of 950 hPa masked such centers out as terrain
+#                             (the 2 October 2026 00 UTC run's Bering Sea seclusion, 925 hPa)
 POLE_LAT = 85.0  # nor is one poleward of this latitude (the pole row is one repeated value)
 MAX_RISE_HPA = 12.0  # nor one more than this above the previous fix (a handover, not a filling low)
 OUTSIDE_FRAMES = 2  # a track ends after this many consecutive fixes outside the closed-low mask
@@ -106,6 +113,18 @@ def gc_km(lat1, lon1, lat2, lon2):
 def wrap180(lon):
     """Longitude folded to -180..180."""
     return (np.asarray(lon) + 180.0) % 360.0 - 180.0
+
+
+def terrain(f: dict, rows=None, cols=None) -> np.ndarray:
+    """Boolean: MSLP exceeds the surface pressure by more than
+    TERRAIN_DEFICIT_HPA (about 500 m of elevation), on the whole grid or on
+    the (rows, cols) subgrid. Over the sea the two pressures agree whatever
+    the low's depth, so a deep low is never mistaken for high ground."""
+    pm, ps = f["pmsl"], f["psfc"]
+    if rows is not None:
+        cut = np.ix_(rows, cols)
+        pm, ps = pm[cut], ps[cut]
+    return (pm - ps) / 100.0 > TERRAIN_DEFICIT_HPA
 
 
 def frac_index(f: dict, lat: float, lon: float) -> tuple[float, float]:
@@ -177,13 +196,13 @@ def parabolic(a: float, b: float, c: float) -> float:
 
 def all_centers(f: dict, wrap: bool) -> list[tuple[int, int, float]]:
     """Every point of the whole grid that find_center would accept as a
-    center: terrain (surface pressure below MIN_PSFC_HPA) masked before the
+    center: terrain (see `terrain`) masked before the
     +/- LOCAL_MIN_HALF box-minimum test, MSLP below MAX_MSLP_HPA, latitude
     within POLE_LAT. On the
     global grid the box wraps across the seam. Returns [(i, j, mslp_hpa)]."""
     k = LOCAL_MIN_HALF
     pm = f["pmsl"] / 100.0
-    pm_ok = np.where(f["psfc"] / 100.0 >= MIN_PSFC_HPA, pm, np.inf)
+    pm_ok = np.where(terrain(f), np.inf, pm)
     if wrap:
         ext = np.concatenate([pm_ok[:, -k:], pm_ok, pm_ok[:, :k]], axis=1)
         ismin = local_minima(ext, k)[:, k:-k]
@@ -222,10 +241,9 @@ def closed_at(f: dict, mask: np.ndarray, clat: float, clon: float, wrap: bool) -
     fi, fj = frac_index(f, clat, clon)
     rows, cols, _, _ = subgrid(f, fi, fj, CLOSED_SEARCH_KM, wrap)
     pm = f["pmsl"][np.ix_(rows, cols)] / 100.0
-    ps = f["psfc"][np.ix_(rows, cols)] / 100.0
     la = f["lat"][rows][:, None]
     lo = f["lon"][cols][None, :]
-    ok = (ps >= MIN_PSFC_HPA) & (np.abs(la) <= POLE_LAT) & (gc_km(clat, clon, la, lo) <= CLOSED_SEARCH_KM)
+    ok = ~terrain(f, rows, cols) & (np.abs(la) <= POLE_LAT) & (gc_km(clat, clon, la, lo) <= CLOSED_SEARCH_KM)
     pm_ok = np.where(ok, pm, np.inf)
     r, c = np.unravel_index(int(np.argmin(pm_ok)), pm_ok.shape)
     if not np.isfinite(pm_ok[r, c]):
@@ -238,7 +256,7 @@ def find_center(f: dict, lat: float, lon: float, radius_km: float, wrap: bool, m
     """The MSLP minimum nearest (lat, lon) within radius_km: a point that is
     the lowest of its +/- LOCAL_MIN_HALF box, below MAX_MSLP_HPA (and not
     above max_mslp, if given), where the surface pressure is at least
-    MIN_PSFC_HPA, no more than POLE_LAT from the equator, and, if reach =
+    not over terrain (see `terrain`), no more than POLE_LAT from the equator, and, if reach =
     (lat0, lon0, km) is given, within km of (lat0, lon0). If CLIMB_KM is
     above 0 (it is 0, off, by default) and a candidate more than
     CLIMB_TOL_HPA deeper (by the same tests, not limited to
@@ -250,8 +268,8 @@ def find_center(f: dict, lat: float, lon: float, radius_km: float, wrap: bool, m
     the full grid, refined to a fraction of a cell by a parabola through the
     minimum and its neighbors along each axis, or None.
 
-    Terrain points (surface pressure below MIN_PSFC_HPA, where MSLP is
-    extrapolated well below ground) are masked out before the box-minimum
+    Terrain points (MSLP more than TERRAIN_DEFICIT_HPA above the surface
+    pressure, where MSLP is extrapolated well below ground) are masked out before the box-minimum
     test, not just filtered from the candidate list afterward: otherwise an
     artificially deep terrain reading (the Greenland ice cap, Iceland's
     interior) can sit inside a genuine low's +/- 1 degree box and hide it,
@@ -263,7 +281,7 @@ def find_center(f: dict, lat: float, lon: float, radius_km: float, wrap: bool, m
     la = f["lat"][rows][:, None]
     lo = f["lon"][cols][None, :]
     ps = f["psfc"][np.ix_(rows, cols)] / 100.0
-    pm_ok = np.where(ps >= MIN_PSFC_HPA, pm, np.inf)
+    pm_ok = np.where(terrain(f, rows, cols), np.inf, pm)
     ismin = local_minima(pm_ok, LOCAL_MIN_HALF)
     dist = gc_km(lat, lon, la, lo)
     ok = ismin & (pm_ok < MAX_MSLP_HPA) & (np.abs(la) <= POLE_LAT)
@@ -303,11 +321,26 @@ class Track:
         self.end_reason = ""
         self.merged: tuple[str, int, float] | None = None  # (other track, hour, km) when it stopped for it
 
+    def reach_rate(self) -> float:
+        """km/h the search may extend from the last fix: SPEED_KMH, or
+        FAST_FACTOR times the storm's own speed over its last two fixes when
+        that is more, so a fast mover is followed without widening the search
+        for slow ones."""
+        if len(self.fixes) < 2:
+            return SPEED_KMH
+        last, prev = self.fixes[-1], self.fixes[-2]
+        hours = last["fhr"] - prev["fhr"]
+        if hours <= 0:
+            return SPEED_KMH
+        speed = float(gc_km(prev["lat"], prev["lon"], last["lat"], last["lon"])) / hours
+        return max(SPEED_KMH, FAST_FACTOR * speed)
+
     def guess(self, fhr: int) -> tuple[float, float, float]:
         """(lat, lon, radius_km): the seed, or the last fix moved on by the
         last motion over the hours since it (half of that after a coasted
         frame, so a wrong motion does not carry the search away), and the
-        search radius."""
+        search radius (reach_rate times the hours, capped at CAP_KM scaled
+        by the same rate)."""
         if not self.fixes:
             return self.lat, self.lon, SEED_KM
         last = self.fixes[-1]
@@ -318,7 +351,8 @@ class Track:
             rate = hours / (last["fhr"] - prev["fhr"]) * (0.5 if self.missed else 1.0)
             lat += (last["lat"] - prev["lat"]) * rate
             lon += float(wrap180(last["lon"] - prev["lon"])) * rate
-        return float(np.clip(lat, -89.0, 89.0)), float(wrap180(lon)), min(SPEED_KMH * hours, CAP_KM)
+        kmh = self.reach_rate()
+        return float(np.clip(lat, -89.0, 89.0)), float(wrap180(lon)), min(kmh * hours, CAP_KM * kmh / SPEED_KMH)
 
 
 def sample_frame(tr: Track, f: dict, p: dict, fhr: int, wrap: bool) -> None:
@@ -334,7 +368,7 @@ def sample_frame(tr: Track, f: dict, p: dict, fhr: int, wrap: bool) -> None:
     if tr.fixes:
         last = tr.fixes[-1]
         cap = last["mslp_hpa"] + MAX_RISE_HPA
-        reach = (last["lat"], last["lon"], SPEED_KMH * (fhr - last["fhr"]))
+        reach = (last["lat"], last["lon"], tr.reach_rate() * (fhr - last["fhr"]))
     hit = find_center(f, lat, lon, rad, wrap, cap, reach)
     if hit is None:
         what = f"no minimum within {rad:.0f} km of {lat:.1f},{lon:.1f}" + (

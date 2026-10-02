@@ -184,7 +184,11 @@ moved on by the last motion over the hours since it (the last center
 itself at the second frame; after a coasted frame, half that
 extrapolation, so a wrong motion does not carry the search away), and
 the search radius around the guess is 90 km/h times the hours since the
-last fix, capped at 600 km (540 km at 6 h spacing). A candidate is a grid
+last fix, capped at 600 km (540 km at 6 h spacing); a storm whose last
+6 h motion was faster than 60 km/h gets 1.5 times its own speed instead,
+rate and cap alike (`FAST_FACTOR`: a recurving typhoon in the westerlies
+covers 700 km in 6 h, which the fixed reach refused on the 2 October
+2026 00 UTC run at +138 h). A candidate is a grid
 point that is the lowest of its +/- 1 degree box (9 x 9 points); the
 candidate nearest the first guess wins. (`find_center` also has a
 move-to-deeper-center step: if a candidate more than 0.6 hPa deeper, the
@@ -202,8 +206,9 @@ attempt.)
 Not a candidate:
 
 - a minimum of 1018 hPa or more (FSU's tracker uses the same limit);
-- one farther from the last fix than 90 km/h times the hours since it
-  (540 km for one 6 h step, 1080 km after a coasted frame; no cap):
+- one farther from the last fix than 90 km/h, or 1.5 times the storm's
+  own last speed when that is more, times the hours since it (540 km for
+  one 6 h step at the base rate, 1080 km after a coasted frame; no cap):
   with the guess extrapolated, a search radius alone would let each
   jump lengthen the next;
 - one more than 12 hPa above the previous fix (`MAX_RISE_HPA`): a
@@ -212,9 +217,10 @@ Not a candidate:
 - one poleward of 85 degrees (`POLE_LAT`): the pole row of the grid is
   one value repeated, so it passes the box test and a track that
   reaches it spins in longitude;
-- one where the surface pressure is under 950 hPa (terrain above about
-  500 m, where MSLP is extrapolated: the Greenland ice cap, Iceland's
-  interior). A terrain point is masked out before the box-minimum test
+- one over terrain, where MSLP exceeds the surface pressure by more than
+  60 hPa, about 500 m of elevation, where MSLP is extrapolated (the
+  Greenland ice cap, Iceland's interior; the test is relative to MSLP, so
+  a 925 hPa low at sea level is not terrain). A terrain point is masked out before the box-minimum test
   itself, not just dropped from the candidate list afterward, so an
   artificially deep terrain reading cannot sit inside a genuine low's
   box and hide the real, slightly shallower minimum beside it (a low
