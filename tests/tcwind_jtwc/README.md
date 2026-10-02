@@ -10,7 +10,7 @@ on its own):
 |---|---|
 | Does the parser still produce what we expect on known inputs? | `test_parser_golden.py` |
 | Do the Python and JS ports actually agree with each other? | `compare_py_js.py` |
-| Does the GFE `Procedure` (dialog-less, end to end) still run against real bulletins outside AWIPS? | `test_procedure_harness.py` |
+| Does the GFE `Procedure` (dialog-less, end to end) still run against real bulletins outside AWIPS - Wind, and the pmsl option (storm moved to the warning, preview vs Fcst, stable when run twice, off without `TCPressure`)? | `test_procedure_harness.py` (`plot_pmsl_preview.py` draws the pmsl case) |
 | How do the two wind-field constructions (GTCM, the shipped default, vs the retired per-quadrant build) compare - ring reproduction and field difference? | `compare_vortex_methods.py` |
 | Is GTCM's field smoother than per-quadrant's (the actual reason for the switch), and does GTCM predict anything it wasn't fit to? Builds `data/gtcm_findings.json`, everything `Findings.html` shows. | `verify_gtcm.py` |
 | Fit GTCM/perquad to a SUBSET of one record's reported radii and score the prediction of the radii withheld - the one genuine held-out-skill test in this suite. | `verify_holdout.py` |
@@ -44,7 +44,8 @@ Node is only needed for `compare_py_js.py` (drives `tools_js.js`).
 into a self-contained bundle a forecaster can copy to a real AWIPS host and
 sanity-check with the AWIPS python (`/awips2/python/bin/python`, Python
 3.6-era) before installing it into GFE. It carries its own copy of
-`test_procedure_harness.py` and the two real fixtures under `selfcheck/`, so
+`test_procedure_harness.py` and the two real fixtures under `selfcheck/`,
+and `TCPressure.py` (the pmsl option's GFE utility) beside the procedure, so
 the check has no dependency on this repo's layout once it is copied over:
 
 ```bash

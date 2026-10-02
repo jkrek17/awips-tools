@@ -7,6 +7,7 @@ fixtures, and a driver shell script) and an AWIPS_TEST.md walkthrough, into:
 
     dist/TCWind_JTWC_<VERSION>/
         TCWind_JTWC.py
+        TCPressure.py               (GFE utility, for the pmsl option)
         TCWind_JTWC_TECHNICAL.md
         AWIPS_TEST.md
         selfcheck/
@@ -45,6 +46,9 @@ PROC_SRC = os.path.join(REPO_ROOT, "GFE", "procedures", "TCWind_JTWC.py")
 # code without it would leave 62 dangling references on the AWIPS host.
 TECHDOC_SRC = os.path.join(
     REPO_ROOT, "GFE", "procedures", "TCWind_JTWC_TECHNICAL.md")
+# The pmsl option's utility.  It installs as a GFE utility, not a procedure;
+# in the bundle it sits beside TCWind_JTWC.py so the self-check finds it.
+TCPRESSURE_SRC = os.path.join(REPO_ROOT, "GFE", "utilities", "TCPressure.py")
 HARNESS_SRC = os.path.join(
     REPO_ROOT, "tests", "tcwind_jtwc", "test_procedure_harness.py")
 FIXTURES_SRC_DIR = os.path.join(REPO_ROOT, "tests", "tcwind_jtwc", "fixtures")
@@ -234,6 +238,10 @@ you are testing.
 4. Add a new procedure file named exactly `TCWind_JTWC.py` and paste in
    (or import) the contents of the `TCWind_JTWC.py` file from this bundle.
 5. Save.
+6. Under **GFE**, find **Utilities**, and add `TCPressure.py` from this
+   bundle the same way, at the same **User** level. It is what the pmsl
+   option uses. Without it the procedure still builds Wind grids, and the
+   status bar says pmsl was left alone.
 
 Once saved at User level, the procedure appears in the GFE **Populate**
 menu (its `MenuItems` entry is `"Populate"`), under your own name only.
@@ -320,6 +328,21 @@ the fly by the procedure. It is not part of your site's normal parm
 configuration, is never saved or published, and disappears the moment you
 clear it (or exit GFE without it). It costs nothing to run repeatedly.
 
+**pmsl.** With **Also move the storms in pmsl to the warnings:** on its
+default, **Yes**, the same run also writes a `pmslJTWC` preview grid for
+every existing Fcst pmsl grid inside the warnings' valid periods: the pmsl
+grid with its own low taken out and the warning's put in, at the warning's
+position and, at tau 0, the bulletin's central pressure. The status bar
+line ends with what was done, roughly:
+
+```
+Moved the storms in N pmslJTWC preview grids: KROVANH (N grids,
+983-996 mb, grid's own low 118-122 nm off).
+```
+
+It needs Fcst pmsl grids to exist, the same way the Wind part needs Fcst
+Wind. `pmslJTWC` is temporary in exactly the way `WindJTWC` is.
+
 ## Step 4: what to look at
 
 Go through this checklist against the `WindJTWC` preview grid. For each
@@ -335,6 +358,10 @@ storm you test, note whether it matches the expected result.
 | A storm below 34 kt (e.g. a tropical depression) | Leaves the background wind completely untouched at that time. |
 | Runtime | Under about a minute for one storm's full forecast period. Note the actual time it took. |
 | CAVE log | No Python traceback. Check `~/caveData/logs` on the workstation after the run. |
+| `pmslJTWC` low | At the warning position at each time, and at tau 0 within a mb or two of the bulletin's minimum central pressure. |
+| `pmslJTWC` where the old low was | No second low and no ring left where the Fcst pmsl grid had the storm. |
+| `pmslJTWC` far from the storm | Identical to Fcst pmsl. |
+| `pmslJTWC` at later times | Deepens and fills with the warning's winds. A storm whose wind field grows can come out deeper than a pressure-wind table would put it - note any that look wrong. |
 
 ## Step 5: known limits, not defects
 
@@ -372,6 +399,10 @@ output". You must set this to **Yes** before the procedure will write
 anything to Fcst Wind; leaving it on the default **No** stops the run
 with a status bar message and writes nothing. This acknowledgement gate
 only applies to Fcst Wind; preview runs never require it.
+
+With the pmsl option on, the same Fcst run also writes **Fcst pmsl**, in
+place, for the grids it previewed as `pmslJTWC`. Set the option to **No**
+to write Fcst Wind alone.
 
 ## What to report back
 
@@ -413,6 +444,12 @@ def build_bundle():
 
     # TCWind_JTWC.py, verbatim.
     shutil.copyfile(PROC_SRC, os.path.join(bundle_dir, "TCWind_JTWC.py"))
+
+    # TCPressure.py, verbatim.
+    if not os.path.isfile(TCPRESSURE_SRC):
+        raise SystemExit("error: TCPressure.py not found at %s"
+                         % TCPRESSURE_SRC)
+    shutil.copyfile(TCPRESSURE_SRC, os.path.join(bundle_dir, "TCPressure.py"))
 
     # TCWind_JTWC_TECHNICAL.md, verbatim.
     if not os.path.isfile(TECHDOC_SRC):

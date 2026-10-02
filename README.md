@@ -274,6 +274,55 @@ bundled real bulletin, translated onto the office's own grid and rebased onto
 live storm in the text database (outside NW Pacific season, or between
 storms). It always writes to the preview grid only, never Fcst Wind.
 
+#### pmsl: the storm where the warning has it
+
+With **Also move the storms in pmsl to the warnings:** on (the dialog
+default), the same run moves each storm in the Fcst pmsl grids, too. Before,
+the Wind grids followed the warning but the isobars stayed wherever the model
+had put the storm.
+
+![pmsl preview](docs/img/tcwind_pmsl_preview.png)
+
+*The real KROVANH warning, with a synthetic Fcst pmsl that has the storm
+1.5 degrees northeast of it all along the track. Top: Fcst pmsl. Bottom: the
+`pmslJTWC` preview the run wrote. At tau 0 the low is 994 mb, the
+bulletin's.*
+
+For every existing Fcst pmsl grid inside the warnings' valid periods, at its
+own time:
+
+1. The grid's own low near the warning position is found, at its center
+   between gridpoints with the environment's tilt taken out, and the
+   symmetric part of it removed. The ridge or trough around it stays.
+2. The warning's vortex is implanted at the warning position, its pressure
+   built through gradient-wind balance from the same fitted wind profile the
+   Wind grids use, so the isobars and the winds agree.
+3. One intensity scale per storm, fixed at the earliest grid so the tau-0
+   central pressure is the bulletin's, is carried through the rest.
+
+It writes where Wind writes: the `pmslJTWC` preview grid by default, or Fcst
+pmsl behind the same acknowledgement as Fcst Wind. It only touches pmsl grids
+that already exist, at their own cadence. Storm-times below 34 kt are left
+alone, as in the Wind grids. A storm just south of the grid still has its
+outer isobars moved, and CreateXML's gap fill moves the same storm the same
+way south of the grid edge, so the two meet.
+
+Things to know:
+
+- **Later intensities follow the warning's winds.** The depth at every time
+  comes from the forecast wind profile, through the tau-0 scale. A storm
+  whose wind field broadens deepens with it, so it can come out deeper than
+  a pressure-wind table would put it: in the picture, KROVANH at 45 kt with
+  a 190 nm NE gale radius is 983 mb at tau 48.
+- **A grid low on the domain edge is not removed**, because half a vortex
+  cannot be removed symmetrically. The status bar names any storm for which
+  no grid low was found, so a second low there can be looked for.
+- **It is stable when run again.** A second run finds the first run's storm
+  and puts it back where it was, to within 0.5 mb.
+- **It needs `TCPressure.py`** installed as a GFE utility. Without it the
+  Wind grids are built as before and the status bar says pmsl was left
+  alone. The AWIPS export bundle ships it.
+
 #### The web app
 
 Three pages, served from one Apps Script deployment:

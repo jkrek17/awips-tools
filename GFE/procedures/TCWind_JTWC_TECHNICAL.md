@@ -11,7 +11,7 @@ marker pointing at the matching numbered note below.
 | | |
 |---|---|
 | Procedure | `GFE/procedures/TCWind_JTWC.py` |
-| Version | `2026-09-19a` (the `VERSION` tunable; the status bar prints it) |
+| Version | `2026-10-02a` (the `VERSION` tunable; the status bar prints it) |
 | Install | `/awips2/edex/data/utility/common_static/site/<SITE>/gfe/userPython/procedures/` |
 | Install test | `AWIPS_TEST.md`, and `selfcheck/run_selfcheck.sh` in the export bundle |
 
@@ -661,6 +661,60 @@ amag, not the closed-over `a`: see _gtcmProfile()'s docstring. During the rm/x1/
 *`buildFor()`*
 
 Tropical Depression strength: no organized 34kt- or-greater wind field to speak of, and - per JTWC's own reporting practice - essentially never any wind radii to build one from even if there were. This tool's parametric vortex is built to represent an organized TC circulation; inserting it over the background model's own winds here would invent structure that isn't really there, not add real information. Leave the background untouched for this storm at this time - any other, stronger storm in the same bulletin is unaffected.
+
+### pmsl: the storms moved to the warnings
+
+#### 64.  pmsl follows the same warnings, through TCPressure
+
+*module level*
+
+The Wind grids put each storm where the warning has it; the pmsl grids still
+had it wherever the model did, often 100 nm and more away and at the model's
+depth.  With "Also move the storms in pmsl to the warnings:" on, the same run
+moves the storm in every existing Fcst pmsl grid the warnings cover.  The
+work is done by `TCPressure` (`GFE/utilities/TCPressure.py`), the module
+CreateXML's gap fill uses for the same job south of the grid, so the grid and
+the chart's gap move a storm identically.  It is a utility, not part of this
+file: without it the Wind grids are built exactly as before and the status
+bar says pmsl was left alone.  The preview goes to `pmslJTWC`, a temporary
+parm made the way `WindJTWC` is; the Fcst write needs the same
+acknowledgement as Fcst Wind.
+
+#### 65.  `_movePmsl()`: each pmsl grid at its own time, one scale per storm
+
+*`_movePmsl()`*
+
+pmsl is adjusted in the grids that already exist, at their own cadence and
+time ranges, not on the 3-hourly Wind series: the pmsl inventory is the
+forecaster's, and nothing here should create or fragment it.  Each grid's
+storms are interpolated to the grid's start time.  A storm counts if its
+implanted vortex reaches the grid at all (its outer radius from the nearest
+gridpoint), so one just south of the grid edge still has its outer isobars
+moved.  Storm-times below 34 kt, and subtropical ones when those are skipped,
+are left alone, exactly as the Wind grids leave them.
+
+In each grid the grid's own vortex is found near the warning position, at its
+center between gridpoints with the environment's tilt taken out, and the
+symmetric part of its anomaly removed; the warning's vortex is implanted from
+the same fitted wind profile the Wind grids use, through gradient-wind
+balance.  The intensity scale that makes the tau-0 central pressure the
+bulletin's is fixed at the earliest grid - the one nearest tau 0 - and
+carried through the rest, so later grids are not re-anchored against a
+different environment.  Run twice, the second run finds the first run's
+storm and puts it back where it was: the harness holds that to 0.5 mb.
+
+A grid low on the field's edge is not removed, since half a vortex cannot be
+removed symmetrically; the status bar names any storm for which no grid low
+was found, so a second low there can be looked for.
+
+#### 66.  Off unless asked for
+
+*`execute()`*
+
+The dialog offers the pmsl option, set to Yes.  A varDict without the key -
+one saved before the option existed, or built by a caller that never offered
+it - leaves pmsl alone: a run that never showed the choice must never touch
+a second weather element.
 
 ### Extended docstrings
 

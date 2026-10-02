@@ -132,7 +132,8 @@ def stormFromSnapshot(snapshot, name=None):
             "vmax": float(snapshot.vmax), "a": float(fit.get("a", 0.0)),
             "rm": float(fit["rm"]), "ri": float(fit["ri"]),
             "x1": float(fit["x1"]), "x2": float(fit["x2"]),
-            "r34": r34, "name": name}
+            "r34": r34, "name": name,
+            "conf": float(getattr(snapshot, "conf", 1.0))}
 
 
 def shortName(header):
@@ -465,6 +466,74 @@ def ringMeans(field, dist, rMax, ring=None, bearing=None, sectors=None):
 # Remove and implant
 # ---------------------------------------------------------------------------
 
+def _vertex(a, b, c):
+    """Offset (-0.5..0.5 spacings) and value of the parabola's minimum
+    through three equally spaced values, b the lowest."""
+    curve = a - 2.0 * b + c
+    if not np.isfinite(curve) or curve <= 0.0:
+        return 0.0, b
+    d = float(np.clip(0.5 * (a - c) / curve, -0.5, 0.5))
+    return d, b - 0.25 * (a - c) * d
+
+
+def _localXY(lat, lon, clat, clon):
+    """Degrees east (scaled by cos lat) and north of (clat, clon)."""
+    dlon = ((np.asarray(lon, dtype=float) - clon + 180.0) % 360.0) - 180.0
+    return (dlon * np.cos(np.radians(clat)),
+            np.asarray(lat, dtype=float) - clat)
+
+
+def refineCenter(pmsl, lat, lon, i, j):
+    """A low's center between gridpoints, and its central pressure.
+
+    Returns (clat, clon, centralMb).  Measuring rings from the nearest
+    gridpoint puts the center up to half a spacing off, and the removal
+    then leaves a dipole of about that offset times the low's gradient -
+    half a mb and more for a typical model low on a 10 km grid.
+
+    The environment's tilt is taken out first - a plane fitted over the
+    removal radius's outer ring - because on a sloping background the
+    lowest pressure is not the vortex's center: it is pushed downslope by
+    the slope over the vortex's curvature, and rings measured from there
+    leave the same kind of dipole.
+    """
+    f = np.asarray(pmsl, dtype=float)
+    lat = np.asarray(lat, dtype=float)
+    lon = np.asarray(lon, dtype=float)
+    lat0, lon0 = float(lat[i, j]), float(lon[i, j])
+    x, y = _localXY(lat, lon, lat0, lon0)
+
+    dist = distanceNm(lat, lon, lat0, lon0)
+    outer = (dist > 0.7 * REMOVE_RADIUS_NM) & (dist <= REMOVE_RADIUS_NM) & \
+        np.isfinite(f)
+    tilt = np.zeros(3)
+    if outer.sum() >= 12:
+        design = np.column_stack([np.ones(outer.sum()), x[outer], y[outer]])
+        tilt = np.linalg.lstsq(design, f[outer], rcond=None)[0]
+        tilt[0] = 0.0                       # the tilt only, not the level
+
+    win = (slice(i - 1, i + 2), slice(j - 1, j + 2))
+    g = f[win] - (tilt[1] * x[win] + tilt[2] * y[win])
+    di, vi = _vertex(g[0, 1], g[1, 1], g[2, 1])
+    dj, vj = _vertex(g[1, 0], g[1, 1], g[1, 2])
+
+    def at(grid):
+        ii = i + (1 if di > 0 else -1)
+        jj = j + (1 if dj > 0 else -1)
+        return (grid[i, j] + abs(di) * (grid[ii, j] - grid[i, j]) +
+                abs(dj) * (grid[i, jj] - grid[i, j]))
+
+    cx, cy = at(x), at(y)
+    central = vi + vj - g[1, 1] + tilt[1] * cx + tilt[2] * cy
+    clat = lat0 + cy
+    clon = lon0 + cx / np.cos(np.radians(lat0))
+    if np.nanmax(lon) > 180.0:
+        clon = clon % 360.0
+    else:
+        clon = ((clon + 180.0) % 360.0) - 180.0
+    return float(clat), float(clon), float(central)
+
+
 def findBackgroundCenter(pmsl, lat, lon, clat, clon, radius=None,
                          taken=()):
     """The background's own vortex near a warning position.
@@ -505,12 +574,19 @@ def removeVortex(pmsl, lat, lon, ci, cj):
 
     The anomaly is the azimuthal-mean pmsl around the low minus its value at
     REMOVE_RADIUS_NM, kept only where negative, so the environment around it
-    - and any asymmetry in it - is left as it was.
+    - and any asymmetry in it - is left as it was.  Rings are measured from
+    the low's center between gridpoints (refineCenter).
     """
-    dist = distanceNm(lat, lon, lat[ci, cj], lon[ci, cj])
+    clat, clon, central = refineCenter(pmsl, lat, lon, ci, cj)
+    dist = distanceNm(lat, lon, clat, clon)
     ring = max(RING_NM, RING_PER_SPACING * gridSpacingNm(lat, lon))
-    bearing = bearingDeg(lat, lon, lat[ci, cj], lon[ci, cj])
-    centers, means = ringMeans(pmsl, dist, REMOVE_RADIUS_NM, ring, bearing)
+    bearing = bearingDeg(lat, lon, clat, clon)
+    # Points within half a spacing of the center have no meaningful
+    # azimuth: one alone in its sector would weigh as much as a whole
+    # sector of the innermost ring.  The center's value is in `central`.
+    spacing = gridSpacingNm(lat, lon)
+    field = np.where(dist < 0.5 * spacing, np.nan, np.asarray(pmsl, float))
+    centers, means = ringMeans(field, dist, REMOVE_RADIUS_NM, ring, bearing)
     good = np.isfinite(means)
     if good.sum() < 3:
         return np.array(pmsl, dtype=float)
@@ -518,7 +594,7 @@ def removeVortex(pmsl, lat, lon, ci, cj):
     envValue = means[-1]
 
     r = np.concatenate([[0.0], centers, [REMOVE_RADIUS_NM]])
-    anomaly = np.concatenate([[float(pmsl[ci, cj]) - envValue],
+    anomaly = np.concatenate([[central - envValue],
                               means - envValue, [0.0]])
     anomaly = np.minimum(anomaly, 0.0)
     taperFrom = REMOVE_TAPER_FROM * REMOVE_RADIUS_NM
@@ -547,7 +623,10 @@ def relocateStorms(pmsl, lat, lon, storms):
     A storm may carry ``"anchor": (tau0Storm, bulletinPressureMb)``; its scale
     is then fixed against the background under its warning position once the
     model's vortex is out, so at tau 0 the central pressure is the
-    bulletin's.  Returns (new pmsl, report): one dict per storm with where
+    bulletin's.  A storm carrying ``"scale"`` uses that instead: a caller
+    working through a forecast fixes the scale at its earliest time and
+    carries it, so that later times do not re-anchor against a different
+    environment.  Returns (new pmsl, report): one dict per storm with where
     the background had it, how far off that was, what was removed, the
     environment, the anchor, and the central pressure implanted.  Background
     lows are matched one per storm, so two nearby storms never share one.
@@ -573,8 +652,9 @@ def relocateStorms(pmsl, lat, lon, storms):
                  "removedMb": 0.0}
         if hit is not None:
             i, j, depth = hit
-            entry["background"] = (float(lat[i, j]), float(lon[i, j]))
-            entry["offsetNm"] = float(distanceNm(lat[i, j], lon[i, j],
+            bLat, bLon, _ = refineCenter(out, lat, lon, i, j)
+            entry["background"] = (bLat, bLon)
+            entry["offsetNm"] = float(distanceNm(bLat, bLon,
                                                  storm["lat"], storm["lon"]))
             entry["removedMb"] = depth
             out = removeVortex(out, lat, lon, i, j)
@@ -585,7 +665,11 @@ def relocateStorms(pmsl, lat, lon, storms):
         k = np.unravel_index(np.argmin(dist), dist.shape)
         env = float(out[k])
         scale, note = 1.0, "no bulletin pressure - unanchored"
-        if storm.get("anchor"):
+        if storm.get("scale") is not None:
+            # Fixed once, at the earliest time, by the caller.
+            scale, note = float(storm["scale"]), storm.get(
+                "scaleNote", "scale carried from the first time")
+        elif storm.get("anchor"):
             tau0Storm, bulletinMb = storm["anchor"]
             scale, note = anchorScale(tau0Storm, bulletinMb, pEnv=env)
 

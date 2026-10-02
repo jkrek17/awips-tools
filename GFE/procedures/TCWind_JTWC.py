@@ -44,6 +44,13 @@ try:
 except ImportError:
     _IN_GFE = False
 
+# The pmsl option needs TCPressure, a GFE utility.  Without it the Wind grids
+# are built exactly as before and the status bar says pmsl was left alone.
+try:
+    import TCPressure
+except ImportError:
+    TCPressure = None
+
 
 # AWIPS text database product IDs, not the WMO headings.  The WTPN33 PGTW
 # heading appears on the bulletin itself, but textdb stores it under NFDTCPWP.
@@ -296,13 +303,21 @@ OUTPUT_GRID_INTERVAL_SECONDS = 3 * 3600  # 3 hours, always, regardless of the ba
 PREVIEW_ELEMENT = "WindJTWC"
 PREVIEW_MAX_KT = 200.0
 
+# [doc 64]
+# pmsl: each storm is moved, in every existing pmsl grid the warnings cover,
+# to the warning's position and central pressure by TCPressure (a GFE
+# utility).  Previews go to this scratch element, made like PREVIEW_ELEMENT.
+PMSL_LABEL = "Also move the storms in pmsl to the warnings:"
+PMSL_PREVIEW_ELEMENT = "pmslJTWC"
+PMSL_PREVIEW_LIMITS_MB = (850.0, 1100.0)
+
 # [doc 18]
 EXPERIMENTAL = True
 REQUIRE_ACKNOWLEDGEMENT = True
 
 # Shown in the dialog title and the status bar.  Bump it on every install so
 # there is never any doubt about which copy GFE actually loaded.
-VERSION = "2026-09-19a"
+VERSION = "2026-10-02a"
 
 # [doc 19]
 MAX_BULLETIN_AGE_HOURS = 12.0
@@ -1617,6 +1632,8 @@ if _IN_GFE:
                 ("Subtropical / extratropical systems:",
                  "Include" if INSERT_AFTER_SUBTROPICAL else "Skip", "radio",
                  ["Include", "Skip"]),
+                # pmsl goes where Wind goes: preview or Fcst.
+                (PMSL_LABEL, "Yes", "radio", ["Yes", "No"]),
             ]
 
             if EXPERIMENTAL and REQUIRE_ACKNOWLEDGEMENT:
@@ -1681,12 +1698,12 @@ if _IN_GFE:
             except AttributeError:
                 raise TypeError("Unrecognized time range object: %r" % (tr,))
 
-        def _fcstInventory(self, activeTR):
-            """Existing Fcst Wind time ranges overlapping activeTR."""
+        def _fcstInventory(self, activeTR, element="Wind"):
+            """Existing Fcst time ranges of `element` overlapping activeTR."""
             inv = []
 
             try:
-                infos = self.getGridInfo("Fcst", "Wind", "SFC", activeTR)
+                infos = self.getGridInfo("Fcst", element, "SFC", activeTR)
             except Exception:
                 infos = None
 
@@ -1700,9 +1717,9 @@ if _IN_GFE:
             if not inv and hasattr(self, "getWEInventory"):
                 try:
                     inv = list(
-                        self.getWEInventory("Fcst", "Wind", "SFC", activeTR))
+                        self.getWEInventory("Fcst", element, "SFC", activeTR))
                 except TypeError:
-                    inv = list(self.getWEInventory("Fcst", "Wind", "SFC"))
+                    inv = list(self.getWEInventory("Fcst", element, "SFC"))
                 except Exception:
                     inv = []
 
@@ -1760,6 +1777,146 @@ if _IN_GFE:
             fp[footprint] = 1.0
             smoothed = self._smooth(fp, int(factor))
             return (smoothed < 1.0) & (smoothed > 0.0) & (~coreMask)
+
+        def _storePmsl(self, data, tr, preview):
+            """Write a pmsl grid, to a temporary parm if previewing."""
+            if preview:
+                lo, hi = PMSL_PREVIEW_LIMITS_MB
+                try:
+                    self.createGrid(
+                        "Fcst", PMSL_PREVIEW_ELEMENT, "SCALAR", data, tr,
+                        descriptiveName="JTWC TC pmsl (preview)",
+                        precision=1, minAllowedValue=lo,
+                        maxAllowedValue=hi, units="mb")
+                    return
+                except TypeError:
+                    pass
+                self.createGrid("Fcst", PMSL_PREVIEW_ELEMENT, "SCALAR",
+                                data, tr)
+                return
+            self.createGrid("Fcst", "pmsl", "SCALAR", data, tr)
+
+        # [doc 65]
+        def _movePmsl(self, storms, activeTR, spanStart, spanEnd, preview,
+                      insertST, latGrid, lonGrid):
+            """Move the storms in every Fcst pmsl grid the warnings cover.
+
+            Returns a status-bar sentence.  Each grid's own vortex is taken
+            out where the warning has the storm, and the warning's put in
+            at its position and central pressure.  A storm-time below
+            34 kt, or subtropical when those are skipped, is left alone, as
+            in the Wind grids.  A storm counts when its vortex reaches the
+            grid at all: one just south of the grid still has its outer
+            isobars in it.
+            """
+            if TCPressure is None:
+                return ("pmsl left alone: TCPressure.py is not installed "
+                        "with the GFE utilities.")
+            module = sys.modules[__name__]
+            warnings = [{"pil": s["pil"], "name": TCPressure.shortName(
+                s["header"]), "taus": s["taus"], "header": s["header"]}
+                for s in storms]
+
+            lo, hi = self._trBounds(activeTR)
+            lo, hi = max(lo, spanStart), min(hi, spanEnd + 1)
+            inventory = []
+            for tr in self._fcstInventory(activeTR, "pmsl"):
+                start = self._trBounds(tr)[0]
+                if lo <= start < hi:
+                    inventory.append(tr)
+            if not inventory:
+                return ("pmsl left alone: no Fcst pmsl grids inside the "
+                        "warnings' valid periods.")
+
+            written, perStorm, edge, problems = 0, {}, set(), []
+            # One scale per storm, fixed at the earliest grid with its center
+            # on it - for a storm in the grid all along, the one nearest the
+            # warning's tau 0 - and carried through the rest.
+            scales = {}
+            for tr in inventory:
+                when = self._trBounds(tr)[0]
+                candidates, _notes = TCPressure.stormsAt(warnings, when,
+                                                         module)
+                moving = []
+                for storm in candidates:
+                    if storm["vmax"] < 34.0:
+                        continue
+                    if not insertST and storm.get("conf", 1.0) < 1.0:
+                        continue
+                    reach = TCPressure.outerRadius(storm)
+                    near = TCPressure.distanceNm(latGrid, lonGrid,
+                                                 storm["lat"], storm["lon"])
+                    if float(np.min(near)) <= reach:
+                        moving.append(storm)
+                if not moving:
+                    continue
+                for storm in moving:
+                    if storm["name"] in scales:
+                        storm["scale"], storm["scaleNote"] = \
+                            scales[storm["name"]]
+
+                pmsl = self.getGrids("Fcst", "pmsl", "SFC", tr,
+                                     mode="First", noDataError=0)
+                if pmsl is None:
+                    continue
+                try:
+                    out, report = TCPressure.relocateStorms(
+                        np.asarray(pmsl, dtype=float), latGrid, lonGrid,
+                        moving)
+                except Exception as exc:
+                    problems.append("%s: %s" % (
+                        time.strftime("%d/%HZ", time.gmtime(when)), exc))
+                    continue
+                self._storePmsl(out.astype(np.float32), tr, preview)
+                written += 1
+
+                for e in report:
+                    # Only from a grid the center is on: off it, the
+                    # environment under the "warning position" is just the
+                    # nearest edge point.
+                    if e["onField"]:
+                        scales.setdefault(e["name"],
+                                          (e["scale"], e["anchorNote"]))
+                    rec = perStorm.setdefault(
+                        e["name"], {"grids": 0, "off": [], "central": [],
+                                    "unanchored": set()})
+                    rec["grids"] += 1
+                    if e["onField"]:
+                        rec["central"].append(e["centralMb"])
+                    if e["offsetNm"] is not None:
+                        rec["off"].append(e["offsetNm"])
+                    elif e["onField"]:
+                        edge.add(e["name"])
+                    if "unanchored" in (e.get("anchorNote") or ""):
+                        rec["unanchored"].add(e["anchorNote"])
+
+            if not written:
+                return ("pmsl left alone: no storm reaches the grid at the "
+                        "times of the Fcst pmsl grids.")
+
+            where = "%s preview grids" % PMSL_PREVIEW_ELEMENT if preview \
+                else "Fcst pmsl grids"
+            parts = []
+            for name, rec in perStorm.items():
+                bits = ["%d grids" % rec["grids"]]
+                if rec["central"]:
+                    bits.append("%.0f-%.0f mb" % (min(rec["central"]),
+                                                  max(rec["central"])))
+                if rec["off"]:
+                    bits.append("grid's own low %.0f-%.0f nm off" % (
+                        min(rec["off"]), max(rec["off"])))
+                bits.extend(sorted(rec["unanchored"]))
+                parts.append("%s (%s)" % (name, ", ".join(bits)))
+            msg = "Moved the storms in %d %s: %s." % (
+                written, where, "; ".join(parts))
+            if edge:
+                msg += (" No low of the grid's own found near %s at some "
+                        "times - added to the background as it stands; "
+                        "check for a second low there." %
+                        ", ".join(sorted(edge)))
+            if problems:
+                msg += " pmsl problems: " + "; ".join(problems) + "."
+            return msg
 
         # -------------------------------------------------------------
         # Main
@@ -2012,12 +2169,21 @@ if _IN_GFE:
                     peakWritten = max(peakWritten, peak)
                     written += 1
 
+            # [doc 66]
+            # Missing from an older saved varDict means no: the pmsl grids
+            # are never touched by a run that did not offer the choice.
+            pmslMsg = ""
+            if varDict.get(PMSL_LABEL, "No") == "Yes":
+                pmslMsg = " " + self._movePmsl(
+                    storms, activeTR, spanStart, spanEnd, preview, insertST,
+                    latGrid, lonGrid)
+
             if not written:
                 msg = "Parsed %d live bulletin(s), but no Fcst Wind grids " \
                       "fell inside their valid periods." % len(storms)
                 if testCase:
                     msg = "TEST CASE (not a live storm). " + msg
-                self.statusBarMsg(msg, "S")
+                self.statusBarMsg(msg + pmslMsg, "S")
                 return
 
             parts = []
@@ -2054,7 +2220,7 @@ if _IN_GFE:
                 msg += " Skipped stale: " + "; ".join(stale) + "."
             if problems:
                 msg += " Problems: " + "; ".join(problems) + "."
-            self.statusBarMsg(msg, "R")
+            self.statusBarMsg(msg + pmslMsg, "R")
 
 
 # ---------------------------------------------------------------------------

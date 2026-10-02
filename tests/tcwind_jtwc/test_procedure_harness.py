@@ -151,6 +151,10 @@ class _FakeSmartScriptBase(object):
         self._inv_blocks = None
         self._lat = None
         self._lon = None
+        # pmsl: a callable (lat, lon, startEpoch) -> field, and the Fcst
+        # pmsl inventory as (start, end) tuples.  None = no pmsl grids.
+        self.pmsl_fn = None
+        self.pmsl_blocks = None
 
     def configure(self, texts, now_epoch, inv_start, inv_end,
                  lat, lon, inv_step=3 * 3600, inv_blocks=None):
@@ -196,6 +200,11 @@ class _FakeSmartScriptBase(object):
         import AbsTime
         import TimeRange
         out = []
+        if elem == "pmsl":
+            for start, end in self.pmsl_blocks or ():
+                out.append(_FakeGridInfo(TimeRange.TimeRange(
+                    AbsTime.AbsTime(start), AbsTime.AbsTime(end))))
+            return out
         if self._inv_blocks is not None:
             for start, end in self._inv_blocks:
                 blockTR = TimeRange.TimeRange(
@@ -214,6 +223,11 @@ class _FakeSmartScriptBase(object):
         return self._lat, self._lon
 
     def getGrids(self, model, elem, level, tr, mode="First", noDataError=0):
+        if elem == "pmsl":
+            if self.pmsl_fn is None:
+                return None
+            return self.pmsl_fn(self._lat, self._lon,
+                                tr.startTime().unixTime()).astype(np.float32)
         # 10 kt westerlies (wind FROM the west -> direction 270, met
         # convention, matching magDirToUV()'s -sin/-cos construction).
         shape = self._lat.shape
@@ -236,10 +250,17 @@ class _FakeSmartScriptBase(object):
 # Import TCWind_JTWC.py fresh, against the fakes.
 # ---------------------------------------------------------------------------
 
+# TCPressure (the pmsl option) is a GFE utility: GFE/utilities/ in the repo,
+# the bundle root alongside TCWind_JTWC.py in the export.
+_REPO_UTIL_DIR = os.path.join(HERE, "..", "..", "GFE", "utilities")
+
+
 def _import_tcwind_jtwc():
     _install_fake_awips_modules()
     if PROC_DIR not in sys.path:
         sys.path.insert(0, PROC_DIR)
+    if os.path.isdir(_REPO_UTIL_DIR) and _REPO_UTIL_DIR not in sys.path:
+        sys.path.insert(0, _REPO_UTIL_DIR)
     sys.modules.pop("TCWind_JTWC", None)
     import importlib
     tc = importlib.import_module("TCWind_JTWC")
@@ -814,6 +835,220 @@ def case_test_case_preview_default():
 # Runner
 # ---------------------------------------------------------------------------
 
+
+# ---------------------------------------------------------------------------
+# pmsl: the storms moved to the warnings
+# ---------------------------------------------------------------------------
+
+KROVANH = "real_2026-09-02_wtpn31_krovanh.txt"
+
+
+def _modelPmsl(taus, offsetDeg=(1.5, 1.5), depth=8.0):
+    """pmsl as a model might have it: a sloping environment and a low
+    `offsetDeg` (dlat, dlon) from wherever the warning has the storm."""
+    def field(lat, lon, epoch):
+        lat = np.asarray(lat, dtype=float)
+        lon = np.asarray(lon, dtype=float)
+        # Near 1004 mb under the storm, as in the monsoon trough Krovanh
+        # was in, rising northward.
+        env = 1001.0 + 0.3 * (lat - 15.0) + 0.05 * (lon - 120.0)
+        if not depth:
+            return env
+        snap = tc.interpolateTrack(taus, epoch)
+        clat, clon = snap.lat + offsetDeg[0], snap.lon + offsetDeg[1]
+        r2 = (lat - clat) ** 2 + ((lon - clon) *
+                                  np.cos(np.radians(clat))) ** 2
+        return env - depth * np.exp(-r2 / (2.0 * 1.2 ** 2))
+    return field
+
+
+def _run_pmsl(pmsl_fn, write_to="Preview grid", ack="No", label="Yes",
+              block_hours=6):
+    """Krovanh, with a Fcst pmsl inventory of `block_hours` blocks over
+    the warning's span and `pmsl_fn` behind it."""
+    text = _load_fixture(KROVANH)
+    taus, header, _kind = tc.parseBulletin(text)
+    t0, t1 = taus[0].epoch, taus[-1].epoch
+    latGrid, lonGrid = _mesh()
+    proc = tc.Procedure(dbss=None)
+    proc.configure(texts={"NFDTCPWP1": text}, now_epoch=t0 + 3 * 3600,
+                   inv_start=t0, inv_end=t1 + 3 * 3600,
+                   lat=latGrid, lon=lonGrid)
+    step = block_hours * 3600
+    proc.pmsl_blocks = [(w, w + step) for w in range(t0, t1 + 1, step)]
+    proc.pmsl_fn = pmsl_fn
+    varDict = {
+        "Basin:": "West Pac",
+        "Write to:": write_to,
+        "Run over selected time range only?": "No",
+        "I understand this tool is experimental and I have reviewed "
+        "the output:": ack,
+    }
+    if label is not None:
+        varDict[tc.PMSL_LABEL] = label
+    proc.execute(None, None, varDict)
+    return proc, taus, header, latGrid, lonGrid
+
+
+def _pmslWrites(proc):
+    """{start epoch: (element, field, kwargs)} for every pmsl grid written."""
+    out = {}
+    for args, kwargs in proc.created:
+        if args[2] == "SCALAR":
+            out[args[4].startTime().unixTime()] = (args[1],
+                                                   np.asarray(args[3]),
+                                                   kwargs)
+    return out
+
+
+def case_pmsl_preview_moves_the_storm():
+    """The model's low is 1.5 degrees NE of the warning position all along
+    the track.  In the preview pmsl grids the low must be where the warning
+    has it, at the bulletin's 994 mb at tau 0, with nothing of the model's
+    low left - checked against the same run on a field that never had one."""
+    fails = []
+    if tc.TCPressure is None:
+        return ["TCPressure did not import"], None
+    proc, taus, header, lat, lon = _run_pmsl(_modelPmsl(taus=tc.parseBulletin(
+        _load_fixture(KROVANH))[0]))
+    writes = _pmslWrites(proc)
+    t0 = taus[0].epoch
+    expected = set(range(t0, taus[-1].epoch + 1, 6 * 3600))
+    if set(writes) != expected:
+        fails.append("pmsl grids written at %d times, expected one per "
+                     "6-hourly pmsl grid in the span (%d)"
+                     % (len(writes), len(expected)))
+    for start, (element, field, kwargs) in writes.items():
+        if element != tc.PMSL_PREVIEW_ELEMENT:
+            fails.append("pmsl written to %r, not the preview element"
+                         % element)
+            break
+        if kwargs.get("units") != "mb" or "descriptiveName" not in kwargs:
+            fails.append("preview pmsl not created as a temporary parm "
+                         "(kwargs %r)" % sorted(kwargs))
+            break
+    winds = [a[1] for a, _ in proc.created if a[2] == "VECTOR"]
+    if not winds or set(winds) != {tc.PREVIEW_ELEMENT}:
+        fails.append("Wind preview grids not written alongside: %r"
+                     % sorted(set(winds)))
+
+    if t0 in writes:
+        field = writes[t0][1]
+        i, j = np.unravel_index(np.argmin(field), field.shape)
+        if abs(lat[i, j] - taus[0].lat) > 0.3 or \
+                abs(lon[i, j] - taus[0].lon) > 0.3:
+            fails.append("tau-0 low at %.2fN %.2fE, warning has %.1fN %.1fE"
+                         % (lat[i, j], lon[i, j], taus[0].lat, taus[0].lon))
+        if abs(field[i, j] - header["pressureMb"]) > 2.0:
+            fails.append("tau-0 central pressure %.1f mb, bulletin %d mb"
+                         % (field[i, j], header["pressureMb"]))
+
+    clean, _, _, _, _ = _run_pmsl(_modelPmsl(taus, depth=0.0))
+    cleanWrites = _pmslWrites(clean)
+    worst = max(float(np.abs(writes[k][1] - cleanWrites[k][1]).max())
+                for k in writes if k in cleanWrites)
+    if worst > 0.6:
+        fails.append("%.2f mb of the model's low left behind" % worst)
+
+    model = _modelPmsl(taus)(lat, lon, t0)
+    if t0 in writes and abs(writes[t0][1][0, 0] - model[0, 0]) > 1e-3:
+        fails.append("the far corner of the grid changed")
+
+    msg = _final_status(proc)
+    for want in (tc.PMSL_PREVIEW_ELEMENT, "KROVANH", "nm off"):
+        if want not in msg:
+            fails.append("status does not mention %r: %r" % (want, msg))
+    return fails, proc
+
+
+def case_pmsl_fcst_needs_ack_and_writes_pmsl():
+    fails = []
+    taus = tc.parseBulletin(_load_fixture(KROVANH))[0]
+    proc, _, _, _, _ = _run_pmsl(_modelPmsl(taus), write_to="Fcst Wind",
+                                 ack="Yes")
+    elements = set(e for e, _, _ in _pmslWrites(proc).values())
+    if elements != {"pmsl"}:
+        fails.append("Fcst run wrote pmsl to %r" % sorted(elements))
+    proc, _, _, _, _ = _run_pmsl(_modelPmsl(taus), write_to="Fcst Wind",
+                                 ack="No")
+    if proc.created:
+        fails.append("Fcst run without the acknowledgement wrote %d grids"
+                     % len(proc.created))
+    return fails, proc
+
+
+def case_pmsl_only_when_asked():
+    fails = []
+    taus = tc.parseBulletin(_load_fixture(KROVANH))[0]
+    for label in ("No", None):
+        proc, _, _, _, _ = _run_pmsl(_modelPmsl(taus), label=label)
+        if _pmslWrites(proc):
+            fails.append("pmsl written with the option %r" % (label,))
+        if not proc.created:
+            fails.append("Wind not written with the pmsl option %r"
+                         % (label,))
+    return fails, proc
+
+
+def case_pmsl_run_twice_is_stable():
+    """Running on a grid the tool already adjusted changes almost nothing:
+    the second run finds the first run's storm and puts it back in place."""
+    fails = []
+    taus = tc.parseBulletin(_load_fixture(KROVANH))[0]
+    first, _, _, _, _ = _run_pmsl(_modelPmsl(taus))
+    firstWrites = _pmslWrites(first)
+    again = lambda lat, lon, epoch: firstWrites[epoch][1].astype(float)
+    second, _, _, _, _ = _run_pmsl(again)
+    secondWrites = _pmslWrites(second)
+    worst = max(float(np.abs(secondWrites[k][1] - firstWrites[k][1]).max())
+                for k in firstWrites)
+    if worst > 0.5:
+        fails.append("a second run moved pmsl by up to %.2f mb" % worst)
+    return fails, second
+
+
+def case_pmsl_without_tcpressure():
+    fails = []
+    taus = tc.parseBulletin(_load_fixture(KROVANH))[0]
+    saved = tc.TCPressure
+    tc.TCPressure = None
+    try:
+        proc, _, _, _, _ = _run_pmsl(_modelPmsl(taus))
+    finally:
+        tc.TCPressure = saved
+    if _pmslWrites(proc):
+        fails.append("pmsl written without TCPressure")
+    if not proc.created:
+        fails.append("Wind not written without TCPressure")
+    if "TCPressure.py is not installed" not in _final_status(proc):
+        fails.append("status does not say why pmsl was left alone: %r"
+                     % _final_status(proc))
+    return fails, proc
+
+
+def case_pmsl_grids_outside_the_span():
+    fails = []
+    taus = tc.parseBulletin(_load_fixture(KROVANH))[0]
+    text = _load_fixture(KROVANH)
+    latGrid, lonGrid = _mesh()
+    t0 = taus[0].epoch
+    proc = tc.Procedure(dbss=None)
+    proc.configure(texts={"NFDTCPWP1": text}, now_epoch=t0 + 3 * 3600,
+                   inv_start=t0, inv_end=taus[-1].epoch + 3 * 3600,
+                   lat=latGrid, lon=lonGrid)
+    proc.pmsl_blocks = [(t0 - 48 * 3600, t0 - 42 * 3600)]
+    proc.pmsl_fn = _modelPmsl(taus)
+    proc.execute(None, None, {
+        "Basin:": "West Pac", "Write to:": "Preview grid",
+        "Run over selected time range only?": "No", tc.PMSL_LABEL: "Yes"})
+    if _pmslWrites(proc):
+        fails.append("pmsl written outside the warning's span")
+    if "no Fcst pmsl grids inside" not in _final_status(proc):
+        fails.append("status does not say there were none: %r"
+                     % _final_status(proc))
+    return fails, proc
+
+
 def main():
     cases = [
         ("krovanh_full_span_3_hourly", case_krovanh_full_span_3_hourly),
@@ -826,6 +1061,13 @@ def main():
         ("test_case_forces_preview_despite_fcst_wind_and_ack",
          case_test_case_forces_preview_despite_fcst_wind_and_ack),
         ("test_case_preview_default", case_test_case_preview_default),
+        ("pmsl_preview_moves_the_storm", case_pmsl_preview_moves_the_storm),
+        ("pmsl_fcst_needs_ack_and_writes_pmsl",
+         case_pmsl_fcst_needs_ack_and_writes_pmsl),
+        ("pmsl_only_when_asked", case_pmsl_only_when_asked),
+        ("pmsl_run_twice_is_stable", case_pmsl_run_twice_is_stable),
+        ("pmsl_without_tcpressure", case_pmsl_without_tcpressure),
+        ("pmsl_grids_outside_the_span", case_pmsl_grids_outside_the_span),
     ]
 
     failed = 0

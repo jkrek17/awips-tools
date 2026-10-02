@@ -199,6 +199,27 @@ def test_removal_leaves_no_ripple():
           float(jump[zone[:-1, :-1]].max()) < 0.1,
           "%.3f mb" % float(jump[zone[:-1, :-1]].max()))
 
+    # Off a gridpoint - the usual case.  Rings measured from the nearest
+    # gridpoint left 1.1-1.5 mb here; from the center between gridpoints,
+    # with the environment's tilt taken out first, it is a tenth of that.
+    rng = np.random.default_rng(1)
+    worst = 0.0
+    for _ in range(12):
+        clat, clon = 21.0 + rng.uniform(0, 0.25), 140.0 + rng.uniform(0, 0.25)
+        background = env + modelVortex(lat, lon, clat, clon, 25.0)
+        i, j, _ = P.findBackgroundCenter(background, lat, lon, 19.5, 137.5)
+        bLat, bLon, _ = P.refineCenter(background, lat, lon, i, j)
+        err = P.removeVortex(background, lat, lon, i, j) - env
+        near = P.distanceNm(lat, lon, clat, clon) <= P.REMOVE_RADIUS_NM
+        worst = max(worst, float(np.abs(err[near]).max()))
+        if P.distanceNm(bLat, bLon, clat, clon) > 1.0:
+            break
+    check("a vortex between gridpoints: center found to within 1 nm",
+          P.distanceNm(bLat, bLon, clat, clon) <= 1.0,
+          "%.2f nm" % P.distanceNm(bLat, bLon, clat, clon))
+    check("and it comes out to within 0.2 mb", worst < 0.2,
+          "%.3f mb" % worst)
+
     x = np.linspace(0.0, 10.0, 7)
     y = np.array([-25.0, -20.0, -12.0, -5.0, -1.5, -0.2, 0.0])
     fine = P.pchip(np.linspace(0.0, 10.0, 200), x, y)
