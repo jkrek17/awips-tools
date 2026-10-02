@@ -9,6 +9,8 @@
 #
 # Modification History:
 # 4/25/26 by S.Williamson, updated to add Isobars and Features layers
+# 10/2/26 fill isobars and Highs/Lows south of the GFE grid (17N to the grid
+#         edge) from a seam-matched blend of global models - PressureGapFill
 # ----------------------------------------------------------------------------
 
 # The MenuItems list defines the GFE menu item(s) under which the
@@ -24,7 +26,10 @@ VariableList = [("Cycle:","00z","radio",["00z","06z","12z","18z"]),
                 ("Area:","HS","radio",["HS","Reg"]),
                 ("Product:","Surface","radio",["Surface","Wave"]),
                 ("Fcst Hr:",["on"],"check",["F000","F024","F048","F072","F096"]),
-                ("Input Grid:", "Fcst","radio",["Fcst","Official"])]#,"GFSwave"])] 
+                ("Input Grid:", "Fcst","radio",["Fcst","Official"]),#,"GFSwave"]),
+                # --- Gap fill: south of the GFE grid (PressureGapFill) ---
+                ("Fill south of grid:", "On", "radio", ["On", "Off"]),
+                ("Gap models:", ["GFS", "ECMWF"], "check", ["GFS", "ECMWF", "CMC", "GEFS"])]
 
 # Import python packages
 import LogStream, time
@@ -39,6 +44,8 @@ import A2GraphicsFunctions
 from A2GraphicsFunctions import MathUtils as MathUtils
 from A2GraphicsFunctions import XmlUtils as XmlUtils
 import numpy as np
+import calendar
+import PressureGapFill
 from xml.dom import minidom
 from xml.etree import ElementTree as ET
 
@@ -63,6 +70,9 @@ class Procedure (A2GraphicsFunctions.A2GraphicsFunctions):
         prod  = varDict["Product:"]
         fhr   = varDict["Fcst Hr:"]
         cyc   = varDict["Cycle:"]
+        # --- Gap fill: defaulted with .get so an older dialog still runs ---
+        fill_gap   = varDict.get("Fill south of grid:", "On") == "On"
+        gap_models = varDict.get("Gap models:", PressureGapFill.DEFAULT_GAP_MODELS)
         
         # Set other variables based on environment
         basin = self.getSiteID()
@@ -152,6 +162,24 @@ class Procedure (A2GraphicsFunctions.A2GraphicsFunctions):
                 if field == "pmsl":
                     pmsl = self.getGrids(input,field,"SFC",timeRange)               
                     
+            # --- Gap fill: pmsl south of the GFE grid, from the models ---
+            # The GFE grid stops near 30N while the charts run to 17N, so the
+            # isobars and pressure centers there used to be drawn by hand.
+            # PressureGapFill blends the picked models over that strip and
+            # matches them to this pmsl grid along its southern edge.  A model
+            # that cannot supply it is skipped with the reason shown; with
+            # none, the chart goes out exactly as it did before.
+            gap = None
+            if fill_gap and "pmsl" in gfe_fields:
+                gap = PressureGapFill.buildGapPressure(
+                    lat, lon, pmsl, calendar.timegm(start_time.timetuple()),
+                    gap_models)
+                for gap_model, gap_run in gap.used:
+                    self.statusBarMsg("gap fill: " + gap_model + " run " +
+                                      time.strftime("%Y%m%d %HZ", time.gmtime(gap_run)), "R")
+                for gap_model, gap_reason in gap.skipped:
+                    self.statusBarMsg("gap fill: " + gap_model + " skipped - " + gap_reason, "S")
+
             #self.statusBarMsg("max wind first "+str(np.max(wind_mag)), "R")
             # Set generic XML information based on product
             # Create shortcut to prod_dict
@@ -361,6 +389,18 @@ class Procedure (A2GraphicsFunctions.A2GraphicsFunctions):
                     # Add contour lines and text to XML
                     XmlUtils.xmladdPressureContour(con_info,de,cont_attr,line_attr,line_color,line_text_attr,line_text_color)
 
+                    # --- Gap fill: the same isobars south of the GFE grid ---
+                    # Same smoother, contourer and writer as above, so the gap
+                    # comes out in exactly this layer's XML.  A Pacific gap is
+                    # one piece per side of the dateline.
+                    if gap is not None and gap.hasGap():
+                        for piece in gap.pieces:
+                            gap_smooth = MathUtils.smoothPressure(piece.filled)
+                            if piece.covered.any():
+                                gap_smooth = np.where(piece.covered, np.nan, gap_smooth)
+                            gap_con = MathUtils.makePressureContours(piece.lon,piece.lat,gap_smooth,basin)
+                            XmlUtils.xmladdPressureContour(gap_con,de,cont_attr,line_attr,line_color,line_text_attr,line_text_color)
+
                 # Generate pressure extrema (Highs/Lows) and labels
                 if each_layer == "Features":
                     # --- Set layer name and read PGEN attributes from config ---
@@ -388,6 +428,22 @@ class Procedure (A2GraphicsFunctions.A2GraphicsFunctions):
                     # Add Low pressure symbols to XML and labels
                     XmlUtils.xmladdPressureSymbol(xml_valley_value,xml_valley_lat,xml_valley_lon,de,low_attr,low_color)
                     XmlUtils.xmladdPressureExtremaLabel(xml_valley_value,xml_valley_lat,xml_valley_lon,de,text_attr,text_color)
+
+                    # --- Gap fill: Highs and Lows south of the GFE grid ---
+                    # Found on the whole gap field, not the dateline pieces, so
+                    # a typhoon on 180 is one center.  pickExtrema drops any
+                    # within SEAM_MARGIN_DEG of the grid edge - the GFE grid
+                    # draws those - and edge artifacts that are not centers.
+                    if gap is not None and gap.hasGap():
+                        for gap_type, gap_attr, gap_color in (("Max", high_attr, high_color),
+                                                              ("Min", low_attr, low_color)):
+                            g_lon,g_lat,g_val = MathUtils.findPressureExtrema(gap.whole.filled,gap.whole.lon,gap.whole.lat,type=gap_type)
+                            g_lon,g_lat,g_val = gap.pickExtrema(g_lon,g_lat,g_val)
+                            if len(g_val) == 0:
+                                continue
+                            x_lon,x_lat,x_val = XmlUtils.plotPeakPressureLocations(g_lon,g_lat,g_val,basin)
+                            XmlUtils.xmladdPressureSymbol(x_val,x_lat,x_lon,de,gap_attr,gap_color)
+                            XmlUtils.xmladdPressureExtremaLabel(x_val,x_lat,x_lon,de,text_attr,text_color)
                     
           
             # Write XML to a file

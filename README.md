@@ -14,6 +14,9 @@ AWIPS tools and procedures.
 | `GFE/procedures/TCWind_JTWC.py` | Builds GFE Wind grids from JTWC tropical cyclone warnings. See below. |
 | `GFE/procedures/CreateXML_WindHazards.py` | Builds a PGEN XML of 34-47, 48-63 and 64+ kt wind polygons for F000-024 and F024-048, plus the pmsl Lows and their track, to overlay in D2D while writing the High Seas text. See below. |
 | `tests/create_xml_windhazards/` | Harness test for that procedure, and a synthetic case it plots straight from the written XML. |
+| `GFE/procedures/CreateXML.py` | The site's chart XML procedure, now filling isobars and Highs/Lows from 17N up to the GFE grid's edge from a seam-matched model blend. See below. |
+| `GFE/utilities/PressureGapFill.py` | The gap-fill module that does it. |
+| `tests/pressure_gap_fill/` | Its checks, an end-to-end run of CreateXML.py, and a synthetic WPAC plot. |
 | `web/TCWind_JTWC/` | Google Apps Script web app for that tool: live JTWC and NHC bulletins, a best-track archive, and the verification findings. |
 | `web/HFArchiveExport/` | Google Apps Script web app that exports the restricted HF low sheet as CSV for `tools/publish.py`. |
 | `data/hf_lows/` | CSV exports of the hurricane force extratropical low archive workbook, committed here on purpose (see below). |
@@ -613,3 +616,88 @@ procedure has to read - and drives `execute()` the way GFE would. The second
 reuses those fakes over a synthetic deepening low, then plots **the XML that
 run wrote** - every polygon, Low and track vertex in the picture is read back
 out of the file. See `tests/create_xml_windhazards/README.md`.
+
+## CreateXML gap fill - isobars south of the GFE grid
+
+The OPC charts run to 17N but the GFE grid stops near 30N, so every isobar and
+every pressure center between them - which is where the WPAC tropical cyclones
+are - had to be drawn by hand. `CreateXML.py` now fills that strip.
+
+![Gap fill](docs/img/createxml_gap_fill.png)
+
+*Synthetic case, drawn from the XML the procedure wrote. Grey isobars come from
+the GFE grid, orange from the models. Top: seam-matched. Bottom: the same
+models with no seam matching, jogging at every crossing.*
+
+### How
+
+`GFE/utilities/PressureGapFill.py` fetches pmsl for the strip from the models
+picked in the dialog through the `DataAccessLayer` - the route `OutOfDomainSpot`
+already uses, with the same `gfs0p25`, `ecmwf0p25`, `Canadian-NH` and
+`gefs0p50` locations - and blends them with equal weight.
+
+The blend is then **seam-matched**. Along the grid's southern edge the model
+pmsl is corrected to equal the forecaster's grid exactly, and the correction
+fades out over `SEAM_FADE_DEG` (5 degrees) southward. Isobars cross the seam
+without a jog, the edited grids stay authoritative where they exist, and the
+models govern the tropics.
+
+The module writes no XML. `CreateXML.py` passes each gap piece through **the
+site's own** `smoothPressure`, `makePressureContours` and
+`xmladdPressureContour` into the same Isobars layer, and the gap's Highs and
+Lows through `findPressureExtrema`, `plotPeakPressureLocations`,
+`xmladdPressureSymbol` and `xmladdPressureExtremaLabel` into the Features
+layer. So the gap comes out in exactly the schema the rest of the chart uses.
+
+### The dialog
+
+| Option | Effect |
+|---|---|
+| `Fill south of grid:` | `On` (default) or `Off`, which draws the chart exactly as before |
+| `Gap models:` | any of GFS, ECMWF, CMC, GEFS; default GFS + ECMWF, blended with equal weight |
+
+A model that cannot supply the field is skipped, with the reason on the status
+bar - no run valid at that time, no pmsl parameter, nothing over the gap. With
+none left, the chart goes out unchanged. The models actually used, and their
+run times, are on the status bar too.
+
+### Details worth knowing
+
+- **Blending and tropical cyclones.** Averaging models that place a TC 100 NM
+  apart gives a broader, shallower low than any one of them. That is fine for
+  the synoptic isobars but under-draws a compact typhoon. Tick a single model
+  when one matters.
+- **The dateline.** The gap follows the longitude convention of the GFE grid
+  it is given. A grid in `0..360` gets a `0..360` gap in one piece. A grid in
+  `-180..180` gets `-180..180`, split at the dateline into two pieces that
+  share the 180 column, so contours meet. Highs and Lows are found on the
+  unsplit field, so a typhoon on 180 is one center.
+- **The seam.** A High or Low within `SEAM_MARGIN_DEG` (1 degree) of the grid
+  edge is left to the GFE grid, so no center is drawn twice. One within
+  `EDGE_MARGIN_DEG` of the gap's other edges is an edge artifact, not a center,
+  and is dropped.
+- **Parameter names differ between models.** `PMSL`, `PRMSL`, `MSLP`, `MSL` and
+  `MSLMA` are tried in that order, at `0.0MSL` then `0.0SFC`. Whichever the DAL
+  offers first is used, and Pa are converted to mb.
+- `GAP_SOUTH_LAT` (17N), `GAP_RES_DEG`, `SEAM_FADE_DEG` and `GAP_MODELS` are
+  constants at the top of the module.
+
+### Installing
+
+1. Put `PressureGapFill.py` next to `A2GraphicsFunctions.py`, in the GFE
+   `userPython/utilities` tree.
+2. Carry the `CreateXML.py` change into your production copy. The file here
+   was committed as uploaded first, so `git show` on the gap-fill commit is the
+   exact diff: seven small hunks, five of them marked `# --- Gap fill`, plus
+   two import lines and a line in the modification history. The file keeps its
+   CRLF line endings.
+
+### Checking it without AWIPS
+
+```bash
+python3 tests/pressure_gap_fill/test_pressure_gap_fill.py
+python3 tests/pressure_gap_fill/test_createxml_gapfill.py
+python3 tests/pressure_gap_fill/plot_gap_fill.py
+```
+
+See `tests/pressure_gap_fill/README.md`.

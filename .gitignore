@@ -19,3 +19,6 @@ docs/cps/
 
 # tests/create_xml_windhazards/test_windhazard_xml.py output
 tests/create_xml_windhazards/out/
+
+# tests/pressure_gap_fill/ output
+tests/pressure_gap_fill/out/
