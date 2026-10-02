@@ -2,7 +2,8 @@
 
 See find_center's own docstring for the rules exercised here: the MSLP
 minimum nearest a guess position within a search radius, below
-MAX_MSLP_HPA, not over terrain (surface pressure under MIN_PSFC_HPA),
+MAX_MSLP_HPA, not over terrain (MSLP more than TERRAIN_DEFICIT_HPA above
+the surface pressure),
 not poleward of POLE_LAT, not above an optional max_mslp cap, and
 within an optional reach = (lat0, lon0, km) of some other point.
 """
@@ -38,7 +39,7 @@ def test_finds_gaussian_low_at_its_center():
 
 
 def test_terrain_does_not_hide_the_real_low_beside_it():
-    """A terrain point (surface pressure under MIN_PSFC_HPA) reading deeper
+    """A terrain point (MSLP far above its surface pressure) reading deeper
     than the real low, placed inside the real low's own +/- LOCAL_MIN_HALF
     box, must not steal the fix: the real low is found instead, per
     find_center's docstring."""
@@ -46,11 +47,11 @@ def test_terrain_does_not_hide_the_real_low_beside_it():
     # 2 cells (0.5 deg) away from the low's center: inside the +/- 4 cell
     # box find_center tests for a local minimum, and reading far deeper
     # (900 hPa) than the genuine low, but over terrain (750 hPa surface
-    # pressure, well under MIN_PSFC_HPA).
+    # pressure, 150 hPa below its MSLP, well over TERRAIN_DEFICIT_HPA).
     terr_lat = clat + 2 * tc.g.RES_DEG
     assert terr_lat != clat
     set_point(f, terr_lat, clon, mslp_hpa=900.0, psfc_hpa=750.0)
-    assert tc.MIN_PSFC_HPA > 750.0
+    assert 900.0 - 750.0 > tc.TERRAIN_DEFICIT_HPA
 
     hit = tc.find_center(f, clat, clon, radius_km=400.0, wrap=False)
     assert hit is not None
@@ -113,3 +114,18 @@ def test_latitudes_poleward_of_pole_lat_are_excluded():
     add_gaussian_low(f2, tc.POLE_LAT - 1.0, plon, depth_hpa=30.0, sigma_km=100.0)
     hit2 = tc.find_center(f2, tc.POLE_LAT - 1.0, plon, radius_km=200.0, wrap=False)
     assert hit2 is not None
+
+
+def test_deep_sea_level_low_is_not_terrain():
+    """A 925 hPa low over the sea has a 925 hPa surface pressure too; the
+    terrain test is relative to MSLP, so the center is found (an absolute
+    floor of 950 hPa used to mask it out)."""
+    f = make_frame(45.0, 65.0, 170.0, 190.0, mslp_hpa=BASE_HPA)
+    clat, clon = 57.0, 184.5
+    add_gaussian_low(f, clat, clon, 88.0, 300.0)
+    f["psfc"] = f["pmsl"].copy()  # sea level everywhere: surface pressure equals MSLP
+    assert f["pmsl"].min() / 100.0 < 930.0
+    assert not tc.terrain(f).any()
+    hit = tc.find_center(f, clat, clon, radius_km=300.0, wrap=False)
+    assert hit is not None
+    assert hit[2] == pytest.approx(BASE_HPA - 88.0, abs=0.01)

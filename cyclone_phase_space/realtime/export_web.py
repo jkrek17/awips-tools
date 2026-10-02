@@ -111,9 +111,11 @@ TERRAIN_RING_DEG = 1.0  # closed isobars smaller than this over high terrain are
 MIN_PART_DEG = 0.2  # a dateline piece narrower than this is the half-cell pad, not part of the blob
 NDIG = 2
 BLOB_RADIUS_KM = 200  # the dilation radius the low-finder uses to build each blob (track_cps.CLOSED_BLOB_KM)
-TERRAIN_PSFC_HPA = 925.0  # display default (not a product rule): a center this far below the surface, roughly
-#                          770 m, is flagged as a terrain artifact rather than a real low; trips over the
-#                          Iranian and Mexican plateaus, Mongolia and the Andes foothills, not the Great Plains
+TERRAIN_DEFICIT_HPA = 90.0  # display default (not a product rule): a center where MSLP exceeds the surface
+#                             pressure by this much, roughly 770 m of elevation, is flagged as a terrain
+#                             artifact rather than a real low; trips over the Iranian and Mexican plateaus,
+#                             Mongolia and the Andes foothills, not the Great Plains. Relative to MSLP, so a
+#                             deep low at sea level (surface pressure far below 925 hPa) is not flagged
 
 CLASS_FULL = ["symmetric deep warm core", "symmetric shallow warm core", "asymmetric deep warm core",
               "asymmetric shallow warm core", "asymmetric cold core", "symmetric cold core", "shallow cold core"]
@@ -453,7 +455,7 @@ def lows_features(f: dict, p: dict) -> list[dict]:
                        "properties": {"kind": "center", "id": n, "lat": la, "lon": lo, "mslp": round(mslp, 1),
                                       "hvtl": r1(p["hvtl"][i, j]), "hvtu": r1(p["hvtu"][i, j]),
                                       "hb": r1(p["hb"][i, j]), "idx": r1(p["idx"][i, j]), "cls": c,
-                                      "psfc": psfc, "terrain": psfc is not None and psfc < TERRAIN_PSFC_HPA,
+                                      "psfc": psfc, "terrain": psfc is not None and mslp - psfc > TERRAIN_DEFICIT_HPA,
                                       "radius_km": BLOB_RADIUS_KM,
                                       "name": tc.CLASS_SHORT[c] if 0 <= c < len(tc.CLASS_SHORT) else str(c)},
                        "geometry": {"type": "Point", "coordinates": [lo, la]}})
@@ -464,9 +466,10 @@ def mslp_features(f: dict, tol: float = MSLP_TOL_DEG) -> list[dict]:
     """Isobars every MSLP_STEP_HPA hPa from contourpy on the global field.
     The first column is repeated at lon 180 so lines reach the dateline,
     where they end (and continue from -180). Small closed rings (under
-    TERRAIN_RING_DEG across) centered where the surface pressure is below
-    tc.MIN_PSFC_HPA are dropped: over high terrain MSLP is extrapolated and
+    TERRAIN_RING_DEG across) centered over terrain (tc.terrain: MSLP more
+    than 60 hPa above the surface pressure) are dropped: over high terrain MSLP is extrapolated and
     breaks into many such rings, which are noise rather than lows."""
+    terr = tc.terrain(f)
     lat, lon = f["lat"], f["lon"]
     pm = f["pmsl"] / 100.0
     ps = f["psfc"] / 100.0
@@ -484,7 +487,7 @@ def mslp_features(f: dict, tol: float = MSLP_TOL_DEG) -> list[dict]:
                 cx, cy = line.mean(axis=0)
                 i = int(np.clip(round((cy - lat[0]) / dlat), 0, lat.size - 1))
                 j = int(round((cx - lon[0]) / dlon)) % lon.size
-                if ps[i, j] < tc.MIN_PSFC_HPA:
+                if terr[i, j]:
                     continue
             line = np.clip(line, [-180.0, -90.0], [180.0, 90.0])
             s = LineString(line).simplify(tol, preserve_topology=False)
