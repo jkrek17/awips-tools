@@ -10,7 +10,7 @@
 
 const FALLBACK_DATA = 'https://raw.githubusercontent.com/jkrek17/awips-tools/cps-live/latest/';
 const LOCAL_DATA = 'data/latest/';  // beside the page when served from the web repository
-const ARTICLE_URL = 'https://jkrek17.github.io/awips-tools/cps/';
+const ARTICLE_URL = 'https://jkrek17.github.io/web/article/';  // published with this page
 const SPACE_URL = ARTICLE_URL + 'figures/phase_space_3d.html';
 const GUIDE_URL = 'https://jkrek17.github.io/web/forecasters/';  // the plain-language explainer, published with this page
 const LABEL_ZOOM = 4;            // MSLP labels at centers and on contours from this zoom
