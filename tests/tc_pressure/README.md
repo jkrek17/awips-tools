@@ -2,6 +2,7 @@
 
 ```bash
 python3 test_tc_pressure.py
+python3 plot_pressure_from_warning.py   # one synthetic typhoon, step by step
 ```
 
 `GFE/utilities/TCPressure.py` moves a tropical cyclone in a pmsl field to the

@@ -23,3 +23,4 @@ tests/create_xml_windhazards/out/
 # tests/pressure_gap_fill/ output
 tests/pressure_gap_fill/out/
 tests/tcwind_jtwc/out/
+tests/tc_pressure/out/
