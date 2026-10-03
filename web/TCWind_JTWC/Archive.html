@@ -1891,7 +1891,8 @@ function buildMap() {
     return;
   }
   if (!S.map) {
-    S.map = L.map('map', { worldCopyJump: true, scrollWheelZoom: false });
+    // No world-copy jump: a dateline crosser is drawn past 180 (archLon).
+    S.map = L.map('map', { worldCopyJump: false, scrollWheelZoom: false });
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 10, attribution: '&copy; OpenStreetMap'
     }).addTo(S.map);
@@ -1903,7 +1904,8 @@ function buildMap() {
 
   var C = themeColors();
   var pts = [], i;
-  for (i = 0; i < S.storm.length; i++) pts.push([S.storm[i].lat, S.storm[i].lon]);
+  S.lonRef = S.storm.length ? S.storm[0].lon : 0;
+  for (i = 0; i < S.storm.length; i++) pts.push(archPt(S.storm[i].lat, S.storm[i].lon));
   L.polyline(pts, { color: C.axis, weight: 3, opacity: 0.95 }).addTo(S.mapLayers);
   L.polyline(pts, { color: C.surface, weight: 1, opacity: 0.9, dashArray: '4,6' }).addTo(S.mapLayers);
 
@@ -1912,18 +1914,18 @@ function buildMap() {
     // shape, not colour, carries intensity band
     var mk;
     if (v >= 96) {
-      mk = L.marker([S.storm[i].lat, S.storm[i].lon], {
+      mk = L.marker(archPt(S.storm[i].lat, S.storm[i].lon), {
         icon: L.divIcon({ className: '', iconSize: [11, 11], html:
           '<div style="width:9px;height:9px;background:' + C.text + ';transform:rotate(45deg);' +
           'border:1px solid ' + C.surface + '"></div>' })
       });
     } else if (v >= 64) {
-      mk = L.marker([S.storm[i].lat, S.storm[i].lon], {
+      mk = L.marker(archPt(S.storm[i].lat, S.storm[i].lon), {
         icon: L.divIcon({ className: '', iconSize: [10, 10], html:
           '<div style="width:8px;height:8px;background:' + C.text + ';border:1px solid ' + C.surface + '"></div>' })
       });
     } else {
-      mk = L.circleMarker([S.storm[i].lat, S.storm[i].lon], {
+      mk = L.circleMarker(archPt(S.storm[i].lat, S.storm[i].lon), {
         radius: 3.4, color: C.surface, weight: 1, fillColor: C.text, fillOpacity: 1
       });
     }
@@ -1937,13 +1939,20 @@ function buildMap() {
   S.map.fitBounds(L.latLngBounds(pts).pad(0.25));
 }
 
+/** [lat, lon] with lon within 180 of the storm's first fix, so a track over
+ *  the dateline is drawn in one piece rather than the long way round. */
+function archPt(lat, lon) {
+  var ref = S.lonRef || 0;
+  return [lat, ref + mod360(lon - ref + 180) - 180];
+}
+
 function updateMapForRecord(an) {
   if (!S.mapOk || !S.mapDyn) return;
   var C = themeColors();
   S.mapDyn.clearLayers();
   var lat = an.snap.lat, lon = an.snap.lon;
 
-  L.circleMarker([lat, lon], {
+  L.circleMarker(archPt(lat, lon), {
     radius: 8, color: C.text, weight: 3, fillColor: C.surface, fillOpacity: 0.9
   }).addTo(S.mapDyn).bindTooltip('selected: ' + dtg(an.rec.iso));
 
@@ -1952,7 +1961,7 @@ function updateMapForRecord(an) {
   for (a = 0; a < 360; a += 5) {
     var rr = an.field.r34At(a);
     if (!rr || rr <= 0) { ring = null; break; }
-    ring.push(V.destPoint(lat, lon, a, rr));
+    ring.push(archPt.apply(null, V.destPoint(lat, lon, a, rr)));
   }
   if (ring && ring.length) {
     L.polygon(ring, { color: THR_COLOR[34], weight: 3, fill: false, dashArray: null })
@@ -1967,7 +1976,7 @@ function updateMapForRecord(an) {
       var Q = QUADS[qi], r = num(q34[Q]);
       if (!r || r <= 0) continue;
       for (var aa = QUAD_AZ[Q] - 45; aa <= QUAD_AZ[Q] + 45; aa += 5) {
-        poly.push(V.destPoint(lat, lon, mod360(aa), r));
+        poly.push(archPt.apply(null, V.destPoint(lat, lon, mod360(aa), r)));
       }
     }
     if (poly.length > 3) {

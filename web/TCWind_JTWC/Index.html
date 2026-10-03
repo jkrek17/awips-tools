@@ -780,7 +780,9 @@ var map = L.map('map', {
   zoomAnimation: !reduceMotion,
   fadeAnimation: !reduceMotion,
   markerZoomAnimation: !reduceMotion,
-  worldCopyJump: true
+  // Off: storms are drawn in lonBase's frame (below), which can run past
+  // 180, and a jump back to -180..180 would leave them on the other copy.
+  worldCopyJump: false
 }).setView([20, 140], 4);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -812,6 +814,57 @@ legend.onAdd = function () {
 };
 legend.addTo(map);
 
+/* --------------------------------------------------------------------------
+   Longitude frame.  Bulletins give -180..180, so a track over the dateline
+   jumps from 179.9 to -179.9 and Leaflet draws that leg the long way round
+   the world.  Everything on the map is drawn in one continuous frame,
+   [lonBase, lonBase + 360), cut at the widest stretch of longitude with no
+   storm in it.  With nothing near the dateline that is the usual -180..180.
+   ----------------------------------------------------------------------- */
+var lonBase = -180;
+
+function setLonFrame(list) {
+  var ls = [], i, j;
+  for (i = 0; i < list.length; i++) {
+    for (j = 0; j < list[i].taus.length; j++) ls.push(V.mod360(list[i].taus[j].lon));
+  }
+  if (!ls.length) { lonBase = -180; return; }
+  ls.sort(function (a, b) { return a - b; });
+  // Cut in the widest gap - at the dateline when that gap holds it, so the
+  // usual case gets the usual frame.
+  var best = -1, cut = 180;
+  for (i = 0; i < ls.length; i++) {
+    var a = ls[i], b = i + 1 < ls.length ? ls[i + 1] : ls[0] + 360;
+    var hasDateline = (a < 180 && 180 < b) || (a < 540 && 540 < b);
+    if (b - a > best || (b - a === best && hasDateline)) {
+      best = b - a;
+      cut = hasDateline ? 180 : a + best / 2;
+    }
+  }
+  cut = V.mod360(cut);
+  lonBase = cut >= 180 ? cut - 360 : cut;
+}
+
+/** A longitude in the map's frame. */
+function mapLon(lon) {
+  return lonBase + V.mod360(lon - lonBase);
+}
+
+/** [lat, lon] in the map's frame. */
+function mapPt(lat, lon) {
+  return [lat, mapLon(lon)];
+}
+
+/** A ring of [lat, lon] around a centre, kept in one piece: each point on
+ *  the same side of the dateline as the centre, the centre in the frame. */
+function mapRing(pts, clon) {
+  var c = mapLon(clon), out = [], i;
+  for (i = 0; i < pts.length; i++) {
+    out.push([pts[i][0], c + V.mod360(pts[i][1] - c + 180) - 180]);
+  }
+  return out;
+}
+
 /** White-cased line so a ring reads over tiles, raster or another ring. */
 function inked(kind, latlngs, opts) {
   var halo = {};
@@ -826,7 +879,7 @@ function inked(kind, latlngs, opts) {
 }
 
 function ringLabel(lat, lon, az, r, text) {
-  var p = V.destPoint(lat, lon, az, r);
+  var p = mapRing([V.destPoint(lat, lon, az, r)], lon)[0];
   L.marker(p, {
     interactive: false,
     icon: L.divIcon({ className: 'ringLabel', html: text,
@@ -846,7 +899,7 @@ function drawVectors(items, epoch) {
     for (i = 0; i < storms.length; i++) {
       s = storms[i];
       var pts = [];
-      for (j = 0; j < s.taus.length; j++) pts.push([s.taus[j].lat, s.taus[j].lon]);
+      for (j = 0; j < s.taus.length; j++) pts.push(mapPt(s.taus[j].lat, s.taus[j].lon));
       inked(L.polyline, pts, {
         color: ink, weight: s.pil === focusPil ? 2.5 : 1.5,
         opacity: s.pil === focusPil ? 0.95 : 0.5, dashArray: '5,5'
@@ -854,7 +907,7 @@ function drawVectors(items, epoch) {
       for (j = 0; j < s.taus.length; j++) {
         t = s.taus[j];
         var isNow = (t.epoch === epoch);
-        L.circleMarker([t.lat, t.lon], {
+        L.circleMarker(mapPt(t.lat, t.lon), {
           radius: isNow ? 5 : 3, color: ink, weight: isNow ? 2.5 : 1.5,
           fillColor: bandColor(t.vmax), fillOpacity: 1,
           opacity: s.pil === focusPil ? 1 : 0.55
@@ -874,7 +927,7 @@ function drawVectors(items, epoch) {
        builds no vortex for it, so it gets a hollow centre and no rings, which
        is itself the message. */
     if (!hasField(it)) {
-      L.circleMarker([snap.lat, snap.lon], {
+      L.circleMarker(mapPt(snap.lat, snap.lon), {
         radius: focused ? 6 : 4, color: ink, weight: focused ? 2.5 : 1.5,
         fillColor: tok('--ink-halo'), fillOpacity: 0.85, dashArray: '2,3'
       }).addTo(vecLayer).bindTooltip(
@@ -886,7 +939,8 @@ function drawVectors(items, epoch) {
     if (showRadii) {
       for (j = 0; j < thrs.length; j++) {
         var thr = thrs[j];
-        inked(L.polygon, steppedPolygon(snap.lat, snap.lon, snap.radii[thr], 1), {
+        inked(L.polygon, mapRing(
+            steppedPolygon(snap.lat, snap.lon, snap.radii[thr], 1), snap.lon), {
           color: ink, weight: focused ? 2.5 : 1.5, fill: false,
           opacity: focused ? 1 : 0.55, dashArray: RING_DASH[thr]
         }).bindTooltip('R' + thr + ' as reported: NE ' +
@@ -903,7 +957,8 @@ function drawVectors(items, epoch) {
     if (showTgt) {
       for (j = 0; j < thrs.length; j++) {
         inked(L.polygon,
-          steppedPolygon(snap.lat, snap.lon, snap.radii[thrs[j]], QAVG), {
+          mapRing(steppedPolygon(snap.lat, snap.lon, snap.radii[thrs[j]], QAVG),
+                  snap.lon), {
             color: ink, weight: focused ? 1.6 : 1, fill: false,
             opacity: focused ? 0.95 : 0.45, dashArray: '1,3'
           }).bindTooltip('GTCM fit target: 0.85 × R' + thrs[j] +
@@ -915,7 +970,7 @@ function drawVectors(items, epoch) {
       }
     }
 
-    L.circleMarker([snap.lat, snap.lon], {
+    L.circleMarker(mapPt(snap.lat, snap.lon), {
       radius: focused ? 7 : 5, color: ink, weight: focused ? 3 : 2,
       fillColor: bandColor(snap.vmax), fillOpacity: 1
     }).addTo(vecLayer).bindTooltip(
@@ -1018,7 +1073,7 @@ function drawFieldFor(it) {
   var pad = Math.max(maxR * 2.2, 150) / 60.0;
   var north = it.snap.lat + pad, south = it.snap.lat - pad;
   var padLon = pad / Math.max(Math.cos(it.snap.lat * Math.PI / 180), 0.3);
-  var east = it.snap.lon + padLon, west = it.snap.lon - padLon;
+  var east = mapLon(it.snap.lon) + padLon, west = mapLon(it.snap.lon) - padLon;
 
   var NX = 260, NY = 220, i, ix, iy;
   var cv = document.createElement('canvas');
@@ -1150,6 +1205,7 @@ function drawR34Edge(it) {
   for (az = 0; az < 360; az += 2) {
     pts.push(V.destPoint(it.snap.lat, it.snap.lon, az, it.field.r34At(az)));
   }
+  pts = mapRing(pts, it.snap.lon);
   var color = tok('--f2');
   var halo = L.polygon(pts, {
     color: tok('--ink-halo'), weight: 4, opacity: 0.85, fill: false, interactive: false
@@ -1826,11 +1882,12 @@ function focusStorm(pil) {
 }
 
 function fitToStorm(s) {
-  var latMin = 90, latMax = -90, lonMin = 180, lonMax = -180, i;
+  var latMin = 90, latMax = -90, lonMin = Infinity, lonMax = -Infinity, i;
   for (i = 0; i < s.taus.length; i++) {
     var t = s.taus[i];
     latMin = Math.min(latMin, t.lat); latMax = Math.max(latMax, t.lat);
-    lonMin = Math.min(lonMin, t.lon); lonMax = Math.max(lonMax, t.lon);
+    var lon = mapLon(t.lon);
+    lonMin = Math.min(lonMin, lon); lonMax = Math.max(lonMax, lon);
   }
   map.fitBounds([[latMin - 3, lonMin - 3], [latMax + 3, lonMax + 3]],
                 { animate: !reduceMotion });
@@ -2022,6 +2079,7 @@ function ingest(results, sourceLabel) {
     s.file = s.file || r.file;
     storms.push(s);
   }
+  setLonFrame(storms);
 
   var stillThere = false;
   for (i = 0; i < storms.length; i++) if (storms[i].pil === focusPil) stillThere = true;
