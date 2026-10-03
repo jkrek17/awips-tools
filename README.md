@@ -12,6 +12,11 @@ AWIPS tools and procedures.
 | `legacy_tools/` | Earlier versions kept for reference; see `legacy_tools/VERSION_CONTROL.md`. |
 | `tests/tcwind_jtwc/` | Parser goldens, Python/JavaScript parity, and the GTCM verification. |
 | `GFE/procedures/TCWind_JTWC.py` | Builds GFE Wind grids from JTWC tropical cyclone warnings. See below. |
+| `GFE/procedures/CreateXML_WindHazards.py` | Builds a PGEN XML of 34-47, 48-63 and 64+ kt wind polygons for F000-024 and F024-048, plus the pmsl Lows and their track, to overlay in D2D while writing the High Seas text. See below. |
+| `tests/create_xml_windhazards/` | Harness test for that procedure, and a synthetic case it plots straight from the written XML. |
+| `GFE/procedures/CreateXML.py` | The site's chart XML procedure, now filling isobars and Highs/Lows from 17N up to the GFE grid's edge from a seam-matched model blend. See below. |
+| `GFE/utilities/PressureGapFill.py` | The gap-fill module that does it. |
+| `tests/pressure_gap_fill/` | Its checks, an end-to-end run of CreateXML.py, and a synthetic WPAC plot. |
 | `web/TCWind_JTWC/` | Google Apps Script web app for that tool: live JTWC and NHC bulletins, a best-track archive, and the verification findings. |
 | `web/HFArchiveExport/` | Google Apps Script web app that exports the restricted HF low sheet as CSV for `tools/publish.py`. |
 | `data/hf_lows/` | CSV exports of the hurricane force extratropical low archive workbook, committed here on purpose (see below). |
@@ -248,8 +253,10 @@ downstream is shared and knows nothing about which product produced it.
 `parseBulletin()` chooses the parser by inspecting the text, not by trusting
 the bin the bulletin arrived in — an office can put anything in any PIL, and a
 wrong guess would yield a confident parse of the wrong shape rather than an
-error. The dialog has a basin row and a per-slot row; a PIL runs only if both
-agree.
+error. The dialog's **Basins:** checklist starts with nothing ticked; tick
+one or more, and every slot in each is read. A storm crossing between
+basins is often in both centers' bulletins for a while; the newer one is
+used and the status bar says so.
 
 JTWC's WestPac is the case with no gridded alternative and the reason this
 tool exists. **NHC and CPHC do publish a gridded TCM**, and AWIPS already
@@ -268,6 +275,96 @@ bundled real bulletin, translated onto the office's own grid and rebased onto
 "now" — useful for confirming the install and seeing example output with no
 live storm in the text database (outside NW Pacific season, or between
 storms). It always writes to the preview grid only, never Fcst Wind.
+
+**Your background is left alone.** Inside a storm's 34 kt radius the
+warning's winds replace the Fcst Wind. Outside it they fade to nothing by
+1.5 times that radius and only raise the wind where yours is weaker - a
+front's gales next to the storm, or another gale area, come through
+exactly as you drew them. (An earlier version capped every wind of 30 kt
+or more to 30 kt out to five times the 34 kt radius.)
+
+#### pmsl: the storm where the warning has it
+
+With **Also move the storms in pmsl to the warnings:** on (the dialog
+default), the same run moves each storm in the Fcst pmsl grids, too. Before,
+the Wind grids followed the warning but the isobars stayed wherever the model
+had put the storm.
+
+![pmsl preview](docs/img/tcwind_pmsl_preview.png)
+
+*The real KROVANH warning, with a synthetic Fcst pmsl that has the storm
+1.5 degrees northeast of it all along the track. Top: Fcst pmsl. Bottom: the
+`pmslJTWC` preview the run wrote. At tau 0 the low is 994 mb, the
+bulletin's.*
+
+For every existing Fcst pmsl grid inside the warnings' valid periods, at its
+own time:
+
+1. The grid's own low near the warning position is found, at its center
+   between gridpoints with the environment's tilt taken out, and the
+   symmetric part of it removed. The ridge or trough around it stays.
+2. The warning's vortex is implanted at the warning position, its pressure
+   built through gradient-wind balance from the same fitted wind profile the
+   Wind grids use, so the isobars and the winds agree.
+3. One intensity scale per storm, fixed at the earliest grid so the tau-0
+   central pressure is the bulletin's, is carried through the rest.
+
+It writes where Wind writes: the `pmslJTWC` preview grid by default, or Fcst
+pmsl behind the same acknowledgement as Fcst Wind. It only touches pmsl grids
+that already exist, at their own cadence. Storm-times below 34 kt are left
+alone, as in the Wind grids. A storm just south of the grid still has its
+outer isobars moved, and CreateXML's gap fill moves the same storm the same
+way south of the grid edge, so the two meet.
+
+Things to know:
+
+- **Later intensities follow the warning's winds.** The depth at every time
+  comes from the forecast wind profile, through the tau-0 scale. A storm
+  whose wind field broadens deepens with it, so it can come out deeper than
+  a pressure-wind table would put it: in the picture, KROVANH at 45 kt with
+  a 190 nm NE gale radius is 983 mb at tau 48.
+- **A grid low on the domain edge is not removed**, because half a vortex
+  cannot be removed symmetrically. The status bar names any storm for which
+  no grid low was found, so a second low there can be looked for.
+- **It is stable when run again.** A second run finds the first run's storm
+  and puts it back where it was, to within 0.5 mb.
+- **It needs `TCPressure.py`** installed as a GFE utility. Without it the
+  Wind grids are built as before and the status bar says pmsl was left
+  alone. The AWIPS export bundle ships it.
+
+#### Days 6-7: forecaster points past the warning
+
+![Days 6-7 extension](docs/img/tcwind_days67_extension.png)
+
+*The real KROVANH warning ends at 120 h. Two forecaster points carry it to
+168 h, the last extratropical at 985 mb with gales mostly east of the
+center. The Wind and pmsl preview grids follow; the gale areas fall short
+of the entered radii (see below).*
+
+Warnings stop at 120 h. With **Forecaster points past the warning
+(days 6-7):** set to **Edit**, a second dialog per storm takes up to four
+points after the warning's end: valid time, position, max wind, the four
+34 kt radii, an optional central pressure, and an **extratropical** flag.
+They are appended to the warning's track, so the Wind and pmsl grids run to
+the last point. They are saved per storm and pre-filled next time; **Use
+saved** (the default) applies them without the dialog, and a point a newer
+warning covers is dropped.
+
+- **Central pressure** sets the pmsl depth at that point. From the warning's
+  end it takes over gradually, so the depth does not jump.
+- **Extratropical** lets the wind fit follow a one-sided gale field much
+  further than a tropical storm's fit is allowed to. It still cannot make
+  gales vanish on the weak side. It also flags the point the way a
+  warning's own transition is flagged, so **Subtropical / extratropical
+  systems: Skip** leaves it out, and **Include** (the default) now moves
+  such storms in pmsl too, not just Wind.
+- **Broad, weak gale fields come out too small.** This is a limit of the
+  wind fit, not of the extension: a 35-45 kt storm whose gales reach far
+  out cannot be fit, and its 34 kt extent falls well short (KROVANH at
+  35 kt: 120 nm reported, about 40 nm built). Extratropical storms are
+  often exactly this.
+- The points live in `~/.TCWind_JTWC_extensions.json` by default; set
+  `EXTENSION_STORE` to a shared directory so they survive a shift change.
 
 #### The web app
 
@@ -418,3 +515,355 @@ everyone holding the old link on the old build.
 
 `BestTrackData.gs` (~2 MB) is generated by `prep_besttrack_data.py`. Never
 hand-edit it.
+
+## CreateXML_WindHazards - warning wind polygons as PGEN XML
+
+`GFE/procedures/CreateXML_WindHazards.py` writes **one** PGEN XML per run
+holding, for each of the F000-024 and F024-048 periods, closed polygons for
+the 34-47, 48-63 and 64+ kt wind bands, plus the mean sea level pressure
+**Lows** and the **track** they trace. It appears under GFE's **Consistency**
+menu.
+
+Four layers, so each piece can be switched on or off in D2D on its own:
+
+| Layer | What is in it |
+|---|---|
+| `F000-024` | that period's three overlapping band polygons |
+| `F024-048` | the same for the second period |
+| `Lows` | every plotted Low, with its pressure and forecast hour |
+| `Track` | the line through the Lows that carry from one plot time to the next |
+
+It is a background field to overlay in D2D while writing the High Seas text:
+a guide to what the grids hold, on the same screen as the text, instead of a
+second screen showing the grids themselves. The text is far coarser than the
+grids - quadrants, semicircles and boxes around a low, not gridpoints - so the
+outline is deliberately smoothed and simplified into something that can be read
+off and written down. What that does not excuse is an area disappearing
+quietly: every contour the noise filters drop is named, with its size, on the
+status bar.
+
+The band labels follow the **Marine Weather Forecast Viewer**'s warning
+legend - Gale 34-47, Storm 48-63, Hurricane 64+ - so this overlay and the
+viewer's rendering of the issued text read the same way, and the colors follow
+the usual marine warning convention: yellow gale, orange storm, red hurricane
+force. Sub-gale is not drawn; adding `("SubGale", "<34", 0.0)` to `WIND_BANDS`
+would draw it.
+
+It follows `CreateXML.py`: it subclasses `A2GraphicsFunctions` and leaves the
+product, layer, pressure extrema and `storeXML` work to the site's own
+`XmlUtils`/`MathUtils` and the `A2GraphicsConfig` dictionaries (`outDir`,
+`pgenProd_dict`, `pgenAttr_dict["Features"]`).
+
+![Synthetic case](docs/img/createxml_windhazards_synthetic.png)
+
+*Both panels are drawn from the XML the procedure wrote, not from the fields -
+see `tests/create_xml_windhazards/plot_synthetic_case.py`.*
+
+### The cycle
+
+`Cycle: Auto` takes the most recent 00/06/12/18Z cycle at or before now, so a
+20Z run uses 18Z. Naming a cycle explicitly takes the most recent occurrence
+of that hour at or before now - asking for `18z` at 05Z means yesterday's 18Z.
+
+All times are UTC, and epoch seconds come from `calendar.timegm`, not
+`datetime.timestamp()`, so the workstation's `TZ` cannot shift which grids get
+read.
+
+### The bands
+
+Each period's polygons come from the **per-gridpoint maximum** Wind magnitude
+over whatever grids the inventory holds in the window, so the grids set their
+own cadence, and a polygon covers anywhere reaching that force at any point in
+the period.
+
+Grids are read **one at a time**, taking `wind[0]` explicitly the way
+`CreateXML.py` does. A vector read is `(magnitude, direction)`, and direction
+runs to 360 - so anything that maxes across that pair, or mistakes a
+`(2, ny, nx)` array for two scalar grids, puts a direction into the contours
+and reports hurricane force at every gridpoint. `MAX_PLAUSIBLE_WIND_KT` is a
+tripwire for exactly that: a period peaking above it draws nothing and says so,
+rather than banding the whole basin.
+
+A band's polygon is the closed contour at its **lower** bound, so **the bands
+overlap**: the 34-48 polygon is the whole gale-or-greater area, with the 48-64
+and 64+ polygons nested inside it. A PGEN `Line` cannot carry a hole, and
+overlapping closed contours are how these charts are drawn anyway.
+
+That field is lightly smoothed (`SMOOTH_PASSES`), optionally zeroed over the
+`Land` edit area, then contoured. Contours below `MIN_POLYGON_AREA_DEG2`
+(1 sq deg, roughly a 60 x 40 NM box at high-seas latitudes) or
+`MIN_POLYGON_POINTS` are dropped as noise **and reported**; longer ones are
+decimated to `MAX_POLYGON_POINTS` so the result stays editable in PGEN.
+
+A contour that comes back on itself is emitted `closed="true"`. **One that runs
+off the edge of the domain is not** - closing it would join its two ends with a
+chord straight across the chart, so it is drawn as an open line and kept on its
+length (`MIN_OPEN_LINE_DEG`) rather than an area that means nothing for an open
+line. A contour with an implausible jump in it, such as a wrap in the
+longitudes, is split at the gap rather than drawn across it
+(`MAX_POINT_JUMP_DEG`).
+
+### The Lows and the track
+
+**The pmsl inventory decides when Lows are plotted** - nothing is forced onto a
+schedule. `getGridInfo` is asked what exists over the selected span and those
+are the plot times, so a database with a gap simply yields fewer Lows instead
+of a run of "missing grid" warnings. They are then thinned to no closer than
+`LOW_INTERVAL_HRS` (6 h), so an hourly database doesn't put 49 Lows on the
+chart. If a site has no working `getGridInfo`, it falls back to every 6 hours.
+Highs are not plotted.
+
+Three dialog options control what reaches the chart. **`Lows every:`** thins the
+plotted Low *symbols* to 6, 12 or 24 h apart, or `Off` drops the Lows and track
+entirely; **`Hour labels:`** drops the `F0xx` text beside each mark; and
+**`Low track:`** drops the line while keeping the marks. The track is always
+built from every position read (`TRACK_INTERVAL_HRS`), so drawing a mark once a
+day still leaves a complete line through the low rather than three points in 48
+hours.
+
+The Lows are joined into **tracks** by nearest-neighbor matching from one plot
+time to the next: shortest distance first, so two tracks never claim the same
+Low, and anything unmatched starts a track of its own. A Low may move
+`TRACK_MAX_MOVE_NM` (600 NM) between plots and still count as the same Low -
+scaled up when a missing grid widens the gap - and a Low seen only once is not
+a track. Lows weaker than `TRACK_MAX_PRESSURE` are plotted but not tracked.
+Ranges are computed across the dateline correctly, for the Pacific.
+
+The four layers collapse into one `Default` layer when the basin's
+`pgenProd_dict["saveLayers"]` is false. Layer names are the `LAYER_NAMES`
+constant.
+
+### Telling the periods apart
+
+`Color by:` chooses which dimension carries the color:
+
+| Setting | Color | Period shown by | Band shown by |
+|---|---|---|---|
+| `Band` (default) | `BAND_COLORS` - yellow gale, orange storm, red hurricane force | line pattern (`PERIOD_LINE_TYPES`: solid vs dashed) | color |
+| `Period` | `PERIOD_COLORS` - cyan and blue, kept clear of the warning colors | color | line width (`LINE_WIDTH`) |
+
+`Hatch fill: On` additionally fills each polygon with its period's hatch
+pattern (`PERIOD_FILL_PATTERNS`) instead of leaving it as an outline. Every one
+of those tables is a module constant at the top of the file - retune without
+touching the logic.
+
+### The PGEN activity
+
+A real OPC chart's `Product` carries **`type` and `name`** - the same string
+in both - and no `subType`:
+
+```xml
+<Product outputFile="Atlantic_HS_Surface.F000.xml" useFile="false"
+         saveLayers="false" onOff="true" status="UNKNOWN" center="OPC"
+         forecaster="jason.krekeler" type="Atlantic_HS_Surface(F000)"
+         name="Atlantic_HS_Surface(F000)">
+```
+
+So this one builds `basin_long + "_" + ACTIVITY_AREA + "_" +
+ACTIVITY_PRODUCT + "(" + ACTIVITY_FHR + ")"` and passes it twice, giving
+`Atlantic_HS_WindHazards(F048)`. **`ACTIVITY_NAME` overrides that** - it is
+`"Default"` at the moment, so the chart lands in PGEN's stock activity with
+nothing to register while testing; set it to `None` to use the built name once
+that activity exists in your list. Either way the run prints the activity it
+used on the status bar. `ACTIVITY_PRODUCT` is `WindHazards` rather
+than `Surface` **on purpose**: an activity is identified by that name, so
+reusing `Surface` would store this chart over the real one.
+
+The output file follows the real charts too - `<Basin>_<Area>_<Product>.<Fhr>.xml`,
+the forecast hour after a dot, with no cycle or database in it.
+
+### The `Line` element
+
+The site's `XmlUtils` has no polygon writer to borrow (`CreateXML.py` only ever
+asks it for contours, barbs, symbols and text), so `addLineToXml` emits the
+PGEN `Line` itself - matched attribute for attribute against a Line from a real
+OPC `Isobars` layer:
+
+```xml
+<Line flipSide="false" fillPattern="SOLID" filled="false" closed="true"
+      smoothFactor="2" sizeScale="1.0" lineWidth="3.0"
+      pgenCategory="Lines" pgenType="LINE_SOLID">
+  <Color alpha="255" blue="0" green="255" red="255"/>
+  <Point Lon="-175.639999" Lat="59.009998"/>
+</Line>
+```
+
+Two details matter and are easy to get wrong: the points are `<Point Lon Lat>`,
+**not** `<linePoints>`, and the color is a single `<Color>`, **not** `<colors>`.
+PGEN cannot deserialize an activity holding elements it does not recognize -
+that is what `unable to deserialize PGEN activity. Name is null` means. An
+unfilled Line still carries `fillPattern="SOLID"`; the hatch pattern only
+appears when the polygon is filled. The tests assert every one of those, so a
+regression fails locally rather than in CAVE.
+
+### Checking it without AWIPS
+
+```bash
+python3 tests/create_xml_windhazards/test_windhazard_xml.py     # 123 checks
+python3 tests/create_xml_windhazards/plot_synthetic_case.py     # writes a PNG
+```
+
+The first fakes the AWIPS and A2Graphics surface - including an inventory the
+procedure has to read - and drives `execute()` the way GFE would. The second
+reuses those fakes over a synthetic deepening low, then plots **the XML that
+run wrote** - every polygon, Low and track vertex in the picture is read back
+out of the file. See `tests/create_xml_windhazards/README.md`.
+
+## CreateXML gap fill - isobars south of the GFE grid
+
+The OPC charts run to 17N but the GFE grid stops near 30N, so every isobar and
+every pressure center between them - which is where the WPAC tropical cyclones
+are - had to be drawn by hand. `CreateXML.py` now fills that strip.
+
+![Gap fill](docs/img/createxml_gap_fill.png)
+
+*Synthetic case, drawn from the XML the procedure wrote. Grey isobars come from
+the GFE grid, orange from the models. Top: seam-matched. Bottom: the same
+models with no seam matching, jogging at every crossing.*
+
+### How
+
+`GFE/utilities/PressureGapFill.py` fetches pmsl for the strip from the models
+picked in the dialog through the `DataAccessLayer` - the route `OutOfDomainSpot`
+already uses, with the same `gfs0p25`, `ecmwf0p25`, `Canadian-NH` and
+`gefs0p50` locations - and blends them with equal weight.
+
+The blend is then **seam-matched**. Along the grid's southern edge the model
+pmsl is corrected to equal the forecaster's grid exactly, and the correction
+fades out over `SEAM_FADE_DEG` (5 degrees) southward. Isobars cross the seam
+without a jog, the edited grids stay authoritative where they exist, and the
+models govern the tropics.
+
+The module writes no XML. `CreateXML.py` passes each gap piece through **the
+site's own** `smoothPressure`, `makePressureContours` and
+`xmladdPressureContour` into the same Isobars layer, and the gap's Highs and
+Lows through `findPressureExtrema`, `plotPeakPressureLocations`,
+`xmladdPressureSymbol` and `xmladdPressureExtremaLabel` into the Features
+layer. So the gap comes out in exactly the schema the rest of the chart uses.
+
+### The dialog
+
+| Option | Effect |
+|---|---|
+| `Fill south of grid:` | `On` (default) or `Off`, which draws the chart exactly as before |
+| `Gap models:` | any of GFS, ECMWF, CMC, GEFS; default GFS + ECMWF, blended with equal weight |
+| `Match TC warnings:` | `On` (default): tropical cyclones go where the JTWC / NHC / CPHC warnings have them, as deep as the warning says. `Off`: as the models have them |
+
+A model that cannot supply the field is skipped, with the reason on the status
+bar - no run valid at that time, no pmsl parameter, nothing over the gap. With
+none left, the chart goes out unchanged. The models actually used, and their
+run times, are on the status bar too.
+
+### Tropical cyclones: matched to the warning
+
+The models rarely have a typhoon where the warning puts it, or as deep, and
+it was the forecaster who had to make the isobars agree with the TCM. With
+`Match TC warnings:` on, each chart's gap carries every warned storm at **the
+warning's position for that chart's valid time, at the warning's central
+pressure**.
+
+![TC match](docs/img/createxml_tc_match.png)
+
+*Synthetic case, drawn from the XML the procedure wrote. The models put a
+40 mb typhoon 200 nm from the warning position. Left: as the models have it.
+Right: matched - the model's vortex is gone and the warning's is in its place,
+949 mb against the bulletin's 950.*
+
+`GFE/utilities/TCPressure.py` does the work, in three steps:
+
+1. **Read the warnings** from the text database - every warning slot
+   `TCWind_JTWC` knows, in every basin - with `TCWind_JTWC`'s own parser.
+   Warnings more than 12 hours old are dissipated storms and are skipped.
+   Each warning's track is interpolated to the chart's valid time. A chart
+   outside a warning's span leaves that storm out rather than extrapolating
+   it, and so does a storm the warning has already flagged subtropical.
+2. **Remove the models' vortex.** Its center is found within 360 nm of the
+   warning position, and the symmetric part of its pressure anomaly is taken
+   out, leaving the environment - the ridge, a monsoon trough - in place.
+3. **Implant the warning's vortex** at the warning position. Its pressure
+   profile is built, through gradient-wind balance, from the same wind
+   profile `TCWind_JTWC` fits to the warning's wind radii, so the isobars and
+   `TCWind_JTWC`'s Wind grids agree. Warnings give a central pressure only at
+   tau 0; one scale per storm, set there, makes the tau-0 central pressure the
+   bulletin's and carries through the forecast.
+
+All of this happens on the model blend, worked on a margin of about 12
+degrees beyond the gap so both vortices are whole, **before** the seam is
+matched. So the matched storm still meets the GFE grid without a jog.
+
+The status bar says what was done for each chart, for example:
+
+```
+F024 TC TESTER at 19.5N 137.5E, 949 mb - model low 207 nm off (21.5N 140.5E), moved
+```
+
+It also says when no model low was found near the warning (the vortex is
+added to the background as it stands), when a storm's center is in the GFE
+grid rather than the gap, and when the bulletin's pressure gave an anchor
+outside the sane range, so the vortex went in unanchored.
+
+**A storm north of the grid's edge is the grid's.** CreateXML still moves it
+in the model field, so its outer isobars in the gap follow the warning, but
+it does not edit the GFE grid. The isobars meet cleanly at the seam when the
+grid has the storm at the warning position, too.
+
+### Details worth knowing
+
+- **Blending and tropical cyclones.** Averaging models that place a TC 100 NM
+  apart gives a broader, shallower low than any one of them. With
+  `Match TC warnings:` on, that no longer matters for a warned storm: its
+  vortex is replaced. It still applies to a low with no warning.
+- **Speed.** GFS, ECMWF and GEFS come on plain lat/lon grids and are
+  interpolated bilinearly, in a fraction of a second. CMC's `Canadian-NH` is a
+  projected grid and goes through a triangulation, which takes a few seconds
+  more with a storm to move.
+- **The dateline.** The gap follows the longitude convention of the GFE grid
+  it is given. A grid in `0..360` gets a `0..360` gap in one piece. A grid in
+  `-180..180` gets `-180..180`, split at the dateline into two pieces that
+  share the 180 column, so contours meet. Highs and Lows are found on the
+  unsplit field, so a typhoon on 180 is one center.
+- **The seam.** A High or Low within `SEAM_MARGIN_DEG` (1 degree) of the grid
+  edge is left to the GFE grid, so no center is drawn twice. One within
+  `EDGE_MARGIN_DEG` of the gap's other edges is an edge artifact, not a center,
+  and is dropped - except a warned storm's own center: a typhoon at 17.5N,
+  half a degree inside the chart's edge, keeps its L.
+- **Parameter names differ between models.** `PMSL`, `PRMSL`, `MSLP`, `MSL` and
+  `MSLMA` are tried in that order, at `0.0MSL` then `0.0SFC`. Whichever the DAL
+  offers first is used, and Pa are converted to mb.
+- `GAP_SOUTH_LAT` (17N), `GAP_RES_DEG`, `SEAM_FADE_DEG` and `GAP_MODELS` are
+  constants at the top of the module.
+
+### Installing
+
+`python3 tools/export_createxml.py` builds
+`dist/CreateXML_GapFill_<date>.zip`: the four files below, `INSTALL.md`, and
+`CreateXML_changes.diff` - every change against the CreateXML.py the site
+uploaded, which is what the repo's copy started from.
+
+1. Put `PressureGapFill.py` and `TCPressure.py` next to
+   `A2GraphicsFunctions.py`, in the GFE `userPython/utilities` tree.
+2. `TCWind_JTWC.py` must be installed as a procedure: `TCPressure` uses its
+   parser. Without it, the gap is still filled, the storms stay where the
+   models have them, and the status bar says why.
+3. Carry the `CreateXML.py` change into your production copy. The file here
+   was committed as uploaded first, so `git show` on the gap-fill commit and
+   then on the TC-matching commit gives the exact diff. The gap-fill commit
+   has seven small hunks, five of them marked `# --- Gap fill`, plus two
+   import lines and a line in the modification history. The TC commit adds a
+   dialog row, an import, the warning read before the forecast-hour loop,
+   and the storms passed to `buildGapPressure`. The uploaded copy had
+   Windows line endings from its trip through email; the file now has Unix
+   ones, so diff with `git diff --ignore-cr-at-eol` to see only the real
+   changes.
+
+### Checking it without AWIPS
+
+```bash
+python3 tests/pressure_gap_fill/test_pressure_gap_fill.py
+python3 tests/pressure_gap_fill/test_createxml_gapfill.py
+python3 tests/pressure_gap_fill/plot_gap_fill.py
+python3 tests/pressure_gap_fill/plot_tc_match.py
+python3 tests/tc_pressure/test_tc_pressure.py
+```
+
+See `tests/pressure_gap_fill/README.md`.

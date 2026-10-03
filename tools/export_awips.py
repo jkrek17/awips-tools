@@ -7,6 +7,7 @@ fixtures, and a driver shell script) and an AWIPS_TEST.md walkthrough, into:
 
     dist/TCWind_JTWC_<VERSION>/
         TCWind_JTWC.py
+        TCPressure.py               (GFE utility, for the pmsl option)
         TCWind_JTWC_TECHNICAL.md
         AWIPS_TEST.md
         selfcheck/
@@ -45,6 +46,9 @@ PROC_SRC = os.path.join(REPO_ROOT, "GFE", "procedures", "TCWind_JTWC.py")
 # code without it would leave 62 dangling references on the AWIPS host.
 TECHDOC_SRC = os.path.join(
     REPO_ROOT, "GFE", "procedures", "TCWind_JTWC_TECHNICAL.md")
+# The pmsl option's utility.  It installs as a GFE utility, not a procedure;
+# in the bundle it sits beside TCWind_JTWC.py so the self-check finds it.
+TCPRESSURE_SRC = os.path.join(REPO_ROOT, "GFE", "utilities", "TCPressure.py")
 HARNESS_SRC = os.path.join(
     REPO_ROOT, "tests", "tcwind_jtwc", "test_procedure_harness.py")
 FIXTURES_SRC_DIR = os.path.join(REPO_ROOT, "tests", "tcwind_jtwc", "fixtures")
@@ -234,6 +238,10 @@ you are testing.
 4. Add a new procedure file named exactly `TCWind_JTWC.py` and paste in
    (or import) the contents of the `TCWind_JTWC.py` file from this bundle.
 5. Save.
+6. Under **GFE**, find **Utilities**, and add `TCPressure.py` from this
+   bundle the same way, at the same **User** level. It is what the pmsl
+   option uses. Without it the procedure still builds Wind grids, and the
+   status bar says pmsl was left alone.
 
 Once saved at User level, the procedure appears in the GFE **Populate**
 menu (its `MenuItems` entry is `"Populate"`), under your own name only.
@@ -253,8 +261,11 @@ testing here is done.
 
 ## Step 2.5: run the built-in test case (optional, but recommended first)
 
-The **Basin:** radio picks one ocean per run - Atlantic, East Pac, West Pac
-or Central Pac - and all five storm slots in it are read. Atlantic and East
+The **Basins:** checklist picks one or more oceans per run - Atlantic,
+East Pac, West Pac, Central Pac - and all five storm slots in each are
+read. Nothing is ticked by default, and a run with none ticked stops with
+a message; tick West Pac and Central Pac together for a storm crossing
+180 (if both centers have it, the newer bulletin is used). Atlantic and East
 Pac come from NHC, Central Pac from CPHC, West Pac from JTWC; the tool works
 out which product format it is holding from the text itself, not from the
 bin it arrived in.
@@ -265,7 +276,7 @@ and no dependence on what JTWC has (or has not) issued today.
 
 From the **Populate** menu, run **TCWind_JTWC**. In the dialog, set
 **Run test case (no live storm needed):** to **Yes**, and leave everything
-else at its default (the **Basin:** radio is ignored in this mode - the test
+else at its default (the **Basins:** checklist is ignored in this mode - the test
 case uses its own bundled storm, never the text database). Run it.
 
 **What the status bar should say**, roughly:
@@ -320,6 +331,21 @@ the fly by the procedure. It is not part of your site's normal parm
 configuration, is never saved or published, and disappears the moment you
 clear it (or exit GFE without it). It costs nothing to run repeatedly.
 
+**pmsl.** With **Also move the storms in pmsl to the warnings:** on its
+default, **Yes**, the same run also writes a `pmslJTWC` preview grid for
+every existing Fcst pmsl grid inside the warnings' valid periods: the pmsl
+grid with its own low taken out and the warning's put in, at the warning's
+position and, at tau 0, the bulletin's central pressure. The status bar
+line ends with what was done, roughly:
+
+```
+Moved the storms in N pmslJTWC preview grids: KROVANH (N grids,
+983-996 mb, grid's own low 118-122 nm off).
+```
+
+It needs Fcst pmsl grids to exist, the same way the Wind part needs Fcst
+Wind. `pmslJTWC` is temporary in exactly the way `WindJTWC` is.
+
 ## Step 4: what to look at
 
 Go through this checklist against the `WindJTWC` preview grid. For each
@@ -332,9 +358,14 @@ storm you test, note whether it matches the expected result.
 | Overall shape | One smooth storm. No seams or kinks at the NE/SE/SW/NW quadrant boundaries. |
 | Stepping through 3-hourly blocks | Core size and peak wind change smoothly from one block to the next. No sudden jumps. |
 | Footprint edge | Blends into the background wind field. No sharp ring or halo at the edge of the insert. |
+| Background winds away from the storm | Unchanged. Beyond 1.5 x the 34 kt radius the grid is exactly your Fcst Wind, and outside the 34 kt radius nothing is ever lowered - a front's gales next to the storm stay as you drew them. |
 | A storm below 34 kt (e.g. a tropical depression) | Leaves the background wind completely untouched at that time. |
 | Runtime | Under about a minute for one storm's full forecast period. Note the actual time it took. |
 | CAVE log | No Python traceback. Check `~/caveData/logs` on the workstation after the run. |
+| `pmslJTWC` low | At the warning position at each time, and at tau 0 within a mb or two of the bulletin's minimum central pressure. |
+| `pmslJTWC` where the old low was | No second low and no ring left where the Fcst pmsl grid had the storm. |
+| `pmslJTWC` far from the storm | Identical to Fcst pmsl. |
+| `pmslJTWC` at later times | Deepens and fills with the warning's winds. A storm whose wind field grows can come out deeper than a pressure-wind table would put it - note any that look wrong. |
 
 ## Step 5: known limits, not defects
 
@@ -372,6 +403,33 @@ output". You must set this to **Yes** before the procedure will write
 anything to Fcst Wind; leaving it on the default **No** stops the run
 with a status bar message and writes nothing. This acknowledgement gate
 only applies to Fcst Wind; preview runs never require it.
+
+With the pmsl option on, the same Fcst run also writes **Fcst pmsl**, in
+place, for the grids it previewed as `pmslJTWC`. Set the option to **No**
+to write Fcst Wind alone.
+
+## Step 7: days 6-7, past the warning
+
+Set **Forecaster points past the warning (days 6-7):** to **Edit**. After
+the main dialog, a second one opens for each live storm with four rows
+past the warning's last time. Fill one or two: valid time (DDHHMM),
+latitude (e.g. 38.5N), longitude (165.0E or 170.0W), max wind, the four
+34 kt radii NE SE SW NW, optionally a central pressure, and whether it is
+extratropical. Leave a row's latitude blank to skip it.
+
+Check, in the preview grids:
+
+| Check | Expected result |
+|---|---|
+| Last `WindJTWC` grid | At your last point's time |
+| `pmslJTWC` low at a point with a pressure | At your position, within a mb or two of your pressure |
+| Between 120 h and your first point | Track and winds change smoothly; no jump at 120 h |
+| Next run, on **Use saved** | Same extension without the dialog; the status bar says "extended to" |
+| An extratropical point with a one-sided gale field | Lopsided toward the strong side, though the weak side stays larger than you entered |
+
+The points are saved in `~/.TCWind_JTWC_extensions.json`. Note whether a
+colleague on the next shift can see them - that tells us whether the file
+needs to move to a shared directory.
 
 ## What to report back
 
@@ -413,6 +471,12 @@ def build_bundle():
 
     # TCWind_JTWC.py, verbatim.
     shutil.copyfile(PROC_SRC, os.path.join(bundle_dir, "TCWind_JTWC.py"))
+
+    # TCPressure.py, verbatim.
+    if not os.path.isfile(TCPRESSURE_SRC):
+        raise SystemExit("error: TCPressure.py not found at %s"
+                         % TCPRESSURE_SRC)
+    shutil.copyfile(TCPRESSURE_SRC, os.path.join(bundle_dir, "TCPressure.py"))
 
     # TCWind_JTWC_TECHNICAL.md, verbatim.
     if not os.path.isfile(TECHDOC_SRC):

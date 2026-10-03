@@ -11,7 +11,7 @@ marker pointing at the matching numbered note below.
 | | |
 |---|---|
 | Procedure | `GFE/procedures/TCWind_JTWC.py` |
-| Version | `2026-09-19a` (the `VERSION` tunable; the status bar prints it) |
+| Version | `2026-10-02d` (the `VERSION` tunable; the status bar prints it) |
 | Install | `/awips2/edex/data/utility/common_static/site/<SITE>/gfe/userPython/procedures/` |
 | Install test | `AWIPS_TEST.md`, and `selfcheck/run_selfcheck.sh` in the export bundle |
 
@@ -38,8 +38,9 @@ Two products, four basins:
 For the three TCM basins this is a text-only fallback and cross-check, not a
 replacement for the real gridded product.
 
-The dialog's **Basin:** radio picks one ocean per run and all five storm slots
-in it are read; empty and stale slots are skipped. `parseBulletin()` chooses
+The dialog's **Basins:** checklist picks one or more oceans per run (none
+ticked by default) and all five storm slots in each are read; empty and stale
+slots are skipped, and a storm in two basins' bulletins is kept once. `parseBulletin()` chooses
 the parser by inspecting the text, not by trusting the PIL — an office can
 store anything in any bin, and a misroute would not raise, it would return a
 confident parse of the wrong shape.
@@ -195,7 +196,7 @@ NHC and CPHC issue the TCM ("Forecast/Advisory"), the structural equivalent of J
 
 *module level*
 
-One run, one basin.  The dialog is a radio, so this list is both the option list and the label-to-PIL lookup, and its order is the order the forecaster sees.  The labels are deliberately the ocean names rather than ATCF codes or office ids - "Atlantic", not "AT - NHC".
+One or more basins per run.  The dialog is a checklist, so this list is both the option list and the label-to-PIL lookup, and its order is the order the forecaster sees.  The labels are deliberately the ocean names rather than ATCF codes or office ids - "Atlantic", not "AT - NHC".
 
 #### 4.  NOTE on what this does NOT claim.  NHC and CPHC already distribute a
 
@@ -422,7 +423,7 @@ Section headers and blank spacer rows are plain "label" rows too, so each one st
 
 *`_buildVarDict()`*
 
-One radio, not a list of every PIL in every basin. All five slots in the chosen basin are read; an empty or stale slot is skipped already, so there is nothing for a per-slot checkbox to save anyone.
+A checklist of basins, not of every PIL in every basin, and nothing ticked by default.  A storm crossing 180 is warned on from both sides, so West Pac and Central Pac often need to run together; ticking nothing is refused rather than guessed at.  All five slots in each ticked basin are read; an empty or stale slot is skipped already, so there is nothing for a per-slot checkbox to save anyone.  A varDict with the old single "Basin:" radio still works (selectedBasins()).
 
 #### 54.  JTWC keeps issuing position and intensity forecasts through
 
@@ -434,7 +435,7 @@ JTWC keeps issuing position and intensity forecasts through subtropical status a
 
 *`execute()`*
 
-Test case mode uses its own bundled storm, not textdb, so the basin radio does not apply to it and the empty guard below is skipped.  With a radio the list can only be empty if BASINS itself is, which would be a code error rather than a choice, but the guard is kept: a silent no-op run is worse than a message saying nothing was selected.
+Test case mode uses its own bundled storm, not textdb, so the basins do not apply to it and the empty guard below is skipped.  Otherwise a run with no basin ticked stops with a message saying so: a silent no-op run is worse.
 
 #### 56.  Safety property, enforced in code rather than only by dialog
 
@@ -662,6 +663,171 @@ amag, not the closed-over `a`: see _gtcmProfile()'s docstring. During the rm/x1/
 
 Tropical Depression strength: no organized 34kt- or-greater wind field to speak of, and - per JTWC's own reporting practice - essentially never any wind radii to build one from even if there were. This tool's parametric vortex is built to represent an organized TC circulation; inserting it over the background model's own winds here would invent structure that isn't really there, not add real information. Leave the background untouched for this storm at this time - any other, stronger storm in the same bulletin is unaffected.
 
+### pmsl: the storms moved to the warnings
+
+#### 64.  pmsl follows the same warnings, through TCPressure
+
+*module level*
+
+The Wind grids put each storm where the warning has it; the pmsl grids still
+had it wherever the model did, often 100 nm and more away and at the model's
+depth.  With "Also move the storms in pmsl to the warnings:" on, the same run
+moves the storm in every existing Fcst pmsl grid the warnings cover.  The
+work is done by `TCPressure` (`GFE/utilities/TCPressure.py`), the module
+CreateXML's gap fill uses for the same job south of the grid, so the grid and
+the chart's gap move a storm identically.  It is a utility, not part of this
+file: without it the Wind grids are built exactly as before and the status
+bar says pmsl was left alone.  The preview goes to `pmslJTWC`, a temporary
+parm made the way `WindJTWC` is; the Fcst write needs the same
+acknowledgement as Fcst Wind.
+
+#### 65.  `_movePmsl()`: each pmsl grid at its own time, one scale per storm
+
+*`_movePmsl()`*
+
+pmsl is adjusted in the grids that already exist, at their own cadence and
+time ranges, not on the 3-hourly Wind series: the pmsl inventory is the
+forecaster's, and nothing here should create or fragment it.  Each grid's
+storms are interpolated to the grid's start time.  A storm counts if its
+implanted vortex reaches the grid at all (its outer radius from the nearest
+gridpoint), so one just south of the grid edge still has its outer isobars
+moved.  Storm-times below 34 kt, and subtropical ones when those are skipped,
+are left alone, exactly as the Wind grids leave them.
+
+In each grid the grid's own vortex is found near the warning position, at its
+center between gridpoints with the environment's tilt taken out, and the
+symmetric part of its anomaly removed; the warning's vortex is implanted from
+the same fitted wind profile the Wind grids use, through gradient-wind
+balance.  The intensity scale that makes the tau-0 central pressure the
+bulletin's is fixed at the earliest grid - the one nearest tau 0 - and
+carried through the rest, so later grids are not re-anchored against a
+different environment.  Run twice, the second run finds the first run's
+storm and puts it back where it was: the harness holds that to 0.5 mb.
+
+A grid low on the field's edge is not removed, since half a vortex cannot be
+removed symmetrically; the status bar names any storm for which no grid low
+was found, so a second low there can be looked for.
+
+#### 66.  Off unless asked for
+
+*`execute()`*
+
+The dialog offers the pmsl option, set to Yes.  A varDict without the key -
+one saved before the option existed, or built by a caller that never offered
+it - leaves pmsl alone: a run that never showed the choice must never touch
+a second weather element.
+
+### Forecaster points past the warning (days 6-7)
+
+#### 67.  Extending a warning to day 7
+
+*module level*
+
+Warnings stop at 120 h; the forecast runs to 168 h.  The forecaster gives
+points past the warning's end - valid time, position, max wind, the four
+34 kt radii, optionally a central pressure, and an extratropical flag - and
+they are appended to the warning's own track, so everything downstream
+(Wind, pmsl, the 3-hourly series) runs to the last point with nothing else
+changed.  The run window already reaches 175 h.  Points are filed by storm
+ID in `EXTENSION_STORE` (JSON) and pre-filled next run; a point the
+warning now covers is dropped from the file, and a storm untouched for
+`EXTENSION_KEEP_DAYS` is forgotten.  The default store is in the
+forecaster's home directory: point it at a shared directory for the points
+to survive a shift change.  The main-dialog choice is "Use saved" (apply
+what is on file), "Edit" (the per-storm dialog), or "Off"; a varDict
+without the key is Off.
+
+#### 68.  Extratropical points: the asymmetry cap lifted
+
+*module level, `fitGTCM()`*
+
+The tropical fit caps the asymmetry vector at 1.5 times the motion-derived
+value and searches within 10 kt of it, on purpose (note 38): a one-sided
+report should not swing a tropical storm's field.  An extratropical storm's
+gale field is one-sided by nature.  For a point flagged extratropical the
+search reaches 30 kt from the motion vector and the cap rises to 0.45 times
+the max wind.  On a slow storm with 34 kt radii of 300/250/60/40 nm this
+takes the fit error from 4.4 kt to 1.2 kt and the strong side from about
+245 nm to 320 nm.  The weak side still comes out larger than reported
+(about 115/80 nm for 60/40): a symmetric profile plus one uniform vector
+cannot make gales vanish on one side.  For a fast storm the motion vector
+already supplies the asymmetry and nothing changes.
+
+The wind fit's known limit for broad weak systems applies with full force
+to extratropical storms: a 35-45 kt storm whose gales reach far out cannot
+be fit (the profile would need an exponent below GTCM_X_MIN), and its 34 kt
+extent comes out well short of the reported radii.
+
+#### 69.  `_askExtension()`: the days 6-7 dialog
+
+*`_askExtension()`*
+
+One dialog per live storm, four rows, in time order: saved points still
+past the warning, then empty rows at EXTENSION_HOURS after the warning's
+initial time.  All entries are text boxes parsed here, so "38.5N", "165E",
+"170W", "300 250 60 40" are all accepted; a row whose latitude is blank is
+no point, so blanking it deletes a saved point.  A row that cannot be read
+is skipped and named on the status bar; Cancel stops the run.
+
+#### 70.  The forecaster's central pressure
+
+*`_movePmsl()`, `TCPressure.relocateStorms()`*
+
+Between two points with a pressure, the target is interpolated at full
+weight.  From the warning's last time - depth from the winds through the
+tau-0 scale - to the first point with a pressure, the target's weight ramps
+from 0 to 1, so the depth hands over smoothly.  The vortex keeps its shape
+from the wind profile and is scaled to reach the target, within 0.3-3.0
+(an extratropical storm's pressure fall is often far from what its winds
+balance); a target out of reach is reported and the warning's depth kept.
+
+#### 71.  Extratropical storm-times follow the radio, in pmsl too
+
+*`execute()`*
+
+An extratropical point is flagged the way the parser flags a warning's own
+transition, so "Subtropical / extratropical systems: Skip" leaves it out of
+Wind, and pmsl now follows the same choice: with Include, the storm is
+moved in pmsl at those times as well, where before the pmsl step always
+left a flagged storm as the model had it.
+
+#### 72.  One storm, two basins
+
+*`dropDuplicateStorms()`*
+
+With more than one basin ticked, a storm crossing a basin boundary can be
+in both: CPHC's last advisory and JTWC's first warning sit in textdb
+together for a while, and two bulletins for one storm would put two
+vortices on the grid.  At the newer bulletin's initial time, the older one's
+track is compared with it: the same name within 300 nm, or - when either is
+unnamed - within 60 nm, is the same storm, and the older bulletin is
+dropped and named on the status bar.  Two named storms with different names
+are never merged, however close, so a Fujiwhara pair survives.
+`TCPressure.readWarnings()`, which reads every basin for CreateXML's gap
+fill, uses the same function.
+
+### The background outside the storm
+
+#### 73.  Outside R34 the background is only ever raised
+
+*module level, `insertStorms()`, `execute()`*
+
+The background Wind is the forecaster's, set before the tool runs; the tool
+puts the warning in and nothing else.  Inside the storm's 34 kt radius the
+warning's winds replace the background.  Outside it they fade to nothing
+by MAX_INSERT_RADIUS_FACTOR (1.5) x R34, with a cos^2 taper, and go in only
+where they beat the background.  On LEE at tau 0: +24 kt just outside R34
+on a 10 kt background, +3 kt by 1.4 x R34, nothing past 1.5 x.
+
+Two things that used to lower it are gone.  A 30 kt background cap out to
+5 x R34 was meant to flatten a model's misplaced copy of the storm, and
+flattened any front or other gale area in that ring with it - a 40 kt band
+400 nm from LEE came out at 30 kt.  BACKGROUND_CAP_KT is now None.  And the
+edge smoothing averaged across the seam, both sides: it now smooths only
+the storm's side, and never takes a point below the background, since
+averaging winds that point different ways cancels speed.  The harness
+holds this end to end, with a front's 45 kt band beside LEE.
+
 ### Extended docstrings
 
 Each function keeps its one-paragraph summary in the source.
@@ -745,7 +911,7 @@ Two deliberate departures from the guide, both documented rather than silent:
 
 #### `insertStorms()`
 
-No blending.  Inside its R34 each warning wins outright, so the 34, 50 and 64 kt contours land on JTWC's reported radii.  Between R34 and the outer limit a vortex is inserted only where it is stronger than what is already there, which puts each seam where the two fields are equal and keeps the speed continuous without averaging anything.
+No blending.  Inside its R34 each warning wins outright, so the 34, 50 and 64 kt contours land on JTWC's reported radii.  Between R34 and the outer limit (1.5 x R34) the storm's winds fade to nothing and go in only where they are stronger than what is already there, which puts each seam where the two fields are equal and keeps the speed continuous without averaging anything.  Outside R34 the background is never lowered (note 73).
 
 Storms are applied outer-first, then cores, so a core always survives a neighbouring storm's tail.  Where two storms genuinely overlap, the stronger wind wins rather than the last one processed.
 
