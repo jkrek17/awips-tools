@@ -356,7 +356,7 @@ REQUIRE_ACKNOWLEDGEMENT = True
 
 # Shown in the dialog title and the status bar.  Bump it on every install so
 # there is never any doubt about which copy GFE actually loaded.
-VERSION = "2026-10-03c"
+VERSION = "2026-10-03d"
 
 # [doc 19]
 MAX_BULLETIN_AGE_HOURS = 12.0
@@ -869,6 +869,18 @@ def bulletinText(raw):
         return "\n".join(str(line).rstrip("\r\n") for line in raw)
     except TypeError:
         return str(raw)
+
+
+def describeError(exc):
+    """An exception with its type and the line that raised it, so a report
+    from GFE says which code ran and where it stopped."""
+    tb = sys.exc_info()[2] if sys.exc_info()[1] is exc else exc.__traceback__
+    where = ""
+    while tb is not None:
+        where = "line %d in %s" % (tb.tb_lineno, tb.tb_frame.f_code.co_name)
+        tb = tb.tb_next
+    text = "%s: %s" % (type(exc).__name__, exc)
+    return "%s (%s)" % (text, where) if where else text
 
 
 def parseBulletin(text, nowSecs=None):
@@ -2563,7 +2575,7 @@ if _IN_GFE:
                         # [doc 57]
                         taus, header, _kind = parseBulletin(raw, nowSecs)
                     except Exception as exc:
-                        problems.append("%s: %s" % (pil, exc))
+                        problems.append("%s: %s" % (pil, describeError(exc)))
                         continue
                     if len(taus) < 2:
                         problems.append("%s: only %d usable forecast times"
@@ -2591,7 +2603,8 @@ if _IN_GFE:
                 stale.extend(twins)
 
             if not storms:
-                msg = "No live bulletins found in %s." % ", ".join(pils)
+                msg = "TCWind_JTWC %s: no live bulletins found in %s." % (
+                    VERSION, ", ".join(pils))
                 if stale:
                     msg += " Stale: " + "; ".join(stale) + "."
                 if problems:
