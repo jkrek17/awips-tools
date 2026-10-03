@@ -356,14 +356,16 @@ warning covers is dropped.
 
 *A 50 kt point with 34 kt radii 300/250/60/40 nm. Left: the wind model's
 own shape, a circle shifted east. Right: the field reshaped so its 34 kt
-line follows the radii. Middle: half way in, between the warning's last
-time and the point.*
+line follows the radii, at 85 % of them like the warnings. Middle: half way
+in, between the warning's last time and the point.*
 
-- **The 34 kt line follows the four radii you enter.** The wind model on
-  its own is a circle shifted toward the strong side, so at your points the
-  field is reshaped along each direction until its 34 kt line lands on your
-  radii (300/250/60/40 nm comes out 298/250/61/41), fading in from the
-  warning's last time. Warning times are unchanged.
+- **The 34 kt line follows the four radii you enter**, at 85 % of them -
+  the same as the warnings, since a radius is the quadrant's maximum extent
+  and the line its average. The wind model on its own is a circle shifted
+  toward the strong side, so at your points the field is reshaped along
+  each direction (300/250/60/40 nm comes out about 255/213/51/34 instead of
+  338/341/114/84), fading in from the warning's last time. Warning times
+  are unchanged.
 - **Extratropical** flags the point the way a warning's own transition is
   flagged, so **Subtropical / extratropical systems: Skip** leaves it out,
   and **Include** (the default) moves such storms in pmsl too, not just
@@ -372,7 +374,7 @@ time and the point.*
   limit of the wind fit at warning times: a 35-45 kt storm whose gales
   reach far out cannot be fit, and its 34 kt extent falls well short
   (KROVANH at 35 kt: 120 nm reported, about 40 nm built). At your own
-  points the reshaping puts the 34 kt line where you entered it.
+  points the reshaping puts the 34 kt line at 85 % of what you entered.
 - The points live in `~/.TCWind_JTWC_extensions.json` by default; set
   `EXTENSION_STORE` to a shared directory so they survive a shift change.
 

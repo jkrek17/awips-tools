@@ -90,7 +90,7 @@ def main():
     shaped, _, _, _, _ = run(True)
     panels = [(plain, 144, "Before: the wind model's own shape"),
               (shaped, 132, "After, 132 h: half way in"),
-              (shaped, 144, "After, 144 h: follows the radii")]
+              (shaped, 144, "After, 144 h: 85 % of the radii")]
 
     fig, axes = plt.subplots(1, 3, figsize=(15.5, 6.2), dpi=130)
     for ax, (winds, h, title) in zip(axes, panels):
@@ -103,13 +103,17 @@ def main():
                    linewidths=0.8)
         if snap.radii.get(34):
             x, y = outline(snap.lat, snap.lon, snap.radii[34])
-            ax.plot(x, y, color=BLUE, linewidth=1.6,
-                    linestyle=(0, (4, 2)) if h != 144 else "-")
+            ax.plot(x, y, color=BLUE, linewidth=1.2, linestyle=(0, (4, 2)))
+            target = dict((q, tc.SHAPE_RADIUS_FACTOR * v)
+                          for q, v in snap.radii[34].items())
+            x, y = outline(snap.lat, snap.lon, target)
+            ax.plot(x, y, color=BLUE, linewidth=1.6)
         ax.plot(snap.lon, snap.lat, "x", color=BLUE, markersize=9,
                 markeredgewidth=2)
         got = extents(f, lat, lon, snap.lat, snap.lon)
         ax.text(0.03, 0.04, "34 kt extent NE/SE/SW/NW: %d/%d/%d/%d nm\n"
-                "entered at 144 h:     300/250/60/40" % tuple(got),
+                "entered at 144 h:     300/250/60/40\n"
+                "85%% target:           255/213/51/34" % tuple(got),
                 transform=ax.transAxes, fontsize=8, family="monospace",
                 bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="#ddd"))
         ax.set_xlim(LON - 7, LON + 9)
@@ -122,11 +126,12 @@ def main():
     fig.legend(handles=[
         Patch(color=GALE, alpha=0.6, label="WindJTWC 34-47 kt"),
         Patch(color=STORM, alpha=0.6, label="48 kt+"),
-        Line2D([], [], color=BLUE, lw=1.6,
+        Line2D([], [], color=BLUE, lw=1.2, ls=(0, (4, 2)),
                label="entered 34 kt radii (interpolated at 132 h)"),
+        Line2D([], [], color=BLUE, lw=1.6, label="85 % of them: the target"),
         Line2D([], [], color=BLUE, marker="x", ls="none", ms=8, mew=2,
                label="center")],
-        loc="lower center", ncol=4, frameon=False, fontsize=8.5)
+        loc="lower center", ncol=5, frameon=False, fontsize=8.5)
     fig.suptitle("Days 6-7 forecaster point: 50 kt, 34 kt radii "
                  "300/250/60/40 nm", x=0.035, ha="left", fontsize=13,
                  y=0.975)

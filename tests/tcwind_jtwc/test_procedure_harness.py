@@ -884,13 +884,14 @@ def _modelPmsl(taus, offsetDeg=(1.5, 1.5), depth=8.0):
 
 
 def _run_pmsl(pmsl_fn, write_to="Preview grid", ack="No", label="Yes",
-              block_hours=6, extra=None, pmsl_until_hours=None):
+              block_hours=6, extra=None, pmsl_until_hours=None, mesh_n=120,
+              only=None):
     """Krovanh, with a Fcst pmsl inventory of `block_hours` blocks over
     the warning's span and `pmsl_fn` behind it."""
     text = _load_fixture(KROVANH)
     taus, header, _kind = tc.parseBulletin(text)
     t0, t1 = taus[0].epoch, taus[-1].epoch
-    latGrid, lonGrid = _mesh()
+    latGrid, lonGrid = _mesh(n=mesh_n)
     proc = tc.Procedure(dbss=None)
     proc.configure(texts={"NFDTCPWP1": text}, now_epoch=t0 + 3 * 3600,
                    inv_start=t0, inv_end=t1 + 3 * 3600,
@@ -910,7 +911,17 @@ def _run_pmsl(pmsl_fn, write_to="Preview grid", ack="No", label="Yes",
     if label is not None:
         varDict[tc.PMSL_LABEL] = label
     varDict.update(extra or {})
-    proc.execute(None, None, varDict)
+    timeRange = None
+    if only is not None:
+        # Background Fcst Wind there too, as GFE would have it.
+        proc._inv_end = max(proc._inv_end, only[1] + 3 * 3600)
+        # Selected time range only: (start, end) epochs.
+        import AbsTime
+        import TimeRange
+        varDict["Run over selected time range only?"] = "Yes"
+        timeRange = TimeRange.TimeRange(AbsTime.AbsTime(only[0]),
+                                        AbsTime.AbsTime(only[1]))
+    proc.execute(None, timeRange, varDict)
     return proc, taus, header, latGrid, lonGrid
 
 
@@ -1588,8 +1599,9 @@ def case_bulletins_as_lists_of_lines():
 
 def case_extension_shape_follows_the_radii():
     """At a forecaster point the written grid's 34 kt line follows the four
-    radii entered (a lopsided 300/250/60/40), not a shifted circle; inside
-    the warning the grids are exactly what they are without the points."""
+    radii entered (a lopsided 300/250/60/40), at 85 percent of them like
+    the warnings, not a shifted circle; inside the warning the grids are
+    exactly what they are without the points."""
     fails = []
     taus = _krovanhTaus()
     t0 = taus[0].epoch
@@ -1597,35 +1609,38 @@ def case_extension_shape_follows_the_radii():
     pts[0].update(lat=29.5, lon=131.0, vmax=50.0,
                   r34={"NE": 300.0, "SE": 250.0, "SW": 60.0, "NW": 40.0})
     path = _withStore(pts)
-    proc, _, _, lat, lon = _run_pmsl(_modelPmsl(taus), label="No",
-                                     extra={tc.EXTENSION_LABEL: "Use saved"})
+    # A 3 nm grid over just the hours around the point: on the weak side
+    # the gale ring is 30-50 nm across, too thin for the 10 nm grid.
+    when = t0 + 144 * 3600
+    proc, _, _, lat, lon = _run_pmsl(
+        _modelPmsl(taus), label="No", mesh_n=400,
+        only=(when - 3 * 3600, when + 3 * 3600 + 1),
+        extra={tc.EXTENSION_LABEL: "Use saved"})
+    full, _, _, _, _ = _run_pmsl(_modelPmsl(taus), label="No",
+                                 extra={tc.EXTENSION_LABEL: "Use saved"})
     plain, _, _, _, _ = _run_pmsl(_modelPmsl(taus), label="No")
     os.remove(path)
-    winds = dict((a[4].startTime().unixTime(), np.asarray(a[3][0]))
-                 for a, _ in proc.created if a[2] == "VECTOR")
-    plainWinds = dict((a[4].startTime().unixTime(), np.asarray(a[3][0]))
-                      for a, _ in plain.created if a[2] == "VECTOR")
-    when = t0 + 144 * 3600
-    if when not in winds:
+
+    def windsOf(p):
+        return dict((a[4].startTime().unixTime(), np.asarray(a[3][0]))
+                    for a, _ in p.created if a[2] == "VECTOR")
+    fine, winds, plainWinds = windsOf(proc), windsOf(full), windsOf(plain)
+    if when not in fine:
         return ["no Wind grid at the 144 h point"], proc
     dist = np.vectorize(tc._gcDistanceNm)(lat, lon, 29.5, 131.0)
     dLon = (lon - 131.0) * np.cos(np.radians(29.5))
     bearing = np.degrees(np.arctan2(dLon, lat - 29.5)) % 360.0
-    # Each quadrant's centre line, in a +/-15 degree wedge (the 10 nm grid
-    # has no points in a narrower one close in), against the largest radius
-    # the entered radii give inside that wedge: within 15 percent plus a
-    # grid spacing.
+    # Each quadrant's centre line: the 34 kt extent against 85 percent of
+    # the entered radius, within 10 percent plus one grid spacing.
     quad = pts[0]["r34"]
     for centre, q in zip((45.0, 135.0, 225.0, 315.0), tc.QUADS):
-        near = np.abs(((bearing - centre + 180.0) % 360.0) - 180.0) < 15.0
-        gale = near & (winds[when] >= 34.0)
+        near = np.abs(((bearing - centre + 180.0) % 360.0) - 180.0) < 3.0
+        gale = near & (fine[when] >= 34.0)
         have = float(dist[gale].max()) if gale.any() else 0.0
-        want = float(tc._quadrantTable(quad, np.arange(centre - 15.0,
-                                                       centre + 15.1,
-                                                       1.0)).max())
-        if abs(have - want) > 0.15 * want + 10.0:
-            fails.append("%s 34 kt extent %.0f nm, entered radii give %.0f"
-                         % (q, have, want))
+        want = tc.SHAPE_RADIUS_FACTOR * quad[q]
+        if abs(have - want) > 0.10 * want + 3.0:
+            fails.append("%s 34 kt extent %.0f nm, target %.0f (85%% of %.0f)"
+                         % (q, have, want, quad[q]))
     same = [k for k in plainWinds if k <= t0 + 96 * 3600]
     changed = [k for k in same if k in winds and
                np.abs(winds[k] - plainWinds[k]).max() > 1e-4]

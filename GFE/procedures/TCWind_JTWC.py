@@ -319,8 +319,11 @@ ET_ASYM_CAP_FRACTION = 0.45
 
 # [doc 74]
 # At a forecaster point the wind field is reshaped so its 34 kt line follows
-# the four radii entered, the reshaping fading in from the warning's last
+# the four radii entered, at SHAPE_RADIUS_FACTOR of them - the same 85 % the
+# warnings' fit lands at (GTCM_QUAD_AVG_FACTOR: a radius is the quadrant's
+# maximum extent, the line its average) - fading in from the warning's last
 # time.  The per-azimuth distance scale it takes is held to these limits.
+SHAPE_RADIUS_FACTOR = GTCM_QUAD_AVG_FACTOR
 SHAPE_SCALE_LIMITS = (0.25, 4.0)
 
 # 1.0 keeps JTWC's 1-minute sustained winds; 0.88 converts to 10-minute.
@@ -353,7 +356,7 @@ REQUIRE_ACKNOWLEDGEMENT = True
 
 # Shown in the dialog title and the status bar.  Bump it on every install so
 # there is never any doubt about which copy GFE actually loaded.
-VERSION = "2026-10-03b"
+VERSION = "2026-10-03c"
 
 # [doc 19]
 MAX_BULLETIN_AGE_HOURS = 12.0
@@ -1399,7 +1402,7 @@ def _buildVortexGTCM(latGrid, lonGrid, snapshot, rmax_nm, outerDecayFactor,
     # (core, fade, footprint) follows the new shape too.
     if shapeTarget is not None:
         quad, weight = shapeTarget
-        target = _quadrantTable(quad, azTable)
+        target = SHAPE_RADIUS_FACTOR * _quadrantTable(quad, azTable)
         ok = anyAbove & (target > 0.0)
         ratio = np.where(ok, r34_table / np.maximum(target, 1e-3), 1.0)
         ratio = np.clip(ratio, SHAPE_SCALE_LIMITS[0], SHAPE_SCALE_LIMITS[1])
