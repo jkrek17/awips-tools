@@ -330,6 +330,14 @@ def test_warnings_to_storms():
           [w["name"] for w in warnings] == ["TESTER"] and len(notes) == 1,
           "%s %s" % ([w["name"] for w in warnings], notes))
 
+    asLines = {"NFDTCPWP1": text["NFDTCPWP1"].split("\n")}
+    lined, lineNotes = P.readWarnings(nowSecs=t0 + 4 * 3600, tools=W,
+                                      pils=["NFDTCPWP1"],
+                                      retrieve=asLines.get)
+    check("a bulletin GFE hands back as a list of lines is read",
+          [w["name"] for w in lined] == ["TESTER"] and not lineNotes,
+          str(lineNotes))
+
     twice = {"NFDTCPWP1": text["NFDTCPWP1"], "HFOTCMCP1": text["NFDTCPWP1"]}
     both, twinNotes = P.readWarnings(nowSecs=t0 + 4 * 3600, tools=W,
                                      retrieve=twice.get)

@@ -60,6 +60,27 @@ class FakeDataTime(object):
         return self.fcst
 
 
+class FakeValidPeriodTime(object):
+    """A DataTime offering only its valid period, as some DAL objects do."""
+
+    def __init__(self, ref, fcst):
+        self.ref, self.fcst = ref, fcst
+
+    def getRefTime(self):
+        return FakeDate(self.ref)
+
+    def getFcstTime(self):
+        raise AttributeError("no forecast time")
+
+    def getValidPeriod(self):
+        valid = self.ref + self.fcst
+
+        class Period(object):
+            def getStart(self):
+                return FakeDate(valid)
+        return Period()
+
+
 class FakeGrid(object):
     def __init__(self, lon, lat, data):
         self.lon, self.lat, self.data = lon, lat, data
@@ -108,16 +129,25 @@ class FakeDAL(object):
         return self.models[req.location]["levels"]
 
     def getAvailableTimes(self, req):
+        model = self.models[req.location]
+        kind = model.get("timeClass", FakeDataTime)
         out = []
-        for ref, fcsts in self.models[req.location]["runs"]:
-            out.extend(FakeDataTime(ref, f) for f in fcsts)
+        for ref, fcsts in model["runs"]:
+            out.extend(kind(ref, f) for f in fcsts)
         return out
 
     def getGridData(self, req, times):
         self.requests.append((req.location, req.param, req.level,
                               req.envelope, times[0].ref))
         model = self.models[req.location]
-        w, s, e, n = req.envelope
+        if times[0].ref in model.get("emptyRuns", ()):
+            return []                       # listed, not delivered yet
+        if req.envelope is None:
+            w, s, e, n = -180.0, -90.0, 179.75, 90.0     # the whole globe
+        elif model.get("boxFails"):
+            return []                       # this server ignores boxes
+        else:
+            w, s, e, n = req.envelope
         res = model.get("res", 0.25)
         lon1d = np.arange(w, e + res / 2.0, res)
         lat1d = np.arange(s, n + res / 2.0, res)
@@ -129,10 +159,12 @@ class FakeDAL(object):
 
 
 def model(field, params=("PMSL",), levels=("0.0MSL",), runs=None,
-          pascals=True, res=0.25):
-    return {"field": field, "params": list(params), "levels": list(levels),
-            "runs": runs or [(VALID - 12 * 3600, [12 * 3600])],
-            "pascals": pascals, "res": res}
+          pascals=True, res=0.25, **extra):
+    out = {"field": field, "params": list(params), "levels": list(levels),
+           "runs": runs or [(VALID - 12 * 3600, [12 * 3600])],
+           "pascals": pascals, "res": res}
+    out.update(extra)
+    return out
 
 
 def gfeGrid(west, east, south=30.0, north=60.0, res=0.5):
@@ -422,6 +454,57 @@ def test_dal_details():
           900.0 < float(np.nanmean(gap.pieces[0].filled)) < 1100.0)
 
 
+def test_finding_a_grid():
+    print("\ntest_finding_a_grid")
+    lat, lon = gfeGrid(-80.0, -20.0)
+    pmsl = gfsField(lon, lat)
+    runs = [(VALID - 18 * 3600, [18 * 3600]), (VALID - 12 * 3600, [12 * 3600]),
+            (VALID - 6 * 3600, [6 * 3600])]
+
+    # The newest run lists the time but has not delivered it yet.
+    dal = FakeDAL({"gfs0p25": model(gfsField, runs=runs,
+                                    emptyRuns={VALID - 6 * 3600})})
+    gap = G.buildGapPressure(lat, lon, pmsl, VALID, ["GFS"], dal=dal)
+    check("a run listed but not delivered falls back to the next older",
+          gap.used and gap.used[0][1] == VALID - 12 * 3600, str(gap.used))
+
+    dal = FakeDAL({"gfs0p25": model(gfsField, runs=runs,
+                                    emptyRuns={r for r, _f in runs})})
+    gap = G.buildGapPressure(lat, lon, pmsl, VALID, ["GFS"], dal=dal)
+    reason = gap.skipped[0][1] if gap.skipped else ""
+    check("none delivered: skipped, saying how many runs were tried",
+          not gap.used and "returned no grid" in reason and "3" in reason,
+          reason)
+
+    # A server that returns nothing for a box: the whole grid, cut here.
+    dal = FakeDAL({"gfs0p25": model(gfsField, boxFails=True, res=0.5)})
+    gap = G.buildGapPressure(lat, lon, pmsl, VALID, ["GFS"], dal=dal)
+    ok = gap.hasGap() and dal.requests[-1][3] is None
+    check("a box that comes back empty is retried for the whole grid", ok,
+          str(dal.requests[-2:]))
+    if ok:
+        err = np.nanmax(np.abs(gap.whole.filled - gfsField(gap.whole.lon,
+                                                           gap.whole.lat)))
+        check("and the strip cut from it is the same field", err < 0.6,
+              "%.2f mb" % err)
+
+    # Nothing valid at the chart time: say what there is.
+    late = [(VALID - 30 * 86400, [0, 6 * 3600, 12 * 3600])]
+    dal = FakeDAL({"gfs0p25": model(gfsField, runs=late)})
+    gap = G.buildGapPressure(lat, lon, pmsl, VALID, ["GFS"], dal=dal)
+    reason = gap.skipped[0][1] if gap.skipped else ""
+    check("no run valid then: the reason names the newest run and its span",
+          "newest run" in reason and "covers" in reason and
+          "3 times" in reason, reason)
+
+    # A DataTime that gives its valid period, not a forecast hour.
+    dal = FakeDAL({"gfs0p25": model(gfsField,
+                                    timeClass=FakeValidPeriodTime)})
+    gap = G.buildGapPressure(lat, lon, pmsl, VALID, ["GFS"], dal=dal)
+    check("valid time read from the valid period when that is all there is",
+          gap.hasGap(), str(gap.skipped))
+
+
 def test_nothing_breaks_the_chart():
     print("\ntest_nothing_breaks_the_chart")
     lat, lon = gfeGrid(-80.0, -20.0)
@@ -575,6 +658,7 @@ def main():
     test_extrema_across_the_dateline()
     test_dal_details()
     test_nothing_breaks_the_chart()
+    test_finding_a_grid()
     test_typhoon_moved_to_the_warning()
     test_typhoon_moved_across_the_dateline()
     print("")

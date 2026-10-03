@@ -11,7 +11,7 @@ marker pointing at the matching numbered note below.
 | | |
 |---|---|
 | Procedure | `GFE/procedures/TCWind_JTWC.py` |
-| Version | `2026-10-02d` (the `VERSION` tunable; the status bar prints it) |
+| Version | `2026-10-03a` (the `VERSION` tunable; the status bar prints it) |
 | Install | `/awips2/edex/data/utility/common_static/site/<SITE>/gfe/userPython/procedures/` |
 | Install test | `AWIPS_TEST.md`, and `selfcheck/run_selfcheck.sh` in the export bundle |
 

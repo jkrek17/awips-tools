@@ -1561,6 +1561,31 @@ def case_background_outside_r34_untouched():
     return fails, proc
 
 
+def case_bulletins_as_lists_of_lines():
+    """GFE's getTextProductFromDB returns a list of lines, not a string.
+    A TCM and a JTWC warning delivered that way are both read."""
+    fails = []
+    lee = _load_fixture("real_2023-09-10_wtnt23_lee.txt")
+    krovanh = _load_fixture(KROVANH)
+    for name, text, basin, pil in (
+            ("TCM", lee, "Atlantic", "MIATCMAT3"),
+            ("JTWC", krovanh, "West Pac", "NFDTCPWP1")):
+        taus = tc.parseBulletin(text)[0]
+        t0 = taus[0].epoch
+        latGrid, lonGrid = _mesh(basin=basin)
+        proc = tc.Procedure(dbss=None)
+        proc.configure(texts={pil: text.split("\n")}, now_epoch=t0 + 3 * 3600,
+                       inv_start=t0, inv_end=taus[-1].epoch + 3 * 3600,
+                       lat=latGrid, lon=lonGrid)
+        proc.execute(None, None, {tc.BASINS_LABEL: [basin],
+                                  "Write to:": "Preview grid",
+                                  "Run over selected time range only?": "No"})
+        msg = _final_status(proc)
+        if not proc.created or "Problems" in msg:
+            fails.append("%s as a list of lines: %r" % (name, msg))
+    return fails, proc
+
+
 def main():
     cases = [
         ("krovanh_full_span_3_hourly", case_krovanh_full_span_3_hourly),
@@ -1597,6 +1622,7 @@ def main():
         ("one_storm_in_two_basins", case_one_storm_in_two_basins),
         ("background_outside_r34_untouched",
          case_background_outside_r34_untouched),
+        ("bulletins_as_lists_of_lines", case_bulletins_as_lists_of_lines),
     ]
 
     failed = 0

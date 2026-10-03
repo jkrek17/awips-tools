@@ -33,6 +33,7 @@
 # ----------------------------------------------------------------------------
 
 import calendar
+import time
 
 import numpy as np
 
@@ -108,6 +109,10 @@ PMSL_LEVELS = ("0.0MSL", "0.0SFC")
 
 # How far a model's valid time may sit from the chart's and still count.
 VALID_TIME_TOLERANCE_S = 1800
+
+# Runs valid at the chart time are tried newest first, at most this many: a
+# run still arriving can list a time it does not deliver yet.
+MAX_RUNS_TRIED = 4
 
 
 class GapFillError(Exception):
@@ -325,29 +330,67 @@ def refEpoch(dataTime):
 
 
 def validEpoch(dataTime):
-    """When a DataTime is valid: run time plus forecast hour."""
+    """When a DataTime is valid: run time plus forecast hour, or the start
+    of its valid period - the way the site's dal.py reads it - when the
+    forecast hour is not offered."""
     try:
         return refEpoch(dataTime) + float(dataTime.getFcstTime())
     except Exception:
-        return _epoch(dataTime.getValidPeriod().getStart())
+        pass
+    period = dataTime.getValidPeriod()
+    for name in ("getStart", "startTime", "getStartTime"):
+        start = getattr(period, name, None)
+        if callable(start):
+            value = start()
+            unix = getattr(value, "unixTime", None)
+            return float(unix()) if callable(unix) else _epoch(value)
+    raise ValueError("no valid time on %r" % (dataTime,))
+
+
+def candidateTimes(times, wantEpoch, tolerance=None):
+    """Every DataTime valid at ``wantEpoch``, newest run first."""
+    if tolerance is None:
+        tolerance = VALID_TIME_TOLERANCE_S
+    found = []
+    for t in times or []:
+        try:
+            valid, ref = validEpoch(t), refEpoch(t)
+        except Exception:
+            continue
+        if valid is not None and abs(valid - wantEpoch) <= tolerance:
+            found.append((ref, t))
+    found.sort(key=lambda pair: pair[0], reverse=True)
+    return [t for _ref, t in found]
 
 
 def pickDataTime(times, wantEpoch, tolerance=None):
     """The newest model run that has a forecast valid at ``wantEpoch``."""
-    if tolerance is None:
-        tolerance = VALID_TIME_TOLERANCE_S
-    best, bestRef = None, None
+    found = candidateTimes(times, wantEpoch, tolerance)
+    return found[0] if found else None
+
+
+def _dtg(epoch):
+    return time.strftime("%d/%HZ", time.gmtime(epoch))
+
+
+def describeTimes(location, times, wantEpoch):
+    """Why no run of ``location`` is valid at ``wantEpoch``, from what it
+    does offer - so the status bar says what is actually there."""
+    pairs = []
     for t in times or []:
         try:
-            valid = validEpoch(t)
-            ref = refEpoch(t)
+            pairs.append((refEpoch(t), validEpoch(t)))
         except Exception:
             continue
-        if valid is None or abs(valid - wantEpoch) > tolerance:
-            continue
-        if best is None or ref > bestRef:
-            best, bestRef = t, ref
-    return best
+    if not pairs:
+        return ("%s offers no times for pmsl (%d listed, none readable)"
+                % (location, len(times or [])))
+    newest = max(ref for ref, _v in pairs)
+    valids = [v for ref, v in pairs if ref == newest]
+    return ("no %s run is valid at %s: newest run %s covers %s-%s, "
+            "%d times offered in all" % (
+                location, _dtg(wantEpoch), _dtg(newest), _dtg(min(valids)),
+                _dtg(max(valids)), len(pairs)))
 
 
 def _firstOffered(wanted, offered):
@@ -358,61 +401,105 @@ def _firstOffered(wanted, offered):
     return None
 
 
+def _request(dal, location, param=None, level=None, box=None):
+    req = dal.newDataRequest()
+    req.setDatatype("grid")
+    req.setLocationNames(location)
+    if param is not None:
+        req.setParameters(param)
+    if level is not None:
+        req.setLevels(level)
+    if box is not None:
+        w, s, e, n = box
+        req.setEnvelope(envelopeBox(w, s, e, n) if envelopeBox is not None
+                        else (w, s, e, n))
+    return req
+
+
+def _gridPoints(grid, use360):
+    """(lon in the working frame, lat, mb) from one DAL grid, flat."""
+    gLon, gLat = grid.getLatLonCoords()
+    value = np.asarray(grid.getRawData(), dtype=float)
+    if np.nanmax(value) > 2000.0:                  # Pa, not mb
+        value = value / 100.0
+    return (toFrame(gLon, use360).ravel(),
+            np.asarray(gLat, dtype=float).ravel(), value.ravel())
+
+
+def _getGrid(dal, req, dataTime):
+    """The first grid back, or None when the request comes back empty or
+    fails."""
+    try:
+        grids = dal.getGridData(req, [dataTime])
+    except Exception:
+        return None
+    return grids[0] if grids else None
+
+
 def fetchModelPmsl(location, wantEpoch, west, east, south, north, use360,
                    dal=None):
     """pmsl in mb from one model over a box, as flat (lon, lat, value).
 
     Longitudes come back in the working frame.  Raises GapFillError with a
     reason the caller can show when the model cannot supply it.
+
+    Runs valid at the chart time are tried newest first: a run still
+    arriving can list a time it does not yet deliver, so the next older
+    one is tried before giving up.  A box request that comes back empty is
+    retried for the whole grid, cut to the box here - some sites' data
+    servers do not honor a box for every model.
     """
     dal = dal if dal is not None else DataAccessLayer
     if dal is None:
         raise GapFillError("DataAccessLayer is not available")
 
-    lons, lats, vals, runs = [], [], [], set()
-    for w, e in envelopes(west, east, use360):
-        req = dal.newDataRequest()
-        req.setDatatype("grid")
-        req.setLocationNames(location)
+    req = _request(dal, location)
+    param = _firstOffered(PMSL_PARAMETERS, dal.getAvailableParameters(req))
+    if param is None:
+        raise GapFillError("%s offers none of %s"
+                           % (location, ", ".join(PMSL_PARAMETERS)))
+    req = _request(dal, location, param)
+    level = _firstOffered(PMSL_LEVELS, dal.getAvailableLevels(req))
+    if level is None:
+        raise GapFillError("%s %s has none of the levels %s"
+                           % (location, param, ", ".join(PMSL_LEVELS)))
 
-        param = _firstOffered(PMSL_PARAMETERS,
-                              dal.getAvailableParameters(req))
-        if param is None:
-            raise GapFillError("%s offers none of %s"
-                               % (location, ", ".join(PMSL_PARAMETERS)))
-        req.setParameters(param)
+    times = dal.getAvailableTimes(_request(dal, location, param, level))
+    candidates = candidateTimes(times, wantEpoch)
+    if not candidates:
+        raise GapFillError(describeTimes(location, times, wantEpoch))
 
-        level = _firstOffered(PMSL_LEVELS, dal.getAvailableLevels(req))
-        if level is None:
-            raise GapFillError("%s %s has none of the levels %s"
-                               % (location, param, ", ".join(PMSL_LEVELS)))
-        req.setLevels(level)
+    for dataTime in candidates[:MAX_RUNS_TRIED]:
+        lons, lats, vals = [], [], []
+        for w, e in envelopes(west, east, use360):
+            grid = _getGrid(dal, _request(dal, location, param, level,
+                                          (w, south, e, north)), dataTime)
+            if grid is None:
+                lons = None
+                break
+            lo, la, va = _gridPoints(grid, use360)
+            lons.append(lo)
+            lats.append(la)
+            vals.append(va)
+        if lons is None:
+            # The box came back empty: the whole grid, cut here.
+            grid = _getGrid(dal, _request(dal, location, param, level),
+                            dataTime)
+            if grid is None:
+                continue                            # try an older run
+            lo, la, va = _gridPoints(grid, use360)
+            keep = ((lo >= west) & (lo <= east) & (la >= south) &
+                    (la <= north))
+            if not keep.any():
+                continue
+            lons, lats, vals = [lo[keep]], [la[keep]], [va[keep]]
+        return (np.concatenate(lons), np.concatenate(lats),
+                np.concatenate(vals), refEpoch(dataTime))
 
-        if envelopeBox is not None:
-            req.setEnvelope(envelopeBox(w, south, e, north))
-        else:
-            req.setEnvelope((w, south, e, north))
-
-        dataTime = pickDataTime(dal.getAvailableTimes(req), wantEpoch)
-        if dataTime is None:
-            raise GapFillError("no %s run has a forecast valid then"
-                               % location)
-        grids = dal.getGridData(req, [dataTime])
-        if not grids:
-            raise GapFillError("%s returned no grid" % location)
-
-        grid = grids[0]
-        gLon, gLat = grid.getLatLonCoords()
-        value = np.asarray(grid.getRawData(), dtype=float)
-        if np.nanmax(value) > 2000.0:              # Pa, not mb
-            value = value / 100.0
-        lons.append(toFrame(gLon, use360).ravel())
-        lats.append(np.asarray(gLat, dtype=float).ravel())
-        vals.append(value.ravel())
-        runs.add(refEpoch(dataTime))
-
-    return (np.concatenate(lons), np.concatenate(lats), np.concatenate(vals),
-            max(runs))
+    raise GapFillError("%s lists %d run(s) valid at %s but returned no "
+                       "grid for the newest %d" % (
+                           location, len(candidates), _dtg(wantEpoch),
+                           min(len(candidates), MAX_RUNS_TRIED)))
 
 
 # ---------------------------------------------------------------------------

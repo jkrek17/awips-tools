@@ -347,7 +347,7 @@ REQUIRE_ACKNOWLEDGEMENT = True
 
 # Shown in the dialog title and the status bar.  Bump it on every install so
 # there is never any doubt about which copy GFE actually loaded.
-VERSION = "2026-10-02d"
+VERSION = "2026-10-03a"
 
 # [doc 19]
 MAX_BULLETIN_AGE_HOURS = 12.0
@@ -847,9 +847,25 @@ def parseTCM(text, nowSecs=None):
 RE_TCM_SNIFF = re.compile(r"FORECAST/ADVISORY NUMBER", re.I)
 
 
+def bulletinText(raw):
+    """The bulletin as one string.  GFE's getTextProductFromDB hands back a
+    list of lines, the textdb command a string; either is accepted."""
+    if raw is None:
+        return ""
+    if isinstance(raw, bytes):
+        return raw.decode("utf-8", "replace")
+    if isinstance(raw, str):
+        return raw
+    try:
+        return "\n".join(str(line).rstrip("\r\n") for line in raw)
+    except TypeError:
+        return str(raw)
+
+
 def parseBulletin(text, nowSecs=None):
     """Parse either product, choosing by content rather than by PIL."""
-    if RE_TCM_SNIFF.search(text or ""):
+    text = bulletinText(text)
+    if RE_TCM_SNIFF.search(text):
         taus, header = parseTCM(text, nowSecs)
         return taus, header, "tcm"
     taus, header = parseJTWC(text, nowSecs)
