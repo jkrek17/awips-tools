@@ -877,7 +877,10 @@ def describeError(exc):
     tb = sys.exc_info()[2] if sys.exc_info()[1] is exc else exc.__traceback__
     where = ""
     while tb is not None:
-        where = "line %d in %s" % (tb.tb_lineno, tb.tb_frame.f_code.co_name)
+        # The last frame in this file, not inside re or numpy.
+        if tb.tb_frame.f_code.co_filename == __file__ or not where:
+            where = "line %d in %s" % (tb.tb_lineno,
+                                       tb.tb_frame.f_code.co_name)
         tb = tb.tb_next
     text = "%s: %s" % (type(exc).__name__, exc)
     return "%s (%s)" % (text, where) if where else text
