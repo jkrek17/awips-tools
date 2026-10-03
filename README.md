@@ -352,17 +352,27 @@ warning covers is dropped.
 
 - **Central pressure** sets the pmsl depth at that point. From the warning's
   end it takes over gradually, so the depth does not jump.
-- **Extratropical** lets the wind fit follow a one-sided gale field much
-  further than a tropical storm's fit is allowed to. It still cannot make
-  gales vanish on the weak side. It also flags the point the way a
-  warning's own transition is flagged, so **Subtropical / extratropical
-  systems: Skip** leaves it out, and **Include** (the default) now moves
-  such storms in pmsl too, not just Wind.
-- **Broad, weak gale fields come out too small.** This is a limit of the
-  wind fit, not of the extension: a 35-45 kt storm whose gales reach far
-  out cannot be fit, and its 34 kt extent falls well short (KROVANH at
-  35 kt: 120 nm reported, about 40 nm built). Extratropical storms are
-  often exactly this.
+![Days 6-7 shape](docs/img/tcwind_days67_shape.png)
+
+*A 50 kt point with 34 kt radii 300/250/60/40 nm. Left: the wind model's
+own shape, a circle shifted east. Right: the field reshaped so its 34 kt
+line follows the radii. Middle: half way in, between the warning's last
+time and the point.*
+
+- **The 34 kt line follows the four radii you enter.** The wind model on
+  its own is a circle shifted toward the strong side, so at your points the
+  field is reshaped along each direction until its 34 kt line lands on your
+  radii (300/250/60/40 nm comes out 298/250/61/41), fading in from the
+  warning's last time. Warning times are unchanged.
+- **Extratropical** flags the point the way a warning's own transition is
+  flagged, so **Subtropical / extratropical systems: Skip** leaves it out,
+  and **Include** (the default) moves such storms in pmsl too, not just
+  Wind. It also loosens the wind fit's asymmetry limit for a slow storm.
+- **Broad, weak gale fields from a warning come out too small.** This is a
+  limit of the wind fit at warning times: a 35-45 kt storm whose gales
+  reach far out cannot be fit, and its 34 kt extent falls well short
+  (KROVANH at 35 kt: 120 nm reported, about 40 nm built). At your own
+  points the reshaping puts the 34 kt line where you entered it.
 - The points live in `~/.TCWind_JTWC_extensions.json` by default; set
   `EXTENSION_STORE` to a shared directory so they survive a shift change.
 

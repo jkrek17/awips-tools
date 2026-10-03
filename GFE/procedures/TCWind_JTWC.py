@@ -317,6 +317,12 @@ EXTENSION_KEEP_DAYS = 10.0
 ET_ASYM_MAX_DEV_KT = 30.0
 ET_ASYM_CAP_FRACTION = 0.45
 
+# [doc 74]
+# At a forecaster point the wind field is reshaped so its 34 kt line follows
+# the four radii entered, the reshaping fading in from the warning's last
+# time.  The per-azimuth distance scale it takes is held to these limits.
+SHAPE_SCALE_LIMITS = (0.25, 4.0)
+
 # 1.0 keeps JTWC's 1-minute sustained winds; 0.88 converts to 10-minute.
 WIND_AVERAGING_FACTOR = 1.0
 
@@ -347,7 +353,7 @@ REQUIRE_ACKNOWLEDGEMENT = True
 
 # Shown in the dialog title and the status bar.  Bump it on every install so
 # there is never any doubt about which copy GFE actually loaded.
-VERSION = "2026-10-03a"
+VERSION = "2026-10-03b"
 
 # [doc 19]
 MAX_BULLETIN_AGE_HOURS = 12.0
@@ -1332,20 +1338,29 @@ def fitGTCM(snapshot):
                 rms=float(np.sqrt(best[0] / np.sum(wt))))
 
 
+def _quadrantTable(quad, azTable):
+    """Quadrant radii as a function of azimuth: each quadrant's value at its
+    centre (45, 135, 225, 315), linear between, wrapping at 360."""
+    centres = np.array([45.0, 135.0, 225.0, 315.0])
+    vals = np.array([float(quad[q]) for q in QUADS])
+    cx = np.concatenate([[centres[-1] - 360.0], centres, [centres[0] + 360.0]])
+    cv = np.concatenate([[vals[-1]], vals, [vals[0]]])
+    return np.interp(np.asarray(azTable, dtype=float) % 360.0, cx, cv)
+
+
 def _buildVortexGTCM(latGrid, lonGrid, snapshot, rmax_nm, outerDecayFactor,
-                     normalizePeak):
-    """GTCM field for one time.  Users Guide eq. (3), (8), (9)."""
+                     normalizePeak, shapeTarget=None):
+    """GTCM field for one time.  Users Guide eq. (3), (8), (9).
+
+    ``shapeTarget`` = (34 kt quadrant radii, weight) reshapes the field so
+    its 34 kt line follows those radii (note 74).
+    """
     r, az = _distBearingGrids(latGrid, lonGrid, snapshot.lat, snapshot.lon)
     fit = snapshot.fit if getattr(snapshot, "fit", None) is not None \
         else fitGTCM(snapshot)
 
     # [doc 39]
     amag = float(np.hypot(fit["ax"], fit["ay"]))
-
-    V = _gtcmProfile(r, snapshot.vmax, amag, fit["rm"], fit["ri"],
-                     fit["x1"], fit["x2"])
-    u, v = _gtcmUV(V, az, fit["ax"], fit["ay"], snapshot.lat)
-    mag = np.sqrt(u * u + v * v)
 
     # [doc 40]
     probe = np.linspace(1.0, GTCM_R34_PROBE_MAX_NM, GTCM_R34_PROBE_MAX_NM)
@@ -1376,6 +1391,29 @@ def _buildVortexGTCM(latGrid, lonGrid, snapshot, rmax_nm, outerDecayFactor,
     peakIdx = np.argmax(prof2d, axis=1)
     peakR = probe[peakIdx]
     r34_table = np.where(anyAbove, r34_exact, peakR)
+
+    # [doc 74]
+    # Reshape: along each azimuth, distance is rescaled so the field's own
+    # 34 kt radius lands on the target radius there.  Everything below is
+    # evaluated at the rescaled distance and returns it, so the insertion
+    # (core, fade, footprint) follows the new shape too.
+    if shapeTarget is not None:
+        quad, weight = shapeTarget
+        target = _quadrantTable(quad, azTable)
+        ok = anyAbove & (target > 0.0)
+        ratio = np.where(ok, r34_table / np.maximum(target, 1e-3), 1.0)
+        ratio = np.clip(ratio, SHAPE_SCALE_LIMITS[0], SHAPE_SCALE_LIMITS[1])
+        ratio = ratio ** float(np.clip(weight, 0.0, 1.0))
+        scaleWrap = np.concatenate([azTable, [360.0]])
+        ratioWrap = np.concatenate([ratio, ratio[:1]])
+        scale = np.interp(np.asarray(az, dtype=float).ravel() % 360.0,
+                          scaleWrap, ratioWrap).reshape(np.shape(r))
+        r = r * scale
+
+    V = _gtcmProfile(r, snapshot.vmax, amag, fit["rm"], fit["ri"],
+                     fit["x1"], fit["x2"])
+    u, v = _gtcmUV(V, az, fit["ax"], fit["ay"], snapshot.lat)
+    mag = np.sqrt(u * u + v * v)
 
     # Interpolate r34(az) onto the grid's own azimuths, linear and wrapping
     # at 360 so the 0/360 seam stays continuous (azTable's last bin is
@@ -1428,11 +1466,17 @@ def buildVortex(latGrid, lonGrid, snapshot, rmax_nm,
                 inflowDeg=INFLOW_ANGLE_DEG,
                 outerDecayFactor=OUTER_DECAY_FACTOR,
                 normalizePeak=NORMALIZE_CORE_PEAK,
-                method=None):
-    """Return (magGrid_kt, dirGrid_deg, r_nm, r34_nm) for one time."""
+                method=None, shapeTarget=None):
+    """Return (magGrid_kt, dirGrid_deg, r_nm, r34_nm) for one time.
+
+    ``shapeTarget`` (GTCM only) = (34 kt quadrant radii, weight 0-1): the
+    34 kt line is made to follow those radii.  The per-quadrant method
+    follows the radii already.
+    """
     if (method or VORTEX_METHOD) == "gtcm":
         return _buildVortexGTCM(latGrid, lonGrid, snapshot, rmax_nm,
-                                outerDecayFactor, normalizePeak)
+                                outerDecayFactor, normalizePeak,
+                                shapeTarget)
     # [doc 44]
     if snapshot.radii:
         asymFrac = 0.0
@@ -1870,6 +1914,23 @@ def extendTrack(taus, points):
             if taus[i].synthetic:
                 taus[i].fit = None
     return taus, used, dropped
+
+
+def shapeWeightAt(taus, epoch):
+    """How much a forecaster point's radii shape the field at ``epoch``: 1
+    from the first forecaster point on, ramping up from 0 at the warning's
+    last time to it, 0 inside the warning."""
+    first = next((i for i, t in enumerate(taus) if t.synthetic), None)
+    if first is None or epoch <= taus[0].epoch:
+        return 0.0
+    if epoch >= taus[first].epoch:
+        return 1.0
+    if first == 0:
+        return 0.0
+    lo, hi = taus[first - 1].epoch, taus[first].epoch
+    if epoch <= lo:
+        return 0.0
+    return (epoch - lo) / float(max(hi - lo, 1))
 
 
 def pressureTargetAt(taus, epoch):
@@ -2608,11 +2669,16 @@ if _IN_GFE:
                         tdSkipped += 1
                         continue
                     rmax = resolveRmax(snap, RMAX_OVERRIDE_NM)
+                    shape = None
+                    weight = shapeWeightAt(taus, when)
+                    if weight > 0.0 and snap.radii.get(34):
+                        shape = (snap.radii[34], weight)
                     vMag, vDir, r, r34 = buildVortex(
                         latGrid, lonGrid, snap, rmax,
                         asymFrac=MOTION_ASYMMETRY_FRACTION,
                         inflowDeg=INFLOW_ANGLE_DEG,
-                        outerDecayFactor=OUTER_DECAY_FACTOR)
+                        outerDecayFactor=OUTER_DECAY_FACTOR,
+                        shapeTarget=shape)
                     if WIND_AVERAGING_FACTOR != 1.0:
                         vMag = vMag * WIND_AVERAGING_FACTOR
                     out.append({"vMag": vMag, "vDir": vDir, "r": r,

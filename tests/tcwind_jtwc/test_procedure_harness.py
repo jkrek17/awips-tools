@@ -1586,6 +1586,57 @@ def case_bulletins_as_lists_of_lines():
     return fails, proc
 
 
+def case_extension_shape_follows_the_radii():
+    """At a forecaster point the written grid's 34 kt line follows the four
+    radii entered (a lopsided 300/250/60/40), not a shifted circle; inside
+    the warning the grids are exactly what they are without the points."""
+    fails = []
+    taus = _krovanhTaus()
+    t0 = taus[0].epoch
+    pts = _extPoints(taus)
+    pts[0].update(lat=29.5, lon=131.0, vmax=50.0,
+                  r34={"NE": 300.0, "SE": 250.0, "SW": 60.0, "NW": 40.0})
+    path = _withStore(pts)
+    proc, _, _, lat, lon = _run_pmsl(_modelPmsl(taus), label="No",
+                                     extra={tc.EXTENSION_LABEL: "Use saved"})
+    plain, _, _, _, _ = _run_pmsl(_modelPmsl(taus), label="No")
+    os.remove(path)
+    winds = dict((a[4].startTime().unixTime(), np.asarray(a[3][0]))
+                 for a, _ in proc.created if a[2] == "VECTOR")
+    plainWinds = dict((a[4].startTime().unixTime(), np.asarray(a[3][0]))
+                      for a, _ in plain.created if a[2] == "VECTOR")
+    when = t0 + 144 * 3600
+    if when not in winds:
+        return ["no Wind grid at the 144 h point"], proc
+    dist = np.vectorize(tc._gcDistanceNm)(lat, lon, 29.5, 131.0)
+    dLon = (lon - 131.0) * np.cos(np.radians(29.5))
+    bearing = np.degrees(np.arctan2(dLon, lat - 29.5)) % 360.0
+    # Each quadrant's centre line, in a +/-15 degree wedge (the 10 nm grid
+    # has no points in a narrower one close in), against the largest radius
+    # the entered radii give inside that wedge: within 15 percent plus a
+    # grid spacing.
+    quad = pts[0]["r34"]
+    for centre, q in zip((45.0, 135.0, 225.0, 315.0), tc.QUADS):
+        near = np.abs(((bearing - centre + 180.0) % 360.0) - 180.0) < 15.0
+        gale = near & (winds[when] >= 34.0)
+        have = float(dist[gale].max()) if gale.any() else 0.0
+        want = float(tc._quadrantTable(quad, np.arange(centre - 15.0,
+                                                       centre + 15.1,
+                                                       1.0)).max())
+        if abs(have - want) > 0.15 * want + 10.0:
+            fails.append("%s 34 kt extent %.0f nm, entered radii give %.0f"
+                         % (q, have, want))
+    same = [k for k in plainWinds if k <= t0 + 96 * 3600]
+    changed = [k for k in same if k in winds and
+               np.abs(winds[k] - plainWinds[k]).max() > 1e-4]
+    if changed:
+        fails.append("%d warning-time grids changed by adding the points"
+                     % len(changed))
+    if not same:
+        fails.append("no warning-time grids to compare")
+    return fails, proc
+
+
 def main():
     cases = [
         ("krovanh_full_span_3_hourly", case_krovanh_full_span_3_hourly),
@@ -1623,6 +1674,8 @@ def main():
         ("background_outside_r34_untouched",
          case_background_outside_r34_untouched),
         ("bulletins_as_lists_of_lines", case_bulletins_as_lists_of_lines),
+        ("extension_shape_follows_the_radii",
+         case_extension_shape_follows_the_radii),
     ]
 
     failed = 0

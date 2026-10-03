@@ -11,7 +11,7 @@ marker pointing at the matching numbered note below.
 | | |
 |---|---|
 | Procedure | `GFE/procedures/TCWind_JTWC.py` |
-| Version | `2026-10-03a` (the `VERSION` tunable; the status bar prints it) |
+| Version | `2026-10-03b` (the `VERSION` tunable; the status bar prints it) |
 | Install | `/awips2/edex/data/utility/common_static/site/<SITE>/gfe/userPython/procedures/` |
 | Install test | `AWIPS_TEST.md`, and `selfcheck/run_selfcheck.sh` in the export bundle |
 
@@ -827,6 +827,27 @@ edge smoothing averaged across the seam, both sides: it now smooths only
 the storm's side, and never takes a point below the background, since
 averaging winds that point different ways cancels speed.  The harness
 holds this end to end, with a front's 45 kt band beside LEE.
+
+#### 74.  A forecaster point's 34 kt line follows its four radii
+
+*`_buildVortexGTCM()`, `shapeWeightAt()`*
+
+GTCM is a symmetric profile plus one uniform vector, so whatever four radii
+it is fit to, its 34 kt line comes out a circle shifted toward the strong
+side: 300/250/60/40 nm came out 338/341/114/84.  Warnings keep that by
+design (note 38).  At a forecaster's days 6-7 point the four radii are the
+forecaster's own, so they are followed: along each azimuth, distance is
+rescaled by the ratio of the field's own 34 kt radius to the target there
+(the quadrant radii at the quadrant centres, linear between, wrapping), and
+the field is evaluated at the rescaled distance.  The 34 kt line then lands
+on the entered radii - 298/250/61/41 for that case - while the profile, its
+peak and the decay outside keep their fitted form along each line.  The
+rescaled distance is what the insertion sees too, so the core, the fade to
+1.5 x R34 and the footprint follow the new shape.  The scale is held to
+0.25-4.  From the warning's last time to the first forecaster point it
+fades in (scale ** weight, weight 0 to 1), so nothing jumps at 120 h;
+inside the warning nothing changes.  Pressure stays symmetric: the pmsl
+vortex is built from the symmetric profile (TCPressure).
 
 ### Extended docstrings
 
