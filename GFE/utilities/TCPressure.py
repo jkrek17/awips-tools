@@ -75,9 +75,10 @@ P_ENV_REF_MB = 1010.0
 # with the bulletin or the fit, and an unscaled vortex is the safer error.
 ANCHOR_LIMITS = (0.5, 2.0)
 
-# A forecaster's central pressure (TCWind_JTWC's days 6-7 points) is reached
-# by scaling the vortex too, within these wider limits: an extratropical
-# storm's pressure fall is often far from what its winds balance.
+# A forecaster's central pressure (TCWind_JTWC's points past the warning) is
+# reached by scaling the vortex too, within these wider limits: an
+# extratropical storm's pressure fall is often far from what its winds
+# balance.
 TARGET_LIMITS = (0.3, 3.0)
 
 # The implanted vortex reaches out to R_OUT: R34_TO_R_OUT times the mean

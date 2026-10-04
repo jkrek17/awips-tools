@@ -885,10 +885,10 @@ def _modelPmsl(taus, offsetDeg=(1.5, 1.5), depth=8.0):
 
 def _run_pmsl(pmsl_fn, write_to="Preview grid", ack="No", label="Yes",
               block_hours=6, extra=None, pmsl_until_hours=None, mesh_n=120,
-              only=None):
-    """Krovanh, with a Fcst pmsl inventory of `block_hours` blocks over
-    the warning's span and `pmsl_fn` behind it."""
-    text = _load_fixture(KROVANH)
+              only=None, text=None):
+    """Krovanh (or `text`), with a Fcst pmsl inventory of `block_hours`
+    blocks over the warning's span and `pmsl_fn` behind it."""
+    text = text or _load_fixture(KROVANH)
     taus, header, _kind = tc.parseBulletin(text)
     t0, t1 = taus[0].epoch, taus[-1].epoch
     latGrid, lonGrid = _mesh(n=mesh_n)
@@ -1085,7 +1085,7 @@ def case_pmsl_grids_outside_the_span():
 
 
 # ---------------------------------------------------------------------------
-# Forecaster points past the warning (days 6-7), and extratropical storms
+# Forecaster points past the warning (to day 7), and extratropical storms
 # ---------------------------------------------------------------------------
 
 import tempfile                                                 # noqa: E402
@@ -1343,6 +1343,71 @@ def case_extension_edit_dialog():
     if proc.created or "Cancelled" not in _final_status(proc):
         fails.append("Cancel did not stop the run")
     FakePVL.answers[:] = []
+    os.remove(path)
+    return fails, proc
+
+
+def _krovanhTo72():
+    """KROVANH's warning cut after its 72 h forecast, as a short final
+    warning would be."""
+    lines = _load_fixture(KROVANH).split("\n")
+    cut = next(i for i, ln in enumerate(lines) if "96 HRS, VALID AT" in ln)
+    end = next(i for i in range(cut - 1, 0, -1) if lines[i].strip() == "---"
+               and "72 HRS" in "".join(lines[i - 12:i]))
+    tail = next(i for i, ln in enumerate(lines) if ln.startswith("REMARKS"))
+    return "\n".join(lines[:end + 1] + lines[tail:])
+
+
+def case_extension_short_warning():
+    """A warning that stops at 72 h gets a row every 12 h from 84 to 168 h,
+    a saved point in its place among them; rows left blank are skipped,
+    and the Wind grids run every 3 h to the last point with no gap."""
+    fails = []
+    text = _krovanhTo72()
+    taus = tc.parseBulletin(text)[0]
+    t0 = taus[0].epoch
+    if taus[-1].tau != 72:
+        return ["short fixture ends at %d h, not 72" % taus[-1].tau], None
+    path = _withStore(_extPoints(taus)[:1])          # a saved 144 h point
+    F = tc.EXT_FIELDS
+    hours = list(range(84, 169, 12))
+    stamp = lambda h: time.strftime("%d%H%M", time.gmtime(t0 + h * 3600))
+    answer = dict((F["valid"] % k, stamp(h))
+                  for k, h in enumerate(hours, 1))
+    answer.update(dict((F["lat"] % k, "") for k in range(1, 9)))
+    answer.update({
+        F["lat"] % 2: "28.0N", F["lon"] % 2: "128.0E", F["vmax"] % 2: "40",
+        F["r34"] % 2: "150 120 60 90", F["et"] % 2: "No",
+        F["lat"] % 6: "30.0N", F["lon"] % 6: "131.0E", F["vmax"] % 6: "45",
+        F["r34"] % 6: "200 180 90 120", F["et"] % 6: "No",
+        F["lat"] % 8: "34.0N", F["lon"] % 8: "136.0E", F["vmax"] % 8: "50",
+        F["r34"] % 8: "300 260 80 60", F["et"] % 8: "Yes"})
+    del FakePVL.calls[:]
+    FakePVL.answers[:] = [answer]
+    proc, _, _, _, _ = _run_pmsl(_modelPmsl(taus), text=text,
+                                 extra={tc.EXTENSION_LABEL: "Edit"},
+                                 pmsl_until_hours=168)
+    FakePVL.answers[:] = []
+    if len(FakePVL.calls) != 1:
+        fails.append("%d dialogs shown, expected one" % len(FakePVL.calls))
+    else:
+        defaults = dict((v[0], v[1]) for v in FakePVL.calls[0][1])
+        times = [defaults.get(F["valid"] % k) for k in range(1, 10)]
+        if times != [stamp(h) for h in hours] + [None]:
+            fails.append("row times %r, want every 12 h from 84 to 168 h"
+                         % times)
+        if defaults.get(F["lat"] % 6) != "30.0N":
+            fails.append("saved 144 h point not in its row: %r"
+                         % defaults.get(F["lat"] % 6))
+    winds = sorted(a[4].startTime().unixTime() for a, _ in proc.created
+                   if a[2] == "VECTOR")
+    gaps = [(b - a) // 3600 for a, b in zip(winds, winds[1:]) if b - a > 10800]
+    if not winds or winds[-1] != t0 + 168 * 3600 or gaps:
+        fails.append("Wind grids end at %s h with gaps %r"
+                     % (winds and (winds[-1] - t0) // 3600, gaps))
+    msg = _final_status(proc)
+    if "extended to" not in msg or "3 forecaster point" not in msg:
+        fails.append("status does not report 3 points: %r" % msg)
     os.remove(path)
     return fails, proc
 
@@ -1689,6 +1754,7 @@ def main():
         ("background_outside_r34_untouched",
          case_background_outside_r34_untouched),
         ("bulletins_as_lists_of_lines", case_bulletins_as_lists_of_lines),
+        ("extension_short_warning", case_extension_short_warning),
         ("extension_shape_follows_the_radii",
          case_extension_shape_follows_the_radii),
     ]

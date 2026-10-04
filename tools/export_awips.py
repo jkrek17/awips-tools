@@ -408,11 +408,12 @@ With the pmsl option on, the same Fcst run also writes **Fcst pmsl**, in
 place, for the grids it previewed as `pmslJTWC`. Set the option to **No**
 to write Fcst Wind alone.
 
-## Step 7: days 6-7, past the warning
+## Step 7: points past the warning, to day 7
 
-Set **Forecaster points past the warning (days 6-7):** to **Edit**. After
-the main dialog, a second one opens for each live storm with four rows
-past the warning's last time. Fill one or two: valid time (DDHHMM),
+Set **Forecaster points past the warning (to day 7):** to **Edit**. After
+the main dialog, a second one opens for each live storm with a row every
+12 h from the warning's last time to 168 h: four rows for a 120 h warning,
+eight for one that stops at 72 h. Every row is optional. Fill one or two: valid time (DDHHMM),
 latitude (e.g. 38.5N), longitude (165.0E or 170.0W), max wind, the four
 34 kt radii NE SE SW NW, optionally a central pressure, and whether it is
 extratropical. Leave a row's latitude blank to skip it.
@@ -423,7 +424,8 @@ Check, in the preview grids:
 |---|---|
 | Last `WindJTWC` grid | At your last point's time |
 | `pmslJTWC` low at a point with a pressure | At your position, within a mb or two of your pressure |
-| Between 120 h and your first point | Track and winds change smoothly; no jump at 120 h |
+| Between the warning's last time and your first point | Track and winds change smoothly; no jump where the warning ends |
+| A warning that stops at 72 h | Dialog rows every 12 h from 84 h to 168 h; blank rows skipped |
 | Next run, on **Use saved** | Same extension without the dialog; the status bar says "extended to" |
 | An extratropical point with a one-sided gale field | Lopsided toward the strong side, though the weak side stays larger than you entered |
 

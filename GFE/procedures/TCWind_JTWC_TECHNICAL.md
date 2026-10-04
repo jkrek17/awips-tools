@@ -11,7 +11,7 @@ marker pointing at the matching numbered note below.
 | | |
 |---|---|
 | Procedure | `GFE/procedures/TCWind_JTWC.py` |
-| Version | `2026-10-03d` (the `VERSION` tunable; the status bar prints it) |
+| Version | `2026-10-04a` (the `VERSION` tunable; the status bar prints it) |
 | Install | `/awips2/edex/data/utility/common_static/site/<SITE>/gfe/userPython/procedures/` |
 | Install test | `AWIPS_TEST.md`, and `selfcheck/run_selfcheck.sh` in the export bundle |
 
@@ -717,14 +717,15 @@ one saved before the option existed, or built by a caller that never offered
 it - leaves pmsl alone: a run that never showed the choice must never touch
 a second weather element.
 
-### Forecaster points past the warning (days 6-7)
+### Forecaster points past the warning, to day 7
 
 #### 67.  Extending a warning to day 7
 
 *module level*
 
-Warnings stop at 120 h; the forecast runs to 168 h.  The forecaster gives
-points past the warning's end - valid time, position, max wind, the four
+Warnings stop at 120 h at most - a final or short warning sooner, often
+72 h for a storm going extratropical - and the forecast runs to 168 h.  The
+forecaster gives points past the warning's end - valid time, position, max wind, the four
 34 kt radii, optionally a central pressure, and an extratropical flag - and
 they are appended to the warning's own track, so everything downstream
 (Wind, pmsl, the 3-hourly series) runs to the last point with nothing else
@@ -758,13 +759,17 @@ to extratropical storms: a 35-45 kt storm whose gales reach far out cannot
 be fit (the profile would need an exponent below GTCM_X_MIN), and its 34 kt
 extent comes out well short of the reported radii.
 
-#### 69.  `_askExtension()`: the days 6-7 dialog
+#### 69.  `_askExtension()`: the points-to-day-7 dialog
 
-*`_askExtension()`*
+*`_askExtension()`, `extensionTimes()`*
 
-One dialog per live storm, four rows, in time order: saved points still
-past the warning, then empty rows at EXTENSION_HOURS after the warning's
-initial time.  All entries are text boxes parsed here, so "38.5N", "165E",
+One dialog per live storm, in time order: saved points still past the
+warning, plus an empty row every EXTENSION_STEP_HOURS (12) after the
+warning's initial time, from its last time to EXTENSION_LAST_HOUR (168), at
+each time no saved point already holds.  A 120 h warning gets four rows; one
+that stops at 72 h gets eight, so the gap to day 7 can be filled.  Every
+row is optional: fill the times that matter and the track is interpolated
+between them.  All entries are text boxes parsed here, so "38.5N", "165E",
 "170W", "300 250 60 40" are all accepted; a row whose latitude is blank is
 no point, so blanking it deletes a saved point.  A row that cannot be read
 is skipped and named on the status bar; Cancel stops the run.
@@ -835,7 +840,7 @@ holds this end to end, with a front's 45 kt band beside LEE.
 GTCM is a symmetric profile plus one uniform vector, so whatever four radii
 it is fit to, its 34 kt line comes out a circle shifted toward the strong
 side: 300/250/60/40 nm came out 338/341/114/84.  Warnings keep that by
-design (note 38).  At a forecaster's days 6-7 point the four radii are the
+design (note 38).  At a forecaster's point past the warning the four radii are the
 forecaster's own, so they are followed: along each azimuth, distance is
 rescaled by the ratio of the field's own 34 kt radius to the target there,
 and the field is evaluated at the rescaled distance.  The target is 85 % of

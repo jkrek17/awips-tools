@@ -298,13 +298,16 @@ SMOOTH_FACTOR = 2
 INSERT_AFTER_SUBTROPICAL = True
 
 # [doc 67]
-# Forecaster points past the end of a warning - days 6 and 7 - entered in a
+# Forecaster points past the end of a warning, out to day 7, entered in a
 # second dialog, appended to the warning's own track, and saved so the next
-# run pre-fills them.  Rows are offered at these hours after the warning's
-# initial time.  EXTENSION_STORE should be a directory every forecaster's
+# run pre-fills them.  Rows are offered every EXTENSION_STEP_HOURS after the
+# warning's initial time, from its last time to EXTENSION_LAST_HOUR: four
+# rows for a 120 h warning, eight for one that stops at 72 h.  Blank rows
+# are skipped.  EXTENSION_STORE should be a directory every forecaster's
 # account can read and write if the points are to survive a shift change.
-EXTENSION_LABEL = "Forecaster points past the warning (days 6-7):"
-EXTENSION_HOURS = (132, 144, 156, 168)
+EXTENSION_LABEL = "Forecaster points past the warning (to day 7):"
+EXTENSION_STEP_HOURS = 12
+EXTENSION_LAST_HOUR = 168
 EXTENSION_STORE = os.path.join(os.path.expanduser("~"),
                                ".TCWind_JTWC_extensions.json")
 EXTENSION_KEEP_DAYS = 10.0
@@ -356,7 +359,7 @@ REQUIRE_ACKNOWLEDGEMENT = True
 
 # Shown in the dialog title and the status bar.  Bump it on every install so
 # there is never any doubt about which copy GFE actually loaded.
-VERSION = "2026-10-03d"
+VERSION = "2026-10-04a"
 
 # [doc 19]
 MAX_BULLETIN_AGE_HOURS = 12.0
@@ -1779,8 +1782,18 @@ def dropDuplicateStorms(storms):
 
 
 # ---------------------------------------------------------------------------
-# Forecaster points past the warning (days 6-7)
+# Forecaster points past the warning, to day 7
 # ---------------------------------------------------------------------------
+
+def extensionTimes(t0, last):
+    """Valid times the dialog offers rows at: every EXTENSION_STEP_HOURS
+    after the warning's initial time ``t0``, past its last time ``last``,
+    to EXTENSION_LAST_HOUR."""
+    step = int(EXTENSION_STEP_HOURS)
+    return [t0 + h * 3600
+            for h in range(step, int(EXTENSION_LAST_HOUR) + 1, step)
+            if t0 + h * 3600 > last]
+
 
 def parseCoord(text, kind):
     """Latitude or longitude from what a forecaster types.
@@ -2225,24 +2238,20 @@ if _IN_GFE:
 
         # [doc 69]
         def _askExtension(self, storm, saved):
-            """The days 6-7 dialog for one storm.
+            """The dialog of points past the warning, for one storm.
 
             Returns (points, problems), or None if the forecaster cancelled.
-            Rows are pre-filled with the saved points still past the
-            warning, then offered at EXTENSION_HOURS after its initial time;
-            a row left without a latitude is no point.
+            Rows are the saved points still past the warning plus an empty
+            row at each extensionTimes() time no saved point already sits
+            on, in time order; a row left without a latitude is no point.
             """
             taus = storm["taus"]
             t0, last = taus[0].epoch, taus[-1].epoch
-            nRows = len(EXTENSION_HOURS)
             rows = [p for p in sorted(saved, key=lambda q: q["epoch"])
-                    if p["epoch"] > last][:nRows]
+                    if p["epoch"] > last]
             taken = set(p["epoch"] for p in rows)
-            for h in EXTENSION_HOURS:
-                if len(rows) >= nRows:
-                    break
-                when = t0 + h * 3600
-                if when > last and when not in taken:
+            for when in extensionTimes(t0, last):
+                if when not in taken:
                     rows.append({"epoch": when})
             rows.sort(key=lambda q: q["epoch"])
 
@@ -2281,7 +2290,7 @@ if _IN_GFE:
                 ]
             answers = {}
             pvl = ProcessVariableList.ProcessVariableList(
-                "Days 6-7: %s" % describeStorm(storm["header"]),
+                "Points to day 7: %s" % describeStorm(storm["header"]),
                 VariableList, answers, None)
             if pvl.status() != "OK":
                 return None
@@ -2625,7 +2634,7 @@ if _IN_GFE:
                 extensionMsg, cancelled = self._extendStorms(
                     storms, extensionMode, nowSecs)
                 if cancelled:
-                    self.statusBarMsg("Cancelled at the days 6-7 dialog; "
+                    self.statusBarMsg("Cancelled at the points-to-day-7 dialog; "
                                       "nothing written.", "S")
                     return
                 if extensionMsg:
