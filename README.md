@@ -270,12 +270,6 @@ exposed in the dialog: none of them is a per-run decision.
 The parser and vortex math have no AWIPS dependencies, so the file runs
 standalone for testing.
 
-The dialog's "Run test case" toggle runs the procedure end to end against a
-bundled real bulletin, translated onto the office's own grid and rebased onto
-"now" — useful for confirming the install and seeing example output with no
-live storm in the text database (outside NW Pacific season, or between
-storms). It always writes to the preview grid only, never Fcst Wind.
-
 **Your background is left alone.** Inside a storm's 34 kt radius the
 warning's winds replace the Fcst Wind. Outside it they fade to nothing by
 1.5 times that radius and only raise the wind where yours is weaker - a
@@ -310,7 +304,7 @@ own time:
    central pressure is the bulletin's, is carried through the rest.
 
 It writes where Wind writes: the `pmslJTWC` preview grid by default, or Fcst
-pmsl behind the same acknowledgement as Fcst Wind. It only touches pmsl grids
+pmsl alongside Fcst Wind. It only touches pmsl grids
 that already exist, at their own cadence. Storm-times below 34 kt are left
 alone, as in the Wind grids. A storm just south of the grid still has its
 outer isobars moved, and CreateXML's gap fill moves the same storm the same

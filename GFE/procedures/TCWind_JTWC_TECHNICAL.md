@@ -11,7 +11,7 @@ marker pointing at the matching numbered note below.
 | | |
 |---|---|
 | Procedure | `GFE/procedures/TCWind_JTWC.py` |
-| Version | `2026-10-04a` (the `VERSION` tunable; the status bar prints it) |
+| Version | `2026-10-04b` (the `VERSION` tunable; the status bar prints it) |
 | Install | `/awips2/edex/data/utility/common_static/site/<SITE>/gfe/userPython/procedures/` |
 | Install test | `AWIPS_TEST.md`, and `selfcheck/run_selfcheck.sh` in the export bundle |
 
@@ -108,16 +108,16 @@ reading before changing anything:
 
 Tunables sit in one block near the top of the procedure and are deliberately
 not exposed in the dialog: none of them is a per-run decision. The dialog
-carries only what is: basin, where to write, time range, the acknowledgement,
-and the test-case toggle.
+carries only what is: basins, where to write, time range, subtropical
+systems, pmsl, and points past the warning.
 
 The ones that change output most: `VORTEX_METHOD`, `GTCM_X_MIN` / `GTCM_X_MAX`,
 `GTCM_ASYM_MAX_DEV_KT` / `GTCM_ASYM_MIN_CAP_KT`, `BACKGROUND_CAP_KT`,
 `MAX_INSERT_RADIUS_FACTOR`, `OUTER_DECAY_FACTOR`, `NORMALIZE_CORE_PEAK`,
 `INSERT_AFTER_SUBTROPICAL`, `OUTPUT_GRID_INTERVAL_SECONDS`.
 
-`EXPERIMENTAL` and `REQUIRE_ACKNOWLEDGEMENT` gate the warning banner and the
-confirmation required before writing to Fcst Wind. `MAX_BULLETIN_AGE_HOURS`
+`EXPERIMENTAL` gates the warning banner in the dialog and the "EXPERIMENTAL,
+verify before use" note on the status bar. `MAX_BULLETIN_AGE_HOURS`
 (12) is what stops a dissipated storm sitting in a PIL forever from being
 gridded — textdb returns whatever was last stored there.
 
@@ -204,13 +204,15 @@ One or more basins per run.  The dialog is a checklist, so this list is both the
 
 NOTE on what this does NOT claim.  NHC and CPHC already distribute a gridded TCM, and AWIPS already ships TCMWindTool to ingest it; for those basins that grid is the authoritative product and this reconstruction is not a replacement for it.  Reading their text matters where the grid is late, missing, or being checked - and because rendering a bulletin whose real grid also exists is the only way to test this tool's core claim, which JTWC's text alone can never provide.
 
-#### 5.  Test case bulletin
+#### 5.  Retired: the built-in test case
 
-*module level*
+*no longer in the code*
 
-Test case bulletin
-
-Real WTPN31 warning for Tropical Storm 22W (KROVANH), issued 2026-09-02, captured verbatim from tests/tcwind_jtwc/fixtures/real_2026-09-02_wtpn31_krovanh.txt (also used by tests/tcwind_jtwc/test_procedure_harness.py). It carries full R34 quadrant radii across nine forecast hours (0-120h). It exists ONLY to back the dialog's "Run test case" toggle below, so a forecaster can see example output with zero live storms in the text database (e.g. outside NW Pacific season, or between storms) - it is never retrieved from textdb and never represents a real, current storm.
+Earlier versions bundled a real WTPN31 warning for 22W (KROVANH) and a
+"Run test case" dialog toggle that gridded it at the grid's centre with no
+live storm needed.  Removed in 2026-10-04b at the forecasters' request; the
+off-line harness feeds the same bulletin from
+tests/tcwind_jtwc/fixtures/ instead.
 
 #### 6.  Tunables.  Set these once for the office; they are deliberately not...
 
@@ -317,7 +319,7 @@ An earlier version instead matched each written block's duration to whatever cad
 
 *module level*
 
-This tool is experimental and has not been operationally vetted.  While that is true, the dialog says so and a forecaster must acknowledge it before anything is written to Fcst.  Preview runs are always allowed without acknowledgement, so evaluating the tool costs nothing.  Set this to False once the tool has been through local vetting.
+This tool is experimental and has not been operationally vetted.  While that is true, the dialog's banner and the status bar say so.  Writing to Fcst Wind no longer needs a separate acknowledgement (removed in 2026-10-04b).  Set this to False once the tool has been through local vetting.
 
 #### 19.  A bulletin older than this is treated as a dead slot and skipped. ...
 
@@ -431,17 +433,18 @@ A checklist of basins, not of every PIL in every basin, and nothing ticked by de
 
 JTWC keeps issuing position and intensity forecasts through subtropical status and extratropical transition, so there is still a forecast point to build from.  What is no longer certain is that a symmetric tropical vortex is the right shape for it, which is a judgement for the forecaster rather than a fixed policy - hence a per-run choice rather than the module-level default it used to be.
 
-#### 55.  Test case mode uses its own bundled storm, not textdb, so the
+#### 55.  A run with no basin ticked stops
 
 *`execute()`*
 
-Test case mode uses its own bundled storm, not textdb, so the basins do not apply to it and the empty guard below is skipped.  Otherwise a run with no basin ticked stops with a message saying so: a silent no-op run is worse.
+A run with no basin ticked stops with a message saying so: a silent no-op run is worse.
 
-#### 56.  Safety property, enforced in code rather than only by dialog
+#### 56.  Retired: test-case safety override
 
-*`execute()`*
+*no longer in the code*
 
-Safety property, enforced in code rather than only by dialog wiring: a synthetic test-case storm must never land in Fcst Wind, no matter what "Write to:" says or whether the forecaster acknowledged writing to Fcst. Force preview before the acknowledgement gate below even runs, and say so once in the final status message.
+Forced the built-in test case to the preview grid.  Removed with the test
+case (note 5).
 
 #### 57.  parseBulletin, not parseJTWC: with four basins in
 
@@ -678,8 +681,8 @@ CreateXML's gap fill uses for the same job south of the grid, so the grid and
 the chart's gap move a storm identically.  It is a utility, not part of this
 file: without it the Wind grids are built exactly as before and the status
 bar says pmsl was left alone.  The preview goes to `pmslJTWC`, a temporary
-parm made the way `WindJTWC` is; the Fcst write needs the same
-acknowledgement as Fcst Wind.
+parm made the way `WindJTWC` is; a Fcst run writes Fcst pmsl alongside Fcst
+Wind.
 
 #### 65.  `_movePmsl()`: each pmsl grid at its own time, one scale per storm
 
@@ -880,18 +883,6 @@ Header fields carry adapted meanings, since the products name things differently
 #### `parseBulletin()`
 
 Returns (taus, header, kind) where kind is "tcm" or "jtwc".  Callers that already know which product they hold can still call parseTCM() or parseJTWC() directly.
-
-#### `_gridCenterLatLon()`
-
-Latitude is a plain mean. Longitude uses a circular mean (mean of unit vectors, then atan2) rather than a plain mean of the raw values, so a grid straddling the dateline (e.g. a Guam office's domain, which spans it) still centers correctly instead of averaging +179 and -179 into 0.
-
-#### `_rebaseTestCaseTrack()`
-
-Time: every tau's epoch is shifted by one constant offset so taus[0] (the analysis time) lands MAX_BULLETIN_AGE_HOURS-safe - 3 hours before `nowSecs` - which is what a bulletin that just came in looks like. The header's DDMMMYY reference date is shifted to match, for display. This does not re-parse the DDMMMYY string; it adjusts the already-parsed epochs directly, then derives a display date from the new taus[0].
-
-Space: every tau's lat/lon is translated by the constant offset that puts taus[0]'s position exactly at the grid's own center (see _gridCenterLatLon()). The track's shape and motion vector are untouched - motionDir/motionSpd are never read here - only position translates, so the storm keeps moving the same way relative to itself, just centered somewhere the forecaster's own grid actually covers. Longitude is wrapped back to -180..180 after the shift, the same convention interpolateTrack() uses for the dateline.
-
-Mutates and returns (taus, header); taus are freshly parsed from TEST_CASE_BULLETIN by the caller each run, so this is not run on anything shared across runs.
 
 #### `_fitTau()`
 

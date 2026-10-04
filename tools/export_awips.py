@@ -162,8 +162,7 @@ cyclone warning text out of the AWIPS text database and builds a Wind grid
 from it, using an analytic vortex model fit to the reported wind radii. It
 has not been operationally vetted. Every grid it produces needs your review
 before it goes anywhere near a real forecast. That is why the procedure
-defaults to writing a temporary preview grid instead of Fcst Wind, and why
-Fcst Wind requires an explicit acknowledgement in the dialog. Run it to the
+defaults to writing a temporary preview grid instead of Fcst Wind. Run it to the
 preview grid first, every time, until you and your office trust it.
 
 This document walks through testing this bundle (version %(version)s) on a
@@ -259,7 +258,7 @@ replacing `<SITE>` with your site identifier. This is a Site-level install
 and is visible to everyone, so it should only be used once User-level
 testing here is done.
 
-## Step 2.5: run the built-in test case (optional, but recommended first)
+## Step 2.5: basins
 
 The **Basins:** checklist picks one or more oceans per run - Atlantic,
 East Pac, West Pac, Central Pac - and all five storm slots in each are
@@ -269,33 +268,6 @@ a message; tick West Pac and Central Pac together for a storm crossing
 Pac come from NHC, Central Pac from CPHC, West Pac from JTWC; the tool works
 out which product format it is holding from the text itself, not from the
 bin it arrived in.
-
-Before ever touching a real bulletin, confirm the install works end to end
-using the procedure's own bundled test storm — no live storm, no network,
-and no dependence on what JTWC has (or has not) issued today.
-
-From the **Populate** menu, run **TCWind_JTWC**. In the dialog, set
-**Run test case (no live storm needed):** to **Yes**, and leave everything
-else at its default (the **Basins:** checklist is ignored in this mode - the test
-case uses its own bundled storm, never the text database). Run it.
-
-**What the status bar should say**, roughly:
-
-```
-TEST CASE (not a live storm). v%(version)s. EXPERIMENTAL, verify before
-use. Wrote N 3-hourly WindJTWC preview grids. ...
-```
-
-The message always starts with `TEST CASE (not a live storm).` and always
-reports `WindJTWC preview grids` — this mode can only ever write to the
-preview grid, never Fcst Wind, even if **Write to:** is set to **Fcst
-Wind** (the status bar says so if you try).
-
-A preview grid should appear centered in your own office's domain, with a
-peak wind near the bundled bulletin's reported Vmax (see Step 4's
-checklist below for what a healthy field looks like generally). If this
-step looks right, Step 3 with a real bulletin should too; if it does not,
-report it the same way as a self-check failure, before moving on.
 
 ## Step 3: first run, in GFE Practice mode
 
@@ -397,12 +369,8 @@ These are expected behavior, not bugs. Do not report them as problems
 Only do this after Steps 1-5 look right to you, and still in **Practice**
 mode first, never Operational, for this first round of testing.
 
-In the dialog, set **Write to:** to **Fcst Wind**. A new radio button
-appears: "I understand this tool is experimental and I have reviewed the
-output". You must set this to **Yes** before the procedure will write
-anything to Fcst Wind; leaving it on the default **No** stops the run
-with a status bar message and writes nothing. This acknowledgement gate
-only applies to Fcst Wind; preview runs never require it.
+In the dialog, set **Write to:** to **Fcst Wind** and run it. Nothing else
+needs setting: there is no separate confirmation step.
 
 With the pmsl option on, the same Fcst run also writes **Fcst pmsl**, in
 place, for the grids it previewed as `pmslJTWC`. Set the option to **No**

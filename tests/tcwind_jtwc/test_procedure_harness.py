@@ -372,8 +372,6 @@ def _run(pil, fixture_name, inv_stop_hours, basin="West Pac"):
         "Basin:": basin,
         "Write to:": "Fcst Wind",
         "Run over selected time range only?": "No",
-        "I understand this tool is experimental and I have reviewed "
-        "the output:": "Yes",
     }
 
     proc.execute(None, None, varDict)
@@ -394,51 +392,6 @@ def _peak_written_kt(proc):
         mag = data[0]
         peak = max(peak, float(np.asarray(mag).max()))
     return peak
-
-
-def _run_test_case(write_to, ack="No", now_epoch=None):
-    """Run Procedure.execute() with the "Run test case (no live storm
-    needed):" toggle set to "Yes" - no fixture, no textdb, the procedure's
-    own bundled TEST_CASE_BULLETIN. Builds a Fcst Wind inventory (3-hourly,
-    same convention as _run()) wide enough to cover the rebased track,
-    computed from TEST_CASE_BULLETIN's own (pre-rebase) span so this stays
-    correct if the bundled bulletin ever changes.
-
-    Returns (proc, origTaus, nowEpoch, latGrid, lonGrid). origTaus is the
-    freshly, independently parsed (never rebased) TEST_CASE_BULLETIN, for
-    computing expectations (bulletin peak Vmax, track duration) without
-    depending on the procedure's internal state.
-    """
-    origTaus, _origHeader = tc.parseJTWC(tc.TEST_CASE_BULLETIN)
-    if now_epoch is None:
-        now_epoch = int(time.time())
-
-    expectedAnalysis = now_epoch - 3 * 3600
-    duration = origTaus[-1].epoch - origTaus[0].epoch
-    expectedLast = expectedAnalysis + duration
-
-    latGrid, lonGrid = _mesh()
-
-    proc = tc.Procedure(dbss=None)
-    proc.configure(
-        texts={},
-        now_epoch=now_epoch,
-        inv_start=expectedAnalysis,
-        inv_end=expectedLast + 3 * 3600,
-        lat=latGrid,
-        lon=lonGrid)
-
-    varDict = {
-        tc.TEST_CASE_LABEL: "Yes",
-        "Basin:": "West Pac",   # ignored: the test case never reads textdb
-        "Write to:": write_to,
-        "Run over selected time range only?": "No",
-        "I understand this tool is experimental and I have reviewed "
-        "the output:": ack,
-    }
-
-    proc.execute(None, None, varDict)
-    return proc, origTaus, now_epoch, latGrid, lonGrid
 
 
 # ---------------------------------------------------------------------------
@@ -571,8 +524,6 @@ def case_mixed_cadence_background_still_writes_3_hourly():
         "Basin:": "West Pac",
         "Write to:": "Fcst Wind",
         "Run over selected time range only?": "No",
-        "I understand this tool is experimental and I have reviewed "
-        "the output:": "Yes",
     }
 
     proc.execute(None, None, varDict)
@@ -649,8 +600,6 @@ def case_selected_time_range_only_respects_bounds():
         "Basin:": "West Pac",
         "Write to:": "Fcst Wind",
         "Run over selected time range only?": "Yes",
-        "I understand this tool is experimental and I have reviewed "
-        "the output:": "Yes",
     }
 
     proc.execute(None, selectedTR, varDict)
@@ -752,106 +701,6 @@ def case_lee_atlantic_tcm():
     return fails, proc
 
 
-def case_test_case_forces_preview_despite_fcst_wind_and_ack():
-    """"Run test case" = Yes, "Write to:" = Fcst Wind, acknowledgement =
-    Yes. This is the safety-property case: even though the forecaster
-    picked Fcst Wind AND acknowledged writing to it, a synthetic test
-    storm must never land there - the override has to be enforced in code,
-    not just by graying the dialog out. Also checks the track was
-    translated onto the fake grid's own center, and that the peak written
-    tracks the bundled bulletin's own Vmax."""
-    fails = []
-
-    proc, origTaus, nowEpoch, latGrid, lonGrid = _run_test_case(
-        write_to="Fcst Wind", ack="Yes")
-
-    if not proc.created:
-        fails.append("no grids were written at all")
-
-    finalMsg = _final_status(proc)
-    if "TEST CASE" not in finalMsg:
-        fails.append("final status does not say TEST CASE: %r" % finalMsg)
-    if "Test case always writes to the preview grid." not in finalMsg:
-        fails.append("final status does not explain the forced-preview "
-                     "override even though Write to: was Fcst Wind and "
-                     "the acknowledgement was Yes: %r" % finalMsg)
-    if "Fcst Wind grids" in finalMsg:
-        fails.append("final status reports writing to real Fcst Wind "
-                     "grids: %r" % finalMsg)
-
-    # Code-level safety check on every grid actually written this run: the
-    # element name must always be the preview element, and the temporary
-    # (createGrid(..., descriptiveName=...)) branch must be the one that
-    # ran - _storeGrid() only passes descriptiveName on the temporary
-    # (preview) path, so its presence is direct evidence createGrid was
-    # never called with temporary=False here.
-    for args, kwargs in proc.created:
-        element = args[1]
-        if element != tc.PREVIEW_ELEMENT:
-            fails.append("createGrid called with element %r, not the "
-                         "preview element %r" % (element, tc.PREVIEW_ELEMENT))
-        if "descriptiveName" not in kwargs:
-            fails.append("createGrid call missing descriptiveName kwarg - "
-                         "the non-temporary (real Fcst Wind) branch ran: "
-                         "args=%r kwargs=%r" % (args, kwargs))
-
-    # The track must be translated so tau 0 sits at the fake grid's own
-    # center - computed the same way the procedure does (tc._gridCenterLatLon
-    # on the exact grid getLatLonGrids() returned), independently re-run
-    # here on a fresh, unrebased parse of TEST_CASE_BULLETIN.
-    freshTaus, freshHeader = tc.parseJTWC(tc.TEST_CASE_BULLETIN)
-    rebasedTaus, _rebasedHeader = tc._rebaseTestCaseTrack(
-        freshTaus, freshHeader, nowEpoch, latGrid, lonGrid)
-    clat, clon = tc._gridCenterLatLon(latGrid, lonGrid)
-    latCell = abs(float(latGrid[1, 0] - latGrid[0, 0]))
-    lonCell = abs(float(lonGrid[0, 1] - lonGrid[0, 0]))
-    tol = 0.5 * max(latCell, lonCell)
-    tau0 = rebasedTaus[0]
-    if abs(tau0.lat - clat) > tol or abs(tau0.lon - clon) > tol:
-        fails.append(
-            "translated tau-0 (%.3f, %.3f) is not within half a grid cell "
-            "(%.4f deg) of the fake grid's own center (%.3f, %.3f)"
-            % (tau0.lat, tau0.lon, tol, clat, clon))
-
-    bulletinPeak = max(t.vmax for t in origTaus)
-    peak = _peak_written_kt(proc)
-    if abs(peak - bulletinPeak) > 5.0:
-        fails.append("peak written %.1f kt not within a few kt of the "
-                     "bundled bulletin's max %.1f kt" % (peak, bulletinPeak))
-
-    return fails, proc
-
-
-def case_test_case_preview_default():
-    """Lighter case: "Run test case" = Yes with "Write to:" left at its
-    normal default, Preview grid. Confirms test mode works there too, not
-    only under the forced-override path above."""
-    fails = []
-
-    proc, origTaus, _nowEpoch, _latGrid, _lonGrid = _run_test_case(
-        write_to="Preview grid", ack="No")
-
-    if not proc.created:
-        fails.append("no grids were written at all")
-
-    finalMsg = _final_status(proc)
-    if "TEST CASE" not in finalMsg:
-        fails.append("final status does not say TEST CASE: %r" % finalMsg)
-
-    for args, _kwargs in proc.created:
-        if args[1] != tc.PREVIEW_ELEMENT:
-            fails.append("createGrid used element %r, expected preview "
-                         "element %r" % (args[1], tc.PREVIEW_ELEMENT))
-
-    bulletinPeak = max(t.vmax for t in origTaus)
-    peak = _peak_written_kt(proc)
-    if abs(peak - bulletinPeak) > 5.0:
-        fails.append("peak written %.1f kt not within a few kt of the "
-                     "bundled bulletin's max %.1f kt" % (peak, bulletinPeak))
-
-    return fails, proc
-
-
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
@@ -883,7 +732,7 @@ def _modelPmsl(taus, offsetDeg=(1.5, 1.5), depth=8.0):
     return field
 
 
-def _run_pmsl(pmsl_fn, write_to="Preview grid", ack="No", label="Yes",
+def _run_pmsl(pmsl_fn, write_to="Preview grid", label="Yes",
               block_hours=6, extra=None, pmsl_until_hours=None, mesh_n=120,
               only=None, text=None):
     """Krovanh (or `text`), with a Fcst pmsl inventory of `block_hours`
@@ -905,8 +754,6 @@ def _run_pmsl(pmsl_fn, write_to="Preview grid", ack="No", label="Yes",
         "Basin:": "West Pac",
         "Write to:": write_to,
         "Run over selected time range only?": "No",
-        "I understand this tool is experimental and I have reviewed "
-        "the output:": ack,
     }
     if label is not None:
         varDict[tc.PMSL_LABEL] = label
@@ -996,20 +843,43 @@ def case_pmsl_preview_moves_the_storm():
     return fails, proc
 
 
-def case_pmsl_fcst_needs_ack_and_writes_pmsl():
+def case_pmsl_fcst_writes_wind_and_pmsl():
+    """A Fcst run writes Fcst Wind and Fcst pmsl, with no confirmation
+    step in the way."""
     fails = []
     taus = tc.parseBulletin(_load_fixture(KROVANH))[0]
-    proc, _, _, _, _ = _run_pmsl(_modelPmsl(taus), write_to="Fcst Wind",
-                                 ack="Yes")
+    proc, _, _, _, _ = _run_pmsl(_modelPmsl(taus), write_to="Fcst Wind")
     elements = set(e for e, _, _ in _pmslWrites(proc).values())
     if elements != {"pmsl"}:
         fails.append("Fcst run wrote pmsl to %r" % sorted(elements))
-    proc, _, _, _, _ = _run_pmsl(_modelPmsl(taus), write_to="Fcst Wind",
-                                 ack="No")
-    if proc.created:
-        fails.append("Fcst run without the acknowledgement wrote %d grids"
-                     % len(proc.created))
+    winds = set(a[1] for a, _ in proc.created if a[2] == "VECTOR")
+    if winds != {"Wind"}:
+        fails.append("Fcst run wrote wind to %r" % sorted(winds))
     return fails, proc
+
+
+def case_main_dialog_rows():
+    """The main dialog has no test-case toggle and no acknowledgement row:
+    just the banner, basins, where to write, time range, subtropical
+    systems, pmsl and the points past the warning."""
+    fails = []
+    del FakePVL.calls[:]
+    tc.Procedure(dbss=None)._buildVarDict()
+    title, vlist = FakePVL.calls[-1]
+    inputs = [v[0] for v in vlist if len(v) > 2 and v[2] != "label"]
+    want = [tc.BASINS_LABEL, "Write to:",
+            "Run over selected time range only?",
+            "Subtropical / extratropical systems:", tc.PMSL_LABEL,
+            tc.EXTENSION_LABEL]
+    if inputs != want:
+        fails.append("dialog inputs %r, want %r" % (inputs, want))
+    text = " ".join(str(v[0]) for v in vlist).lower()
+    for gone in ("test case", "i understand", "testing only"):
+        if gone in text:
+            fails.append("dialog still mentions %r" % gone)
+    if tc.VERSION not in title:
+        fails.append("title %r lacks the version" % title)
+    return fails, None
 
 
 def case_pmsl_only_when_asked():
@@ -1726,12 +1596,10 @@ def main():
          case_selected_time_range_only_respects_bounds),
         ("saudel_weak_no_radii_runs_clean", case_saudel),
         ("lee_atlantic_tcm_end_to_end", case_lee_atlantic_tcm),
-        ("test_case_forces_preview_despite_fcst_wind_and_ack",
-         case_test_case_forces_preview_despite_fcst_wind_and_ack),
-        ("test_case_preview_default", case_test_case_preview_default),
         ("pmsl_preview_moves_the_storm", case_pmsl_preview_moves_the_storm),
-        ("pmsl_fcst_needs_ack_and_writes_pmsl",
-         case_pmsl_fcst_needs_ack_and_writes_pmsl),
+        ("pmsl_fcst_writes_wind_and_pmsl",
+         case_pmsl_fcst_writes_wind_and_pmsl),
+        ("main_dialog_rows", case_main_dialog_rows),
         ("pmsl_only_when_asked", case_pmsl_only_when_asked),
         ("pmsl_run_twice_is_stable", case_pmsl_run_twice_is_stable),
         ("pmsl_without_tcpressure", case_pmsl_without_tcpressure),
