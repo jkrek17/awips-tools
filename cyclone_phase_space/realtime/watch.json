@@ -3,9 +3,9 @@
   "storms": [
     {
       "name": "EPAC",
-      "lat": 25.62,
-      "lon": 176.11,
-      "cycle": "2026100512",
+      "lat": 25.46,
+      "lon": 168.97,
+      "cycle": "2026100612",
       "fhr0": 0,
       "fhr1": null,
       "notes": "Eastern Pacific tropical cyclone; FSU cyclone 1 of the 2026092412 run.",
@@ -13,9 +13,9 @@
     },
     {
       "name": "WPAC",
-      "lat": 27.19,
-      "lon": 145.76,
-      "cycle": "2026100512",
+      "lat": 33.41,
+      "lon": 147.22,
+      "cycle": "2026100612",
       "fhr0": 0,
       "fhr1": null,
       "notes": "Western Pacific typhoon near 17N 145E on the 2 Oct 00 UTC run (L01 on the live map, 925 hPa at 180 h): the GFS recurves it east of Japan, takes it through a full extratropical transition (0, 2, 4) over the Kuril Islands on 7 to 8 Oct and then re-forms a warm core as a Bering Sea seclusion (3, 1, 0, 1). Added by hand on 2 Oct to keep the case.",
@@ -122,9 +122,9 @@
     },
     {
       "name": "AUTO_260929_01",
-      "lat": 70.27,
-      "lon": 5.69,
-      "cycle": "2026100512",
+      "lat": 68.84,
+      "lon": 35.75,
+      "cycle": "2026100612",
       "fhr0": 0,
       "fhr1": null,
       "notes": "Found automatically at 0 h of 2026092912: 974.04 hPa, NATL.",
@@ -143,9 +143,9 @@
     },
     {
       "name": "AUTO_260930_01",
-      "lat": 73.44,
-      "lon": 150.65,
-      "cycle": "2026100512",
+      "lat": 75.73,
+      "lon": 153.3,
+      "cycle": "2026100612",
       "fhr0": 0,
       "fhr1": null,
       "notes": "Found automatically at 0 h of 2026093012: 963.08 hPa, NPAC.",
@@ -153,9 +153,9 @@
     },
     {
       "name": "AUTO_261001_01",
-      "lat": 20.43,
-      "lon": -115.87,
-      "cycle": "2026100512",
+      "lat": 20.54,
+      "lon": -118.9,
+      "cycle": "2026100612",
       "fhr0": 0,
       "fhr1": null,
       "notes": "Found automatically at 0 h of 2026100112: 966.34 hPa, TROP.",
@@ -163,19 +163,20 @@
     },
     {
       "name": "AUTO_261001_02",
-      "lat": 63.78,
-      "lon": -56.97,
-      "cycle": "2026100512",
+      "lat": 62.55,
+      "lon": -56.37,
+      "cycle": "2026100612",
       "fhr0": 0,
       "fhr1": null,
-      "notes": "Found automatically at 0 h of 2026100112: 975.00 hPa, NATL.",
-      "active": true
+      "notes": "Found automatically at 0 h of 2026100112: 975.00 hPa, NATL. Inactive from 2026100612: filled.",
+      "active": false,
+      "ended_cycle": "2026100612"
     },
     {
       "name": "AUTO_261003_01",
-      "lat": 57.26,
-      "lon": -158.05,
-      "cycle": "2026100512",
+      "lat": 58.82,
+      "lon": -149.58,
+      "cycle": "2026100612",
       "fhr0": 0,
       "fhr1": null,
       "notes": "Found automatically at 0 h of 2026100312: 966.18 hPa, NPAC.",
@@ -202,6 +203,16 @@
       "notes": "Found automatically at 0 h of 2026100512: 978.16 hPa, NATL. Inactive from 2026100512: merged into AUTO_260929_01 at +6 h.",
       "active": false,
       "ended_cycle": "2026100512"
+    },
+    {
+      "name": "AUTO_261006_01",
+      "lat": 52.06,
+      "lon": -62.28,
+      "cycle": "2026100612",
+      "fhr0": 0,
+      "fhr1": null,
+      "notes": "Found automatically at 0 h of 2026100612: 979.11 hPa, NATL.",
+      "active": true
     }
   ]
 }
