@@ -14,6 +14,7 @@ data/storms/<cycle>/<NAME>/   phase.png, compare.png, meta.json, track.csv
 .nojekyll
 phillies/        kept: published by jkrek17/codex, copied forward on each push
 lsr/             kept: published by jkrek17/lsrMap (lsr/ = main, lsr/next/ = test branch)
+wind/            kept: published by jkrek17/wind-particles (forecast map, data rebuilt every 6 h)
 ```
 
 Each publish replaces the whole branch, so folders other projects put in
