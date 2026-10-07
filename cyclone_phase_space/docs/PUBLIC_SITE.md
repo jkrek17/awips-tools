@@ -8,21 +8,31 @@ source, tests, figure scripts or collection code go there.
 ## Layout of the public repository (branch main, served by Pages at the root)
 
 ```
-index.html, style.css, app.js, basemap.js, basemap/   the map page
-data/latest/     index.json, legend.json, history.json, frames/f{hhh}/...
-data/storms/<cycle>/<NAME>/   phase.png, compare.png, meta.json, track.csv
+index.html       the projects index, rebuilt on each publish (tools/build_site_index.py)
+cyclone/         the map page: index.html, style.css, app.js, basemap.js, basemap/, fonts/
+cyclone/data/latest/   index.json, legend.json, history.json, frames/f{hhh}/...
+cyclone/data/storms/<cycle>/<NAME>/   phase.png, compare.png, meta.json, track.csv
+article/         the article and its figures
+forecasters/     the plain-language guide
 .nojekyll
 phillies/        kept: published by jkrek17/codex, copied forward on each push
 lsr/             kept: published by jkrek17/lsrMap (lsr/ = main, lsr/next/ = test branch)
 wind/            kept: published by jkrek17/wind-particles (forecast map, data rebuilt every 6 h)
 ```
 
-Each publish replaces the whole branch, so folders other projects put in
-the public repository are listed in `KEEP_FOLDERS` in the workflow and
-copied forward from the current public `main` before the push. To add
-another, add its folder name there.
+Each publish replaces the whole branch, so every top-level folder this
+site does not write (anything not in `OWN_FOLDERS` in the workflow) is
+copied forward from the current public `main` before the push. Another
+project only has to push its own folder to the public repository; it
+needs no change here.
 
-The page finds its data at `data/latest/` when served this way, falls
+The root page lists every top-level folder that has an `index.html`,
+with any `index.html` one level down (`lsr/next/`) under its parent. Each
+entry takes the page's `<title>` and `<meta name="description">`, so a
+project fixes its own entry by fixing those; a title starting
+`[test: name]` gets a test tag. A new folder appears on the next publish.
+
+The map finds its data at `data/latest/` beside it when served this way, falls
 back to the `cps-live` branch of this repository if that is public, and
 accepts `?data=<url>` for tests.
 
@@ -47,6 +57,7 @@ accepts `?data=<url>` for tests.
    repository's `main` branch.
 5. In the public repository: Settings > Pages > Source "Deploy from a
    branch", branch `main`, folder `/ (root)`. The map is then at
+   `https://jkrek17.github.io/web/cyclone/`, under the projects index at
    `https://jkrek17.github.io/web/`.
 6. Make this repository private whenever you want. Two consequences:
    the article at `jkrek17.github.io/awips-tools/cps/` stops being served

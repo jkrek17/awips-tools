@@ -1,7 +1,8 @@
 # Publishes the public web site to the separate public repository (the
 # repository variable PUBLIC_SITE_REPO, for example jkrek17/web) so that this
 # repository can be private. The site is assembled from the live map page
-# (cyclone_phase_space/article/live/), the forecasters' explainer
+# (cyclone_phase_space/article/live/, served at /cyclone/ with its data under
+# /cyclone/data/), the forecasters' explainer
 # (cyclone_phase_space/article/forecasters/), the article with its figures
 # (cyclone_phase_space/article/{index.html,style.css,figures/}), the newest
 # live data (the latest/ and storms/ trees of the cps-live branch) and nothing else; it is pushed as the
@@ -11,9 +12,12 @@
 # with GitHub Pages from main at the root.
 #
 # Other projects may publish their own folders to the public repository
-# (listed in KEEP_FOLDERS, for example phillies/ from jkrek17/codex, lsr/
-# from jkrek17/lsrMap and wind/ from jkrek17/wind-particles). Because the push replaces the whole branch, those
-# folders are copied forward from the current public main before each push.
+# (for example phillies/ from jkrek17/codex, lsr/ from jkrek17/lsrMap and
+# wind/ from jkrek17/wind-particles). Because the push replaces the whole
+# branch, every top-level folder this site does not own (OWN_FOLDERS) is
+# copied forward from the current public main before each push, so a new
+# project needs no change here. The root index.html is the projects index,
+# built by tools/build_site_index.py from each folder's title and description.
 #
 # Runs after every live data export and daily collection, on a push that
 # changes the page, and by hand. Skips quietly when the variable or the
@@ -34,6 +38,7 @@ on:
       - 'cyclone_phase_space/article/style.css'
       - 'cyclone_phase_space/article/figures/**'
       - '.github/workflows/site_publish.yml'
+      - 'tools/build_site_index.py'
   workflow_dispatch:
 
 permissions:
@@ -83,8 +88,10 @@ jobs:
         run: |
           site="$RUNNER_TEMP/site"
           rm -rf "$site"
-          mkdir -p "$site/data"
-          cp -r cyclone_phase_space/article/live/. "$site/"
+          # The live map with its data beside it, served at /cyclone/; the
+          # site root is the projects index (built after the kept folders).
+          mkdir -p "$site/cyclone/data"
+          cp -r cyclone_phase_space/article/live/. "$site/cyclone/"
           # The plain-language explainer for forecasters, self-contained
           # (its own stylesheet and figure copies), served at /forecasters/.
           mkdir -p "$site/forecasters"
@@ -95,17 +102,17 @@ jobs:
           cp cyclone_phase_space/article/index.html cyclone_phase_space/article/style.css "$site/article/"
           cp -r cyclone_phase_space/article/figures/. "$site/article/figures/"
           if [ -d "$RUNNER_TEMP/live/latest" ]; then
-            cp -r "$RUNNER_TEMP/live/latest" "$site/data/latest"
+            cp -r "$RUNNER_TEMP/live/latest" "$site/cyclone/data/latest"
           fi
           if [ -d "$RUNNER_TEMP/live/storms" ]; then
-            cp -r "$RUNNER_TEMP/live/storms" "$site/data/storms"
+            cp -r "$RUNNER_TEMP/live/storms" "$site/cyclone/data/storms"
           fi
           # Stamp the page's own script and style links with the commit so a
           # browser holding a cached index.html never pairs it with stale
           # files (Pages serves everything with a 10 minute max-age).
           v="${GITHUB_SHA::8}"
-          sed -i -E "s/(href|src)=\"(style\.css|basemap\.js|card\.js|storms\.js|space3d\.js|app\.js)\"/\1=\"\2?v=$v\"/g" "$site/index.html"
-          grep -c "?v=$v" "$site/index.html"
+          sed -i -E "s/(href|src)=\"(style\.css|basemap\.js|card\.js|storms\.js|space3d\.js|app\.js)\"/\1=\"\2?v=$v\"/g" "$site/cyclone/index.html"
+          grep -c "?v=$v" "$site/cyclone/index.html"
           touch "$site/.nojekyll"
           du -sh "$site"
 
@@ -114,24 +121,33 @@ jobs:
         env:
           REPO: ${{ vars.PUBLIC_SITE_REPO }}
           TOKEN: ${{ secrets.WEB_TOKEN }}
-          KEEP_FOLDERS: phillies lsr wind
+          # Folders this workflow writes, plus data/, fonts/ and basemap/,
+          # which the map used at the root before it moved to /cyclone/.
+          OWN_FOLDERS: cyclone article forecasters data fonts basemap
         run: |
           current="$RUNNER_TEMP/current"
           rm -rf "$current"
-          # Sparse and blobless, so only the kept folders are downloaded,
-          # not the storm frames.
+          # Sparse and blobless, so only the other projects' folders are
+          # downloaded, not the storm frames.
           if ! git clone -q --depth 1 --filter=blob:none --sparse \
               "https://x-access-token:${TOKEN}@github.com/${REPO}.git" "$current" \
-              || ! git -C "$current" sparse-checkout set --no-cone $(printf '/%s/ ' $KEEP_FOLDERS); then
+              || ! git -C "$current" sparse-checkout set --no-cone '/*/' $(printf '!/%s/ ' $OWN_FOLDERS); then
             echo "Could not read the current public site; publishing without kept folders."
             exit 0
           fi
-          for folder in $KEEP_FOLDERS; do
-            if [ -d "$current/$folder" ]; then
+          for dir in "$current"/*/; do
+            [ -d "$dir" ] || continue
+            folder=$(basename "$dir")
+            case " $OWN_FOLDERS " in *" $folder "*) continue ;; esac
+            if [ ! -e "$RUNNER_TEMP/site/$folder" ]; then
               cp -r "$current/$folder" "$RUNNER_TEMP/site/$folder"
               echo "Kept $folder/"
             fi
           done
+
+      - name: Build the projects index
+        if: steps.cfg.outputs.ready == 'true'
+        run: python3 tools/build_site_index.py "$RUNNER_TEMP/site"
 
       - name: Push to the public repository
         if: steps.cfg.outputs.ready == 'true'
