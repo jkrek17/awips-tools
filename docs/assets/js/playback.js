@@ -12,7 +12,7 @@
 
    Three modes, two query shapes:
 
-     composite  every season laid on one Jul 1 -> Jun 30 axis (the climatology
+     composite  every season laid on one Jun 1 -> May 31 axis (the climatology
                 product: the Pacific belt sliding south through DJF, the
                 Atlantic belt tilting NE, the Cape Farewell tip-jet cluster).
      season     one season on the absolute clock, first fix to last fix.
@@ -68,9 +68,9 @@ window.HF = window.HF || {};
 
   var DEG = Math.PI / 180;
 
-  // Month lengths in season order (Jul ... Jun) for a LEAP year. The
+  // Month lengths in season order (Jun ... May) for a LEAP year. The
   // composite axis is deliberately the 366-day one - see compositeHour().
-  var SEASON_MONTH_DAYS = [31, 31, 30, 31, 30, 31, 31, 29, 31, 30, 31, 30];
+  var SEASON_MONTH_DAYS = [30, 31, 31, 30, 31, 30, 31, 31, 29, 31, 30, 31];
   var SEASON_MONTH_START = [];          // day-of-axis on which each month begins
   (function () {
     var d = 0;
@@ -143,24 +143,27 @@ window.HF = window.HF || {};
     return c.year * 1000000 + c.month * 10000 + c.day * 100 + (h - days * 24);
   }
 
-  /** Which Jul-Jun season a calendar date falls in, by the DATE (a Jan event
-      belongs to the season that began the previous Jul). Used for the
+  /** Which Jun-May season a calendar date falls in, by the DATE (a Jan event
+      belongs to the season that began the previous Jun; season "2001-02" is
+      1 Jun 2001 - 31 May 2002). Used for the
       composite axis, which must put a fix where its date says regardless of
-      what the archive's own `season` label says - see the findings in the
-      report: 7 events carry a label that disagrees with their dates. */
+      what the archive's own `season` label says: one event (pac:2004200502,
+      a mistyped year in the source) carries a label that disagrees with its
+      dates, and a handful of early-June events are deliberately numbered as
+      the first event of the NEW season. */
   function seasonOfDate(n) {
     var p = parse(n);
-    return p.month >= 7 ? p.year : p.year - 1;
+    return p.month >= 6 ? p.year : p.year - 1;
   }
 
-  /** Composite-axis hour of a date: hours since Jul 1 00Z on a fixed 366-day
+  /** Composite-axis hour of a date: hours since Jun 1 00Z on a fixed 366-day
       calendar.
 
       Leap years: the axis always has a 29 Feb slot, so every date sits on
       the SAME slot in every season - 14 Jan is 14 Jan whether the season
       has a Feb 29 or not. Counting plain day-of-year instead would put 1 Mar
       at day 60 in a leap season and 59 in a normal one, sliding the whole
-      Mar-Jun half of the composite by a day between the two kinds of season,
+      Mar-May half of the composite by a day between the two kinds of season,
       i.e. smearing the climatology exactly where the track is changing
       fastest. The cost: the 29 Feb slot is fed by leap seasons only (1 in 4)
       so it is thin, and a storm stepping 28 Feb 18Z -> 1 Mar 00Z in a normal
@@ -171,14 +174,14 @@ window.HF = window.HF || {};
       by up to a day.
 
       Season boundary: a fix is placed by its own date, so a storm that
-      crosses 30 Jun -> 1 Jul would jump from the end of the axis to the start.
+      crosses 31 May -> 1 Jun would jump from the end of the axis to the start.
       The caller (prepare()) adds one period to the later fixes to keep the
       storm's track continuous, and the clock tests it against t, t+period and
       t-period. None of the 1,932 lows does this today; the code does not
       depend on that staying true. */
   function compositeHour(n) {
     var p = parse(n);
-    var idx = (p.month + 5) % 12;                // Jul = 0 ... Jun = 11
+    var idx = (p.month + 6) % 12;                // Jun = 0 ... May = 11
     return (SEASON_MONTH_START[idx] + p.day - 1) * 24 + p.hour;
   }
 
@@ -189,7 +192,7 @@ window.HF = window.HF || {};
     if (day > 365) day = 365;
     var idx = 11;
     while (idx > 0 && SEASON_MONTH_START[idx] > day) idx--;
-    var month = ((idx + 6) % 12) + 1;
+    var month = ((idx + 5) % 12) + 1;
     return (day - SEASON_MONTH_START[idx] + 1) + ' ' + HF.monthName(month);
   }
 
@@ -405,7 +408,7 @@ window.HF = window.HF || {};
   function monthTicksComposite() {
     var out = [];
     for (var i = 0; i < 12; i++) {
-      out.push({ t: SEASON_MONTH_START[i] * 24, label: HF.monthName(((i + 6) % 12) + 1) });
+      out.push({ t: SEASON_MONTH_START[i] * 24, label: HF.monthName(((i + 5) % 12) + 1) });
     }
     return out;
   }
@@ -469,9 +472,9 @@ window.HF = window.HF || {};
     function seasonDomain(s) {
       var rs = bySeason[s] || [];
       if (!rs.length) {
-        // Empty season: the nominal Jul 1 -> Jul 1 window, so a scrubber
+        // Empty season: the nominal Jun 1 -> Jun 1 window, so a scrubber
         // built from the domain still has a sensible range to show.
-        return { start: toHours(s * 1000000 + 70100), end: toHours((s + 1) * 1000000 + 70100) };
+        return { start: toHours(s * 1000000 + 60100), end: toHours((s + 1) * 1000000 + 60100) };
       }
       var lo = Infinity, hi = -Infinity;
       for (var j = 0; j < rs.length; j++) {

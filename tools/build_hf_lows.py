@@ -311,10 +311,16 @@ def normalize_pressure(raw):
     return {"value": n, "kind": "ok", "detail": None}
 
 
+SEASON_START_MONTH = 6   # storm season runs 1 Jun - 31 May (confirmed by the archive owner)
+
+
 def season_from_date(yyyymmddhh: int) -> int:
+    """Season start year for a date: the season labelled 2001-02 runs 1 Jun 2001
+    to 31 May 2002, so June-December belong to that year and January-May to the
+    year before."""
     y = yyyymmddhh // 1000000
     mo = (yyyymmddhh // 10000) % 100
-    return y if mo >= 7 else y - 1
+    return y if mo >= SEASON_START_MONTH else y - 1
 
 
 # ---------------------------------------------------------------------------

@@ -81,35 +81,58 @@ test('fromHours inverts toHours', function () {
 
 console.log('season assignment');
 
-test('a January event belongs to the season that began the previous July', function () {
+test('a January event belongs to the season that began the previous June', function () {
   assert.strictEqual(PB.seasonOfDate(2002011500), 2001);
-  assert.strictEqual(PB.seasonOfDate(2002063018), 2001);
-  assert.strictEqual(PB.seasonOfDate(2001070100), 2001);
+  assert.strictEqual(PB.seasonOfDate(2002053118), 2001);      // last slot of season 2001-02
+  assert.strictEqual(PB.seasonOfDate(2001060100), 2001);      // first slot of season 2001-02
   assert.strictEqual(PB.seasonOfDate(2001123100), 2001);
 });
 
-test('every archive event starting Jan-May has season = year - 1 (June is checked separately: see report, 6 early-June events are labelled with the NEXT season)', function () {
+test('an event dated 10 June belongs to the season beginning that June (a July boundary would put it in the previous season)', function () {
+  assert.strictEqual(PB.seasonOfDate(2001061000), 2001);
+  assert.strictEqual(PB.seasonOfDate(2001062018), 2001);
+  assert.strictEqual(PB.seasonOfDate(2001063018), 2001);
+  assert.strictEqual(PB.seasonOfDate(2001070100), 2001);
+  assert.strictEqual(PB.seasonOfDate(2001053118), 2000);      // 31 May is still the old season
+});
+
+test('season boundary is 1 Jun 00Z: 31 May 18Z and 1 Jun 00Z are in different seasons', function () {
+  assert.strictEqual(PB.seasonOfDate(2002053118), 2001);
+  assert.strictEqual(PB.seasonOfDate(2002060100), 2002);
+});
+
+test('every archive event\'s start date falls in its labelled season under the 1 Jun boundary (one known source typo excepted)', function () {
   var D = realData();
-  var bad = 0;
+  var bad = [];
   D.lows.forEach(function (l) {
-    var m = Math.floor(l.start / 10000) % 100;
-    if (m <= 5 && PB.seasonOfDate(l.start) !== l.season) bad++;
+    if (PB.seasonOfDate(l.start) !== l.season) bad.push(l.basin + ':' + l.id);
   });
-  assert.strictEqual(bad, 0);
+  // pac:2004200502 has six fixes dated 2005-10-07/08 amid neighbours in Oct 2004:
+  // a mistyped year in the source, deliberately left as is. Under a 1 Jul
+  // boundary 6 early-June events (numbered 01 of the new season) would join it.
+  same(bad, ['pac:2004200502']);
 });
 
 console.log('composite axis, leap years');
 
-test('1 Jul 00Z is the axis origin and 30 Jun 18Z is the last slot', function () {
-  assert.strictEqual(PB.compositeHour(2001070100), 0);
-  assert.strictEqual(PB.compositeHour(2002063018), 366 * 24 - 6);
+test('1 Jun 00Z is the axis origin and 31 May 18Z is the last slot', function () {
+  assert.strictEqual(PB.compositeHour(2001060100), 0);
+  assert.strictEqual(PB.compositeHour(2002053118), 366 * 24 - 6);
   assert.strictEqual(PB.COMPOSITE_PERIOD_H, 8784);
+});
+
+test('a date in May maps near the END of the composite axis, a date in June near the START', function () {
+  var may = PB.compositeHour(2002051000), jun = PB.compositeHour(2001061000);
+  assert.ok(may > 8784 - 24 * 25, '10 May at hour ' + may + ' is not within the last 25 days');
+  assert.strictEqual(jun, 9 * 24);                       // 10 Jun = day 9 of the axis
+  assert.strictEqual(PB.compositeHour(2002050100), 8784 - 24 * 31);   // 1 May opens the last month (day 335)
+  assert.ok(PB.compositeHour(2001070100) === 30 * 24);   // 1 Jul = day 30 (June has 30 days)
 });
 
 test('the same calendar date lands on the same slot in leap and non-leap seasons', function () {
   // 2003-04 has no 29 Feb, 2007-08 does (Feb 2008). Everything from 1 Mar on
   // must NOT slide by a day between them - that is the smear to avoid.
-  [114, 228, 301, 415, 630].forEach(function (md) {
+  [114, 228, 301, 415, 531, 601].forEach(function (md) {
     var normal = PB.compositeHour(2004 * 1000000 + Number(md) * 100 + 6);       // season 2003 (no leap day)
     var leap = PB.compositeHour(2008 * 1000000 + Number(md) * 100 + 6);         // season 2007 (leap day)
     assert.strictEqual(normal, leap, md + ' slides between leap and non-leap seasons');
@@ -125,10 +148,11 @@ test('29 Feb has its own slot, between 28 Feb and 1 Mar', function () {
 });
 
 test('composite labels have no year and show 29 Feb', function () {
-  assert.strictEqual(PB.compositeLabel(0), '1 Jul');
+  assert.strictEqual(PB.compositeLabel(0), '1 Jun');
   assert.strictEqual(PB.compositeLabel(PB.compositeHour(2002011406)), '14 Jan');
   assert.strictEqual(PB.compositeLabel(PB.compositeHour(2008022912)), '29 Feb');
-  assert.strictEqual(PB.compositeLabel(PB.COMPOSITE_PERIOD_H), '30 Jun');   // clamped, not wrapped to 1 Jul
+  assert.strictEqual(PB.compositeLabel(PB.compositeHour(2002053118)), '31 May');
+  assert.strictEqual(PB.compositeLabel(PB.COMPOSITE_PERIOD_H), '31 May');   // clamped, not wrapped to 1 Jun
   var c = PB.create([]).composite();
   assert.strictEqual(c.label(PB.compositeHour(2002011406)), '14 Jan');
   assert.ok(!/\d{4}/.test(c.label(1234)));
@@ -144,15 +168,15 @@ test('composite: storms from different seasons are active together, and a normal
   near(f.storms[1].lat, 42, 0.05);
 });
 
-test('composite: a storm crossing 30 Jun -> 1 Jul stays continuous across the wrap', function () {
-  var s = low('w', 2001, [fix(2002063012, 50, -40), fix(2002063018, 50, -38), fix(2002070100, 50, -36), fix(2002070106, 50, -34)]);
+test('composite: a storm crossing 31 May -> 1 Jun stays continuous across the wrap', function () {
+  var s = low('w', 2001, [fix(2002053112, 50, -40), fix(2002053118, 50, -38), fix(2002060100, 50, -36), fix(2002060106, 50, -34)]);
   var c = PB.create([s]).composite();
-  var late = c.at(8784 - 3, 0), early = c.at(3, 0);        // 30 Jun 21Z and 1 Jul 03Z
+  var late = c.at(8784 - 3, 0), early = c.at(3, 0);        // 31 May 21Z and 1 Jun 03Z
   assert.strictEqual(late.storms.length, 1);
   assert.strictEqual(early.storms.length, 1);
   near(late.storms[0].lon, -37, 0.05);
   near(early.storms[0].lon, -35, 0.05);
-  // tail at 1 Jul 03Z reaches back across the seam to 30 Jun
+  // tail at 1 Jun 03Z reaches back across the seam to 31 May
   var ft = c.at(3, 12);
   assert.strictEqual(ft.storms[0].tail[0].age, 12);
   near(ft.storms[0].tail[0].lon, -39, 0.05);
@@ -351,8 +375,13 @@ test('composite clock: domain is the fixed 366-day axis', function () {
   var c = PB.create([TRACK]).composite();
   same(c.domain, { start: 0, end: 8784 });
   assert.strictEqual(c.ticks().length, 12);
-  assert.strictEqual(c.ticks()[0].label, 'Jul');
-  assert.strictEqual(c.ticks()[11].label, 'Jun');
+  assert.strictEqual(c.ticks()[0].label, 'Jun');
+  assert.strictEqual(c.ticks()[11].label, 'May');
+  same(c.ticks().map(function (k) { return k.label; }),
+       ['Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May']);
+  assert.strictEqual(c.ticks()[0].t, 0);
+  assert.strictEqual(c.ticks()[1].t, 30 * 24);           // 1 Jul
+  assert.strictEqual(c.ticks()[7].t, 214 * 24);          // 1 Jan = 30+31+31+30+31+30+31
   assert.strictEqual(c.clamp(-5), 0);
   assert.strictEqual(c.clamp(99999), 8784);
 });
@@ -404,7 +433,7 @@ test('empty input: no throw anywhere, empty flags set', function () {
     var c = pb.composite();
     assert.strictEqual(c.empty, true);
     assert.strictEqual(c.at(100, 48).storms.length, 0);
-    assert.strictEqual(c.label(100), '5 Jul');
+    assert.strictEqual(c.label(100), '5 Jun');
     same(c.domain, { start: 0, end: 8784 });
     var s = pb.season();
     assert.strictEqual(s.empty, true);
