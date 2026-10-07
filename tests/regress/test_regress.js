@@ -615,13 +615,27 @@ test('a single season of real events: coefficients returned, interval withheld',
 /* ========================================== real archive: acceptance */
 console.log('\nreal archive (complete seasons, month fixed effects, season-block bootstrap)');
 
-// reference values from the coordinator's Python
+// Reference values computed independently in Python. Two things to know
+// before trusting a mismatch here.
+//
+// They are not all from one model specification: atlMinP and pacMinP come
+// from a main-effects fit, atlLat and atlLon from one carrying all three
+// pairwise index interactions, and pacLon from a fit that also carried an
+// ENSO-flavour term and its interaction. Comparing against the wrong spec
+// looks like a bug in the module and is not one.
+//
+// pacMinP moved from -1.735 to -1.726 when a mistyped year was corrected in
+// the source CSV: pac:2004200502's six fixes were dated 2005-10-07/08 among
+// neighbours in Oct 2004. It is a Pacific event, so its date correction
+// changes which daily index values that event is attributed to, and only
+// the Pacific references shift. That the Atlantic ones did not is a useful
+// consistency check on the correction.
 var REF = {
   atlLat:  { coef: 1.896, ci: [1.391, 2.467] },
   atlLon:  { coef: 3.744, ci: [2.742, 4.826] },
   pacLon:  { coef: 4.946, ci: [3.034, 6.756] },
   atlMinP: { coef: -1.630, ci: [-2.479, -0.721] },
-  pacMinP: { coef: -1.735, ci: [-2.385, -1.068] }
+  pacMinP: { coef: -1.726, ci: [-2.385, -1.068] }
 };
 var REAL = {};
 function real(key, basin, resp, extra) {
