@@ -68,6 +68,59 @@
     });
   }
 
+  /* ------------------------------------- recorded track vs hurricane-force
+     The archive's recording practice changed (analysts began logging
+     developing-HF fixes before a storm's first HF fix and storm-force fixes
+     after its last: the 2013-14 Pacific season, the 2017-18 Atlantic), so any
+     figure measured over "the whole recorded track" partly measures how many
+     fixes were logged, not how the storm behaved. The build therefore keeps
+     two versions of each affected figure (tools/build_hf_lows.py):
+
+         hurricane-force window   deep24 berg bomb hfDurH hfDistNm hfSpdKt   (the default here)
+         recorded track           deep24All bergAll bombAll durH distNm spdKt
+
+     The page leads with the first, labels the second as "recorded track", and
+     explains the change on the Method tab. */
+
+  /** Fixes logged before the first and after the last HF fix, or null when
+      the event has no HF fix to anchor them to. */
+  function leadTrail(low) {
+    var fx = low.fixes, first = -1, last = -1, i;
+    for (i = 0; i < fx.length; i++) {
+      if (fx[i].cat === 'HF') { if (first < 0) first = i; last = i; }
+    }
+    return first < 0 ? null : { lead: first, trail: fx.length - 1 - last };
+  }
+
+  /** Explosive events among `lows`, by one of the two definitions. The share
+      is taken over ALL events, not only the ones with a measurable 24 h
+      window: an HF period shorter than ~18 h has no 24 h deepening to
+      measure, and dropping those would make the share a statement about the
+      minority of long-lived lows. Counting them as not explosive makes it a
+      lower bound whose meaning does not move with how many fixes an analyst
+      logged around the HF period. `measurable` is reported alongside. */
+  function explosiveCount(lows, bombKey, bergKey) {
+    var n = 0, measurable = 0;
+    lows.forEach(function (l) {
+      if (l[bergKey] != null) measurable++;
+      if (l[bombKey]) n++;
+    });
+    return { n: n, measurable: measurable, of: lows.length };
+  }
+
+  function pctText(n, d) { return d ? Math.round(100 * n / d) + '%' : '--'; }
+
+  /** Jump to the recording-practice section of the Method tab. */
+  function gotoPractice() {
+    var tab = document.querySelector('.tab[data-panel="method"]');
+    if (tab) tab.click();
+    var h = document.getElementById('practiceH');
+    if (h) {
+      h.scrollIntoView();
+      h.focus();
+    }
+  }
+
   /* ----------------------------------------------------------------- KPIs */
 
   /** Tiny inline trend line for a KPI tile - a dozen lines of SVG rather
@@ -125,8 +178,8 @@
     lows.forEach(function (l) {
       if (l.minP != null && (!deepest || l.minP < deepest.minP)) deepest = l;
     });
-    var withBerg = lows.filter(function (l) { return l.berg != null; });
-    var bombs = withBerg.filter(function (l) { return l.bomb; });
+    var hfShare = explosiveCount(lows, 'bomb', 'berg');
+    var allShare = explosiveCount(lows, 'bombAll', 'bergAll');
     var noCentre = lows.filter(function (l) { return l.cls !== 'low'; });
     var tipjets = lows.filter(function (l) { return l.cls === 'tipjet'; });
 
@@ -144,10 +197,29 @@
         note: deepest ? deepest.id + ' · ' + HF.fmtDate(deepest.minPAt) : '' },
       { label: 'Median time at HF',
         value: lows.length ? HF.median(lows.map(function (l) { return l.hfH; })) + ' h' : '--',
-        note: '6-hourly fixes × 6 h' },
+        // hfH is a count x 6 h, so its median can only land on a multiple of
+        // 6 and ticks across a boundary on a small shift in the mix; the
+        // mean says whether the distribution actually moved.
+        note: lows.length
+          ? 'mean ' + HF.mean(lows.map(function (l) { return l.hfH; })).toFixed(1) + ' h · 6-hourly fixes × 6 h'
+          : '6-hourly fixes × 6 h' },
+      // Comparable across the whole record: the deepening is measured at
+      // hurricane-force fixes only (see the block comment above leadTrail).
       { label: 'Explosive share',
-        value: withBerg.length ? Math.round(100 * bombs.length / withBerg.length) + '%' :  '--',
-        note: withBerg.length ? bombs.length + ' of ' + withBerg.length + ' events with 24 h of pressures' : 'no qualifying events' },
+        value: pctText(hfShare.n, hfShare.of),
+        note: lows.length
+          ? hfShare.n + ' of ' + hfShare.of.toLocaleString() + ' events · deepening at hurricane-force fixes only'
+          : 'no events match the filters' },
+      // The figure this tile used to be. It covers the whole recorded track,
+      // so it steps up where the recording practice changed; kept so the
+      // earlier number can still be found and its inflation seen.
+      { label: 'Explosive, whole track',
+        value: allShare.measurable ? pctText(allShare.n, allShare.measurable) : '--',
+        note: allShare.measurable
+          ? 'Recorded track, of ' + allShare.measurable.toLocaleString() + ' events with 24 h of pressures (' +
+            pctText(allShare.n, allShare.of) + ' of all). Not comparable across years'
+          : 'no qualifying events',
+        link: true },
       { label: 'No analyzed centre',
         value: noCentre.length.toLocaleString(),
         note: tipjets.length
@@ -161,6 +233,11 @@
       card.appendChild(HF.el('div', { class: 'k-value' }, t.value));
       if (t.spark && t.spark.length > 1) card.appendChild(sparklineSvg(t.spark));
       if (t.note) card.appendChild(HF.el('div', { class: 'k-note' }, t.note));
+      if (t.link) {
+        var more = HF.el('button', { type: 'button', class: 'k-link' }, 'Why not comparable?');
+        more.addEventListener('click', gotoPractice);
+        card.appendChild(more);
+      }
       box.appendChild(card);
     });
   }
@@ -256,12 +333,15 @@
     var bergBins = HF.histogram(lows, function (l) { return l.berg; }, 0.25, -1, 3.5);
     HF.charts.histogram(document.getElementById('chartBergeron'), {
       bins: bergBins, color: HF.cssVar('--seq-5'),
-      xTitle: 'Bergerons over the best 18\u201324 h window (negative = filled)',
+      xTitle: 'Bergerons, best 18\u201324 h window at HF fixes (negative = filled)',
       yTitle: 'Events',
       threshold: { x: 1, label: 'bomb' },
       fmtBin: function (b) { return b.x0.toFixed(2) + '–' + b.x1.toFixed(2) + ' B'; },
       fmtTick: function (v) { return v.toFixed(1); }
     });
+
+    // Explosive share by season, recorded track vs HF fixes ------------------
+    renderPracticeChart(lows);
 
     // Events with no analyzed centre ---------------------------------------
     var ncSeries = [
@@ -308,6 +388,216 @@
     });
   }
 
+  /* ------------------------------------------- explosive share by season
+     The one chart on this tab that makes the recording-practice change
+     visible rather than only correcting for it. Two lines per season: the
+     share of events that are explosive measured over the whole recorded track
+     (dashed, hollow squares) and measured at hurricane-force fixes only
+     (solid, filled circles), with a labelled vertical rule at the first season
+     each basin logs lead/trail fixes. Where the dashed line steps at a rule
+     and the solid one does not, the step is the recording, not the weather.
+
+     Hand-drawn SVG rather than HF.charts: it needs two lines and the boundary
+     rules, which the shared column/histogram/scatter charts do not draw. It
+     uses the same grid/axis/tick classes so it matches in both themes. The
+     two series differ by line style AND marker shape, never colour alone, and
+     the same numbers sit in a table under the chart for keyboard and
+     screen-reader users (the hover tooltip is mouse-only). */
+
+  var PRACTICE_PAD = { top: 40, right: 16, bottom: 34, left: 46 };
+
+  function practiceRows(lows) {
+    var by = {};
+    lows.forEach(function (l) {
+      var r = by[l.season];
+      if (!r) r = by[l.season] = { n: 0, all: 0, hf: 0, anchored: 0, lead: 0, trail: 0 };
+      r.n++;
+      if (l.bombAll) r.all++;
+      if (l.bomb) r.hf++;
+      var lt = leadTrail(l);
+      if (lt) { r.anchored++; r.lead += lt.lead; r.trail += lt.trail; }
+    });
+    return activeSeasons().map(function (s) {
+      var r = by[s.start] || { n: 0, all: 0, hf: 0, anchored: 0, lead: 0, trail: 0 };
+      return {
+        season: s.start, label: s.label, n: r.n,
+        all: r.n ? 100 * r.all / r.n : null, hf: r.n ? 100 * r.hf / r.n : null,
+        allN: r.all, hfN: r.hf,
+        lead: r.anchored ? r.lead / r.anchored : null,
+        trail: r.anchored ? r.trail / r.anchored : null
+      };
+    });
+  }
+
+  function practiceBoundaries() {
+    var out = [];
+    var pr = DATA.practice;
+    if (!pr) return out;
+    DATA.basins.forEach(function (b) {
+      if (state.basin !== 'both' && state.basin !== b.key) return;
+      var info = pr.basins[b.key];
+      if (info && info.onset != null) out.push({ key: b.key, label: b.label, onset: info.onset });
+    });
+    return out;
+  }
+
+  function renderPracticeChart(lows) {
+    var host = document.getElementById('chartPractice');
+    var details = document.getElementById('practiceDetails');
+    if (!host) return;
+    HF.clear(host);
+    var table = document.getElementById('practiceTable');
+    if (table) { HF.clear(table.tHead || table.createTHead()); HF.clear(table.tBodies[0]); }
+
+    var message = null;
+    if (!lows.length) message = 'No events match the current filters.';
+    else if (state.bombOnly) message = 'The Explosive-only filter keeps only events that are explosive at hurricane-force fixes, so this comparison is empty by construction. Clear that filter to see it.';
+    if (message) {
+      var box = HF.el('div', { 'class': 'chart-empty', style: 'min-height:200px' });
+      box.appendChild(HF.el('p', {}, message));
+      host.appendChild(box);
+      if (details) details.hidden = true;
+      return;
+    }
+    if (details) details.hidden = false;
+
+    var rows = practiceRows(lows);
+    var NS = 'http://www.w3.org/2000/svg';
+    function node(tag, attrs) {
+      var el = document.createElementNS(NS, tag);
+      for (var k in attrs) el.setAttribute(k, attrs[k]);
+      return el;
+    }
+
+    var P = PRACTICE_PAD;
+    var w = Math.max(280, Math.floor(host.clientWidth || 640)), h = 290;
+    var plotW = w - P.left - P.right, plotH = h - P.top - P.bottom;
+    var slot = plotW / Math.max(1, rows.length);
+    var maxPct = 20;
+    rows.forEach(function (r) {
+      if (r.all != null) maxPct = Math.max(maxPct, r.all);
+      if (r.hf != null) maxPct = Math.max(maxPct, r.hf);
+    });
+    var top = Math.ceil(maxPct / 20) * 20, step = top <= 40 ? 10 : 20;
+    function xOf(i) { return P.left + slot * (i + 0.5); }
+    function yOf(v) { return P.top + plotH - (v / top) * plotH; }
+
+    var svg = node('svg', { viewBox: '0 0 ' + w + ' ' + h, width: w, height: h, role: 'img' });
+    svg.style.width = '100%';
+    svg.style.height = h + 'px';
+    var first = rows.filter(function (r) { return r.all != null; })[0];
+    var last = rows.filter(function (r) { return r.all != null; }).pop();
+    svg.setAttribute('aria-label',
+      'Line chart of the share of events that are explosive in each season, by two definitions. ' +
+      (first && last
+        ? 'Over the whole recorded track it runs from ' + Math.round(first.all) + '% in ' + first.label +
+          ' to ' + Math.round(last.all) + '% in ' + last.label + '; at hurricane-force fixes only, from ' +
+          Math.round(first.hf) + '% to ' + Math.round(last.hf) + '%. '
+        : '') +
+      'Vertical rules mark the first season in which each basin began logging extra fixes around the hurricane-force period. The same numbers are in the table below.');
+
+    var g = node('g', {});
+    svg.appendChild(g);
+    var v, y, t;
+    for (v = 0; v <= top; v += step) {
+      y = yOf(v);
+      g.appendChild(node('line', { 'class': v === 0 ? 'c-axis' : 'c-grid', x1: P.left, x2: P.left + plotW, y1: y, y2: y }));
+      t = node('text', { 'class': 'c-tick', x: P.left - 7, y: y + 3.5, 'text-anchor': 'end' });
+      t.textContent = v + '%';
+      g.appendChild(t);
+    }
+    var tickEvery = Math.max(1, Math.ceil(24 / slot));
+    rows.forEach(function (r, i) {
+      if (i % tickEvery) return;
+      t = node('text', { 'class': 'c-tick', x: xOf(i), y: P.top + plotH + 14, 'text-anchor': 'middle' });
+      t.textContent = String(r.season).slice(2);
+      g.appendChild(t);
+    });
+    t = node('text', { 'class': 'c-axis-title', x: P.left + plotW / 2, y: h - 4, 'text-anchor': 'middle' });
+    t.textContent = 'Season (start year)';
+    g.appendChild(t);
+    t = node('text', { 'class': 'c-axis-title', x: 12, y: P.top + plotH / 2, 'text-anchor': 'middle',
+                       transform: 'rotate(-90 12 ' + (P.top + plotH / 2) + ')' });
+    t.textContent = 'Explosive events (% of events)';
+    g.appendChild(t);
+
+    // Boundary rules first, so the lines draw over them. Each label sits on
+    // its own row so two nearby onsets (Pacific 2013, Atlantic 2017) never
+    // overprint, and flips to the left of its rule near the right edge.
+    practiceBoundaries().forEach(function (b, row) {
+      var idx = -1;
+      rows.forEach(function (r, i) { if (r.season === b.onset) idx = i; });
+      if (idx < 0) return;
+      var x = P.left + slot * idx;
+      g.appendChild(node('line', { 'class': 'c-prac-edge', x1: x, x2: x, y1: 8 + row * 13, y2: P.top + plotH }));
+      var text = b.label + ' ' + HF.seasonLabel(b.onset);
+      var est = text.length * 5.7;
+      var flip = x + 6 + est > w - 4;
+      var lab = node('text', { 'class': 'c-label c-ref-label', x: flip ? x - 5 : x + 5, y: 18 + row * 13,
+                               'text-anchor': flip ? 'end' : 'start' });
+      lab.textContent = text;
+      g.appendChild(lab);
+    });
+
+    function series(key, cls, markCls, shape) {
+      var pts = [];
+      rows.forEach(function (r, i) { if (r[key] != null) pts.push([xOf(i), yOf(r[key])]); });
+      if (!pts.length) return;
+      g.appendChild(node('polyline', { 'class': cls, points: pts.map(function (p) { return p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join(' ') }));
+      pts.forEach(function (p) {
+        g.appendChild(shape === 'square'
+          ? node('rect', { 'class': markCls, x: (p[0] - 3.5).toFixed(1), y: (p[1] - 3.5).toFixed(1), width: 7, height: 7 })
+          : node('circle', { 'class': markCls, cx: p[0].toFixed(1), cy: p[1].toFixed(1), r: 3.6 }));
+      });
+    }
+    series('all', 'c-prac-all', 'c-prac-mk-all', 'square');
+    series('hf', 'c-prac-hf', 'c-prac-mk-hf', 'circle');
+
+    // Mouse-only detail; the table below carries the same numbers.
+    rows.forEach(function (r, i) {
+      if (r.n === 0) return;
+      var hit = node('rect', { 'class': 'c-hit', x: P.left + slot * i, y: P.top, width: slot, height: plotH });
+      var html = '<b>' + r.label + '</b> · ' + r.n + ' events' +
+        '<div class="t-row">Recorded track: ' + Math.round(r.all) + '% (' + r.allN + ')</div>' +
+        '<div class="t-row">HF fixes only: ' + Math.round(r.hf) + '% (' + r.hfN + ')</div>' +
+        (r.lead != null ? '<div class="t-row">Fixes logged before first HF fix: ' + r.lead.toFixed(2) + ' per event</div>' : '');
+      hit.addEventListener('mouseenter', function (e) { HF.showTip(html, e); });
+      hit.addEventListener('mousemove', HF.moveTip);
+      hit.addEventListener('mouseleave', HF.hideTip);
+      g.appendChild(hit);
+    });
+    host.appendChild(svg);
+
+    var legend = HF.el('p', { 'class': 'chart-legend' });
+    [['c-prac-key-all', 'Whole recorded track'], ['c-prac-key-hf', 'Hurricane-force fixes only'],
+     ['c-prac-key-edge', 'First season of the new logging practice']].forEach(function (k) {
+      var span = HF.el('span');
+      span.appendChild(HF.el('i', { 'class': 'c-prac-key ' + k[0] }));
+      span.appendChild(document.createTextNode(k[1]));
+      legend.appendChild(span);
+    });
+    host.appendChild(legend);
+
+    // The same numbers as a table.
+    if (table) {
+      var head = HF.el('tr');
+      ['Season', 'Events', 'Recorded track', 'HF fixes only', 'Fixes before first HF', 'Fixes after last HF'].forEach(function (c, i) {
+        var th = HF.el('th', { scope: 'col', 'class': i ? 'num' : '' }, c);
+        head.appendChild(th);
+      });
+      table.tHead.appendChild(head);
+      rows.forEach(function (r) {
+        if (!r.n) return;
+        var tr = HF.el('tr');
+        [HF.seasonLabel(r.season), r.n,
+         Math.round(r.all) + '% (' + r.allN + ')', Math.round(r.hf) + '% (' + r.hfN + ')',
+         r.lead != null ? r.lead.toFixed(2) : '--', r.trail != null ? r.trail.toFixed(2) : '--'
+        ].forEach(function (c, i) { tr.appendChild(HF.el('td', { 'class': i ? 'num' : '' }, String(c))); });
+        table.tBodies[0].appendChild(tr);
+      });
+    }
+  }
+
   /* ---------------------------------------------------------------- table */
 
   var COLUMNS = [
@@ -325,21 +615,46 @@
       render: function (l) { return document.createTextNode(HF.seasonLabel(l.season)); } },
     { key: 'start', label: 'First fix', get: function (l) { return l.start; },
       render: function (l) { return document.createTextNode(HF.fmtDate(l.start)); } },
-    { key: 'durH', label: 'Tracked (h)', num: true, get: function (l) { return l.durH; } },
-    { key: 'hfH', label: 'At HF (h)', num: true, get: function (l) { return l.hfH; } },
+    // Two kinds of figure sit side by side, and the headers say which. "HF"
+    // columns cover the hurricane-force window (first to last HF fix, or
+    // pressures at HF fixes only) and compare across the whole record.
+    // "Recorded" columns cover everything logged for the event, which grew
+    // when the archive began logging fixes around the HF period - see the
+    // Method tab - so they are not comparable across 2013 (Pacific) / 2017
+    // (Atlantic).
+    { key: 'durH', label: 'Recorded (h)', num: true, get: function (l) { return l.durH; },
+      title: 'Hours from the first to the last fix logged. Includes fixes logged before and after the hurricane-force period, so not comparable across years.' },
+    { key: 'hfDurH', label: 'HF span (h)', num: true, get: function (l) { return l.hfDurH; },
+      title: 'Hours from the first to the last hurricane-force fix.' },
+    { key: 'hfH', label: 'At HF (h)', num: true, get: function (l) { return l.hfH; },
+      title: 'Hurricane-force fixes x 6 h.' },
     { key: 'minP', label: 'Min hPa', num: true, get: function (l) { return l.minP; },
       render: function (l) { return document.createTextNode(l.minP != null ? l.minP : '--'); } },
     { key: 'minPLat', label: 'Peak position', get: function (l) { return l.minPLat; },
       render: function (l) { return document.createTextNode(HF.fmtLatLon(l.minPLat, l.minPLon)); } },
-    { key: 'berg', label: 'Max 24 h (B)', num: true, get: function (l) { return l.berg; },
+    { key: 'berg', label: 'Max 24 h at HF (B)', num: true, get: function (l) { return l.berg; },
+      title: 'Largest 24 h pressure fall (Bergerons) between hurricane-force fixes only. Comparable across years. Needs 18 h or more between HF fixes.',
       render: function (l) {
         if (l.berg == null) return document.createTextNode('--');
         var span = HF.el('span', {}, l.berg.toFixed(2));
         if (l.bomb) span.style.color = HF.cssVar('--critical');
         return span;
       } },
-    { key: 'spdKt', label: 'Mean kt', num: true, get: function (l) { return l.spdKt; } },
-    { key: 'distNm', label: 'Track nm', num: true, get: function (l) { return l.distNm; } }
+    { key: 'bergAll', label: 'Max 24 h recorded (B)', num: true, get: function (l) { return l.bergAll; },
+      title: 'The same, over every fix logged for the event. Inflated since the archive began logging developing-HF fixes (2013 Pacific, 2017 Atlantic); not comparable across years.',
+      render: function (l) {
+        if (l.bergAll == null) return document.createTextNode('--');
+        var span = HF.el('span', {}, l.bergAll.toFixed(2));
+        // A bold marker as well as the colour: explosive is never colour alone.
+        if (l.bombAll) { span.style.color = HF.cssVar('--critical'); span.style.fontWeight = '700'; }
+        return span;
+      } },
+    { key: 'hfSpdKt', label: 'HF mean kt', num: true, get: function (l) { return l.hfSpdKt; },
+      title: 'Mean translation speed between the first and last hurricane-force fix.' },
+    { key: 'hfDistNm', label: 'HF track nm', num: true, get: function (l) { return l.hfDistNm; },
+      title: 'Track length between the first and last hurricane-force fix.' },
+    { key: 'distNm', label: 'Recorded nm', num: true, get: function (l) { return l.distNm; },
+      title: 'Track length over every fix logged. Not comparable across years.' }
   ];
 
   function renderTable(lows) {
@@ -351,6 +666,7 @@
     COLUMNS.forEach(function (col) {
       var th = HF.el('th', { class: col.num ? 'num' : '' }, col.label);
       th.setAttribute('scope', 'col');
+      if (col.title) th.setAttribute('title', col.title);
       if (state.sort.key === col.key) {
         th.appendChild(HF.el('span', { class: 'sort-caret' }, state.sort.dir > 0 ? '▲' : '▼'));
       }
@@ -398,16 +714,26 @@
 
   function exportCsv() {
     var lows = filtered();
-    var head = ['id', 'basin', 'season', 'first_fix', 'last_fix', 'tracked_h', 'hf_h',
+    // "hf_" columns cover the hurricane-force window and compare across the
+    // whole record; "recorded_" columns cover every fix logged for the event
+    // and do not (the archive began logging fixes around the HF period in the
+    // 2013-14 Pacific and 2017-18 Atlantic seasons - see the Method tab).
+    var head = ['id', 'basin', 'season', 'first_fix', 'last_fix',
+                'recorded_h', 'hf_span_h', 'hf_h',
                 'min_pressure_hpa', 'min_pressure_at', 'min_pressure_lat', 'min_pressure_lon',
-                'max_24h_deepening_hpa', 'max_24h_bergerons', 'explosive', 'mean_speed_kt',
-                'track_nm', 'fixes'];
+                'hf_max_24h_deepening_hpa', 'hf_max_24h_bergerons', 'hf_explosive',
+                'recorded_max_24h_deepening_hpa', 'recorded_max_24h_bergerons', 'recorded_explosive',
+                'hf_mean_speed_kt', 'hf_track_nm', 'recorded_mean_speed_kt', 'recorded_track_nm',
+                'hf_fixes', 'recorded_fixes'];
+    function cell(v) { return v == null ? '' : v; }
     var rows = lows.map(function (l) {
-      return [l.id, l.basin, HF.seasonLabel(l.season), l.start, l.end, l.durH, l.hfH,
-              l.minP == null ? '' : l.minP, l.minPAt == null ? '' : l.minPAt,
-              l.minPLat == null ? '' : l.minPLat, l.minPLon == null ? '' : l.minPLon,
-              l.deep24 == null ? '' : l.deep24, l.berg == null ? '' : l.berg,
-              l.bomb ? 'yes' : 'no', l.spdKt == null ? '' : l.spdKt, l.distNm, l.n].join(',');
+      return [l.id, l.basin, HF.seasonLabel(l.season), l.start, l.end,
+              l.durH, cell(l.hfDurH), l.hfH,
+              cell(l.minP), cell(l.minPAt), cell(l.minPLat), cell(l.minPLon),
+              cell(l.deep24), cell(l.berg), l.bomb ? 'yes' : 'no',
+              cell(l.deep24All), cell(l.bergAll), l.bombAll ? 'yes' : 'no',
+              cell(l.hfSpdKt), cell(l.hfDistNm), cell(l.spdKt), l.distNm,
+              l.hfN, l.n].join(',');
     });
     var blob = new Blob([head.join(',') + '\n' + rows.join('\n')], { type: 'text/csv' });
     var a = HF.el('a', { href: URL.createObjectURL(blob), download: 'hf-lows-filtered.csv' });
@@ -469,12 +795,16 @@
     [
       ['Season', HF.seasonLabel(low.season)],
       ['Minimum pressure', low.minP != null ? low.minP + ' hPa' : 'not analyzed'],
-      ['Tracked', low.durH + ' h (' + low.n + ' fixes)'],
+      ['Recorded track', low.durH + ' h (' + low.n + ' fixes)'],
+      ['Hurricane-force span', low.hfDurH != null ? low.hfDurH + ' h (' + low.hfN + ' HF fixes)' : 'n/a'],
       ['At hurricane force', low.hfH + ' h'],
-      ['Max 24 h deepening', low.deep24 != null ? low.deep24.toFixed(1) + ' hPa' : 'n/a'],
-      ['Normalized', low.berg != null ? low.berg.toFixed(2) + ' B' + (low.bomb ? ' — explosive' : '') : 'n/a'],
-      ['Mean speed', low.spdKt != null ? low.spdKt + ' kt' : 'n/a'],
-      ['Track length', low.distNm.toLocaleString() + ' nm']
+      ['Max 24 h deepening, HF fixes', low.deep24 != null ? low.deep24.toFixed(1) + ' hPa' : 'n/a'],
+      ['Normalized, HF fixes', low.berg != null ? low.berg.toFixed(2) + ' B' + (low.bomb ? ' — explosive' : '') : 'n/a'],
+      ['Max 24 h deepening, recorded track', low.deep24All != null ? low.deep24All.toFixed(1) + ' hPa' : 'n/a'],
+      ['Normalized, recorded track', low.bergAll != null ? low.bergAll.toFixed(2) + ' B' + (low.bombAll ? ' — explosive' : '') : 'n/a'],
+      ['Mean speed, HF span', low.hfSpdKt != null ? low.hfSpdKt + ' kt' : 'n/a'],
+      ['Track length, HF span', low.hfDistNm != null ? low.hfDistNm.toLocaleString() + ' nm' : 'n/a'],
+      ['Track length, recorded', low.distNm.toLocaleString() + ' nm']
     ].forEach(function (pair) {
       var stat = HF.el('div', { class: 'stat' });
       stat.appendChild(HF.el('b', {}, pair[1]));
@@ -784,6 +1114,149 @@
 
     renderBuildProvenance();
     renderCurrentsCredit();
+    renderPracticeNote();
+  }
+
+  /** The Method tab's account of the change in recording practice, written
+      from the numbers the build measured (DATA.practice) so the prose cannot
+      drift from the data: a rebuild with a longer archive or a corrected
+      export rewrites it. Plain paragraphs and real tables, so it reads the
+      same in a screen reader as on screen; the heading it hangs from
+      (#practiceH) takes focus when a KPI or chart links here. */
+  function renderPracticeNote() {
+    var box = document.getElementById('practiceNote');
+    if (!box) return;
+    HF.clear(box);
+    var pr = DATA.practice;
+    if (!pr) {
+      box.appendChild(HF.el('p', {}, 'The figures for this change were not included in this build of the data.'));
+      return;
+    }
+    function p(text) { var el = HF.el('p', {}, text); box.appendChild(el); return el; }
+    function f2(v) { return v == null ? '--' : v.toFixed(2); }
+    function f1(v) { return v == null ? '--' : v.toFixed(1); }
+    function pc(o) { return o.pct == null ? '--' : o.pct.toFixed(1) + '%'; }
+    function seasonRow(basin, season) {
+      var r = null;
+      pr.perSeason.forEach(function (x) { if (x.basin === basin && x.season === season) r = x; });
+      return r;
+    }
+    function table(caption, heads, rows) {
+      var wrap = HF.el('div', { 'class': 'table-wrap' });
+      var t = HF.el('table', { 'class': 'data-table practice-table' });
+      t.appendChild(HF.el('caption', {}, caption));
+      var tr = HF.el('tr');
+      heads.forEach(function (h, i) { tr.appendChild(HF.el('th', { scope: 'col', 'class': i ? 'num' : '' }, h)); });
+      t.appendChild(HF.el('thead')).appendChild(tr);
+      var tb = HF.el('tbody');
+      rows.forEach(function (r) {
+        var row = HF.el('tr');
+        r.forEach(function (c, i) {
+          var td = HF.el(i ? 'td' : 'th', i ? { 'class': 'num' } : { scope: 'row' });
+          if (c && typeof c === 'object') {
+            td.appendChild(document.createTextNode(c.main));
+            td.appendChild(HF.el('span', { 'class': 'practice-sub' }, c.sub));
+          } else td.textContent = c;
+          row.appendChild(td);
+        });
+        tb.appendChild(row);
+      });
+      t.appendChild(tb);
+      wrap.appendChild(t);
+      box.appendChild(wrap);
+    }
+
+    var B = pr.eras.before, A = pr.eras.after;
+    var bl = B.from + '–' + B.to, al = A.from + '–' + A.to;
+
+    box.appendChild(HF.el('h3', {}, 'How much changed'));
+    var basinRows = [];
+    var sentences = [];
+    DATA.basins.forEach(function (b) {
+      var info = pr.basins[b.key];
+      if (!info || info.onset == null) return;
+      basinRows.push([b.label, HF.seasonLabel(info.onset),
+        f2(info.before.lead) + ' → ' + f2(info.after.lead),
+        f2(info.before.trail) + ' → ' + f2(info.after.trail)]);
+      var prev = seasonRow(b.key, info.onset - 1), on = seasonRow(b.key, info.onset), peak = null, latest = null;
+      pr.perSeason.forEach(function (x) {
+        if (x.basin !== b.key || x.lead == null) return;
+        if (!peak || x.lead > peak.lead) peak = x;
+        latest = x;
+      });
+      if (on && peak && latest) {
+        sentences.push(b.label + ': ' + (prev ? f2(prev.lead) + ' lead fixes per event in ' + HF.seasonLabel(prev.season) + ', ' : '') +
+          f2(on.lead) + ' in ' + HF.seasonLabel(on.season) + ', a peak of ' + f2(peak.lead) + ' in ' +
+          HF.seasonLabel(peak.season) + ', and ' + f2(latest.lead) + ' in ' + HF.seasonLabel(latest.season) + '.');
+      }
+    });
+    table('Fixes logged around the hurricane-force period, per event, before and since the practice began',
+      ['Basin', 'New practice from', 'Before the first HF fix', 'After the last HF fix'], basinRows);
+    if (sentences.length) p(sentences.join(' '));
+
+    function perSeason(era) {
+      var total = 0, seasons = {};
+      pr.perSeason.forEach(function (x) {
+        if (x.season < era.from || x.season > era.to) return;
+        total += x.events; seasons[x.season] = true;
+      });
+      var n = Object.keys(seasons).length;
+      return n ? total / n : null;
+    }
+    p('The storms did not change. Hurricane-force fixes per event are flat across the record (' +
+      f2(B.stats.hfN.mean) + ' in ' + bl + ', ' + f2(A.stats.hfN.mean) + ' in ' + al + '), events per season are flat (' +
+      f1(perSeason(B)) + ' and ' + f1(perSeason(A)) + '), and the ' +
+      'median minimum pressure moves by about ' + Math.abs((A.stats.minP.median - B.stats.minP.median)).toFixed(0) +
+      ' hPa (' + B.stats.minP.median + ' to ' + A.stats.minP.median + '). What changed is how much of each storm’s ' +
+      'life the record contains.');
+
+    box.appendChild(HF.el('h3', {}, 'What it does to the statistics'));
+    p('The extra lead fixes reach back into the deepening phase, so the 24-hour deepening measured over the whole recorded ' +
+      'track catches more of the real deepening and far more events clear 1 Bergeron. The share of events that are explosive, ' +
+      'taken over all events with a hurricane-force fix:');
+    // Medians of 229.5 or 23.65 read as false precision; round to the digits
+    // the measure deserves and drop a trailing ".0".
+    function fm(v, d) { return String(parseFloat(v.toFixed(d))); }
+    function pair(key, d) {
+      return { main: fm(B.stats[key].median, d) + ' \u2192 ' + fm(A.stats[key].median, d),
+               sub: 'mean ' + B.stats[key].mean.toFixed(d) + ' \u2192 ' + A.stats[key].mean.toFixed(d) };
+    }
+    function meas(x) { return x.measurable.toLocaleString() + ' of ' + x.events.toLocaleString() + ' (' + Math.round(100 * x.measurable / x.events) + '%)'; }
+    table('The same events measured two ways, ' + bl + ' → ' + al,
+      ['Measure', 'Recorded track', 'Hurricane-force window'],
+      [['Explosive share (≥ 1 Bergeron)',
+        pc(B.explosiveAll) + ' → ' + pc(A.explosiveAll), pc(B.explosiveHf) + ' → ' + pc(A.explosiveHf)],
+       ['Events with an 18–24 h window to measure',
+        meas(B.explosiveAll) + ' → ' + meas(A.explosiveAll), meas(B.explosiveHf) + ' → ' + meas(A.explosiveHf)],
+       ['Duration (h)', pair('durH', 1), pair('hfDurH', 1)],
+       ['Track length (nm)', pair('distNm', 0), pair('hfDistNm', 0)],
+       ['Fixes per event', pair('n', 2), pair('hfN', 2)],
+       ['Mean speed (kt)', pair('spdKt', 1), pair('hfSpdKt', 1)]]);
+    p('Across the ' + pr.corr.n + ' season-basins, the number of lead fixes per event predicts the recorded-track explosive share ' +
+      '(r = ' + (pr.corr.all >= 0 ? '+' : '') + pr.corr.all.toFixed(3) + ') far better than the hurricane-force-only share ' +
+      '(r = ' + (pr.corr.hf >= 0 ? '+' : '') + pr.corr.hf.toFixed(3) + '). The recorded-track figure is, to a good approximation, ' +
+      'a measure of recording practice.');
+    p('Medians of counts and durations sit on a coarse 6-hourly grid and can jump on a small shift in the mix. The median ' +
+      'hurricane-force duration goes from ' + fm(B.stats.hfDurH.median, 0) + ' h to ' + fm(A.stats.hfDurH.median, 0) + ' h while its mean goes from ' +
+      B.stats.hfDurH.mean.toFixed(1) + ' h to ' + A.stats.hfDurH.mean.toFixed(1) + ' h, and the median time at hurricane force goes from ' +
+      (B.stats.hfN.median * 6) + ' h to ' + (A.stats.hfN.median * 6) + ' h while its mean goes from ' +
+      (B.stats.hfN.mean * 6).toFixed(1) + ' h to ' + (A.stats.hfN.mean * 6).toFixed(1) + ' h. Read the means: time at hurricane force moves by ' +
+      Math.round(100 * Math.abs(A.stats.hfN.mean / B.stats.hfN.mean - 1)) + '%, ' +
+      'and the median\u2019s jump is a property of where the median falls on the grid rather than a change in the storms.');
+
+    box.appendChild(HF.el('h3', {}, 'What this page does about it'));
+    var ul = HF.el('ul');
+    [
+      'The headline Explosive share, the Explosive-only filter, the deepening histogram and the Max 24 h column use pressures at hurricane-force fixes only, so every season is measured through the same window. ' +
+        'It is a lower bound: an event whose hurricane-force fixes span less than 18 hours cannot be measured and counts as not explosive. ' +
+        'Even so, ' + pc(A.explosiveHf) + ' in ' + al + ' against ' + pc(B.explosiveHf) + ' in ' + bl +
+        ' is a small rise that this archive cannot attribute to weather or to a subtler change in practice.',
+      'The recorded-track versions remain: the second KPI tile, the recorded columns of the Events table and CSV, and the event detail. ' +
+        'The post-change records genuinely contain more of the deepening phase, which is richer information, but it cannot be compared with earlier seasons.',
+      'The Climatology chart of explosive share by season draws both definitions with a rule at each basin’s first season of the new practice. A step in the dashed line at a rule that the solid line does not share is recording, not weather.',
+      'Event counts, season assignment, minimum pressure, the deepest event and the maps are not rebuilt from the hurricane-force window. Mean fix latitude and longitude, and anything derived from an event’s first fix, still use every recorded fix.'
+    ].forEach(function (t) { ul.appendChild(HF.el('li', {}, t)); });
+    box.appendChild(ul);
   }
 
   /** Fills in the actual OSCAR period the currents mean covers, read from
@@ -1742,6 +2215,9 @@
       render();
     });
     document.getElementById('exportCsv').addEventListener('click', exportCsv);
+    ['practiceLink', 'tableBasisLink'].forEach(function (id) {
+      document.getElementById(id).addEventListener('click', gotoPractice);
+    });
     document.getElementById('detailClose').addEventListener('click', function () { select(null); });
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') select(null);

@@ -1,5 +1,5 @@
 HF extratropical low archive - data quality report
-generated 2026-10-07T12:32:19Z
+generated 2026-10-07T18:47:01Z
 
   categoriesMapped         7
   categoriesUnknown        1
@@ -13,10 +13,17 @@ generated 2026-10-07T12:32:19Z
   idsReused                11
   idsSuspect               3
   lows                     1932
+  practiceChangeBasins     2
   pressuresDropped         1
   pressuresRepaired        1
   rowsDropped              3
   rowsRead                 8126
+  speedImplausible         41
+
+practice-change (3)
+  atl  id=(all lows): Atlantic: from the 2017-18 season, analysts log developing-hurricane-force fixes before each event's first HF fix and storm-force fixes after its last. Lead/trail fixes per event: 0.00/0.00 before, 1.70/0.82 from then on. The storms did not change; the recorded track did. Deepening, duration and distance over the recorded track are not comparable across this boundary - use the HF-window figures (deep24, berg, bomb, hfDurH, hfDistNm, hfSpdKt).
+  pac  id=(all lows): Pacific: from the 2013-14 season, analysts log developing-hurricane-force fixes before each event's first HF fix and storm-force fixes after its last. Lead/trail fixes per event: 0.04/0.04 before, 0.88/0.86 from then on. The storms did not change; the recorded track did. Deepening, duration and distance over the recorded track are not comparable across this boundary - use the HF-window figures (deep24, berg, bomb, hfDurH, hfDistNm, hfSpdKt).
+  all  id=(all lows): Explosive share (>= 1 Bergeron, of all events with an HF fix): on the recorded track 8.6% (2004-2016) -> 36.8% (2017-2025); on HF fixes only 6.8% -> 9.4%. Across the 44 season-basins, lead fixes per event correlate with the recorded-track share at r = +0.930 and with the HF-only share at r = +0.227.
 
 category-mapped (7)
   atl row 2103  id=2017201844 date=2018041000: Category "missing" read as UNK (Unclassified)
@@ -63,6 +70,49 @@ pressure-dropped (1)
 
 pressure-repaired (1)
   pac row 2198  id=2015201607 date=2015102500: Pressure "976*" read as 976 hPa (annotation dropped)
+
+speed-implausible (41)
+  atl  id=2022202325 date=2023013006: fastest leg 90 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2021202217 date=2021122006: fastest leg 108 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2018201938 date=2019030706: fastest leg 99 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2017201835 date=2018022418: fastest leg 116 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2017201837 date=2018030518: fastest leg 108 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2016201745 date=2017031418: fastest leg 114 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2017201814 date=2017121012: fastest leg 94 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2017201815 date=2017121418: fastest leg 149 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2015201638 date=2016022000: fastest leg 162 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2014201548 date=2015031218: fastest leg 98 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2014201553 date=2015032206: fastest leg 123 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2014201557 date=2015042006: fastest leg 96 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2015201613 date=2015122018: fastest leg 101 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2013201422 date=2014010206: fastest leg 162 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2013201402 date=2013102906: fastest leg 106 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2013201421 date=2013123000: fastest leg 112 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2011201229 date=2012013018: fastest leg 117 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2012201309 date=2012111112: fastest leg 122 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2010201102 date=2010100318: fastest leg 137 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2008200944 date=2009031000: fastest leg 124 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2007200824 date=2008010900: fastest leg 113 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2007200829 date=2008012400: fastest leg 146 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2007200840 date=2008031700: fastest leg 96 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2008200912 date=2008110400: fastest leg 131 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2008200913 date=2008110812: fastest leg 171 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2008200923 date=2008122212: fastest leg 137 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2006200751 date=2007022106: fastest leg 174 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2007200808 date=2007110300: fastest leg 140 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2007200812 date=2007112912: fastest leg 100 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2007200822 date=2007122906: fastest leg 130 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2005200624 date=2006022512: fastest leg 138 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2005200627 date=2006022800: fastest leg 133 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  atl  id=2005200629 date=2006030600: fastest leg 96 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  pac  id=2025202631 date=2026013000: fastest leg 100 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  pac  id=2025202619 date=2025120106: fastest leg 91 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  pac  id=2024202508 date=2024110906: fastest leg 102 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  pac  id=2015201631 date=2016012412: fastest leg 102 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  pac  id=2016201707 date=2016110112: fastest leg 184 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  pac  id=2016201716 date=2016122006: fastest leg 542 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  pac  id=2006200710 date=2006110912: fastest leg 113 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
+  pac  id=2002200319 date=2003031806: fastest leg 120 kt between consecutive fixes; a cyclone centre does not move that fast, so check these positions for a mistyped digit or a sign error
 
 time-duplicate (18)
   atl  id=2024202505 date=2024102006: Two different fixes share 2024102006Z; both kept, but one date is probably mistyped

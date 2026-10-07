@@ -78,6 +78,12 @@ SYNOPTIC_HOURS = (0, 6, 12, 18)
 # starts here so per-season statistics are not distorted by partial coverage.
 RECORD_START = 2004
 
+# Fastest plausible translation speed for a cyclone centre, in knots. Above
+# this the build reports a position error rather than a storm - see the note
+# in derive() for how the number was chosen from the archive's own
+# distribution.
+SPEED_IMPLAUSIBLE_KT = 90.0
+
 # Cape Farewell, the southern tip of Greenland. Forward and reverse tip jets
 # accelerate around this terrain and routinely produce hurricane force winds
 # with no closed low centre to analyze a pressure for; barrier jets down the
@@ -109,6 +115,10 @@ LOW_FIELDS = [
     "hfN", "hfH", "minP", "minPAt", "minPLat", "minPLon", "lat0", "lon0",
     "latMax", "deep24", "berg", "bomb", "distNm", "spdKt", "spdMaxKt",
     "idOk", "timesSuspect", "split", "month", "cls", "noPresN", "glFixes", "fixes",
+    # Appended after the original wire format (never reorder). See the block
+    # comment above derive() for why the archive carries two versions of the
+    # deepening and track figures, and what each one is for.
+    "deep24All", "bergAll", "bombAll", "hfDurH", "hfDistNm", "hfSpdKt", "hfSpdMaxKt",
 ]
 FIX_FIELDS = ["date", "lat", "lon", "cat", "pres"]
 
@@ -507,6 +517,87 @@ def classify(low):
         low["cls"] = "nocentre"
 
 
+def max_deepening(fixes):
+    """Largest 24-h-normalized pressure fall among `fixes` (time-sorted), as
+    (hPa per 24 h, Bergerons or None) - or None when no pair of pressures sits
+    18-24 h apart. Pairs closer than 18 h are skipped: that is most of a day or
+    nothing."""
+    best24 = None
+    for i, (t_i, _, _, _, p_i) in enumerate(fixes):
+        if p_i is None:
+            continue
+        for t_j, lat_j, _, _, p_j in fixes[i + 1:]:
+            hours = (to_dt(t_j) - to_dt(t_i)).total_seconds() / 3600.0
+            if p_j is None or hours <= 0:
+                continue
+            if hours > 24.0:
+                break
+            if hours < 18.0:                     # need most of a day to call it
+                continue
+            drop = (p_i - p_j) * (24.0 / hours)  # hPa per 24 h
+            mean_lat = (fixes[i][1] + lat_j) / 2.0
+            sin_lat = math.sin(math.radians(abs(mean_lat)))
+            # 1 Bergeron = 24 hPa/24 h at 60 deg N (Sanders & Gyakum 1980).
+            berg = (drop / 24.0) * math.sin(math.radians(60.0)) / sin_lat \
+                if sin_lat > 0.05 else None
+            if best24 is None or drop > best24[0]:
+                best24 = (drop, berg, t_i, t_j)
+    return best24
+
+
+def track_stats(fixes):
+    """(path length nm, mean speed kt or None, fastest leg kt or None) along
+    time-sorted `fixes`, skipping legs with a duplicate timestamp."""
+    dist = 0.0
+    hours = 0.0
+    fastest = None
+    for a, b in zip(fixes, fixes[1:]):
+        dh = (to_dt(b[0]) - to_dt(a[0])).total_seconds() / 3600.0
+        if dh <= 0:
+            continue
+        d = great_circle_nm(a[1], a[2], b[1], b[2])
+        dist += d
+        hours += dh
+        leg = d / dh
+        if fastest is None or leg > fastest:
+            fastest = leg
+    return (dist,
+            round(dist / hours, 1) if hours > 0 else None,
+            round(fastest, 1) if fastest is not None else None)
+
+
+# ---------------------------------------------------------------------------
+# Two windows on one storm
+#
+# The archive's recording practice changed. From about the 2013-14 Pacific and
+# 2017-18 Atlantic seasons, analysts began logging developing-hurricane-force
+# (DHF) fixes before a storm's first hurricane-force fix and storm-force (S)
+# fixes after its last. The storms did not change - HF fixes per event, events
+# per season and median minimum pressure are flat across the whole record - but
+# each event's recorded track grew at both ends. Anything measured over "the
+# whole recorded track" therefore measures recording practice as much as
+# weather. The sharpest case is the 24-h deepening: the extra lead fixes reach
+# back into the deepening phase, so far more events clear 1 Bergeron.
+#
+# So the derived figures come in two versions:
+#
+#   HF window  (the default; the names the page and the regressions use)
+#       deep24  berg  bomb                     pressures at HF-category fixes only
+#       hfDurH  hfDistNm  hfSpdKt  hfSpdMaxKt  first HF fix to last HF fix
+#       hfN  hfH                               HF fixes / hours (always HF-only)
+#     The same observational window in every era, so they compare backwards.
+#
+#   Recorded track  (the original definitions, kept)
+#       deep24All  bergAll  bombAll            every fix
+#       durH  n  distNm  spdKt  spdMaxKt       first fix to last fix
+#     Richer after the change - it genuinely contains more of the deepening
+#     phase - but not comparable with seasons before it.
+#
+# Unaffected and left alone: event counts, minP/minPAt (the pressure minimum
+# sits in the HF period in either practice), peak, and season/month (assigned
+# from the ID and first fix, so they do not move).
+# ---------------------------------------------------------------------------
+
 def derive(low, qc):
     """Add the per-low climatology metrics the page displays."""
     fixes = sorted(low["fixes"], key=lambda f: f[0])
@@ -554,56 +645,71 @@ def derive(low, qc):
     low["lat0"], low["lon0"] = fixes[0][1], fixes[0][2]
     low["latMax"] = max(f[1] for f in fixes)
 
-    # Deepening. Bergerons normalize the 24-h pressure fall by latitude:
+    # Deepening, twice. `deep24`/`berg`/`bomb` are measured on the HF-category
+    # fixes only; `deep24All`/`bergAll`/`bombAll` on every recorded fix. See the
+    # block comment above derive() for why.
+    #
+    # Bergerons normalize the 24-h pressure fall by latitude:
     #   B = (dp/24h) * sin(60) / sin(mean lat);  B >= 1 is the classic "bomb".
-    # Most archive tracks begin at or near HF onset and run < 24 h, so this is
-    # available for a minority of lows - which is itself worth showing.
-    best24 = None
-    for i, (t_i, _, _, _, p_i) in enumerate(fixes):
-        if p_i is None:
-            continue
-        for t_j, lat_j, _, _, p_j in fixes[i + 1:]:
-            hours = (to_dt(t_j) - to_dt(t_i)).total_seconds() / 3600.0
-            if p_j is None or hours <= 0:
-                continue
-            if hours > 24.0:
-                break
-            if hours < 18.0:                     # need most of a day to call it
-                continue
-            drop = (p_i - p_j) * (24.0 / hours)  # hPa per 24 h
-            mean_lat = (fixes[i][1] + lat_j) / 2.0
-            sin_lat = math.sin(math.radians(abs(mean_lat)))
-            # 1 Bergeron = 24 hPa/24 h at 60 deg N (Sanders & Gyakum 1980).
-            berg = (drop / 24.0) * math.sin(math.radians(60.0)) / sin_lat \
-                if sin_lat > 0.05 else None
-            if best24 is None or drop > best24[0]:
-                best24 = (drop, berg, t_i, t_j)
-    if best24:
-        low["deep24"] = round(best24[0], 1)
-        low["berg"] = round(best24[1], 2) if best24[1] is not None else None
-        low["bomb"] = bool(best24[1] is not None and best24[1] >= 1.0)
-    else:
-        low["deep24"] = None
-        low["berg"] = None
-        low["bomb"] = False
+    # Most HF tracks run < 18 h, so this is available for a minority of lows -
+    # which is itself worth showing.
+    for suffix, subset in (("", [f for f in fixes if f[3] == "HF"]), ("All", fixes)):
+        best24 = max_deepening(subset)
+        if best24:
+            low["deep24" + suffix] = round(best24[0], 1)
+            low["berg" + suffix] = round(best24[1], 2) if best24[1] is not None else None
+            low["bomb" + suffix] = bool(best24[1] is not None and best24[1] >= 1.0)
+        else:
+            low["deep24" + suffix] = None
+            low["berg" + suffix] = None
+            low["bomb" + suffix] = False
 
     # Translation speed along the track (kt), skipping duplicate timestamps.
-    dist = 0.0
-    hours = 0.0
-    fastest = None
-    for a, b in zip(fixes, fixes[1:]):
-        dh = (to_dt(b[0]) - to_dt(a[0])).total_seconds() / 3600.0
-        if dh <= 0:
-            continue
-        d = great_circle_nm(a[1], a[2], b[1], b[2])
-        dist += d
-        hours += dh
-        leg = d / dh
-        if fastest is None or leg > fastest:
-            fastest = leg
-    low["distNm"] = int(round(dist))
-    low["spdKt"] = round(dist / hours, 1) if hours > 0 else None
-    low["spdMaxKt"] = round(fastest, 1) if fastest is not None else None
+    low["distNm"], low["spdKt"], low["spdMaxKt"] = track_stats(fixes)
+    low["distNm"] = int(round(low["distNm"]))
+
+    # A centre that appears to move faster than any cyclone can is a position
+    # error, not a fast storm. The build has always computed spdMaxKt and
+    # never said anything about it, so errors of this kind have sat in the
+    # archive unremarked: atl:2006200703 implied 133 kt for years because two
+    # latitudes read 56.3/56.9 where the track and ERA5 both say 46.3/46.9.
+    #
+    # The threshold is empirical. Across the archive's multi-fix events the
+    # fastest leg has a median of 33 kt and a 95th percentile of 68 kt - a
+    # deeply embedded low in a strong jet really can run at 60-70 kt - and
+    # then the distribution breaks into a tail reaching 542 kt. SPEED_IMPLAUSIBLE_KT
+    # sits above that break, so a genuinely fast storm is not flagged and
+    # roughly 2.5% of events are, which is a reviewable list rather than noise.
+    #
+    # One threshold catches three different mistakes, because each shows up as
+    # impossible motion: a mistyped digit (atl:2006200703), a flipped longitude
+    # sign (pac:2016201716, 123W to 132E in one step), and a duplicated
+    # timestamp carrying a contradictory position.
+    if low["spdMaxKt"] is not None and low["spdMaxKt"] >= SPEED_IMPLAUSIBLE_KT:
+        qc.note(low["basin"], None, low["id"], low["start"], "speed-implausible",
+                f"fastest leg {low['spdMaxKt']:.0f} kt between consecutive fixes; "
+                f"a cyclone centre does not move that fast, so check these "
+                f"positions for a mistyped digit or a sign error")
+        qc.bump("speedImplausible")
+
+    # The same track figures over the hurricane-force window only: first HF fix
+    # to last HF fix, keeping any fix in between (a dip to storm force between
+    # two HF fixes is still part of the path; cutting the corner would
+    # understate the distance). An event with a single HF fix has no window.
+    hf_idx = [i for i, f in enumerate(fixes) if f[3] == "HF"]
+    if len(hf_idx) >= 2:
+        window = fixes[hf_idx[0]:hf_idx[-1] + 1]
+        dist, spd, spd_max = track_stats(window)
+        low["hfDurH"] = int(round((to_dt(window[-1][0]) - to_dt(window[0][0]))
+                                  .total_seconds() / 3600.0))
+        low["hfDistNm"] = int(round(dist))
+        low["hfSpdKt"] = spd
+        low["hfSpdMaxKt"] = spd_max
+    else:
+        low["hfDurH"] = 0 if hf_idx else None
+        low["hfDistNm"] = 0 if hf_idx else None
+        low["hfSpdKt"] = None
+        low["hfSpdMaxKt"] = None
 
 
 # ---------------------------------------------------------------------------
@@ -653,6 +759,197 @@ def _build_host() -> str | None:
         return None
 
 
+# A season's mean lead fixes per event at or above this counts as "the new
+# practice is in use that season". One-off blips below it (the 2004-05 Pacific
+# season logs 0.42 and then nothing for eight years) do not count.
+PRACTICE_MIN_LEAD = 0.1
+
+# The comparison eras. 2017 is the first season in which BOTH basins log lead
+# fixes (the Pacific began in 2013, the Atlantic in 2017), so before/after it
+# the whole archive is in one practice or the other, except for the Pacific's
+# 2013-16 ramp. The page leads with this split because it is the one a reader
+# can hold in their head.
+PRACTICE_SPLIT = 2017
+
+
+def _median(values):
+    v = sorted(x for x in values if x is not None)
+    if not v:
+        return None
+    mid = len(v) // 2
+    return v[mid] if len(v) % 2 else (v[mid - 1] + v[mid]) / 2.0
+
+
+def _mean(values):
+    v = [x for x in values if x is not None]
+    return sum(v) / len(v) if v else None
+
+
+def _r2(x):
+    return round(x, 2) if x is not None else None
+
+
+def _corr(xs, ys):
+    n = len(xs)
+    if n < 3:
+        return None
+    mx, my = sum(xs) / n, sum(ys) / n
+    sxx = sum((x - mx) ** 2 for x in xs)
+    syy = sum((y - my) ** 2 for y in ys)
+    if sxx == 0 or syy == 0:
+        return None
+    return sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / math.sqrt(sxx * syy)
+
+
+def _lead_trail(low):
+    """Fixes logged before the first / after the last HF fix, or None when the
+    event has no HF fix at all."""
+    cats = [f[3] for f in low["fixes"]]
+    if "HF" not in cats:
+        return None
+    first = cats.index("HF")
+    last = len(cats) - 1 - cats[::-1].index("HF")
+    return first, len(cats) - 1 - last
+
+
+def _share(lows, bomb, berg):
+    """Explosive count over all events, and how many events could be measured.
+
+    The denominator is every event, not just the measurable ones: a hurricane
+    force period shorter than ~18 h has no 24-h deepening to measure, and
+    dropping those events would make the share a statement about the minority
+    of long-lived HF lows. Counting them as not explosive makes it a lower
+    bound, but one whose meaning does not depend on how many fixes an analyst
+    logged around the HF period."""
+    n = len(lows)
+    explosive = sum(1 for l in lows if l.get(bomb))
+    measurable = sum(1 for l in lows if l.get(berg) is not None)
+    return {"explosive": explosive, "events": n, "measurable": measurable,
+            "pct": round(100.0 * explosive / n, 1) if n else None}
+
+
+def practice_summary(out, qc):
+    """Quantify the change in recording practice and record it in the QC notes.
+
+    Measured over every event from RECORD_START on, which is the population the
+    page's KPIs describe. Lead and trail fixes are averaged over the events that
+    have an HF fix to anchor them to (all but four); shares use every event."""
+    rows = []
+    for l in out:
+        if l["season"] < RECORD_START:
+            continue
+        lt = _lead_trail(l) or (None, None)
+        rows.append((l, lt[0], lt[1]))
+    last_season = max(l["season"] for l, _, _ in rows)
+
+    per_season = []
+    for basin, _label, _rel, _rng in BASINS:
+        for season in range(RECORD_START, last_season + 1):
+            grp = [r for r in rows if r[0]["basin"] == basin and r[0]["season"] == season]
+            if not grp:
+                continue
+            lows = [r[0] for r in grp]
+            a, h = _share(lows, "bombAll", "bergAll"), _share(lows, "bomb", "berg")
+            per_season.append({
+                "basin": basin, "season": season, "events": len(grp),
+                "lead": _r2(_mean([r[1] for r in grp])),
+                "trail": _r2(_mean([r[2] for r in grp])),
+                "bombAll": a["explosive"], "bombHf": h["explosive"],
+                "measAll": a["measurable"], "measHf": h["measurable"]})
+
+    basins = {}
+    for basin, label, _rel, _rng in BASINS:
+        seq = [r for r in per_season if r["basin"] == basin]
+        # Onset: the first season from which every later season is in the new
+        # practice (so an isolated early blip does not count as the onset).
+        onset = None
+        for i in range(len(seq)):
+            if all((r["lead"] or 0) >= PRACTICE_MIN_LEAD for r in seq[i:]):
+                onset = seq[i]["season"]
+                break
+
+        def side(sel):
+            grp = [r for r in rows if r[0]["basin"] == basin and sel(r[0]["season"])]
+            if not grp:
+                return None
+            return {"events": len(grp), "lead": _r2(_mean([r[1] for r in grp])),
+                    "trail": _r2(_mean([r[2] for r in grp]))}
+        basins[basin] = {
+            "label": label, "onset": onset,
+            "before": side(lambda y: onset is None or y < onset),
+            "after": side(lambda y: onset is not None and y >= onset)}
+
+    def era(lo, hi):
+        grp = [r for r in rows if lo <= r[0]["season"] <= hi]
+        lows = [r[0] for r in grp]
+        a, h = _share(lows, "bombAll", "bergAll"), _share(lows, "bomb", "berg")
+
+        def stat(key):
+            vals = [l[key] for l in lows]
+            mean = _mean(vals)
+            return {"median": _median(vals),
+                    "mean": round(mean, 2) if mean is not None else None}
+        return {
+            "from": lo, "to": hi, "events": len(lows),
+            "lead": _r2(_mean([r[1] for r in grp])),
+            "trail": _r2(_mean([r[2] for r in grp])),
+            "explosiveAll": a, "explosiveHf": h,
+            # Medians sit on a coarse 6-hourly grid (a median of 12 h can tick
+            # to 6 h on a small shift in the mix), so the mean travels with it.
+            "stats": {k: stat(k) for k in (
+                "durH", "hfDurH", "distNm", "hfDistNm", "n", "hfN", "spdKt", "hfSpdKt",
+                "minP")},
+        }
+
+    eras = {"before": era(RECORD_START, PRACTICE_SPLIT - 1),
+            "after": era(PRACTICE_SPLIT, last_season)}
+
+    # The share of events that are explosive, season by season and basin,
+    # against the lead fixes per event of the same season-basin. If the share
+    # were weather, recording practice would not predict it.
+    xs, ys_all, ys_hf = [], [], []
+    for r in per_season:
+        if r["lead"] is None:
+            continue
+        xs.append(r["lead"])
+        ys_all.append(r["bombAll"] / r["events"])
+        ys_hf.append(r["bombHf"] / r["events"])
+    corr = {"n": len(xs), "all": _corr(xs, ys_all), "hf": _corr(xs, ys_hf)}
+    for k in ("all", "hf"):
+        corr[k] = round(corr[k], 3) if corr[k] is not None else None
+
+    summary = {
+        "split": PRACTICE_SPLIT, "minLead": PRACTICE_MIN_LEAD,
+        "from": RECORD_START, "to": last_season,
+        "perSeason": per_season, "basins": basins, "eras": eras, "corr": corr}
+
+    for basin, label, _rel, _rng in BASINS:
+        b = basins[basin]
+        if b["onset"] is None:
+            continue
+        qc.note(basin, None, "(all lows)", None, "practice-change",
+                f"{label}: from the {season_label(b['onset'])} season, analysts log "
+                f"developing-hurricane-force fixes before each event's first HF fix and "
+                f"storm-force fixes after its last. Lead/trail fixes per event: "
+                f"{b['before']['lead']:.2f}/{b['before']['trail']:.2f} before, "
+                f"{b['after']['lead']:.2f}/{b['after']['trail']:.2f} from then on. "
+                f"The storms did not change; the recorded track did. Deepening, "
+                f"duration and distance over the recorded track are not comparable "
+                f"across this boundary - use the HF-window figures (deep24, berg, bomb, "
+                f"hfDurH, hfDistNm, hfSpdKt).")
+    b4, af = eras["before"], eras["after"]
+    qc.note("all", None, "(all lows)", None, "practice-change",
+            f"Explosive share (>= 1 Bergeron, of all events with an HF fix): on the "
+            f"recorded track {b4['explosiveAll']['pct']}% ({b4['from']}-{b4['to']}) -> "
+            f"{af['explosiveAll']['pct']}% ({af['from']}-{af['to']}); on HF fixes only "
+            f"{b4['explosiveHf']['pct']}% -> {af['explosiveHf']['pct']}%. Across the "
+            f"{corr['n']} season-basins, lead fixes per event correlate with the "
+            f"recorded-track share at r = {corr['all']:+.3f} and with the HF-only "
+            f"share at r = {corr['hf']:+.3f}.")
+    qc.bump("practiceChangeBasins", sum(1 for b in basins.values() if b["onset"] is not None))
+    return summary
+
+
 def build(data_source: str | None = None):
     qc = QC()
     lows: dict[str, dict] = {}
@@ -685,6 +982,8 @@ def build(data_source: str | None = None):
     for info in basin_info:
         info["lows"] = sum(1 for l in out if l["basin"] == info["key"])
 
+    practice = practice_summary(out, qc)
+
     # Records go out array-encoded against LOW_FIELDS rather than as objects:
     # repeating 20-odd key names across ~1900 lows tripled the payload. The
     # page rebuilds objects from these on load.
@@ -711,6 +1010,9 @@ def build(data_source: str | None = None):
         "lowFields": LOW_FIELDS,
         "fixFields": FIX_FIELDS,
         "lows": lows_encoded,
+        # The recording-practice change, quantified. The page's Method note and
+        # the Climatology boundary markers read this rather than recomputing it.
+        "practice": practice,
         "qc": {"counts": dict(sorted(qc.counts.items())), "notes": qc.notes},
     }
     return payload
@@ -725,11 +1027,14 @@ def qc_report(payload) -> str:
     by_kind = defaultdict(list)
     for n in payload["qc"]["notes"]:
         by_kind[n["kind"]].append(n)
-    for kind in sorted(by_kind):
+    # The recording-practice change reads as context for everything below it,
+    # so it leads the by-kind listing instead of sorting alphabetically.
+    for kind in sorted(by_kind, key=lambda k: (k != "practice-change", k)):
         lines.append(f"{kind} ({len(by_kind[kind])})")
         for n in by_kind[kind]:
             where = f'{n["basin"]} row {n["row"]}' if n["row"] else f'{n["basin"]}'
-            lines.append(f'  {where}  id={n["id"]} date={n["date"]}: {n["detail"]}')
+            when = f' date={n["date"]}' if n["date"] is not None else ""
+            lines.append(f'  {where}  id={n["id"]}{when}: {n["detail"]}')
         lines.append("")
     return "\n".join(lines)
 
