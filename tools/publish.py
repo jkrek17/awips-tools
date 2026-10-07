@@ -514,7 +514,12 @@ def validate_deploy_target(target: str) -> str:
 # UI pointing at it and no auth in front of it. So it is excluded here, at
 # the one place both --deploy and --flat build their file list from, rather
 # than trusted to stay out of some downstream list forever.
-NOT_DEPLOYED = {"data/qc-report.txt"}
+NOT_DEPLOYED = {"data/qc-report.txt", "img/"}
+# An entry ending in "/" excludes that directory and everything under it.
+# docs/img/ holds screenshots for the TCWind tool that only README.md links
+# to - they live under docs/ for GitHub's benefit, are not part of this site
+# (index.html references none of them), and listing the six by name would
+# break the build the next time someone adds a seventh.
 
 # Whole docs/ subtrees that are GitHub Pages content but not part of the
 # archive site: they are served by Pages straight from docs/, but they never
@@ -530,6 +535,17 @@ NOT_DEPLOYED = {"data/qc-report.txt"}
 NOT_DEPLOYED_DIRS = {"cps"}
 
 
+def is_not_deployed(rel: str) -> bool:
+    """True when a docs-relative path is excluded from every deploy."""
+    for entry in NOT_DEPLOYED:
+        if entry.endswith("/"):
+            if rel.startswith(entry):
+                return True
+        elif rel == entry:
+            return True
+    return False
+
+
 def iter_site_files():
     for dirpath, dirnames, filenames in os.walk(DOCS_DIR):
         rel_dir = os.path.relpath(dirpath, DOCS_DIR)
@@ -537,8 +553,8 @@ def iter_site_files():
             dirnames[:] = [d for d in dirnames if d not in NOT_DEPLOYED_DIRS]
         for name in filenames:
             full = os.path.join(dirpath, name)
-            rel = os.path.relpath(full, DOCS_DIR)
-            if rel in NOT_DEPLOYED:
+            rel = os.path.relpath(full, DOCS_DIR).replace(os.sep, "/")
+            if is_not_deployed(rel):
                 continue
             yield rel
 

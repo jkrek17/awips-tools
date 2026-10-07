@@ -308,9 +308,23 @@ jobs:
           # or disagrees with it - publish.py isn't keeping it in sync
           # either way, so flagging any of those as drift would be a false
           # alarm, not a genuine mistake to catch.
+          # An entry ending in "/" excludes a whole directory under docs/ and
+          # everything in it, matching is_not_deployed() in publish.py. Keep
+          # the two in step: this check reads publish.py's own constant, so a
+          # new exclusion shape added there must be understood here or the job
+          # starts flagging files publish.py has deliberately stopped copying.
+          def _excluded(rel):
+              for entry in NOT_DEPLOYED:
+                  if entry.endswith('/'):
+                      if rel.startswith(entry):
+                          return True
+                  elif rel == entry:
+                      return True
+              return False
+
           excluded_bases = {
-              os.path.basename(rel) for rel in NOT_DEPLOYED
-              if rel in by_base.get(os.path.basename(rel), [])
+              base for base, rels in by_base.items()
+              if rels and all(_excluded(r) for r in rels)
           }
 
           docs_basenames = set(by_base) - set(collisions) - excluded_bases
