@@ -24,3 +24,9 @@ tests/create_xml_windhazards/out/
 tests/pressure_gap_fill/out/
 tests/tcwind_jtwc/out/
 tests/tc_pressure/out/
+
+# Bookkeeping written by tools/publish.py --deploy ... --flat so a later
+# run knows which files it placed. It belongs next to the deployed site on
+# the NOAA server, not in the committed flat/ copy (and the flat-sync job
+# in .github/workflows/pages.yml skips it by name).
+flat/.awips-publish-manifest.json

@@ -115,7 +115,7 @@
   </div>
 
   <div class="filter filter-checks">
-    <label class="check"><input type="checkbox" id="fBomb"> Explosive only <abbr title="Maximum 24-hour deepening of at least 1 Bergeron, latitude-normalized">(&ge;1 B)</abbr></label>
+    <label class="check"><input type="checkbox" id="fBomb"> Explosive only <abbr title="Maximum 24-hour deepening of at least 1 Bergeron, latitude-normalized, measured between hurricane-force fixes only">(&ge;1 B, at HF)</abbr></label>
     <button type="button" id="fReset" class="btn">Reset</button>
   </div>
 </section>
@@ -223,6 +223,32 @@
         <div class="chart" id="chartSeason"></div>
       </figure>
 
+      <figure class="card chart-card chart-wide">
+        <figcaption>
+          <h2>Explosive share by season</h2>
+          <p>
+            The share of events that deepen by at least 1&nbsp;Bergeron in 24&nbsp;h,
+            measured two ways. The solid line uses pressures at hurricane-force
+            fixes only and is comparable across the record. The dashed line uses
+            every fix logged, and steps up where analysts began logging fixes
+            around the hurricane-force period (marked). The step is the recording,
+            not the weather.
+            <button type="button" class="link-btn" id="practiceLink">How the recording changed</button>
+          </p>
+        </figcaption>
+        <div class="chart" id="chartPractice"></div>
+        <details class="tele-table" id="practiceDetails">
+          <summary>Show as a table</summary>
+          <div class="table-wrap">
+            <table class="data-table" id="practiceTable">
+              <caption class="sr-only">Explosive share and extra fixes per event, by season</caption>
+              <thead></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </details>
+      </figure>
+
       <figure class="card chart-card">
         <figcaption>
           <h2>Seasonal cycle</h2>
@@ -251,10 +277,11 @@
         <figcaption>
           <h2>Maximum 24-hour deepening</h2>
           <p>
-            Largest pressure fall over any 18&ndash;24&nbsp;h window, scaled to
-            24&nbsp;h and latitude-normalized. Only events carrying that much
-            pressure data qualify; a negative value means the low filled
-            throughout the window it was tracked.
+            Largest pressure fall over any 18&ndash;24&nbsp;h window between
+            hurricane-force fixes, scaled to 24&nbsp;h and latitude-normalized.
+            Only events with that much hurricane-force data qualify; a negative
+            value means the low filled throughout the window. Hurricane-force
+            fixes only, so every season is measured through the same window.
           </p>
         </figcaption>
         <div class="chart" id="chartBergeron"></div>
@@ -295,6 +322,13 @@
       </table>
     </div>
     <p class="table-more" id="tableMore"></p>
+    <p class="table-basis" id="tableBasis">
+      <strong>HF</strong> columns cover the hurricane-force period and compare across seasons.
+      <strong>Recorded</strong> columns cover every fix logged, which grew when the archive began
+      logging fixes around that period (2013&ndash;14 Pacific, 2017&ndash;18 Atlantic), so they
+      are not comparable across it.
+      <button type="button" class="link-btn" id="tableBasisLink">Read why</button>
+    </p>
   </section>
 
   <!-- Teleconnections ------------------------------------------------- -->
@@ -552,6 +586,19 @@
         reached hurricane force.
       </p>
 
+      <h2 id="practiceH" tabindex="-1">A change in recording practice</h2>
+      <p>
+        Partway through the record, analysts began logging
+        <strong>developing-hurricane-force</strong> (DHF) fixes <em>before</em>
+        each storm&rsquo;s first hurricane-force fix, and
+        <strong>storm-force</strong> (S) fixes <em>after</em> its last. This
+        began with the 2013&ndash;14 Pacific season and the 2017&ndash;18
+        Atlantic season. It makes each event&rsquo;s recorded track longer
+        without making the storm any different, and any statistic measured over
+        the whole recorded track moves with it.
+      </p>
+      <div id="practiceNote"></div>
+
       <h2>Category codes</h2>
       <dl class="defs" id="catDefs"></dl>
 
@@ -605,20 +652,25 @@
         </dd>
         <dt>Maximum 24-hour deepening (Bergerons)</dt>
         <dd>
-          The largest pressure fall over any 18&ndash;24&nbsp;h window in the
-          track, scaled to 24&nbsp;h and normalized by latitude:
+          The largest pressure fall over any 18&ndash;24&nbsp;h window between
+          <strong>hurricane-force fixes</strong>, scaled to 24&nbsp;h and
+          normalized by latitude (the version over every recorded fix is kept
+          alongside it; see <em>A change in recording practice</em>):
           <code>B = (&Delta;p / 24 hPa) &times; sin 60&deg; / sin &phi;</code>,
           following Sanders and Gyakum (1980). <code>B &ge; 1</code> is the
-          classic &ldquo;bomb&rdquo; threshold. Because most tracks begin near
-          hurricane force onset and run less than a day, this is available for
-          roughly half the archive &mdash; and those are biased toward the
-          longer-tracked, more intense events. Treat the explosive fraction as
-          a property of <em>tracked windows</em>, not of all HF lows.
+          classic &ldquo;bomb&rdquo; threshold. Most hurricane-force periods
+          last less than 18&nbsp;h, so this can be measured for only about a
+          third of events &mdash; and those are biased toward the longer-lived,
+          more intense ones. The headline explosive share is taken over
+          <em>all</em> events, counting those that cannot be measured as not
+          explosive, so it is a lower bound rather than a property of the
+          measurable minority.
         </dd>
         <dt>Translation speed</dt>
         <dd>
           Great-circle distance between consecutive fixes divided by elapsed
-          time, in knots; the table reports the track mean.
+          time, in knots; reported as the mean from the first to the last
+          hurricane-force fix, with the whole-track figure kept alongside.
         </dd>
         <dt>Season</dt>
         <dd>
@@ -638,7 +690,7 @@
           default period of record.
         </li>
         <li>Positions and pressures are analyst estimates recorded to the nearest tenth of a degree and whole hPa; no reanalysis has been applied.</li>
-        <li>Counts per season reflect both real variability and changes in analysis practice over 20+ years. A trend here is not necessarily a climate signal.</li>
+        <li>Counts per season reflect both real variability and changes in analysis practice over 20+ years. A trend here is not necessarily a climate signal. The clearest case is described under <em>A change in recording practice</em>, above: durations, track lengths and deepening measured over the whole recorded track are not comparable across 2013 (Pacific) or 2017 (Atlantic).</li>
         <li>Where one archive ID covered two unrelated lows, the build split it into lettered events (<code>&hellip;a</code>, <code>&hellip;b</code>) &mdash; noted in that event's detail drawer.</li>
         <li>Pressures outside 880&ndash;1060&nbsp;hPa and non-numeric sentinels (<code>NOPRES</code>, <code>XXX</code>, <code>NA</code>) are treated as &ldquo;not analyzed&rdquo;, not as zero.</li>
       </ul>

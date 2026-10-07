@@ -53,6 +53,9 @@ window.HF = window.HF || {};
       recordStart: raw.recordStart,
       seasons: raw.seasons,
       lows: lows,
+      // The recording-practice change, quantified by the build (see
+      // tools/build_hf_lows.py). Null on a payload built before it existed.
+      practice: raw.practice || null,
       qc: raw.qc
     };
   };

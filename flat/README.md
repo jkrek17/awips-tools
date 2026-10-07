@@ -10,13 +10,38 @@ map is a hand-rolled Canvas 2D globe, not a tile-based basemap).
 | Tab | What it answers |
 |---|---|
 | Map | Where the lows went, on a rotatable orthographic globe. Basin selection changes what is plotted and re-centres the view; tracks are coloured by analyzed MSLP along the track, with fix density, first-fix, and peak-intensity as alternate point layers, an optional ocean-currents underlay, a 10-degree graticule, a lat/lon readout under the cursor, and cursor-anchored zoom. |
-| Climatology | Events per season, the seasonal cycle, minimum pressure and time-at-HF distributions, 24-hour deepening, and peak intensity against latitude. |
+| Climatology | Events per season, the explosive share by season (two definitions, with the change in recording practice marked), the seasonal cycle, minimum pressure and time-at-HF distributions, 24-hour deepening, and peak intensity against latitude. |
 | Events | Every event in a sortable table, with a CSV download of whatever the filters currently select. Per-event data-quality notes (splits, suspect timestamps, QC flags) show in that event's detail drawer rather than in a separate tab. |
-| Method | Category codes, how each derived quantity is computed, and the limits of the archive. |
+| Method | Category codes, how each derived quantity is computed, the change in recording practice (with the real numbers), and the limits of the archive. |
 
 Filters (basin, event type, seasons, months, minimum pressure, explosive
 only, free text) apply to every tab at once, including the summary tiles at
 the top.
+
+### Two windows on each storm
+
+From the 2013-14 Pacific and 2017-18 Atlantic seasons, analysts began logging
+developing-hurricane-force fixes before each storm's first hurricane-force (HF)
+fix and storm-force fixes after its last. The storms did not change; the
+recorded track did, and any figure measured over it moved with the practice
+(the explosive share went from 8.6% to 36.8% across 2017 on the whole recorded
+track, but 6.8% to 9.4% on HF fixes only). So the build keeps two versions of
+each affected figure, and the page leads with the first:
+
+| HF window (default) | Recorded track (kept) |
+|---|---|
+| `deep24`, `berg`, `bomb` - pressures at HF fixes only | `deep24All`, `bergAll`, `bombAll` - every fix |
+| `hfDurH`, `hfDistNm`, `hfSpdKt`, `hfSpdMaxKt` - first to last HF fix | `durH`, `distNm`, `spdKt`, `spdMaxKt` - first to last fix |
+| `hfN`, `hfH` - HF fixes and hours (always HF-only) | `n` - every fix |
+
+Unaffected and not duplicated: event counts, season, `minP`/`minPAt`, `peak`.
+The headline "Explosive share" is bombs over *all* events (events whose HF
+period is too short to measure count as not explosive), a lower bound that does
+not depend on how many fixes were logged. The payload's `practice` block holds
+the per-season lead/trail fixes and era statistics the Method note and the
+Climatology chart read, and `qc-report.txt` leads with the same figures.
+`tests/hf_lows/test_hf_lows.py` asserts the HF-only share does not step across
+2017 while the recorded-track share does.
 
 A dedicated "Data quality" tab used to list every repair, flag and drop
 row-by-row. It was removed at the archive owner's request: the repairs are a
