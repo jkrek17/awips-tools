@@ -61,6 +61,7 @@
   <button type="button" role="tab" class="tab is-active" data-panel="map" aria-selected="true">Map</button>
   <button type="button" role="tab" class="tab" data-panel="clim" aria-selected="false">Climatology</button>
   <button type="button" role="tab" class="tab" data-panel="events" aria-selected="false">Events</button>
+  <button type="button" role="tab" class="tab" data-panel="tele" aria-selected="false">Teleconnections</button>
   <button type="button" role="tab" class="tab" data-panel="method" aria-selected="false">Method</button>
 </nav>
 </div>
@@ -296,6 +297,128 @@
     <p class="table-more" id="tableMore"></p>
   </section>
 
+  <!-- Teleconnections ------------------------------------------------- -->
+  <!-- Composite of the storm track under a chosen climate state (ENSO phase,
+       NAO/PNA/AO tercile, MJO state and lag) against the whole archive, with
+       the statistics beside it. The Filters bar above does not apply here
+       (app.js hides it on this tab): a composite is always the full archive's
+       complete seasons against the subset, never a hand-narrowed slice, so
+       the sample sizes printed in the statistics are the real ones. Every
+       control is a native element; the statistics card is a polite live
+       region by way of #teleLive (see app.js, announceTele). -->
+  <section class="panel" id="panel-tele" role="tabpanel">
+    <div class="tele-grid">
+      <div class="tele-side">
+        <section class="card tele-card tele-controls" aria-labelledby="teleSelH">
+          <h2 id="teleSelH">Climate state</h2>
+          <fieldset class="filter tele-field">
+            <legend>Index</legend>
+            <div class="pb-mode-set">
+              <label class="pb-mode"><input type="radio" name="teleIndex" value="enso" checked><span>ENSO</span></label>
+              <label class="pb-mode"><input type="radio" name="teleIndex" value="nao"><span>NAO</span></label>
+              <label class="pb-mode"><input type="radio" name="teleIndex" value="pna"><span>PNA</span></label>
+              <label class="pb-mode"><input type="radio" name="teleIndex" value="ao"><span>AO</span></label>
+              <label class="pb-mode"><input type="radio" name="teleIndex" value="mjo"><span>MJO</span></label>
+            </div>
+          </fieldset>
+
+          <fieldset class="filter tele-field" id="teleEnsoWrap">
+            <legend>Phase</legend>
+            <div class="pb-mode-set">
+              <label class="pb-mode"><input type="radio" name="teleEnso" value="E" checked><span>El Ni&ntilde;o</span></label>
+              <label class="pb-mode"><input type="radio" name="teleEnso" value="N"><span>Neutral</span></label>
+              <label class="pb-mode"><input type="radio" name="teleEnso" value="L"><span>La Ni&ntilde;a</span></label>
+            </div>
+          </fieldset>
+
+          <fieldset class="filter tele-field" id="teleTercWrap" hidden>
+            <legend>Tercile</legend>
+            <div class="pb-mode-set">
+              <label class="pb-mode"><input type="radio" name="teleTerc" value="upper" checked><span>Upper</span></label>
+              <label class="pb-mode"><input type="radio" name="teleTerc" value="middle"><span>Middle</span></label>
+              <label class="pb-mode"><input type="radio" name="teleTerc" value="lower"><span>Lower</span></label>
+            </div>
+          </fieldset>
+
+          <div class="tele-mjo" id="teleMjoWrap" hidden>
+            <div class="filter tele-field">
+              <label for="teleLon">Longitude</label>
+              <select id="teleLon"></select>
+            </div>
+            <fieldset class="filter tele-field">
+              <legend>State</legend>
+              <div class="pb-mode-set">
+                <label class="pb-mode"><input type="radio" name="teleMjoState" value="enhanced" checked><span>Enhanced</span></label>
+                <label class="pb-mode"><input type="radio" name="teleMjoState" value="suppressed"><span>Suppressed</span></label>
+                <label class="pb-mode"><input type="radio" name="teleMjoState" value="neutral"><span>Neutral</span></label>
+              </div>
+            </fieldset>
+            <div class="filter tele-field tele-lag">
+              <label for="teleLag">Lag: <span id="teleLagOut"></span></label>
+              <input type="range" id="teleLag" min="0" max="6" step="1" value="2" aria-describedby="teleLagHint">
+              <p class="tele-hint" id="teleLagHint">How many pentads (5-day steps) before the storm the index is read. The extratropical response is thought to lag the tropics by about 5&ndash;15 days, so 1&ndash;3 pentads is the usual place to look.</p>
+            </div>
+          </div>
+
+          <p class="tele-defn" id="teleDefn"></p>
+        </section>
+
+        <section class="card tele-card tele-stats" id="teleStats" aria-labelledby="teleStatsH" aria-busy="false">
+          <h2 id="teleStatsH">Does the storm track differ?</h2>
+          <p class="tele-pending" id="telePending" hidden></p>
+          <div id="teleStatsBody"></div>
+        </section>
+      </div>
+
+      <section class="card tele-card tele-mapcard" id="teleMapCardWrap" aria-labelledby="teleMapH">
+        <h2 id="teleMapH">Composite anomaly map</h2>
+        <fieldset class="filter tele-field tele-fieldsel">
+          <legend>Map shows</legend>
+          <div class="pb-mode-set">
+            <label class="pb-mode"><input type="radio" name="teleField" value="rate" checked><span>Activity rate</span></label>
+            <label class="pb-mode"><input type="radio" name="teleField" value="shape"><span>Track shape</span></label>
+          </div>
+          <p class="tele-hint" id="teleFieldHint"></p>
+        </fieldset>
+        <p class="tele-mapcap" id="teleMapCap"></p>
+        <!-- app.js moves the globe (.map-wrap) here while this tab is
+             active, and back to the Map tab afterwards: there is one
+             canvas and one HF.globe, and two copies would mean two
+             drawing states to keep in step. -->
+        <div class="tele-map" id="teleMapSlot"></div>
+        <div class="tele-legend" id="teleLegend"></div>
+      </section>
+    </div>
+
+    <figure class="card chart-card chart-wide tele-series" id="teleSeriesCard">
+      <figcaption>
+        <h2 id="teleSeriesH">Index and storm activity</h2>
+        <p id="teleSeriesCap"></p>
+      </figcaption>
+      <div class="chart" id="chartTele"></div>
+      <details class="tele-table" id="teleTable">
+        <summary>Table view: one row per season</summary>
+        <div class="table-wrap">
+          <table class="data-table" id="teleTableEl">
+            <caption class="sr-only" id="teleTableCap"></caption>
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </details>
+    </figure>
+
+    <section class="card prose tele-method" id="teleMethod" aria-labelledby="teleMethodH">
+      <h2 id="teleMethodH">How to read this tab</h2>
+      <div id="teleMethodBody"></div>
+    </section>
+
+    <!-- Polite live region for the finished result. Outside the card so it
+         is in the document before it first speaks; written once per
+         completed computation, never while one is pending. -->
+    <p id="teleLive" class="sr-only" aria-live="polite" aria-atomic="true"></p>
+  </section>
+
   <!-- Method ----------------------------------------------------------- -->
   <section class="panel" id="panel-method" role="tabpanel">
     <div class="card prose">
@@ -474,7 +597,10 @@
 </footer>
 
 <script src="data/hf-lows.js"></script>
+<script src="data/teleconnections.js"></script>
 <script src="assets/js/util.js"></script>
+<script src="assets/js/teleconnect.js"></script>
+<script src="assets/js/composite.js"></script>
 <script src="assets/js/playback.js"></script>
 <script src="assets/js/charts.js"></script>
 <script src="data/coastlines.js"></script>

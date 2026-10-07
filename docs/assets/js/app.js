@@ -560,8 +560,9 @@
   /** Only animate while the map tab is actually on screen. Call after
       anything that can change the active tab. */
   function syncMapMode() {
-    HF.globe.setVisible(state.tab === 'map');
-    if (state.tab === 'map') resizeActiveView();
+    var showsGlobe = state.tab === 'map' || state.tab === 'tele';   // Teleconnections hosts the same canvas
+    HF.globe.setVisible(showsGlobe);
+    if (showsGlobe) resizeActiveView();
   }
 
   /** Selecting a basin re-points the globe at it, derived from that basin's
@@ -969,6 +970,7 @@
     if (state.tab === 'map') renderMap(lows);
     if (state.tab === 'clim') renderCharts(lows);
     if (state.tab === 'events') renderTable(lows);
+    if (state.tab === 'tele') { renderTele(); return; }
     announceResults(lows.length);
   }
 
@@ -1700,7 +1702,12 @@
       // body starts with this class already set in the HTML, matching the
       // Map tab being the default active one.
       document.body.classList.toggle('map-active', state.tab === 'map');
+      // The Filters bar and KPI strip describe the filtered archive, which a
+      // composite deliberately ignores (see the teleconnections section), so
+      // they are hidden there rather than left to look like they apply.
+      document.body.classList.toggle('tele-active', state.tab === 'tele');
       if (state.tab !== 'map') setPlaying(false, true);   // nothing to watch; do not run unseen
+      placeGlobe();
       syncMapMode();
       render();
     }
@@ -1746,9 +1753,930 @@
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(function () {
         if (state.tab === 'clim') renderCharts(filtered());
+        if (state.tab === 'tele') renderTeleSeries();
         HF.globe.resize();
       }, 180);
     });
+  }
+
+  /* ------------------------------------------------------- teleconnections
+     "Does the storm track look different when a climate index is in a given
+     state, and can that be told from noise?" This section is wiring only:
+     HF.teleconnect picks the events, HF.composite.compare() decides whether
+     the difference is real, HF.globe draws the cells, HF.charts draws the
+     index. What lives here is the part that decides how the answer is
+     SAID, because that is where a tool like this misleads people.
+
+     The honest answer at this sample size is usually "no part of the storm
+     track differs from the archive by more than chance". An unstippled map
+     can look like a quiet result or like a broken one, and a reader will
+     take whichever they were hoping for. So the statistics card states the
+     count, in words, first - and it states what kind of null it is: eight
+     El Nino winters cannot rule out a modest shift, and "not detected" is
+     not "absent". The numbers come from the result object untouched; this
+     file formats them and never recomputes, rounds toward significance, or
+     drops a warning.
+
+     Scope on purpose: the Filters bar does not apply on this tab (it is
+     hidden, see activateTab). A composite is the archive's complete seasons
+     against the subset a climate state selects, so n_events and n_seasons
+     printed here are the real ones; a hand-narrowed baseline would make
+     "the archive" mean something different on every click.
+
+     Cost and feedback. compare() takes a few tenths of a second to ~0.7 s
+     on the whole archive at 5,000 draws and cannot be cut into slices, so it
+     is never run from an event handler. A control change marks the card
+     pending at once (aria-busy, a banner, the old numbers dimmed AND labelled
+     as the previous selection), and the work starts after a short debounce,
+     so dragging the lag slider across five positions costs one run, not
+     five. Results are kept by selection (the seed is fixed, so the same
+     selection always gives the same map), which makes going back instant. */
+
+  var TELE_DEBOUNCE_MS = 220;
+  var TELE_CACHE_MAX = 30;
+  var TELE_DRAWS = 5000;
+
+  var TELE_INDEX_NAMES = {
+    nao: 'North Atlantic Oscillation (NAO)',
+    pna: 'Pacific/North American pattern (PNA)',
+    ao: 'Arctic Oscillation (AO)'
+  };
+  var TELE_ENSO_NAMES = { E: 'El Niño', N: 'ENSO-neutral', L: 'La Niña' };
+
+  var tele = {
+    index: 'enso', enso: 'E', terc: 'upper', lon: null, mjoState: 'enhanced', lag: 2,
+    fieldUser: null,        // 'rate' | 'shape' once the reader chooses; until then the design picks
+    engine: null, failed: null,
+    cache: {}, order: [],
+    want: null, timer: null,
+    shown: null,            // the bundle the card, map and chart are showing
+    built: false
+  };
+
+  function tEl(id) { return document.getElementById(id); }
+  function tx(tag, cls, text) { return HF.el(tag, cls ? { 'class': cls } : null, text); }
+  function fmtInt(n) { return Number(n).toLocaleString(); }
+  function signed(v, d) { return (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(d); }
+  function pentadText(lag) {
+    return lag + (lag === 1 ? ' pentad' : ' pentads') + ' (' + (lag * 5) + ' days)';
+  }
+
+  /** The engine, or null (with tele.failed saying why). Created lazily so a
+      load failure costs this tab only, never the rest of the site. */
+  function teleEngine() {
+    if (tele.engine || tele.failed) return tele.engine;
+    try {
+      if (!window.HF_TELECONNECTIONS || !HF.teleconnect || !HF.composite) {
+        throw new Error('the index data or the teleconnection scripts did not load');
+      }
+      tele.engine = HF.teleconnect.create({ archive: DATA });
+      if (tele.lon == null) tele.lon = tele.engine.longitudes.indexOf('120W') >= 0 ? '120W' : tele.engine.longitudes[0];
+    } catch (err) {
+      tele.failed = String(err && err.message ? err.message : err);
+    }
+    return tele.engine;
+  }
+
+  function teleSpec() {
+    if (tele.index === 'enso') return { type: 'enso', phase: tele.enso };
+    if (tele.index === 'mjo') {
+      return { type: 'mjo', lon: tele.lon, state: tele.mjoState, lag: tele.lag };
+    }
+    return { type: 'tercile', index: tele.index, group: tele.terc };
+  }
+
+  function teleKey(spec) {
+    return [spec.type, spec.phase, spec.index, spec.group, spec.lon, spec.state, spec.lag].join('|');
+  }
+
+  function teleLabel(spec) {
+    if (spec.type === 'enso') return TELE_ENSO_NAMES[spec.phase] + ' seasons';
+    if (spec.type === 'tercile') {
+      return spec.group.charAt(0).toUpperCase() + spec.group.slice(1) + ' third of the ' +
+             spec.index.toUpperCase();
+    }
+    return 'MJO ' + spec.state + ' at ' + spec.lon + ', ' + pentadText(spec.lag) + ' earlier';
+  }
+
+  /** What "in this subset" means, in one or two sentences, for the control
+      card. Thresholds and cut points are read from the engine, not typed. */
+  function teleDefinition(spec) {
+    var tc = tele.engine;
+    if (spec.type === 'enso') {
+      var th = (window.HF_TELECONNECTIONS.oni.thresholds) || { elNino: 0.5, laNina: -0.5 };
+      var rule = spec.phase === 'E' ? 'at or above ' + signed(th.elNino, 1)
+               : spec.phase === 'L' ? 'at or below ' + signed(th.laNina, 1)
+               : 'between ' + signed(th.laNina, 1) + ' and ' + signed(th.elNino, 1);
+      return 'Seasons (1 June to 31 May) whose December–February Oceanic Niño Index is ' + rule +
+             ' °C. Every storm in those seasons is in the subset, so this is a comparison of whole seasons.';
+    }
+    if (spec.type === 'tercile') {
+      var cut = tc.terciles(spec.index, 'mean5');
+      var rng = spec.group === 'upper' ? 'at or above ' + signed(cut.upper, 2)
+              : spec.group === 'lower' ? 'at or below ' + signed(cut.lower, 2)
+              : 'between ' + signed(cut.lower, 2) + ' and ' + signed(cut.upper, 2);
+      return 'Storms whose first fix falls on a day when the 5-day mean ' + spec.index.toUpperCase() +
+             ' (' + TELE_INDEX_NAMES[spec.index] + ') is ' + rng + '. The thirds are taken over every day of the ' +
+             'complete seasons, not over the storms, so the three groups are not equal in size.';
+    }
+    var thr = tc.defaultThreshold;
+    var cond = spec.state === 'enhanced' ? 'at or below ' + signed(-thr, 1) + ' (enhanced convection)'
+             : spec.state === 'suppressed' ? 'at or above ' + signed(thr, 1) + ' (suppressed convection)'
+             : 'within ' + '±' + thr.toFixed(1) + ' of zero';
+    return 'Storms whose pentad (5-day period) is preceded, ' + pentadText(spec.lag) + ' earlier, by an MJO index at ' +
+           spec.lon + ' ' + cond + '. This is the CPC velocity-potential index at one longitude, not RMM.';
+  }
+
+  /* ---------------------------------------------------------------- run */
+
+  function teleCompute(spec) {
+    var tc = tele.engine;
+    var t0 = Date.now();
+    var b = {
+      spec: spec, key: teleKey(spec), label: teleLabel(spec), defn: teleDefinition(spec),
+      subset: [], unattributed: 0, result: null, error: null, model: null, ms: 0
+    };
+    try {
+      b.subset = tc.select(LOWS, spec);
+      b.unattributed = tc.unattributed(LOWS, spec).length;
+      // minSeason is not optional: seasons before recordStart are short-counted
+      // (not quiet) and manufacture signal; see composite.js. LOWS goes in
+      // whole so the exclusion is counted and reported in result.warnings.
+      b.result = HF.composite.compare(LOWS, b.subset, {
+        seasons: DATA.seasons, minSeason: DATA.recordStart, iterations: TELE_DRAWS, seed: 1
+      });
+      b.model = teleModel(b);
+    } catch (err) {
+      b.error = String(err && err.message ? err.message : err);
+    }
+    b.ms = Date.now() - t0;
+    return b;
+  }
+
+  /** Called on every control change. Cached selections show at once; others
+      go pending, then run after the debounce. Only the latest selection ever
+      runs (tele.want), so a burst of changes is one computation. */
+  function teleRequest(soon) {
+    if (!teleEngine()) { renderTele(); return; }
+    var spec = teleSpec(), key = teleKey(spec);
+    tele.want = key;
+    clearTimeout(tele.timer);
+    tele.timer = null;
+    syncTeleControls();
+    if (tele.cache[key]) { teleShow(tele.cache[key]); return; }
+    teleSetPending(true, spec);
+    tele.timer = setTimeout(function () {
+      tele.timer = null;
+      if (tele.want !== key || state.tab !== 'tele') return;
+      var b = teleCompute(spec);
+      if (!b.error) {
+        tele.cache[key] = b;
+        tele.order.push(key);
+        while (tele.order.length > TELE_CACHE_MAX) delete tele.cache[tele.order.shift()];
+      }
+      if (tele.want === key) teleShow(b);
+    }, soon ? 30 : TELE_DEBOUNCE_MS);
+  }
+
+  function teleSetPending(on, spec) {
+    var card = tEl('teleStats');
+    card.setAttribute('aria-busy', on ? 'true' : 'false');
+    card.classList.toggle('is-pending', on);
+    tEl('teleMapCardWrap').classList.toggle('is-pending', on);
+    var p = tEl('telePending');
+    p.hidden = !on;
+    if (!on) return;
+    p.textContent = tele.shown
+      ? 'Updating for ' + teleLabel(spec) + ' (resampling ' + fmtInt(TELE_DRAWS) + ' draws). ' +
+        'The numbers and map below are still for ' + tele.shown.label + ' and are out of date until this finishes.'
+      : 'Working on ' + teleLabel(spec) + ' (resampling ' + fmtInt(TELE_DRAWS) + ' draws)…';
+  }
+
+  function teleShow(b) {
+    tele.shown = b;
+    teleSetPending(false);
+    if (b.error) {
+      renderTeleFailure('The test could not run for ' + b.label + ': ' + b.error);
+      return;
+    }
+    if (tele.fieldUser == null) {
+      var def = b.result.design === 'events' ? 'shape' : 'rate';
+      var radio = document.querySelector('input[name="teleField"][value="' + def + '"]');
+      if (radio) radio.checked = true;
+    }
+    renderTeleStats(b);
+    teleDrawMap(b);
+    renderTeleSeries();
+    renderTeleTable(b);
+    tEl('teleDefn').textContent = b.defn;
+    announceTele(b);
+  }
+
+  function teleField(b) {
+    if (tele.fieldUser) return tele.fieldUser;
+    return b && b.result && b.result.design === 'events' ? 'shape' : 'rate';
+  }
+
+  /* ------------------------------------------------------- the words */
+
+  var TELE_RELIABILITY = {
+    ok: ['Adequate', 'The sample is large enough for the test to run and to mean something.'],
+    low: ['Low', 'Too few seasons define this subset for the absence of a result to count for much. The map is drawn washed out and marked provisional.'],
+    none: ['None', 'The test did not run, so there is no result to read.']
+  };
+
+  /** The one sentence that matters, as a plain object: {tone, title, text}.
+      tone: 'untested' (nothing was tested), 'null' (tested, nothing passes),
+      'found' (tested, some cells pass). */
+  function teleVerdict(b) {
+    var r = b.result, S = r.summary;
+    var ran = r.status === 'ok' && r.inference && !r.identical && S.rate.nTested > 0;
+    if (!ran) {
+      var why = r.reason ||
+        (r.identical ? 'This subset is the whole archive, so there is nothing to compare it with.' : null) ||
+        (S.rate.nTested === 0 ? 'No cell holds enough storms in the full archive to be tested.' : null) ||
+        'The test did not run.';
+      return {
+        tone: 'untested', icon: '—', title: 'Not tested',
+        text: 'No test was run, so this page makes no statement about whether the storm track differs. ' + why +
+              ' The map is not drawn. This is a limit of the sample, not a result.'
+      };
+    }
+    var nR = S.rate.nSigFDR, nS = S.shape.nSigFDR, m = S.rate.nTested;
+    if (nR === 0 && nS === 0) {
+      var none = 'No part of the storm track differs from the archive by more than chance would produce. ' +
+                 'None of the ' + fmtInt(m) + ' cells tested passes false discovery rate control, for either activity rate or ' +
+                 'track shape. ';
+      if (r.reliability === 'low') {
+        // Tested, but with little power: a different statement from a clean null.
+        return {
+          tone: 'lowpower', icon: '\u25d0', title: 'No significant difference, but low power',
+          text: none + 'Only ' + r.n.seasons + ' seasons define this subset, so the test could only have found a large ' +
+                'shift. This is not evidence that the climate state has no effect; the sample is too small to say.'
+        };
+      }
+      return {
+        tone: 'null', icon: '\u25cb', title: 'No significant difference',
+        text: none + 'That describes this sample; it is not proof that the climate state has no effect.'
+      };
+    }
+    var pct = Math.round((S.rate.alphaFDR != null ? S.rate.alphaFDR : 0.1) * 100);
+    return {
+      tone: 'found', icon: '●', title: 'Some cells differ beyond chance',
+      text: 'After false discovery rate control, ' + fmtInt(nR) + (nR === 1 ? ' cell differs' : ' cells differ') +
+            ' in activity rate and ' + fmtInt(nS) + ' in track shape, out of ' + fmtInt(m) +
+            ' tested. The control accepts that up to about ' + pct + '% of the cells it flags could be false alarms, so ' +
+            'trust a coherent patch of flagged cells more than any single one.' +
+            (r.reliability === 'low' ? ' Few seasons define this subset, so treat what is flagged as provisional.' : '')
+    };
+  }
+
+  function teleControlled(r) {
+    if (r.design === 'seasons') {
+      return 'Compared as whole seasons: the null is built by resampling seasons, the unit that shares a background state.';
+    }
+    if (r.design === 'events' && r.strata) {
+      return r.strata.scheme === 'auto'
+        ? 'Controlled for season, month and basin: labels were re-dealt only within ' + fmtInt(r.strata.n) +
+          ' season-month-basin blocks, so a subset drawn heavily from October, or from one basin, is not mistaken for an index effect.'
+        : 'Labels were re-dealt within ' + fmtInt(r.strata.n) + ' blocks (scheme: ' + r.strata.scheme + ').';
+    }
+    return null;
+  }
+
+  function telePowerNote(b) {
+    var r = b.result, k = r.n.seasons;
+    if (r.design === 'seasons') {
+      if (k >= 10) return null;
+      var head = 'Statistical power. In synthetic tests this method found a 10-degree shift in the storm track from ' +
+                 '5 defining seasons upward, and did not find it at 3 or 4. This subset has ' + k + ' defining season' +
+                 (k === 1 ? '' : 's') + '. ';
+      if (k < 5) {
+        return head + 'That is below the point where the test is allowed to run.';
+      }
+      return head + (k <= 7
+        ? 'That sits at the edge of what the test can resolve, so low power is expected: '
+        : 'That is still a small sample, so low power is expected: ') +
+        'a result of “no significant cells” means “no shift large enough to detect”, not “no effect”.';
+    }
+    if (r.design === 'events') {
+      return 'Statistical power. This subset is a slice of events spread across seasons, so there are no defining ' +
+             'seasons to count; the test re-deals which events carry the label within each season, month and basin. ' +
+             'It does not model dependence between storms of one episode (two storms from one MJO event, say), so ' +
+             'treat a significant cell as optimistic and a null as weak evidence of no effect.';
+    }
+    return null;
+  }
+
+  /* ------------------------------------------------------ stats card */
+
+  function teleTable(cap, headers, rows) {
+    var t = tx('table', 'data-table tele-t');
+    t.appendChild(tx('caption', 'sr-only', cap));
+    var thead = tx('thead'), htr = tx('tr');
+    headers.forEach(function (h, i) {
+      var th = tx('th', i ? 'num' : '', h);
+      th.setAttribute('scope', 'col');
+      htr.appendChild(th);
+    });
+    thead.appendChild(htr);
+    t.appendChild(thead);
+    var tbody = tx('tbody');
+    rows.forEach(function (row) {
+      var tr = tx('tr');
+      row.forEach(function (cell, i) {
+        var node = i === 0 ? tx('th', '') : tx('td', 'num');
+        if (i === 0) node.setAttribute('scope', 'row');
+        if (cell && cell.nodeType) node.appendChild(cell); else node.textContent = String(cell);
+        tr.appendChild(node);
+      });
+      tbody.appendChild(tr);
+    });
+    t.appendChild(tbody);
+    return t;
+  }
+
+  function renderTeleStats(b) {
+    var body = HF.clear(tEl('teleStatsBody'));
+    var r = b.result, n = r.n, S = r.summary;
+    var v = teleVerdict(b);
+
+    body.appendChild(tx('p', 'tele-showing', 'Showing: ' + b.label));
+
+    // 1. the verdict ----------------------------------------------------
+    var box = tx('div', 'tele-verdict is-' + v.tone);
+    var head = tx('p', 'tele-verdict-title');
+    head.appendChild(tx('span', 'tele-verdict-icon', v.icon));
+    head.lastChild.setAttribute('aria-hidden', 'true');
+    head.appendChild(document.createTextNode(v.title));
+    box.appendChild(head);
+    box.appendChild(tx('p', 'tele-verdict-text', v.text));
+    body.appendChild(box);
+
+    // What the null controls for. Surfaced beside the verdict, not left to
+    // the warnings list below, because it is what makes a result defensible.
+    var ctl = teleControlled(r);
+    if (ctl) body.appendChild(tx('p', 'tele-controlled', ctl));
+
+    // 2. sample sizes ---------------------------------------------------
+    body.appendChild(tx('h3', '', 'Sample size'));
+    var subLabel = r.design === 'seasons' ? 'seasons define it' : 'seasons contain one';
+    body.appendChild(teleTable('Events and seasons in the subset and in the archive baseline',
+      ['Group', 'Events', 'Seasons'],
+      [['This subset', fmtInt(n.events), fmtInt(n.seasons)],
+       ['Archive baseline', fmtInt(n.allEvents), fmtInt(n.allSeasons)]]));
+    var sizeNote = n.events ? n.seasons + ' ' + subLabel + '. ' : '';
+    sizeNote += 'The baseline is every complete season (from ' + HF.seasonLabel(DATA.recordStart) + ').';
+    if (b.unattributed) {
+      sizeNote += ' ' + fmtInt(b.unattributed) + ' event' + (b.unattributed === 1 ? ' has' : 's have') +
+                  ' no index value for this selection and ' + (b.unattributed === 1 ? 'is' : 'are') +
+                  ' in the baseline only.';
+    } else {
+      sizeNote += ' Every event in those seasons has an index value for this selection.';
+    }
+    body.appendChild(tx('p', 'tele-note', sizeNote));
+
+    // 3. cell counts ----------------------------------------------------
+    body.appendChild(tx('h3', '', 'Cells tested'));
+    function fdrCell(count) {
+      var s = tx('span', 'tele-fdr' + (count ? ' has-hits' : ''));
+      s.appendChild(tx('strong', '', fmtInt(count)));
+      s.appendChild(document.createTextNode(count ? ' flagged' : ' none'));
+      return s;
+    }
+    var alphaPct = Math.round((S.rate.alpha != null ? S.rate.alpha : 0.05) * 100);
+    var ran = v.tone !== 'untested';
+    // When nothing was tested the summary holds zeros that mean "not run",
+    // and a column of zeros under "Significant" would read as a null result.
+    // The answer column comes first, so on a narrow screen (where the table
+    // scrolls sideways) it is the part that cannot be scrolled out of view.
+    var rows = ran ? [
+      ['Activity rate', fdrCell(S.rate.nSigFDR), fmtInt(S.rate.nTested), fmtInt(S.rate.nSigCell), S.rate.expectedByChance.toFixed(1)],
+      ['Track shape', fdrCell(S.shape.nSigFDR), fmtInt(S.shape.nTested), fmtInt(S.shape.nSigCell), S.shape.expectedByChance.toFixed(1)]
+    ] : [
+      ['Activity rate', 'not tested', '\u2014', '\u2014', '\u2014'],
+      ['Track shape', 'not tested', '\u2014', '\u2014', '\u2014']
+    ];
+    var cellsTable = teleTable('Cells tested: the count significant after FDR control, then cells tested, cells passing an uncorrected test, and the number expected by chance',
+      ['Measure', 'Significant after FDR', 'Cells tested', 'Pass ' + alphaPct + '% alone', 'Expected by chance'], rows);
+    var wrap = tx('div', 'tele-t-wrap');
+    wrap.appendChild(cellsTable);
+    body.appendChild(wrap);
+    var sentence;
+    if (ran) {
+      sentence = 'Of ' + fmtInt(S.rate.nTested) + ' cells tested, ' + fmtInt(S.rate.nSigCell) + (S.rate.nSigCell === 1 ? ' passes' : ' pass') +
+        ' an uncorrected ' + alphaPct + '% test on activity rate and ' + fmtInt(S.shape.nSigCell) + ' on track shape; about ' + S.rate.expectedByChance.toFixed(1) +
+        ' would pass by chance alone. ' +
+        (S.rate.nSigFDR + S.shape.nSigFDR === 0
+          ? 'Once the test allows for looking at ' + fmtInt(S.rate.nTested) + ' cells at once, none remain.'
+          : 'After allowing for looking at ' + fmtInt(S.rate.nTested) + ' cells at once, ' +
+            fmtInt(S.rate.nSigFDR) + ' remain on rate and ' + fmtInt(S.shape.nSigFDR) + ' on shape.');
+    } else {
+      sentence = 'No counts are given because no cell was tested; that is not the same as testing and finding nothing.';
+    }
+    body.appendChild(tx('p', 'tele-note', sentence));
+    var measureNote = 'Activity rate is storm fixes per season in a cell, subset minus archive: busier or quieter. ' +
+      'Track shape is where the subset puts its storms once its overall activity is matched to the archive’s: ' +
+      'did the track move.';
+    if (r.design === 'events') {
+      measureNote += ' For a slice of events like this one, activity rate is lower nearly everywhere by construction, so track shape is the measure to read.';
+    }
+    body.appendChild(tx('p', 'tele-note', measureNote));
+
+    // 4. reliability and power -------------------------------------------
+    body.appendChild(tx('h3', '', 'Reliability'));
+    var rel = TELE_RELIABILITY[r.reliability] || [String(r.reliability), ''];
+    var relP = tx('p', 'tele-reliability is-' + r.reliability);
+    relP.appendChild(tx('strong', '', rel[0] + '.'));
+    relP.appendChild(document.createTextNode(' ' + rel[1]));
+    body.appendChild(relP);
+    var power = telePowerNote(b);
+    if (power) body.appendChild(tx('p', 'tele-power', power));
+
+    // 5. every warning, verbatim ------------------------------------------
+    body.appendChild(tx('h3', '', 'Warnings from the test'));
+    if (r.warnings && r.warnings.length) {
+      var ul = tx('ul', 'tele-warnings');
+      r.warnings.forEach(function (w) { ul.appendChild(tx('li', '', w)); });
+      body.appendChild(ul);
+    } else {
+      body.appendChild(tx('p', 'tele-note', 'None.'));
+    }
+
+    // 6. what was compared ------------------------------------------------
+    var design = r.design === 'seasons'
+      ? 'Whole seasons are compared and the season is the unit that is resampled.'
+      : r.design === 'events'
+        ? 'Events are compared and labels are re-dealt within each season, month and basin.'
+        : '';
+    if (design) body.appendChild(tx('p', 'tele-note', design));
+    if (r.design === 'seasons' && n.subsetSeasons && n.subsetSeasons.length) {
+      body.appendChild(tx('p', 'tele-note',
+        'Defining seasons: ' + n.subsetSeasons.map(function (s) { return HF.seasonLabel(s); }).join(', ') + '.'));
+    }
+    if (r.status !== 'ok' && r.reason) body.appendChild(tx('p', 'tele-note', 'Reason: ' + r.reason));
+  }
+
+  function renderTeleFailure(message) {
+    var body = HF.clear(tEl('teleStatsBody'));
+    var box = tx('div', 'tele-verdict is-untested');
+    var head = tx('p', 'tele-verdict-title');
+    head.appendChild(tx('span', 'tele-verdict-icon', '—'));
+    head.lastChild.setAttribute('aria-hidden', 'true');
+    head.appendChild(document.createTextNode('Not tested'));
+    box.appendChild(head);
+    box.appendChild(tx('p', 'tele-verdict-text', message));
+    body.appendChild(box);
+    HF.clear(tEl('teleSeriesCap'));
+    HF.clear(tEl('chartTele'));
+    tEl('teleMapCap').textContent = 'No map is drawn.';
+    HF.clear(tEl('teleLegend'));
+    if (HF.globe.setComposite) { HF.globe.setComposite(null); HF.globe.render(LOWS, null, 'composite'); }
+    tEl('teleLive').textContent = 'Not tested. ' + message;
+  }
+
+  /** One finished-result sentence for the polite live region. Written once
+      per completed run (never while pending), and it carries the answer,
+      not just the sizes. */
+  function announceTele(b) {
+    var r = b.result, n = r.n, v = teleVerdict(b);
+    var text = b.label + ': ' + fmtInt(n.events) + ' events in ' + n.seasons + ' seasons, against ' +
+      fmtInt(n.allEvents) + ' events in ' + n.allSeasons + ' seasons. ' + v.title + '. ';
+    if (v.tone === 'untested') {
+      text += 'Nothing was tested.';
+    } else {
+      text += fmtInt(r.summary.rate.nSigFDR) + ' of ' + fmtInt(r.summary.rate.nTested) +
+        ' cells significant on activity rate and ' + fmtInt(r.summary.shape.nSigFDR) +
+        ' on track shape after false discovery rate control; about ' + r.summary.rate.expectedByChance.toFixed(1) +
+        ' would pass an uncorrected test by chance. Reliability ' + (TELE_RELIABILITY[r.reliability] || [r.reliability])[0].toLowerCase() + '.';
+    }
+    tEl('teleLive').textContent = text;
+  }
+
+  /* --------------------------------------------------------- the map */
+
+  function teleDrawMap(b) {
+    var cap = tEl('teleMapCap');
+    if (typeof HF.globe.setComposite !== 'function') {
+      cap.textContent = 'This build of the map has no composite layer, so no map is drawn. The statistics beside it are unaffected.';
+      HF.clear(tEl('teleLegend'));
+      return;
+    }
+    var r = b.result;
+    var field = teleField(b);
+    var st = HF.globe.setComposite(r, { field: field });
+    HF.globe.render(LOWS, null, 'composite');
+
+    var n = r.n, S = r.summary[field];
+    var fieldName = field === 'shape' ? 'track shape' : 'activity rate';
+    var text;
+    if (st && !st.drawn) {
+      text = 'No map is drawn: ' + (st.reason || 'the test did not run.') + ' The statistics are the answer here.';
+    } else {
+      text = 'Composite of ' + fmtInt(n.events) + ' events (' + n.seasons + ' seasons) against ' + fmtInt(n.allEvents) +
+        ' events (' + n.allSeasons + ' seasons). Colour is the difference in ' + fieldName + ' from the archive; ' +
+        'dots mark the cells that pass false discovery rate control.';
+      if (S.nSigFDR === 0) {
+        text += ' None do, so no cell is dotted and nothing on this map is distinguishable from sampling noise.';
+      } else {
+        text += ' ' + fmtInt(S.nSigFDR) + ' of ' + fmtInt(S.nTested) + ' do.';
+      }
+      if (r.reliability === 'low') text += ' Provisional: few seasons define this subset.';
+    }
+    cap.textContent = text;
+    teleRenderLegend();
+    tEl('teleFieldHint').textContent = field === 'shape'
+      ? 'Track shape: where the subset puts its storms once overall activity is matched to the archive. Read this to ask whether the track moved.'
+      : 'Activity rate: storm fixes per season, subset minus archive. Read this to ask whether it was busier or quieter.';
+  }
+
+  /** The map's colour key as HTML, from the same table the canvas uses
+      (HF.globe.compositeLegend), so the two cannot disagree. Every swatch is
+      named with its range and meaning; colour is never the only carrier. */
+  function teleRenderLegend() {
+    var box = HF.clear(tEl('teleLegend'));
+    var lg = HF.globe.compositeLegend ? HF.globe.compositeLegend() : null;
+    if (!lg) return;
+    box.appendChild(tx('h3', '', 'Difference from the archive' + (lg.unit ? ' (' + lg.unit + ')' : '')));
+    var bar = tx('div', 'tele-scale');
+    lg.bins.forEach(function (bin) {
+      var seg = tx('span', 'tele-scale-seg');
+      seg.style.background = bin.color;
+      bar.appendChild(seg);
+    });
+    bar.setAttribute('aria-hidden', 'true');
+    box.appendChild(bar);
+    var ends = tx('div', 'tele-scale-ends');
+    var first = lg.bins[0], last = lg.bins[lg.bins.length - 1];
+    ends.appendChild(tx('span', '', '−' + Math.abs(first.lo).toFixed(2) + '  ' + lg.negative));
+    ends.appendChild(tx('span', '', 'about the same'));
+    ends.appendChild(tx('span', '', last.hi.toFixed(2) + '  ' + lg.positive));
+    box.appendChild(ends);
+    var ul = tx('ul', 'tele-keylist');
+    ul.appendChild(tx('li', '', 'Dots: ' + lg.stipple + '.'));
+    ul.appendChild(tx('li', '', 'Dotted outline, no fill: ' + lg.untested + '.'));
+    if (lg.alpha < 1) ul.appendChild(tx('li', '', 'Faded colours: provisional, because few seasons define the subset.'));
+    box.appendChild(ul);
+  }
+
+  /* ----------------------------------------------- index + activity chart */
+
+  function ymdToDay(ymd) {
+    return HF.teleconnect.dayNumber(Math.floor(ymd / 10000), Math.floor(ymd / 100) % 100, ymd % 100);
+  }
+
+  function dayLabel(day, withDay) {
+    var ymd = HF.teleconnect.daysToYmd(day);
+    var y = Math.floor(ymd / 10000), m = Math.floor(ymd / 100) % 100, d = ymd % 100;
+    return (withDay ? d + ' ' : '') + HF.monthName(m) + ' ' + y;
+  }
+
+  /** Everything the chart and the table need, computed once per selection
+      (not per redraw): the index over the archive period, event counts per
+      month for the archive and the subset, and the season spans. Reads the
+      index through the engine's own lookups (oniAt, mean5, mjoValues), so
+      the line shows exactly the values the selection used. */
+  function teleModel(b) {
+    var tc = tele.engine, spec = b.spec, r = b.result;
+    var per = tc.period;
+    if (!per) return null;
+    var d0 = ymdToDay(per.from), d1 = ymdToDay(per.to);
+    var y0 = Math.floor(per.from / 10000), y1 = Math.floor(per.to / 10000);
+    var x = [], y = [], i, ix;
+
+    if (spec.type === 'enso') {
+      var th = window.HF_TELECONNECTIONS.oni.thresholds || { elNino: 0.5, laNina: -0.5 };
+      for (var yy = y0; yy <= y1; yy++) {
+        for (var mm = 1; mm <= 12; mm++) {
+          var ymd = yy * 10000 + mm * 100 + 15, day = ymdToDay(ymd);
+          if (day < d0 || day > d1) continue;
+          var e = tc.oniAt(ymd);
+          x.push(day); y.push(e ? e.value : null);
+        }
+      }
+      ix = {
+        title: 'ONI (°C)', name: 'Oceanic Niño Index', line: 'normal',
+        fmt: function (v) { return signed(v, 2) + ' °C'; },
+        fmtTick: function (v) { return signed(v, 1).replace('+', ''); },
+        fmtDay: function (d) { return dayLabel(d, false); },
+        refs: [{ value: th.elNino, label: 'El Niño ≥ ' + signed(th.elNino, 1) },
+               { value: th.laNina, label: 'La Niña ≤ ' + signed(th.laNina, 1) }]
+      };
+    } else if (spec.type === 'tercile') {
+      var cut = tc.terciles(spec.index, 'mean5');
+      for (var d = d0; d <= d1; d++) {
+        x.push(d); y.push(tc.mean5(spec.index, HF.teleconnect.daysToYmd(d)));
+      }
+      ix = {
+        title: spec.index.toUpperCase() + ' (5-day mean)', name: spec.index.toUpperCase() + ' 5-day mean', line: 'thin',
+        fmt: function (v) { return signed(v, 2); },
+        fmtTick: function (v) { return signed(v, 1).replace('+', ''); },
+        fmtDay: function (dd) { return dayLabel(dd, true); },
+        refs: [{ value: cut.upper, label: 'upper third ≥ ' + signed(cut.upper, 2) },
+               { value: cut.lower, label: 'lower third ≤ ' + signed(cut.lower, 2) }]
+      };
+    } else {
+      var thr = tc.defaultThreshold;
+      var rowA = tc.mjoRow(per.from), rowB = tc.mjoRow(per.to);
+      if (rowA == null) rowA = 0;
+      for (var rw = rowA; rowB == null ? false : rw <= rowB; rw++) {
+        var cd = tc.mjoPentad(rw);
+        if (cd == null) break;
+        var vals = tc.mjoValues(rw);
+        x.push(ymdToDay(cd)); y.push(vals ? vals[spec.lon] : null);
+      }
+      ix = {
+        title: 'MJO ' + spec.lon + ' (pentad)', name: 'MJO index at ' + spec.lon, line: 'thin',
+        fmt: function (v) { return signed(v, 2); },
+        fmtTick: function (v) { return signed(v, 1).replace('+', ''); },
+        fmtDay: function (dd) { return dayLabel(dd, true) + ' (pentad centre)'; },
+        refs: [{ value: thr, label: 'suppressed ≥ ' + signed(thr, 1) },
+               { value: -thr, label: 'enhanced ≤ ' + signed(-thr, 1) }]
+      };
+    }
+    ix.x = x; ix.y = y;
+
+    // events per month, whole archive and subset ------------------------
+    var bins = [], byYm = {};
+    for (var cy = y0; cy <= y1; cy++) {
+      for (var cm = 1; cm <= 12; cm++) {
+        var first = cy * 12 + cm - 1;
+        var bx0 = HF.teleconnect.dayNumber(cy, cm, 1);
+        var ny = cm === 12 ? cy + 1 : cy, nm = cm === 12 ? 1 : cm + 1;
+        var bx1 = HF.teleconnect.dayNumber(ny, nm, 1) - 1;
+        if (bx1 < d0 || bx0 > d1) continue;
+        byYm[cy * 100 + cm] = bins.length;
+        bins.push({ x0: Math.max(bx0, d0), x1: Math.min(bx1, d1), all: 0, sub: 0, label: HF.monthName(cm) + ' ' + cy, key: first });
+      }
+    }
+    function put(low, field) {
+      if (!(low.season >= DATA.recordStart)) return;
+      var ym = Math.floor(low.start / 10000);       // YYYYMM from YYYYMMDDHH
+      var k = byYm[ym];
+      if (k != null) bins[k][field]++;
+    }
+    for (i = 0; i < LOWS.length; i++) put(LOWS[i], 'all');
+    for (i = 0; i < b.subset.length; i++) put(b.subset[i], 'sub');
+
+    // season spans -------------------------------------------------------
+    var defining = {};
+    if (r.design === 'seasons' && r.n.subsetSeasons) {
+      r.n.subsetSeasons.forEach(function (s) { defining[s] = true; });
+    }
+    var seasons = [];
+    DATA.seasons.forEach(function (s) {
+      if (s.start < DATA.recordStart) return;
+      seasons.push({
+        season: s.start, x0: HF.teleconnect.dayNumber(s.start, 6, 1), x1: HF.teleconnect.dayNumber(s.start + 1, 5, 31),
+        tick: String(s.start).slice(2) + '/' + String(s.start + 1).slice(2), defining: !!defining[s.start]
+      });
+    });
+
+    return { span: [d0, d1], index: ix, bins: bins, seasons: seasons };
+  }
+
+  function teleSeriesCaption(b) {
+    var spec = b.spec, tc = tele.engine, sp = tc.spans;
+    var bars = ' Below it, each bar is the storms that began in that month: the part in the chosen subset at the base, ' +
+               'the rest of the archive stacked on top. Both panels share one time axis, and seasons run 1 June to 31 May.';
+    if (spec.type === 'enso') {
+      return 'The Oceanic Niño Index (a 3-month mean of Niño-3.4 sea-surface temperature anomalies, °C), one point per ' +
+             'month, with the ±0.5 °C phase thresholds. Seasons that define the subset are shaded and capped.' + bars;
+    }
+    if (spec.type === 'tercile') {
+      return 'The 5-day mean ' + spec.index.toUpperCase() + ' (' + TELE_INDEX_NAMES[spec.index] + '), one point per day, with the ' +
+             'cut points between its lower, middle and upper thirds. The index runs to ' + sp[spec.index].end + '.' + bars;
+    }
+    return 'The MJO index at ' + spec.lon + ' only: one of ten longitude-keyed series from CPC 200-hPa velocity potential at pentad ' +
+           'resolution, not a single global index. Negative means enhanced convection. Each storm is classified by the value ' +
+           pentadText(spec.lag) + ' before its own pentad, so read the index to the left of a cluster of storms. The ' +
+           'series runs to ' + sp.mjo.end + '.' + bars;
+  }
+
+  function renderTeleSeries() {
+    var b = tele.shown;
+    var box = tEl('chartTele');
+    if (!b || !b.model) { HF.clear(box); return; }
+    var m = b.model;
+    tEl('teleSeriesCap').textContent = teleSeriesCaption(b);
+    var defLegend = b.result.design === 'seasons';
+    var legend = [{ label: m.index.name + (b.spec.type === 'mjo' ? ' (negative = enhanced)' : ''), kind: 'line' },
+                  { label: b.spec.type === 'tercile' ? 'Tercile cut points' : 'Threshold', kind: 'ref' },
+                  { label: 'Events in this subset', kind: 'sub' },
+                  { label: 'Rest of the archive', kind: 'rest' }];
+    if (defLegend) legend.push({ label: 'Seasons that define the subset (shaded, capped)', kind: 'band' });
+    HF.charts.indexSeries(box, {
+      span: m.span, index: m.index, bins: m.bins, seasons: m.seasons,
+      countTitle: 'Events / month', legend: legend,
+      ariaLabel: m.index.name + ' from ' + HF.seasonLabel(DATA.recordStart) + ' with events per month beneath; ' +
+                 fmtInt(b.result.n.events) + ' of ' + fmtInt(b.result.n.allEvents) + ' events are in the subset. The table view below holds the same numbers by season.'
+    });
+  }
+
+  function renderTeleTable(b) {
+    var m = b.model, tc = tele.engine;
+    var tbl = tEl('teleTableEl');
+    var thead = HF.clear(tbl.querySelector('thead')), tbody = HF.clear(tbl.querySelector('tbody'));
+    if (!m) return;
+    var isEnso = b.spec.type === 'enso';
+    var hasDef = b.result.design === 'seasons';
+    var heads = ['Season', isEnso ? 'DJF ONI (°C)' : 'Mean of the plotted index', 'Events, archive', 'Events, subset'];
+    if (hasDef) heads.push('Defines the subset');
+    var tr = tx('tr');
+    heads.forEach(function (h) { var th = tx('th', '', h); th.setAttribute('scope', 'col'); tr.appendChild(th); });
+    thead.appendChild(tr);
+    tEl('teleTableCap').textContent = 'Per-season values for ' + b.label + ': the index, events in the archive, events in the subset.';
+
+    var all = {}, sub = {};
+    m.bins.forEach(function () {});
+    function seasonOfBin(bin) {
+      for (var s = 0; s < m.seasons.length; s++) if (bin.x0 >= m.seasons[s].x0 && bin.x0 <= m.seasons[s].x1) return m.seasons[s].season;
+      return null;
+    }
+    m.bins.forEach(function (bin) {
+      var s = seasonOfBin(bin);
+      if (s == null) return;
+      all[s] = (all[s] || 0) + bin.all;
+      sub[s] = (sub[s] || 0) + bin.sub;
+    });
+    m.seasons.forEach(function (s) {
+      var idxText;
+      if (isEnso) {
+        var e = tc.oniDjf(s.season);
+        idxText = e ? signed(e.value, 1) + ' (' + (e.phaseName || e.phase) + ')' : 'no value';
+      } else {
+        var sum = 0, cnt = 0, ix = m.index;
+        for (var i = 0; i < ix.x.length; i++) {
+          if (ix.x[i] >= s.x0 && ix.x[i] <= s.x1 && ix.y[i] != null) { sum += ix.y[i]; cnt++; }
+        }
+        idxText = cnt ? signed(sum / cnt, 2) : 'no value';
+      }
+      var row = tx('tr');
+      var th = tx('th', '', HF.seasonLabel(s.season)); th.setAttribute('scope', 'row'); row.appendChild(th);
+      row.appendChild(tx('td', '', idxText));
+      row.appendChild(tx('td', 'num', fmtInt(all[s.season] || 0)));
+      row.appendChild(tx('td', 'num', fmtInt(sub[s.season] || 0)));
+      if (hasDef) row.appendChild(tx('td', '', s.defining ? 'Yes' : '—'));
+      tbody.appendChild(row);
+    });
+  }
+
+  /* ------------------------------------------------------ method note */
+
+  function renderTeleMethod() {
+    var tc = tele.engine;
+    var box = HF.clear(tEl('teleMethodBody'));
+    var partial = DATA.seasons.filter(function (s) { return s.start < DATA.recordStart; });
+    var counts = {};
+    LOWS.forEach(function (l) { counts[l.season] = (counts[l.season] || 0) + 1; });
+    var partialText = partial.map(function (s) { return fmtInt(counts[s.start] || 0); }).join(', ');
+    var full = DATA.seasons.filter(function (s) { return s.start >= DATA.recordStart; })
+      .map(function (s) { return counts[s.start] || 0; });
+    var lo = Math.min.apply(null, full), hi = Math.max.apply(null, full);
+    var sp = tc ? tc.spans : null;
+
+    function item(term, text) {
+      box.appendChild(tx('h3', '', term));
+      box.appendChild(tx('p', '', text));
+    }
+    item('Seasons',
+      'A season runs 1 June to 31 May and is labelled by its starting year. A storm on 2 January 2015 belongs to ' +
+      '2014–15. The season is also the unit that is resampled: storms in one season share a background state ' +
+      '(the jet, blocking, the ENSO phase itself), so they are not independent draws, and treating 400 storms as 400 ' +
+      'samples would make a chance pattern look decisive. Counts are converted to rates per season so a subset of ' +
+      '8 seasons and an archive of 22 can be compared at all.');
+    item('Seasons left out',
+      'Seasons before ' + HF.seasonLabel(DATA.recordStart) + ' are excluded from both the subset and the baseline. ' +
+      'Pacific entries begin in February 2002 and Atlantic entries in September 2003, so the ' + partial.length +
+      ' earlier seasons hold ' + partialText + ' events against ' + lo + '–' + hi + ' in every complete one. ' +
+      'They are short-counted, not quiet, and including them manufactures signal: in testing, comparing the twelve earliest ' +
+      'seasons with the rest flagged 11 significant cells for no climatic reason, and leaving out just the three ' +
+      'short-counted seasons took that to none.');
+    item('Significance',
+      'The map is split into equal-area cells about 4 degrees of latitude across, and every cell with enough storms in the ' +
+      'archive is tested (about 150 of them). With that many tests, roughly 5% pass on pure noise, so a cell only counts ' +
+      'if it survives false discovery rate control (Benjamini–Hochberg, at twice the 5% global level as Wilks 2016 ' +
+      'recommends for spatially correlated fields). The “expected by chance” column is that 5% expectation, shown so ' +
+      'a handful of uncorrected hits is not mistaken for a finding. Colour on the map is the size of a difference and ' +
+      'dots are significance; a deep colour without dots is a big difference the test cannot tell from chance.');
+    item('Events versus seasons',
+      'ENSO subsets are whole seasons, so the season is resampled directly. NAO, PNA, AO and MJO subsets pick storms ' +
+      'within seasons, so there is no season to resample; the test instead re-deals which storms carry the label ' +
+      'within each season, month and basin. The blocking matters: the daily indices persist for a week or two, so a ' +
+      'tercile or MJO subset is clustered in time and inherits a month and basin mix unlike the archive\u2019s (storms in ' +
+      'the lower NAO third, for example, are about 18% October against 9% for the archive, and the storm track sits in ' +
+      'a very different place in October than in February). Without blocking, a subset drawn disproportionately from ' +
+      'October, or from one basin, looks like an index effect when it is only a seasonal one. Blocking is the more ' +
+      'conservative choice and the result is still a floor on the real uncertainty, not the whole of it.');
+    item('Looking at many selections',
+      'False discovery rate control covers the cells of one map. It does not cover the choices made around the map: ' +
+      'ten longitudes, three states, any lag from 0 to 6 pentads, four indices. Trying several and reporting the one ' +
+      'that lights up brings the false-alarm rate back. Treat a single flagged map from a search like that as a lead ' +
+      'to confirm, not a result.');
+    item('Indices',
+      'ENSO is the December–February Oceanic Niño Index of the storm’s season (NOAA CPC, El Niño at or ' +
+      'above +0.5, La Niña at or below −0.5). NAO, PNA and AO are the CPC daily indices, averaged over the five ' +
+      'days ending on the day the storm’s first fix was analyzed' +
+      (sp ? ' (they run to ' + sp.nao.end + ')' : '') + '. The MJO index is the CPC 200-hPa velocity-potential ' +
+      'index at pentad resolution, one series for each of ten longitudes' + (sp ? ' (to ' + sp.mjo.end + ')' : '') +
+      ': it is not the Wheeler–Hendon RMM index, so there is no phase 1–8 and no amplitude. Negative values ' +
+      'are enhanced convection. “Enhanced” and “suppressed” mean at or beyond ±' +
+      (tc ? tc.defaultThreshold.toFixed(1) : '0.5') + ' and “neutral” means inside it. A storm with no index value ' +
+      'on its day (a missing day or pentad) is left out of the subset, never counted as zero.');
+    item('Lag',
+      'The extratropical response to the tropics is thought to arrive about 5–15 days later, so the MJO state is ' +
+      'read a chosen number of pentads before the storm. The default is ' + (tc ? pentadText(tc.defaultLag) : '2 pentads') +
+      ' as a starting point, not a finding, and each lag is another look at the data.');
+  }
+
+  /* --------------------------------------------------- controls & tab */
+
+  function syncTeleControls() {
+    tEl('teleEnsoWrap').hidden = tele.index !== 'enso';
+    tEl('teleTercWrap').hidden = tele.index !== 'nao' && tele.index !== 'pna' && tele.index !== 'ao';
+    tEl('teleMjoWrap').hidden = tele.index !== 'mjo';
+    var lagWord = pentadText(tele.lag);
+    tEl('teleLagOut').textContent = lagWord;
+    tEl('teleLag').setAttribute('aria-valuetext', lagWord + ' before the storm');
+  }
+
+  function buildTele() {
+    if (tele.built) return;
+    tele.built = true;
+    var tc = teleEngine();
+    if (!tc) return;
+
+    var lon = tEl('teleLon');
+    tc.longitudes.forEach(function (name) {
+      var deg = name.replace(/E$/, '°E').replace(/W$/, '°W');
+      lon.appendChild(HF.el('option', { value: name }, deg));
+    });
+    lon.value = tele.lon;
+    tEl('teleLag').value = String(tele.lag);
+
+    function radios(name, apply) {
+      Array.prototype.forEach.call(document.querySelectorAll('input[name="' + name + '"]'), function (r) {
+        r.addEventListener('change', function () { if (r.checked) apply(r.value); });
+      });
+    }
+    radios('teleIndex', function (v) { tele.index = v; teleRequest(); });
+    radios('teleEnso', function (v) { tele.enso = v; teleRequest(); });
+    radios('teleTerc', function (v) { tele.terc = v; teleRequest(); });
+    radios('teleMjoState', function (v) { tele.mjoState = v; teleRequest(); });
+    lon.addEventListener('change', function () { tele.lon = lon.value; teleRequest(); });
+    tEl('teleLag').addEventListener('input', function (e) {
+      tele.lag = Number(e.target.value);
+      teleRequest();
+    });
+    radios('teleField', function (v) {
+      tele.fieldUser = v;
+      if (tele.shown && !tele.shown.error) {
+        teleDrawMap(tele.shown);
+        announceTeleField(tele.shown, v);
+      }
+    });
+    renderTeleMethod();
+  }
+
+  /** Switching the map between rate and shape changes what the map says but
+      not which result is shown, so say it briefly and without re-reading the
+      whole card. */
+  function announceTeleField(b, field) {
+    var S = b.result.summary[field];
+    tEl('teleLive').textContent = 'Map now shows ' + (field === 'shape' ? 'track shape' : 'activity rate') + ': ' +
+      fmtInt(S.nSigFDR) + ' of ' + fmtInt(S.nTested) + ' cells significant after false discovery rate control.';
+  }
+
+  /** Moves the single globe canvas between the Map tab and this tab.
+      HF.globe is one canvas with one set of listeners; moving its wrapper
+      keeps all of that intact, where a second canvas would need a second
+      drawing state kept in step with the first. */
+  function placeGlobe() {
+    var wrap = document.querySelector('.map-wrap');
+    if (!wrap) return;
+    var home = tEl('panel-map'), slot = tEl('teleMapSlot');
+    var want = state.tab === 'tele' ? slot : home;
+    if (wrap.parentNode !== want) want.appendChild(wrap);
+  }
+
+  /** Called from render() while the tab is active, and from the resize and
+      theme paths. Redraws from the result already held; asks for a
+      computation only when there is none for the current selection. */
+  function renderTele() {
+    buildTele();
+    syncTeleControls();
+    var key = tele.engine ? teleKey(teleSpec()) : null;
+    if (!tele.engine) {
+      renderTeleFailure('The teleconnection data or scripts did not load (' + (tele.failed || 'unknown error') + '), so nothing can be tested here.');
+      return;
+    }
+    if (tele.shown && tele.shown.key === key && !tele.shown.error) {
+      teleSetPending(false);         // a run abandoned by leaving the tab must not leave the banner up
+      teleDrawMap(tele.shown);       // new theme / size: same result, redrawn
+      renderTeleSeries();
+      return;
+    }
+    teleRequest(true);
   }
 
   /* ----------------------------------------------------------------- theme */

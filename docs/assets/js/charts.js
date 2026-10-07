@@ -634,4 +634,259 @@ window.HF = window.HF || {};
     svg.appendChild(xlab2);
   };
 
+  /* --------------------------------------------- index + activity (stacked) */
+
+  /**
+   * One climate index above the storm activity it is being compared with,
+   * on a SHARED time axis. Two panels, not two y-axes: the index (degC, a
+   * standardized value, a pentad value) and the event count have nothing in
+   * common but the calendar, and a dual-axis chart would let the eye find a
+   * correlation the scaling invented. Stacked panels with one x scale and
+   * one crosshair keep every vertical line meaning the same date in both.
+   *
+   * The lower panel is a single-unit stack: events in the chosen subset
+   * (accent) with the rest of the archive on top of them (muted), so the bar
+   * height is always "events that month" and the accent part is "how many of
+   * those are in the subset" - the same measure, one axis.
+   *
+   * spec: {
+   *   span:   [firstDay, lastDay]            day numbers on one common scale
+   *   index:  {x:[day...], y:[value|null...], // null breaks the line
+   *            title, fmt(v), fmtDay(day), unit,
+   *            refs:[{value,label}], line: 'thin' | 'normal'}
+   *   bins:   [{x0, x1, all, sub, label}]    event counts, x0..x1 inclusive days;
+   *                                          merged in groups when too narrow
+   *   seasons:[{x0, x1, tick, defining}]     1 Jun .. 31 May; defining ones are
+   *                                          shaded and capped
+   *   countTitle, ariaLabel,
+   *   legend: [{label, kind:'line'|'ref'|'sub'|'rest'|'band'}]   (styled in charts.css)
+   * }
+   *
+   * Hover shows the nearest index sample and the count for that bin. It
+   * enhances; the same numbers are in the table view the page offers.
+   */
+  charts.indexSeries = function (container, spec) {
+    if (!spec.index || !spec.index.x.length) {
+      return empty(container, 'No index values cover this period.', 200);
+    }
+    var IDX_H = 150, GAP = 20, CNT_H = 104, AXIS_H = 26;
+    var totalH = PAD.top + IDX_H + GAP + CNT_H + AXIS_H;
+    var f = frame(container, totalH);
+    var plotW = f.plotW;
+    f.svg.setAttribute('aria-label', spec.ariaLabel || 'Climate index and event counts over time');
+    var g = svgEl('g', {});
+    f.svg.appendChild(g);
+
+    var d0 = spec.span[0], d1 = spec.span[1];
+    var xOf = function (d) { return PAD.left + ((d - d0) / (d1 - d0)) * plotW; };
+    var idxTop = PAD.top, idxBot = PAD.top + IDX_H;
+    var cntTop = idxBot + GAP, cntBot = cntTop + CNT_H;
+
+    // ---- index scale: cover the data and every reference line, with air
+    var ix = spec.index, vmin = Infinity, vmax = -Infinity, i;
+    for (i = 0; i < ix.y.length; i++) {
+      if (ix.y[i] == null) continue;
+      if (ix.y[i] < vmin) vmin = ix.y[i];
+      if (ix.y[i] > vmax) vmax = ix.y[i];
+    }
+    (ix.refs || []).forEach(function (r) {
+      if (r.value < vmin) vmin = r.value;
+      if (r.value > vmax) vmax = r.value;
+    });
+    if (!isFinite(vmin)) { vmin = -1; vmax = 1; }
+    if (vmin > 0) vmin = 0;
+    if (vmax < 0) vmax = 0;
+    var vstep = niceStep(vmax - vmin, Math.max(2, Math.floor(IDX_H / 36)));
+    var lo = Math.floor(vmin / vstep - 1e-9) * vstep, hi = Math.ceil(vmax / vstep - 1e-9) * vstep;
+    var yIdx = function (v) { return idxBot - ((v - lo) / (hi - lo)) * IDX_H; };
+
+    // ---- count scale
+    var cmax = 0;
+    spec.bins.forEach(function (b) { if (b.all > cmax) cmax = b.all; });
+
+    // ---- merge bins until each is wide enough to read as a bar
+    var bins = spec.bins, group = 1;
+    if (bins.length) {
+      var perBin = plotW / bins.length;
+      group = Math.max(1, Math.ceil(3 / perBin));
+    }
+    if (group > 1) {
+      var merged = [];
+      for (i = 0; i < bins.length; i += group) {
+        var chunk = bins.slice(i, i + group), m = {
+          x0: chunk[0].x0, x1: chunk[chunk.length - 1].x1, all: 0, sub: 0,
+          label: chunk.length > 1 ? chunk[0].label + ' to ' + chunk[chunk.length - 1].label : chunk[0].label
+        };
+        chunk.forEach(function (b) { m.all += b.all; m.sub += b.sub; });
+        merged.push(m);
+      }
+      bins = merged;
+      cmax = 0;
+      bins.forEach(function (b) { if (b.all > cmax) cmax = b.all; });
+    }
+    var cscale = niceScale(Math.max(cmax, 1), 3);
+    var yCnt = function (n) { return cntBot - (n / cscale.max) * CNT_H; };
+
+    // ---- seasons: defining ones shaded across both panels and capped, so the
+    // shading is never the only carrier (the cap is a shape; the table view
+    // and the legend say the same in words)
+    var seasons = spec.seasons || [];
+    seasons.forEach(function (s) {
+      if (!s.defining) return;
+      var x0 = Math.max(PAD.left, xOf(s.x0)), x1 = Math.min(PAD.left + plotW, xOf(s.x1 + 1));
+      g.appendChild(svgEl('rect', {
+        class: 'c-band', x: x0, y: idxTop, width: Math.max(1, x1 - x0), height: cntBot - idxTop
+      }));
+      g.appendChild(svgEl('rect', {
+        class: 'c-band-cap', x: x0, y: idxTop, width: Math.max(1, x1 - x0), height: 3
+      }));
+    });
+
+    // ---- grid: horizontal for each panel, vertical at every season start
+    for (var v = lo; v <= hi + 1e-9; v += vstep) {
+      var gy = yIdx(v);
+      g.appendChild(svgEl('line', { class: v === 0 ? 'c-axis' : 'c-grid', x1: PAD.left, x2: PAD.left + plotW, y1: gy, y2: gy }));
+      var lab = svgEl('text', { class: 'c-tick', x: PAD.left - 7, y: gy + 3.5, 'text-anchor': 'end' });
+      lab.textContent = ix.fmtTick ? ix.fmtTick(v) : String(Math.round(v * 100) / 100);
+      g.appendChild(lab);
+    }
+    for (var cv = 0; cv <= cscale.max + 1e-9; cv += cscale.step) {
+      var cy = yCnt(cv);
+      g.appendChild(svgEl('line', { class: cv === 0 ? 'c-axis' : 'c-grid', x1: PAD.left, x2: PAD.left + plotW, y1: cy, y2: cy }));
+      var clab = svgEl('text', { class: 'c-tick', x: PAD.left - 7, y: cy + 3.5, 'text-anchor': 'end' });
+      clab.textContent = String(Math.round(cv));
+      g.appendChild(clab);
+    }
+    seasons.forEach(function (s) {
+      var sx = xOf(s.x0);
+      if (sx <= PAD.left + 0.5) return;
+      g.appendChild(svgEl('line', { class: 'c-grid c-grid-v', x1: sx, x2: sx, y1: idxTop, y2: cntBot }));
+    });
+
+    // ---- reference lines (thresholds, tercile cuts): labelled, never red -
+    // red is this site's "critical" status colour and these are not alarms
+    (ix.refs || []).forEach(function (r) {
+      var ry = yIdx(r.value);
+      g.appendChild(svgEl('line', { class: 'c-ref', x1: PAD.left, x2: PAD.left + plotW, y1: ry, y2: ry }));
+      // Above the line for a positive reference, below for a negative one, so
+      // the label sits on the side away from zero and clear of the index line.
+      var rl = svgEl('text', { class: 'c-label c-ref-label', x: PAD.left + plotW - 4,
+                               y: r.value >= 0 ? ry - 4 : ry + 12, 'text-anchor': 'end' });
+      rl.textContent = r.label;
+      g.appendChild(rl);
+    });
+
+    // ---- the index line, broken wherever a value is missing
+    var path = [], pen = false;
+    for (i = 0; i < ix.x.length; i++) {
+      if (ix.y[i] == null) { pen = false; continue; }
+      path.push((pen ? 'L' : 'M') + xOf(ix.x[i]).toFixed(1) + ' ' + yIdx(ix.y[i]).toFixed(1));
+      pen = true;
+    }
+    g.appendChild(svgEl('path', {
+      class: 'c-line' + (ix.line === 'thin' ? ' c-line-thin' : ''), d: path.join('')
+    }));
+
+    // ---- event counts: subset at the base, the rest stacked on it
+    var barG = svgEl('g', {});
+    g.appendChild(barG);
+    bins.forEach(function (b) {
+      if (!b.all) return;
+      var bx0 = xOf(b.x0), bx1 = xOf(b.x1 + 1);
+      var w = Math.max(1, bx1 - bx0 - (bx1 - bx0 > 3 ? 1 : 0));
+      var hSub = (b.sub / cscale.max) * CNT_H, hAll = (b.all / cscale.max) * CNT_H;
+      if (b.sub) {
+        barG.appendChild(svgEl('rect', {
+          class: 'c-bar c-bar-sub', x: bx0, y: cntBot - hSub, width: w, height: Math.max(1, hSub)
+        }));
+      }
+      if (b.all > b.sub) {
+        var hRest = hAll - hSub;
+        // 2px surface gap between the two fills only when both can afford it
+        var gap = b.sub && hRest > 3 ? 1.5 : 0;
+        barG.appendChild(svgEl('rect', {
+          class: 'c-bar c-bar-rest', x: bx0, y: cntBot - hAll, width: w, height: Math.max(1, hRest - gap)
+        }));
+      }
+    });
+
+    // ---- x axis: season labels centred in their season, thinned to fit
+    var tickW = 0;
+    seasons.forEach(function (s) { tickW = Math.max(tickW, textWidth(s.tick, 10.5)); });
+    var tstep = tickStep(seasons.length, tickW, plotW, 8);
+    seasons.forEach(function (s, k) {
+      if (k % tstep !== 0) return;
+      var cx = (Math.max(PAD.left, xOf(s.x0)) + Math.min(PAD.left + plotW, xOf(s.x1 + 1))) / 2;
+      var t = svgEl('text', { class: 'c-tick', x: cx, y: cntBot + 15, 'text-anchor': 'middle' });
+      t.textContent = s.tick;
+      g.appendChild(t);
+    });
+    axisTitle(g, ix.title || 'Index', 12, idxTop + IDX_H / 2, 'middle', true, IDX_H * 0.96);
+    axisTitle(g, spec.countTitle || 'Events', 12, cntTop + CNT_H / 2, 'middle', true, CNT_H * 0.96);
+
+    // ---- one crosshair, one tooltip: nearest index sample + the bin's counts
+    var crosshair = svgEl('line', { class: 'c-crosshair' });
+    g.appendChild(crosshair);
+    var hit = svgEl('rect', {
+      class: 'c-hit', x: PAD.left, y: idxTop, width: plotW, height: cntBot - idxTop
+    });
+    g.appendChild(hit);
+
+    function nearestIndex(day) {
+      var a = 0, b = ix.x.length - 1;
+      while (a < b) {
+        var mid = (a + b) >> 1;
+        if (ix.x[mid] < day) a = mid + 1; else b = mid;
+      }
+      if (a > 0 && Math.abs(ix.x[a - 1] - day) <= Math.abs(ix.x[a] - day)) a--;
+      return a;
+    }
+    function binAt(day) {
+      for (var k = 0; k < bins.length; k++) if (day >= bins[k].x0 && day <= bins[k].x1) return bins[k];
+      return null;
+    }
+    function tipAt(e) {
+      var rect = f.svg.getBoundingClientRect();
+      var px = (e.clientX - rect.left) * (f.w / rect.width);
+      var day = d0 + ((px - PAD.left) / plotW) * (d1 - d0);
+      var k = nearestIndex(day);
+      var bin = binAt(day);
+      var html = '<b>' + (ix.fmtDay ? ix.fmtDay(ix.x[k]) : ix.x[k]) + '</b>';
+      html += '<div class="t-row">' + (ix.name || 'Index') + ': ' +
+              (ix.y[k] == null ? 'no value' : (ix.fmt ? ix.fmt(ix.y[k]) : ix.y[k])) + '</div>';
+      if (bin) {
+        html += '<div class="t-row">' + bin.label + ': ' + bin.all + ' event' + (bin.all === 1 ? '' : 's') +
+                ', ' + bin.sub + ' in this subset</div>';
+      }
+      var cxp = xOf(ix.x[k]);
+      crosshair.setAttribute('x1', cxp); crosshair.setAttribute('x2', cxp);
+      crosshair.setAttribute('y1', idxTop); crosshair.setAttribute('y2', cntBot);
+      crosshair.classList.add('is-visible');
+      return html;
+    }
+    hit.addEventListener('mouseenter', function (e) { HF.showTip(tipAt(e), e); });
+    hit.addEventListener('mousemove', function (e) {
+      var tip = document.getElementById('tooltip');
+      if (tip) tip.innerHTML = tipAt(e);
+      HF.moveTip(e);
+    });
+    hit.addEventListener('mouseleave', function () {
+      crosshair.classList.remove('is-visible');
+      HF.hideTip();
+    });
+
+    // ---- legend: a key for every mark, so nothing rests on colour alone
+    if (spec.legend && spec.legend.length) {
+      var box = HF.el('p', { class: 'chart-legend' });
+      spec.legend.forEach(function (it) {
+        var span = HF.el('span');
+        var key = HF.el('i', { class: 'c-key c-key-' + it.kind });
+        span.appendChild(key);
+        span.appendChild(document.createTextNode(it.label));
+        box.appendChild(span);
+      });
+      container.appendChild(box);
+    }
+  };
+
 })(window.HF.charts = window.HF.charts || {}, window.HF);

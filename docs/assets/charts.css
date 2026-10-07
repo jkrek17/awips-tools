@@ -99,3 +99,39 @@ svg.is-hovering .c-dot.is-hover { opacity: 1; }
   .c-crosshair, .c-guide { transition: opacity .12s ease-out; }
   .c-dot, .c-bar { transition: opacity .12s ease-out, r .12s ease-out; }
 }
+
+/* ------------------------------------------------ index + activity (stacked)
+   charts.indexSeries (charts.js). One accent hue for "the thing being
+   examined" (the index line, the events in the chosen subset) against the
+   muted ink for everything else - the emphasis form, not a categorical one.
+   Contrast of both marks against the surface is >= 3:1 in each theme
+   (WCAG, light/dark: accent 10.4/8.5, muted 3.5/4.8; accent vs muted CVD separation ΔE 25.6/16.6 from the dataviz validator), and
+   neither carries the meaning alone: the subset is also the base of every
+   bar, the defining seasons are also capped, and the legend names each. */
+.c-line { fill: none; stroke: var(--accent); stroke-width: 1.75; stroke-linejoin: round; stroke-linecap: round; }
+.c-line.c-line-thin { stroke-width: 1.25; }
+.c-bar-sub { fill: var(--accent); }
+.c-bar-rest { fill: var(--ink-muted); }
+
+/* Seasons that define the subset: a faint wash plus a 3px cap, so the shading
+   is a shape as well as a tint. */
+.c-band { fill: var(--accent); fill-opacity: .1; pointer-events: none; }
+.c-band-cap { fill: var(--accent); pointer-events: none; }
+
+/* Reference lines (thresholds, tercile cuts): quiet dashed ink, labelled. A
+   surface-coloured halo (paint-order: stroke) keeps the label readable where
+   it crosses the line or a bar, with no backing rect to measure. */
+.c-ref { stroke: var(--ink-2); stroke-width: 1; stroke-dasharray: 5 3; opacity: .8; }
+.c-ref-label { paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
+.c-grid-v { opacity: .55; }
+
+/* Legend keys for this chart. The legend always shows every mark in use. */
+.chart-legend .c-key { width: 14px; height: 10px; border-radius: 2px; }
+.chart-legend .c-key-line { height: 0; border-top: 2px solid var(--accent); border-radius: 0; background: none; }
+.chart-legend .c-key-ref { height: 0; border-top: 1px dashed var(--ink-2); border-radius: 0; background: none; }
+.chart-legend .c-key-sub { background: var(--accent); }
+.chart-legend .c-key-rest { background: var(--ink-muted); }
+.chart-legend .c-key-band {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-top: 3px solid var(--accent); height: 12px; border-radius: 0;
+}
