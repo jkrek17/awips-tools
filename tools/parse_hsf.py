@@ -63,11 +63,13 @@ MONTHS = {m: i + 1 for i, m in enumerate(
 
 # The line that carries the analysis time. A weekday is printed by the tropical
 # sections ("SYNOPSIS VALID 0000 UTC TUE JAN 01") and not by OPC's; accepting
-# both lets the same pattern delimit every section of the text. The day is not
-# followed by a word boundary because the tropical bulletin has printed
-# "NOV 03NOV 02" (a date pasted twice), and the line must still be recognised
-# as a section start even when its time cannot be trusted.
-SYNOPSIS_MARK = re.compile(r"^[ \t]*SYNOPSIS\s+VALID\b.*$", re.M)
+# both lets the same pattern delimit every section of the text. Two quirks are
+# tolerated when recognising the line as a section start: a leading '.' (some
+# 2011 products print every preamble line with one) and a mangled date (the
+# tropical bulletin has printed "NOV 03NOV 02"). The line must still open its
+# section even when its time cannot be trusted, or the next bulletin's lows
+# would be read as OPC's.
+SYNOPSIS_MARK = re.compile(r"^[ \t]*\.?[ \t]*SYNOPSIS\s+VALID\b.*$", re.M)
 SYNOPSIS_TIME = re.compile(
     r"SYNOPSIS\s+VALID\s+(\d{4})\s+UTC\s+(?:[A-Z]{3}\s+)?([A-Z]{3})\s+(\d{1,2})")
 # OPC signs off with a FORECASTER line. What follows it in the raw text is the
@@ -89,7 +91,7 @@ SECTION_SYN = re.compile(r"^\.?\s*SYNOPSIS\s+AND\s+FORECAST\s*\.?$")
 # A statement is a forecast if it opens with a lead time or the word FORECAST.
 # "36 HOUR", "12 HR" and "48 HOURS" have all been printed.
 FORECAST_OPEN = re.compile(
-    r"^\.?\s*(?:\d+\s*(?:HOURS?|HRS?)\b|FORECAST\b|FCST\b|OUTLOOK\b"
+    r"^\.*\s*(?:\d+\s*(?:HOURS?|HRS?)\b|FORECAST\b|FCST\b|OUTLOOK\b"
     r"|(?:BY|AT|AFTER)\s+\d{3,4}\s+UTC\b)")
 
 # Words that, once seen inside an otherwise-analysis statement, mean everything
@@ -129,7 +131,7 @@ LOW_POS = re.compile(
     r"(?P<lon>\d{1,3}(?:\.\d)?)(?:\s*(?P<h>[EW])\b|(?=\s))"
     # A pressure is 3-4 digits not followed by a unit. "120 NM" after a
     # position is a radius, not a pressure.
-    r"(?:\s+(?P<pres>\d{3,4})\b(?!\s*(?:NM|KT|FT|N\b|S\b|E\b|W\b))(?:\s*(?:MB|HPA))?)?")
+    r"(?:\s+(?P<pres>\d{3,4})(?!\d)(?!\s*(?:NM|KT|FT|N\b|S\b|E\b|W\b))(?:\s*(?:MB|HPA))?)?")
 
 # What may precede the FIRST position in a statement. An analysis statement
 # opens with its low, so anything else in front of a position ("IN ASSOCIATION
@@ -138,14 +140,14 @@ LOW_POS = re.compile(
 # valid at another time, and taking it would duplicate a low or smuggle in a
 # forecast. The words listed are the ones OPC puts in front of a real centre.
 OPENING = re.compile(
-    r"^\.?\s*(?:(?:COMPLEX|SYSTEM|LOW|WITH|ONE|FIRST|MAIN|MEAN|DEVELOPING"
+    r"^\.*\s*(?:(?:COMPLEX|SYSTEM|LOW|WITH|ONE|FIRST|MAIN|MEAN|DEVELOPING"
     r"|HURRICANE|FORCE|INLAND)\s+)*$")
 # A later position in the same statement is accepted only as a named additional
 # centre of a complex system ("...AND A SECOND LOW 36N 140W 1004 MB").
 ADDITIONAL = re.compile(
     r"\b(?:AND|WITH|\.\.\.)\s*(?:A\s+)?(?:SECOND|SECONDARY|THIRD)\s+(?:LOW|CENTER)\b")
 # A position tagged with its own time is not the analysis time.
-TIME_TAGGED = re.compile(r"\s*(?:AT|BY|AFTER)\s+\d")
+TIME_TAGGED = re.compile(r"\s*(?:AT|BY)\s+\d{3,4}\s+UTC")
 
 # "MOVING E NE 15 KT", "DRIFTING NE 5 KT", "WILL MOVE N 20 KT". The old layout
 # prints the bearing as two words ("N NE"), which is read as one compass point.
@@ -234,6 +236,14 @@ def split_segments(text):
     return segs
 
 
+# A statement can begin in the middle of a line, straight after the full stop
+# that ends the previous one ("...SEAS 15 TO 20 FT. .48 HOUR FORECAST N OF
+# 65N..."). Line-start detection alone would fold that forecast into the
+# statement above it; splitting at ". ." keeps every statement judged on its
+# own opening words.
+MIDLINE_START = re.compile(r"(?<=\.)\s+(?=\.(?!\.)\S)")
+
+
 def statements(body):
     """Yield (section, warn_cat, statement) with hard-wrapped lines joined.
 
@@ -248,22 +258,20 @@ def statements(body):
         if cur:
             st = re.sub(r"\s+", " ", " ".join(cur)).strip()
             del cur[:]
-            return (section, cat, st)
-        return None
+            return [(section, cat, piece) for piece in MIDLINE_START.split(st)]
+        return []
 
     for raw in body.split("\n"):
         s = raw.strip()
         if not s:
-            out = flush()
-            if out:
+            for out in flush():
                 yield out
             continue
         # Section and category changes first, so a statement is stamped with
         # the header above it and never the one below.
         h = HEADER.match(s)
         if h or SECTION_WARN.match(s) or SECTION_SYN.match(s):
-            out = flush()
-            if out:
+            for out in flush():
                 yield out
             if SECTION_WARN.match(s):
                 section, cat = "warning", ""
@@ -280,12 +288,10 @@ def statements(body):
                         break
             continue
         if s.startswith(".") and not s.startswith("..."):
-            out = flush()
-            if out:
+            for out in flush():
                 yield out
         cur.append(s)
-    out = flush()
-    if out:
+    for out in flush():
         yield out
 
 
