@@ -125,10 +125,12 @@ STOP_WORDS = re.compile(
 # letter ("LOW 41N 180 1004 MB"); any other longitude without one is refused
 # rather than guessed.
 LOW_KEYWORD = (r"(?:LOW(?:\s+PRES(?:SURE)?)?"
-               r"|(?:MEAN|MAIN|SECONDARY|SECOND|THIRD|ONE|FIRST)\s+CENTER"
+               r"|(?:MEAN|MAIN|PRIMARY|SECONDARY|SECOND|THIRD|ONE|FIRST)\s+(?:LOW\s+)?CENTER"
                r"|(?:DEVELOPING\s+)?(?:HURRICANE\s+FORCE\s+LOW|STORM|GALE))")
+DIRECTION_OF_AREA = (r"(?:N|S|E|W|NE|NW|SE|SW|NORTH|SOUTH|EAST|WEST|NORTHEAST|NORTHWEST"
+                     r"|SOUTHEAST|SOUTHWEST)\s+OF\s+(?:THE\s+)?(?:FORECAST\s+)?(?:AREA|REGION)")
 LOW_QUALIFIER = (r"(?:(?:JUST|WELL|NEAR|INLAND|RELOCATED"
-                 r"|(?:N|S|E|W|NE|NW|SE|SW)\s+OF\s+(?:THE\s+)?(?:FORECAST\s+)?(?:AREA|REGION))\s+){0,4}")
+                 r"|" + DIRECTION_OF_AREA + r")\s+){0,4}")
 LOW_POS = re.compile(
     r"\b(?P<kw>" + LOW_KEYWORD + r")(?:\s+|\.\.\.)" + LOW_QUALIFIER +
     r"(?P<lat>\d{1,2}(?:\.\d)?)\s*N\s*"
@@ -144,13 +146,13 @@ LOW_POS = re.compile(
 # valid at another time, and taking it would duplicate a low or smuggle in a
 # forecast. The words listed are the ones OPC puts in front of a real centre.
 OPENING = re.compile(
-    r"^\.*\s*(?:(?:COMPLEX|SYSTEM|LOW|WITH|ONE|FIRST|MAIN|MEAN|DEVELOPING"
-    r"|HURRICANE|FORCE|INLAND|RAPIDLY|INTENSIFYING|WEAKENING"
-    r"|(?:N|S|E|W|NE|NW|SE|SW)\s+OF\s+(?:THE\s+)?AREA)\s+)*$")
+    r"^\.*\s*(?:(?:COMPLEX|SYSTEM|LOW|WITH|WITHIN|ONE|FIRST|MAIN|MEAN|PRIMARY|DEVELOPING"
+    r"|NEW|NEWLY|FORMED|COMBINED|HURRICANE|FORCE|INLAND|RAPIDLY|INTENSIFYING|WEAKENING"
+    r"|" + DIRECTION_OF_AREA + r")\s+)*$")
 # A later position in the same statement is accepted only as a named additional
 # centre of a complex system ("...AND A SECOND LOW 36N 140W 1004 MB").
 ADDITIONAL = re.compile(
-    r"\b(?:AND|WITH|\.\.\.)\s*(?:A\s+)?(?:SECOND|SECONDARY|THIRD)\s+(?:LOW|CENTER)\b")
+    r"\b(?:AND|WITH|\.\.\.)\s*(?:A\s+)?(?:NEW\s+)?(?:SECOND|SECONDARY|THIRD)\s+(?:LOW|CENTER)\b")
 # A position tagged with its own time is not the analysis time.
 TIME_TAGGED = re.compile(r"\s*(?:AT|BY)\s+\d{3,4}\s+UTC")
 
@@ -405,60 +407,133 @@ def pil_of(product_id, default=""):
     return m.group(1) if m else default
 
 
+# A WMO abbreviated heading ("FZNT01 KWBC 100420") opens every bulletin on the
+# wire, and it - not the AFOS PIL the archive filed the text under - is what
+# says what the text is. The archive has bulletins misfiled under these PILs
+# (a 4 MB run of SRUS27 hydrology bulletins from KZID sits in HSFAT1), and
+# river-stage text read for coordinate pairs and warning headers would be
+# attributed to North Atlantic storms. So a bulletin is accepted only when its
+# heading is one of the three OPC products, and a record with no heading at all
+# is rejected rather than parsed hopefully.
+WMO_HEADING = re.compile(
+    r"^[ \t]*([A-Z]{4}\d{2})[ \t]+([A-Z]{4})[ \t]+\d{6}(?:[ \t]+[A-Z]{3})?[ \t]*$", re.M)
+WMO_PIL = {("FZNT01", "KWBC"): "HSFAT1",
+           ("FZPN01", "KWBC"): "HSFEP1",
+           ("FZPN02", "KWBC"): "HSFEPI"}
+
+
+def split_bulletins(text):
+    """[(heading "TTAAii CCCC" or None, text)] - one per WMO heading.
+
+    Some archive records carry more than one bulletin (an HSFEP1 followed by
+    the HSFEP2 of NHC Miami), so a heading is a hard boundary: nothing before
+    it can contribute lows to the bulletin after it. Text that precedes the
+    first heading belongs to no bulletin and is ignored.
+    """
+    marks = list(WMO_HEADING.finditer(text))
+    if not marks:
+        return [(None, text)]
+    out = []
+    for i, m in enumerate(marks):
+        end = marks[i + 1].start() if i + 1 < len(marks) else len(text)
+        out.append(("%s %s" % (m.group(1), m.group(2)), text[m.end():end]))
+    return out
+
+
 def parse_product(text, issued, product_id="", pil="", all_segments=False,
                   stats=None):
-    """Parse one product. Returns (valid or None, [row dicts])."""
+    """Parse one archive record.
+
+    Returns a list of analyses, one per accepted OPC bulletin in the record:
+    {"pil", "valid" (datetime or None), "rows": [...]}. Normally a record is
+    one bulletin and the list has one entry; a rejected record gives [].
+    `pil` is the PIL the archive filed the record under; it is only compared
+    with the PIL the heading implies, never trusted over it.
+    """
     st = stats if stats is not None else Stats()
-    pil = pil or pil_of(product_id)
-    segs = split_segments(text)
-    if not segs:
-        st.no_valid += 1
-        return None, []
-    valid0 = None
-    rows = []
-    for idx, (m, body) in enumerate(segs):
-        if idx > 0 and not all_segments:
-            # Count what the tropical block would have contributed so the
-            # exclusion is visible, without letting any of it into the output.
+    analyses = []
+    rejected = []
+    for heading, btext in split_bulletins(text):
+        bpil = WMO_PIL.get(tuple(heading.split())) if heading else None
+        if bpil is None:
+            rejected.append(heading or "(no WMO heading)")
+            continue
+        if pil and pil != bpil:
+            st.pil_mismatch += 1
+        segs = split_segments(btext)
+        if not segs:
+            st.no_valid += 1
+            analyses.append({"pil": bpil, "valid": None, "rows": []})
+            continue
+        for idx, (m, body) in enumerate(segs):
+            if idx > 0 and not all_segments:
+                # What the tropical block would have contributed, counted so
+                # the exclusion is visible, without letting it into the output.
+                for sec, cat, s in statements(body):
+                    if not is_forecast(s):
+                        st.other_segment_lows += len(lows_in(s, strict=False)[0])
+                continue
+            mon = MONTHS.get(m.group(2)) if m else None
+            valid = resolve_year(m.group(1), mon, int(m.group(3)), issued) if mon else None
+            if valid is None:
+                if idx == 0:
+                    st.no_valid += 1
+                    analyses.append({"pil": bpil, "valid": None, "rows": []})
+                continue
+            rows = []
             for sec, cat, s in statements(body):
-                if not is_forecast(s):
-                    st.other_segment_lows += len(lows_in(s, strict=False)[0])
-            continue
-        mon = MONTHS.get(m.group(2)) if m else None
-        valid = resolve_year(m.group(1), mon, int(m.group(3)), issued) if mon else None
-        if idx == 0:
-            valid0 = valid
-        if valid is None:
-            if idx == 0:
-                st.no_valid += 1
-            continue
-        for sec, cat, s in statements(body):
-            if sec is None:
-                continue
-            if is_forecast(s):
-                st.fc_statements += 1
-                continue
-            st.an_statements += 1
-            found, rej, cut, refused = lows_in(s, strict=(idx == 0))
-            st.pres_rejected += rej
-            st.cut_after_stop += cut
-            st.refused += refused
-            if not found and LOW_WORD.search(analysis_head(s)):
-                st.low_no_centre += 1
-                st.low_no_centre_year[valid.year] += 1
-                if len(st.no_centre_examples) < 400:
-                    st.no_centre_examples.append((product_id or "-", s))
-            for f in found:
-                rows.append({
-                    "pil": pil, "product_id": product_id, "issued": iso(issued),
-                    "valid": iso(valid), "section": sec,
-                    "warn_cat": cat_for(f["kw"], cat),
-                    "lat": f["lat"], "lon": f["lon"], "pres": f["pres"],
-                    "mot_dir": f["mot_dir"], "mot_kt": f["mot_kt"], "raw": s})
-    return valid0, rows
+                if sec is None:
+                    continue
+                if is_forecast(s):
+                    st.fc_statements += 1
+                    continue
+                st.an_statements += 1
+                found, rej, cut, refused = lows_in(s, strict=(idx == 0))
+                st.pres_rejected += rej
+                st.cut_after_stop += cut
+                st.refused += refused
+                if not found and LOW_WORD.search(analysis_head(s)):
+                    st.low_no_centre += 1
+                    st.low_no_centre_year[valid.year] += 1
+                    if len(st.no_centre_examples) < 400:
+                        st.no_centre_examples.append((product_id or "-", s))
+                for f in found:
+                    rows.append({
+                        "pil": bpil, "product_id": product_id,
+                        "issued": iso(issued), "valid": iso(valid),
+                        "section": sec, "warn_cat": cat_for(f["kw"], cat),
+                        "lat": f["lat"], "lon": f["lon"], "pres": f["pres"],
+                        "mot_dir": f["mot_dir"], "mot_kt": f["mot_kt"], "raw": s})
+            analyses.append({"pil": bpil, "valid": valid, "rows": rows, "seg": idx})
+    st.rejected_bulletins += len(rejected)
+    for h in rejected:
+        st.rejected_headings[h] += 1
+    if rejected and not analyses:
+        st.rejected_records += 1
+        st.rejected_year[issued.year] += 1
+    return analyses
 
 
 # -------------------------------------------------------------- stats ------
+
+# Eras for the yield table. The 2002-2005 text is laid out differently from
+# everything after it (no leading dots, analysis and forecast in one paragraph,
+# STORM/GALE keywords instead of LOW), so it is the era most likely to yield
+# thin, and the one the backfill most needs. Reported on its own so a coverage
+# trend cannot hide inside per-year noise.
+ERAS = [(2002, 2005), (2006, 2010), (2011, 2015), (2016, 2020), (2021, 2099)]
+# An era yielding fewer lows per analysis than this share of the median era is
+# flagged. Seasons and sampling move the number by tens of percent; a format
+# the parser has stopped understanding moves it by much more.
+THIN_SHARE = 0.75
+
+
+def era_of(year):
+    for lo, hi in ERAS:
+        if lo <= year <= hi:
+            return (lo, hi)
+    return (year, year)
+
 
 class Stats:
     def __init__(self):
@@ -473,46 +548,87 @@ class Stats:
         self.low_no_centre = 0
         self.other_segment_lows = 0
         self.dup_dropped = 0
+        self.rejected_records = 0        # records with no accepted OPC bulletin
+        self.rejected_bulletins = 0
+        self.pil_mismatch = 0
+        self.rejected_year = Counter()   # by year of `issued`: no valid time exists
+        self.rejected_headings = Counter()
         self.low_no_centre_year = Counter()
-        self.prod_year = Counter()       # products with a valid time, by year
-        self.nov_year = Counter()        # products whose valid time failed
+        self.prod_year = Counter()       # analyses with a valid time, by year
+        self.nov_year = Counter()        # analyses whose valid time failed
         self.lows_year = Counter()
         self.lows_pres_year = Counter()
         self.lows_hf_year = Counter()
-        self.empty_year = Counter()      # valid products that yielded no low
+        self.empty_year = Counter()      # valid analyses that yielded no low
+
+    def _table(self, w, label, keyf, keys):
+        w("  %-9s analyses  no-valid  empty  lows  with-pres  HF-hdr  lows/an  pres/an" % label)
+        agg = defaultdict(lambda: [0, 0, 0, 0, 0, 0, 0])
+        for y in sorted(set(self.prod_year) | set(self.nov_year) | set(self.lows_year)):
+            a = agg[keyf(y)]
+            for i, v in enumerate((self.prod_year[y], self.nov_year[y], self.empty_year[y],
+                                   self.lows_year[y], self.lows_pres_year[y],
+                                   self.lows_hf_year[y])):
+                a[i] += v
+        per = {}
+        for k in sorted(agg):
+            n, nv, em, lo, lp, hf, _ = agg[k]
+            per[k] = (lo / n if n else 0.0)
+            w("  %-9s %8d  %8d  %5d  %4d  %9d  %6d  %7.2f  %7.2f" % (
+                keys(k), n, nv, em, lo, lp, hf, per[k], (lp / n if n else 0.0)))
+        return per
+
+    def _rej_eras(self):
+        out = Counter()
+        for y, n in self.rejected_year.items():
+            out[era_of(y)] += n
+        return out
 
     def report(self, file=sys.stderr):
         w = lambda s="": print(s, file=file)
         w("parse_hsf statistics")
-        w("  products read                      %7d" % self.products)
-        w("  valid time not determined          %7d" % self.no_valid)
-        w("  duplicate products dropped         %7d" % self.dup_dropped)
-        w("  statements, analysis               %7d" % self.an_statements)
-        w("  statements, forecast (not emitted) %7d" % self.fc_statements)
-        w("  positions cut after a forecast word %6d" % self.cut_after_stop)
-        w("  positions refused (prefix/tag/form) %6d" % self.refused)
-        w("  analysis LOW statements, no centre  %6d" % self.low_no_centre)
+        w("  products read                       %7d" % self.products)
+        w("  records rejected on WMO heading     %7d" % self.rejected_records)
+        w("  valid time not determined           %7d" % self.no_valid)
+        w("  duplicate analyses dropped          %7d" % self.dup_dropped)
+        w("  statements, analysis                %7d" % self.an_statements)
+        w("  statements, forecast (not emitted)  %7d" % self.fc_statements)
+        w("  positions cut after a forecast word %7d" % self.cut_after_stop)
+        w("  positions refused (prefix/tag/form) %7d" % self.refused)
+        w("  analysis LOW statements, no centre  %7d" % self.low_no_centre)
         w("  pressures rejected (outside %d-%d) %7d" % (PRES_MIN, PRES_MAX, self.pres_rejected))
-        w("  lows in non-OPC segments, excluded %7d" % self.other_segment_lows)
-        w("  lows emitted                       %7d" % sum(self.lows_year.values()))
+        w("  lows in non-OPC bulletins, excluded %7d" % self.other_segment_lows)
+        w("  lows emitted                        %7d" % sum(self.lows_year.values()))
+        w("  (an analysis = one OPC bulletin after de-duplication on pil+valid time)")
+        if self.pil_mismatch:
+            w("  bulletins filed under a PIL other than their heading's %d" % self.pil_mismatch)
+        if self.rejected_bulletins:
+            w()
+            w("  rejected on WMO heading, by heading: " + ", ".join(
+                "%s x%d" % (h, n) for h, n in self.rejected_headings.most_common(8)))
+            w("  rejected records by era (issued year): " + (", ".join(
+                "%s: %d" % ("%d-%d" % e if e[1] < 2099 else "%d+" % e[0], n)
+                for e, n in sorted(self._rej_eras().items())) or "none"))
         w()
-        w("  year  products  no-valid  empty  lows  with-pres  HF-hdr  lows/prod  no-centre")
-        years = sorted(set(self.prod_year) | set(self.nov_year) | set(self.lows_year))
-        for y in years:
-            n = self.prod_year[y]
-            w("  %d  %8d  %8d  %5d  %4d  %9d  %6d  %9.2f  %9d" % (
-                y, n, self.nov_year[y], self.empty_year[y], self.lows_year[y],
-                self.lows_pres_year[y], self.lows_hf_year[y],
-                (self.lows_year[y] / n) if n else 0.0,
-                self.low_no_centre_year[y]))
+        w("  analysis lows with a pressure, by year:")
+        self._table(w, "year", lambda y: y, lambda k: "%d" % k)
+        w()
+        per = self._table(w, "era", era_of, lambda k: "%d-%d" % k if k[1] < 2099 else "%d+" % k[0])
+        vals = sorted(v for v in per.values() if v > 0)
+        if len(vals) >= 2:
+            med = vals[len(vals) // 2]
+            for k, v in per.items():
+                if v < THIN_SHARE * med:
+                    w("  WARNING: era %s yields %.2f lows/analysis against a median of %.2f"
+                      " - thin, check the parser for that era" % (k, v, med))
 
 
-def tally(stats, issued, valid, rows):
-    """Credit a product's outcome to the year of its ANALYSIS time."""
-    y = (valid or issued).year
+def tally(stats, valid, rows, issued=None):
+    """Credit an analysis to the year of its ANALYSIS time."""
     if valid is None:
-        stats.nov_year[y] += 1
+        stats.nov_year[(issued or datetime.now(timezone.utc)).year] += 1
         return
+    y = valid.year
     stats.prod_year[y] += 1
     if not rows:
         stats.empty_year[y] += 1
@@ -547,26 +663,42 @@ def iter_cache(cache_dir, pils=None):
                         yield pil, json.loads(line)
 
 
-def dedupe(parsed, stats):
-    """One product per (basin, synopsis time).
+def dedupe(analyses, stats):
+    """One analysis per (basin, synopsis time); the later transmission wins.
 
-    The wire carries each issuance more than once - a re-transmission minutes
-    later, an -RRA/-CCA correction, and HSFEPI beside HSFEP1 - and the
-    duplicates share a synopsis time. Prefer HSFEP1 over HSFEPI, then the
-    latest issuance, because a correction supersedes what it corrects.
+    The archive holds each bulletin more than once: a re-transmission minutes
+    later (04:20 and 04:23 for one 0430 UTC bulletin), -RRA/-CCA/-CCB
+    corrections, HSFEPI beside HSFEP1, and same-minute transmissions that share
+    a product id and differ only in the LDM sequence number (or, when they
+    differ meteorologically, in being the correction). All share a synopsis
+    time, and keeping them all would count one low several times.
+
+    HSFEP1 beats HSFEPI (the spec's preference). Within a PIL the later
+    transmission wins: later `issued` first, then, among equals, the one read
+    last, because the cache keeps products in the order the archive served
+    them, which is transmission order. One rule covers amendments and
+    same-minute repeats. `issued` is the archive's entry time, not the header
+    time, so it only orders transmissions.
     """
     best = {}
-    for p in parsed:
-        key = (PIL_BASIN.get(p["pil"], p["pil"]), p["valid"])
+    for a in analyses:
+        key = (PIL_BASIN.get(a["pil"], a["pil"]), a["valid"], a.get("seg", 0))
         cur = best.get(key)
-        rank = (PIL_RANK.get(p["pil"], 9), -p["issued_dt"].timestamp())
-        if cur is None or rank < cur[0]:
-            if cur is not None:
-                stats.dup_dropped += 1
-            best[key] = (rank, p)
-        else:
+        if cur is not None:
             stats.dup_dropped += 1
-    return [v[1] for v in best.values()]
+        if cur is None or _supersedes(a, cur):
+            best[key] = a
+    return list(best.values())
+
+
+def _supersedes(a, b):
+    """True if analysis `a` should replace `b` for the same synopsis time."""
+    ra, rb = PIL_RANK.get(a["pil"], 9), PIL_RANK.get(b["pil"], 9)
+    if ra != rb:
+        return ra < rb
+    if a["issued_dt"] != b["issued_dt"]:
+        return a["issued_dt"] > b["issued_dt"]
+    return a["seq"] > b["seq"]
 
 
 def run_cache(args):
@@ -579,20 +711,20 @@ def run_cache(args):
         except (KeyError, ValueError):
             stats.no_valid += 1
             continue
-        valid, rows = parse_product(rec.get("text", ""), issued,
-                                    rec.get("product_id", ""), pil,
-                                    args.all_segments, stats)
-        parsed.append({"pil": pil, "valid": valid, "issued_dt": issued,
-                       "rows": rows})
-        if valid is None:
-            tally(stats, issued, None, rows)
-    # Tally after de-duplication so a doubly-transmitted product is not
-    # counted twice in the yield table.
-    keep = dedupe([p for p in parsed if p["valid"] is not None], stats)
+        pid = rec.get("product_id", "")
+        for a in parse_product(rec.get("text", ""), issued, pid, pil,
+                               args.all_segments, stats):
+            a["issued_dt"], a["product_id"], a["seq"] = issued, pid, stats.products
+            if a["valid"] is None:
+                tally(stats, None, [], issued)
+            else:
+                parsed.append(a)
+    # Tally after de-duplication so a re-transmitted bulletin is not counted
+    # twice in the yield table.
     out = []
-    for p in keep:
-        tally(stats, p["issued_dt"], p["valid"], p["rows"])
-        out.extend(p["rows"])
+    for a in dedupe(parsed, stats):
+        tally(stats, a["valid"], a["rows"])
+        out.extend(a["rows"])
     out.sort(key=lambda r: (r["valid"], r["pil"], r["product_id"]))
     return out, stats
 
@@ -613,9 +745,11 @@ def run_text(args):
     if issued is None:
         sys.exit("cannot determine the issue time; pass --issued YYYY-MM-DDTHH:MM:SSZ")
     stats.products = 1
-    valid, rows = parse_product(text, issued, pid, args.pil[0] if args.pil else "",
-                                args.all_segments, stats)
-    tally(stats, issued, valid, rows)
+    rows = []
+    for a in parse_product(text, issued, pid, args.pil[0] if args.pil else "",
+                           args.all_segments, stats):
+        tally(stats, a["valid"], a["rows"], issued)
+        rows.extend(a["rows"])
     return rows, stats
 
 

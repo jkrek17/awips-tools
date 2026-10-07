@@ -6,15 +6,16 @@ almost nothing before it, so the deepening that precedes hurricane-force winds i
 not measurable from the archive itself. OPC published that missing phase 4x daily
 in the High Seas Forecast (analysed low position + central pressure). This script
 is stage 1 of the backfill: it only gets the raw product text onto disk, once. It
-does NOT parse, deduplicate or choose between products - tools/parse_hsf.py and
-the tracker do that - so a cache record is exactly what the archive served.
+does NOT parse, deduplicate or choose between products - tools/parse_hsf.py does
+that - so a cache record is exactly what the archive served.
 
-Source: Iowa State IEM AFOS archive, via the two endpoints it publishes for this
-    list  https://mesonet.agron.iastate.edu/api/1/nws/afos/list.json?pil=<PIL>&date=YYYY-MM-DD
-    text  https://mesonet.agron.iastate.edu/api/1/nwstext/<product_id>
-The list endpoint takes ONE UTC day, not a month (year=/month= are rejected with
-HTTP 422), so a month costs 28-31 list requests before a single product is
-fetched. That shapes everything below.
+Source: the Iowa State IEM AFOS bulk endpoint behind its public AFOS form
+    https://mesonet.agron.iastate.edu/cgi-bin/afos/retrieve.py
+        ?pil=<PIL>&sdate=<from>&edate=<until>&limit=100&order=asc&fmt=zip
+One request returns up to 100 whole products. The whole 2002-now record of both
+Pacific/Atlantic products is therefore ~800 requests, not the ~100 000 that a
+list-then-fetch-each walk of the per-product API needs - the reason this tool
+exists in this form, since the archive is a free university service.
 
 Products (PIL):
     HSFAT1  North Atlantic 31-67N, W of 35W (OPC / KWBC)
@@ -27,59 +28,90 @@ Cache (gitignored): data/hsf_cache/<PIL>/<YYYY-MM>.jsonl.gz, one gzipped
 JSON-Lines file per PIL-month, one record per product, in issue order:
     {"product_id": "200612100420-KWBC-FZNT01-HSFAT1",
      "issued": "2006-12-10T04:20:00Z", "text": "<the full raw product text>"}
-`issued` is the IEM "entered" time of the product, not the time in its header.
-Every product the listing reports is kept - amended re-issues (-RRA, -CCA ...)
-and the near-duplicate transmissions the archive holds a few minutes apart are
-separate records, because deciding which one is authoritative is the parser's job.
+Every product the archive holds is kept: amended re-issues (-RRA, -CCA ...), the
+near-duplicate transmissions a few minutes apart, and early products that bundle
+several bulletins in one transmission (HSFAT1 in 2002 averages ~63 KB per
+product, ~10x later years). They are cached as transmitted; telling them apart
+is the parser's job.
 
-Beside each month file sits <YYYY-MM>.listing.json, the product ids the archive
-listed for each day. It is what makes a re-run free: without it "does this month
-hold everything the listing reports?" could only be answered by re-listing ~30
-days per PIL-month, i.e. ~17 000 requests to confirm a finished 24-year cache.
-Only the *.jsonl.gz files are cache records; the sidecar is bookkeeping.
+Why the zip format, not the plain-text one: fmt=text frames each product with
+SOH/ETX but carries NO product id and NO issue time - and the WMO header time
+inside the text is not the archive's entry time (in 2015 it differs from it by
+up to ~50 minutes for 40% of products). Without the entry time there is nothing
+to put in `issued` and nothing to move the cursor on. fmt=zip carries the same
+bytes, one member per product, named <PIL>_<YYYYMMDDHHMM>.txt: that minute is
+`issued`, and is exactly the leading 12 digits of the archive's own product id.
+The rest of the id is rebuilt from the product's own WMO header line
+("FZNT01 KWBC 100501 RRA" -> KWBC-FZNT01-HSFAT1-RRA); checked on 3 months of
+real data it matched the archive's id for all but one product in ~1000 (the
+archive filed it without the -CCB its header carries). Member text is
+byte-identical to what the per-product API serves.
 
-Resumable, and that is the point. A month is COMPLETE, and costs zero requests,
-only when all three hold:
-    * the month is wholly in the past (UTC);
-    * every day of it has a recorded listing;
-    * its file holds a record for every product id those listings report.
-A month file that exists but is short is therefore finished, not skipped. Days
-already listed are not listed again (so a run stopped by --max-requests mid-month
-resumes where it left off), and neither are products already on disk. The current
-month always tops up: days before today are final once listed, today is re-listed
-on every run because new forecasts keep arriving. --relist forgets recorded
-listings, for the rare case the archive back-fills a past month.
+Paging is by cursor, not by day. A page is asked for from the cursor to the end
+of the span, oldest first; the next cursor is the entry minute of the last
+product returned. `sdate` is inclusive and takes a minute (2006-12-10T04:23Z), so
+the next page repeats only the products filed in that last minute; they are
+recognised and dropped. A page of fewer than 100 products means the span is
+exhausted - that, not a probe, is how a finished span is known - and a full page
+continues. `edate` is exclusive (sdate == edate returns nothing), so the span ends
+at the first of the month after --end, or tomorrow for the current month.
+
+Resumable, and that is the point. Where to resume is read from the cache: the
+cursor starts at the newest product in the last month of the contiguous run of
+COMPLETE month files that begins at --start. Re-running over a finished span
+therefore costs ONE short page per PIL that confirms nothing is newer, and the
+current month tops up the same way. Months are buffered and written once the
+cursor has left them, and a file is only ever replaced whole (temp file +
+rename), never appended to. A month with no products still gets an empty file, so
+"file exists" means "looked at".
+
+The one thing a file's existence cannot say is "and it is finished". When a run
+stops mid-month (--max-requests, an unrecoverable page, Ctrl-C) the buffered
+products are flushed so nothing fetched is lost, and that month gets a
+<YYYY-MM>.partial marker beside it; the contiguous run ends there, so the next run
+resumes inside it even if later months already exist (a smaller earlier run).
+The marker is removed when the cursor leaves the month. It is bookkeeping, not a
+cache record, and does not match *.jsonl.gz.
+
+What reading the cache instead of keeping a per-day listing costs: a month damaged
+or emptied in the MIDDLE of an otherwise complete cache is not noticed. --rescan
+walks from --start regardless (~800 requests; products already held are
+recognised and kept) and fills it. A file truncated at its end is completed by an
+ordinary run.
 
 Things that are easy to get wrong, and are handled explicitly:
 
+* Same-minute products can share an id. The archive holds two different
+  transmissions both filed at 2024-01-01T10:30 under one id (they differ only in
+  the LDM sequence number on line 1), while its per-product API serves just one of
+  them. Both are kept: a record is a duplicate only if id AND text match.
+* Truncated or corrupt pages. The zip's own directory and per-member CRC are the
+  framing check (a cut-off body fails to open), plus: every member name must match
+  the PIL, and a page may not exceed the 100-product limit. Any of these is
+  treated like a network error: retried with backoff, never half-trusted. An empty
+  span is a valid empty zip (or the text "ERROR: Could not Find: <PIL>"); nothing
+  else is accepted as empty.
 * The egress proxy in the build container resets connections intermittently
-  (ConnectionResetError during the TLS handshake). Every network error is
-  retried with backoff (2, 4, 8, 16 s). A request that still fails after that is
-  recorded as a gap and the run moves on, so one bad product cannot end a
-  24-year run; only FETCH_ABORT_AFTER consecutive exhausted requests (the
-  network is plainly down, not glitching) stops it. A 4xx other than 408/429 is a
-  refusal, not a glitch, and is not repeated.
-* A cache file is only ever replaced whole (temp file + rename), never appended
-  to: a kill mid-write would otherwise leave a truncated gzip member that every
-  later run has to guess around. A truncated file from some other cause is read
-  as far as it goes, with a warning, and topped up.
-* Requests are serialised with a pause between them, and are counted against
-  --max-requests so a run can be done in chunks. Months are visited in time
-  order and PILs are interleaved within a month, so a capped chunk advances all
-  requested products evenly rather than finishing one PIL first.
-* Gaps stay visible. The closing table is read back from disk, not from this
-  run's counters, so it reports what is actually cached vs what the archive
-  listed, per year, whether or not this run fetched anything.
+  (ConnectionResetError during the TLS handshake). Every network error is retried
+  (waits of 2, 4, 8, 16 s). A page that still fails is a gap: that PIL stops
+  there - the cursor cannot skip a page - and the next PIL continues. Only
+  FETCH_ABORT_AFTER consecutive exhausted requests (network plainly down) end the
+  run. A 4xx other than 408/429 is a refusal, not a glitch, and is not repeated.
+* Requests are serialised with a pause between them and counted against
+  --max-requests, so a run can be done in chunks.
+* Gaps stay visible. The closing table is read back from disk, per year: products,
+  mean product size, months not yet fetched, and months that look thin (fewer than
+  ~3 products per day, against the ~4.5 normal).
 
 Exit status: 0 on success (including a run stopped by --max-requests, which is
-progress); 1 if any day could not be listed, or the run was aborted by the
-network; 2 if listings were fine but some listed products could not be fetched.
-A re-run retries the gaps.
+progress); 1 if a span could not be fetched to its end, or the run was aborted by
+the network; 2 if every fetch succeeded but some product had no recognisable WMO
+header (cached anyway, under a placeholder id). A re-run retries the gaps.
 
 Usage:
     python3 tools/fetch_hsf.py --dry-run                              # read the cache, no network: what a run would cost
-    python3 tools/fetch_hsf.py --pil HSFAT1 --start 2006-12 --end 2006-12 --max-requests 300
-    python3 tools/fetch_hsf.py --max-requests 5000                    # a chunk of the full 2002-01..now run
+    python3 tools/fetch_hsf.py --pil HSFAT1 --start 2006-12 --end 2006-12
+    python3 tools/fetch_hsf.py --max-requests 200                     # a chunk of the full 2002-01..now run
 """
 
 from __future__ import annotations
@@ -89,6 +121,7 @@ import calendar
 import datetime as dt
 import gzip
 import http.client
+import io
 import json
 import os
 import re
@@ -98,13 +131,16 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import zipfile
+import zlib
 from collections import defaultdict
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE_DIR = os.path.join(ROOT, "data", "hsf_cache")
 
-LIST_URL = "https://mesonet.agron.iastate.edu/api/1/nws/afos/list.json?pil={pil}&date={date}"
-TEXT_URL = "https://mesonet.agron.iastate.edu/api/1/nwstext/{pid}"
+PAGE_URL = ("https://mesonet.agron.iastate.edu/cgi-bin/afos/retrieve.py"
+            "?pil={pil}&sdate={sdate}&edate={edate}&limit={limit}&order=asc&fmt=zip")
+PAGE_LIMIT = 100               # the endpoint's maximum
 
 # The client is named honestly; the archive operator can see who is asking and why.
 USER_AGENT = "awips-tools hf-low-archive (+https://github.com/jkrek17/awips-tools) python-urllib"
@@ -115,8 +151,10 @@ PILS = ("HSFAT1", "HSFEP1", "HSFEPI")
 DEFAULT_PILS = ("HSFAT1", "HSFEP1")
 DEFAULT_START = "2002-01"
 
-DEFAULT_DELAY_S = 0.3          # pause between requests; the archive is a free public service
-FETCH_TIMEOUT_S = 60
+# Pages are up to several MB each and the whole run is ~800 of them, so the pause
+# costs minutes; there is no reason to lean on a free public service harder.
+DEFAULT_DELAY_S = 1.0
+FETCH_TIMEOUT_S = 120          # a 2002 page is ~6 MB
 # Pauses before retries 1..4. Four waits means up to five attempts on one request.
 BACKOFF_S = (2, 4, 8, 16)
 # 408/429 are the server asking us to slow down, not refusing; everything else in
@@ -124,18 +162,26 @@ BACKOFF_S = (2, 4, 8, 16)
 RETRYABLE_4XX = (408, 429)
 # Consecutive requests that exhausted every retry before the run gives up. A proxy
 # that resets one connection in ten never gets near this; a dead one gets there in
-# a few minutes instead of burning 30 s of backoff per product for hours.
+# a few minutes instead of burning minutes of backoff per page for hours.
 FETCH_ABORT_AFTER = 5
 
-FLUSH_EVERY = 25               # products between whole-file rewrites of the month cache
+# A month with fewer products per day than this looks like a gap (4 synoptic
+# issues a day, plus amendments, is the norm; ~4.5 measured).
+THIN_PER_DAY = 3.0
 
-# Only used to price a --dry-run on months not yet listed: observed ~4.5 products per
-# PIL-day (4 synoptic issues plus amendments and near-duplicate transmissions).
+# Only used to price a --dry-run. Mean product text size measured from one page per
+# PIL-year, 2002-2026: 3.6-7.4 KB everywhere EXCEPT HSFAT1 in 2002, where products
+# bundle many bulletins (44-63 KB mean, one product of 4 MB). A size projection
+# that missed that would be out by a factor of three.
 EST_PRODUCTS_PER_DAY = 4.5
-EST_LATENCY_S = 0.3            # observed round trip per request through the proxy
+EST_KB_DEFAULT = 5.0
+EST_KB_BY_PIL_YEAR = {("HSFAT1", 2002): 10.5}
 
 _YM_RE = re.compile(r"^(\d{4})-(\d{2})$")
-_ISSUED_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+# "FZNT01 KWBC 100501 RRA": TTAAii, originating centre, DDHHMM, optional BBB amendment.
+_WMO_RE = re.compile(r"^([A-Z]{4}\d{2}) ([A-Z]{4}) \d{6}(?: ([A-Z]{3}))?[ \t]*\r?$", re.M)
+_NAME_RE = re.compile(r"^([A-Z0-9]+)_(\d{12})\.txt$")
+_NOT_FOUND = re.compile(rb"^\s*ERROR: Could not Find: \w+\s*$")
 
 
 class CapReached(Exception):
@@ -148,6 +194,11 @@ class RunAborted(Exception):
 
 class FetchError(Exception):
     """One request failed for good (retries exhausted, or a refusal)."""
+
+
+class BadBody(ValueError):
+    """A 200 response that is not a complete, well-formed page. Retried like a
+    network error: the cause is almost always a cut-off transfer."""
 
 
 # ---------------------------------------------------------------------------
@@ -186,7 +237,9 @@ class Fetcher:
         finally:
             self._last_end = time.monotonic()
 
-    def get(self, url: str) -> bytes:
+    def get(self, url: str, parse=None):
+        """Body bytes, or parse(body) if given. parse raising BadBody counts as a
+        transient failure and is retried with the rest."""
         if self.max_requests is not None and self.requests >= self.max_requests:
             raise CapReached()
         self.requests += 1
@@ -194,9 +247,10 @@ class Fetcher:
         for attempt in range(len(BACKOFF_S) + 1):
             try:
                 body = self._once(url)
-                self._consecutive_failed = 0
                 self.bytes += len(body)
-                return body
+                out = parse(body) if parse else body
+                self._consecutive_failed = 0
+                return out
             except urllib.error.HTTPError as err:
                 if 400 <= err.code < 500 and err.code not in RETRYABLE_4XX:
                     self._consecutive_failed = 0          # the server answered; the network is fine
@@ -206,7 +260,7 @@ class Fetcher:
             # started (or a short body) surfaces as ConnectionError / HTTPException
             # instead, so all of them are the same transient failure.
             except (urllib.error.URLError, ConnectionError, socket.timeout, TimeoutError,
-                    http.client.HTTPException, ssl.SSLError, OSError) as err:
+                    http.client.HTTPException, ssl.SSLError, BadBody, OSError) as err:
                 last_err = err
             if attempt == len(BACKOFF_S):
                 break
@@ -223,22 +277,45 @@ class Fetcher:
         raise FetchError(f"gave up after {len(BACKOFF_S) + 1} attempts: {type(last_err).__name__}: {last_err}")
 
 
-def parse_listing(raw: bytes, pil: str, day: dt.date):
-    """List endpoint body -> [(product_id, issued)] in listing order. A body that is
-    not the expected JSON raises ValueError, which the caller treats as a failed
-    (retryable-on-next-run) listing rather than as 'no products' - an empty day and
-    a truncated response must never look alike."""
-    obj = json.loads(raw.decode("utf-8"))
-    rows = obj["data"]
-    out = []
-    for r in rows:
-        pid, issued = r["product_id"], r["entered"]
-        if r.get("pil") not in (None, pil):
-            raise ValueError(f"listing for {pil} {day} returned a {r.get('pil')} product: {pid}")
-        if not _ISSUED_RE.match(issued):
-            raise ValueError(f"unexpected 'entered' value {issued!r} for {pid}")
-        out.append((pid, issued))
-    return out
+def product_id(pil: str, ts: str, text: str):
+    """Archive-style id from the entry minute (zip member name) and the product's own
+    WMO header. Returns (id, ok); ok False means no header was found and a
+    placeholder id was used (the product is still cached)."""
+    m = _WMO_RE.search(text[:600])
+    if not m:
+        return f"{ts}-NOHDR-NOHDR-{pil}", False
+    return f"{ts}-{m.group(2)}-{m.group(1)}-{pil}" + (f"-{m.group(3)}" if m.group(3) else ""), True
+
+
+def parse_page(body: bytes, pil: str):
+    """Page body -> [(product_id, issued, text, header_ok)] in served (time) order.
+    Raises BadBody for anything that is not a complete page."""
+    if not body.startswith(b"PK"):
+        if _NOT_FOUND.match(body[:200]) and len(body) < 200:
+            return []
+        raise BadBody(f"not a zip archive ({len(body)} bytes: {body[:60]!r})")
+    try:
+        z = zipfile.ZipFile(io.BytesIO(body))
+        bad = z.testzip()
+        if bad is not None:
+            raise BadBody(f"CRC mismatch in member {bad}")
+        infos = z.infolist()
+        if len(infos) > PAGE_LIMIT:
+            raise BadBody(f"{len(infos)} products on a page limited to {PAGE_LIMIT}")
+        out = []
+        for info in infos:
+            m = _NAME_RE.match(info.filename)
+            if not m or m.group(1) != pil:
+                raise BadBody(f"unexpected member name {info.filename!r} in a {pil} page")
+            ts = m.group(2)
+            text = z.read(info).decode("utf-8", errors="replace")
+            pid, ok = product_id(pil, ts, text)
+            issued = f"{ts[:4]}-{ts[4:6]}-{ts[6:8]}T{ts[8:10]}:{ts[10:]}:00Z"
+            out.append((pid, issued, text, ok))
+        return out
+    except (zipfile.BadZipFile, zlib.error, EOFError) as err:
+        raise BadBody(f"damaged zip: {err}") from err
+
 
 
 # ---------------------------------------------------------------------------
@@ -249,8 +326,15 @@ def month_path(cache_dir: str, pil: str, ym: str) -> str:
     return os.path.join(cache_dir, pil, f"{ym}.jsonl.gz")
 
 
-def listing_path(cache_dir: str, pil: str, ym: str) -> str:
-    return os.path.join(cache_dir, pil, f"{ym}.listing.json")
+def partial_path(cache_dir: str, pil: str, ym: str) -> str:
+    return os.path.join(cache_dir, pil, f"{ym}.partial")
+
+
+def clear_partial(cache_dir: str, pil: str, ym: str):
+    try:
+        os.remove(partial_path(cache_dir, pil, ym))
+    except FileNotFoundError:
+        pass
 
 
 def atomic_write(path: str, data: bytes):
@@ -261,10 +345,10 @@ def atomic_write(path: str, data: bytes):
     os.replace(tmp, path)
 
 
-def read_month(path: str) -> dict:
-    """{product_id: record} for a month file; {} if absent. Reads as far as the file
+def read_month(path: str) -> list:
+    """Records of a month file in file order; [] if absent. Reads as far as the file
     is intact and warns about the rest, so a damaged file is topped up, not fatal."""
-    recs = {}
+    recs = []
     if not os.path.exists(path):
         return recs
     try:
@@ -274,7 +358,7 @@ def read_month(path: str) -> dict:
                     continue
                 try:
                     r = json.loads(line)
-                    recs[r["product_id"]] = {"product_id": r["product_id"], "issued": r["issued"], "text": r["text"]}
+                    recs.append({"product_id": r["product_id"], "issued": r["issued"], "text": r["text"]})
                 except (ValueError, KeyError):
                     print(f"  warning: {path} line {lineno} unreadable - dropped, will be re-fetched",
                           file=sys.stderr)
@@ -284,8 +368,10 @@ def read_month(path: str) -> dict:
     return recs
 
 
-def write_month(path: str, recs: dict):
-    ordered = sorted(recs.values(), key=lambda r: (r["issued"], r["product_id"]))
+def write_month(path: str, recs: list):
+    # Stable sort: two transmissions with the same minute and id stay in the order
+    # the archive served them.
+    ordered = sorted(recs, key=lambda r: (r["issued"], r["product_id"]))
     body = "".join(json.dumps({"product_id": r["product_id"], "issued": r["issued"], "text": r["text"]},
                               ensure_ascii=False, separators=(",", ":")) + "\n" for r in ordered)
     # mtime=0 so identical content gives an identical file; a re-run that changes
@@ -293,34 +379,12 @@ def write_month(path: str, recs: dict):
     atomic_write(path, gzip.compress(body.encode("utf-8"), compresslevel=9, mtime=0))
 
 
-def read_listing(path: str) -> dict:
-    """{'YYYY-MM-DD': [product_id, ...]} for the days already listed; {} if none."""
-    try:
-        with open(path, encoding="utf-8") as fh:
-            return json.load(fh)["days"]
-    except FileNotFoundError:
-        return {}
-    except (ValueError, KeyError, OSError) as err:
-        print(f"  warning: {path} unreadable ({err}) - month will be re-listed", file=sys.stderr)
-        return {}
-
-
-def write_listing(path: str, pil: str, ym: str, days: dict):
-    obj = {"pil": pil, "month": ym, "days": {d: days[d] for d in sorted(days)}}
-    atomic_write(path, (json.dumps(obj, separators=(",", ":")) + "\n").encode("utf-8"))
-
-
 # ---------------------------------------------------------------------------
-# Month logic
+# Span logic
 # ---------------------------------------------------------------------------
 
 def today_utc() -> dt.date:
     return dt.datetime.now(dt.timezone.utc).date()
-
-
-def month_days(ym: str):
-    y, m = int(ym[:4]), int(ym[5:])
-    return [dt.date(y, m, d) for d in range(1, calendar.monthrange(y, m)[1] + 1)]
 
 
 def month_range(start: str, end: str):
@@ -333,200 +397,256 @@ def month_range(start: str, end: str):
             y, m = y + 1, 1
 
 
-def final_days(ym: str, today: dt.date):
-    """Days of the month whose listing can no longer change: strictly before today."""
-    return [d for d in month_days(ym) if d < today]
+def month_start(ym: str) -> dt.date:
+    return dt.date(int(ym[:4]), int(ym[5:]), 1)
 
 
-def listed_ids(days: dict):
-    return {pid for ids in days.values() for pid in ids}
+def span_end(last_ym: str, today: dt.date) -> dt.date:
+    """Exclusive `edate`: the first day after the last requested month, but never past
+    tomorrow - the current month tops up through today's products."""
+    y, m = int(last_ym[:4]), int(last_ym[5:])
+    nxt = dt.date(y + (m == 12), m % 12 + 1, 1)
+    return min(nxt, today + dt.timedelta(days=1))
 
 
-def month_state(cache_dir: str, pil: str, ym: str, today: dt.date, relist: bool = False):
-    """What is on disk for a PIL-month, and what is still owed.
-    Returns dict: recs, days (recorded listings), todo_days (days to list this run),
-    missing (listed ids with no record), complete (nothing owed, zero requests)."""
-    recs = read_month(month_path(cache_dir, pil, ym))
-    days = {} if relist else read_listing(listing_path(cache_dir, pil, ym))
-    # today is never trusted from a recorded listing: forecasts are still arriving.
-    days = {d: ids for d, ids in days.items() if d < today.isoformat()}
-    wanted = [d for d in month_days(ym) if d <= today]
-    todo_days = [d for d in wanted if d.isoformat() not in days]
-    missing = sorted(listed_ids(days) - set(recs))
-    past = month_days(ym)[-1] < today
-    complete = past and not todo_days and not missing and os.path.exists(month_path(cache_dir, pil, ym))
-    return {"recs": recs, "days": days, "todo_days": todo_days, "missing": missing,
-            "complete": complete, "past": past}
+def fmt_cursor(c: dt.datetime) -> str:
+    return c.strftime("%Y-%m-%dT%H:%MZ")
+
+
+def start_cursor(cache_dir: str, pil: str, months, rescan: bool):
+    """Where to resume: the newest product of the last month in the contiguous run of
+    complete month files that starts at the first requested month (a month marked
+    .partial ends the run and is the one resumed). No such file -> the start
+    of the span. Returns (datetime, ym of the last file counted as done or None)."""
+    first = dt.datetime.combine(month_start(months[0]), dt.time())
+    if rescan:
+        return first, None
+    last = None
+    for ym in months:
+        if not os.path.exists(month_path(cache_dir, pil, ym)):
+            break
+        last = ym
+        if os.path.exists(partial_path(cache_dir, pil, ym)):
+            break                      # stopped mid-month: resume inside it
+    if last is None:
+        return first, None
+    recs = read_month(month_path(cache_dir, pil, last))
+    if not recs:
+        return dt.datetime.combine(month_start(last), dt.time()), last
+    newest = max(r["issued"] for r in recs)
+    return dt.datetime.strptime(newest, "%Y-%m-%dT%H:%M:%SZ"), last
 
 
 class RunStats:
     def __init__(self):
-        self.list_failed = []      # (pil, 'YYYY-MM-DD')
-        self.text_failed = []      # (pil, product_id)
+        self.span_failed = []      # (pil, cursor string) - spans that stopped short
         self.fetched = 0           # products written this run
-        self.skipped_complete = 0  # PIL-months that cost nothing
+        self.pages = 0
+        self.no_header = 0         # products cached under a placeholder id
+        self.dup_dropped = 0       # cursor-overlap repeats recognised and dropped
         self.capped = False
         self.aborted = None
 
 
-def fetch_month(fetcher: Fetcher, cache_dir: str, pil: str, ym: str, today: dt.date,
-                relist: bool, stats: RunStats):
-    st = month_state(cache_dir, pil, ym, today, relist)
-    if st["complete"]:
-        stats.skipped_complete += 1
-        print(f"{ym} {pil}  complete ({len(st['recs'])} products) - skipped")
-        return
-    mpath, lpath = month_path(cache_dir, pil, ym), listing_path(cache_dir, pil, ym)
-    recs, days = st["recs"], st["days"]
-    had, req0 = len(recs), fetcher.requests
-    issued_of = {}             # id -> archive "entered" time, for ids listed this run
-    listed_today = {}          # today's listing: used this run, deliberately not recorded
-    list_gaps = text_gaps = since_flush = 0
-    dirty_listing = dirty_recs = False
-    capped = False
-    try:
-        for day in st["todo_days"]:
-            iso = day.isoformat()
-            try:
-                rows = parse_listing(fetcher.get(LIST_URL.format(pil=pil, date=iso)), pil, day)
-            except (FetchError, ValueError, KeyError, TypeError) as err:
-                list_gaps += 1
-                stats.list_failed.append((pil, iso))
-                print(f"  could not list {pil} {iso}: {err}", file=sys.stderr)
+class MonthBuffer:
+    """Months of one PIL being assembled. A month is loaded from disk the first time a
+    product for it arrives, and written when the cursor has left it."""
+
+    def __init__(self, cache_dir: str, pil: str):
+        self.cache_dir, self.pil = cache_dir, pil
+        self.recs = {}             # ym -> list of records
+        self.keys = {}             # ym -> set of (product_id, text)
+        self.touched = set()       # months with something new this run
+
+    def _load(self, ym):
+        if ym not in self.recs:
+            self.recs[ym] = read_month(month_path(self.cache_dir, self.pil, ym))
+            self.keys[ym] = {(r["product_id"], r["text"]) for r in self.recs[ym]}
+
+    def add(self, pid, issued, text) -> bool:
+        ym = issued[:7]
+        self._load(ym)
+        # A repeat only if id AND text match: two different transmissions can share
+        # an id when they were filed in the same minute.
+        if (pid, text) in self.keys[ym]:
+            return False
+        self.keys[ym].add((pid, text))
+        self.recs[ym].append({"product_id": pid, "issued": issued, "text": text})
+        self.touched.add(ym)
+        return True
+
+    def flush(self, before: str | None, months, finished: bool, partial_ym: str | None = None):
+        """Write buffered months that are final (strictly before `before`, or all if
+        None) and clear their .partial markers. With `finished`, also give every
+        requested month that has no file an empty one, so 'file exists' keeps
+        meaning 'looked at'. `partial_ym` is the month a stopped run was in: it is
+        written (nothing fetched is lost) but marked, so the next run resumes in it."""
+        for ym in sorted(self.recs):
+            if before is not None and ym >= before:
                 continue
-            issued_of.update(rows)
-            ids = [pid for pid, _ in rows]
-            if day < today:
-                days[iso] = ids
-                dirty_listing = True
+            path = month_path(self.cache_dir, self.pil, ym)
+            if ym == partial_ym:
+                atomic_write(partial_path(self.cache_dir, self.pil, ym), b"")   # marker first: a crash
+                write_month(path, self.recs[ym])                                # between the two is safe
             else:
-                listed_today[iso] = ids
-        # Flush the listing before spending the (much larger) text budget: if the
-        # run dies in the text phase, the listing work is not repeated.
-        if dirty_listing:
-            write_listing(lpath, pil, ym, days)
-            dirty_listing = False
-        want, seen = [], set(recs)
-        for d in sorted(list(days) + list(listed_today)):
-            for pid in days.get(d) or listed_today.get(d) or ():
-                if pid not in seen:
-                    seen.add(pid)
-                    want.append(pid)
-        for pid in want:
+                if ym in self.touched or not os.path.exists(path):
+                    write_month(path, self.recs[ym])
+                clear_partial(self.cache_dir, self.pil, ym)
+            self.touched.discard(ym)
+            del self.recs[ym], self.keys[ym]
+        for ym in months:
+            if (before is None or ym < before) and ym != partial_ym:
+                if finished or before is not None:
+                    clear_partial(self.cache_dir, self.pil, ym)
+                path = month_path(self.cache_dir, self.pil, ym)
+                if (finished or before is not None) and not os.path.exists(path):
+                    write_month(path, [])
+
+
+def fetch_pil(fetcher: Fetcher, cache_dir: str, pil: str, months, today: dt.date,
+              rescan: bool, stats: RunStats):
+    cursor, done_ym = start_cursor(cache_dir, pil, months, rescan)
+    edate = span_end(months[-1], today)
+    buf = MonthBuffer(cache_dir, pil)
+    req0, new0 = fetcher.requests, stats.fetched
+    print(f"{pil}  {months[0]}..{months[-1]}  " + ("rescanning" if rescan else "resuming") + f" from {fmt_cursor(cursor)}"
+          + ("" if rescan else f" (cache holds the run up to {done_ym})" if done_ym else " (nothing cached)"), flush=True)
+    finished = False
+    page_no = 0
+    try:
+        while True:
+            url = PAGE_URL.format(pil=pil, sdate=fmt_cursor(cursor), edate=edate.isoformat(), limit=PAGE_LIMIT)
             try:
-                text = fetcher.get(TEXT_URL.format(pid=pid)).decode("utf-8", errors="replace")
-                if not text.strip():
-                    raise FetchError("empty body")
+                page = fetcher.get(url, lambda b: parse_page(b, pil))
             except FetchError as err:
-                text_gaps += 1
-                stats.text_failed.append((pil, pid))
-                print(f"  could not fetch {pid}: {err}", file=sys.stderr)
-                continue
-            # Ids listed on an earlier run have no `entered` in memory; the leading
-            # 12 digits of the id are the same instant.
-            recs[pid] = {"product_id": pid, "issued": issued_of.get(pid) or issued_from_id(pid), "text": text}
-            stats.fetched += 1
-            dirty_recs = True
-            since_flush += 1
-            if since_flush >= FLUSH_EVERY:
-                write_month(mpath, recs)
-                dirty_recs, since_flush = False, 0
+                stats.span_failed.append((pil, fmt_cursor(cursor)))
+                print(f"  could not fetch {pil} from {fmt_cursor(cursor)}: {err}", file=sys.stderr)
+                break
+            stats.pages += 1
+            page_no += 1
+            new = 0
+            for pid, issued, text, ok in page:
+                if buf.add(pid, issued, text):
+                    new += 1
+                    stats.fetched += 1
+                    if not ok:
+                        stats.no_header += 1
+                else:
+                    stats.dup_dropped += 1
+            if len(page) < PAGE_LIMIT:
+                finished = True
+                break
+            last = dt.datetime.strptime(page[-1][1], "%Y-%m-%dT%H:%M:%SZ")
+            # Every product in a full page shares this minute only if >=100 products
+            # were filed in it - not credible, but a cursor that cannot move would
+            # loop forever, so step past it rather than trust that.
+            if last <= cursor and new == 0:
+                print(f"  warning: page of {PAGE_LIMIT} did not move the cursor past "
+                      f"{fmt_cursor(cursor)}; stepping one minute", file=sys.stderr)
+                last = cursor + dt.timedelta(minutes=1)
+            cursor = last
+            # Months strictly before the cursor's month can receive nothing more.
+            buf.flush(cursor.strftime("%Y-%m"), months, finished=False)
+            print(f"  page {page_no}: {len(page)} products ({new} new) to {fmt_cursor(cursor)}", flush=True)
     except CapReached:
-        capped = True
+        stats.capped = True
     finally:
-        # Reached on cap, on abort, on Ctrl-C and on a normal exit alike: whatever
-        # was fetched is on disk before the exception continues.
-        if dirty_listing:
-            write_listing(lpath, pil, ym, days)
-        # A month with no products still gets its (empty) file, so "file exists"
-        # always means "this month was looked at".
-        if dirty_recs or not os.path.exists(mpath):
-            write_month(mpath, recs)
-    print(f"{ym} {pil}  listed {len(listed_ids(days)) + len(listed_ids(listed_today))} products, "
-          f"cached {had} -> {len(recs)}, {fetcher.requests - req0} requests"
-          + (f", {list_gaps} day(s) unlisted" if list_gaps else "")
-          + (f", {text_gaps} product(s) failed" if text_gaps else "")
-          + (", STOPPED at request cap" if capped else ""), flush=True)
-    if capped:
+        # Reached on cap, abort, Ctrl-C and normal exit alike: whatever was fetched is
+        # on disk before the exception continues. Only a span that ran to its short
+        # page may give the months after the last product their empty files; one
+        # that stopped marks the month it was in as partial.
+        buf.flush(None, months, finished, partial_ym=None if finished else cursor.strftime("%Y-%m"))
+    print(f"{pil}  {fetcher.requests - req0} requests, {stats.fetched - new0} new products"
+          + ("" if finished else ", span NOT finished"), flush=True)
+    if stats.capped:
         raise CapReached()
-
-
-def issued_from_id(pid: str) -> str:
-    """YYYYMMDDHHMM-... -> 'YYYY-MM-DDTHH:MM:00Z'. Fallback only, for products whose
-    listing was recorded on an earlier run."""
-    m = re.match(r"^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})-", pid)
-    if not m:
-        raise FetchError(f"cannot derive an issue time from product id {pid!r}")
-    return "{}-{}-{}T{}:{}:00Z".format(*m.groups())
 
 
 # ---------------------------------------------------------------------------
 # Reporting
 # ---------------------------------------------------------------------------
 
-def disk_report(cache_dir: str, pils, months, today: dt.date):
-    """Per (pil, year): months, listed, cached, missing, unlisted days, bytes - read
-    from disk, so it is true whether or not this run fetched anything."""
-    rows = defaultdict(lambda: {"months": 0, "listed": 0, "cached": 0, "missing": 0, "unlisted": 0, "bytes": 0})
+def disk_report(cache_dir: str, pils, months):
+    """Per (pil, year), read back from disk so it is true whether or not this run
+    fetched anything. Product text size is measured on the serialised line, which
+    is the text plus a few JSON escapes (within a few percent)."""
+    rows = defaultdict(lambda: {"months": 0, "missing": 0, "thin": 0, "products": 0, "chars": 0, "bytes": 0})
     for pil in pils:
         for ym in months:
-            st = month_state(cache_dir, pil, ym, today)
             r = rows[(pil, int(ym[:4]))]
             r["months"] += 1
-            ids = listed_ids(st["days"])
-            r["listed"] += len(ids)
-            r["cached"] += len(ids & set(st["recs"]))
-            r["missing"] += len(st["missing"])
-            r["unlisted"] += len([d for d in final_days(ym, today) if d.isoformat() not in st["days"]])
-            for p in (month_path(cache_dir, pil, ym), listing_path(cache_dir, pil, ym)):
-                if os.path.exists(p):
-                    r["bytes"] += os.path.getsize(p)
+            path = month_path(cache_dir, pil, ym)
+            if not os.path.exists(path):
+                r["missing"] += 1
+                continue
+            n = chars = 0
+            try:
+                with gzip.open(path, "rt", encoding="utf-8") as fh:
+                    for line in fh:
+                        if line.strip():
+                            n += 1
+                            chars += len(line)
+            except (EOFError, OSError):
+                pass
+            r["products"] += n
+            r["chars"] += chars
+            r["bytes"] += os.path.getsize(path)
+            days = calendar.monthrange(int(ym[:4]), int(ym[5:]))[1]
+            if n < THIN_PER_DAY * days and ym < today_utc().strftime("%Y-%m"):
+                r["thin"] += 1
     return rows
 
 
 def print_report(rows):
     print()
-    print(f"{'PIL':7s} {'year':>4s} {'months':>6s} {'listed':>7s} {'cached':>7s} {'missing':>7s} "
-          f"{'unlisted days':>13s} {'MB':>7s}")
+    print(f"{'PIL':7s} {'year':>4s} {'months':>6s} {'unfetched':>9s} {'thin':>4s} {'products':>8s} "
+          f"{'KB/product':>10s} {'disk MB':>8s}")
     tot = defaultdict(int)
     for (pil, year) in sorted(rows):
         r = rows[(pil, year)]
-        flag = "  <-- gaps" if r["missing"] or r["unlisted"] else ""
-        print(f"{pil:7s} {year:4d} {r['months']:6d} {r['listed']:7d} {r['cached']:7d} {r['missing']:7d} "
-              f"{r['unlisted']:13d} {r['bytes'] / 1e6:7.2f}{flag}")
+        kb = f"{r['chars'] / r['products'] / 1024:10.1f}" if r["products"] else f"{'-':>10s}"
+        flag = "  <-- gaps" if r["missing"] or r["thin"] else ""
+        print(f"{pil:7s} {year:4d} {r['months']:6d} {r['missing']:9d} {r['thin']:4d} {r['products']:8d} "
+              f"{kb} {r['bytes'] / 1e6:8.2f}{flag}")
         for k in r:
             tot[k] += r[k]
-    print(f"{'total':12s} {tot['months']:6d} {tot['listed']:7d} {tot['cached']:7d} {tot['missing']:7d} "
-          f"{tot['unlisted']:13d} {tot['bytes'] / 1e6:7.2f}")
-    if tot["unlisted"]:
-        print("'unlisted days' are days never listed (so their products are not even counted in 'listed'); "
-              "'missing' are listed products not yet cached.")
+    kb = f"{tot['chars'] / tot['products'] / 1024:10.1f}" if tot["products"] else f"{'-':>10s}"
+    print(f"{'total':12s} {tot['months']:6d} {tot['missing']:9d} {tot['thin']:4d} {tot['products']:8d} "
+          f"{kb} {tot['bytes'] / 1e6:8.2f}")
+    print("'unfetched' months have no file yet; 'thin' months hold under "
+          f"{THIN_PER_DAY:g} products/day (a real gap, or a quiet product).")
 
 
-def dry_run(cache_dir: str, pils, months, today: dt.date, delay: float, relist: bool):
-    """No network. Prices the run from what the cache already holds."""
-    n_complete = n_open = list_req = text_req = 0
-    est_days = est_prod = 0
-    for ym in months:
-        for pil in pils:
-            st = month_state(cache_dir, pil, ym, today, relist)
-            if st["complete"]:
-                n_complete += 1
-                continue
-            n_open += 1
-            list_req += len(st["todo_days"])
-            text_req += len(st["missing"])
-            est_days += len(st["todo_days"])
-            print(f"{ym} {pil}  would fetch: {len(st['todo_days'])} day listing(s), "
-                  f"{len(st['missing'])} known product(s) missing, {len(st['recs'])} cached")
-    est_prod = int(est_days * EST_PRODUCTS_PER_DAY)
-    total = list_req + text_req + est_prod
-    secs = total * (delay + EST_LATENCY_S)
+def est_kb(pil: str, year: int):
+    return EST_KB_BY_PIL_YEAR.get((pil, year), EST_KB_DEFAULT)
+
+
+def dry_run(cache_dir: str, pils, months, today: dt.date, delay: float, rescan: bool):
+    """No network. Prices the run from the cache: where each PIL would resume, and
+    how many pages and MB the rest of the span is."""
+    total_pages = 0
+    total_mb = 0.0
+    for pil in pils:
+        cursor, done_ym = start_cursor(cache_dir, pil, months, rescan)
+        edate = span_end(months[-1], today)
+        days = max(0.0, (dt.datetime.combine(edate, dt.time()) - cursor).total_seconds() / 86400)
+        n = days * EST_PRODUCTS_PER_DAY
+        pages = max(1, -(-int(n) // PAGE_LIMIT) if n else 1)
+        mb = 0.0
+        d = cursor.date()
+        while d < edate:                       # integrate size by year
+            ye = min(edate, dt.date(d.year + 1, 1, 1))
+            mb += (ye - d).days * EST_PRODUCTS_PER_DAY * est_kb(pil, d.year) / 1024
+            d = ye
+        total_pages += pages
+        total_mb += mb
+        print(f"{pil}  " + ("rescans" if rescan else "resumes") + f" from {fmt_cursor(cursor)} "
+              + ("" if rescan else f"(cache holds the run up to {done_ym})" if done_ym else "(nothing cached)")
+              + f": {days:.0f} days left, ~{int(n)} products, ~{pages} page request(s), ~{mb:.0f} MB")
+    secs = total_pages * (delay + 1.0)
     print()
-    print(f"{n_complete} PIL-month(s) complete (zero requests), {n_open} would be worked on.")
-    print(f"requests: {list_req} listings + {text_req} known products + ~{est_prod} products in "
-          f"not-yet-listed days (est. {EST_PRODUCTS_PER_DAY}/day) = ~{total}")
-    print(f"at --delay {delay:g}s plus ~{EST_LATENCY_S}s round trip: ~{secs / 3600:.1f} h")
+    print(f"~{total_pages} requests, ~{total_mb:.0f} MB transferred; at --delay {delay:g}s "
+          f"(+~1 s per page to transfer): ~{secs / 60:.0f} min")
 
 
 # ---------------------------------------------------------------------------
@@ -562,21 +682,20 @@ def main() -> int:
     ap.add_argument("--end", type=parse_ym, default=None, metavar="YYYY-MM",
                     help="last month (default: the current month)")
     ap.add_argument("--delay", type=float, default=DEFAULT_DELAY_S, metavar="SECONDS",
-                    help=f"pause between requests (default {DEFAULT_DELAY_S})")
+                    help=f"pause between requests (default {DEFAULT_DELAY_S:g})")
     ap.add_argument("--max-requests", type=int, default=None, metavar="N",
-                    help="stop cleanly after N requests (listings + products), to run in chunks")
+                    help="stop cleanly after N page requests, to run in chunks")
     ap.add_argument("--dry-run", action="store_true",
-                    help="no network: read the cache and report what a run would fetch")
-    ap.add_argument("--relist", action="store_true",
-                    help="ignore recorded listings and list every day again")
+                    help="no network: read the cache and report what a run would cost")
+    ap.add_argument("--rescan", action="store_true",
+                    help="walk from --start instead of resuming from the cache (fills holes; "
+                         "products already cached are recognised and kept)")
     ap.add_argument("--cache-dir", default=CACHE_DIR, metavar="DIR", help=argparse.SUPPRESS)
     args = ap.parse_args()
 
     today = today_utc()
     this_month = today.strftime("%Y-%m")
-    end = args.end or this_month
-    if end > this_month:
-        end = this_month
+    end = min(args.end or this_month, this_month)
     if args.start > end:
         ap.error(f"--start {args.start} is after --end {end}")
     if args.delay < 0 or (args.max_requests is not None and args.max_requests < 0):
@@ -586,17 +705,16 @@ def main() -> int:
     print(f"{', '.join(args.pil)}  {args.start}..{end}  ({len(months)} months)  cache {os.path.relpath(args.cache_dir, ROOT)}"
           + ("  [dry run: no network]" if args.dry_run else ""))
     if args.dry_run:
-        dry_run(args.cache_dir, args.pil, months, today, args.delay, args.relist)
-        print_report(disk_report(args.cache_dir, args.pil, months, today))
+        dry_run(args.cache_dir, args.pil, months, today, args.delay, args.rescan)
+        print_report(disk_report(args.cache_dir, args.pil, months))
         return 0
 
     fetcher = Fetcher(args.delay, args.max_requests)
     stats = RunStats()
     t0 = time.monotonic()
     try:
-        for ym in months:
-            for pil in args.pil:
-                fetch_month(fetcher, args.cache_dir, pil, ym, today, args.relist, stats)
+        for pil in args.pil:
+            fetch_pil(fetcher, args.cache_dir, pil, months, today, args.rescan, stats)
     except CapReached:
         print(f"stopped at --max-requests {args.max_requests}; re-run to continue where this left off")
     except RunAborted as err:
@@ -609,23 +727,20 @@ def main() -> int:
     elapsed = time.monotonic() - t0
     print()
     print(f"run: {fetcher.requests} requests ({fetcher.attempts} attempts, {fetcher.retries} retries, "
-          f"{fetcher.failed} failed), {stats.fetched} products fetched, {fetcher.bytes / 1e6:.2f} MB received, "
-          f"{stats.skipped_complete} PIL-months already complete, {elapsed:.0f} s")
-    print_report(disk_report(args.cache_dir, args.pil, months, today))
+          f"{fetcher.failed} failed), {stats.fetched} new products, {stats.dup_dropped} repeats dropped, "
+          f"{fetcher.bytes / 1e6:.2f} MB received, {elapsed:.0f} s")
+    print_report(disk_report(args.cache_dir, args.pil, months))
 
-    if stats.list_failed:
-        by_month = defaultdict(list)
-        for pil, iso in stats.list_failed:
-            by_month[(pil, iso[:7])].append(iso[8:])
-        print("\nCOULD NOT LIST:", file=sys.stderr)
-        for (pil, ym), ds in sorted(by_month.items(), key=lambda kv: (kv[0][1], kv[0][0])):
-            print(f"  {pil} {ym}: day(s) {','.join(ds)}", file=sys.stderr)
-    if stats.text_failed:
-        print(f"\n{len(stats.text_failed)} listed product(s) could not be fetched (retried on the next run), e.g. "
-              f"{stats.text_failed[0][1]}", file=sys.stderr)
-    if stats.list_failed or stats.aborted:
+    if stats.span_failed:
+        print("\nSPAN STOPPED SHORT (re-run to retry):", file=sys.stderr)
+        for pil, cur in stats.span_failed:
+            print(f"  {pil} from {cur}", file=sys.stderr)
+    if stats.no_header:
+        print(f"\n{stats.no_header} product(s) had no recognisable WMO header line; cached under a "
+              f"'NOHDR' placeholder id", file=sys.stderr)
+    if stats.span_failed or stats.aborted:
         return 1
-    if stats.text_failed:
+    if stats.no_header:
         return 2
     return 0
 
