@@ -9,9 +9,12 @@ window.HF = window.HF || {};
   var MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-  // Cool-season order: the archive's year runs July -> June, so charts that
-  // show a seasonal cycle must not start at January or they split the peak.
-  HF.SEASON_MONTHS = [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6];
+  // Cool-season order: the archive's year runs June -> May (the season
+  // labelled 2001-02 begins 1 Jun 2001), so charts that show a seasonal
+  // cycle must not start at January or they split the peak across the ends
+  // of the axis. This order drives both the monthly chart and the month
+  // filter chips, so it is behaviour, not decoration.
+  HF.SEASON_MONTHS = [6, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5];
   HF.MONTH_NAMES = MONTH_NAMES;
 
   HF.monthName = function (m) { return MONTH_NAMES[m - 1] || '?'; };
