@@ -107,7 +107,7 @@ window.HF = window.HF || {};
   var lastHoverT = 0;
   var hoveredKey = undefined;            // undefined = "not computed yet"
 
-  var curLayer = 'tracks';               // 'tracks' | 'density' | 'genesis' | 'peak'
+  var curLayer = 'tracks';               // 'tracks' | 'density' | 'genesis' | 'peak' | 'playback' | 'composite'
 
   // Ocean currents: a background context layer, independent of curLayer -
   // see the "ocean currents" block below for the rest of it. Off by default
@@ -127,6 +127,21 @@ window.HF = window.HF || {};
   function reducedMotion() {
     return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   }
+
+  /* Playback state (see the "playback" section below) and the static-layer
+     cache (see drawStaticLayers()). Kept together here, beside the other
+     module state, rather than next to the code that uses them, so the whole
+     of what survives between frames is readable in one place. */
+  var PB_FADE_MS = 380;                  // Season step crossfade length
+  var pbLayers = [];                     // [{frame, a0, t0, dir}] - one entry normally, two or more mid-crossfade
+  var pbKind = 'clock';                  // 'clock' (heads + tails) | 'step' (whole-season tracks)
+  var pbTail = 48;                       // hours, or Infinity; fixes the shape of the tail fade
+  var animator = null;                   // fn(now) -> keep-going; the app's playback clock, driven from tick()
+  var lastPointer = null;                // {px, py, clientX, clientY} while the cursor is over the canvas
+  var lastTipHtml = '';                  // so a moving storm only re-writes the tooltip when its text changed
+  var themeGen = 0;                      // bumped by applyTheme(); part of the static-layer cache key
+  var pressCache = {};                   // pressure token -> resolved colour, cleared with the theme
+  var bg = { canvas: null, ctx: null, key: '' };   // offscreen copy of ocean + graticule + land
 
   /* ------------------------------------------------------------ geometry */
 
@@ -325,12 +340,19 @@ window.HF = window.HF || {};
       // already mean "data" elsewhere on this map (fix density, Atlantic
       // basin colour) - this should read as quiet context, never as a
       // series of its own.
-      current: readColor('--current', isDarkTheme() ? '#5fb6bf' : '#2c6c73')
+      current: readColor('--current', isDarkTheme() ? '#5fb6bf' : '#2c6c73'),
+      // Colour for events with no analyzed centre, resolved once per theme
+      // rather than once per storm per frame during playback.
+      terrain: HF.classColor('tipjet')
     };
   }
 
   globe.applyTheme = function () {
     computePalette();
+    themeGen++;                 // the cached ocean/land/graticule bitmap is the old theme's
+    pressCache = {};
+    densityRamp = null;         // --seq-* are themed too; resolved again on the next density draw
+    compRamp = null;            // --div-* likewise
     dirty = true;
     scheduleFrame();
   };
@@ -628,6 +650,268 @@ window.HF = window.HF || {};
     hitPoints.push({ x: p.x, y: p.y, low: low });
   }
 
+  /* ------------------------------------------------------------ playback
+     One frame of HF.playback (playback.js) drawn as storms: a head marker
+     plus a tail that fades with age. The engine is pure data and does all
+     the time arithmetic - which storms are alive at t, where they are,
+     how far behind the head each tail point sits (`age`, in hours) - so
+     nothing here ever looks at a clock; colour, width and fade are this
+     file's call, as the engine's header says.
+
+     Two kinds of frame:
+       'clock'  composite and season replay: head + tail per storm.
+       'step'   Season step: each storm's COMPLETE track, no head. A small
+                marker at the event's lowest pressure carries intensity,
+                since a whole track has no "now" to hang a head on.
+
+     Everything reuses what the other layers already do: pressure colour
+     per edge off the same --mslp-* ramp, dashed terrain-class strokes,
+     radiusForPressure() for marker size, strokeEdge()'s horizon clipping,
+     hitPoints/hoveredKey/selectedKey for hover and click. */
+
+  /** Resolve a pressure colour once per ramp step per theme instead of
+      once per tail edge per frame. HF.pressureColor does the lookup (a
+      getComputedStyle read); this only remembers it. */
+  function pressureColorCached(hpa) {
+    var tok = HF.pressureToken(hpa);
+    var c = pressCache[tok];
+    if (c === undefined) c = pressCache[tok] = HF.pressureColor(hpa);
+    return c;
+  }
+
+  /** 1 at the head, falling to 0 at the far end of the tail. A finite tail
+      fades linearly over exactly its own length, so a 24 h tail and a 96 h
+      tail both taper to nothing at their ends. The accumulating "track so
+      far" tail has no end to fade towards, so it decays exponentially
+      instead (72 h e-folding, about a typical event's whole life) and
+      tailAlpha() gives it a high floor: the point of that view is to read
+      the whole path, so its oldest part must stay visible. */
+  function tailFraction(age) {
+    if (isFinite(pbTail) && pbTail > 0) {
+      var f = 1 - age / pbTail;
+      return f < 0 ? 0 : f;
+    }
+    return Math.exp(-age / 72);
+  }
+
+  function tailAlpha(f) {
+    return isFinite(pbTail) ? 0.05 + 0.95 * f : 0.4 + 0.6 * f;
+  }
+
+  /** Move the crossfade along: once the newest frame is fully in, the
+      older ones are dropped and the layer stack collapses back to one. */
+  function layerAlpha(l, now) {
+    if (!l.dir) return l.a0;
+    var a = l.a0 + l.dir * (now - l.t0) / PB_FADE_MS;
+    return a < 0 ? 0 : a > 1 ? 1 : a;
+  }
+
+  function stepFade(now) {
+    var n = pbLayers.length;
+    if (!n || (n === 1 && !pbLayers[0].dir)) return;
+    var newest = pbLayers[n - 1];
+    if (layerAlpha(newest, now) >= 1) {
+      newest.a0 = 1; newest.dir = 0;
+      pbLayers = [newest];
+      return;
+    }
+    var keep = [];
+    for (var i = 0; i < n; i++) {
+      if (i === n - 1 || layerAlpha(pbLayers[i], now) > 0) keep.push(pbLayers[i]);
+    }
+    pbLayers = keep;
+  }
+
+  /** Flatten the layer stack into one entry per storm key: [{storm, alpha}].
+      This is the crossfade's "dissolve by matching storms": a storm present
+      in both the outgoing and incoming frame is drawn once at the larger of
+      its two alphas - so it stays solid instead of dipping to ~75% mid-fade
+      the way two stacked half-transparent copies would - while a storm in
+      only one frame fades out or in. The newest frame's geometry wins. */
+  function pbDrawList(now) {
+    var byKey = {}, list = [];
+    for (var li = 0; li < pbLayers.length; li++) {
+      var l = pbLayers[li], a = layerAlpha(l, now);
+      if (a <= 0) continue;
+      var storms = l.frame.storms;
+      for (var i = 0; i < storms.length; i++) {
+        var s = storms[i], e = byKey[s.key];
+        if (!e) { e = byKey[s.key] = { storm: s, alpha: a }; list.push(e); }
+        else { e.storm = s; if (a > e.alpha) e.alpha = a; }
+      }
+    }
+    return list;
+  }
+
+  function isTerrain(s) { return !!s.cls && s.cls !== 'low'; }
+
+  /** One storm's tail (clock) or whole track (step), edge by edge. Clock
+      tails are cut into short pieces whose alpha and width follow `age`, so
+      the fade is a smooth taper along the line rather than one flat value
+      per 6-hour edge (a 24 h tail is only four edges). Dashed terrain
+      strokes and horizon-clipped edges are drawn whole, at their mid-age:
+      cutting a dashed line into pieces restarts the dash pattern in each,
+      and a clipped edge's age at the cut is not known. */
+  function drawStormLine(e, step, style, isSel, isHov) {
+    var s = e.storm, tail = s.tail, n = tail.length;
+    if (n < 2) return;
+    var terrain = isTerrain(s);
+    var emph = isSel || isHov;
+    ctx.setLineDash(terrain ? [4, 3] : []);
+
+    for (var i = 0; i < n - 1; i++) {
+      var a = tail[i], b = tail[i + 1];           // oldest -> newest
+      var pa = project(a.lon, a.lat), pb = project(b.lon, b.lat);
+      if (!pa.visible && !pb.visible) continue;
+      var p0 = pa, p1 = pb, whole = true;
+      if (pa.visible !== pb.visible) {
+        var cross = horizonCrossing([a.lon, a.lat], [b.lon, b.lat]);
+        var pc = project(cross[0], cross[1]);
+        if (pa.visible) p1 = pc; else p0 = pc;
+        whole = false;
+      }
+      ctx.strokeStyle = terrain ? pal.terrain : pressureColorCached(segmentPressure(a, b));
+
+      var dx = p1.x - p0.x, dy = p1.y - p0.y;
+      var pieces = 1;
+      if (!step && !terrain && whole) {
+        pieces = Math.max(1, Math.min(6, Math.ceil(Math.sqrt(dx * dx + dy * dy) / 5)));
+      }
+      for (var k = 0; k < pieces; k++) {
+        var u0 = k / pieces, u1 = (k + 1) / pieces;
+        var alpha, width;
+        if (step) {
+          alpha = Math.max(style.opacity, 0.6);
+          width = style.weight + (terrain ? 0.6 : 0.3);
+        } else {
+          var f = tailFraction(a.age + (b.age - a.age) * (u0 + u1) / 2);
+          alpha = tailAlpha(f);
+          width = 1.1 + 2.3 * f + (terrain ? 0.3 : 0);
+        }
+        if (emph) {
+          alpha = step ? 1 : Math.min(1, alpha + 0.35);
+          width += isHov ? 1.2 : 1;
+        }
+        ctx.globalAlpha = alpha * e.alpha;
+        ctx.lineWidth = width;
+        ctx.beginPath();
+        ctx.moveTo(p0.x + dx * u0, p0.y + dy * u0);
+        ctx.lineTo(p0.x + dx * u1, p0.y + dy * u1);
+        ctx.stroke();
+      }
+    }
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+  }
+
+  /** The storm's marker, plus its hit points.
+
+      Shape and size carry the information that colour also carries, so
+      nothing depends on telling two hues apart: pressure is the disc's
+      SIZE (radiusForPressure, as the peak-intensity layer does) as well as
+      its colour, and an event with no analyzed centre is a DIAMOND of fixed
+      size where a low is a circle. A clock head also gets a thin outer ring
+      so it reads as a storm with extent, not a dot; a step marker is
+      smaller and has none, since up to ~100 of them share one globe. */
+  function drawStormMark(e, step, isSel, isHov) {
+    var s = e.storm, tail = s.tail, low = s.low, i, tp, pt;
+    var terrain = isTerrain(s);
+    var emph = isSel || isHov;
+
+    // Hit points first, from every visible tail vertex (the head is the last
+    // one), so hover works on the line as well as the marker - but only for
+    // a storm that is mostly faded in, or a dissolving storm stays hoverable.
+    if (e.alpha >= 0.5) {
+      for (i = 0; i < tail.length; i++) {
+        tp = project(tail[i].lon, tail[i].lat);
+        if (tp.visible) hitPoints.push({ x: tp.x, y: tp.y, low: low, storm: s });
+      }
+    }
+
+    var lat, lon;
+    if (step) {
+      if (low.minPLat != null && low.minPLon != null) { lat = low.minPLat; lon = low.minPLon; }
+      else { pt = tail[(tail.length - 1) >> 1]; lat = pt.lat; lon = pt.lon; }
+    } else {
+      lat = s.lat; lon = s.lon;
+    }
+    if (lat == null || lon == null) return;
+    var p = project(lon, lat);
+    if (!p.visible) return;
+    if (step && e.alpha >= 0.5) hitPoints.push({ x: p.x, y: p.y, low: low, storm: s });
+
+    var base = terrain ? 5 : radiusForPressure(s.pres);
+    if (step) base = terrain ? 4 : Math.max(2.5, base * 0.75);
+    var r = emph ? base + 2.5 : base;
+    var color = terrain ? pal.terrain : pressureColorCached(s.pres);
+
+    ctx.globalAlpha = e.alpha * (step && !emph ? 0.85 : 1);
+    ctx.fillStyle = color;
+    ctx.strokeStyle = pal.oceanWash;
+    ctx.lineWidth = emph ? 2 : 1.2;
+    ctx.beginPath();
+    if (terrain) {
+      var d = r * 1.3;
+      ctx.moveTo(p.x, p.y - d); ctx.lineTo(p.x + d, p.y);
+      ctx.lineTo(p.x, p.y + d); ctx.lineTo(p.x - d, p.y);
+      ctx.closePath();
+    } else {
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    }
+    ctx.fill();
+    ctx.stroke();
+    if (!terrain && !step) {
+      ctx.globalAlpha = e.alpha * 0.55;
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r + 3.5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawPlayback() {
+    hitPoints = [];
+    if (!pbLayers.length) return;
+    var list = pbDrawList(performance.now());
+    var step = pbKind === 'step';
+    var style = styleForCount(list.length);
+    var selected = null, hovered = null, i, e;
+
+    // Selected, then hovered, are drawn last (hover is the transient pointer
+    // emphasis and must end up on top), exactly as drawTracks() orders them.
+    // Lines for every storm go down before any marker, so a head is never
+    // buried under another storm's tail.
+    var normal = [];
+    for (i = 0; i < list.length; i++) {
+      e = list[i];
+      var isSel = e.storm.key === selectedKey;
+      var isHov = hoveredKey != null && e.storm.key === hoveredKey;
+      if (isSel) selected = e;
+      if (isHov) hovered = e;
+      if (!isSel && !isHov) normal.push(e);
+    }
+    ctx.lineCap = 'round';
+    for (i = 0; i < normal.length; i++) drawStormLine(normal[i], step, style, false, false);
+    if (selected && selected !== hovered) drawStormLine(selected, step, style, true, false);
+    if (hovered) drawStormLine(hovered, step, style, hovered === selected, true);
+    ctx.lineCap = 'butt';
+
+    for (i = 0; i < normal.length; i++) drawStormMark(normal[i], step, false, false);
+    if (selected && selected !== hovered) drawStormMark(selected, step, true, false);
+    if (hovered) drawStormMark(hovered, step, hovered === selected, true);
+  }
+
+  /** The storms move under a stationary cursor, so the hover result from
+      the last mousemove goes stale: the hovered storm can end, or another
+      can drift under the pointer. Re-test against the freshly built hit
+      points after every playback draw (a few hundred distance checks). */
+  function afterPlaybackDraw() {
+    if (dragging || !lastPointer) return;
+    updateHover(nearestHit(lastPointer.px, lastPointer.py), lastPointer);
+  }
+
   /* -------------------------------------------------------------- density
      Gridded hurricane-force fix counts. Binning is ported unchanged from
      the flat map's HF.maps.densityGrid (see DENSITY_LON_ORIGIN above for why
@@ -729,6 +1013,592 @@ window.HF = window.HF || {};
       drawOneCell(c, ramp, false);
     }
     if (hoveredCell) drawOneCell(hoveredCell, ramp, true);
+  }
+
+  /* ----------------------------------------------------------- composite
+     "Did the storm track move, and can that be told from noise?" - the
+     HF.composite.compare() result drawn as a diverging map. The statistics
+     live in composite.js; this section only decides how much of that answer
+     a picture is allowed to say, and says it no louder.
+
+     Four encodings, each on its own channel so none has to stand in for
+     another (and none rests on colour alone - Section 508):
+
+       FILL COLOUR  how big the difference is, and which way (more / fewer
+                    storms than the baseline). Diverging scale, symmetric
+                    about zero, neutral grey at zero.
+       STIPPLE      FDR significance (sigFDR) and nothing else. Dots, not a
+                    colour change, so "big" and "believable" cannot be
+                    confused: a deep-blue cell with no dots is a big
+                    difference that the test cannot tell from chance, which
+                    is the usual outcome with 8-9 seasons.
+       NO FILL,     the cell was visited but the full archive has too few
+       HATCH AND    fixes in it to test (r.cells[i].tested === false). A cell
+       DOTTED RING  with 3 fixes must not look like a cell with 300 fixes
+                    whose subset happened to match - the second is
+                    information ("no difference found, and we could have
+                    found one"), the first is its absence. This is the
+                    distinction that matters most on the usual map, where
+                    almost nothing is stippled, so it gets three separate
+                    cues rather than one: no colour fill (the strongest
+                    contrast the canvas has - the neutral class IS a fill),
+                    a 45-degree line hatch (the conventional "no data"
+                    texture, and a different texture from the stipple), and
+                    a dotted outline (the only thing visible where the
+                    hatch is cut by the horizon or by a very small cell).
+       HOVER        every number behind the cell (see compositeTip()).
+
+     Per-cell significance without FDR correction (sigCell) is NEVER drawn.
+     With ~150 tested cells about 5% of them carry it on pure noise, and a
+     map stippled by it reliably shows "patterns" in random data. It appears
+     only as a muted, separately labelled "uncorrected p" line in the hover.
+
+     What is refused. compare() can return status 'insufficient' / 'empty' /
+     'invalid' or reliability 'none'; every one of those means the cells are
+     not a finding, and a map drawn from them would look exactly as
+     authoritative as a good one. They draw nothing (a one-line caption says
+     why) and compositeState() reports the reason so the tab can explain at
+     length. reliability 'low' (few defining seasons) draws, but washed out
+     under a "PROVISIONAL" caption, because absence of stippling is weak
+     evidence there and the map should not read as confident.
+
+     Colour. Diverging blue <-> vermilion with a neutral grey midpoint (the
+     dataviz skill's diverging method: two hues that read as opposite plus a
+     grey that reads as "nothing", equal steps per arm). Blue is "more storms
+     than the baseline", the same direction blue already means on the Fix
+     density layer (more = deeper blue); vermilion is "fewer". Blue/orange is
+     the pair that survives protan and deutan best. The arms are matched in
+     OKLCH lightness step for step, so a blue and an orange of the same
+     magnitude are equally dark and the sign is readable in greyscale as
+     well as hue. Four steps an arm (nine classes with the neutral one): few
+     enough that the legend can name every class, and the exact value is in
+     the hover anyway. Values live in app.css as --div-pos-1..4,
+     --div-neg-1..4 and --div-mid (themed like --mslp-*); the DIV_FALLBACK
+     tables below are the same validated hexes, used only until those tokens
+     exist, so the layer works either way. */
+
+  var COMP_STEPS = 4;                    // colour classes per arm; class 0 is the neutral one
+  var COMP_THIN = 5;                     // subset counts below this get a "thin" warning in the hover
+  var COMP_PROVISIONAL_ALPHA = 0.62;     // fill opacity when reliability is 'low'
+  var COMP_DOT_SPACING = 8;              // px between stipple dots at any zoom
+  var COMP_HATCH_SPACING = 5;            // px between hatch lines on untested cells
+  var COMP_RING_STEP = 2;                // degrees of longitude per segment when walking a cell's parallels
+
+  // Validated in the dataviz method (diverging: monotone lightness, arms
+  // matched in OKLCH L, every step >= 9 deltaE from its neighbour under
+  // protan/deutan/normal, neighbouring-step contrast against each theme's
+  // surface). Arms run weakest -> strongest. Light steps get darker with
+  // magnitude, dark steps get lighter, as --seq-* and --mslp-* do.
+  var DIV_FALLBACK = {
+    light: {
+      pos: ['#b7d3f6', '#6da7ec', '#2a78d6', '#184f95'],
+      neg: ['#f4c4b3', '#e38869', '#c44f21', '#882f08'],
+      mid: '#f0efec'
+    },
+    dark: {
+      pos: ['#1c5cab', '#3987e5', '#86b6ef', '#b7d3f6'],
+      neg: ['#983e1b', '#d45e32', '#ee9a7c', '#ffbfa9'],
+      mid: '#383835'
+    }
+  };
+
+  var comp = null;                       // null, or {result, state, reason, cells, byId, grid, max, ...}
+  var compField = 'rate';                // 'rate' | 'shape'
+  var compScaleMax = null;               // caller's fixed scale, or null for "fit to the data"
+  var compRamp = null;                   // resolved colours, reset with the theme
+  var hoveredCompId = null;              // cell id under the cursor, composite layer only
+
+  function compColors() {
+    if (compRamp) return compRamp;
+    var fb = DIV_FALLBACK[isDarkTheme() ? 'dark' : 'light'];
+    var pos = [], neg = [];
+    for (var i = 0; i < COMP_STEPS; i++) {
+      pos.push(readColor('--div-pos-' + (i + 1), fb.pos[i]));
+      neg.push(readColor('--div-neg-' + (i + 1), fb.neg[i]));
+    }
+    compRamp = {
+      pos: pos, neg: neg,
+      mid: readColor('--div-mid', fb.mid),
+      surface: readColor('--surface', '#fcfcfb'),
+      ink: readColor('--ink', '#0b0b0b'),
+      inkMuted: readColor('--ink-muted', '#898781'),
+      ink2: readColor('--ink-2', '#52514e'),
+      border: readColor('--border-strong', '#c3c2b7')
+    };
+    return compRamp;
+  }
+
+  /** Round a magnitude UP to a 1-1.5-2-2.5-3-4-5-6-8-10 number, so the scale
+      ends on a value a person can say out loud. Rounding up (never down)
+      keeps the extreme cell inside the top class. */
+  function niceCeil(x) {
+    if (!(x > 0) || !isFinite(x)) return 1;
+    var e = Math.pow(10, Math.floor(Math.log(x) / Math.LN10));
+    var f = x / e, nice = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10];
+    for (var i = 0; i < nice.length; i++) if (f <= nice[i] * (1 + 1e-9)) return nice[i] * e;
+    return 10 * e;
+  }
+
+  /** Signed class -COMP_STEPS..+COMP_STEPS for a difference on a scale that
+      runs -max..+max. 2*COMP_STEPS+1 equal-width classes, the middle one
+      centred on zero, so +d and -d always land in mirror-image classes. */
+  function compClass(diff, max) {
+    var w = 2 * max / (2 * COMP_STEPS + 1), a = Math.abs(diff);
+    if (a < w / 2) return 0;
+    var k = Math.min(COMP_STEPS, Math.ceil((a - w / 2) / w - 1e-9));
+    return diff < 0 ? -k : k;
+  }
+
+  function compColorFor(cls, ramp) {
+    if (cls === 0) return ramp.mid;
+    return cls > 0 ? ramp.pos[cls - 1] : ramp.neg[-cls - 1];
+  }
+
+  /** A cell's outline as [lon, lat] points. The two parallels are walked in
+      <= 2 degree steps so they follow the curve of the latitude circle
+      instead of cutting a chord: neighbouring bands have different numbers
+      of cells, so their corners do not line up along the shared parallel,
+      and two different chords would leave slivers of bare globe or double
+      cover between them once zoomed in. The meridian edges are great
+      circles already and need no help. Longitudes run past 180 for a cell
+      that crosses the dateline; the trig is 360-periodic. */
+  function compRing(c) {
+    var n = Math.max(1, Math.ceil(c.dlon / COMP_RING_STEP)), i, pts = [];
+    for (i = 0; i <= n; i++) pts.push([c.lon0 + c.dlon * i / n, c.lat0]);
+    pts.push([c.lon0 + c.dlon, (c.lat0 + c.lat1) / 2]);
+    for (i = n; i >= 0; i--) pts.push([c.lon0 + c.dlon * i / n, c.lat1]);
+    pts.push([c.lon0, (c.lat0 + c.lat1) / 2]);
+    pts.push([c.lon0, c.lat0]);
+    return pts;
+  }
+
+  function compFieldOf(cell, field) { return cell[field] || null; }
+
+  /** (Re)derive everything that depends on the field choice or the scale:
+      which cells are drawable, the symmetric scale limit, the counts the
+      state report quotes. Cheap (a few hundred cells). */
+  function compRefresh() {
+    if (!comp || !comp.drawable) return;
+    var max = 0, nTested = 0, nUntested = 0, nFDR = 0, i;
+    for (i = 0; i < comp.cells.length; i++) {
+      var w = comp.cells[i], f = compFieldOf(w.cell, compField);
+      w.drawn = !!(w.cell.tested && f && typeof f.diff === 'number' && isFinite(f.diff));
+      if (w.drawn) {
+        nTested++;
+        if (f.sigFDR) nFDR++;
+        if (Math.abs(f.diff) > max) max = Math.abs(f.diff);
+      } else if (!w.cell.tested) {
+        nUntested++;
+      }
+    }
+    comp.fieldMax = max;
+    comp.max = compScaleMax > 0 ? compScaleMax : niceCeil(max || 0.1);
+    comp.nTested = nTested;
+    comp.nUntested = nUntested;
+    comp.nSigFDR = nFDR;
+  }
+
+  function compUnitLabel() {
+    var u = comp && comp.result.options && comp.result.options.unit;
+    return u === 'events' ? 'storm visits per season' : 'fixes per season';
+  }
+
+  function compSetResult(result) {
+    comp = null;
+    hoveredCompId = null;
+    HF.hideTip();
+    if (!result) { dirty = true; scheduleFrame(); return; }
+
+    var refuse = null;
+    if (result.status !== 'ok') {
+      refuse = result.reason || ('The comparison returned status "' + result.status + '".');
+    } else if (result.reliability === 'none') {
+      refuse = result.reason || 'The comparison is not reliable enough to draw.';
+    } else if (result.inference === false) {
+      refuse = 'No test was run (no cell had enough fixes), so there is nothing to show.';
+    }
+    comp = {
+      result: result,
+      drawable: !refuse,
+      refusal: refuse,
+      provisional: !refuse && result.reliability === 'low',
+      cells: [], byId: {}, grid: null
+    };
+    if (!refuse) {
+      var g = result.grid || {};
+      comp.grid = HF.composite.grid(g.latStep, g.lonOrigin);
+      var cells = result.cells || [];
+      for (var i = 0; i < cells.length; i++) {
+        var c = cells[i];
+        var w = { id: c.id, cell: c, ring: compRing(c), drawn: false };
+        comp.cells.push(w);
+        comp.byId[c.id] = w;
+      }
+      compRefresh();
+      if (!comp.nTested) {
+        // Nothing testable: a map of zero coloured cells would read as
+        // "no difference anywhere", the opposite of "nothing was tested".
+        comp.drawable = false;
+        comp.refusal = 'No cell has enough fixes in the full archive to be tested.';
+      }
+    }
+    dirty = true;
+    scheduleFrame();
+  }
+
+  /** What the tab needs to explain the map. Plain data, safe to call any time. */
+  function compState() {
+    var r = comp && comp.result;
+    var s = {
+      state: !comp ? 'none' : !comp.drawable ? 'refused' : comp.provisional ? 'provisional' : 'ok',
+      drawn: !!(comp && comp.drawable),
+      reason: !comp ? null : comp.refusal,
+      status: r ? r.status : null,
+      reliability: r ? r.reliability : null,
+      warnings: r && r.warnings ? r.warnings.slice() : [],
+      field: compField,
+      unit: comp && comp.drawable ? compUnitLabel() : null,
+      scaleMax: comp && comp.drawable ? comp.max : null,
+      fieldMax: comp && comp.drawable ? comp.fieldMax : null,
+      nTested: comp && comp.drawable ? comp.nTested : 0,
+      nUntested: comp && comp.drawable ? comp.nUntested : 0,
+      nSigFDR: comp && comp.drawable ? comp.nSigFDR : 0,
+      expectedByChance: null,
+      n: r ? r.n : null
+    };
+    if (comp && comp.drawable && r.summary && r.summary[compField]) {
+      s.summary = r.summary[compField];
+      s.expectedByChance = r.summary[compField].expectedByChance;
+    }
+    return s;
+  }
+
+  /** The legend as data, with colours resolved for the current theme, so the
+      tab can paint swatches that are guaranteed to match the canvas (it is
+      the same table the canvas reads). bins run most negative -> most
+      positive; neutral is the middle one. */
+  function compLegend() {
+    if (!comp || !comp.drawable) return null;
+    var ramp = compColors(), M = comp.max, w = 2 * M / (2 * COMP_STEPS + 1), bins = [];
+    for (var cls = -COMP_STEPS; cls <= COMP_STEPS; cls++) {
+      var lo, hi;
+      if (cls === 0) { lo = -w / 2; hi = w / 2; }
+      else if (cls > 0) { lo = w / 2 + (cls - 1) * w; hi = cls === COMP_STEPS ? M : lo + w; }
+      else { hi = -(w / 2 + (-cls - 1) * w); lo = cls === -COMP_STEPS ? -M : hi - w; }
+      bins.push({ cls: cls, lo: lo, hi: hi, color: compColorFor(cls, ramp),
+                  meaning: cls === 0 ? 'about the same' : cls > 0 ? 'more than baseline' : 'fewer than baseline' });
+    }
+    return {
+      field: compField, unit: compUnitLabel(), max: M, bins: bins,
+      alpha: comp.provisional ? COMP_PROVISIONAL_ALPHA : 1,
+      positive: 'more than baseline', negative: 'fewer than baseline',
+      stipple: 'FDR-significant (q <= ' + (comp.result.options && comp.result.options.alphaFDR != null
+        ? comp.result.options.alphaFDR : 0.1) + ')',
+      untested: 'too few fixes in the full archive to test (hatched, dotted outline, no fill)',
+      neutralColor: ramp.mid
+    };
+  }
+
+  /* ---- drawing ---- */
+
+  /** Cosine of the angular distance from the view centre: 1 at the middle of
+      the disc, 0 on the limb. Stipple skips the last sliver before the limb,
+      where dots would pile up into a smear. */
+  function facing(lon, lat) {
+    return dot3(toXYZ(lon, lat), viewVector());
+  }
+
+  function drawStipple(w, ramp) {
+    var c = w.cell, R = baseR * view.zoom;
+    var latPx = R * (c.lat1 - c.lat0) * DEG;
+    var lonPx = R * c.dlon * DEG * Math.max(0.15, Math.cos(c.latC * DEG));
+    // At least a 3 x 3 lattice so a small cell still reads as stippled, and
+    // never so many dots that they merge into hatching and bury the fill
+    // colour (the magnitude) of the cell they are meant to annotate.
+    var rows = Math.max(3, Math.min(14, Math.round(latPx / COMP_DOT_SPACING)));
+    var cols = Math.max(3, Math.min(24, Math.round(lonPx / COMP_DOT_SPACING)));
+    var r = Math.min(1.6, 1.05 + 0.08 * view.zoom);
+    var pts = [], i, j;
+    for (i = 0; i < rows; i++) {
+      // Offset alternate rows by half a column: a hex lattice reads as a
+      // texture, a square one as a grid of dots (a second graticule).
+      var lat = c.lat0 + (i + 0.5) * (c.lat1 - c.lat0) / rows;
+      for (j = 0; j < cols; j++) {
+        var lon = c.lon0 + (j + 0.25 + (i % 2) * 0.5) * c.dlon / cols;
+        var p = project(lon, lat);
+        if (p.visible && facing(lon, lat) > 0.12) pts.push(p);
+      }
+    }
+    if (!pts.length) return;
+    // Surface-coloured halo first, ink dot on top: the dot is legible on the
+    // palest and the darkest class alike, so one stipple style serves the
+    // whole scale and never has to be re-coloured per fill.
+    ctx.fillStyle = ramp.surface;
+    ctx.beginPath();
+    for (i = 0; i < pts.length; i++) { ctx.moveTo(pts[i].x + r + 0.7, pts[i].y); ctx.arc(pts[i].x, pts[i].y, r + 0.7, 0, Math.PI * 2); }
+    ctx.fill();
+    ctx.fillStyle = ramp.ink;
+    ctx.beginPath();
+    for (i = 0; i < pts.length; i++) { ctx.moveTo(pts[i].x + r, pts[i].y); ctx.arc(pts[i].x, pts[i].y, r, 0, Math.PI * 2); }
+    ctx.fill();
+  }
+
+  /** Coastlines again, on top of the fills. The cells are opaque (a diverging
+      scale only means what its legend says if the fill is the colour on the
+      legend - a translucent fill over ocean and land would be two different
+      colours for one class), so they would otherwise hide the land under
+      them. Thin and half-strength: orientation, not decoration. */
+  function drawCoastOverlay(ramp) {
+    var coast = window.HF_COAST;
+    if (!coast || !coast.polygons) return;
+    ctx.globalAlpha = 0.55;
+    for (var i = 0; i < coast.polygons.length; i++) {
+      strokePath(visibleSegments(coast.polygons[i]), 0.8, ramp.ink2);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /** One short caption, wrapped to the disc: the refusal reason, the
+      provisional notice. Canvas text has no layout engine, so this is the
+      minimum that keeps a long reason from running off the sphere. */
+  function drawCaption(lines, ramp, tone) {
+    var R = baseR * view.zoom, size = 12, lh = 16, pad = 8, maxW = Math.min(R * 1.5, cssW - 32);
+    ctx.font = '600 ' + size + 'px system-ui, -apple-system, "Segoe UI", sans-serif';
+    var wrapped = [], i, j;
+    for (i = 0; i < lines.length; i++) {
+      var words = String(lines[i]).split(/\s+/), cur = '';
+      for (j = 0; j < words.length; j++) {
+        var t = cur ? cur + ' ' + words[j] : words[j];
+        if (cur && ctx.measureText(t).width > maxW - 2 * pad) { wrapped.push(cur); cur = words[j]; } else cur = t;
+      }
+      if (cur) wrapped.push(cur);
+    }
+    if (wrapped.length > 5) { wrapped.length = 5; wrapped[4] += '...'; }
+    var w = 0;
+    for (i = 0; i < wrapped.length; i++) w = Math.max(w, ctx.measureText(wrapped[i]).width);
+    w += 2 * pad;
+    var h = wrapped.length * lh + 2 * pad - 4;
+    var x = cx - w / 2, y = tone === 'refused' ? cy - h / 2 : Math.min(cssH - h - 12, cy + R * 0.82 - h);
+    ctx.fillStyle = ramp.surface;
+    ctx.strokeStyle = tone === 'refused' ? ramp.border : ramp.ink2;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = ramp.ink;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (i = 0; i < wrapped.length; i++) ctx.fillText(wrapped[i], cx, y + pad - 2 + lh / 2 + i * lh);
+    ctx.textAlign = 'start';
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  /** 45-degree hatch clipped to one untested cell. The clip path is the same
+      closed, horizon-bridged outline fillClippedRing() fills, so a cell cut
+      by the limb is hatched only where it is visible. The lines are drawn in
+      screen space (they do not rotate with the globe): a texture that says
+      "nothing here", not a data mark. */
+  function hatchCell(segs, R, ramp) {
+    var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, i, j;
+    for (i = 0; i < segs.length; i++) for (j = 0; j < segs[i].length; j++) {
+      var p = segs[i][j];
+      if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x;
+      if (p.y < y0) y0 = p.y; if (p.y > y1) y1 = p.y;
+    }
+    if (!(x1 - x0 > 1) || !(y1 - y0 > 1)) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(segs[0][0].x, segs[0][0].y);
+    for (i = 0; i < segs.length; i++) {
+      var seg = segs[i];
+      for (j = (i === 0 ? 1 : 0); j < seg.length; j++) ctx.lineTo(seg[j].x, seg[j].y);
+      bridgeHorizon(seg[seg.length - 1], segs[(i + 1) % segs.length][0], R);
+    }
+    ctx.closePath();
+    ctx.clip();
+    ctx.strokeStyle = ramp.inkMuted;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.6;
+    ctx.beginPath();
+    // lines of constant (x + y): from the cell's top-left to bottom-right
+    // diagonal sweep, spaced COMP_HATCH_SPACING apart perpendicular to them.
+    var step = COMP_HATCH_SPACING * Math.SQRT2;
+    for (var k = Math.floor((x0 + y0) / step) * step; k <= x1 + y1; k += step) {
+      ctx.moveTo(k - y0, y0);
+      ctx.lineTo(k - y1, y1);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawComposite() {
+    hitPoints = [];                       // nothing here is a storm: clicks must not select one
+    var ramp = compColors();
+    if (!comp) {
+      drawCaption(['No composite has been computed yet.'], ramp, 'refused');
+      return;
+    }
+    if (!comp.drawable) {
+      drawCaption(['Composite not drawn.', comp.refusal], ramp, 'refused');
+      return;
+    }
+    var R = baseR * view.zoom, M = comp.max, i, w, segs;
+    var alpha = comp.provisional ? COMP_PROVISIONAL_ALPHA : 1;
+    var hovered = null, stip = [];
+
+    // 1. fills, opaque (or washed, if provisional), with a hairline in the
+    // surface colour between cells so the class boundaries (which are also
+    // the hover targets) can be seen.
+    for (i = 0; i < comp.cells.length; i++) {
+      w = comp.cells[i];
+      if (!w.drawn) continue;
+      segs = visibleSegments(w.ring);
+      if (!segs.length) continue;
+      var f = w.cell[compField];
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = compColorFor(compClass(f.diff, M), ramp);
+      fillClippedRing(segs, R);
+      ctx.globalAlpha = 0.7;
+      strokePath(segs, 0.8, ramp.surface);
+      ctx.globalAlpha = 1;
+      if (f.sigFDR) stip.push(w);
+      if (w.id === hoveredCompId) hovered = { w: w, segs: segs };
+    }
+
+    drawCoastOverlay(ramp);
+
+    // 2. untested cells: no fill, hatch, dotted ring (see the section
+    // header). Drawn after the coast so they are not lost under it.
+    for (i = 0; i < comp.cells.length; i++) {
+      w = comp.cells[i];
+      if (w.cell.tested) continue;
+      segs = visibleSegments(w.ring);
+      if (!segs.length) continue;
+      hatchCell(segs, R, ramp);
+      ctx.globalAlpha = 0.9;
+      strokePath(segs, 1, ramp.inkMuted, [2, 3]);
+      ctx.globalAlpha = 1;
+      if (w.id === hoveredCompId) hovered = { w: w, segs: segs };
+    }
+
+    // 3. stipple: FDR-significant cells only.
+    for (i = 0; i < stip.length; i++) drawStipple(stip[i], ramp);
+
+    // 4. the hovered cell, outlined last.
+    if (hovered) strokePath(hovered.segs, 2, ramp.ink);
+
+    if (comp.provisional) {
+      drawCaption(['PROVISIONAL: few seasons define this subset, so only a large shift could be detected. ' +
+                   'No stippling is weak evidence of no shift.'], ramp, 'provisional');
+    }
+  }
+
+  /* ---- hover ---- */
+
+  function fmtLatBand(c) {
+    // Bands never straddle the equator at the default 4 degree step, but a
+    // coarser latStep can, so the two edges are named separately then.
+    function one(v) { return Math.abs(Math.round(v * 10) / 10) + '\u00b0' + (v < 0 ? 'S' : 'N'); }
+    if (c.lat0 < 0 && c.lat1 > 0) return one(c.lat0) + ' to ' + one(c.lat1);
+    var lo = Math.min(Math.abs(c.lat0), Math.abs(c.lat1)), hi = Math.max(Math.abs(c.lat0), Math.abs(c.lat1));
+    return lo + '\u2013' + hi + '\u00b0' + (c.lat1 <= 0 ? 'S' : 'N');
+  }
+
+  function fmtLonSpan(c) {
+    if (c.dlon >= 359.9) return 'all longitudes';
+    function one(v) {
+      var x = normLonDeg(v);
+      x = Math.round(x * 10) / 10;
+      return Math.abs(x) + '°' + (x < 0 ? 'W' : x > 0 && x < 180 ? 'E' : '');
+    }
+    return one(c.lon0) + '–' + one(c.lon0 + c.dlon);
+  }
+
+  function fmtNum(v, d) {
+    var s = v.toFixed(d == null ? 2 : d);
+    return s === '-0.00' ? '0.00' : s;
+  }
+
+  function fmtSigned(v, d) {
+    var s = fmtNum(v, d);
+    return v > 0 && s !== fmtNum(0, d) ? '+' + s : s;
+  }
+
+  function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many || one + 's'); }
+
+  /** "3 fixes" / "1 storm visit", in the unit the comparison was run in. */
+  function countWord(n) {
+    return comp.result.options && comp.result.options.unit === 'events'
+      ? plural(n, 'storm visit') : plural(n, 'fix', 'fixes');
+  }
+
+  /** The honest part. Everything the colour cannot say: both rates, the
+      difference, how many fixes and seasons stand behind it, whether it
+      survives FDR correction, and a plain-words warning when the cell is
+      thin. All numbers come from composite.js untouched. */
+  function compositeTip(w) {
+    var c = w.cell, r = comp.result, n = r.n || {};
+    var unit = compUnitLabel();
+    var head = '<b>' + fmtLatBand(c) + ', ' + fmtLonSpan(c) + '</b>';
+    if (!c.tested) {
+      return head + '<div class="t-row">Not tested: ' + countWord(c.nAll) +
+        ' in the full archive here (a cell needs ' +
+        ((r.options && r.options.minCellCount) || 10) + ').</div>' +
+        '<div class="t-row">Too few to say anything about this cell, either way.</div>';
+    }
+    var f = c[compField];
+    if (!f) return head;
+    var html = head +
+      '<div class="t-row">Subset ' + fmtNum(f.subset) + ' vs baseline ' + fmtNum(f.all) + ' ' + unit +
+      (compField === 'shape' ? ' (pattern only: total activity held at baseline)' : '') + '</div>' +
+      '<div class="t-row"><b>' + fmtSigned(f.diff) + '</b> ' + unit +
+      (f.ratio != null ? ' (' + fmtNum(f.ratio, 2) + '&times; baseline)' : '') +
+      ' &middot; ' + (f.diff > 0 ? 'more' : f.diff < 0 ? 'fewer' : 'no change') + '</div>' +
+      '<div class="t-row">Subset: ' + countWord(c.nSubset) + ', in ' + c.nSubsetSeasons + ' of its ' +
+      (n.seasons != null ? n.seasons : '?') + ' seasons. Baseline: ' + countWord(c.nAll) + ' over ' +
+      (n.allSeasons != null ? n.allSeasons : '?') + ' seasons.</div>';
+    if (f.p == null) {
+      html += '<div class="t-row"><b>Significance not assessed</b></div>';
+    } else {
+      html += '<div class="t-row"><b>' + (f.sigFDR ? 'FDR-significant' : 'Not FDR-significant') + '</b>' +
+        (f.q != null ? ' (q = ' + fmtNum(f.q, 3) + ')' : '') +
+        (f.sigFDR ? ' &middot; stippled' : ' &middot; no stipple') + '</div>';
+      // Secondary and separately labelled by design - see the section header.
+      html += '<div class="t-row" style="opacity:.75">Uncorrected p = ' + fmtNum(f.p, 3) +
+        ' (not adjusted for ' + (r.summary && r.summary[compField] ? r.summary[compField].nTested : 'many') +
+        ' cells tested; do not read as significance)</div>';
+    }
+    if (c.nSubset < COMP_THIN) {
+      html += '<div class="t-row"><b>Thin:</b> only ' + countWord(c.nSubset) +
+        ' from the subset here. A large-looking difference on this little is easily chance.</div>';
+    }
+    if (comp.provisional) {
+      html += '<div class="t-row"><b>Provisional:</b> few seasons define this subset.</div>';
+    }
+    return html;
+  }
+
+  function handleCompositeHover(px, py, evt) {
+    var w = null;
+    if (comp && comp.drawable && comp.grid) {
+      var geo = unproject(px, py);
+      if (geo) {
+        var id = comp.grid.cellIndex(geo[1], geo[0]);
+        w = id >= 0 ? comp.byId[id] || null : null;
+        if (w && !w.drawn && w.cell.tested) w = null;     // tested but no value for this field
+      }
+    }
+    var id2 = w ? w.id : null;
+    if (id2 !== hoveredCompId) {
+      hoveredCompId = id2;
+      dirty = true;
+      scheduleFrame();
+      canvas.style.cursor = w ? 'crosshair' : '';
+      if (w) HF.showTip(compositeTip(w), evt); else HF.hideTip();
+    } else if (w) {
+      HF.moveTip(evt);
+    }
   }
 
   /* ------------------------------------------------------------- currents
@@ -860,14 +1730,21 @@ window.HF = window.HF || {};
     if (curLayer === 'density') return drawDensity();
     if (curLayer === 'genesis') return drawPoints('genesis');
     if (curLayer === 'peak') return drawPoints('peak');
+    if (curLayer === 'playback') return drawPlayback();
+    if (curLayer === 'composite') return drawComposite();
     return drawTracks();
   }
 
-  function draw() {
-    if (!ctx || !cssW || !cssH || !pal) return;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, cssW, cssH);
-
+  /** Everything under the features: ocean disc, currents, graticule, land.
+      None of it depends on anything but the view (lambda, phi, zoom), the
+      canvas size, the theme and the currents toggle - and during playback
+      the view does not change from one frame to the next, only the storms
+      do. Measured, this is the ~17 ms per-frame floor (see the report that
+      came with the playback layer): the graticule and ~60 coastline rings
+      are projected, horizon-clipped and stroked point by point. So
+      paintStatic() renders it once into an offscreen canvas and blits that
+      for every frame until the view, size or theme actually changes. */
+  function drawStaticLayers() {
     var R = baseR * view.zoom;
 
     // 1. ocean disc - base tone plus a low-alpha ink wash (see computePalette)
@@ -892,9 +1769,75 @@ window.HF = window.HF || {};
 
     // 4. land
     drawLand();
+  }
+
+  function staticKey() {
+    // Exact numbers, not rounded: a rounded key would let a slow drag show a
+    // stale background for a few frames; the string is cheap to build.
+    return view.lambda + '|' + view.phi + '|' + view.zoom + '|' + canvas.width + 'x' +
+      canvas.height + '@' + dpr + '|' + themeGen + '|' + (showCurrents ? 1 : 0);
+  }
+
+  /** Put the static layers on the main canvas - from the cache when it is
+      current, drawn directly otherwise. Returns true when it blitted.
+      Only the playback layer uses the cache: it is the one layer that
+      redraws every frame with a still view, so it is the one that gains,
+      and the other layers keep exactly the code path they always had.
+      window.HF_NO_STATIC_CACHE switches the cache off, for the same
+      measure-before-and-after use as HF_DEBUG_TIMING. */
+  function paintStatic() {
+    if (curLayer !== 'playback' || window.HF_NO_STATIC_CACHE) {
+      ctx.clearRect(0, 0, cssW, cssH);
+      drawStaticLayers();
+      return false;
+    }
+    var key = staticKey();
+    if (bg.key !== key) {
+      if (!bg.canvas) {
+        bg.canvas = document.createElement('canvas');
+        bg.ctx = bg.canvas.getContext('2d');
+      }
+      // Assigning width/height reallocates and clears, so only do it when
+      // the size really changed; otherwise clear in place.
+      if (bg.canvas.width !== canvas.width || bg.canvas.height !== canvas.height) {
+        bg.canvas.width = canvas.width;
+        bg.canvas.height = canvas.height;
+      }
+      // The draw helpers all use the module-level `ctx`, so point it at the
+      // offscreen context for the duration rather than threading a context
+      // argument through ten functions that have no other reason to take one.
+      var main = ctx;
+      ctx = bg.ctx;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, cssW, cssH);
+      drawStaticLayers();
+      ctx = main;
+      bg.key = key;
+    }
+    // Device pixels 1:1, so no transform and no resampling. 'copy' replaces
+    // the destination outright, which saves the separate clearRect.
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = 'copy';
+    ctx.drawImage(bg.canvas, 0, 0);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return true;
+  }
+
+  function draw() {
+    if (!ctx || !cssW || !cssH || !pal) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    var dbg = window.HF_DEBUG_TIMING;
+    var t0 = dbg ? performance.now() : 0;
+    var R = baseR * view.zoom;
+
+    var cached = paintStatic();
+    var t1 = dbg ? performance.now() : 0;
 
     // 5. the active layer's features (selected/hovered drawn last within it)
     drawFeatures();
+    var t2 = dbg ? performance.now() : 0;
 
     // 6. sphere outline, always on top and always a full circle
     ctx.beginPath();
@@ -902,6 +1845,17 @@ window.HF = window.HF || {};
     ctx.lineWidth = 1.25;
     ctx.strokeStyle = pal.outline;
     ctx.stroke();
+
+    if (dbg) {
+      // Canvas 2D records commands and rasterizes later, so the clock above
+      // can read near zero for a frame that is expensive to paint. With
+      // HF_DEBUG_SYNC also set, read one pixel back to force the pending
+      // raster to finish and make the numbers the true per-frame cost.
+      // Debug only: the readback itself stalls the pipeline.
+      if (window.HF_DEBUG_SYNC) ctx.getImageData(0, 0, 1, 1);
+      globe.lastDraw = { layer: curLayer, cached: cached, staticMs: t1 - t0,
+                         featureMs: t2 - t1, totalMs: performance.now() - t0 };
+    }
   }
 
   /* ---------------------------------------------------------- animation
@@ -913,27 +1867,43 @@ window.HF = window.HF || {};
     rafId = window.requestAnimationFrame(tick);
   }
 
+  function pbFading() {
+    return pbLayers.length > 1 || (pbLayers.length === 1 && pbLayers[0].dir !== 0);
+  }
+
   function tick() {
     rafId = null;
     if (!visible) return;
 
-    var animating = dragging || !!inertia || !!transition;
+    var now = performance.now();
+    var animating = dragging || !!inertia || !!transition || pbFading() || !!animator;
     if (dirty || animating) {
       if (inertia) stepInertia();
       if (transition) stepTransition();
+      // The app's playback clock runs here, inside the one rAF loop, rather
+      // than on a second loop of its own: a second requestAnimationFrame
+      // would be queued behind this one and land its frame a whole display
+      // frame late. It sets the new frame (which marks us dirty) and says
+      // whether to keep going.
+      if (animator && !animator(now)) animator = null;
+      if (pbLayers.length) stepFade(now);
       // window.HF_DEBUG_TIMING flips this on for perf investigation (e.g. the
       // hover-emphasis redraw path below) without adding a console.log that
       // fires on every normal frame/drag.
       if (window.HF_DEBUG_TIMING) {
         var t0 = performance.now();
         draw();
-        console.log('[globe] draw() took ' + (performance.now() - t0).toFixed(2) + ' ms, ' + lows.length + ' tracks');
+        var ld = globe.lastDraw || {};
+        console.log('[globe] draw() took ' + (performance.now() - t0).toFixed(2) + ' ms, ' + lows.length +
+          ' tracks, layer ' + curLayer + (ld.cached ? ' (static cached)' : '') +
+          ' [static ' + (ld.staticMs || 0).toFixed(2) + ' ms, features ' + (ld.featureMs || 0).toFixed(2) + ' ms]');
       } else {
         draw();
       }
       dirty = false;
+      if (curLayer === 'playback') afterPlaybackDraw();
     }
-    if (animating) scheduleFrame();
+    if (dragging || !!inertia || !!transition || pbFading() || !!animator) scheduleFrame();
   }
 
   function stepInertia() {
@@ -1018,6 +1988,20 @@ window.HF = window.HF || {};
       (low.bomb ? '<div class="t-row">Explosive: ' + low.berg.toFixed(2) + ' B</div>' : '');
   }
 
+  /** Tooltip text for a hit. In playback a storm is moving, so the event's
+      summary alone ("Min 962 hPa") would not say what it is doing right now;
+      a clock frame adds its current pressure and position. */
+  function tipFor(hit) {
+    var html = fixTip(hit.low);
+    var s = hit.storm;
+    if (curLayer === 'playback' && pbKind === 'clock' && s) {
+      html += '<div class="t-row">Now: ' +
+        (s.pres != null ? Math.round(s.pres) + ' hPa' : 'no analyzed centre') +
+        ' &middot; ' + HF.fmtLatLon(s.lat, s.lon) + '</div>';
+    }
+    return html;
+  }
+
   /** Lat/lon readout under the cursor, in the site's own HF.fmtLatLon format
       so it matches the tables and every other tooltip. Hidden whenever the
       cursor isn't actually over the sphere. */
@@ -1031,16 +2015,45 @@ window.HF = window.HF || {};
 
   function hideReadout() { if (readoutEl) readoutEl.hidden = true; }
 
+  /* A throttle that only ever DROPS moves leaves the tooltip on whatever the
+     last accepted move saw: the pointer stops inside the 30 ms window, the
+     final position is discarded, and the readout names the neighbouring cell
+     until the mouse moves again. On the storm layers that is a missed hover;
+     on the composite layer it is a tooltip quoting the wrong cell's numbers,
+     which is worse than none. So a dropped move is remembered and replayed
+     once, when the window closes (a trailing edge). */
+  var pendingHover = null, hoverTimer = null;
+
+  function replayHover() {
+    hoverTimer = null;
+    var e = pendingHover;
+    pendingHover = null;
+    if (!e || dragging || !canvas || !lastPointer) return;
+    handleHover(e, canvas.getBoundingClientRect());
+  }
+
   function handleHover(evt, rect) {
     var now = performance.now();
-    if (now - lastHoverT < HOVER_THROTTLE_MS) return;
+    if (now - lastHoverT < HOVER_THROTTLE_MS) {
+      pendingHover = { clientX: evt.clientX, clientY: evt.clientY };
+      if (!hoverTimer) hoverTimer = window.setTimeout(replayHover, HOVER_THROTTLE_MS - (now - lastHoverT) + 2);
+      return;
+    }
+    pendingHover = null;
     lastHoverT = now;
 
     var px = evt.clientX - rect.left, py = evt.clientY - rect.top;
 
     if (curLayer === 'density') { handleDensityHover(px, py, evt); return; }
+    if (curLayer === 'composite') { handleCompositeHover(px, py, evt); return; }
 
-    var hit = nearestHit(px, py);
+    updateHover(nearestHit(px, py), evt);
+  }
+
+  /** Apply a hit-test result to the hover state. Shared by the mousemove
+      path above and by afterPlaybackDraw(), which has to re-run it when the
+      storms move under a stationary cursor. `evt` only needs clientX/Y. */
+  function updateHover(hit, evt) {
     var key = hit ? hit.low.key : null;
 
     if (key !== hoveredKey) {
@@ -1052,9 +2065,18 @@ window.HF = window.HF || {};
       dirty = true;
       scheduleFrame();
       canvas.style.cursor = key ? 'pointer' : '';
-      if (hit) HF.showTip(fixTip(hit.low), evt); else HF.hideTip();
+      if (hit) { lastTipHtml = tipFor(hit); HF.showTip(lastTipHtml, evt); }
+      else { lastTipHtml = ''; HF.hideTip(); }
     } else if (hit) {
-      HF.moveTip(evt);
+      if (curLayer === 'playback') {
+        // The storm under the cursor keeps moving, so its "Now:" row changes
+        // every few frames - rewrite the tooltip only when the text did.
+        var html = tipFor(hit);
+        if (html !== lastTipHtml) { lastTipHtml = html; HF.showTip(html, evt); }
+        else HF.moveTip(evt);
+      } else {
+        HF.moveTip(evt);
+      }
     }
   }
 
@@ -1108,6 +2130,7 @@ window.HF = window.HF || {};
     var rect = canvas.getBoundingClientRect();
     var px = evt.clientX - rect.left, py = evt.clientY - rect.top;
     updateReadout(px, py);
+    lastPointer = dragging ? null : { px: px, py: py, clientX: evt.clientX, clientY: evt.clientY };
 
     if (dragging && dragLast) {
       var dx = evt.clientX - dragLast.x, dy = evt.clientY - dragLast.y;
@@ -1130,6 +2153,7 @@ window.HF = window.HF || {};
       HF.hideTip();
       hoveredKey = undefined;
       hoveredCellKey = null;
+      hoveredCompId = null;
     } else {
       handleHover(evt, rect);
     }
@@ -1241,10 +2265,13 @@ window.HF = window.HF || {};
   }
 
   function onLeave() {
+    lastPointer = null;
+    pendingHover = null;
     if (!dragging) {
-      if (hoveredKey != null || hoveredCellKey != null) {
+      if (hoveredKey != null || hoveredCellKey != null || hoveredCompId != null) {
         hoveredKey = undefined;
         hoveredCellKey = null;
+        hoveredCompId = null;
         dirty = true;
         scheduleFrame();
       }
@@ -1281,12 +2308,18 @@ window.HF = window.HF || {};
       nothing once density stops being the layer, etc.) and recomputes the
       density grid only when that layer is actually active. */
   globe.render = function (lowsArg, selKey, layer) {
+    // render('composite'): a lone string is a layer name, and the lows and
+    // selection from the last full call stay as they were.
+    if (typeof lowsArg === 'string' && selKey === undefined && layer === undefined) {
+      layer = lowsArg; lowsArg = lows; selKey = selectedKey;
+    }
     lows = lowsArg || [];
     selectedKey = selKey || null;
     var newLayer = layer || 'tracks';
     if (newLayer !== curLayer) {
       hoveredKey = undefined;
       hoveredCellKey = null;
+      hoveredCompId = null;
       if (canvas) canvas.style.cursor = '';
       HF.hideTip();
     }
@@ -1397,6 +2430,52 @@ window.HF = window.HF || {};
     }
   };
 
+  /** Hand the globe the frame to draw for layer 'playback'.
+
+      frame  an HF.playback frame: a clock's at(t, tail) result, or the
+             engine's step(season) result.
+      opts   {kind: 'clock' | 'step', tailHours: number | Infinity,
+              crossfade: false to cut instead of dissolve}
+
+      Clock frames replace each other instantly - the heads already move
+      smoothly, there is nothing to dissolve. A step frame arriving over
+      another step frame crossfades (PB_FADE_MS), matched by storm key; under
+      prefers-reduced-motion it cuts. A fade interrupted by yet another frame
+      continues from its current alpha instead of popping. */
+  globe.setPlaybackFrame = function (frame, opts) {
+    opts = opts || {};
+    var kind = opts.kind === 'step' ? 'step' : 'clock';
+    var now = performance.now();
+    var wasKind = pbKind;
+    pbKind = kind;
+    pbTail = opts.tailHours == null ? 48 : opts.tailHours;
+    if (!frame) { pbLayers = []; }
+    else if (kind === 'step' && wasKind === 'step' && pbLayers.length &&
+             opts.crossfade !== false && !reducedMotion()) {
+      for (var i = 0; i < pbLayers.length; i++) {
+        var l = pbLayers[i];
+        l.a0 = layerAlpha(l, now); l.t0 = now; l.dir = -1;
+      }
+      pbLayers.push({ frame: frame, a0: 0, t0: now, dir: 1 });
+    } else {
+      pbLayers = [{ frame: frame, a0: 1, t0: now, dir: 0 }];
+    }
+    dirty = true;
+    scheduleFrame();
+  };
+
+  /** Install (or, with null, remove) the callback that advances playback.
+      It is called once per animation frame, before drawing, with the frame
+      timestamp, and returns true to keep running. Lives in the globe's own
+      loop - see tick() for why. */
+  globe.setAnimator = function (fn) {
+    animator = fn || null;
+    if (animator) scheduleFrame();
+  };
+
+  // app.js needs the same answer for "do not autoplay"; one definition here.
+  globe.prefersReducedMotion = reducedMotion;
+
   /** Toggle the ocean currents background layer - independent of
       globe.render's layer argument, so it can be shown under Tracks, Fix
       density or either point layer. Off by default; app.js calls this only
@@ -1411,6 +2490,55 @@ window.HF = window.HF || {};
   // shade drawCurrents() strokes with, rather than duplicating the
   // isDarkTheme()/fallback logic in two files.
   globe.currentsColor = function () { return pal ? pal.current : null; };
+
+  /** Composite-anomaly layer (see the "composite" section).
+
+        HF.globe.setComposite(result [, opts])   result from HF.composite.compare(), or null to clear
+        HF.globe.render('composite')             show it (the full render(lows, sel, layer) form works too)
+
+      opts.field     'rate' (default) | 'shape'. Which difference to colour.
+      opts.scaleMax  fix the colour scale at +-scaleMax instead of fitting it
+                     to the data, so two maps can share one scale.
+
+      Returns compositeState(). Nothing is drawn for a result that is not
+      status 'ok' or has reliability 'none'; the state says so and why. */
+  globe.setComposite = function (result, opts) {
+    opts = opts || {};
+    compField = opts.field === 'shape' ? 'shape' : 'rate';
+    compScaleMax = opts.scaleMax > 0 ? Number(opts.scaleMax) : null;
+    compSetResult(result);
+    return compState();
+  };
+
+  /** Switch between 'rate' and 'shape' on the result already set. */
+  globe.setCompositeField = function (field) {
+    compField = field === 'shape' ? 'shape' : 'rate';
+    hoveredCompId = null;
+    HF.hideTip();
+    compRefresh();
+    dirty = true;
+    scheduleFrame();
+    return compState();
+  };
+
+  /** Fix (or, with null, release) the +-max of the colour scale. */
+  globe.setCompositeScale = function (max) {
+    compScaleMax = max > 0 ? Number(max) : null;
+    compRefresh();
+    dirty = true;
+    scheduleFrame();
+    return compState();
+  };
+
+  /** {state: 'none'|'refused'|'provisional'|'ok', drawn, reason, warnings,
+      field, unit, scaleMax, nTested, nUntested, nSigFDR, expectedByChance,
+      summary, n, status, reliability} - what the tab needs to explain the map. */
+  globe.compositeState = compState;
+
+  /** The colour scale as data ({bins: [{cls, lo, hi, color, meaning}], max,
+      unit, alpha, stipple, untested, ...}) with colours resolved for the
+      current theme, or null when nothing is drawn. Same table the canvas uses. */
+  globe.compositeLegend = compLegend;
 
   // Read by app.js for the "Fix density" map-note text, same as the flat
   // map exposed them (HF.maps.CELL_LAT/CELL_LON) before it was removed.

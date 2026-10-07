@@ -47,6 +47,15 @@
   --seq-1: #cde2fb; --seq-2: #9ec5f4; --seq-3: #6da7ec;
   --seq-4: #3987e5; --seq-5: #256abf; --seq-6: #184f95; --seq-7: #0d366b;
 
+  /* Diverging pair for the composite anomaly map (globe.js reads these by
+     name; its DIV_FALLBACK table is the same validated hexes). Blue = more
+     storms than the archive, vermilion = fewer; neutral grey at zero; four
+     steps an arm, matched in lightness. Light steps darken with magnitude,
+     dark steps lighten, as --seq-* and --mslp-* do. */
+  --div-pos-1: #b7d3f6; --div-pos-2: #6da7ec; --div-pos-3: #2a78d6; --div-pos-4: #184f95;
+  --div-neg-1: #f4c4b3; --div-neg-2: #e38869; --div-neg-3: #c44f21; --div-neg-4: #882f08;
+  --div-mid:   #f0efec;
+
   /* Per-fix MSLP "intensity" ramp: pale amber (shallow, ~1010 hPa) -> orange
      -> red -> deep magenta (<945 hPa). 1 = shallowest, 7 = deepest. On this
      light surface the ramp runs light -> dark (deepest = darkest), the same
@@ -144,6 +153,10 @@
     --seq-1: #0d366b; --seq-2: #184f95; --seq-3: #256abf;
     --seq-4: #3987e5; --seq-5: #6da7ec; --seq-6: #9ec5f4; --seq-7: #cde2fb;
 
+    --div-pos-1: #1c5cab; --div-pos-2: #3987e5; --div-pos-3: #86b6ef; --div-pos-4: #b7d3f6;
+    --div-neg-1: #983e1b; --div-neg-2: #d45e32; --div-neg-3: #ee9a7c; --div-neg-4: #ffbfa9;
+    --div-mid:   #383835;
+
     /* MSLP ramp, chosen fresh for this dark surface (not the light steps
        flipped) - on a dark ground the ramp runs dark -> light so the deepest
        lows (--mslp-7) still read as the brightest, highest-contrast marks.
@@ -188,6 +201,10 @@
   --accent-soft:   #16263a;
   --seq-1: #0d366b; --seq-2: #184f95; --seq-3: #256abf;
   --seq-4: #3987e5; --seq-5: #6da7ec; --seq-6: #9ec5f4; --seq-7: #cde2fb;
+
+  --div-pos-1: #1c5cab; --div-pos-2: #3987e5; --div-pos-3: #86b6ef; --div-pos-4: #b7d3f6;
+  --div-neg-1: #983e1b; --div-neg-2: #d45e32; --div-neg-3: #ee9a7c; --div-neg-4: #ffbfa9;
+  --div-mid:   #383835;
 
   --mslp-1: #784700; --mslp-2: #a74d01; --mslp-3: #de3400; --mslp-4: #ff4d29;
   --mslp-5: #ff7aa8; --mslp-6: #ff9fd6; --mslp-7: #ffc2f8;
@@ -497,6 +514,9 @@ main { padding: 0 var(--sp-5) var(--sp-6); }
 .seg:last-child { border-right: 0; }
 .seg:hover { background: var(--surface-sunk); }
 .seg.is-active { background: var(--accent-soft); color: var(--accent); }
+/* Not colour alone: the active layer also gets a heavier weight and an
+   underline bar, and carries aria-pressed (see app.js). */
+.seg.is-active { font-weight: 650; box-shadow: inset 0 -3px 0 var(--accent); }
 
 /* ------------------------------------------------------------------- map */
 
@@ -558,6 +578,133 @@ main { padding: 0 var(--sp-5) var(--sp-6); }
 .legend-scale span { flex: 1; }
 .legend-ends { display: flex; justify-content: space-between; color: var(--ink-muted); font-size: var(--fs-micro); font-variant-numeric: tabular-nums; }
 .legend-note { margin: 6px 0 0; font-size: var(--fs-micro); color: var(--ink-muted); line-height: 1.35; }
+
+/* -------------------------------------------------------------- transport
+   The playback strip under the layer control (docs/index.html #pbBar).
+   Text here uses --ink-2, not --ink-muted: the muted token is ~3.5:1 on the
+   surface, under the 4.5:1 a small label needs. No colours are introduced -
+   everything is an existing token - and no state is carried by colour alone:
+   the checked mode is bold with an underline bar, play/pause changes both
+   the button's word and its glyph's shape. */
+
+.transport {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: var(--sp-3) var(--sp-4);
+  margin: 0 0 var(--sp-3);
+}
+.transport-row { display: flex; align-items: flex-end; gap: var(--sp-3) var(--sp-4); flex-wrap: wrap; }
+.transport-main { align-items: center; margin-top: var(--sp-3); }
+
+/* the Mode group is a fieldset (native grouping for assistive tech) styled
+   as one of the page's labelled .filter blocks */
+fieldset.filter { border: 0; margin: 0; padding: 0; }
+.filter > legend {
+  padding: 0; font-size: var(--fs-micro); font-weight: 600; color: var(--ink-2);
+  text-transform: uppercase; letter-spacing: var(--tracking); margin-bottom: 5px;
+}
+fieldset.filter { display: flex; flex-direction: column; }
+
+.pb-mode-set {
+  display: inline-flex; border: 1px solid var(--border-strong);
+  border-radius: var(--radius); overflow: hidden; height: var(--control-h);
+}
+.pb-mode { position: relative; display: flex; }
+.pb-mode + .pb-mode { border-left: 1px solid var(--border); }
+/* The radio itself is visually hidden but stays focusable; its label text
+   is the visible control. */
+.pb-mode input {
+  position: absolute; inset: 0; width: 100%; height: 100%; margin: 0;
+  opacity: 0; cursor: pointer;
+}
+.pb-mode span {
+  display: flex; align-items: center; padding: 0 var(--sp-3); white-space: nowrap;
+  font-size: var(--fs-base); font-weight: 550; color: var(--ink-2); background: var(--surface);
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.pb-mode:hover span { background: var(--surface-sunk); }
+.pb-mode input:checked + span {
+  background: var(--accent-soft); color: var(--accent);
+  font-weight: 650; box-shadow: inset 0 -3px 0 var(--accent);
+}
+.pb-mode input:focus-visible + span {
+  outline: 2px solid var(--accent); outline-offset: -2px;
+}
+
+.pb-play { min-width: 92px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+/* Play = triangle, Pause = two bars: the shape changes, not just a colour. */
+.pb-glyph {
+  display: inline-block; width: 0; height: 0;
+  border-style: solid; border-width: 6px 0 6px 10px;
+  border-color: transparent transparent transparent currentColor;
+}
+.pb-play.is-playing .pb-glyph {
+  width: 4px; height: 12px; border-width: 0 4px; border-style: solid;
+  border-color: currentColor;
+}
+
+.pb-scrub-wrap { flex: 1 1 260px; min-width: 200px; }
+input.pb-scrub {
+  -webkit-appearance: none; appearance: none; display: block;
+  width: 100%; height: 20px; margin: 0; padding: 0; border: 0; background: transparent;
+  --pb-fill: 0%;
+}
+input.pb-scrub:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: var(--radius-sm); }
+input.pb-scrub::-webkit-slider-runnable-track {
+  height: 6px; border-radius: 3px; border: 1px solid var(--border-strong);
+  background: linear-gradient(to right, var(--accent) var(--pb-fill), var(--surface-sunk) var(--pb-fill));
+}
+input.pb-scrub::-moz-range-track {
+  height: 6px; border-radius: 3px; border: 1px solid var(--border-strong);
+  background: linear-gradient(to right, var(--accent) var(--pb-fill), var(--surface-sunk) var(--pb-fill));
+}
+input.pb-scrub::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 16px; height: 16px; margin-top: -6px;
+  border-radius: 50%; background: var(--accent); border: 2px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--ink-2); cursor: pointer;
+}
+input.pb-scrub::-moz-range-thumb {
+  width: 12px; height: 12px; border-radius: 50%; background: var(--accent);
+  border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--ink-2); cursor: pointer;
+}
+
+/* Month ticks. The container is inset by half a thumb on each side because
+   a native range's thumb centre travels (width - thumb) across the track, so
+   a tick at p% lines up with the thumb at p%. Each label starts at its tick
+   (the tick is the label's left border) so it reads as the month that
+   begins there. */
+.pb-ticks { position: relative; height: 18px; margin: 3px 8px 0; }
+.pb-tick {
+  position: absolute; top: 0; padding-left: 3px; white-space: nowrap;
+  border-left: 1px solid var(--ink-muted); line-height: 14px;
+  font-size: var(--fs-micro); color: var(--ink-2); font-variant-numeric: tabular-nums;
+}
+
+.pb-readout { margin: 0; min-width: 150px; text-align: right; }
+.pb-date { font-size: var(--fs-xl); font-weight: 650; font-variant-numeric: tabular-nums; color: var(--ink); }
+.pb-count { display: block; font-size: var(--fs-xs); color: var(--ink-2); }
+.transport-hint { margin: var(--sp-2) 0 0; font-size: var(--fs-xs); color: var(--ink-2); }
+.transport-status { margin: var(--sp-1) 0 0; font-size: var(--fs-sm); font-weight: 600; color: var(--ink); }
+.transport-status:empty { display: none; }
+
+/* Legend swatches for the playback layer */
+.legend-diamond { width: 8px; height: 8px; transform: rotate(45deg); flex: none; margin: 0 1px; }
+.legend-ring { box-sizing: content-box; border: 1px solid; background: transparent; }
+.legend-fade { width: 30px; height: 4px; border-radius: 2px; flex: none; }
+
+/* The transport takes room from the globe rather than pushing it off the
+   first screen; the 460px floor on .globe-wrap still applies. */
+.pb-active .globe-wrap { height: min(calc(78vh - 112px), 820px, 92vw); }
+
+@media (max-width: 620px) {
+  .transport { padding: var(--sp-3); }
+  .pb-mode-set { max-width: 100%; overflow-x: auto; }
+  .pb-mode span { padding: 0 var(--sp-2); font-size: var(--fs-sm); }
+  .transport-row > .filter { flex: 1 1 40%; }
+  .transport-row > fieldset.filter { flex-basis: 100%; }
+  .transport-row select { width: 100%; }
+  .pb-scrub-wrap { flex-basis: 100%; order: 3; }
+  .pb-readout { margin-left: auto; }
+}
 
 /* ---------------------------------------------------------------- charts */
 
@@ -699,6 +846,121 @@ main { padding: 0 var(--sp-5) var(--sp-6); }
   .panel-tools .tool-note { margin-left: 0; text-align: left; flex-basis: 100%; }
 }
 
+/* ------------------------------------------------------- teleconnections
+   The Teleconnections tab (docs/index.html #panel-tele, app.js). Tokens only:
+   no colour here is hard-coded, so both themes follow. The verdict never
+   rides on colour - each state has its own glyph, its own title in words and
+   its own border weight - and the green/amber/red status tokens are NOT used,
+   because "no significant difference" is not a pass or a fail, it is a
+   statement about a sample. */
+
+/* The Filters bar, active-filter chips and KPI strip describe the filtered
+   archive; a composite ignores them (it is the whole archive's complete
+   seasons against a subset), so they step aside rather than look live. */
+.tele-active .filters, .tele-active .active-filters, .tele-active .kpis { display: none; }
+
+.tele-grid {
+  display: grid; gap: var(--sp-4); align-items: start;
+  grid-template-columns: minmax(340px, 5fr) minmax(360px, 6fr);
+  margin-bottom: var(--sp-4);
+}
+.tele-side { display: grid; gap: var(--sp-4); min-width: 0; }
+.tele-card { padding: var(--sp-4); min-width: 0; }
+.tele-card h2 { margin: 0 0 var(--sp-3); font-size: var(--fs-md); font-weight: 650; }
+.tele-card h3 {
+  margin: var(--sp-4) 0 var(--sp-2); font-size: var(--fs-xs); font-weight: 650;
+  text-transform: uppercase; letter-spacing: var(--tracking); color: var(--ink-2);
+}
+fieldset.tele-field, .tele-field { margin: 0 0 var(--sp-3); }
+.tele-field select { min-width: 140px; }
+.tele-mjo { display: block; }
+.tele-lag input[type="range"] { width: 100%; max-width: 320px; }
+.tele-hint { margin: var(--sp-1) 0 0; font-size: var(--fs-xs); color: var(--ink-2); max-width: 60ch; }
+.tele-defn { margin: 0; font-size: var(--fs-sm); color: var(--ink-2); }
+.tele-fieldsel { margin-bottom: var(--sp-2); }
+
+/* statistics card ------------------------------------------------------ */
+.tele-stats { border-top: 3px solid var(--accent); }
+.tele-stats.is-pending #teleStatsBody { opacity: .5; }
+.tele-pending {
+  margin: 0 0 var(--sp-3); padding: var(--sp-2) var(--sp-3); font-size: var(--fs-sm); font-weight: 600;
+  background: var(--accent-soft); color: var(--ink);
+  border: 1px dashed var(--accent); border-radius: var(--radius);
+}
+.tele-showing { margin: 0 0 var(--sp-2); font-size: var(--fs-sm); font-weight: 600; color: var(--ink-2); }
+
+.tele-verdict {
+  padding: var(--sp-3) var(--sp-4); border-radius: var(--radius);
+  background: var(--surface-sunk); border: 1px solid var(--border-strong);
+  border-left-width: 6px;
+}
+.tele-verdict-title { margin: 0; font-size: var(--fs-xl); font-weight: 700; letter-spacing: -.01em; color: var(--ink); }
+.tele-verdict-icon { display: inline-block; width: 1.4em; font-weight: 400; color: var(--ink-2); }
+.tele-verdict-text { margin: var(--sp-2) 0 0; font-size: var(--fs-md); color: var(--ink); max-width: 62ch; }
+/* Four states, four distinct edges and glyphs (not colour alone):
+   not tested = dotted, null = solid grey, null with low power = dashed,
+   cells found = accent. */
+.tele-verdict.is-untested { border-left-style: dotted; border-left-color: var(--ink-muted); }
+.tele-verdict.is-null { border-left-style: solid; border-left-color: var(--ink-2); }
+.tele-verdict.is-lowpower { border-left-style: dashed; border-left-color: var(--ink-2); background: var(--surface-2); }
+.tele-verdict.is-found { border-left-style: solid; border-left-color: var(--accent); background: var(--accent-soft); }
+.tele-verdict.is-found .tele-verdict-icon { color: var(--accent); }
+
+.tele-controlled {
+  margin: var(--sp-2) 0 0; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-sm); color: var(--ink);
+  border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface);
+}
+.tele-note { margin: var(--sp-2) 0 0; font-size: var(--fs-sm); color: var(--ink-2); max-width: 66ch; }
+.tele-reliability { margin: 0; font-size: var(--fs-base); color: var(--ink); max-width: 66ch; }
+.tele-reliability.is-low, .tele-reliability.is-none { padding-left: var(--sp-3); border-left: 3px dashed var(--ink-2); }
+.tele-power {
+  margin: var(--sp-2) 0 0; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-sm); color: var(--ink);
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); max-width: 66ch;
+}
+.tele-warnings { margin: 0; padding-left: var(--sp-5); font-size: var(--fs-sm); color: var(--ink); max-width: 66ch; }
+.tele-warnings li { margin: 0 0 var(--sp-1); }
+
+.tele-t-wrap { overflow-x: auto; }
+.tele-t { width: 100%; font-size: var(--fs-sm); }
+.tele-t th, .tele-t td { padding: 5px 8px; white-space: normal; }
+.tele-t thead th { position: static; cursor: default; white-space: normal; }
+.tele-t td.num, .tele-t th.num { text-align: right; }
+.tele-t tbody th { font-weight: 600; text-align: left; }
+.tele-fdr strong { font-size: var(--fs-lg); }
+.tele-fdr.has-hits strong { color: var(--accent); }
+
+/* map ------------------------------------------------------------------ */
+.tele-mapcard.is-pending .tele-map, .tele-mapcard.is-pending .tele-legend { opacity: .55; }
+.tele-mapcap { margin: 0 0 var(--sp-3); font-size: var(--fs-sm); color: var(--ink); max-width: 70ch; }
+.tele-map .globe-wrap { height: min(66vh, 620px, 92vw); min-height: 340px; }
+.tele-legend { margin-top: var(--sp-2); font-size: var(--fs-xs); color: var(--ink-2); }
+.tele-legend h3 { margin-top: var(--sp-2); }
+.tele-scale { display: flex; height: 10px; border-radius: 2px; overflow: hidden; border: 1px solid var(--border); }
+.tele-scale-seg { flex: 1; }
+.tele-scale-ends { display: flex; justify-content: space-between; gap: var(--sp-2); margin-top: 3px; font-variant-numeric: tabular-nums; }
+.tele-keylist { margin: var(--sp-2) 0 0; padding-left: var(--sp-5); }
+/* The Map tab's own legend overlay is not used here (the key sits under the map). */
+.tele-active .map-legend { display: none; }
+/* Playback may have left body.pb-active set; the transport is not on this tab. */
+.tele-active .tele-map .globe-wrap { height: min(66vh, 620px, 92vw); }
+
+.tele-series { margin-bottom: var(--sp-4); }
+.tele-table { margin-top: var(--sp-3); }
+.tele-table summary { cursor: pointer; font-size: var(--fs-sm); font-weight: 600; color: var(--accent); padding: var(--sp-1) 0; }
+.tele-table .table-wrap { max-height: 360px; margin-top: var(--sp-2); }
+.tele-table .data-table thead th { cursor: default; }
+.tele-method h3 { font-size: var(--fs-base); font-weight: 650; margin: var(--sp-4) 0 var(--sp-1); color: var(--ink); }
+.tele-method h3:first-of-type { margin-top: 0; }
+
+@media (max-width: 900px) {
+  .tele-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 620px) {
+  .tele-card { padding: var(--sp-3); }
+  .tele-field .pb-mode-set { max-width: 100%; overflow-x: auto; }
+  .tele-scale-ends { flex-direction: column; }
+}
+
 /* ------------------------------------------------------------------ print */
 
 @media print {
@@ -719,7 +981,7 @@ main { padding: 0 var(--sp-5) var(--sp-6); }
   }
   body { background: #fff; }
   .shell-sticky { position: static; }
-  .tabs, .filters, .active-filters, #loading, .footer,
+  .tabs, .filters, .active-filters, #loading, .footer, .transport, .tele-controls,
   .topbar-actions, .panel-tools, .map-legend, .drawer, .tooltip {
     display: none !important;
   }
