@@ -81,12 +81,16 @@ SIGNOFF = re.compile(r"^[ \t]*(?:\.?\s*FORECASTER\b|\$\$)", re.M)
 ISSUED_LINE = re.compile(
     r"^\s*(\d{4})\s+UTC\s+([A-Z]{3})\s+(\d{1,2})\s+(\d{4})\b", re.M)
 
-# Headers are "...WORDS..." on a line of their own. Requiring the closing dots
-# matters: a hard wrap can leave a continuation line that starts with "..."
-# ("...AND E OF 59N N OF 45N."), and that must stay part of its statement.
-HEADER = re.compile(r"^\.{3}\s*([A-Z][A-Z /&-]*?)\s*\.{3}$")
-SECTION_WARN = re.compile(r"^\.?\s*WARNINGS\s*\.?$")
-SECTION_SYN = re.compile(r"^\.?\s*SYNOPSIS\s+AND\s+FORECAST\s*\.?$")
+# Headers are "...WORDS..." on a line of their own, but the typed products are
+# sloppy about the dots: "..STORM WARNING..." and ".SYNOPSIS AND FORECAST..."
+# both occur. A missed header is not harmless - the lows below it would keep the
+# previous category, or be filed under the wrong section - so the dots are
+# matched loosely and the title is what carries the meaning. Requiring the
+# closing dots (and no digits in the title) keeps a hard-wrapped continuation
+# like "...AND E OF 59N N OF 45N." from being taken for one.
+HEADER = re.compile(r"^\.{2,3}\s*([A-Z][A-Z /&-]*?)\s*\.{2,3}$")
+SECTION_WARN = re.compile(r"^\.*\s*WARNINGS\s*\.*$")
+SECTION_SYN = re.compile(r"^\.*\s*SYNOPSIS\s+AND\s+FORECAST\s*\.*$")
 
 # A statement is a forecast if it opens with a lead time or the word FORECAST.
 # "36 HOUR", "12 HR" and "48 HOURS" have all been printed.
@@ -141,7 +145,8 @@ LOW_POS = re.compile(
 # forecast. The words listed are the ones OPC puts in front of a real centre.
 OPENING = re.compile(
     r"^\.*\s*(?:(?:COMPLEX|SYSTEM|LOW|WITH|ONE|FIRST|MAIN|MEAN|DEVELOPING"
-    r"|HURRICANE|FORCE|INLAND)\s+)*$")
+    r"|HURRICANE|FORCE|INLAND|RAPIDLY|INTENSIFYING|WEAKENING"
+    r"|(?:N|S|E|W|NE|NW|SE|SW)\s+OF\s+(?:THE\s+)?AREA)\s+)*$")
 # A later position in the same statement is accepted only as a named additional
 # centre of a complex system ("...AND A SECOND LOW 36N 140W 1004 MB").
 ADDITIONAL = re.compile(
@@ -270,6 +275,10 @@ def statements(body):
         # Section and category changes first, so a statement is stamped with
         # the header above it and never the one below.
         h = HEADER.match(s)
+        if h and "WARNING" not in h.group(1) and cur and not cur[-1].endswith("."):
+            # An untitled-looking "...WORDS..." line in the middle of an
+            # unfinished sentence is the wrapped tail of that sentence.
+            h = None
         if h or SECTION_WARN.match(s) or SECTION_SYN.match(s):
             for out in flush():
                 yield out
