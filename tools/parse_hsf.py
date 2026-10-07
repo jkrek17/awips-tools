@@ -17,6 +17,13 @@ intensification. Every choice below that looks over-strict is guarding that.
 When in doubt this parser emits nothing: a missing fix costs a gap in a track,
 a wrong one corrupts a statistic.
 
+What counts as an OPC bulletin is decided by the WMO heading (FZNT01 KWBC,
+FZPN01 KWBC, FZPN02 KWBC), never by the PIL the archive filed it under, and
+records without one are rejected and counted by era. The archive holds each
+bulletin several times (re-transmissions, -RRA/-CCA/-CCB corrections, HSFEPI
+beside HSFEP1), so the output has one analysis per basin and synopsis time,
+the later transmission winning.
+
 Usage:
     python3 tools/parse_hsf.py                       # whole cache -> CSV
     python3 tools/parse_hsf.py --from-text FILE      # one raw product -> stdout
@@ -124,20 +131,28 @@ STOP_WORDS = re.compile(
 # Latitude letter is always N. Longitude 180 is printed with no hemisphere
 # letter ("LOW 41N 180 1004 MB"); any other longitude without one is refused
 # rather than guessed.
-LOW_KEYWORD = (r"(?:LOW(?:\s+PRES(?:SURE)?)?"
-               r"|(?:MEAN|MAIN|PRIMARY|SECONDARY|SECOND|THIRD|ONE|FIRST)\s+(?:LOW\s+)?CENTER"
+LOW_KEYWORD = (r"(?:LOW(?:\s+PRES(?:SURE)?|\s+CENTER)?"
+               r"|(?:MEAN|MAIN|PRIMARY|STRONGER|WEAKER|SECONDARY|SECOND|THIRD|ONE|FIRST)\s+(?:LOW\s+)?CENTER"
                r"|(?:DEVELOPING\s+)?(?:HURRICANE\s+FORCE\s+LOW|STORM|GALE))")
 DIRECTION_OF_AREA = (r"(?:N|S|E|W|NE|NW|SE|SW|NORTH|SOUTH|EAST|WEST|NORTHEAST|NORTHWEST"
                      r"|SOUTHEAST|SOUTHWEST)\s+OF\s+(?:THE\s+)?(?:FORECAST\s+)?(?:AREA|REGION)")
+# The 2002 text strings its fields together with ellipses ("LOW INLAND...47N
+# 67W 1004 MB", "LOW E OF AREA...51N 31W 992 MB", "47N 34W...978 MB"), so an
+# ellipsis counts as a separator wherever a space does.
+SEP = r"(?:\s|\.\.\.)+"
 LOW_QUALIFIER = (r"(?:(?:JUST|WELL|NEAR|INLAND|RELOCATED"
-                 r"|" + DIRECTION_OF_AREA + r")\s+){0,4}")
+                 r"|(?:DOWNGRADED|UPGRADED)\s+FROM\s+(?:GALE|STORM|HURRICANE\s+FORCE)"
+                 r"|" + DIRECTION_OF_AREA + r")" + SEP + r"){0,4}")
 LOW_POS = re.compile(
-    r"\b(?P<kw>" + LOW_KEYWORD + r")(?:\s+|\.\.\.)" + LOW_QUALIFIER +
+    r"\b(?P<kw>" + LOW_KEYWORD + r")" + SEP + LOW_QUALIFIER +
     r"(?P<lat>\d{1,2}(?:\.\d)?)\s*N\s*"
     r"(?P<lon>\d{1,3}(?:\.\d)?)(?:\s*(?P<h>[EW])\b|(?=\s))"
     # A pressure is 3-4 digits not followed by a unit. "120 NM" after a
     # position is a radius, not a pressure.
-    r"(?:\s+(?P<pres>\d{3,4})(?!\d)(?!\s*(?:NM|KT|FT|N\b|S\b|E\b|W\b))(?:\s*(?:MB|HPA))?)?")
+    # ".LOW 62N 31W...E OF FORECAST AREA...995 MB" puts the area note between
+    # position and pressure.
+    r"(?:" + SEP + DIRECTION_OF_AREA + r")?"
+    r"(?:" + SEP + r"(?P<pres>\d{3,4})(?!\d)(?!\s*(?:NM|KT|FT|N\b|S\b|E\b|W\b))(?:\s*(?:MB|HPA))?)?")
 
 # What may precede the FIRST position in a statement. An analysis statement
 # opens with its low, so anything else in front of a position ("IN ASSOCIATION
@@ -146,9 +161,9 @@ LOW_POS = re.compile(
 # valid at another time, and taking it would duplicate a low or smuggle in a
 # forecast. The words listed are the ones OPC puts in front of a real centre.
 OPENING = re.compile(
-    r"^\.*\s*(?:(?:COMPLEX|SYSTEM|LOW|WITH|WITHIN|ONE|FIRST|MAIN|MEAN|PRIMARY|DEVELOPING"
-    r"|NEW|NEWLY|FORMED|COMBINED|HURRICANE|FORCE|INLAND|RAPIDLY|INTENSIFYING|WEAKENING"
-    r"|" + DIRECTION_OF_AREA + r")\s+)*$")
+    r"^\.*\s*(?:(?:COMPLEX|SYSTEM|LOW|PRESSURE|CENTER|WITH|WITHIN|ONE|FIRST|MAIN|MEAN|PRIMARY"
+    r"|DEVELOPING|GALE|STORM|NEW|NEWLY|FORMED|COMBINED|HURRICANE|FORCE|INLAND|RAPIDLY"
+    r"|INTENSIFYING|WEAKENING|" + DIRECTION_OF_AREA + r")(?:\s+|\.{1,3}\s*))*$")
 # A later position in the same statement is accepted only as a named additional
 # centre of a complex system ("...AND A SECOND LOW 36N 140W 1004 MB").
 ADDITIONAL = re.compile(
@@ -206,6 +221,40 @@ def resolve_year(hhmm, mon, day, issued):
     return best[1]
 
 
+# The 24-hour forecast time is printed under the synopsis time, and is the
+# synopsis time plus a day.
+FORECAST24_TIME = re.compile(
+    r"24\s+HOUR\s+FORECAST\s+VALID\s+(\d{4})\s+UTC\s+(?:[A-Z]{3}\s+)?([A-Z]{3})\s+(\d{1,2})")
+
+
+def synopsis_time(m, line, body, issued):
+    """(valid or None, repaired) for a segment's SYNOPSIS VALID line.
+
+    OPC's template prints the previous month's name on the first day of the
+    month ("SYNOPSIS VALID 0000 UTC JUN 01" in a product issued 1 July, whose
+    header and 24-hour line both say JUL), about one bulletin day in thirty.
+    Dropping those would blank every month start, so when the stated date is
+    nowhere near the issuance the time is re-derived from the 24-hour forecast
+    line minus one day, and used only if it agrees with the stated hour and
+    lands within the usual window of the issuance. Reported as a repair count.
+    """
+    mon = MONTHS.get(m.group(2)) if m else None
+    valid = resolve_year(m.group(1), mon, int(m.group(3)), issued) if mon else None
+    if valid is not None or m is None:
+        return valid, False
+    f = FORECAST24_TIME.search(line + " " + body[:400])
+    fmon = MONTHS.get(f.group(2)) if f else None
+    if not fmon or f.group(1) != m.group(1):
+        return None, False
+    t24 = resolve_year(f.group(1), fmon, int(f.group(3)), issued + timedelta(days=1))
+    if t24 is None:
+        return None, False
+    t = t24 - timedelta(days=1)
+    if abs((t - issued).total_seconds()) > 3 * 86400:
+        return None, False
+    return t, True
+
+
 def issued_from_text(text):
     m = ISSUED_LINE.search(text)
     if not m or m.group(2) not in MONTHS:
@@ -221,7 +270,7 @@ def issued_from_text(text):
 # --------------------------------------------------------- segmentation ----
 
 def split_segments(text):
-    """[(time_match_or_None, body)] - one per 'SYNOPSIS VALID' line.
+    """[(time_match_or_None, body, synopsis_line)] - one per 'SYNOPSIS VALID' line.
 
     The raw text of an OPC product continues into the tropical bulletin of the
     neighbouring office (NHC for the Atlantic, TAFB for the east Pacific), which
@@ -239,7 +288,7 @@ def split_segments(text):
         so = SIGNOFF.search(body)
         if so:
             body = body[:so.start()]
-        segs.append((SYNOPSIS_TIME.search(m.group(0)), body))
+        segs.append((SYNOPSIS_TIME.search(m.group(0)), body, m.group(0)))
     return segs
 
 
@@ -343,7 +392,9 @@ def lows_in(st, strict=True):
             if not ok:
                 refused += 1
                 continue
-        if TIME_TAGGED.match(head, m.end()):
+        # Looked up in the whole statement: the cut at "AT 0000 UTC" would
+        # otherwise hide the very tag being tested for.
+        if TIME_TAGGED.match(st, m.end()):
             refused += 1
             continue
         lat = float(m.group("lat"))
@@ -402,11 +453,6 @@ def cat_for(kw, header_cat):
     return ""
 
 
-def pil_of(product_id, default=""):
-    m = re.search(r"(HSF[A-Z0-9]{3})(?:-[A-Z0-9]+)?$", product_id or "")
-    return m.group(1) if m else default
-
-
 # A WMO abbreviated heading ("FZNT01 KWBC 100420") opens every bulletin on the
 # wire, and it - not the AFOS PIL the archive filed the text under - is what
 # says what the text is. The archive has bulletins misfiled under these PILs
@@ -436,7 +482,13 @@ def split_bulletins(text):
     out = []
     for i, m in enumerate(marks):
         end = marks[i + 1].start() if i + 1 < len(marks) else len(text)
-        out.append(("%s %s" % (m.group(1), m.group(2)), text[m.end():end]))
+        body = text[m.end():end]
+        # Two headings back to back (one record starts "FZNT01 KWBC 100429 /
+        # HSFAT1 / FZNT01 KWBC 092218 / HSFAT1") leave the first with nothing
+        # but its PIL line; it is a header, not a bulletin.
+        if i + 1 < len(marks) and re.fullmatch(r"\s*(?:HSF[A-Z0-9]{3})?\s*", body):
+            continue
+        out.append(("%s %s" % (m.group(1), m.group(2)), body))
     return out
 
 
@@ -465,7 +517,7 @@ def parse_product(text, issued, product_id="", pil="", all_segments=False,
             st.no_valid += 1
             analyses.append({"pil": bpil, "valid": None, "rows": []})
             continue
-        for idx, (m, body) in enumerate(segs):
+        for idx, (m, body, line) in enumerate(segs):
             if idx > 0 and not all_segments:
                 # What the tropical block would have contributed, counted so
                 # the exclusion is visible, without letting it into the output.
@@ -473,8 +525,10 @@ def parse_product(text, issued, product_id="", pil="", all_segments=False,
                     if not is_forecast(s):
                         st.other_segment_lows += len(lows_in(s, strict=False)[0])
                 continue
-            mon = MONTHS.get(m.group(2)) if m else None
-            valid = resolve_year(m.group(1), mon, int(m.group(3)), issued) if mon else None
+            valid, repaired = synopsis_time(m, line, body, issued)
+            if repaired:
+                st.month_repaired += 1
+                st.repaired_year[valid.year] += 1
             if valid is None:
                 if idx == 0:
                     st.no_valid += 1
@@ -551,6 +605,8 @@ class Stats:
         self.rejected_records = 0        # records with no accepted OPC bulletin
         self.rejected_bulletins = 0
         self.pil_mismatch = 0
+        self.month_repaired = 0
+        self.repaired_year = Counter()
         self.rejected_year = Counter()   # by year of `issued`: no valid time exists
         self.rejected_headings = Counter()
         self.low_no_centre_year = Counter()
@@ -590,6 +646,7 @@ class Stats:
         w("  products read                       %7d" % self.products)
         w("  records rejected on WMO heading     %7d" % self.rejected_records)
         w("  valid time not determined           %7d" % self.no_valid)
+        w("  valid time repaired (month typo)    %7d" % self.month_repaired)
         w("  duplicate analyses dropped          %7d" % self.dup_dropped)
         w("  statements, analysis                %7d" % self.an_statements)
         w("  statements, forecast (not emitted)  %7d" % self.fc_statements)
