@@ -39,3 +39,9 @@ data/hsf_cache/
 # and regenerable from data/hsf_cache/ in a couple of minutes. Only the derived
 # precursors.csv is committed, so this must never be.
 data/hf_lows/hsf_lows.csv
+
+# Python wheels left in the tree by a pip install or download. Research scripts
+# under research/ need numpy, numcodecs and scipy, but the wheels themselves are
+# re-downloadable and tens of MB each - three separate large files have come
+# within one `git add -A` of this history already.
+*.whl
