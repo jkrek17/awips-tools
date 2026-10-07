@@ -34,3 +34,8 @@ flat/.awips-publish-manifest.json
 # tools/fetch_hsf.py cache: raw OPC High Seas Forecast text from the Iowa State
 # IEM archive (~70 MB for 2002-now). Re-fetchable, so never committed.
 data/hsf_cache/
+
+# tools/parse_hsf.py output: every analysed low centre in the cache, about 67 MB
+# and regenerable from data/hsf_cache/ in a couple of minutes. Only the derived
+# precursors.csv is committed, so this must never be.
+data/hf_lows/hsf_lows.csv
