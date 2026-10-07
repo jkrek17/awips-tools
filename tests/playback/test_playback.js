@@ -107,10 +107,14 @@ test('every archive event\'s start date falls in its labelled season under the 1
   D.lows.forEach(function (l) {
     if (PB.seasonOfDate(l.start) !== l.season) bad.push(l.basin + ':' + l.id);
   });
-  // pac:2004200502 has six fixes dated 2005-10-07/08 amid neighbours in Oct 2004:
-  // a mistyped year in the source, deliberately left as is. Under a 1 Jul
-  // boundary 6 early-June events (numbered 01 of the new season) would join it.
-  same(bad, ['pac:2004200502']);
+  // Every event's start now falls inside its labelled season. This used to
+  // except pac:2004200502, whose six fixes were dated 2005-10-07/08 among
+  // neighbours in Oct 2004 - a mistyped year, since corrected in the source
+  // CSV after the 2004-05 season's strict chronological ID order (01 Oct 7,
+  // 03 Oct 31, 04 Nov 16 ...) left no reading in which a 2005 date fits.
+  // Under a 1 Jul boundary 6 early-June events, each numbered 01 of the new
+  // season, would appear here; under 1 Jun none do.
+  same(bad, []);
 });
 
 console.log('composite axis, leap years');
