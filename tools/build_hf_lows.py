@@ -9,12 +9,18 @@ web page needs, and writes:
     docs/data/hf-lows.json   the same payload, for anyone else who wants it
     docs/data/qc-report.txt  every repair, flag and drop, in plain text
 
+Optionally reads data/hf_lows/precursors.csv - fixes recovered from the OPC High
+Seas Forecasts for the 72 h before each event's first hurricane-force fix - and
+attaches them as a separate series (see "Pre-HF backfill" below). The file is
+optional: without it every backfill field is null and nothing else changes.
+
 The reader is deliberately tolerant: it repairs what is unambiguous, drops what
 is not, and reports every decision. Nothing is silently discarded.
 
 Usage:
     python3 tools/build_hf_lows.py                 # uses data/hf_lows/*.csv
     python3 tools/build_hf_lows.py --check         # build, but write nothing
+    python3 tools/build_hf_lows.py --no-backfill   # ignore precursors.csv
 """
 
 from __future__ import annotations
@@ -25,6 +31,7 @@ import json
 import math
 import os
 import platform
+import re
 import subprocess
 import sys
 from collections import Counter, defaultdict
@@ -119,6 +126,14 @@ LOW_FIELDS = [
     # comment above derive() for why the archive carries two versions of the
     # deepening and track figures, and what each one is for.
     "deep24All", "bergAll", "bombAll", "hfDurH", "hfDistNm", "hfSpdKt", "hfSpdMaxKt",
+    # The pre-HF backfill (data/hf_lows/precursors.csv), appended after the
+    # above. All null when that file is absent. `Bf` is the third basis for the
+    # deepening - see "Pre-HF backfill" below.
+    "preFixes", "preN", "preH", "preSrc", "deep24Bf", "bergBf", "bombBf", "deepRelH",
+    # Hours of gapless pressure record behind the first HF fix, whether or not
+    # it reached BACKFILL_MIN_LEAD_H. deepRelH >= 18 - bfLeadH by construction,
+    # so no statement about WHEN the deepening happened is safe without it.
+    "bfLeadH",
 ]
 FIX_FIELDS = ["date", "lat", "lon", "cat", "pres"]
 
@@ -545,6 +560,24 @@ def max_deepening(fixes):
     return best24
 
 
+def deepening_stats(fixes):
+    """max_deepening() in the shape the payload stores. One code path for every
+    basis (HF-only, whole track, HF + backfill): three copies of a Bergeron
+    calculation would drift apart the first time one of them is fixed.
+
+    Returns {"deep24": hPa/24 h rounded to 0.1, "berg": Bergerons rounded to
+    0.01 or None, "bomb": bool, "start", "end": the best pair's times}, with
+    deep24/berg/start/end None and bomb False when no pair is 18-24 h apart."""
+    best = max_deepening(fixes)
+    if not best:
+        return {"deep24": None, "berg": None, "bomb": False, "start": None, "end": None}
+    drop, berg, t_i, t_j = best
+    return {"deep24": round(drop, 1),
+            "berg": round(berg, 2) if berg is not None else None,
+            "bomb": bool(berg is not None and berg >= 1.0),
+            "start": t_i, "end": t_j}
+
+
 def track_stats(fixes):
     """(path length nm, mean speed kt or None, fastest leg kt or None) along
     time-sorted `fixes`, skipping legs with a duplicate timestamp."""
@@ -653,16 +686,13 @@ def derive(low, qc):
     #   B = (dp/24h) * sin(60) / sin(mean lat);  B >= 1 is the classic "bomb".
     # Most HF tracks run < 18 h, so this is available for a minority of lows -
     # which is itself worth showing.
+    # A third basis, `Bf` (HF fixes + the pre-HF backfill), is added by
+    # attach_backfill() through the same deepening_stats().
     for suffix, subset in (("", [f for f in fixes if f[3] == "HF"]), ("All", fixes)):
-        best24 = max_deepening(subset)
-        if best24:
-            low["deep24" + suffix] = round(best24[0], 1)
-            low["berg" + suffix] = round(best24[1], 2) if best24[1] is not None else None
-            low["bomb" + suffix] = bool(best24[1] is not None and best24[1] >= 1.0)
-        else:
-            low["deep24" + suffix] = None
-            low["berg" + suffix] = None
-            low["bomb" + suffix] = False
+        stats = deepening_stats(subset)
+        low["deep24" + suffix] = stats["deep24"]
+        low["berg" + suffix] = stats["berg"]
+        low["bomb" + suffix] = stats["bomb"]
 
     # Translation speed along the track (kt), skipping duplicate timestamps.
     low["distNm"], low["spdKt"], low["spdMaxKt"] = track_stats(fixes)
@@ -710,6 +740,558 @@ def derive(low, qc):
         low["hfDistNm"] = 0 if hf_idx else None
         low["hfSpdKt"] = None
         low["hfSpdMaxKt"] = None
+
+
+# ---------------------------------------------------------------------------
+# Pre-HF backfill
+#
+# The archive records the hurricane-force segment and almost nothing before it,
+# and the deepening is mostly over by the time the first HF fix is logged. So
+# the HF-only statistic is comparable across eras but blind to the deepening.
+# tools/track_hsf.py recovers the missing phase from the OPC High Seas
+# Forecasts into data/hf_lows/precursors.csv; this section attaches it.
+#
+# The human archive is never altered. Recovered fixes live in their own series
+# (preFixes) with a per-fix source tag, so a reader can always tell a recovered
+# fix from a human-analysed one, and a recovered fix never replaces or edits an
+# archive fix. A third basis for the deepening results:
+#
+#   no suffix  HF-category fixes only                 era-safe floor, undercounts
+#   All        the whole recorded archive track       not comparable across years
+#   Bf         HF fixes + backfill (+ the archive's own fixes inside the same
+#              window - see backfill_low)             the intended measure
+#
+# Why Bf may use the archive's non-HF fixes when `All` may not. What makes `All`
+# era-contaminated is not that it uses non-HF fixes; it is that the AVAILABILITY
+# of those fixes jumped in 2013/2017, so the same storm is measured over a
+# longer record afterwards. A recovered fix and an archive lead fix at the same
+# valid time are the same analysis by the same office (where checked, the
+# pressures agree exactly), so preferring the human-analysed one is strictly
+# better and costs no era-safety. Bf is era-safe if and only if its COVERAGE is
+# era-uniform; the basis is not the thing to police, coverage is. That is why
+# the build measures coverage season by season and trips `coverageTrend` (see
+# backfill_summary) instead of trusting the basis.
+#
+# All three go through deepening_stats(); Bf is emitted only when the record
+# genuinely covers the window (BACKFILL_MIN_LEAD_H below) and is null otherwise,
+# never the HF-only number under another name.
+# ---------------------------------------------------------------------------
+
+BACKFILL_PATH = "data/hf_lows/precursors.csv"
+PRECURSOR_COLUMNS = ["basin", "event_id", "valid", "lat", "lon", "pres", "warn_cat",
+                     "source", "match_nm", "conf"]
+
+# The agreed window: 72 h ending at each event's first HF fix, identical in
+# every era. A row before it is outside the definition; a row after the first
+# HF fix is not "pre-HF" at all (the archive owns that period).
+BACKFILL_WINDOW_H = 72
+
+# Coverage needed before a Bf statistic is emitted: a gapless chain of
+# pressures, steps no longer than BACKFILL_MAX_STEP_H, running back at least
+# BACKFILL_MIN_LEAD_H from the first HF fix.
+#
+#   24 h is the shortest lead that observes one complete 24-h window ending at
+#   HF onset - the window the HF-only statistic can never see. With less, every
+#   window that reaches back before onset is half-observed: its far end is
+#   simply missing, and the best *observed* window would be reported as if it
+#   were the best window - the HF-only number again, under a Bf name. A 24-h
+#   pair that merely reaches a few hours into the lead is the half-covered
+#   case, so "a 24-h pair can be computed" is not the test.
+#
+#   6 h steps because the source is 4x-daily on the 00/06/12/18Z grid: a longer
+#   step is a missing analysis or an attribution the track tool refused, not
+#   normal sampling, so the record is not continuous across it. Pressure-less
+#   fixes are not links in the chain.
+#
+#   The choice is deliberately independent of the pressures themselves.
+#   Requiring, say, that the steepest window not touch the edge of the record
+#   would select on the outcome and bias the very statistic being measured.
+#
+#   Consequence worth knowing: a lead of L hours cannot observe a window that
+#   ends earlier than (18 - L) h from onset (the shortest accepted pair is
+#   18 h), so deepRelH >= 18 - L by construction - at the minimum lead, no
+#   earlier than -6. The sign of deepRelH is censored towards "late" for short
+#   leads, and a consumer asking *when* the deepening happened should condition
+#   on lead rather than pool every event. The payload does not carry the chain
+#   lead itself (preH, the span of the recovered fixes, is the nearest proxy).
+BACKFILL_MIN_LEAD_H = 24
+BACKFILL_MAX_STEP_H = 6
+
+# `conf` is the track tool's own grading of an attribution. A wrong precursor
+# corrupts the statistic and a missing one is recoverable later, so the lowest
+# grade is refused here rather than averaged in.
+CONF_RANK = {"low": 0, "medium": 1, "high": 2}
+BACKFILL_MIN_CONF = "medium"
+PRECURSOR_SOURCES = ("hsf", "era5")
+PRECURSOR_WARN_CATS = ("HF", "S", "G", "")
+
+# A recovered fix that lands on an archive fix "agrees" when its pressure
+# matches (same office, same analysis, so it should match exactly - the
+# tolerance is only for float parsing) and its position is close. HSF gives
+# whole degrees, so up to half a degree of rounding (~30 nm in latitude) is
+# expected against the archive's finer positions.
+AGREE_HPA = 0.5
+AGREE_NM = 60.0
+
+# The coverage-uniformity gate. Bf is era-safe only if the share of HF events
+# with a usable window is flat across seasons. Early HSFs state the analysis as
+# ".LOW 62N 35W 933 MB ..." reliably while recent ones are often area-only, so
+# recovery may be BETTER early and a Bf explosive share would then inherit a
+# spurious downward trend, hiding in the denominator. The gate trips when the
+# seasonal share spreads over COVERAGE_SPREAD_PTS points, or its least-squares
+# slope on season is more than COVERAGE_SLOPE_SE standard errors from zero. It
+# only raises a flag and a QC note; what the page does about it is not decided
+# here. Seasons before RECORD_START are short-counted (see RECORD_START) and
+# would dominate the spread with a handful of events, so they are left out of
+# the statistics (though not out of the table).
+COVERAGE_SPREAD_PTS = 20.0
+COVERAGE_SLOPE_SE = 2.0
+
+# A season-basin with at least this many HF events and not one usable Bf window
+# is reported as a coverage gap: the table shows every season, this makes a
+# collapse in one era a QC note rather than something to be spotted by eye.
+COVERAGE_ALARM_MIN_EVENTS = 5
+
+_ISO_VALID = re.compile(r"^(\d{4})-(\d{2})-(\d{2})[T ](\d{2})(?::?(\d{2}))?(?::?(\d{2}))?Z?$")
+
+
+def _hours(t_a: int, t_b: int) -> float:
+    """Hours from YYYYMMDDHH t_a to t_b (positive when t_b is later)."""
+    return (to_dt(t_b) - to_dt(t_a)).total_seconds() / 3600.0
+
+
+def parse_valid(raw):
+    """A precursor's valid time as YYYYMMDDHH. Accepts the archive's own 10-digit
+    form and ISO 8601 ("2006-12-10T06:00:00Z"); the interface contract does not
+    say which the track tool writes. Synoptic hours only: the source is the
+    00/06/12/18Z analysis, and an off-grid time would break the chain test."""
+    s = (raw or "").strip()
+    m = _ISO_VALID.match(s)
+    if m:
+        y, mo, d, h, mi, sec = m.groups()
+        if (mi or "00") != "00" or (sec or "00") != "00":
+            return {"value": None, "detail": f'valid "{s}" is not on the hour'}
+        s = y + mo + d + h
+    parsed = parse_date_digits(s)
+    if not parsed or parsed["rolled"]:
+        return {"value": None, "detail": f'valid "{(raw or "").strip()}" is not a real date/time'}
+    if not parsed["synoptic"]:
+        return {"value": None,
+                "detail": f'valid "{(raw or "").strip()}" is not a 00/06/12/18Z time'}
+    return {"value": parsed["value"], "detail": None}
+
+
+def parse_precursor(cells, row_no):
+    """One precursors.csv row -> ({record}, None) or (None, (kind, detail, date)).
+    Everything that cannot be trusted is refused here; nothing is guessed."""
+    def bad(kind, detail, date=None):
+        return None, (kind, detail, date)
+
+    basin = cells["basin"].strip().lower()
+    lon_range = next((b[3] for b in BASINS if b[0] == basin), None)
+    if lon_range is None:
+        return bad("precursor-malformed", f'basin "{cells["basin"].strip()}" is not one of '
+                   f'{", ".join(b[0] for b in BASINS)}')
+    event_id = cells["event_id"].strip()
+    if not event_id:
+        return bad("precursor-malformed", "row has no event_id")
+
+    valid = parse_valid(cells["valid"])
+    if valid["value"] is None:
+        return bad("precursor-malformed", valid["detail"])
+    date = valid["value"]
+
+    label = next(b[1] for b in BASINS if b[0] == basin)
+    pos = normalize_position(cells["lat"], cells["lon"], label, lon_range)
+    if not pos["ok"]:
+        return bad("precursor-malformed", pos["detail"], date)
+    if pos["detail"]:
+        # The archive keeps a doubtful position and notes it. A recovered one is
+        # refused: there is no human analyst vouching for it.
+        return bad("precursor-malformed", pos["detail"].replace("kept but check the sign",
+                                                                "recovered fix refused"), date)
+
+    pres = normalize_pressure(cells["pres"])
+    if pres["kind"] == "dropped":
+        return bad("precursor-malformed", pres["detail"], date)
+
+    warn = cells["warn_cat"].strip().upper()
+    if warn not in PRECURSOR_WARN_CATS:
+        return bad("precursor-malformed", f'warn_cat "{warn}" is not HF, S, G or blank', date)
+    source = cells["source"].strip().lower()
+    if source not in PRECURSOR_SOURCES:
+        return bad("precursor-malformed", f'source "{source}" is not hsf or era5', date)
+    conf = cells["conf"].strip().lower()
+    if conf not in CONF_RANK:
+        return bad("precursor-malformed", f'conf "{conf}" is not high, medium or low', date)
+    if cells["match_nm"].strip() and to_number(cells["match_nm"]) is None:
+        return bad("precursor-malformed", f'match_nm "{cells["match_nm"].strip()}" is not numeric', date)
+    if CONF_RANK[conf] < CONF_RANK[BACKFILL_MIN_CONF]:
+        return bad("precursor-low-conf", f"attribution confidence is {conf}; "
+                   f"below the {BACKFILL_MIN_CONF} minimum, not used", date)
+
+    return ({"row": row_no, "basin": basin, "id": event_id, "date": date,
+             "lat": pos["lat"], "lon": pos["lon"], "pres": pres["value"],
+             "cat": warn, "source": source, "conf": conf}, None)
+
+
+def read_precursors(path, qc):
+    """Read and validate precursors.csv -> (records, comments).
+
+    A wrong header is fatal, like the archive CSVs: a mis-shaped file silently
+    read as empty would look exactly like "nothing recovered". Individual bad
+    rows are refused with a QC note. Lines starting with '#' are comments; they
+    exist so a development file can say it is synthetic."""
+    records, comments, header = [], [], None
+    with open(path, newline="", encoding="utf-8-sig") as fh:
+        reader = csv.reader(fh)
+        for row in reader:
+            if row and row[0].lstrip().startswith("#"):
+                comments.append(",".join(row).lstrip().lstrip("#").strip())
+                continue
+            if not any(str(c).strip() for c in row):
+                continue
+            if header is None:
+                header = {str(n).strip().lower(): i for i, n in enumerate(row)}
+                missing = [c for c in PRECURSOR_COLUMNS if c not in header]
+                if missing:
+                    raise SystemExit(f"{path}: no column found for {', '.join(missing)}")
+                continue
+            qc.bump("precursorRows")
+            cells = {c: (str(row[header[c]]) if header[c] < len(row) else "")
+                     for c in PRECURSOR_COLUMNS}
+            rec, err = parse_precursor(cells, reader.line_num)
+            if err:
+                kind, detail, date = err
+                qc.note(cells["basin"].strip().lower(), reader.line_num,
+                        cells["event_id"].strip(), date, kind, detail)
+                qc.bump("precursorsRefused")
+                qc.bump("precRefused_" + kind[len("precursor-"):])
+                continue
+            records.append(rec)
+    return records, comments
+
+
+def _same_fix(rec_pres, rec_lat, rec_lon, fix_pres, fix_lat, fix_lon):
+    """Do a recovered fix and another fix at the same time describe one analysis?"""
+    if (rec_pres is None) != (fix_pres is None):
+        return False
+    if rec_pres is not None and abs(rec_pres - fix_pres) > AGREE_HPA:
+        return False
+    return great_circle_nm(rec_lat, rec_lon, fix_lat, fix_lon) <= AGREE_NM
+
+
+def screen_precursors(low, recs, qc):
+    """The recovered rows of one event that may enter its backfill series.
+
+    Refused, each with a QC note (the archive is the authority throughout):
+      - the event has no HF fix, so there is no window to anchor;
+      - later than the first HF fix: outside the agreed window, and the period
+        after onset belongs to the archive;
+      - more than 72 h before it: outside the agreed window;
+      - at a time the archive already has a fix for this event. If it agrees
+        with the archive fix it is a harmless duplicate and is counted; if it
+        does not, it is a contradiction, noted in full. Either way the human
+        analysis stays and the recovered row is dropped;
+      - two rows for one time that disagree (neither can be preferred).
+    """
+    if not recs:
+        return []
+    first_hf = next((f for f in low["fixes"] if f[3] == "HF"), None)
+
+    def refuse(rec, kind, detail):
+        qc.note(rec["basin"], rec["row"], rec["id"], rec["date"], kind, detail)
+        qc.bump("precursorsRefused")
+        qc.bump("precRefused_" + kind[len("precursor-"):])
+
+    if first_hf is None:
+        for rec in recs:
+            refuse(rec, "precursor-no-anchor",
+                   "event has no HF fix, so there is no window to attach a precursor to")
+        return []
+
+    t_hf = first_hf[0]
+    at_time = defaultdict(list)
+    for f in low["fixes"]:
+        at_time[f[0]].append(f)
+
+    candidates, agreeing = [], 0
+    for rec in recs:
+        lead = -_hours(t_hf, rec["date"])           # hours BEFORE the first HF fix
+        if lead < 0:
+            refuse(rec, "precursor-late",
+                   f"valid {rec['date']}Z is {-lead:g} h after the first HF fix "
+                   f"({t_hf}Z); outside the {BACKFILL_WINDOW_H}-h pre-HF window, rejected")
+        elif lead > BACKFILL_WINDOW_H:
+            refuse(rec, "precursor-early",
+                   f"valid {rec['date']}Z is {lead:g} h before the first HF fix "
+                   f"({t_hf}Z); outside the {BACKFILL_WINDOW_H}-h pre-HF window, rejected")
+        elif rec["date"] in at_time:
+            arch = at_time[rec["date"]]
+            if any(_same_fix(rec["pres"], rec["lat"], rec["lon"], a[4], a[1], a[2])
+                   for a in arch):
+                agreeing += 1
+                qc.bump("precDuplicatesOfArchive")
+            else:
+                a = arch[0]
+                refuse(rec, "precursor-contradiction",
+                       f"archive already has a fix at {rec['date']}Z "
+                       f"({a[1]:g}, {a[2]:g}, {a[3]}, {a[4] if a[4] is not None else 'no pres'}) "
+                       f"that this {rec['source']} fix does not match "
+                       f"({rec['lat']:g}, {rec['lon']:g}, "
+                       f"{rec['pres'] if rec['pres'] is not None else 'no pres'}); "
+                       f"archive kept, recovered fix dropped")
+        else:
+            candidates.append(rec)
+    if agreeing:
+        qc.note(low["basin"], None, low["id"], t_hf, "precursor-duplicate",
+                f"{agreeing} recovered fix{'es' if agreeing != 1 else ''} landed on archive "
+                f"fixes and agree with them; the archive fixes stand and the recovered rows "
+                f"are not used")
+
+    # Two recovered rows for one time: keep one only if they say the same thing.
+    by_time = defaultdict(list)
+    for rec in candidates:
+        by_time[rec["date"]].append(rec)
+    accepted = []
+    for date in sorted(by_time):
+        group = sorted(by_time[date], key=lambda r: (r["source"] != "hsf", r["row"]))
+        head = group[0]
+        if all(_same_fix(r["pres"], r["lat"], r["lon"], head["pres"], head["lat"], head["lon"])
+               for r in group[1:]):
+            accepted.append(head)
+            for dup in group[1:]:
+                qc.bump("precDuplicatesOfRecovered")
+        else:
+            for r in group:
+                refuse(r, "precursor-contradiction",
+                       f"{len(group)} recovered rows for {date}Z disagree with each other; "
+                       f"none is used")
+    return accepted
+
+
+def chain_lead_h(series, t_hf):
+    """Hours of gapless pressure record running back from the first HF fix.
+
+    Walks backwards from the first HF fix through the pressure-bearing fixes of
+    `series` (time-sorted) while each step is <= BACKFILL_MAX_STEP_H. 0 when the
+    first HF fix itself has no pressure: there is then nothing to attach the
+    chain to."""
+    pressured = [f for f in series if f[4] is not None]
+    anchor = next((i for i, f in enumerate(pressured)
+                   if f[0] == t_hf and f[3] == "HF"), None)
+    if anchor is None:
+        return 0.0
+    reach = t_hf
+    for prev in reversed(pressured[:anchor]):
+        if _hours(prev[0], reach) > BACKFILL_MAX_STEP_H:
+            break
+        reach = prev[0]
+    return _hours(reach, t_hf)
+
+
+def backfill_low(low, accepted):
+    """Attach the backfill fields to one derived low. Never touches low["fixes"].
+
+    The Bf series is the recovered fixes + the archive's HF fixes + any archive
+    fix of its own that falls inside the same 72 h window. The last group is
+    not in the contract's wording ("archive HF fixes + backfill") but cannot be
+    left out: a recovered row that lands on one of those fixes is rejected so
+    the human analysis wins, so leaving them out of the series would punch a
+    hole exactly where the archive is best (the DHF lead fixes of the recent
+    seasons) and make coverage look worst in the eras where it is richest.
+
+    It does not readmit the contamination the HF-only statistic removes: the
+    recovered and the archive fix at one valid time are the same analysis, so
+    which one is used changes no number. The risk that remains is uneven
+    coverage across eras, which backfill_summary() measures."""
+    low["preFixes"] = [[r["date"], r["lat"], r["lon"], r["pres"], r["cat"], r["source"]]
+                       for r in accepted]
+    low["preN"] = len(accepted)
+    sources = {r["source"] for r in accepted}
+    low["preSrc"] = None if not sources else (sources.pop() if len(sources) == 1 else "mixed")
+
+    first_hf = next((f for f in low["fixes"] if f[3] == "HF"), None)
+    low["preH"] = int(round(_hours(accepted[0]["date"], first_hf[0]))) \
+        if accepted and first_hf else 0
+    for k in ("deep24Bf", "bergBf", "bombBf", "deepRelH", "bfLeadH"):
+        low[k] = None
+    if first_hf is None:
+        return
+    t_hf = first_hf[0]
+
+    series = [[r["date"], r["lat"], r["lon"], r["cat"], r["pres"]] for r in accepted]
+    series += [f for f in low["fixes"]
+               if f[3] == "HF" or -BACKFILL_WINDOW_H <= _hours(t_hf, f[0]) < 0]
+    series.sort(key=lambda f: f[0])
+
+    lead = chain_lead_h(series, t_hf)
+    low["bfLeadH"] = int(round(lead))
+    if lead < BACKFILL_MIN_LEAD_H:
+        return                                  # not covered: null, never the HF-only value
+    stats = deepening_stats(series)
+    if stats["deep24"] is None:
+        return
+    low["deep24Bf"] = stats["deep24"]
+    low["bergBf"] = stats["berg"]
+    low["bombBf"] = stats["bomb"]
+    # Negative = the steepest 24-h window ended before hurricane-force onset.
+    low["deepRelH"] = int(round(_hours(t_hf, stats["end"])))
+
+
+def attach_backfill(lows, records, qc):
+    """Attach recovered fixes to the derived lows, keyed on (basin, event id) -
+    ids repeat across basins ("2006200718" is in both) and, once split, carry
+    a/b suffixes."""
+    index = {(l["basin"], l["id"]): l for l in lows}
+    split_bases = {(l["basin"], l["id"][:-1]) for l in lows if l.get("split")}
+    by_low = defaultdict(list)
+    for rec in records:
+        key = (rec["basin"], rec["id"])
+        if key in index:
+            by_low[key].append(rec)
+        elif key in split_bases:
+            qc.note(rec["basin"], rec["row"], rec["id"], rec["date"], "precursor-ambiguous-id",
+                    "archive id was split into separate events (a/b/...) because of a time "
+                    "gap; which one this row belongs to is not knowable from the id. Rejected")
+            qc.bump("precursorsRefused")
+            qc.bump("precRefused_ambiguous-id")
+        else:
+            qc.note(rec["basin"], rec["row"], rec["id"], rec["date"], "precursor-unknown-event",
+                    "no archive event with this (basin, event_id); rejected")
+            qc.bump("precursorsRefused")
+            qc.bump("precRefused_unknown-event")
+    for low in lows:
+        accepted = screen_precursors(low, by_low.get((low["basin"], low["id"]), []), qc)
+        backfill_low(low, accepted)
+        qc.bump("precursorsAccepted", len(accepted))
+
+
+def _ols(xs, ys):
+    """Least-squares slope of ys on xs and its standard error, or (None, None)
+    when there are fewer than three points or no spread in xs."""
+    n = len(xs)
+    if n < 3:
+        return None, None
+    mx, my = sum(xs) / n, sum(ys) / n
+    sxx = sum((x - mx) ** 2 for x in xs)
+    if sxx == 0:
+        return None, None
+    slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sxx
+    sse = sum((y - my - slope * (x - mx)) ** 2 for x, y in zip(xs, ys))
+    return slope, math.sqrt(sse / (n - 2) / sxx)
+
+
+def _pct(usable, events):
+    return round(100.0 * usable / events, 1) if events else None
+
+
+def coverage_trend(coverage):
+    """Is Bf coverage uniform across seasons? One series per basin and one
+    pooled, over the seasons from RECORD_START: the share of HF events with a
+    usable window, its spread, and the OLS slope on season (points per season)
+    with its standard error. Returns ({key: stats}, tripped), where `tripped`
+    lists the reasons the gate fired."""
+    by_key = {b[0]: defaultdict(lambda: [0, 0]) for b in BASINS}
+    by_key["all"] = defaultdict(lambda: [0, 0])
+    for r in coverage:
+        if r["season"] < RECORD_START:
+            continue
+        for k in (r["basin"], "all"):
+            by_key[k][r["season"]][0] += r["events"]
+            by_key[k][r["season"]][1] += r["usable"]
+    stats, tripped = {}, []
+    for key, seasons in by_key.items():
+        pts = [(s, 100.0 * u / e) for s, (e, u) in sorted(seasons.items()) if e]
+        if not pts:
+            continue
+        shares = [p[1] for p in pts]
+        slope, se = _ols([p[0] for p in pts], shares)
+        spread = max(shares) - min(shares)
+        st = {"seasons": len(pts), "min": round(min(shares), 1), "max": round(max(shares), 1),
+              "spread": round(spread, 1),
+              "slope": round(slope, 2) if slope is not None else None,
+              "se": round(se, 2) if se is not None else None}
+        if spread > COVERAGE_SPREAD_PTS:
+            tripped.append(f"{key}: seasonal share spans {spread:.1f} points "
+                           f"({min(shares):.1f}% to {max(shares):.1f}%), more than "
+                           f"{COVERAGE_SPREAD_PTS:g}")
+        if slope is not None and (abs(slope) > COVERAGE_SLOPE_SE * se if se else slope != 0):
+            tripped.append(f"{key}: share trends {slope:+.2f} points per season "
+                           f"(standard error {se:.2f}), more than {COVERAGE_SLOPE_SE:g} "
+                           f"standard errors from zero")
+        stats[key] = st
+    return stats, tripped
+
+
+def coverage_selection(lows):
+    """Median minimum pressure and first-HF-fix latitude of the events with a
+    usable Bf window versus those without, from RECORD_START on. If recovery
+    succeeds preferentially on deep or high-latitude storms the covered subset
+    is not a random sample, and a Bf share quoted from it is not the archive's."""
+    def summarize(group):
+        return {"n": len(group),
+                "medianMinP": _median([l["minP"] for l in group]),
+                "medianLat": _median([next(f for f in l["fixes"] if f[3] == "HF")[1]
+                                      for l in group])}
+    out = {}
+    pop = [l for l in lows if l["hfN"] and l["season"] >= RECORD_START]
+    for key in [b[0] for b in BASINS] + ["all"]:
+        sel = [l for l in pop if key == "all" or l["basin"] == key]
+        out[key] = {"covered": summarize([l for l in sel if l["deep24Bf"] is not None]),
+                    "uncovered": summarize([l for l in sel if l["deep24Bf"] is None])}
+    return out
+
+
+def backfill_summary(lows, qc, path, comments):
+    """Coverage of the backfill by season and basin, for the QC report and the
+    page. Events counted are those with an HF fix: the rest have no window.
+    `usable` is an event with a Bf statistic emitted.
+
+    Also the era-uniformity diagnostics (coverage_trend, coverage_selection)
+    and the `coverageTrend` flag they set. The flag suppresses nothing."""
+    cells = defaultdict(lambda: [0, 0, 0])
+    for l in lows:
+        if not l["hfN"]:
+            continue
+        c = cells[(l["basin"], l["season"])]
+        c[0] += 1
+        c[1] += 1 if l["preN"] else 0
+        c[2] += 1 if l["deep24Bf"] is not None else 0
+    coverage = [{"basin": b, "season": s, "events": c[0], "recovered": c[1], "usable": c[2],
+                 "share": _pct(c[2], c[0])}
+                for (b, s), c in sorted(cells.items(), key=lambda kv: (kv[0][1], kv[0][0]))]
+    for row in coverage:
+        qc.bump("bfEvents", row["events"])
+        qc.bump("bfRecovered", row["recovered"])
+        qc.bump("bfUsable", row["usable"])
+        if row["events"] >= COVERAGE_ALARM_MIN_EVENTS and row["usable"] == 0:
+            qc.note(row["basin"], None, "(all lows)", None, "backfill-coverage",
+                    f"season {season_label(row['season'])}: none of {row['events']} HF events "
+                    f"has a usable Bf window ({row['recovered']} have any recovered fix); "
+                    f"the Bf statistics are blank for this whole season")
+
+    trend, tripped = coverage_trend(coverage)
+    if tripped:
+        qc.note("all", None, "(all lows)", None, "backfill-coverage-trend",
+                "Bf coverage is NOT uniform across seasons, so the Bf statistics are not safe "
+                "to compare across seasons (a trend in what can be measured would read as a "
+                "trend in the weather): " + "; ".join(tripped))
+        qc.bump("coverageTrend")
+
+    synthetic = any("SYNTHETIC" in c.upper() for c in comments)
+    if synthetic:
+        qc.note("all", None, "(precursors.csv)", None, "precursor-synthetic",
+                "the precursors file declares itself SYNTHETIC development data; every Bf "
+                "figure in this build is fabricated and must not be published")
+    return {"source": os.path.relpath(path, ROOT) if os.path.isabs(path) else path,
+            "synthetic": synthetic, "windowH": BACKFILL_WINDOW_H,
+            "minLeadH": BACKFILL_MIN_LEAD_H, "maxStepH": BACKFILL_MAX_STEP_H,
+            "minConf": BACKFILL_MIN_CONF, "coverage": coverage,
+            "trendFrom": RECORD_START, "trend": trend,
+            "coverageTrend": bool(tripped), "coverageTrendWhy": tripped,
+            "spreadPts": COVERAGE_SPREAD_PTS, "slopeSe": COVERAGE_SLOPE_SE,
+            "selection": coverage_selection(lows)}
 
 
 # ---------------------------------------------------------------------------
@@ -950,7 +1532,9 @@ def practice_summary(out, qc):
     return summary
 
 
-def build(data_source: str | None = None):
+def build(data_source: str | None = None, precursors: str | None = BACKFILL_PATH):
+    """Build the payload. `precursors` is the backfill CSV (relative to ROOT, or
+    absolute); None, or a path that does not exist, builds without a backfill."""
     qc = QC()
     lows: dict[str, dict] = {}
     basin_info = []
@@ -977,6 +1561,15 @@ def build(data_source: str | None = None):
 
     out.sort(key=lambda l: (l["start"], l["basin"]))
     qc.bump("lows", len(out))
+
+    # The backfill is optional input. Absent, the eight backfill fields stay
+    # unset (null on the wire) and not one other number moves.
+    backfill = None
+    precursors_path = os.path.join(ROOT, precursors) if precursors else None
+    if precursors_path and os.path.exists(precursors_path):
+        records, comments = read_precursors(precursors_path, qc)
+        attach_backfill(out, records, qc)
+        backfill = backfill_summary(out, qc, precursors_path, comments)
 
     seasons = sorted({l["season"] for l in out})
     for info in basin_info:
@@ -1013,9 +1606,73 @@ def build(data_source: str | None = None):
         # The recording-practice change, quantified. The page's Method note and
         # the Climatology boundary markers read this rather than recomputing it.
         "practice": practice,
+        # Backfill provenance and coverage by season and basin; null when no
+        # precursors file was read.
+        "backfill": backfill,
         "qc": {"counts": dict(sorted(qc.counts.items())), "notes": qc.notes},
     }
     return payload
+
+
+def backfill_report(bf) -> list:
+    """The coverage tables: by season and basin, then the era-uniformity
+    diagnostics, then covered versus uncovered storms."""
+    keys = [b[0] for b in BASINS]
+    lines = [f"Backfill coverage ({bf['source']})"]
+    if bf["synthetic"]:
+        lines.append("  *** SYNTHETIC DEVELOPMENT DATA - these figures are not real ***")
+    if bf["coverageTrend"]:
+        lines.append("  *** COVERAGE TREND: Bf statistics are NOT safe to compare across seasons ***")
+    lines.append(f"  usable = gapless pressure chain, steps <= {bf['maxStepH']} h, reaching back "
+                 f">= {bf['minLeadH']} h from the first HF fix (window {bf['windowH']} h, "
+                 f"recovered fixes of confidence >= {bf['minConf']})")
+    lines.append("  cells: events with an HF fix / with any recovered fix / with a usable window / share %")
+    lines.append("  " + "season".ljust(10) + "".join(k.ljust(26) for k in keys))
+    by = {(r["basin"], r["season"]): r for r in bf["coverage"]}
+    totals = {k: [0, 0, 0] for k in keys}
+
+    def cell(e, r, u):
+        return f"{e:>3} {r:>4} {u:>4} {_pct(u, e) if e else 0:>6.1f}".ljust(26)
+    for season in sorted({r["season"] for r in bf["coverage"]}):
+        cells = []
+        for k in keys:
+            r = by.get((k, season))
+            cells.append(cell(r["events"], r["recovered"], r["usable"]) if r else "-".ljust(26))
+            if r:
+                totals[k] = [totals[k][0] + r["events"], totals[k][1] + r["recovered"],
+                             totals[k][2] + r["usable"]]
+        lines.append("  " + season_label(season).ljust(10) + "".join(cells))
+    lines.append("  " + "all".ljust(10) + "".join(cell(*totals[k]) for k in keys))
+    lines.append("")
+
+    lines.append(f"Coverage uniformity, seasons from {season_label(bf['trendFrom'])} "
+                 f"(share of HF events with a usable window; gate: spread > "
+                 f"{bf['spreadPts']:g} points or slope > {bf['slopeSe']:g} standard errors)")
+    lines.append("  " + "series".ljust(8) + "seasons".rjust(8) + "min %".rjust(8) + "max %".rjust(8)
+                 + "spread".rjust(8) + "slope/season".rjust(14) + "std err".rjust(9))
+    for key, t in bf["trend"].items():
+        slope = f"{t['slope']:+.2f}" if t["slope"] is not None else "-"
+        se = f"{t['se']:.2f}" if t["se"] is not None else "-"
+        lines.append("  " + key.ljust(8) + str(t["seasons"]).rjust(8) + f"{t['min']:.1f}".rjust(8)
+                     + f"{t['max']:.1f}".rjust(8) + f"{t['spread']:.1f}".rjust(8)
+                     + slope.rjust(14) + se.rjust(9))
+    lines.append("  coverageTrend: " + ("TRUE - " + "; ".join(bf["coverageTrendWhy"])
+                                       if bf["coverageTrend"] else "false"))
+    lines.append("")
+
+    lines.append(f"Covered vs uncovered storms, seasons from {season_label(bf['trendFrom'])} "
+                 f"(is recovery selective? median minimum pressure hPa / latitude of first HF fix)")
+    lines.append("  " + "series".ljust(8) + "group".ljust(11) + "events".rjust(7)
+                 + "median minP".rjust(13) + "median lat".rjust(12))
+    for key, groups in bf["selection"].items():
+        for name in ("covered", "uncovered"):
+            g = groups[name]
+            minp = f"{g['medianMinP']:.1f}" if g["medianMinP"] is not None else "-"
+            lat = f"{g['medianLat']:.1f}" if g["medianLat"] is not None else "-"
+            lines.append("  " + key.ljust(8) + name.ljust(11) + str(g["n"]).rjust(7)
+                         + minp.rjust(13) + lat.rjust(12))
+    lines.append("")
+    return lines
 
 
 def qc_report(payload) -> str:
@@ -1024,6 +1681,8 @@ def qc_report(payload) -> str:
     for k, v in payload["qc"]["counts"].items():
         lines.append(f"  {k:24s} {v}")
     lines.append("")
+    if payload.get("backfill"):
+        lines += backfill_report(payload["backfill"])
     by_kind = defaultdict(list)
     for n in payload["qc"]["notes"]:
         by_kind[n["kind"]].append(n)
@@ -1047,14 +1706,28 @@ def main():
                      help="how the CSVs in data/hf_lows/ got there, recorded in the "
                           "payload's build.dataSource (e.g. 'fetched', 'local'); "
                           "tools/publish.py sets this itself. Defaults to unknown.")
+    ap.add_argument("--no-backfill", action="store_true",
+                    help=f"ignore {BACKFILL_PATH} even if it exists")
     args = ap.parse_args()
 
-    payload = build(data_source=args.data_source)
+    payload = build(data_source=args.data_source,
+                    precursors=None if args.no_backfill else BACKFILL_PATH)
     counts = payload["qc"]["counts"]
     print(f"lows {counts.get('lows', 0)}  fixes {counts.get('fixes', 0)}  "
           f"seasons {len(payload['seasons'])}  "
           f"dropped rows {counts.get('rowsDropped', 0)}  "
           f"notes {len(payload['qc']['notes'])}")
+
+    if payload["backfill"]:
+        bf = payload["backfill"]
+        usable = sum(r["usable"] for r in bf["coverage"])
+        events = sum(r["events"] for r in bf["coverage"])
+        print(f"backfill {bf['source']}: {counts.get('precursorsAccepted', 0)} fixes used, "
+              f"{counts.get('precursorsRefused', 0)} refused; "
+              f"{usable}/{events} HF events have a usable Bf window"
+              + ("  ** SYNTHETIC DATA **" if bf["synthetic"] else "")
+              + ("  ** COVERAGE TREND: Bf not safe to compare across seasons **"
+                 if bf["coverageTrend"] else ""))
 
     if args.check:
         return

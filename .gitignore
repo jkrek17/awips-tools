@@ -30,3 +30,7 @@ tests/tc_pressure/out/
 # the NOAA server, not in the committed flat/ copy (and the flat-sync job
 # in .github/workflows/pages.yml skips it by name).
 flat/.awips-publish-manifest.json
+
+# tools/fetch_hsf.py cache: raw OPC High Seas Forecast text from the Iowa State
+# IEM archive, ~hundreds of MB over 2002-now. Re-fetchable, so never committed.
+data/hsf_cache/

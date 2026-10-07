@@ -16,12 +16,20 @@ tests pin down that the default deepening/track figures no longer do:
   * the expected values come from independent code below, not from the
     module's own deepening arithmetic, so a bug cannot cancel against itself.
 
+  * the pre-HF BACKFILL (data/hf_lows/precursors.csv) is exercised on synthetic
+    events and synthetic CSV files written to a temp directory - never the
+    development precursors.csv in the repo, whose contents are not real - so
+    the sign of deepRelH, the coverage rule, and every rejection path are
+    pinned by numbers worked out by hand below.
+
     python3 tests/hf_lows/test_hf_lows.py
 """
+import copy
 import importlib.util
 import json
 import math
 import os
+import tempfile
 import unittest
 from datetime import datetime, timedelta
 
@@ -44,9 +52,9 @@ def stamp(t0, hours):
 T0 = datetime(2020, 1, 10, 0)
 
 
-def make_low(spec_rows):
+def make_low(spec_rows, basin="atl", low_id="2019202001"):
     """spec_rows: [(hours since T0, lat, lon, cat, pres)] -> a derived low."""
-    low = {"basin": "atl", "id": "2019202001", "season": 2019, "num": 1, "idOk": True,
+    low = {"basin": basin, "id": low_id, "season": 2019, "num": 1, "idOk": True,
            "fixes": [[stamp(T0, h), lat, lon, cat, p] for h, lat, lon, cat, p in spec_rows]}
     tool.derive(low, tool.QC())
     return low
@@ -147,7 +155,9 @@ class Mechanism(unittest.TestCase):
 class RealPayload(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.payload = tool.build()
+        # Without the backfill: these tests are about the archive's own figures,
+        # and must not depend on whatever precursors.csv is lying in the repo.
+        cls.payload = tool.build(precursors=None)
         fields = cls.payload["lowFields"]
         cls.lows = [dict(zip(fields, row)) for row in cls.payload["lows"]]
         cls.practice = cls.payload["practice"]
@@ -286,10 +296,470 @@ class RealPayload(unittest.TestCase):
         for k in ("generated", "build"):
             committed.pop(k, None)
             fresh.pop(k, None)
-        self.assertEqual(committed["lowFields"], fresh["lowFields"])
-        self.assertEqual(committed["lows"], fresh["lows"],
+        # Compare the columns the committed payload has. The backfill columns
+        # are appended after them (and are null without a precursors file), so
+        # a committed payload from before they existed is not stale for lacking
+        # them - but every column it does have must still match.
+        n = len(committed["lowFields"])
+        self.assertEqual(committed["lowFields"], fresh["lowFields"][:n])
+        self.assertEqual(committed["lows"], [row[:n] for row in fresh["lows"]],
                          "docs/data/hf-lows.json is stale: run python3 tools/build_hf_lows.py")
         self.assertEqual(committed["practice"], fresh["practice"])
+
+
+# ---------------------------------------------------------------------------
+# Pre-HF backfill
+# ---------------------------------------------------------------------------
+
+HEADER = "basin,event_id,valid,lat,lon,pres,warn_cat,source,match_nm,conf"
+
+
+def valid_str(hours, fmt="iso"):
+    d = T0 + timedelta(hours=hours)
+    if fmt == "digits":
+        return d.strftime("%Y%m%d%H")
+    return d.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def prow(hours, pres, basin="atl", low_id="2019202001", lat=50.0, lon=-40.0,
+         warn="S", source="hsf", match="10", conf="high", fmt="iso"):
+    """One precursors.csv line; `hours` is since T0 like make_low()."""
+    return ",".join(str(x) for x in (basin, low_id, valid_str(hours, fmt), lat, lon,
+                                     "" if pres is None else pres, warn, source, match, conf))
+
+
+def write_csv(directory, rows, header=HEADER, comments=()):
+    path = os.path.join(directory, "precursors.csv")
+    with open(path, "w", newline="", encoding="utf-8") as fh:
+        for c in comments:
+            fh.write("# " + c + "\n")
+        fh.write(header + "\n")
+        for r in rows:
+            fh.write(r + "\n")
+    return path
+
+
+def backfill(lows, rows, **kw):
+    """Run a synthetic precursors file through the module -> (lows, qc)."""
+    qc = tool.QC()
+    with tempfile.TemporaryDirectory() as d:
+        records, comments = tool.read_precursors(write_csv(d, rows, **kw), qc)
+    tool.attach_backfill(lows, records, qc)
+    return lows, qc
+
+
+def kinds(qc):
+    return sorted(n["kind"] for n in qc.notes)
+
+
+# A storm whose first HF fix is at hour 48. HF fixes at 48/54/60 h; the
+# pre-HF record is whatever the test supplies.
+HF_TAIL = [(48, 50.0, -40.0, "HF", 976.0), (54, 50.0, -40.0, "HF", 975.0),
+           (60, 50.0, -40.0, "HF", 975.0)]
+
+
+def pre_rows(profile, **kw):
+    """profile: {hours since T0: pressure} -> precursor CSV lines."""
+    return [prow(h, p, **kw) for h, p in sorted(profile.items())]
+
+
+# Steepest fall happens well BEFORE onset. Worked by hand (24 h pairs, and
+# 18 h pairs scaled by 24/18): 12->30 h is 1006-982 = 24 hPa in 18 h = 32 hPa/24 h,
+# which beats every 24-h pair (best 12->36: 28) and every other 18-h pair. It
+# ends at hour 30, i.e. 18 h before the first HF fix at hour 48.
+EARLY = {0: 1010, 6: 1009, 12: 1006, 18: 998, 24: 990, 30: 982, 36: 978, 42: 977}
+# Flat until onset, then the HF segment itself falls fast.
+LATE_HF = [(48, 50.0, -40.0, "HF", 990.0), (54, 50.0, -40.0, "HF", 980.0),
+           (60, 50.0, -40.0, "HF", 972.0), (66, 50.0, -40.0, "HF", 966.0)]
+LATE = {18: 992, 24: 991, 30: 991, 36: 990, 42: 990}
+
+
+def window_end_hours(fixes_hours_pres):
+    """Independent check of the steepest 18-24 h pair's END, in hours: [(h, p)]."""
+    best = None
+    for i, (ha, pa) in enumerate(fixes_hours_pres):
+        for hb, pb in fixes_hours_pres[i + 1:]:
+            h = hb - ha
+            if h < 18 or h > 24:
+                continue
+            drop = (pa - pb) * 24.0 / h
+            if best is None or drop > best[0]:
+                best = (drop, hb)
+    return best
+
+
+class BackfillMechanism(unittest.TestCase):
+    """Synthetic storms, one mechanism each."""
+
+    def test_deepRelH_is_negative_when_the_deepening_ended_before_onset(self):
+        # The question that motivated the whole exercise. Sign convention:
+        # hours of the window END relative to the first HF fix; before = negative.
+        low = make_low(HF_TAIL)
+        backfill([low], pre_rows(EARLY))
+        series = sorted(EARLY.items()) + [(48, 976), (54, 975), (60, 975)]
+        drop, end_h = window_end_hours(series)
+        self.assertEqual(end_h, 30)
+        self.assertEqual(low["deepRelH"], -18, "window ends 18 h BEFORE the first HF fix")
+        self.assertEqual(low["deepRelH"], end_h - 48)
+        self.assertLess(low["deepRelH"], 0)
+        self.assertAlmostEqual(low["deep24Bf"], round(drop, 1))
+        self.assertAlmostEqual(low["bergBf"], 32.0 / 24.0 * math.sin(math.radians(60))
+                               / math.sin(math.radians(50.0)), places=2)
+        self.assertTrue(low["bombBf"])
+        # The HF segment alone (976 -> 975, 12 h) has no 24-h window at all:
+        # the blindness the backfill exists to cure.
+        self.assertIsNone(low["deep24"])
+
+    def test_deepRelH_is_positive_when_the_deepening_is_inside_the_HF_period(self):
+        low = make_low(LATE_HF)
+        backfill([low], pre_rows(LATE))
+        series = sorted(LATE.items()) + [(48, 990), (54, 980), (60, 972), (66, 966)]
+        drop, end_h = window_end_hours(series)
+        self.assertEqual(low["deepRelH"], end_h - 48)
+        self.assertEqual(low["deepRelH"], 18)       # 48 -> 66 h: 24 hPa in 18 h
+        self.assertGreater(low["deepRelH"], 0)
+        self.assertAlmostEqual(low["deep24Bf"], round(drop, 1))
+        self.assertAlmostEqual(low["deep24Bf"], low["deep24"])   # all of it is HF
+
+    def test_bf_is_never_below_the_hf_only_floor(self):
+        # Bf's series contains every HF fix, so where both exist Bf >= HF-only.
+        low = make_low(LATE_HF)
+        backfill([low], pre_rows(LATE))
+        self.assertGreaterEqual(low["deep24Bf"], low["deep24"])
+
+    def test_coverage_rule(self):
+        def run(profile, hf=HF_TAIL):
+            low = make_low(hf)
+            backfill([low], pre_rows(profile))
+            return low
+        # Exactly the minimum: a gapless 24 h behind onset (24..42 + onset 48).
+        ok = run({24: 990, 30: 982, 36: 978, 42: 977})
+        self.assertIsNotNone(ok["deep24Bf"])
+        # Nothing earlier than an 18-h pair fits: the earliest observable end is
+        # (18 - lead) h from onset, here -6.
+        self.assertEqual(ok["deepRelH"], 18 - 24)
+        # Six hours short: half-covered, so null - and NOT the HF-only value.
+        short = run({30: 982, 36: 978, 42: 977}, hf=LATE_HF)
+        self.assertIsNotNone(short["deep24"], "the HF-only figure exists here...")
+        for k in ("deep24Bf", "bergBf", "bombBf", "deepRelH"):
+            self.assertIsNone(short[k], k + " must be null, not a fallback to the HF-only value")
+        # A missing synoptic fix (no 36 h) breaks the chain even though the
+        # record reaches back far enough.
+        gap = run({0: 1010, 6: 1009, 12: 1006, 18: 998, 24: 990, 30: 982, 42: 977})
+        self.assertEqual(gap["preN"], 7)
+        self.assertIsNone(gap["deep24Bf"])
+        # So does a recovered fix with no pressure: it is not a link in the chain.
+        nopres = make_low(HF_TAIL)
+        backfill([nopres], pre_rows({0: 1010, 6: 1009, 12: 1006, 18: 998, 24: 990, 30: 982,
+                                     36: None, 42: 977}))
+        self.assertIsNone(nopres["deep24Bf"])
+        # A first HF fix without a pressure has nothing to anchor the chain to.
+        anchorless = make_low([(48, 50.0, -40.0, "HF", None)] + HF_TAIL[1:])
+        backfill([anchorless], pre_rows(EARLY))
+        self.assertIsNone(anchorless["deep24Bf"])
+
+    def test_recovered_series_is_separate_and_tagged(self):
+        low = make_low(HF_TAIL)
+        before = copy.deepcopy(low["fixes"])
+        rows = [prow(42, 977, source="hsf", warn="HF"), prow(36, 978, source="era5", warn="S"),
+                prow(30, 982, source="hsf", lat=49.5, lon=-41.5, warn="")]
+        backfill([low], rows)
+        self.assertEqual(low["fixes"], before, "the archive fix list is never touched")
+        self.assertEqual(low["n"], 3)
+        self.assertEqual(low["preN"], 3)
+        self.assertEqual(low["preH"], 18)            # earliest recovered fix, 30 h -> 48 h
+        self.assertEqual(low["preSrc"], "mixed")
+        fix = [stamp(T0, 30), 49.5, -41.5, 982.0, "", "hsf"]
+        self.assertEqual(low["preFixes"][0], fix)    # [date,lat,lon,pres,warn_cat,source], oldest first
+        self.assertEqual([f[0] for f in low["preFixes"]], sorted(f[0] for f in low["preFixes"]))
+        only_hsf = make_low(HF_TAIL)
+        backfill([only_hsf], [prow(42, 977)])
+        self.assertEqual(only_hsf["preSrc"], "hsf")
+        only_era5 = make_low(HF_TAIL)
+        backfill([only_era5], [prow(42, 977, source="era5")])
+        self.assertEqual(only_era5["preSrc"], "era5")
+
+    def test_event_without_recovered_rows_is_looked_at_and_empty(self):
+        low = make_low(HF_TAIL)
+        backfill([low], [])
+        self.assertEqual((low["preFixes"], low["preN"], low["preH"], low["preSrc"]),
+                         ([], 0, 0, None))
+        self.assertIsNone(low["deep24Bf"])
+
+    def test_archive_lead_fixes_count_towards_the_window(self):
+        # The recent seasons carry DHF lead fixes of their own. A recovered row
+        # landing on one is dropped (archive wins), so the series must include
+        # the archive's own fixes in the window or coverage would collapse
+        # exactly where the archive is richest.
+        archive = [(30, 50.0, -40.0, "DHF", 982.0), (36, 50.0, -40.0, "DHF", 978.0),
+                   (42, 50.0, -40.0, "DHF", 977.0), (24, 50.0, -40.0, "DHF", 990.0)] + HF_TAIL
+        low = make_low(archive)
+        _, qc = backfill([low], pre_rows({30: 982, 36: 978, 42: 977}))
+        self.assertEqual(low["preN"], 0)
+        self.assertEqual(kinds(qc), ["precursor-duplicate"])
+        self.assertIsNotNone(low["deep24Bf"], "the archive's own lead fixes cover the window")
+        self.assertEqual(low["deepRelH"], 18 - 24)
+
+
+class BackfillGuards(unittest.TestCase):
+    """Rows that duplicate, contradict, post-date or mis-key an archive fix."""
+
+    def attach(self, rows, low=None, **kw):
+        low = low or make_low(HF_TAIL)
+        _, qc = backfill([low], rows, **kw)
+        return low, qc
+
+    def test_row_after_first_hf_fix_is_rejected(self):
+        low, qc = self.attach(pre_rows(EARLY) + [prow(54, 970), prow(66, 970)])
+        self.assertEqual(low["preN"], len(EARLY), "post-onset rows are not used")
+        late = [n for n in qc.notes if n["kind"] == "precursor-late"]
+        self.assertEqual(len(late), 2)
+        self.assertIn("6 h after the first HF fix", late[0]["detail"])
+        self.assertEqual(qc.counts["precRefused_late"], 2)
+        self.assertNotIn(stamp(T0, 66), [f[0] for f in low["preFixes"]])
+
+    def test_row_more_than_72h_before_is_rejected(self):
+        low, qc = self.attach([prow(-30, 1000), prow(-24, 1000), prow(42, 977)])
+        # first HF is at hour 48: hour -24 is exactly 72 h before (inside), -30 is 78 h.
+        self.assertEqual([f[0] for f in low["preFixes"]], [stamp(T0, -24), stamp(T0, 42)])
+        self.assertEqual(kinds(qc), ["precursor-early"])
+
+    def test_contradicting_an_archive_fix_never_overrides_it(self):
+        archive = [(42, 50.0, -40.0, "DHF", 985.0)] + HF_TAIL
+        low = make_low(archive)
+        before = copy.deepcopy(low["fixes"])
+        _, qc = backfill([low], [prow(42, 960)])        # archive says 985 at 42 h
+        self.assertEqual(low["fixes"], before)
+        self.assertEqual(low["preN"], 0)
+        self.assertEqual(low["preFixes"], [])
+        self.assertEqual(kinds(qc), ["precursor-contradiction"])
+        detail = qc.notes[0]["detail"]
+        self.assertIn("985", detail)
+        self.assertIn("960", detail)
+        self.assertIn("archive kept", detail)
+
+    def test_position_disagreement_alone_is_a_contradiction(self):
+        archive = [(42, 50.0, -40.0, "DHF", 985.0)] + HF_TAIL
+        low = make_low(archive)
+        _, qc = backfill([low], [prow(42, 985, lat=58.0, lon=-20.0)])
+        self.assertEqual(kinds(qc), ["precursor-contradiction"])
+
+    def test_agreeing_duplicate_of_an_archive_fix_is_counted_not_used(self):
+        archive = [(42, 50.0, -40.0, "DHF", 985.0)] + HF_TAIL
+        low = make_low(archive)
+        # Whole-degree HSF position against the archive's finer one, same pressure.
+        _, qc = backfill([low], [prow(42, 985, lat=50.0, lon=-39.5)])
+        self.assertEqual(low["preN"], 0)
+        self.assertEqual(kinds(qc), ["precursor-duplicate"])
+        self.assertEqual(qc.counts["precDuplicatesOfArchive"], 1)
+
+    def test_row_at_the_first_hf_fix_collides_with_it(self):
+        low, qc = self.attach([prow(48, 960)])
+        self.assertEqual(low["preN"], 0)
+        self.assertEqual(kinds(qc), ["precursor-contradiction"])
+
+    def test_two_recovered_rows_for_one_time(self):
+        low, qc = self.attach([prow(42, 977), prow(42, 977, source="era5")])
+        self.assertEqual(low["preN"], 1)
+        self.assertEqual(low["preFixes"][0][5], "hsf", "hsf is preferred when they agree")
+        self.assertEqual(qc.counts["precDuplicatesOfRecovered"], 1)
+        low, qc = self.attach([prow(42, 977), prow(42, 960, source="era5")])
+        self.assertEqual(low["preN"], 0, "disagreeing rows: neither can be preferred")
+        self.assertEqual(kinds(qc), ["precursor-contradiction", "precursor-contradiction"])
+
+    def test_event_without_an_hf_fix_has_no_window(self):
+        low = make_low([(48, 50.0, -40.0, "S", 976.0), (54, 50.0, -40.0, "S", 975.0)])
+        low, qc = self.attach([prow(42, 977)], low=low)
+        self.assertEqual(low["preN"], 0)
+        self.assertEqual(kinds(qc), ["precursor-no-anchor"])
+        self.assertIsNone(low["deep24Bf"])
+
+    def test_keys_are_basin_and_event_id(self):
+        # "2006200718" exists in both atl and pac in the real archive.
+        atl = make_low(HF_TAIL, basin="atl", low_id="2006200718")
+        pac = make_low(HF_TAIL, basin="pac", low_id="2006200718")
+        _, qc = backfill([atl, pac], [prow(42, 977, basin="pac", low_id="2006200718", lon=-150.0)])
+        self.assertEqual((atl["preN"], pac["preN"]), (0, 1))
+        self.assertEqual(qc.notes, [])
+        _, qc = backfill([atl], [prow(42, 977, basin="pac", low_id="2006200718", lon=-150.0)])
+        self.assertEqual(kinds(qc), ["precursor-unknown-event"])
+
+    def test_split_ids_are_not_guessed(self):
+        a = make_low(HF_TAIL, low_id="2019202001a")
+        b = make_low(HF_TAIL, low_id="2019202001b")
+        a["split"] = b["split"] = True
+        _, qc = backfill([a, b], [prow(42, 977, low_id="2019202001")])
+        self.assertEqual((a["preN"], b["preN"]), (0, 0))
+        self.assertEqual(kinds(qc), ["precursor-ambiguous-id"])
+        _, qc = backfill([a, b], [prow(42, 977, low_id="2019202001b")])
+        self.assertEqual((a["preN"], b["preN"]), (0, 1))
+
+    def test_malformed_rows_are_refused_not_repaired(self):
+        bad = [prow(42, 977, basin="indian"),
+               prow(42, 977, source="radar"),
+               prow(42, 977, conf="great"),
+               prow(42, 977, warn="DHF"),
+               prow(42, 1200),                         # outside the pressure range
+               prow(42, 977, lat="abc"),
+               prow(42, 977, match="far"),
+               prow(40, 977),                          # 16Z: not a synoptic time
+               "atl,2019202001,not-a-date,50,-40,977,S,hsf,10,high",
+               prow(42, 977, lat=-50.0)]               # southern hemisphere
+        low, qc = self.attach(bad)
+        self.assertEqual(low["preN"], 0)
+        self.assertEqual(kinds(qc), ["precursor-malformed"] * len(bad))
+
+    def test_low_confidence_is_refused(self):
+        low, qc = self.attach([prow(42, 977, conf="low"), prow(36, 978, conf="medium")])
+        self.assertEqual(low["preN"], 1)
+        self.assertEqual(kinds(qc), ["precursor-low-conf"])
+
+    def test_valid_accepts_iso_and_digits(self):
+        low, qc = self.attach([prow(42, 977, fmt="digits"), prow(36, 978, fmt="iso")])
+        self.assertEqual(low["preN"], 2)
+        self.assertEqual(qc.notes, [])
+        self.assertIsNone(tool.parse_valid("2020-01-11T18:30:00Z")["value"])
+        self.assertEqual(tool.parse_valid("2020-01-11 18:00")["value"], 2020011118)
+        self.assertEqual(tool.parse_valid("2020-01-11T18Z")["value"], 2020011118)
+
+    def test_wrong_header_is_fatal_and_comments_are_skipped(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = write_csv(d, [], header="basin,event_id,valid,lat,lon")
+            with self.assertRaises(SystemExit):
+                tool.read_precursors(path, tool.QC())
+            path = write_csv(d, [prow(42, 977)], comments=["a comment", "another"])
+            records, comments = tool.read_precursors(path, tool.QC())
+            self.assertEqual(len(records), 1)
+            self.assertEqual(comments, ["a comment", "another"])
+
+
+class BackfillPayload(unittest.TestCase):
+    """The whole build, on the real archive."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.base = tool.build(precursors=None)
+        fields = cls.base["lowFields"]
+        cls.lows = [dict(zip(fields, r)) for r in cls.base["lows"]]
+
+    def hf_event(self, basin, low_id=None, season=None):
+        for l in self.lows:
+            if (l["basin"] == basin and l["hfN"] and l["n"] == l["hfN"] and l["noPresN"] == 0
+                    and (low_id is None or l["id"] == low_id)
+                    and (season is None or l["season"] == season)):
+                return l
+        self.fail("no suitable event")
+
+    def synthetic_file(self, directory, events, comments=()):
+        """48 h of 6-hourly precursors for each of `events`, the early-deepening profile."""
+        rows = []
+        for l in events:
+            first = next(f for f in l["fixes"] if f[3] == "HF")
+            t0 = tool.to_dt(first[0])
+            p0 = first[4]
+            for k in range(1, 9):
+                d = t0 - timedelta(hours=6 * k)
+                pres = int(round(p0 + EARLY[48 - 6 * k] - 976 + 1))
+                rows.append(",".join(str(x) for x in (
+                    l["basin"], l["id"], d.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    first[1] - 0.4 * k, first[2] - 1.0 * k, pres, "S", "hsf", 12, "high")))
+        return write_csv(directory, rows, comments=comments)
+
+    def test_absent_file_changes_nothing(self):
+        n = len(tool.LOW_FIELDS) - 8
+        self.assertEqual(tool.LOW_FIELDS[n:], ["preFixes", "preN", "preH", "preSrc",
+                                              "deep24Bf", "bergBf", "bombBf", "deepRelH"])
+        for l in self.lows:
+            for k in tool.LOW_FIELDS[n:]:
+                self.assertIsNone(l[k], k)
+        self.assertIsNone(self.base["backfill"])
+        self.assertFalse([k for k in self.base["qc"]["counts"]
+                          if k.startswith(("prec", "bf"))])
+        self.assertNotIn("Backfill coverage", tool.qc_report(self.base))
+        # A path that does not exist is the same as no path.
+        with tempfile.TemporaryDirectory() as d:
+            missing = tool.build(precursors=os.path.join(d, "nope.csv"))
+        missing, base = (json.loads(json.dumps(p)) for p in (missing, self.base))
+        for payload in (missing, base):
+            for k in ("generated", "build"):
+                payload.pop(k)
+        self.assertEqual(missing, base)
+
+    def test_present_file_leaves_every_archive_column_alone(self):
+        events = [self.hf_event("atl"), self.hf_event("pac")]
+        with tempfile.TemporaryDirectory() as d:
+            payload = tool.build(precursors=self.synthetic_file(d, events))
+        n = len(tool.LOW_FIELDS) - 8
+        self.assertEqual([r[:n] for r in payload["lows"]], [r[:n] for r in self.base["lows"]],
+                         "backfill must not alter a single archive field, fix list included")
+        got = {(l[1], l[0]): dict(zip(payload["lowFields"], l)) for l in payload["lows"]}
+        for e in events:
+            row = got[(e["basin"], e["id"])]
+            self.assertEqual(row["preN"], 8)
+            self.assertEqual(row["preH"], 48)
+            self.assertEqual(row["preSrc"], "hsf")
+            self.assertIsNotNone(row["deep24Bf"])
+            self.assertEqual(row["fixes"], e["fixes"])
+        # Events the file does not mention were looked at and found empty.
+        other = next(r for r in got.values() if r["preN"] == 0)
+        self.assertEqual(other["preFixes"], [])
+
+    def test_cross_basin_id_attaches_to_the_right_basin(self):
+        atl = next((l for l in self.lows if l["basin"] == "atl" and l["id"] == "2006200718"), None)
+        pac = next((l for l in self.lows if l["basin"] == "pac" and l["id"] == "2006200718"), None)
+        self.assertTrue(atl and pac, "the id that exists in both basins")
+        if not (atl["hfN"] and pac["hfN"]):
+            self.skipTest("one of the shared-id events has no HF fix")
+        with tempfile.TemporaryDirectory() as d:
+            payload = tool.build(precursors=self.synthetic_file(d, [pac]))
+        got = {(r[1], r[0]): dict(zip(payload["lowFields"], r)) for r in payload["lows"]}
+        self.assertEqual(got[("pac", "2006200718")]["preN"], 8)
+        self.assertEqual(got[("atl", "2006200718")]["preN"], 0)
+
+    def test_qc_reports_coverage_by_season_and_basin(self):
+        events = [self.hf_event("atl"), self.hf_event("pac")]
+        with tempfile.TemporaryDirectory() as d:
+            payload = tool.build(precursors=self.synthetic_file(
+                d, events, comments=["SYNTHETIC test data"]))
+        bf = payload["backfill"]
+        self.assertTrue(bf["synthetic"])
+        self.assertEqual(bf["minLeadH"], 24)
+        usable = {(r["basin"], r["season"]): r["usable"] for r in bf["coverage"]}
+        recovered = {(r["basin"], r["season"]): r["recovered"] for r in bf["coverage"]}
+        for e in events:
+            self.assertGreaterEqual(usable[(e["basin"], e["season"])], 1)
+            self.assertGreaterEqual(recovered[(e["basin"], e["season"])], 1)
+        fields = payload["lowFields"]
+        lows = [dict(zip(fields, r)) for r in payload["lows"]]
+        self.assertEqual(sum(usable.values()),
+                         sum(1 for l in lows if l["hfN"] and l["deep24Bf"] is not None))
+        self.assertEqual(sum(r["events"] for r in bf["coverage"]),
+                         sum(1 for l in lows if l["hfN"]))
+        report = tool.qc_report(payload)
+        self.assertIn("Backfill coverage", report)
+        self.assertIn("SYNTHETIC", report)
+        self.assertIn("precursor-synthetic", report)
+        self.assertEqual(payload["qc"]["counts"]["bfUsable"], sum(usable.values()))
+
+    def test_coverage_collapse_in_a_season_is_a_note(self):
+        # A file that recovers nothing at all: every well-populated season-basin
+        # is flagged rather than quietly blank.
+        with tempfile.TemporaryDirectory() as d:
+            payload = tool.build(precursors=write_csv(d, []))
+        notes = [n for n in payload["qc"]["notes"] if n["kind"] == "backfill-coverage"]
+        self.assertGreater(len(notes), 5)
+        self.assertIn("none of", notes[0]["detail"])
+
+    def test_deepening_has_one_code_path(self):
+        # All three bases come out of deepening_stats(): feed it the same fixes
+        # and the HF-only and Bf figures agree to the last digit.
+        low = make_low(LATE_HF)
+        backfill([low], pre_rows(LATE))
+        hf = tool.deepening_stats([f for f in low["fixes"] if f[3] == "HF"])
+        self.assertEqual((low["deep24"], low["berg"], low["bomb"]),
+                         (hf["deep24"], hf["berg"], hf["bomb"]))
+        self.assertEqual((low["deep24Bf"], low["bergBf"], low["bombBf"]),
+                         (hf["deep24"], hf["berg"], hf["bomb"]))
 
 
 if __name__ == "__main__":
