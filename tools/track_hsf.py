@@ -54,9 +54,16 @@ WHAT TO KNOW BEFORE TRUSTING A ROW (measured by --validate; numbers in the repor
     No weight was fitted to V1; the three derived constants follow stated rules
     from the archive's own step-cost table.
   * Pressure continuity is symmetric by design, so the search does not prefer
-    deepening - but any magnitude penalty refuses a very large 6-h fall, so the
-    storms that deepened >= 16 hPa into their first HF fix are recovered far
-    less often. The recovered subset under-represents the fastest deepeners.
+    deepening, and its scale is calibrated on the pre-HF regime (see the weights
+    block). Even so, storms that fell >= 16 hPa into their first HF fix are
+    recovered about half as often (50%) as the rest (~72%): the missing-slot
+    price caps what a single step may cost. The recovered subset still
+    under-represents the fastest deepeners.
+  * Events whose first HF fix, or (in production) an archive lead fix, is a
+    suspected mistyped position (archive_position_suspects) are not tracked.
+  * Chains of ROWS in precursors.csv have holes where the archive owns a slot,
+    which happens only in the 2017+ lead-fix era. For an era-neutral coverage
+    measure use --chain-out (tracker alone, archive pre-HF fixes ignored).
   * `warn_cat` is the header the product filed the low under, which for a
     developing storm is the warning for what it WILL become: a 1008 hPa low can
     carry HF. It is not an observation of hurricane-force winds at that time.
@@ -73,6 +80,8 @@ Usage:
     python3 tools/track_hsf.py --event atl:2006200718          # one track, as a table
     python3 tools/track_hsf.py --calibrate         # re-derive the weights' sources
     python3 tools/track_hsf.py --validate          # V1, V1b, V2, coverage, dumps, build check
+    python3 tools/track_hsf.py --chain-out F --archive-qc-out G   # sidecars: recovered-only chain
+                                                   # hours per event; suspected archive position errors
 """
 
 from __future__ import annotations
@@ -102,16 +111,44 @@ PIL_BASIN = {"HSFAT1": "atl", "HSFEP1": "pac", "HSFEPI": "pac"}
 
 # ---------------------------------------------------------------------------
 # Weights. Every number is either an archive statistic or derived from one.
-# The statistics were taken on the archive's HF-category fixes only (6-hourly
-# HF -> HF steps, 3,770 of them, all 1,928 events), so that the pre-HF fixes
-# used to validate the tracker (V1) have no say in any weight.
+# Speed, heading and the missing-slot price come from the archive's HF-category
+# fixes (6-hourly HF -> HF steps, 3,770 of them), so the pre-HF fixes used to
+# validate the tracker (V1) have no say in them.
 #
 #   archive HF->HF 6-h steps        p50    p75    p90    p95    p99
 #     translation speed, kt         24.5   33.5   42.3   49.1   88.7 (tail = errors)
 #     heading change, deg           12.3   22.4   37.9   52.4   (steps >= 20 kt)
-#     |pressure change|, hPa        3      5      8      10     16   (p99.9: 21)
 #   HSF reported motion vs the archive's next-6h motion, 2,936 matched lows:
 #     vector difference, kt         10.5   15.8   21.4   25.9   43.4
+#
+# THE PRESSURE TERM IS CALIBRATED ON THE PRE-HF REGIME, NOT THE MATURE ONE.
+# The first version took its scale from HF -> HF steps (|dp| p90 = 8 hPa), but
+# the tracker works in the DEEPENING phase before HF onset, where a 6-h fall of
+# 16 hPa is a 1-in-18 event against 1-in-100 in the mature segment. That made
+# the cost ~5x too steep exactly where it has to follow the deepening, and
+# recall for storms that fell >= 16 hPa into onset was 16%, against ~72% for the
+# rest. Sample used: the 1,216 archive 6-h steps whose later fix is at or before
+# the event's first HF fix (any category):
+#
+#   6-h pressure change, hPa            n     p1    p5   p10  median  min
+#     HF -> HF (mature)               3,617  -15   -10   -8     -1    -23
+#     pre-HF (the regime tracked)     1,216  -20   -16  -14     -7    -31
+#   |dp|, pre-HF:  p50 7  p90 14  p95 16  p99 21  max 31
+#
+# The scale is the p90 of |dp| (14 hPa), the same rule as before applied to the
+# right sample, and the hard reject moves to 33 hPa because the observed pre-HF
+# extreme is 31 and a real step must not be rejected as impossible. The term is
+# still SYMMETRIC in sign (see pressure_cost); the sample was the problem, not
+# the symmetry. Two caveats, stated so nobody has to find them: (1) the pre-HF
+# sample comes from the 2017+ lead fixes, a selected set - storms someone was
+# watching closely, so biased toward rapid deepeners. For a TOLERANCE that bias
+# is the conservative direction (it makes the gate more permissive, not less),
+# which is why it is still the right sample. (2) It is the same set of archive
+# fixes V1 scores against. Only one scalar (a marginal quantile of |dp|) is
+# taken from it, but V1's pressure tolerance is therefore not independent of its
+# truth; V1b (mature-phase HF fixes) is the check that is not affected.
+# Position and motion terms are unchanged: a wrong storm is wrong in position,
+# not in pressure, so the loosening is spent on pressure alone.
 # ---------------------------------------------------------------------------
 
 SPEED_HARD_KT = B.SPEED_IMPLAUSIBLE_KT         # 90: the build already calls this an error
@@ -124,8 +161,8 @@ HEADING_SCALE_DEG = 30.0                       # cost 1 at 70 deg, 4 at 100, 21 
 HSF_POSITION_NOISE_NM = 30.0                   # whole-degree rounding, see heading_cost()
 HEADING_FULL_WEIGHT_NM = 120.0                 # below 20 kt of motion a bearing is mostly rounding noise
 
-PRES_SCALE_HPA = 8.0                           # archive p90: cost 1 at p90, 0.14 at the median
-PRES_HARD_HPA = 25.0                           # the contract's limit; archive p99.9 is 21-23
+PRES_SCALE_HPA = 14.0                          # p90 of |6-h dp| in the PRE-HF regime: cost 1 at p90, 0.25 at the median
+PRES_HARD_HPA = 33.0                           # pre-HF extreme is 31; the contract said "about 25" for the mature regime
 PRES_UNKNOWN_COST = 1.0                        # a low printed without a pressure: weaker evidence
 
 MOTION_FREE_KT = 15.0                          # HSF motion vs archive motion: p75 is 15.8
@@ -134,16 +171,19 @@ MOTION_CAP = 4.0                               # a mistyped motion must not veto
 
 # The three constants below come from --calibrate: the cost, under THIS cost
 # function, of the archive's 2,281 genuine HF -> HF steps that have a step on
-# either side (so the heading term applies):  p50 0.48  p75 1.18  p90 2.69
-# p95 4.39  p97.5 6.74  p99 10.6.  The rule for each is fixed (p95, p90, p75)
+# either side (so the heading term applies):  p50 0.30  p75 0.76  p90 1.66
+# p95 3.21  p97.5 5.70  p99 10.2.  The rule for each is fixed (p95, p90, p75)
 # and the values are re-derived from the table whenever the cost function
-# changes; they are not adjusted against any validation result.
-MISSING_COST = 4.4        # flat price of a missing slot = the p95 of a TRUE step's cost.
+# changes; they are not adjusted against any validation result. (Recalibrating
+# the pressure term on the pre-HF regime shrank the pressure share of a true
+# step's cost, so by the same rule these came DOWN: the position, motion and
+# heading terms are held, and the budget they are allowed to spend is tighter.)
+MISSING_COST = 3.2        # flat price of a missing slot = the p95 of a TRUE step's cost.
                           # A real candidate beats a gap iff it is no worse than 95% of
                           # genuine steps; the other 5% of real steps are traded for not
                           # accepting a poor match (p97.5 was judged too loose).
-LOW_BAND_COST = 2.7       # "all transition costs in the low band": the p90 of a true step
-AMBIGUITY_MARGIN = 1.2    # the p75 of a true step: if the runner-up explains the data
+LOW_BAND_COST = 1.7       # "all transition costs in the low band": the p90 of a true step
+AMBIGUITY_MARGIN = 0.8    # the p75 of a true step: if the runner-up explains the data
                           # within a typical step's worth of cost, the choice is a coin flip
 
 ANCHOR_MATCH_NM = 100.0   # a parsed low within this of the anchor "verifies" it (V2 uses it too)
@@ -526,6 +566,25 @@ def archive_node(f):
     return new_node(f[1], f[2], f[4], None, None, f[3], True, "archive")
 
 
+# POST-V1 CHANGE: the archive-suspect refusal below was added after the V1 runs, on
+# principle (never anchor on a probable typo), and removes 16 events from tracking.
+# (basin, event_id, valid) of archive fixes that archive_position_suspects() judges to be
+# mistyped. Filled by set_suspects(); empty means no check (unit tests, ad-hoc use).
+ARCHIVE_SUSPECTS = set()
+
+
+def set_suspects(events, lows):
+    """Compute the suspected archive position errors once and make prepare() refuse
+    to build a track on one: an anchor whose position is probably mistyped would
+    attach a stranger's low to the event, and a pinned lead fix that is mistyped
+    corrupts every step next to it. The event is skipped (status archive-suspect),
+    not repaired - the archive is never altered."""
+    suspects = archive_position_suspects(events, lows)
+    ARCHIVE_SUSPECTS.clear()
+    ARCHIVE_SUSPECTS.update((x["basin"], x["event"], x["valid"]) for x in suspects)
+    return suspects
+
+
 def prepare(event, lows, mode="production", anchor_time=None):
     """Everything the search needs for one event, or (None, reason).
 
@@ -549,6 +608,9 @@ def prepare(event, lows, mode="production", anchor_time=None):
         return None, "duplicate-times"
 
     basin = event["basin"]
+    watched = [t0] + ([t for t in window[1:] if t in times] if mode == "production" else [])
+    if any((basin, event["id"], t) in ARCHIVE_SUSPECTS for t in watched):
+        return None, "archive-suspect"
     anchor = archive_node(anchor_fix)
     verified, anchor_match = False, None
     for c in lows.get((basin, t0), []):
@@ -698,10 +760,15 @@ def collisions(results, events):
     return notes
 
 
-def write_csv(path, results, notes, header_comments=()):
+def write_csv(path, results, notes, header_comments=(), min_conf="low"):
+    """Write precursors.csv. `min_conf` drops rows below that grade: the contract
+    says emit all three and let the build decide, but the build refuses `low`
+    outright (one QC note per row), so the committed file is written at
+    min_conf="medium"."""
     rows = []
     for res in results:
-        rows.extend(rows_for(res))
+        rows.extend(r for r in rows_for(res)
+                    if B.CONF_RANK[r[9]] >= B.CONF_RANK[min_conf])
     rows.sort(key=lambda r: (r[0], r[1], r[2]))
     with open(path, "w", newline="", encoding="utf-8") as fh:
         for c in header_comments:
@@ -767,7 +834,40 @@ def true_step_costs(events, lows):
     return costs
 
 
+def prehf_pressure_steps(events):
+    """Signed 6-h pressure changes (later minus earlier) over archive steps whose
+    later fix is at or before the event's first HF fix, and over HF -> HF steps."""
+    pre, mature = [], []
+    for ev in events:
+        hf = [f for f in sorted(ev["fixes"]) if f[3] == "HF"]
+        if not hf:
+            continue
+        by = {f[0]: f for f in ev["fixes"] if f[3] != "ABS"}
+        for t, f in by.items():
+            prev = by.get(shift(t, -STEP_H))
+            if prev is None or f[4] is None or prev[4] is None:
+                continue
+            if t <= hf[0][0]:
+                pre.append(f[4] - prev[4])
+            if f[3] == "HF" and prev[3] == "HF":
+                mature.append(f[4] - prev[4])
+    return pre, mature
+
+
 def calibrate(events, lows, out=sys.stdout):
+    pre, mature = prehf_pressure_steps(events)
+    out.write("6-h pressure change (later minus earlier), hPa:\n")
+    for name, v in (("HF -> HF (mature)", mature), ("pre-HF (regime tracked)", pre)):
+        sv = sorted(v)
+        q = lambda p: sv[min(len(sv) - 1, int(p * len(sv)))]
+        out.write("  %-26s n %5d  p1 %4.0f p5 %4.0f p10 %4.0f median %4.0f min %4.0f   "
+                  "|dp| p50 %.0f p90 %.0f p95 %.0f p99 %.0f max %.0f\n" % (
+                      name, len(sv), q(.01), q(.05), q(.1), q(.5), sv[0],
+                      quantile([abs(x) for x in sv], .5), quantile([abs(x) for x in sv], .9),
+                      quantile([abs(x) for x in sv], .95), quantile([abs(x) for x in sv], .99),
+                      max(abs(x) for x in sv)))
+    out.write("shipped: PRES_SCALE_HPA=%.0f (rule: p90 of pre-HF |dp|)  PRES_HARD_HPA=%.0f\n"
+              % (PRES_SCALE_HPA, PRES_HARD_HPA))
     c = true_step_costs(events, lows)
     out.write("true HF->HF step cost over %d steps (cost function as shipped):\n" % len(c))
     for p in (0.5, 0.75, 0.9, 0.95, 0.975, 0.99):
@@ -776,6 +876,145 @@ def calibrate(events, lows, out=sys.stdout):
               "AMBIGUITY_MARGIN=%.2f (rule: p75)\n"
               % (MISSING_COST, LOW_BAND_COST, AMBIGUITY_MARGIN))
     return c
+
+
+# ---------------------------------------------------------------------------
+# Recovered-only chains, and suspected archive errors
+# ---------------------------------------------------------------------------
+
+CHAIN_COLUMNS = ["basin", "event_id", "season", "t0", "status", "seeded", "anchor_verified",
+                 "chain_h_any", "chain_h_medium_plus", "chain_h_high"]
+
+
+def hidden_chains(events, lows):
+    """Per HF event, the hours of gapless RECOVERED pressure-bearing chain behind the
+    first HF fix when every pre-HF archive fix is ignored (the tracker alone).
+
+    Why a sidecar rather than counting rows of precursors.csv: in production the
+    archive's own pre-HF fixes are pinned and the tracker emits nothing at those
+    slots (the build would refuse a recovered row at a time the archive has a
+    fix), so the chain of ROWS has holes exactly where the archive recorded lead
+    fixes - 2017+ - and would carry the recording-practice artefact in the other
+    direction. This is the era-neutral measure: archive practice cannot reach it.
+    Three tiers, by the prefix confidence of the fixes in the chain."""
+    out = []
+    for ev in events:
+        if not ev["hfN"]:
+            continue
+        hf = first_hf(ev)[0]
+        rec = {"basin": ev["basin"], "event": ev["id"], "season": ev["season"], "t0": hf[0],
+               "minP": ev["minP"], "lat0": hf[1], "status": "tracked", "seeded": False,
+               "verified": False, "chain_h_any": 0, "chain_h_usable": 0, "chain_h_high": 0}
+        prep, why = prepare(ev, lows, "hidden")
+        if prep is None:
+            rec["status"] = why
+            out.append(rec)
+            continue
+        res = track(prep)
+        rec["seeded"] = prep["seed"] is not None
+        rec["verified"] = prep["verified"]
+        fx = {f["slot"]: f for f in res["fixes"] if f["node"]["pres"] is not None}
+        for key, ok in (("chain_h_any", lambda c: True), ("chain_h_usable", lambda c: c != "low"),
+                        ("chain_h_high", lambda c: c == "high")):
+            k = 0
+            while k + 1 in fx and ok(fx[k + 1]["conf"]) and k < SLOTS:
+                k += 1
+            rec[key] = k * STEP_H
+        out.append(rec)
+    return out
+
+
+CHAIN_HEADER = [
+    "Recovered-only chain hours per HF event, written by tools/track_hsf.py (--chain-out).",
+    "NOT the precursors file: this is a per-event table, one row per archive event with an HF fix.",
+    "Each chain_h_* is the hours of gapless, pressure-bearing, 6-hourly RECOVERED chain behind the",
+    "event's first HF fix, found with EVERY pre-HF archive fix ignored (the tracker alone), so the",
+    "archive's 2013/2017 change of recording practice cannot reach it. Use this, not the row chain",
+    "of precursors.csv, for era-neutral coverage: precursors.csv omits the slots the archive owns.",
+    "  basin, event_id    the build's keys (suffixed split ids included)",
+    "  season, t0         storm season label, and the first HF fix (UTC)",
+    "  status             tracked | anchor-no-pressure | archive-suspect | duplicate-times",
+    "  seeded             1 if the archive has a second HF fix 6-12 h later (heading seed)",
+    "  anchor_verified    1 if a parsed HSF low lies within 100 nm of the first HF fix at t0",
+    "  chain_h_any        hours of chain counting fixes of any confidence",
+    "  chain_h_medium_plus  ... counting only medium or high fixes (the shipping floor)",
+    "  chain_h_high       ... counting only high fixes",
+    "A chain of 24 or more is what the build's Bf rule needs. 0 for every untracked status.",
+]
+
+
+def write_chain_csv(path, chains, header_comments=CHAIN_HEADER):
+    with open(path, "w", newline="", encoding="utf-8") as fh:
+        for c in header_comments:
+            fh.write("# " + c + "\n")
+        w = csv.writer(fh, lineterminator="\n")
+        w.writerow(CHAIN_COLUMNS)
+        for c in sorted(chains, key=lambda c: (c["basin"], c["event"])):
+            w.writerow([c["basin"], c["event"], B.season_label(c["season"]), iso(c["t0"]), c["status"],
+                        int(c["seeded"]), int(c["verified"]), c["chain_h_any"], c["chain_h_usable"],
+                        c["chain_h_high"]])
+
+
+def archive_position_suspects(events, lows):
+    """Archive fixes whose POSITION is probably mistyped, found by the HSF.
+
+    A fix is listed when (1) a parsed low at the same valid time has exactly the
+    archive fix's pressure yet sits more than WRONG_STORM_NM from it, and (2)
+    moving the fix to that low turns an implausible leg into a plausible one:
+    the fastest adjacent leg is >= 60 kt as archived, <= 50 kt if moved, and the
+    move buys at least 20 kt. (1) alone is a one-in-ten coincidence per
+    candidate low; (2) is what makes it evidence. Independent of the build's
+    90 kt check, which flags a subset of these. Nothing is corrected - the human
+    archive is never altered - this is a worklist for fixing it upstream."""
+    out = []
+    for ev in events:
+        by = {}
+        for f in ev["fixes"]:
+            if f[3] != "ABS":
+                by.setdefault(f[0], []).append(f)
+        for t, fs in sorted(by.items()):
+            if len(fs) != 1 or fs[0][4] is None:
+                continue
+            f = fs[0]
+            nbrs = [by[tt][0] for tt in (shift(t, -STEP_H), shift(t, STEP_H))
+                    if tt in by and len(by[tt]) == 1]
+            if not nbrs:
+                continue
+
+            def worst(lat, lon):
+                return max(B.great_circle_nm(lat, lon, n[1], n[2]) / STEP_H for n in nbrs)
+            before = worst(f[1], f[2])
+            if before < 60.0:
+                continue
+            best = None
+            for c in lows.get((ev["basin"], t), []):
+                if c["pres"] != f[4]:
+                    continue
+                d = B.great_circle_nm(f[1], f[2], c["lat"], c["lon"])
+                if d <= WRONG_STORM_NM:
+                    continue
+                after = worst(c["lat"], c["lon"])
+                if after <= 50.0 and before - after >= 20.0 and (best is None or after < best[0]):
+                    best = (after, d, c)
+            if best is not None:
+                out.append({"basin": ev["basin"], "event": ev["id"], "valid": t, "cat": f[3],
+                            "a_lat": f[1], "a_lon": f[2], "pres": f[4], "h_lat": best[2]["lat"],
+                            "h_lon": best[2]["lon"], "nm": best[1], "speed_before": before,
+                            "speed_after": best[0]})
+    return out
+
+
+def write_suspects_csv(path, suspects):
+    with open(path, "w", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh, lineterminator="\n")
+        w.writerow(["basin", "event_id", "valid", "category", "archive_lat", "archive_lon", "pres",
+                    "hsf_lat", "hsf_lon", "distance_nm", "speed_kt_as_archived", "speed_kt_if_moved",
+                    "build_speed_flag"])
+        for x in suspects:
+            w.writerow([x["basin"], x["event"], iso(x["valid"]), x["cat"], "%.1f" % x["a_lat"],
+                        "%.1f" % x["a_lon"], "%d" % x["pres"], "%.1f" % x["h_lat"], "%.1f" % x["h_lon"],
+                        "%.0f" % x["nm"], "%.0f" % x["speed_before"], "%.0f" % x["speed_after"],
+                        int(x["speed_before"] >= B.SPEED_IMPLAUSIBLE_KT)])
 
 
 # ---------------------------------------------------------------------------
@@ -834,21 +1073,22 @@ def score_fixes(res, truth, t0):
     return out
 
 
-def is_wrong(score, pressure_also_differs=False):
+def is_wrong(score, excl_exact_pressure=False):
     """A fix more than WRONG_STORM_NM from the archive's own analysis at that time.
 
-    With `pressure_also_differs`, only those whose pressure ALSO disagrees by 3
-    hPa or more. The reason for the second reading: HSF and the archive state the
-    same office's same analysis, so they agree to the exact hPa 97% of the time.
-    A recovered fix that sits 400 nm from the archive's position but matches its
-    pressure to the hPa is far more often a mistyped archive coordinate than a
-    different storm (chance agreement to the hPa between two different lows is
-    about one in ten). Both readings are reported; neither is tuned."""
+    With `excl_exact_pressure`, fixes whose pressure matches the archive's to the
+    exact hPa are not counted. HSF and the archive state the same office's same
+    analysis, so they agree to the hPa 97% of the time; a recovered fix 400 nm
+    from the archive position that matches its pressure exactly is far more often
+    a mistyped ARCHIVE coordinate than a different storm (chance agreement to the
+    hPa between two different lows is about one in ten). Both readings are
+    reported; neither is tuned. Suspected archive errors are listed by
+    archive_position_suspects()."""
     if score["pos"] <= WRONG_STORM_NM:
         return False
-    if not pressure_also_differs:
+    if not excl_exact_pressure:
         return True
-    return score["dp"] is None or abs(score["dp"]) >= 3
+    return score["dp"] is None or score["dp"] != 0
 
 
 def contiguous_lead(truth, t0):
@@ -880,9 +1120,10 @@ def deepening_pair(event, t0, res, usable):
     return a[0], b[0], (a[2] < t0 or b[2] < t0), len(common)
 
 
-def validate(events, lows, out_path, out=sys.stdout):
+def validate(events, lows, out_path, out=sys.stdout, chain_out=None, archive_qc_out=None):
     w = out.write
     t_start = datetime.now(timezone.utc)
+    suspects_all = set_suspects(events, lows)
 
     # ----- V2: the anchor check ------------------------------------------------
     w("\n=== V2  anchor check: parsed low nearest the archive's first HF fix, same valid time, "
@@ -955,7 +1196,7 @@ def validate(events, lows, out_path, out=sys.stdout):
     def v1_table(title, filt):
         w("  %s\n" % title)
         w("  %-26s %7s %7s %6s %7s | %-24s | %-22s | %s\n" % (
-            "subset", "events", "scored", "wrong", "wrong&dP", "position nm  med/p90/max",
+            "subset", "events", "scored", "wrong", "wrongX", "position nm  med/p90/max",
             "pressure hPa |err| med/p90/max", "bias hPa"))
         for name, sel in (("all confidences", lambda c: True),
                           ("medium or high (usable)", lambda c: c != "low"),
@@ -1031,7 +1272,7 @@ def validate(events, lows, out_path, out=sys.stdout):
       "high) fixes: %d (%.1f%%)\n" % (len(wrong_events), n6, 100.0 * len(wrong_events) / n6,
                                       len(wrong_events_u), 100.0 * len(wrong_events_u) / n6))
 
-    w("  ... of which the pressure ALSO differs by >= 3 hPa (not an archive typo): usable fixes %d "
+    w("  ... excluding fixes whose pressure matches the archive exactly: usable fixes %d "
       "of %d (%.1f%%)\n" % (sum(1 for r in v1 for s in r["scores"] if s["conf"] != "low" and is_wrong(s, True)),
                             sum(1 for r in v1 for s in r["scores"] if s["conf"] != "low"),
                             100.0 * sum(1 for r in v1 for s in r["scores"] if s["conf"] != "low" and is_wrong(s, True))
@@ -1041,7 +1282,7 @@ def validate(events, lows, out_path, out=sys.stdout):
         rows = [s for r in v1 for s in r["scores"]
                 if s["conf"] != "low" and lo <= r["t0"] // 1000000 <= hi]
         if rows:
-            w("   %-10s scored %4d  wrong %5.1f%%  (pressure also differs %5.1f%%)  events %d\n" % (
+            w("   %-10s scored %4d  wrong %5.1f%%  (excl. exact-P %5.1f%%)  events %d\n" % (
                 "%d-%d" % (lo, hi) if hi < 2099 else "%d+" % lo, len(rows),
                 100.0 * sum(1 for s in rows if is_wrong(s)) / len(rows),
                 100.0 * sum(1 for s in rows if is_wrong(s, True)) / len(rows),
@@ -1076,7 +1317,7 @@ def validate(events, lows, out_path, out=sys.stdout):
     for tag in ("high", "medium", "low"):
         rows = [s for r in v1 for s in r["scores"] if s["conf"] == tag]
         if rows:
-            w("   %-8s scored %5d  wrong %5.1f%%  (pressure also differs %5.1f%%)\n" % (
+            w("   %-8s scored %5d  wrong %5.1f%%  (excl. exact-P %5.1f%%)\n" % (
                 tag, len(rows), 100.0 * sum(1 for s in rows if is_wrong(s)) / len(rows),
                 100.0 * sum(1 for s in rows if is_wrong(s, True)) / len(rows)))
     w("\n  V1 wrong-storm rate by anchor status (usable fixes only):\n")
@@ -1136,7 +1377,7 @@ def validate(events, lows, out_path, out=sys.stdout):
             end_err.append(sc[4]["dp"])
     ae = sorted(abs(e) for e in end_err)
     w("  events whose usable chain reaches 24 h (slots 1-4 all usable; what the build would use): %d\n"
-      "    with any fix > %d nm from the archive: %d (%.1f%%); of those, pressure also differs: %d "
+      "    with any fix > %d nm from the archive: %d (%.1f%%); of those, excl. exact-P: %d "
       "(%.1f%%)\n" % (chain_n, WRONG_STORM_NM, chain_wrong, 100.0 * chain_wrong / max(1, chain_n),
                       chain_wrong_dp, 100.0 * chain_wrong_dp / max(1, chain_n)))
     if ae:
@@ -1149,11 +1390,31 @@ def validate(events, lows, out_path, out=sys.stdout):
         rows = [s for r in v1b for s in r["scores"]
                 if s["conf"] != "low" and lo <= r["t0"] // 1000000 <= hi]
         if rows:
-            w("   %-10s scored %4d  wrong %5.1f%%  (pressure also differs %5.1f%%)  events %d\n" % (
+            w("   %-10s scored %4d  wrong %5.1f%%  (excl. exact-P %5.1f%%)  events %d\n" % (
                 "%d-%d" % (lo, hi) if hi < 2099 else "%d+" % lo, len(rows),
                 100.0 * sum(1 for s in rows if is_wrong(s)) / len(rows),
                 100.0 * sum(1 for s in rows if is_wrong(s, True)) / len(rows),
                 len({id(r) for r in v1b if lo <= r["t0"] // 1000000 <= hi and r["scores"]})))
+    w("  V1b by the tracker's own confidence tag (per fix / per 24 h chain):\n")
+    for tag, ok in (("high", lambda c: c == "high"), ("medium", lambda c: c == "medium"),
+                    ("medium or high", lambda c: c != "low")):
+        rows = [s for r in v1b for s in r["scores"] if ok(s["conf"])]
+        chains_ = 0
+        cw = cwx = 0
+        for r in v1b:
+            fx = {f["slot"]: f for f in r["res"]["fixes"]}
+            if not all(k in fx and ok(fx[k]["conf"]) for k in (1, 2, 3, 4)):
+                continue
+            chains_ += 1
+            sc = {s["slot"]: s for s in r["scores"]}
+            cw += any(k in sc and is_wrong(sc[k]) for k in (1, 2, 3, 4))
+            cwx += any(k in sc and is_wrong(sc[k], True) for k in (1, 2, 3, 4))
+        if rows:
+            w("   %-15s fixes %5d wrong %4.1f%% (excl. exact-P %4.1f%%) | 24 h chains %3d: any wrong %d (%.1f%%), "
+              "excl. exact-P %d (%.1f%%)\n" % (
+                  tag, len(rows), 100.0 * sum(1 for s in rows if is_wrong(s)) / len(rows),
+                  100.0 * sum(1 for s in rows if is_wrong(s, True)) / len(rows), chains_, cw,
+                  100.0 * cw / max(1, chains_), cwx, 100.0 * cwx / max(1, chains_)))
     allr = [s for r in v1b for s in r["scores"]]
     usr = [s for s in allr if s["conf"] != "low"]
     w("  all leads: scored %d, wrong %.1f%%;  usable: %d, wrong %.1f%%;  pressure |err| median %s "
@@ -1252,70 +1513,86 @@ def validate(events, lows, out_path, out=sys.stdout):
       "2013/2017 change of recording practice cannot contribute ===\n")
     w("  (the build's table above lets the archive's own DHF/S lead fixes complete a chain, so it "
       "partly measures practice; this one measures the tracker)\n")
-    own = defaultdict(lambda: [0, 0, 0])
-    grp = {True: [], False: []}
-    for ev in hf_events:
-        c = own[(ev["basin"], ev["season"])]
-        c[0] += 1
-        prep, why = prepare(ev, lows, "hidden")
-        ok = False
-        if prep is not None:
-            res = track(prep)
-            fx = {f["slot"]: f for f in res["fixes"]}
-            c[1] += 1 if any(f["conf"] != "low" for f in res["fixes"]) else 0
-            ok = all(k in fx and fx[k]["conf"] != "low" and fx[k]["node"]["pres"] is not None
-                     for k in (1, 2, 3, 4))
-        c[2] += 1 if ok else 0
-        if ev["season"] >= B.RECORD_START:
-            hfx = first_hf(ev)[0]
-            grp[ok].append((ev["minP"], hfx[1], ev["basin"]))
-    rows = [{"basin": b, "season": se, "events": c[0], "recovered": c[1], "usable": c[2]}
-            for (b, se), c in sorted(own.items(), key=lambda kv: (kv[0][1], kv[0][0]))]
-    w("  %-8s %-5s %9s %9s %9s\n" % ("season", "basin", "attempted", "any usable", "24h chain"))
-    for row in rows:
-        w("  %-8s %-5s %9d %9d %9d %6.1f%%\n" % (B.season_label(row["season"]), row["basin"],
-                                               row["events"], row["recovered"], row["usable"],
-                                               100.0 * row["usable"] / row["events"]))
-    trend, tripped = B.coverage_trend(rows)
-    for k, st in trend.items():
-        w("   %-4s seasons %2d  min %5.1f%%  max %5.1f%%  spread %5.1f pts  slope %s pts/season "
-          "(se %s)\n" % (k, st["seasons"], st["min"], st["max"], st["spread"], st["slope"], st["se"]))
-    for why in tripped:
-        w("    - %s\n" % why)
-    # How much spread would a perfectly uniform tracker show? Seasons hold only 25-65 HF
-    # events, so a constant success probability still scatters the seasonal share.
-    rr = random.Random(1)
-    for key in ("atl", "pac", "all"):
-        sel = [r for r in rows if r["season"] >= B.RECORD_START and (key == "all" or r["basin"] == key)]
-        by_season = defaultdict(lambda: [0, 0])
-        for r in sel:
-            by_season[r["season"]][0] += r["events"]
-            by_season[r["season"]][1] += r["usable"]
-        p_all = sum(v[1] for v in by_season.values()) / float(sum(v[0] for v in by_season.values()))
-        spreads = []
-        for _ in range(2000):
-            shares = [100.0 * sum(rr.random() < p_all for _ in range(n)) / n
-                      for n, _u in by_season.values()]
-            spreads.append(max(shares) - min(shares))
-        w("   %-4s a constant %.1f%% success rate would scatter the seasonal share over a spread of "
-          "%.0f-%.0f points (5th-95th percentile of 2000 draws)\n" % (
-              key, 100.0 * p_all, quantile(spreads, .05), quantile(spreads, .95)))
-    by_era = defaultdict(lambda: [0, 0])
-    for row in rows:
-        if row["season"] >= B.RECORD_START:
-            y = row["season"]
-            era = next(("%d-%d" % (lo, hi) if hi < 2099 else "%d+" % lo) for lo, hi in ERAS if lo <= y <= hi)
-            by_era[(row["basin"], era)][0] += row["events"]
-            by_era[(row["basin"], era)][1] += row["usable"]
-    w("  pooled by era (season start year): ")
-    w("; ".join("%s %s %.0f%% (%d/%d)" % (b, e, 100.0 * u / n, u, n)
-                for (b, e), (n, u) in sorted(by_era.items())) + "\n")
-    w("  selection (tracker alone, from %d on): events with a 24 h chain vs without\n" % B.RECORD_START)
-    for key in ("atl", "pac", "all"):
-        for lab, ok in (("covered", True), ("uncovered", False)):
-            g = [x for x in grp[ok] if key == "all" or x[2] == key]
-            w("   %-5s %-10s %6d %12s %14s\n" % (key, lab, len(g), fmt(median([x[0] for x in g if x[0] is not None]), 1),
-                                                 fmt(median([x[1] for x in g]), 1)))
+    chains = hidden_chains(hf_events, lows)
+    tiers = (("medium or high (usable)", "chain_h_usable"), ("high only", "chain_h_high"))
+    for tier, key in tiers:
+        w("\n  --- tier: %s; an event counts if slots 1-4 (24 h) are all in the tier ---\n" % tier)
+        own = defaultdict(lambda: [0, 0, 0])
+        grp = {True: [], False: []}
+        for c in chains:
+            row = own[(c["basin"], c["season"])]
+            row[0] += 1
+            row[1] += 1 if c["chain_h_any"] > 0 else 0
+            ok = c[key] >= 24
+            row[2] += 1 if ok else 0
+            if c["season"] >= B.RECORD_START:
+                grp[ok].append((c["minP"], c["lat0"], c["basin"]))
+        rows = [{"basin": b_, "season": se, "events": c[0], "recovered": c[1], "usable": c[2]}
+                for (b_, se), c in sorted(own.items(), key=lambda kv: (kv[0][1], kv[0][0]))]
+        if key == "chain_h_usable":
+            w("  %-8s %-5s %9s %9s %9s\n" % ("season", "basin", "attempted", "any usable", "24h chain"))
+            for row in rows:
+                w("  %-8s %-5s %9d %9d %9d %6.1f%%\n" % (
+                    B.season_label(row["season"]), row["basin"], row["events"], row["recovered"],
+                    row["usable"], 100.0 * row["usable"] / row["events"]))
+        trend, tripped = B.coverage_trend(rows)
+        for k, st in trend.items():
+            w("   %-4s seasons %2d  min %5.1f%%  max %5.1f%%  spread %5.1f pts  slope %s pts/season "
+              "(se %s)\n" % (k, st["seasons"], st["min"], st["max"], st["spread"], st["slope"], st["se"]))
+        for why in tripped:
+            w("    - %s\n" % why)
+        # How much spread would a perfectly uniform tracker show? Seasons hold only 25-65 HF
+        # events, so a constant success probability still scatters the seasonal share.
+        rr = random.Random(1)
+        for k2 in ("atl", "pac", "all"):
+            sel = [r for r in rows if r["season"] >= B.RECORD_START and (k2 == "all" or r["basin"] == k2)]
+            by_season = defaultdict(lambda: [0, 0])
+            for r in sel:
+                by_season[r["season"]][0] += r["events"]
+                by_season[r["season"]][1] += r["usable"]
+            p_all = sum(v[1] for v in by_season.values()) / float(sum(v[0] for v in by_season.values()))
+            spreads = []
+            for _ in range(2000):
+                shares = [100.0 * sum(rr.random() < p_all for _ in range(n)) / n
+                          for n, _u in by_season.values()]
+                spreads.append(max(shares) - min(shares))
+            w("   %-4s a constant %.1f%% success rate would scatter the seasonal share over a spread of "
+              "%.0f-%.0f points (5th-95th percentile of 2000 draws)\n" % (
+                  k2, 100.0 * p_all, quantile(spreads, .05), quantile(spreads, .95)))
+        by_era = defaultdict(lambda: [0, 0])
+        for row in rows:
+            if row["season"] >= B.RECORD_START:
+                y = row["season"]
+                era = next(("%d-%d" % (lo, hi) if hi < 2099 else "%d+" % lo) for lo, hi in ERAS if lo <= y <= hi)
+                by_era[(row["basin"], era)][0] += row["events"]
+                by_era[(row["basin"], era)][1] += row["usable"]
+        w("  pooled by era (season start year): ")
+        w("; ".join("%s %s %.0f%% (%d/%d)" % (b_, e, 100.0 * u / n, u, n)
+                    for (b_, e), (n, u) in sorted(by_era.items())) + "\n")
+        w("  selection (tracker alone, from %d on): events with a 24 h chain vs without\n" % B.RECORD_START)
+        for k2 in ("atl", "pac", "all"):
+            for lab, ok in (("covered", True), ("uncovered", False)):
+                g = [x for x in grp[ok] if k2 == "all" or x[2] == k2]
+                w("   %-5s %-10s %6d %12s %14s\n" % (k2, lab, len(g),
+                                                     fmt(median([x[0] for x in g if x[0] is not None]), 1),
+                                                     fmt(median([x[1] for x in g]), 1)))
+    if chain_out:
+        write_chain_csv(chain_out, chains)
+        w("\n  recovered-only chain lengths per event written to %s\n" % chain_out)
+    suspects = suspects_all
+    if archive_qc_out:
+        write_suspects_csv(archive_qc_out, suspects)
+    w("\n=== suspected ARCHIVE position errors: %d fixes (%d events); %d already flagged by the build's "
+      "%d kt check ===\n" % (len(suspects), len({(x["basin"], x["event"]) for x in suspects}),
+                             sum(1 for x in suspects if x["speed_before"] >= B.SPEED_IMPLAUSIBLE_KT),
+                             int(B.SPEED_IMPLAUSIBLE_KT)))
+    for x in suspects[:15]:
+        w("   %s:%s %s %s archive %.1f/%.1f %s hPa -> HSF low %.0f nm away with the SAME pressure; "
+          "implied speed %.0f kt as archived, %.0f kt if moved\n" % (
+              x["basin"], x["event"], iso(x["valid"]), x["cat"], x["a_lat"], x["a_lon"], x["pres"],
+              x["nm"], x["speed_before"], x["speed_after"]))
+    w("   (the same-pressure rule alone is a one-in-ten coincidence per candidate; a fix is listed only if "
+      "moving it to the HSF low also removes an implausible leg)\n")
 
     # ----- cross-event collisions ----------------------------------------------
     w("\n=== cross-event collision QC notes: %d (recovered fix within %d nm of ANOTHER archive "
@@ -1328,25 +1605,53 @@ def validate(events, lows, out_path, out=sys.stdout):
             n["conf"]))
 
     # ----- V3 dumps --------------------------------------------------------------
-    w("\n=== V3  20 recovered tracks (production mode; random, seed 20261007) ===\n")
+    w("\n=== V3  20 recovered tracks (production mode, the tracker as shipped; random, seed 20261007) ===\n")
+    w("    5 are tracks the tracker rated low confidence somewhere; 4 are events that fell >= 16 hPa into\n"
+      "    t0; the rest are one per basin x era. 'archive' rows are pinned archive fixes, not recovered.\n")
     rnd = random.Random(20261007)
     have = [r for r in results if r["fixes"]]
     any_low = [r for r in have if any(f["conf"] == "low" for f in r["fixes"])]
+    steep = [r for r in have if (fall_into_t0(r["prep"]["event"], r["prep"]["t0"]) or 0) >= 16]
     cells = defaultdict(list)
     for r in have:
         ev = r["prep"]["event"]
         cells[(ev["basin"], era_of(r["prep"]["t0"]))].append(r)
     chosen = rnd.sample(any_low, min(5, len(any_low)))          # what "unsure" looks like
+    chosen += rnd.sample([r for r in steep if r not in chosen], min(4, len(steep)))
     for key in sorted(cells):                                   # one per basin x era
         pick = rnd.choice([r for r in cells[key] if r not in chosen] or cells[key])
         if pick not in chosen:
             chosen.append(pick)
     pool = [r for r in have if r not in chosen]
     chosen.extend(rnd.sample(pool, max(0, 20 - len(chosen))))
+    chosen = chosen[:20]
     chosen.sort(key=lambda r: (r["prep"]["event"]["basin"], r["prep"]["t0"]))
-    for r in chosen[:20]:
+    for r in chosen:
+        falls = fall_into_t0(r["prep"]["event"], r["prep"]["t0"])
+        extra = []
+        if r in any_low:
+            extra.append("has LOW-confidence fixes")
+        if falls is not None and falls >= 16:
+            extra.append("fell %d hPa into t0" % falls)
         print_track(r, out)
+        if extra:
+            w("  [%s]\n" % "; ".join(extra))
         w("\n")
+    w("=== V3b  the same steep events with the archive's lead fixes HIDDEN: tracker vs the archive's own ===\n")
+    shown = 0
+    for r in chosen:
+        ev = r["prep"]["event"]
+        falls = fall_into_t0(ev, r["prep"]["t0"])
+        if falls is None or falls < 16:
+            continue
+        prep, why = prepare(ev, lows, "hidden")
+        if prep is None:
+            continue
+        print_track_vs_truth(track(prep), truth_by_time(ev), out)
+        w("\n")
+        shown += 1
+    if not shown:
+        w("  (none of the chosen steep events could be re-run hidden)\n")
     w("elapsed %.0f s\n" % (datetime.now(timezone.utc) - t_start).total_seconds())
     return 0
 
@@ -1354,6 +1659,38 @@ def validate(events, lows, out_path, out=sys.stdout):
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
+def fall_into_t0(event, t0):
+    """hPa the archive says the storm deepened in the 6 h before t0 (positive = fell),
+    or None when either pressure is missing."""
+    by = {f[0]: f for f in event["fixes"]}
+    a, b = by.get(t0), by.get(shift(t0, -STEP_H))
+    if a is None or b is None or a[4] is None or b[4] is None:
+        return None
+    return int(round(b[4] - a[4]))
+
+
+def print_track_vs_truth(res, truth, out=sys.stdout):
+    prep = res["prep"]
+    ev = prep["event"]
+    out.write("%s:%s  t0=%s  [hidden mode: archive pre-HF fixes not seen]  anchor %.1fN %.1f %s hPa\n" % (
+        ev["basin"], ev["id"], iso(prep["t0"]), prep["anchor"]["lat"], prep["anchor"]["lon"],
+        prep["anchor"]["pres"]))
+    out.write("  %-20s %6s %7s %6s  %-6s | %-28s %s\n" % (
+        "valid", "lat", "lon", "pres", "conf", "archive's own (cat lat lon pres)", "error"))
+    for f in sorted(res["fixes"], key=lambda f: f["slot"]):
+        n = f["node"]
+        tr = truth.get(f["valid"])
+        tx = "-"
+        err = ""
+        if tr is not None:
+            tx = "%-4s %5.1f %6.1f %s" % (tr[3], tr[1], tr[2], "-" if tr[4] is None else "%d" % tr[4])
+            err = "%.0f nm%s" % (B.great_circle_nm(n["lat"], n["lon"], tr[1], tr[2]),
+                                 "" if tr[4] is None or n["pres"] is None else ", %+d hPa" % (n["pres"] - tr[4]))
+        out.write("  %-20s %6.1f %7.1f %6s  %-6s | %-28s %s\n" % (
+            iso(f["valid"]), n["lat"], n["lon"], "" if n["pres"] is None else "%d" % n["pres"],
+            f["conf"], tx, err))
+
 
 def print_track(res, out=sys.stdout):
     prep = res["prep"]
@@ -1386,16 +1723,23 @@ def main(argv=None):
     ap.add_argument("--calibrate", action="store_true", help="print the archive step-cost quantiles")
     ap.add_argument("--validate", action="store_true", help="V1, V1b, V2, coverage, dumps")
     ap.add_argument("--qc-out", help="write the cross-event collision notes here (CSV)")
+    ap.add_argument("--archive-qc-out", help="write suspected ARCHIVE position errors here (CSV)")
+    ap.add_argument("--chain-out", help="write per-event recovered-only chain lengths here (CSV)")
+    ap.add_argument("--min-conf", choices=("low", "medium", "high"), default="low",
+                    help="drop precursor rows below this grade (default low = emit all three; "
+                         "the committed file uses medium, the build's floor)")
     args = ap.parse_args(argv)
 
     events = load_events()
     lows = load_lows(args.lows)
+    suspects = set_suspects(events, lows)
 
     if args.calibrate:
         calibrate(events, lows)
         return 0
     if args.validate:
-        return validate(events, lows, args.out)
+        return validate(events, lows, args.out, chain_out=args.chain_out,
+                        archive_qc_out=args.archive_qc_out)
     if args.event:
         basin, _, eid = args.event.partition(":")
         ev = next((e for e in events if e["basin"] == basin and e["id"] == eid), None)
@@ -1409,13 +1753,23 @@ def main(argv=None):
 
     results, skipped = run_all(events, lows)
     notes = collisions(results, events)
-    n = write_csv(args.out, results, notes)
+    header = ["Pre-HF precursors recovered from OPC High Seas Forecasts by tools/track_hsf.py.",
+              "Floor: conf >= %s. source=hsf. Production run: archive lead fixes are pinned, so no row" % args.min_conf,
+              "is written at a time the archive already has a fix for the event.",
+              "warn_cat is the header the product filed the low under; for a developing storm that is the",
+              "warning for what it WILL become, not an observation of hurricane-force wind at that time.",
+              "Recovered-only chain hours per event are in recovered_chain_hours.csv, not derivable here."]
+    n = write_csv(args.out, results, notes, header, args.min_conf)
     conf = Counter(f["conf"] for r in results for f in r["fixes"])
     sys.stderr.write("events %d, tracked %d, skipped %s\nrows written %d (%s) -> %s\n"
                      % (len(events), len(results), dict(skipped), n,
                         ", ".join("%s %d" % (k, conf[k]) for k in ("high", "medium", "low")),
                         os.path.relpath(args.out, ROOT)))
     sys.stderr.write("cross-event collision notes: %d\n" % len(notes))
+    if args.chain_out:
+        write_chain_csv(args.chain_out, hidden_chains(events, lows))
+    if args.archive_qc_out:
+        write_suspects_csv(args.archive_qc_out, suspects)
     if args.qc_out:
         with open(args.qc_out, "w", newline="") as fh:
             w = csv.writer(fh)

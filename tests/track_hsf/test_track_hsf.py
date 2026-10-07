@@ -122,14 +122,23 @@ class CostTerms(unittest.TestCase):
         self.assertIsNotNone(T.edge_cost(a, T.new_node(50.0, -40.0 - 12.0, 970.0), 6.0))
         self.assertEqual(T.speed_cost(90.0), None)
 
-    def test_pressure_hard_reject_at_25_hpa_per_6h(self):
+    def test_pressure_hard_reject_at_33_hpa_per_6h(self):
+        # Calibrated on the pre-HF regime: the observed 6-h extreme is 31 hPa, so a real
+        # step of 30 must not be rejected as impossible; 34 is.
         a = T.new_node(50.0, -40.0, 970.0)
-        self.assertIsNone(T.edge_cost(a, T.new_node(50.0, -43.1, 996.0), 6.0))
-        self.assertIsNone(T.edge_cost(a, T.new_node(50.0, -43.1, 944.0), 6.0))
-        self.assertIsNotNone(T.edge_cost(a, T.new_node(50.0, -43.1, 990.0), 6.0))
+        self.assertEqual(T.PRES_HARD_HPA, 33.0)
+        self.assertIsNone(T.edge_cost(a, T.new_node(50.0, -43.1, 1004.0), 6.0))
+        self.assertIsNone(T.edge_cost(a, T.new_node(50.0, -43.1, 936.0), 6.0))
+        self.assertIsNotNone(T.pressure_cost(970.0, 1000.0, 6.0))
+        self.assertIsNotNone(T.pressure_cost(970.0, 940.0, 6.0))
         # a 12 h step is allowed proportionally more (square-root of time), not twice
-        self.assertIsNotNone(T.pressure_cost(970.0, 1000.0, 12.0))
-        self.assertIsNone(T.pressure_cost(970.0, 1010.0, 12.0))
+        self.assertIsNotNone(T.pressure_cost(970.0, 1010.0, 12.0))
+        self.assertIsNone(T.pressure_cost(970.0, 1020.0, 12.0))
+
+    def test_a_16_hpa_fall_is_cheap_in_the_pre_hf_regime(self):
+        # In the mature regime (scale 8) 16 hPa in 6 h cost 4; it is 1-in-18 pre-HF, so ~1.3 now.
+        self.assertLess(T.pressure_cost(970.0, 986.0, 6.0), 1.5)
+        self.assertLess(T.pressure_cost(970.0, 986.0, 6.0), T.MISSING_COST)
 
     def test_speed_cost_shape(self):
         self.assertLess(T.speed_cost(25.0), 0.2)
@@ -298,6 +307,69 @@ class ArchiveFixes(unittest.TestCase):
         self.assertEqual(T.prepare(dup, lows)[1], "duplicate-times")
         no_hf = event([[T0, LAT, -40.0, "DHF", 970]])
         self.assertEqual(T.prepare(no_hf, lows)[1], "no-hf-fix")
+
+
+class ArchiveSuspects(unittest.TestCase):
+    """A mistyped archive coordinate is found by the HSF, listed, and never anchored on."""
+
+    def setUp(self):
+        T.ARCHIVE_SUSPECTS.clear()
+
+    tearDown = setUp
+
+    def typo_event(self):
+        # DHF lead fix at slot 1 typed 10 degrees of longitude wrong (west of where it was)
+        ev = storm_event()
+        ev["fixes"].append([when(1), LAT, -40.0 - DLON - 10.0, "DHF", 975])
+        ev["fixes"].sort()
+        return ev
+
+    def test_same_pressure_low_that_removes_an_implausible_leg_is_listed(self):
+        ev = self.typo_event()
+        lows = lows_with({1: [T.new_node(LAT, -40.0 - DLON, 975.0)]})
+        found = T.archive_position_suspects([ev], lows)
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0]["valid"], when(1))
+        self.assertGreater(found[0]["speed_before"], 60.0)
+        self.assertLess(found[0]["speed_after"], 50.0)
+
+    def test_equal_pressure_alone_is_not_evidence(self):
+        # A different low with the same pressure, but the archive track is perfectly plausible
+        ev = storm_event()
+        ev["fixes"].append([when(1), LAT, -40.0 - DLON, "DHF", 975])
+        far = T.new_node(62.0, -55.0, 975.0)
+        self.assertEqual(T.archive_position_suspects([ev], lows_with({1: [far]})), [])
+
+    def test_a_suspect_anchor_or_pinned_fix_is_not_tracked(self):
+        ev = self.typo_event()
+        lows = lows_with({1: [T.new_node(LAT, -40.0 - DLON, 975.0)]})
+        T.set_suspects([ev], lows)
+        self.assertEqual(T.prepare(ev, lows, "production")[1], "archive-suspect")
+        # hidden mode ignores the pre-HF fix, so only a suspect ANCHOR blocks it
+        self.assertIsNotNone(T.prepare(ev, lows, "hidden")[0])
+        T.ARCHIVE_SUSPECTS.add((ev["basin"], ev["id"], T0))
+        self.assertEqual(T.prepare(ev, lows, "hidden")[1], "archive-suspect")
+
+
+class RecoveredOnlyChains(unittest.TestCase):
+    def setUp(self):
+        T.ARCHIVE_SUSPECTS.clear()
+
+    def test_chain_hours_ignore_the_archives_own_lead_fixes(self):
+        ev = storm_event()
+        ev["fixes"].append([when(2), LAT, -40.0 - 2 * DLON, "DHF", 980])   # archive owns slot 2
+        ev["fixes"].sort()
+        lows = lows_with({s: [true_low(s)] for s in range(1, 6)})
+        c = T.hidden_chains([ev], lows)[0]
+        self.assertEqual((c["chain_h_any"], c["chain_h_usable"], c["chain_h_high"]), (30, 30, 30))
+        # while the production rows skip slot 2, which is why the sidecar exists
+        prod = run(ev, lows)
+        self.assertNotIn(2, slots_of(prod))
+
+    def test_a_gap_ends_the_chain_hours(self):
+        lows = lows_with({1: [true_low(1)], 2: [true_low(2)], 4: [true_low(4)]})
+        c = T.hidden_chains([storm_event()], lows)[0]
+        self.assertEqual(c["chain_h_usable"], 12)
 
 
 class Output(unittest.TestCase):
