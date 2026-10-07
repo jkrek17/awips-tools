@@ -1,5 +1,5 @@
 HF extratropical low archive - data quality report
-generated 2026-10-07T22:26:25Z
+generated 2026-10-07T22:29:07Z
 
   bfEvents                 1928
   bfRecovered              1423
