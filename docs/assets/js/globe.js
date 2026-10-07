@@ -107,7 +107,7 @@ window.HF = window.HF || {};
   var lastHoverT = 0;
   var hoveredKey = undefined;            // undefined = "not computed yet"
 
-  var curLayer = 'tracks';               // 'tracks' | 'density' | 'genesis' | 'peak'
+  var curLayer = 'tracks';               // 'tracks' | 'density' | 'genesis' | 'peak' | 'playback'
 
   // Ocean currents: a background context layer, independent of curLayer -
   // see the "ocean currents" block below for the rest of it. Off by default
@@ -127,6 +127,21 @@ window.HF = window.HF || {};
   function reducedMotion() {
     return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   }
+
+  /* Playback state (see the "playback" section below) and the static-layer
+     cache (see drawStaticLayers()). Kept together here, beside the other
+     module state, rather than next to the code that uses them, so the whole
+     of what survives between frames is readable in one place. */
+  var PB_FADE_MS = 380;                  // Season step crossfade length
+  var pbLayers = [];                     // [{frame, a0, t0, dir}] - one entry normally, two or more mid-crossfade
+  var pbKind = 'clock';                  // 'clock' (heads + tails) | 'step' (whole-season tracks)
+  var pbTail = 48;                       // hours, or Infinity; fixes the shape of the tail fade
+  var animator = null;                   // fn(now) -> keep-going; the app's playback clock, driven from tick()
+  var lastPointer = null;                // {px, py, clientX, clientY} while the cursor is over the canvas
+  var lastTipHtml = '';                  // so a moving storm only re-writes the tooltip when its text changed
+  var themeGen = 0;                      // bumped by applyTheme(); part of the static-layer cache key
+  var pressCache = {};                   // pressure token -> resolved colour, cleared with the theme
+  var bg = { canvas: null, ctx: null, key: '' };   // offscreen copy of ocean + graticule + land
 
   /* ------------------------------------------------------------ geometry */
 
@@ -325,12 +340,17 @@ window.HF = window.HF || {};
       // already mean "data" elsewhere on this map (fix density, Atlantic
       // basin colour) - this should read as quiet context, never as a
       // series of its own.
-      current: readColor('--current', isDarkTheme() ? '#5fb6bf' : '#2c6c73')
+      current: readColor('--current', isDarkTheme() ? '#5fb6bf' : '#2c6c73'),
+      // Colour for events with no analyzed centre, resolved once per theme
+      // rather than once per storm per frame during playback.
+      terrain: HF.classColor('tipjet')
     };
   }
 
   globe.applyTheme = function () {
     computePalette();
+    themeGen++;                 // the cached ocean/land/graticule bitmap is the old theme's
+    pressCache = {};
     dirty = true;
     scheduleFrame();
   };
@@ -628,6 +648,268 @@ window.HF = window.HF || {};
     hitPoints.push({ x: p.x, y: p.y, low: low });
   }
 
+  /* ------------------------------------------------------------ playback
+     One frame of HF.playback (playback.js) drawn as storms: a head marker
+     plus a tail that fades with age. The engine is pure data and does all
+     the time arithmetic - which storms are alive at t, where they are,
+     how far behind the head each tail point sits (`age`, in hours) - so
+     nothing here ever looks at a clock; colour, width and fade are this
+     file's call, as the engine's header says.
+
+     Two kinds of frame:
+       'clock'  composite and season replay: head + tail per storm.
+       'step'   Season step: each storm's COMPLETE track, no head. A small
+                marker at the event's lowest pressure carries intensity,
+                since a whole track has no "now" to hang a head on.
+
+     Everything reuses what the other layers already do: pressure colour
+     per edge off the same --mslp-* ramp, dashed terrain-class strokes,
+     radiusForPressure() for marker size, strokeEdge()'s horizon clipping,
+     hitPoints/hoveredKey/selectedKey for hover and click. */
+
+  /** Resolve a pressure colour once per ramp step per theme instead of
+      once per tail edge per frame. HF.pressureColor does the lookup (a
+      getComputedStyle read); this only remembers it. */
+  function pressureColorCached(hpa) {
+    var tok = HF.pressureToken(hpa);
+    var c = pressCache[tok];
+    if (c === undefined) c = pressCache[tok] = HF.pressureColor(hpa);
+    return c;
+  }
+
+  /** 1 at the head, falling to 0 at the far end of the tail. A finite tail
+      fades linearly over exactly its own length, so a 24 h tail and a 96 h
+      tail both taper to nothing at their ends. The accumulating "track so
+      far" tail has no end to fade towards, so it decays exponentially
+      instead (72 h e-folding, about a typical event's whole life) and
+      tailAlpha() gives it a high floor: the point of that view is to read
+      the whole path, so its oldest part must stay visible. */
+  function tailFraction(age) {
+    if (isFinite(pbTail) && pbTail > 0) {
+      var f = 1 - age / pbTail;
+      return f < 0 ? 0 : f;
+    }
+    return Math.exp(-age / 72);
+  }
+
+  function tailAlpha(f) {
+    return isFinite(pbTail) ? 0.05 + 0.95 * f : 0.4 + 0.6 * f;
+  }
+
+  /** Move the crossfade along: once the newest frame is fully in, the
+      older ones are dropped and the layer stack collapses back to one. */
+  function layerAlpha(l, now) {
+    if (!l.dir) return l.a0;
+    var a = l.a0 + l.dir * (now - l.t0) / PB_FADE_MS;
+    return a < 0 ? 0 : a > 1 ? 1 : a;
+  }
+
+  function stepFade(now) {
+    var n = pbLayers.length;
+    if (!n || (n === 1 && !pbLayers[0].dir)) return;
+    var newest = pbLayers[n - 1];
+    if (layerAlpha(newest, now) >= 1) {
+      newest.a0 = 1; newest.dir = 0;
+      pbLayers = [newest];
+      return;
+    }
+    var keep = [];
+    for (var i = 0; i < n; i++) {
+      if (i === n - 1 || layerAlpha(pbLayers[i], now) > 0) keep.push(pbLayers[i]);
+    }
+    pbLayers = keep;
+  }
+
+  /** Flatten the layer stack into one entry per storm key: [{storm, alpha}].
+      This is the crossfade's "dissolve by matching storms": a storm present
+      in both the outgoing and incoming frame is drawn once at the larger of
+      its two alphas - so it stays solid instead of dipping to ~75% mid-fade
+      the way two stacked half-transparent copies would - while a storm in
+      only one frame fades out or in. The newest frame's geometry wins. */
+  function pbDrawList(now) {
+    var byKey = {}, list = [];
+    for (var li = 0; li < pbLayers.length; li++) {
+      var l = pbLayers[li], a = layerAlpha(l, now);
+      if (a <= 0) continue;
+      var storms = l.frame.storms;
+      for (var i = 0; i < storms.length; i++) {
+        var s = storms[i], e = byKey[s.key];
+        if (!e) { e = byKey[s.key] = { storm: s, alpha: a }; list.push(e); }
+        else { e.storm = s; if (a > e.alpha) e.alpha = a; }
+      }
+    }
+    return list;
+  }
+
+  function isTerrain(s) { return !!s.cls && s.cls !== 'low'; }
+
+  /** One storm's tail (clock) or whole track (step), edge by edge. Clock
+      tails are cut into short pieces whose alpha and width follow `age`, so
+      the fade is a smooth taper along the line rather than one flat value
+      per 6-hour edge (a 24 h tail is only four edges). Dashed terrain
+      strokes and horizon-clipped edges are drawn whole, at their mid-age:
+      cutting a dashed line into pieces restarts the dash pattern in each,
+      and a clipped edge's age at the cut is not known. */
+  function drawStormLine(e, step, style, isSel, isHov) {
+    var s = e.storm, tail = s.tail, n = tail.length;
+    if (n < 2) return;
+    var terrain = isTerrain(s);
+    var emph = isSel || isHov;
+    ctx.setLineDash(terrain ? [4, 3] : []);
+
+    for (var i = 0; i < n - 1; i++) {
+      var a = tail[i], b = tail[i + 1];           // oldest -> newest
+      var pa = project(a.lon, a.lat), pb = project(b.lon, b.lat);
+      if (!pa.visible && !pb.visible) continue;
+      var p0 = pa, p1 = pb, whole = true;
+      if (pa.visible !== pb.visible) {
+        var cross = horizonCrossing([a.lon, a.lat], [b.lon, b.lat]);
+        var pc = project(cross[0], cross[1]);
+        if (pa.visible) p1 = pc; else p0 = pc;
+        whole = false;
+      }
+      ctx.strokeStyle = terrain ? pal.terrain : pressureColorCached(segmentPressure(a, b));
+
+      var dx = p1.x - p0.x, dy = p1.y - p0.y;
+      var pieces = 1;
+      if (!step && !terrain && whole) {
+        pieces = Math.max(1, Math.min(6, Math.ceil(Math.sqrt(dx * dx + dy * dy) / 5)));
+      }
+      for (var k = 0; k < pieces; k++) {
+        var u0 = k / pieces, u1 = (k + 1) / pieces;
+        var alpha, width;
+        if (step) {
+          alpha = Math.max(style.opacity, 0.6);
+          width = style.weight + (terrain ? 0.6 : 0.3);
+        } else {
+          var f = tailFraction(a.age + (b.age - a.age) * (u0 + u1) / 2);
+          alpha = tailAlpha(f);
+          width = 1.1 + 2.3 * f + (terrain ? 0.3 : 0);
+        }
+        if (emph) {
+          alpha = step ? 1 : Math.min(1, alpha + 0.35);
+          width += isHov ? 1.2 : 1;
+        }
+        ctx.globalAlpha = alpha * e.alpha;
+        ctx.lineWidth = width;
+        ctx.beginPath();
+        ctx.moveTo(p0.x + dx * u0, p0.y + dy * u0);
+        ctx.lineTo(p0.x + dx * u1, p0.y + dy * u1);
+        ctx.stroke();
+      }
+    }
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+  }
+
+  /** The storm's marker, plus its hit points.
+
+      Shape and size carry the information that colour also carries, so
+      nothing depends on telling two hues apart: pressure is the disc's
+      SIZE (radiusForPressure, as the peak-intensity layer does) as well as
+      its colour, and an event with no analyzed centre is a DIAMOND of fixed
+      size where a low is a circle. A clock head also gets a thin outer ring
+      so it reads as a storm with extent, not a dot; a step marker is
+      smaller and has none, since up to ~100 of them share one globe. */
+  function drawStormMark(e, step, isSel, isHov) {
+    var s = e.storm, tail = s.tail, low = s.low, i, tp, pt;
+    var terrain = isTerrain(s);
+    var emph = isSel || isHov;
+
+    // Hit points first, from every visible tail vertex (the head is the last
+    // one), so hover works on the line as well as the marker - but only for
+    // a storm that is mostly faded in, or a dissolving storm stays hoverable.
+    if (e.alpha >= 0.5) {
+      for (i = 0; i < tail.length; i++) {
+        tp = project(tail[i].lon, tail[i].lat);
+        if (tp.visible) hitPoints.push({ x: tp.x, y: tp.y, low: low, storm: s });
+      }
+    }
+
+    var lat, lon;
+    if (step) {
+      if (low.minPLat != null && low.minPLon != null) { lat = low.minPLat; lon = low.minPLon; }
+      else { pt = tail[(tail.length - 1) >> 1]; lat = pt.lat; lon = pt.lon; }
+    } else {
+      lat = s.lat; lon = s.lon;
+    }
+    if (lat == null || lon == null) return;
+    var p = project(lon, lat);
+    if (!p.visible) return;
+    if (step && e.alpha >= 0.5) hitPoints.push({ x: p.x, y: p.y, low: low, storm: s });
+
+    var base = terrain ? 5 : radiusForPressure(s.pres);
+    if (step) base = terrain ? 4 : Math.max(2.5, base * 0.75);
+    var r = emph ? base + 2.5 : base;
+    var color = terrain ? pal.terrain : pressureColorCached(s.pres);
+
+    ctx.globalAlpha = e.alpha * (step && !emph ? 0.85 : 1);
+    ctx.fillStyle = color;
+    ctx.strokeStyle = pal.oceanWash;
+    ctx.lineWidth = emph ? 2 : 1.2;
+    ctx.beginPath();
+    if (terrain) {
+      var d = r * 1.3;
+      ctx.moveTo(p.x, p.y - d); ctx.lineTo(p.x + d, p.y);
+      ctx.lineTo(p.x, p.y + d); ctx.lineTo(p.x - d, p.y);
+      ctx.closePath();
+    } else {
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    }
+    ctx.fill();
+    ctx.stroke();
+    if (!terrain && !step) {
+      ctx.globalAlpha = e.alpha * 0.55;
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r + 3.5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawPlayback() {
+    hitPoints = [];
+    if (!pbLayers.length) return;
+    var list = pbDrawList(performance.now());
+    var step = pbKind === 'step';
+    var style = styleForCount(list.length);
+    var selected = null, hovered = null, i, e;
+
+    // Selected, then hovered, are drawn last (hover is the transient pointer
+    // emphasis and must end up on top), exactly as drawTracks() orders them.
+    // Lines for every storm go down before any marker, so a head is never
+    // buried under another storm's tail.
+    var normal = [];
+    for (i = 0; i < list.length; i++) {
+      e = list[i];
+      var isSel = e.storm.key === selectedKey;
+      var isHov = hoveredKey != null && e.storm.key === hoveredKey;
+      if (isSel) selected = e;
+      if (isHov) hovered = e;
+      if (!isSel && !isHov) normal.push(e);
+    }
+    ctx.lineCap = 'round';
+    for (i = 0; i < normal.length; i++) drawStormLine(normal[i], step, style, false, false);
+    if (selected && selected !== hovered) drawStormLine(selected, step, style, true, false);
+    if (hovered) drawStormLine(hovered, step, style, hovered === selected, true);
+    ctx.lineCap = 'butt';
+
+    for (i = 0; i < normal.length; i++) drawStormMark(normal[i], step, false, false);
+    if (selected && selected !== hovered) drawStormMark(selected, step, true, false);
+    if (hovered) drawStormMark(hovered, step, hovered === selected, true);
+  }
+
+  /** The storms move under a stationary cursor, so the hover result from
+      the last mousemove goes stale: the hovered storm can end, or another
+      can drift under the pointer. Re-test against the freshly built hit
+      points after every playback draw (a few hundred distance checks). */
+  function afterPlaybackDraw() {
+    if (dragging || !lastPointer) return;
+    updateHover(nearestHit(lastPointer.px, lastPointer.py), lastPointer);
+  }
+
   /* -------------------------------------------------------------- density
      Gridded hurricane-force fix counts. Binning is ported unchanged from
      the flat map's HF.maps.densityGrid (see DENSITY_LON_ORIGIN above for why
@@ -860,14 +1142,20 @@ window.HF = window.HF || {};
     if (curLayer === 'density') return drawDensity();
     if (curLayer === 'genesis') return drawPoints('genesis');
     if (curLayer === 'peak') return drawPoints('peak');
+    if (curLayer === 'playback') return drawPlayback();
     return drawTracks();
   }
 
-  function draw() {
-    if (!ctx || !cssW || !cssH || !pal) return;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, cssW, cssH);
-
+  /** Everything under the features: ocean disc, currents, graticule, land.
+      None of it depends on anything but the view (lambda, phi, zoom), the
+      canvas size, the theme and the currents toggle - and during playback
+      the view does not change from one frame to the next, only the storms
+      do. Measured, this is the ~17 ms per-frame floor (see the report that
+      came with the playback layer): the graticule and ~60 coastline rings
+      are projected, horizon-clipped and stroked point by point. So
+      paintStatic() renders it once into an offscreen canvas and blits that
+      for every frame until the view, size or theme actually changes. */
+  function drawStaticLayers() {
     var R = baseR * view.zoom;
 
     // 1. ocean disc - base tone plus a low-alpha ink wash (see computePalette)
@@ -892,9 +1180,75 @@ window.HF = window.HF || {};
 
     // 4. land
     drawLand();
+  }
+
+  function staticKey() {
+    // Exact numbers, not rounded: a rounded key would let a slow drag show a
+    // stale background for a few frames; the string is cheap to build.
+    return view.lambda + '|' + view.phi + '|' + view.zoom + '|' + canvas.width + 'x' +
+      canvas.height + '@' + dpr + '|' + themeGen + '|' + (showCurrents ? 1 : 0);
+  }
+
+  /** Put the static layers on the main canvas - from the cache when it is
+      current, drawn directly otherwise. Returns true when it blitted.
+      Only the playback layer uses the cache: it is the one layer that
+      redraws every frame with a still view, so it is the one that gains,
+      and the other layers keep exactly the code path they always had.
+      window.HF_NO_STATIC_CACHE switches the cache off, for the same
+      measure-before-and-after use as HF_DEBUG_TIMING. */
+  function paintStatic() {
+    if (curLayer !== 'playback' || window.HF_NO_STATIC_CACHE) {
+      ctx.clearRect(0, 0, cssW, cssH);
+      drawStaticLayers();
+      return false;
+    }
+    var key = staticKey();
+    if (bg.key !== key) {
+      if (!bg.canvas) {
+        bg.canvas = document.createElement('canvas');
+        bg.ctx = bg.canvas.getContext('2d');
+      }
+      // Assigning width/height reallocates and clears, so only do it when
+      // the size really changed; otherwise clear in place.
+      if (bg.canvas.width !== canvas.width || bg.canvas.height !== canvas.height) {
+        bg.canvas.width = canvas.width;
+        bg.canvas.height = canvas.height;
+      }
+      // The draw helpers all use the module-level `ctx`, so point it at the
+      // offscreen context for the duration rather than threading a context
+      // argument through ten functions that have no other reason to take one.
+      var main = ctx;
+      ctx = bg.ctx;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, cssW, cssH);
+      drawStaticLayers();
+      ctx = main;
+      bg.key = key;
+    }
+    // Device pixels 1:1, so no transform and no resampling. 'copy' replaces
+    // the destination outright, which saves the separate clearRect.
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = 'copy';
+    ctx.drawImage(bg.canvas, 0, 0);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return true;
+  }
+
+  function draw() {
+    if (!ctx || !cssW || !cssH || !pal) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    var dbg = window.HF_DEBUG_TIMING;
+    var t0 = dbg ? performance.now() : 0;
+    var R = baseR * view.zoom;
+
+    var cached = paintStatic();
+    var t1 = dbg ? performance.now() : 0;
 
     // 5. the active layer's features (selected/hovered drawn last within it)
     drawFeatures();
+    var t2 = dbg ? performance.now() : 0;
 
     // 6. sphere outline, always on top and always a full circle
     ctx.beginPath();
@@ -902,6 +1256,17 @@ window.HF = window.HF || {};
     ctx.lineWidth = 1.25;
     ctx.strokeStyle = pal.outline;
     ctx.stroke();
+
+    if (dbg) {
+      // Canvas 2D records commands and rasterizes later, so the clock above
+      // can read near zero for a frame that is expensive to paint. With
+      // HF_DEBUG_SYNC also set, read one pixel back to force the pending
+      // raster to finish and make the numbers the true per-frame cost.
+      // Debug only: the readback itself stalls the pipeline.
+      if (window.HF_DEBUG_SYNC) ctx.getImageData(0, 0, 1, 1);
+      globe.lastDraw = { layer: curLayer, cached: cached, staticMs: t1 - t0,
+                         featureMs: t2 - t1, totalMs: performance.now() - t0 };
+    }
   }
 
   /* ---------------------------------------------------------- animation
@@ -913,27 +1278,43 @@ window.HF = window.HF || {};
     rafId = window.requestAnimationFrame(tick);
   }
 
+  function pbFading() {
+    return pbLayers.length > 1 || (pbLayers.length === 1 && pbLayers[0].dir !== 0);
+  }
+
   function tick() {
     rafId = null;
     if (!visible) return;
 
-    var animating = dragging || !!inertia || !!transition;
+    var now = performance.now();
+    var animating = dragging || !!inertia || !!transition || pbFading() || !!animator;
     if (dirty || animating) {
       if (inertia) stepInertia();
       if (transition) stepTransition();
+      // The app's playback clock runs here, inside the one rAF loop, rather
+      // than on a second loop of its own: a second requestAnimationFrame
+      // would be queued behind this one and land its frame a whole display
+      // frame late. It sets the new frame (which marks us dirty) and says
+      // whether to keep going.
+      if (animator && !animator(now)) animator = null;
+      if (pbLayers.length) stepFade(now);
       // window.HF_DEBUG_TIMING flips this on for perf investigation (e.g. the
       // hover-emphasis redraw path below) without adding a console.log that
       // fires on every normal frame/drag.
       if (window.HF_DEBUG_TIMING) {
         var t0 = performance.now();
         draw();
-        console.log('[globe] draw() took ' + (performance.now() - t0).toFixed(2) + ' ms, ' + lows.length + ' tracks');
+        var ld = globe.lastDraw || {};
+        console.log('[globe] draw() took ' + (performance.now() - t0).toFixed(2) + ' ms, ' + lows.length +
+          ' tracks, layer ' + curLayer + (ld.cached ? ' (static cached)' : '') +
+          ' [static ' + (ld.staticMs || 0).toFixed(2) + ' ms, features ' + (ld.featureMs || 0).toFixed(2) + ' ms]');
       } else {
         draw();
       }
       dirty = false;
+      if (curLayer === 'playback') afterPlaybackDraw();
     }
-    if (animating) scheduleFrame();
+    if (dragging || !!inertia || !!transition || pbFading() || !!animator) scheduleFrame();
   }
 
   function stepInertia() {
@@ -1018,6 +1399,20 @@ window.HF = window.HF || {};
       (low.bomb ? '<div class="t-row">Explosive: ' + low.berg.toFixed(2) + ' B</div>' : '');
   }
 
+  /** Tooltip text for a hit. In playback a storm is moving, so the event's
+      summary alone ("Min 962 hPa") would not say what it is doing right now;
+      a clock frame adds its current pressure and position. */
+  function tipFor(hit) {
+    var html = fixTip(hit.low);
+    var s = hit.storm;
+    if (curLayer === 'playback' && pbKind === 'clock' && s) {
+      html += '<div class="t-row">Now: ' +
+        (s.pres != null ? Math.round(s.pres) + ' hPa' : 'no analyzed centre') +
+        ' &middot; ' + HF.fmtLatLon(s.lat, s.lon) + '</div>';
+    }
+    return html;
+  }
+
   /** Lat/lon readout under the cursor, in the site's own HF.fmtLatLon format
       so it matches the tables and every other tooltip. Hidden whenever the
       cursor isn't actually over the sphere. */
@@ -1040,7 +1435,13 @@ window.HF = window.HF || {};
 
     if (curLayer === 'density') { handleDensityHover(px, py, evt); return; }
 
-    var hit = nearestHit(px, py);
+    updateHover(nearestHit(px, py), evt);
+  }
+
+  /** Apply a hit-test result to the hover state. Shared by the mousemove
+      path above and by afterPlaybackDraw(), which has to re-run it when the
+      storms move under a stationary cursor. `evt` only needs clientX/Y. */
+  function updateHover(hit, evt) {
     var key = hit ? hit.low.key : null;
 
     if (key !== hoveredKey) {
@@ -1052,9 +1453,18 @@ window.HF = window.HF || {};
       dirty = true;
       scheduleFrame();
       canvas.style.cursor = key ? 'pointer' : '';
-      if (hit) HF.showTip(fixTip(hit.low), evt); else HF.hideTip();
+      if (hit) { lastTipHtml = tipFor(hit); HF.showTip(lastTipHtml, evt); }
+      else { lastTipHtml = ''; HF.hideTip(); }
     } else if (hit) {
-      HF.moveTip(evt);
+      if (curLayer === 'playback') {
+        // The storm under the cursor keeps moving, so its "Now:" row changes
+        // every few frames - rewrite the tooltip only when the text did.
+        var html = tipFor(hit);
+        if (html !== lastTipHtml) { lastTipHtml = html; HF.showTip(html, evt); }
+        else HF.moveTip(evt);
+      } else {
+        HF.moveTip(evt);
+      }
     }
   }
 
@@ -1108,6 +1518,7 @@ window.HF = window.HF || {};
     var rect = canvas.getBoundingClientRect();
     var px = evt.clientX - rect.left, py = evt.clientY - rect.top;
     updateReadout(px, py);
+    lastPointer = dragging ? null : { px: px, py: py, clientX: evt.clientX, clientY: evt.clientY };
 
     if (dragging && dragLast) {
       var dx = evt.clientX - dragLast.x, dy = evt.clientY - dragLast.y;
@@ -1241,6 +1652,7 @@ window.HF = window.HF || {};
   }
 
   function onLeave() {
+    lastPointer = null;
     if (!dragging) {
       if (hoveredKey != null || hoveredCellKey != null) {
         hoveredKey = undefined;
@@ -1396,6 +1808,52 @@ window.HF = window.HF || {};
       rafId = null;
     }
   };
+
+  /** Hand the globe the frame to draw for layer 'playback'.
+
+      frame  an HF.playback frame: a clock's at(t, tail) result, or the
+             engine's step(season) result.
+      opts   {kind: 'clock' | 'step', tailHours: number | Infinity,
+              crossfade: false to cut instead of dissolve}
+
+      Clock frames replace each other instantly - the heads already move
+      smoothly, there is nothing to dissolve. A step frame arriving over
+      another step frame crossfades (PB_FADE_MS), matched by storm key; under
+      prefers-reduced-motion it cuts. A fade interrupted by yet another frame
+      continues from its current alpha instead of popping. */
+  globe.setPlaybackFrame = function (frame, opts) {
+    opts = opts || {};
+    var kind = opts.kind === 'step' ? 'step' : 'clock';
+    var now = performance.now();
+    var wasKind = pbKind;
+    pbKind = kind;
+    pbTail = opts.tailHours == null ? 48 : opts.tailHours;
+    if (!frame) { pbLayers = []; }
+    else if (kind === 'step' && wasKind === 'step' && pbLayers.length &&
+             opts.crossfade !== false && !reducedMotion()) {
+      for (var i = 0; i < pbLayers.length; i++) {
+        var l = pbLayers[i];
+        l.a0 = layerAlpha(l, now); l.t0 = now; l.dir = -1;
+      }
+      pbLayers.push({ frame: frame, a0: 0, t0: now, dir: 1 });
+    } else {
+      pbLayers = [{ frame: frame, a0: 1, t0: now, dir: 0 }];
+    }
+    dirty = true;
+    scheduleFrame();
+  };
+
+  /** Install (or, with null, remove) the callback that advances playback.
+      It is called once per animation frame, before drawing, with the frame
+      timestamp, and returns true to keep running. Lives in the globe's own
+      loop - see tick() for why. */
+  globe.setAnimator = function (fn) {
+    animator = fn || null;
+    if (animator) scheduleFrame();
+  };
+
+  // app.js needs the same answer for "do not autoplay"; one definition here.
+  globe.prefersReducedMotion = reducedMotion;
 
   /** Toggle the ocean currents background layer - independent of
       globe.render's layer argument, so it can be shown under Tracks, Fix

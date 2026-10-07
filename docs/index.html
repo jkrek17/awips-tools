@@ -130,10 +130,11 @@
   <section class="panel is-active" id="panel-map" role="tabpanel">
     <div class="panel-tools">
       <div class="segmented" role="group" aria-label="Map layer">
-        <button type="button" class="seg is-active" data-layer="tracks">Tracks</button>
-        <button type="button" class="seg" data-layer="density">Fix density</button>
-        <button type="button" class="seg" data-layer="genesis">First fix</button>
-        <button type="button" class="seg" data-layer="peak">Peak intensity</button>
+        <button type="button" class="seg is-active" data-layer="tracks" aria-pressed="true">Tracks</button>
+        <button type="button" class="seg" data-layer="density" aria-pressed="false">Fix density</button>
+        <button type="button" class="seg" data-layer="genesis" aria-pressed="false">First fix</button>
+        <button type="button" class="seg" data-layer="peak" aria-pressed="false">Peak intensity</button>
+        <button type="button" class="seg" data-layer="playback" aria-pressed="false">Playback</button>
       </div>
       <!-- Independent of the layer switch above: a background context layer
            that can sit under Tracks, Fix density, or either point layer, so
@@ -145,6 +146,55 @@
       <button type="button" class="btn" id="fitBounds">Fit to events</button>
       <p class="tool-note" id="mapNote"></p>
     </div>
+
+    <!-- Playback transport. Shown only while the Playback layer is active
+         (app.js toggles [hidden]). Every control is a native element - radio
+         inputs, selects, a button and a range input - so keyboard and
+         screen-reader behaviour is the browser's own, not reimplemented. -->
+    <div class="transport" id="pbBar" role="group" aria-label="Playback controls" hidden>
+      <div class="transport-row">
+        <fieldset class="filter pb-modes">
+          <legend>Mode</legend>
+          <div class="pb-mode-set">
+            <label class="pb-mode"><input type="radio" name="pbMode" value="composite" checked><span>Composite</span></label>
+            <label class="pb-mode"><input type="radio" name="pbMode" value="season"><span>Season replay</span></label>
+            <label class="pb-mode"><input type="radio" name="pbMode" value="step"><span>Season step</span></label>
+          </div>
+        </fieldset>
+        <div class="filter" id="pbSeasonWrap" hidden>
+          <label for="pbSeason">Season</label>
+          <select id="pbSeason"></select>
+        </div>
+        <div class="filter" id="pbTailWrap">
+          <label for="pbTail">Tail length</label>
+          <select id="pbTail">
+            <option value="24">1 day</option>
+            <option value="48">2 days</option>
+            <option value="96" selected>4 days</option>
+            <option value="inf">Whole track so far</option>
+          </select>
+        </div>
+        <div class="filter">
+          <label for="pbSpeed" id="pbSpeedLabel">Speed</label>
+          <select id="pbSpeed"></select>
+        </div>
+      </div>
+      <div class="transport-row transport-main">
+        <button type="button" class="btn pb-play" id="pbPlay"><span class="pb-glyph" aria-hidden="true"></span><span id="pbPlayText">Play</span></button>
+        <div class="pb-scrub-wrap">
+          <input type="range" class="pb-scrub" id="pbScrub" min="0" max="1" step="1" value="0" aria-label="Playback position" aria-describedby="pbHint">
+          <div class="pb-ticks" id="pbTicks" aria-hidden="true"></div>
+        </div>
+        <p class="pb-readout"><span class="pb-date" id="pbDate">&ndash;</span> <span class="pb-count" id="pbCount"></span></p>
+      </div>
+      <p class="transport-hint" id="pbHint">Arrow keys move the position by one day (one season in Season step); Shift+arrow by six hours; Page Up and Page Down by a week; Home and End jump to the ends.</p>
+      <p class="transport-status" id="pbStatus"></p>
+    </div>
+    <!-- Polite live region for the playback position. Kept outside the
+         transport so it is in the document before it first speaks; app.js
+         throttles what is written to it (see announcePlayback). -->
+    <p id="pbLive" class="sr-only" aria-live="polite" aria-atomic="true"></p>
+
     <div class="map-wrap">
       <div id="globeWrap" class="globe-wrap">
         <canvas id="globe"></canvas>
@@ -162,7 +212,7 @@
         <figcaption>
           <h2>Events per season</h2>
           <p>
-            Each bar is one cool season (July&ndash;June); the dashed line is the
+            Each bar is one cool season (June&ndash;May); the dashed line is the
             period mean. Coverage begins part-way through the record &mdash;
             Pacific entries start in February&nbsp;2002 and Atlantic in
             September&nbsp;2003 &mdash; so the first seasons are short-counted,
@@ -175,7 +225,7 @@
       <figure class="card chart-card">
         <figcaption>
           <h2>Seasonal cycle</h2>
-          <p>Events by calendar month of first fix, ordered July&ndash;June.</p>
+          <p>Events by calendar month of first fix, ordered June&ndash;May.</p>
         </figcaption>
         <div class="chart" id="chartMonth"></div>
       </figure>
@@ -330,7 +380,7 @@
         </dd>
         <dt>Season</dt>
         <dd>
-          July&ndash;June, labelled by the starting year: an event on
+          June&ndash;May, labelled by the starting year: an event on
           2&nbsp;January&nbsp;2015 belongs to season 2014&ndash;15. This keeps
           a single cool season in one bucket.
         </dd>
@@ -425,6 +475,7 @@
 
 <script src="data/hf-lows.js"></script>
 <script src="assets/js/util.js"></script>
+<script src="assets/js/playback.js"></script>
 <script src="assets/js/charts.js"></script>
 <script src="data/coastlines.js"></script>
 <script src="data/currents.js"></script>
