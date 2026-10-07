@@ -438,16 +438,20 @@ class BackfillMechanism(unittest.TestCase):
         # Nothing earlier than an 18-h pair fits: the earliest observable end is
         # (18 - lead) h from onset, here -6.
         self.assertEqual(ok["deepRelH"], 18 - 24)
+        self.assertEqual(ok["bfLeadH"], 24)
+        self.assertGreaterEqual(ok["deepRelH"], 18 - ok["bfLeadH"], "the censoring floor")
         # Six hours short: half-covered, so null - and NOT the HF-only value.
         short = run({30: 982, 36: 978, 42: 977}, hf=LATE_HF)
         self.assertIsNotNone(short["deep24"], "the HF-only figure exists here...")
         for k in ("deep24Bf", "bergBf", "bombBf", "deepRelH"):
             self.assertIsNone(short[k], k + " must be null, not a fallback to the HF-only value")
+        self.assertEqual(short["bfLeadH"], 18, "the lead is reported even when it is too short")
         # A missing synoptic fix (no 36 h) breaks the chain even though the
         # record reaches back far enough.
         gap = run({0: 1010, 6: 1009, 12: 1006, 18: 998, 24: 990, 30: 982, 42: 977})
         self.assertEqual(gap["preN"], 7)
         self.assertIsNone(gap["deep24Bf"])
+        self.assertEqual(gap["bfLeadH"], 6, "the chain stops at the missing 36 h fix")
         # So does a recovered fix with no pressure: it is not a link in the chain.
         nopres = make_low(HF_TAIL)
         backfill([nopres], pre_rows({0: 1010, 6: 1009, 12: 1006, 18: 998, 24: 990, 30: 982,
@@ -457,6 +461,10 @@ class BackfillMechanism(unittest.TestCase):
         anchorless = make_low([(48, 50.0, -40.0, "HF", None)] + HF_TAIL[1:])
         backfill([anchorless], pre_rows(EARLY))
         self.assertIsNone(anchorless["deep24Bf"])
+        self.assertEqual(anchorless["bfLeadH"], 0)
+        nohf = make_low([(48, 50.0, -40.0, "S", 976.0)])
+        backfill([nohf], [])
+        self.assertIsNone(nohf["bfLeadH"], "no HF fix, no window, no lead")
 
     def test_recovered_series_is_separate_and_tagged(self):
         low = make_low(HF_TAIL)
@@ -666,9 +674,10 @@ class BackfillPayload(unittest.TestCase):
         return write_csv(directory, rows, comments=comments)
 
     def test_absent_file_changes_nothing(self):
-        n = len(tool.LOW_FIELDS) - 8
+        n = len(tool.LOW_FIELDS) - 9
         self.assertEqual(tool.LOW_FIELDS[n:], ["preFixes", "preN", "preH", "preSrc",
-                                              "deep24Bf", "bergBf", "bombBf", "deepRelH"])
+                                              "deep24Bf", "bergBf", "bombBf", "deepRelH",
+                                              "bfLeadH"])
         for l in self.lows:
             for k in tool.LOW_FIELDS[n:]:
                 self.assertIsNone(l[k], k)
@@ -689,7 +698,7 @@ class BackfillPayload(unittest.TestCase):
         events = [self.hf_event("atl"), self.hf_event("pac")]
         with tempfile.TemporaryDirectory() as d:
             payload = tool.build(precursors=self.synthetic_file(d, events))
-        n = len(tool.LOW_FIELDS) - 8
+        n = len(tool.LOW_FIELDS) - 9
         self.assertEqual([r[:n] for r in payload["lows"]], [r[:n] for r in self.base["lows"]],
                          "backfill must not alter a single archive field, fix list included")
         got = {(l[1], l[0]): dict(zip(payload["lowFields"], l)) for l in payload["lows"]}
@@ -760,6 +769,107 @@ class BackfillPayload(unittest.TestCase):
                          (hf["deep24"], hf["berg"], hf["bomb"]))
         self.assertEqual((low["deep24Bf"], low["bergBf"], low["bombBf"]),
                          (hf["deep24"], hf["berg"], hf["bomb"]))
+
+
+class BackfillCoverageGate(unittest.TestCase):
+    """Is Bf coverage uniform across seasons? The risk that remains once Bf is
+    allowed to use the archive's own fixes."""
+
+    @staticmethod
+    def rows(shares, events=100, basin="atl", first=2004):
+        return [{"basin": basin, "season": first + i, "events": events,
+                 "recovered": events, "usable": int(round(events * p / 100.0))}
+                for i, p in enumerate(shares)]
+
+    def test_ols_against_a_worked_example(self):
+        # x = 0..3, y = 1,3,2,5: slope 5.5/5 = 1.1; residual SS 2.7 on 2 df, so
+        # se = sqrt(1.35 / 5) = 0.5196.
+        slope, se = tool._ols([0, 1, 2, 3], [1, 3, 2, 5])
+        self.assertAlmostEqual(slope, 1.1)
+        self.assertAlmostEqual(se, math.sqrt(0.27))
+        self.assertEqual(tool._ols([0, 1], [1, 2]), (None, None))
+
+    def test_flat_noisy_coverage_does_not_trip(self):
+        shares = [50 + (3 if i % 2 else -3) for i in range(20)]
+        stats, tripped = tool.coverage_trend(self.rows(shares))
+        self.assertEqual(tripped, [])
+        self.assertEqual(stats["atl"]["spread"], 6.0)
+        self.assertLess(abs(stats["atl"]["slope"]), 2 * stats["atl"]["se"])
+
+    def test_wide_spread_trips(self):
+        stats, tripped = tool.coverage_trend(self.rows([20, 25, 30, 45, 25, 30] * 3))
+        self.assertEqual(stats["atl"]["spread"], 25.0)
+        self.assertTrue(any("spans 25.0 points" in t for t in tripped), tripped)
+
+    def test_a_steady_slope_trips_even_with_a_small_spread(self):
+        # 0.5 points per season for 21 seasons is a 10-point spread, under the
+        # spread limit, but it is a trend: coverage drifting is what would
+        # fabricate a trend in the explosive share.
+        shares = [40 + 0.5 * i + (0.4 if i % 2 else -0.4) for i in range(21)]
+        stats, tripped = tool.coverage_trend(self.rows(shares))
+        self.assertLess(stats["atl"]["spread"], tool.COVERAGE_SPREAD_PTS)
+        self.assertAlmostEqual(stats["atl"]["slope"], 0.5, places=1)
+        self.assertEqual(len(tripped), 2, "the basin and the pooled series both trip")
+        self.assertTrue(all("standard errors from zero" in t for t in tripped), tripped)
+
+    def test_seasons_before_the_period_of_record_are_left_out(self):
+        early = self.rows([0], events=1, first=2001)
+        stats, tripped = tool.coverage_trend(early + self.rows([50] * 10))
+        self.assertEqual(tripped, [])
+        self.assertEqual(stats["atl"]["min"], 50.0)
+
+    def test_basins_are_judged_separately_and_pooled(self):
+        rows = self.rows([50] * 10) + self.rows([10, 90] * 5, basin="pac")
+        stats, tripped = tool.coverage_trend(rows)
+        self.assertEqual(set(stats), {"atl", "pac", "all"})
+        self.assertTrue(any(t.startswith("pac:") for t in tripped))
+        self.assertFalse(any(t.startswith("atl:") for t in tripped))
+
+    def test_covered_vs_uncovered_selection(self):
+        def ev(basin, min_p, lat, usable):
+            return {"basin": basin, "season": 2010, "hfN": 2, "minP": min_p,
+                    "fixes": [[2010010100, lat - 5.0, -40.0, "DHF", 1000.0],
+                              [2010010106, lat, -40.0, "HF", min_p]],
+                    "deep24Bf": 20.0 if usable else None}
+        lows = [ev("atl", 950.0, 60.0, True), ev("atl", 960.0, 58.0, True),
+                ev("atl", 990.0, 50.0, False), ev("atl", 980.0, 48.0, False),
+                ev("pac", 970.0, 45.0, True),
+                dict(ev("atl", 900.0, 70.0, True), hfN=0)]           # no HF fix: not counted
+        sel = tool.coverage_selection(lows)
+        self.assertEqual(sel["atl"]["covered"], {"n": 2, "medianMinP": 955.0, "medianLat": 59.0})
+        self.assertEqual(sel["atl"]["uncovered"], {"n": 2, "medianMinP": 985.0, "medianLat": 49.0})
+        self.assertEqual(sel["all"]["covered"]["n"], 3)
+        self.assertEqual(sel["pac"]["uncovered"], {"n": 0, "medianMinP": None, "medianLat": None})
+
+    def test_flag_and_note_in_a_whole_build(self):
+        # Recover only the recent half of the record: coverage is wildly uneven.
+        base = tool.build(precursors=None)
+        lows = [dict(zip(base["lowFields"], r)) for r in base["lows"]]
+        recent = [l for l in lows if l["hfN"] and l["season"] >= 2014
+                  and next(f for f in l["fixes"] if f[3] == "HF")[4] is not None
+                  and l["id"] not in {x["id"] for x in lows if x["id"].endswith(("a", "b"))}]
+        helper = BackfillPayload(methodName="test_absent_file_changes_nothing")
+        with tempfile.TemporaryDirectory() as d:
+            path = helper.synthetic_file(d, recent)
+            payload = tool.build(precursors=path)
+        bf = payload["backfill"]
+        self.assertTrue(bf["coverageTrend"])
+        self.assertTrue(bf["coverageTrendWhy"])
+        notes = [n for n in payload["qc"]["notes"] if n["kind"] == "backfill-coverage-trend"]
+        self.assertEqual(len(notes), 1)
+        self.assertIn("not safe to compare across seasons", notes[0]["detail"])
+        report = tool.qc_report(payload)
+        self.assertIn("COVERAGE TREND", report)
+        self.assertIn("Coverage uniformity", report)
+        self.assertIn("Covered vs uncovered", report)
+        # The flag suppresses nothing: Bf values are still emitted.
+        out = [dict(zip(payload["lowFields"], r)) for r in payload["lows"]]
+        self.assertTrue(any(l["deep24Bf"] is not None for l in out))
+        self.assertTrue(all(l["bfLeadH"] is not None for l in out if l["hfN"]))
+        self.assertTrue(all(l["bfLeadH"] is None for l in out if not l["hfN"]))
+        self.assertEqual(bf["selection"]["all"]["covered"]["n"]
+                         + bf["selection"]["all"]["uncovered"]["n"],
+                         sum(1 for l in out if l["hfN"] and l["season"] >= tool.RECORD_START))
 
 
 if __name__ == "__main__":
