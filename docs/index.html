@@ -307,6 +307,26 @@
        control is a native element; the statistics card is a polite live
        region by way of #teleLive (see app.js, announceTele). -->
   <section class="panel" id="panel-tele" role="tabpanel">
+    <!-- Two ways of asking one question of the same events. The composite
+         bins an index into thirds and tests ~150 map cells ("where does the
+         density differ?"); the regression keeps the index continuous and
+         asks one question of one number ("does it move the whole
+         distribution, and could this archive have seen an effect of that
+         size?"). Neither is a different dataset. Both views stay in the DOM;
+         app.js shows one. -->
+    <section class="card tele-card tele-viewcard" aria-labelledby="teleViewH">
+      <h2 id="teleViewH">Two ways of asking</h2>
+      <fieldset class="filter tele-field">
+        <legend>Method</legend>
+        <div class="pb-mode-set">
+          <label class="pb-mode"><input type="radio" name="teleView" value="composite" checked><span>Composite map</span></label>
+          <label class="pb-mode"><input type="radio" name="teleView" value="regress"><span>Regression</span></label>
+        </div>
+      </fieldset>
+      <p class="tele-note" id="teleViewNote"></p>
+    </section>
+
+    <div id="teleCompView">
     <div class="tele-grid">
       <div class="tele-side">
         <section class="card tele-card tele-controls" aria-labelledby="teleSelH">
@@ -412,6 +432,105 @@
       <h2 id="teleMethodH">How to read this tab</h2>
       <div id="teleMethodBody"></div>
     </section>
+
+    </div><!-- #teleCompView -->
+
+    <!-- Regression view -------------------------------------------------
+         HF.regress.fit on the same decoded events. One model per basin (the
+         API enforces it), month as a fixed effect, the index entered
+         continuously, season-block bootstrap intervals, and next to every
+         interval the smallest effect this sample could have detected. The
+         coefficient plot is drawn by HF.charts.coefPlot; everything it
+         shows is also in the table view and the plain-language list. -->
+    <div id="teleRegView" hidden>
+      <section class="card tele-card reg-controls" aria-labelledby="regSelH">
+        <h2 id="regSelH">Model</h2>
+        <div class="reg-controls-row">
+          <fieldset class="filter tele-field">
+            <legend>Basin</legend>
+            <div class="pb-mode-set">
+              <label class="pb-mode"><input type="radio" name="regBasin" value="atl" checked><span>Atlantic</span></label>
+              <label class="pb-mode"><input type="radio" name="regBasin" value="pac"><span>Pacific</span></label>
+            </div>
+            <p class="tele-hint" id="regBasinHint">Each basin is its own model. The Atlantic track is expected to respond to the NAO and the Pacific to the PNA, and a shared model would assume the two respond alike.</p>
+          </fieldset>
+
+          <div class="filter tele-field">
+            <label for="regResponse">Response</label>
+            <select id="regResponse" aria-describedby="regRespHint">
+              <option value="lat">Track latitude (degrees N)</option>
+              <option value="lon">Track longitude (degrees E)</option>
+              <option value="minP">Minimum central pressure (hPa)</option>
+              <option value="hfH">Time at hurricane force (hours)</option>
+            </select>
+            <p class="tele-hint" id="regRespHint"></p>
+          </div>
+
+          <div class="filter tele-field">
+            <label class="check"><input type="checkbox" id="regInter" aria-describedby="regInterHint"> Interactions</label>
+            <p class="tele-hint" id="regInterHint">Adds NAO&times;PNA, NAO&times;ONI and PNA&times;ONI: does one index change how strongly another acts? Each carries its own detection floor.</p>
+          </div>
+
+          <div class="filter tele-field">
+            <label class="check"><input type="checkbox" id="regMjo" aria-describedby="regMjoHint"> MJO</label>
+            <p class="tele-hint" id="regMjoHint">Adds the MJO phase and amplitude from the CPC velocity-potential field (a local derivation, not Wheeler&ndash;Hendon RMM). Runs a permutation test, about half a second.</p>
+          </div>
+        </div>
+        <div class="filter tele-field tele-lag reg-lag" id="regLagWrap" hidden>
+          <label for="regLag">MJO lag: <span id="regLagOut"></span></label>
+          <input type="range" id="regLag" min="0" max="6" step="1" value="0" aria-describedby="regLagHint">
+          <p class="tele-hint" id="regLagHint">How many pentads (5-day steps) before the storm&rsquo;s first fix the MJO is read. 0 is the pentad the storm begins in. The answer can change a great deal between lags, so this is not a cosmetic control: compare them all below, and read what that does to a single p-value.</p>
+          <button type="button" class="btn" id="regSweep">Compare lags 0 to 6</button>
+          <div id="regSweepOut" class="reg-sweep" tabindex="-1"></div>
+        </div>
+      </section>
+
+      <section class="card tele-card reg-main" id="regMain" aria-labelledby="regPlotH" aria-busy="false">
+        <h2 id="regPlotH">Effect of each index</h2>
+        <p class="tele-pending" id="regPending" hidden></p>
+        <div id="regBody">
+          <p class="tele-showing" id="regShowing"></p>
+          <p class="reg-headline" id="regHeadline"></p>
+          <div class="chart reg-plot" id="regPlot"></div>
+          <details class="tele-table" id="regTable">
+            <summary>Table view: every number in the plot</summary>
+            <div class="table-wrap">
+              <table class="data-table" id="regTableEl">
+                <caption class="sr-only" id="regTableCap"></caption>
+                <thead></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <div class="reg-grid" id="regLower">
+        <section class="card tele-card" aria-labelledby="regReadH">
+          <h2 id="regReadH">In plain language</h2>
+          <div id="regReading"></div>
+        </section>
+        <div class="tele-side">
+          <section class="card tele-card" aria-labelledby="regFitH">
+            <h2 id="regFitH">Sample and fit</h2>
+            <div id="regFit"></div>
+          </section>
+          <section class="card tele-card" aria-labelledby="regMjoH" id="regMjoCard" hidden>
+            <h2 id="regMjoH">The MJO</h2>
+            <div id="regMjoBody"></div>
+          </section>
+          <section class="card tele-card" aria-labelledby="regWarnH">
+            <h2 id="regWarnH">Warnings from the fit</h2>
+            <div id="regWarn"></div>
+          </section>
+        </div>
+      </div>
+
+      <section class="card prose tele-method" aria-labelledby="regMethodH">
+        <h2 id="regMethodH">How to read the regression</h2>
+        <div id="regMethodBody"></div>
+      </section>
+    </div>
 
     <!-- Polite live region for the finished result. Outside the card so it
          is in the document before it first speaks; written once per
@@ -601,6 +720,7 @@
 <script src="assets/js/util.js"></script>
 <script src="assets/js/teleconnect.js"></script>
 <script src="assets/js/composite.js"></script>
+<script src="assets/js/regress.js"></script>
 <script src="assets/js/playback.js"></script>
 <script src="assets/js/charts.js"></script>
 <script src="data/coastlines.js"></script>
