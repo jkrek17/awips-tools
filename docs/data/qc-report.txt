@@ -1,11 +1,15 @@
 HF extratropical low archive - data quality report
-generated 2026-10-07T18:50:26Z
+generated 2026-10-07T22:26:25Z
 
+  bfEvents                 1928
+  bfRecovered              1423
+  bfUsable                 696
   categoriesMapped         7
   categoriesUnknown        1
   class_low                1890
   class_nocentre           13
   class_tipjet             29
+  coverageTrend            1
   datesRepaired            1
   duplicateTimes           18
   exactDuplicates          50
@@ -14,16 +18,69 @@ generated 2026-10-07T18:50:26Z
   idsSuspect               3
   lows                     1932
   practiceChangeBasins     2
+  precursorRows            6658
+  precursorsAccepted       6658
   pressuresDropped         1
   pressuresRepaired        1
   rowsDropped              3
   rowsRead                 8126
   speedImplausible         41
 
+Backfill coverage (data/hf_lows/precursors.csv)
+  *** COVERAGE TREND: Bf statistics are NOT safe to compare across seasons ***
+  usable = gapless pressure chain, steps <= 6 h, reaching back >= 24 h from the first HF fix (window 72 h, recovered fixes of confidence >= medium)
+  cells: events with an HF fix / with any recovered fix / with a usable window / share %
+  season    atl                       pac                       
+  2001-02   -                           1    0    0    0.0      
+  2002-03   -                          22   14    5   22.7      
+  2003-04    11    9    2   18.2       27   22   11   40.7      
+  2004-05    45   36   16   35.6       36   30    8   22.2      
+  2005-06    33   22    9   27.3       33   28   10   30.3      
+  2006-07    67   47   16   23.9       48   34   11   22.9      
+  2007-08    42   31   13   31.0       51   40   13   25.5      
+  2008-09    51   40   16   31.4       33   26    9   27.3      
+  2009-10    30   23   11   36.7       41   36   16   39.0      
+  2010-11    32   25   11   34.4       30   28   19   63.3      
+  2011-12    40   23   14   35.0       46   40   18   39.1      
+  2012-13    42   31   20   47.6       40   31   12   30.0      
+  2013-14    46   31   13   28.3       27   18   12   44.4      
+  2014-15    57   42   22   38.6       31   24    9   29.0      
+  2015-16    51   44   21   41.2       50   37   21   42.0      
+  2016-17    50   41   21   42.0       34   21   11   32.4      
+  2017-18    47   26   27   57.4       27   16    6   22.2      
+  2018-19    46   32   35   76.1       35   27    9   25.7      
+  2019-20    42   26   26   61.9       33   27   14   42.4      
+  2020-21    42   27   24   57.1       44   32   11   25.0      
+  2021-22    57   44   25   43.9       44   34   13   29.5      
+  2022-23    42   30   15   35.7       41   25   11   26.8      
+  2023-24    40   29   13   32.5       50   37   19   38.0      
+  2024-25    43   31   10   23.3       42   35   11   26.2      
+  2025-26    66   48   29   43.9       40   23    8   20.0      
+  all       1022  738  409   40.0     906  685  287   31.7      
+
+Coverage uniformity, seasons from 2004-05 (share of HF events with a usable window; gate: spread > 20 points or slope > 2 standard errors)
+  series   seasons   min %   max %  spread  slope/season  std err
+  atl           22    23.3    76.1    52.8         +0.75     0.42
+  pac           22    20.0    63.3    43.3         -0.18     0.34
+  all           22    23.5    54.3    30.8         +0.36     0.27
+  coverageTrend: TRUE - atl: seasonal share spans 52.8 points (23.3% to 76.1%), more than 20; pac: seasonal share spans 43.3 points (20.0% to 63.3%), more than 20; all: seasonal share spans 30.8 points (23.5% to 54.3%), more than 20
+
+Covered vs uncovered storms, seasons from 2004-05 (is recovery selective? median minimum pressure hPa / latitude of first HF fix)
+  series  group       events  median minP  median lat
+  atl     covered        407        963.0        53.7
+  atl     uncovered      604        964.0        56.3
+  pac     covered        271        965.0        47.0
+  pac     uncovered      585        964.0        43.7
+  all     covered        678        964.0        50.7
+  all     uncovered     1189        964.0        48.3
+
 practice-change (3)
   atl  id=(all lows): Atlantic: from the 2017-18 season, analysts log developing-hurricane-force fixes before each event's first HF fix and storm-force fixes after its last. Lead/trail fixes per event: 0.00/0.00 before, 1.70/0.82 from then on. The storms did not change; the recorded track did. Deepening, duration and distance over the recorded track are not comparable across this boundary - use the HF-window figures (deep24, berg, bomb, hfDurH, hfDistNm, hfSpdKt).
   pac  id=(all lows): Pacific: from the 2013-14 season, analysts log developing-hurricane-force fixes before each event's first HF fix and storm-force fixes after its last. Lead/trail fixes per event: 0.04/0.04 before, 0.88/0.86 from then on. The storms did not change; the recorded track did. Deepening, duration and distance over the recorded track are not comparable across this boundary - use the HF-window figures (deep24, berg, bomb, hfDurH, hfDistNm, hfSpdKt).
   all  id=(all lows): Explosive share (>= 1 Bergeron, of all events with an HF fix): on the recorded track 8.6% (2004-2016) -> 36.8% (2017-2025); on HF fixes only 6.8% -> 9.4%. Across the 44 season-basins, lead fixes per event correlate with the recorded-track share at r = +0.930 and with the HF-only share at r = +0.227.
+
+backfill-coverage-trend (1)
+  all  id=(all lows): Bf coverage is NOT uniform across seasons, so the Bf statistics are not safe to compare across seasons (a trend in what can be measured would read as a trend in the weather): atl: seasonal share spans 52.8 points (23.3% to 76.1%), more than 20; pac: seasonal share spans 43.3 points (20.0% to 63.3%), more than 20; all: seasonal share spans 30.8 points (23.5% to 54.3%), more than 20
 
 category-mapped (7)
   atl row 2103  id=2017201844 date=2018041000: Category "missing" read as UNK (Unclassified)

@@ -38,6 +38,30 @@ six-hourly slots from t0-72 h to t0, where t0 is the event's first HF fix.
   * The archive's first two HF fixes give the storm's heading at t0; the first
     backward step must continue it.
 
+LIMITS OF THE VALIDATION AND OF THE RESULT - READ BEFORE QUOTING ANYTHING FROM THIS.
+  * V1 (pre-HF fixes hidden, scored against the archive's own analysis) was run
+    FOUR times while the tracker was being built: the spec design; a cap on what
+    one link may cost plus a rounding-aware heading band; a recalibration of the
+    pressure term on the pre-HF regime; and the archive-suspect refusal. It is
+    therefore no longer a clean held-out test. No weight was fitted to it, but
+    design decisions were made after seeing it. V1b (anchor on a later HF fix) is
+    a second look at the same events, not an independent sample.
+  * One scalar of the pressure calibration (PRES_SCALE_HPA, the p90 of |6-h dp|)
+    comes from the pre-HF archive steps - the very fixes V1 scores against.
+  * Slot recall on the fastest deepeners is 50% (25 of 50 slots where the storm
+    fell >= 16 hPa into its first HF fix), against ~72% for the rest. At the
+    EVENT level the dependence of reaching a 24 h chain on the archive's own
+    24-h deepening is mild (slope -2.7 points per 10 hPa, t = -1.8, n = 612), but
+    the recovered subset is still not a random sample of storms.
+  * Coverage is 32% of HF events (a gapless 24 h chain of medium+high fixes with
+    the archive's lead fixes ignored; 16% at high only), era-flat within sampling
+    noise but nowhere near complete. A rate computed from the recovered subset is
+    a statement about that subset, not about the archive.
+  * Wrong-storm rates, V1, usable (medium+high) fixes: 3.5% as measured, 2.4%
+    excluding fixes that match the archive pressure exactly (mostly mistyped
+    archive coordinates); 5.5% / 4.5% where the event has >= 12 h of lead. The
+    medium tier alone is 5.7% / 5.0%. V1 reaches ~24 h and is almost all 2017+.
+
 WHAT TO KNOW BEFORE TRUSTING A ROW (measured by --validate; numbers in the report):
   * `conf` is graded on the PREFIX of the track from t0 to that fix, so a track
     whose far end is shaky still keeps its trustworthy near end. "high" needs

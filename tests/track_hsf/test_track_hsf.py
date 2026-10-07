@@ -420,6 +420,40 @@ class Output(unittest.TestCase):
             self.assertEqual([n["kind"] for n in qc.notes], ["precursor-low-conf"])
 
 
+class CommittedFileShape(unittest.TestCase):
+    def test_min_conf_drops_low_rows_and_header_comments_are_accepted_by_the_build(self):
+        twin = T.new_node(LAT + 3.0, -40.0 - DLON, 975.0)      # ambiguous -> low
+        res_low = run(storm_event(), lows_with({1: [true_low(1, 975.0), twin]}))
+        res_ok = run(storm_event(eid="2009201002"), lows_with({s: [true_low(s)] for s in range(1, 4)}))
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "precursors.csv")
+            n = T.write_csv(path, [res_low, res_ok], [], ["a comment line"], min_conf="medium")
+            self.assertEqual(n, 3)                                  # the low row is gone
+            with open(path) as fh:
+                self.assertTrue(fh.read().startswith("# a comment line\n"))
+            qc = B.QC()
+            records, comments = B.read_precursors(path, qc)
+            self.assertEqual(len(records), 3)
+            self.assertEqual(qc.counts.get("precursorsRefused", 0), 0)
+            self.assertFalse(any("SYNTHETIC" in c.upper() for c in comments))
+
+    def test_chain_sidecar_documents_its_columns_and_is_not_a_precursors_file(self):
+        lows = lows_with({s: [true_low(s)] for s in range(1, 4)})
+        chains = T.hidden_chains([storm_event()], lows)
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "recovered_chain_hours.csv")
+            T.write_chain_csv(path, chains)
+            with open(path) as fh:
+                text = fh.read()
+            head = [l for l in text.splitlines() if l.startswith("#")]
+            self.assertTrue(any("chain_h_medium_plus" in l for l in head))
+            self.assertTrue(any("NOT the precursors file" in l for l in head))
+            rows = list(csv.reader(l for l in text.splitlines() if not l.startswith("#")))
+            self.assertEqual(rows[0], T.CHAIN_COLUMNS)
+            self.assertEqual(rows[1][-3:], ["18", "18", "18"])
+            self.assertNotEqual(set(rows[0]) & set(T.COLUMNS), set(T.COLUMNS))
+
+
 class CollisionQC(unittest.TestCase):
     def test_a_fix_on_another_events_fix_is_noted_and_kept(self):
         mine = storm_event(eid="2009201001")

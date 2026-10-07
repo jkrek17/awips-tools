@@ -292,14 +292,19 @@ class RealPayload(unittest.TestCase):
         the old, contaminated figures back on screen."""
         with open(os.path.join(ROOT, "docs", "data", "hf-lows.json"), encoding="utf-8") as fh:
             committed = json.load(fh)
-        fresh = json.loads(json.dumps(self.payload))
+        # This one test, unlike the rest of the class, builds the way the tool
+        # does when run with no arguments - backfill included. The committed
+        # payload is the output of that command, so comparing it against a
+        # no-backfill build would report a correct payload as stale the moment
+        # a real precursors.csv exists.
+        fresh = json.loads(json.dumps(tool.build()))
         for k in ("generated", "build"):
             committed.pop(k, None)
             fresh.pop(k, None)
         # Compare the columns the committed payload has. The backfill columns
-        # are appended after them (and are null without a precursors file), so
-        # a committed payload from before they existed is not stale for lacking
-        # them - but every column it does have must still match.
+        # are appended after them, so a committed payload from before they
+        # existed is not stale for lacking them - but every column it does
+        # have must still match.
         n = len(committed["lowFields"])
         self.assertEqual(committed["lowFields"], fresh["lowFields"][:n])
         self.assertEqual(committed["lows"], [row[:n] for row in fresh["lows"]],
