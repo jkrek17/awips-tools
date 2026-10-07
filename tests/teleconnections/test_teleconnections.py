@@ -17,6 +17,7 @@ import importlib.util
 import json
 import math
 import os
+import random
 import re
 import unittest
 
@@ -132,7 +133,9 @@ class EmittedData(unittest.TestCase):
     def test_mjo_block(self):
         m = self.d["mjo"]
         self.assertEqual(m["cadence"], "pentad")
-        # Not RMM: none of the RMM fields exist, and the payload says so.
+        # Not RMM: none of the RMM fields exist, and the payload says so. The locally
+        # derived pair is deliberately named eofPhase / eofAmplitude, never phase / amp /
+        # amplitude, so a consumer cannot mistake it for RMM by key name.
         for key in ("phase", "amp", "amplitude", "rmm1", "rmm2", "epoch", "epochs"):
             self.assertNotIn(key, m)
         self.assertIn("NOT the Wheeler-Hendon", m["notRmm"])
@@ -173,6 +176,142 @@ class EmittedData(unittest.TestCase):
         self.assertEqual(p["negative"], 0)
         self.assertEqual(p["positive"] + p["zero"] + p["negative"], len(p["pairs"]))
         self.assertGreaterEqual(p["positive"] / len(p["pairs"]), tool.MJO_PAIR_MIN_POSITIVE_FRAC)
+
+    # --- derived EOF phase space (mjo.eof / eofPhase / eofAmplitude) --------
+
+    def test_eof_provenance_present(self):
+        m = self.d["mjo"]
+        e = m["eof"]
+        for k in ("notRmm", "method", "pcFormula", "decomposition", "means", "eigenvalues", "totalVariance",
+                  "varianceExplainedPct", "loadings", "pcStd", "signConvention", "phaseConvention",
+                  "validation"):
+            self.assertIn(k, e, k)
+        self.assertEqual(e["longitudes"], LONS_EAST)
+        for k in ("eof1", "eof2"):
+            self.assertEqual(sorted(e["loadings"][k]), sorted(LONS_EAST), k)
+            self.assertAlmostEqual(sum(v * v for v in e["loadings"][k].values()), 1.0, places=4)
+        self.assertAlmostEqual(sum(a * b for a, b in zip(e["loadings"]["eof1"].values(),
+                                                         e["loadings"]["eof2"].values())), 0.0, places=4)
+        self.assertEqual(sorted(e["means"]), sorted(LONS_EAST))
+        self.assertEqual(len(e["varianceExplainedPct"]), 3)
+        self.assertEqual(len(e["eigenvalues"]), 3)
+        self.assertGreater(e["pcStd"]["pc1"], 0)
+        self.assertGreater(e["pcStd"]["pc2"], 0)
+        self.assertIn(e["signConvention"]["pc2Sign"], (-1, 1))
+        self.assertTrue(e["signConvention"]["why"])
+        # decomposition = pentads with all ten longitudes present, and nothing else
+        full = [i for i in range(m["n"]) if all(m["series"][l][i] is not None for l in LONS_EAST)]
+        self.assertEqual(e["decomposition"]["pentads"], len(full))
+        self.assertEqual(e["decomposition"]["of"], m["n"])
+        self.assertEqual(e["decomposition"]["first"], m["dates"][full[0]])
+        self.assertEqual(e["decomposition"]["last"], m["dates"][full[-1]])
+
+    def test_eof_states_it_is_not_rmm(self):
+        m = self.d["mjo"]
+        self.assertIn("NOT the Wheeler-Hendon", m["notRmm"])           # the existing flag survives
+        self.assertIn("NOT the Wheeler-Hendon", m["eof"]["notRmm"])
+        self.assertIn("DERIVED LOCALLY", m["eof"]["notRmm"])
+        self.assertIn("not an octant", m["eof"]["notRmm"])
+        # a continuous angle: no octant / phase-number field anywhere in the block
+        for key in m["eof"]:
+            self.assertNotRegex(key.lower(), r"octant|rmm1|rmm2")
+        self.assertNotIn("octant", [k.lower() for k in m])
+
+    def test_eof_phase_convention_is_spelled_out(self):
+        c = self.d["mjo"]["eof"]["phaseConvention"]
+        self.assertIn("EASTWARD", c["advances"])
+        self.assertIn("radians", c["units"])
+        self.assertIn("enhanced convection", c["phase0"])
+        self.assertTrue(0 <= c["phase0ConvectionLonDegE"] < 360)
+        t = c["convectionLonByPhase"]
+        self.assertEqual(len(t["phaseDeg"]), len(t["convectionLonDegE"]))
+        self.assertEqual(t["phaseDeg"], list(range(0, 360, tool.MJO_EOF_TABLE_STEP_DEG)))
+        self.assertEqual(len(t["phaseDeg"]), 12)      # 30-degree steps, not eight octants
+        self.assertEqual(t["convectionLonDegE"][0], c["phase0ConvectionLonDegE"])
+        # the table is the emitted proof of "eastward": every step east, one full circuit
+        lon = t["convectionLonDegE"]
+        steps = [(lon[(k + 1) % len(lon)] - lon[k] + 180) % 360 - 180 for k in range(len(lon))]
+        self.assertTrue(all(0 < s < 180 for s in steps), steps)
+        self.assertAlmostEqual(sum(steps), 360.0, delta=1e-6)
+
+    def test_eof_arrays_align_with_dates(self):
+        m = self.d["mjo"]
+        self.assertEqual(len(m["eofPhase"]), len(m["dates"]))
+        self.assertEqual(len(m["eofAmplitude"]), len(m["dates"]))
+
+    def test_eof_nulls_line_up_with_null_series_rows(self):
+        m = self.d["mjo"]
+        nulls = 0
+        for i in range(m["n"]):
+            any_null = any(m["series"][l][i] is None for l in LONS_EAST)
+            self.assertEqual(m["eofPhase"][i] is None, any_null, i)
+            self.assertEqual(m["eofAmplitude"][i] is None, any_null, i)
+            nulls += any_null
+        self.assertGreater(nulls, 0)                     # the real record has missing pentads
+        self.assertEqual(nulls, m["missing"])            # ...and none of them got a value
+        self.assertEqual(sum(v is not None for v in m["eofPhase"]), m["eof"]["decomposition"]["pentads"])
+
+    def test_eof_amplitude_non_negative_and_phase_in_range(self):
+        m = self.d["mjo"]
+        for a in m["eofAmplitude"]:
+            if a is not None:
+                self.assertIsInstance(a, float)
+                self.assertGreaterEqual(a, 0.0)
+        for ph in m["eofPhase"]:
+            if ph is not None:
+                self.assertIsInstance(ph, float)
+                self.assertGreaterEqual(ph, -math.pi)
+                self.assertLessEqual(ph, math.pi)
+
+    def test_eof_reproducible_from_the_payload_alone(self):
+        """Recompute phase and amplitude for every pentad from nothing but the
+        emitted series, means, loadings, pcStd and pc2Sign."""
+        m = self.d["mjo"]
+        e = m["eof"]
+        l1, l2, mean = e["loadings"]["eof1"], e["loadings"]["eof2"], e["means"]
+        sgn = e["signConvention"]["pc2Sign"]
+        for i in range(m["n"]):
+            if m["eofPhase"][i] is None:
+                continue
+            x = {l: m["series"][l][i] - mean[l] for l in LONS_EAST}
+            z1 = sum(l1[l] * x[l] for l in LONS_EAST) / e["pcStd"]["pc1"]
+            z2 = sum(l2[l] * x[l] for l in LONS_EAST) / e["pcStd"]["pc2"]
+            dphi = (math.atan2(sgn * z2, z1) - m["eofPhase"][i] + math.pi) % (2 * math.pi) - math.pi
+            self.assertLess(abs(dphi), 1e-4, i)
+            self.assertAlmostEqual(math.hypot(z1, z2), m["eofAmplitude"][i], delta=1e-3)
+
+    def test_eof_validation_recorded_and_inside_thresholds(self):
+        v = self.d["mjo"]["eof"]["validation"]
+        e = self.d["mjo"]["eof"]
+        self.assertGreaterEqual(e["variance12Pct"], 100 * tool.MJO_EOF_MIN_VAR12)
+        self.assertGreaterEqual(e["pairRatio"], tool.MJO_EOF_MIN_PAIR_RATIO)
+        lo, hi = tool.MJO_EOF_PERIOD_BAND_DAYS
+        self.assertTrue(lo <= v["periodDays"]["value"] <= hi)
+        self.assertGreater(v["medianAdvanceDegPerPentad"], 0)               # eastward
+        self.assertGreaterEqual(v["forwardStepFraction"]["value"], tool.MJO_EOF_MIN_FORWARD_FRAC)
+        self.assertGreater(v["patternEastwardNetDeg"], 180)
+        # the near-equal pair and negligible third mode that make it a wave
+        a, b, c = e["varianceExplainedPct"]
+        self.assertGreater(a + b, 90)
+        self.assertLess(c, 5)
+        # the phase series itself advances eastward: forward steps dominate, measured on the
+        # emitted phase and amplitude (not on the build's internal numbers)
+        m = self.d["mjo"]
+        fwd = tot = 0
+        for i in range(m["n"] - 1):
+            if all(m[k][j] is not None for k in ("eofPhase", "eofAmplitude") for j in (i, i + 1)) \
+                    and min(m["eofAmplitude"][i], m["eofAmplitude"][i + 1]) >= 1.0:
+                d = (m["eofPhase"][i + 1] - m["eofPhase"][i] + math.pi) % (2 * math.pi) - math.pi
+                fwd += d > 0
+                tot += 1
+        self.assertGreater(tot, 500)
+        self.assertGreater(fwd / tot, 0.8)
+
+    def test_eof_does_not_alter_existing_mjo_arrays(self):
+        m = self.d["mjo"]
+        self.assertEqual(m["n"], len(m["dates"]))
+        for lon in LONS_EAST:
+            self.assertEqual(len(m["series"][lon]), m["n"])
 
     def test_pentad_lookup_rule(self):
         m = self.d["mjo"]
@@ -361,6 +500,168 @@ class Parsers(unittest.TestCase):
     def test_season_boundary_is_1_june(self):
         self.assertEqual(tool.season_label(dt.date(2002, 5, 31)), 2001)
         self.assertEqual(tool.season_label(dt.date(2002, 6, 1)), 2002)
+
+
+class EofDerivation(unittest.TestCase):
+    """derive_mjo_eof on synthetic ten-longitude blocks: it must accept an
+    eastward wave in the MJO band and refuse everything else."""
+
+    N = 800
+
+    @staticmethod
+    def block(fn, n=N, seed=1, noise=0.05):
+        """MJO-block-shaped dict whose series[lon][t] = fn(t, lon_deg_east) plus
+        small deterministic noise, 2 decimals like the real file."""
+        rng = random.Random(seed)
+        day0 = dt.date(2000, 1, 3)
+        dates = [int((day0 + dt.timedelta(days=5 * t)).strftime("%Y%m%d")) for t in range(n)]
+        series = {lon: [round(fn(t, tool.lon_deg_east(lon)) + noise * rng.gauss(0, 1), 2) for t in range(n)]
+                  for lon in LONS_EAST}
+        return {"longitudes": list(LONS_EAST), "dates": dates, "series": series,
+                "lonDegE": {lon: tool.lon_deg_east(lon) for lon in LONS_EAST}}
+
+    @staticmethod
+    def wave(period_pentads, direction=+1):
+        return lambda t, lam: math.sin(2 * math.pi * (t / period_pentads - direction * lam / 360.0))
+
+    def test_jacobi_matches_a_known_matrix(self):
+        vals, vecs = tool.jacobi_eigh([[2.0, 1.0], [1.0, 2.0]])
+        self.assertAlmostEqual(vals[0], 3.0, places=9)
+        self.assertAlmostEqual(vals[1], 1.0, places=9)
+        self.assertAlmostEqual(abs(vecs[0][0]), math.sqrt(0.5), places=9)
+        self.assertAlmostEqual(vecs[0][0] * vecs[0][1], 0.5, places=9)
+
+    def test_jacobi_eigenpairs_on_a_random_symmetric_matrix(self):
+        rng = random.Random(7)
+        n = 10
+        b = [[rng.gauss(0, 1) for _ in range(n)] for _ in range(n)]
+        a = [[sum(b[k][i] * b[k][j] for k in range(n)) for j in range(n)] for i in range(n)]
+        vals, vecs = tool.jacobi_eigh(a)
+        self.assertEqual(vals, sorted(vals, reverse=True))
+        self.assertAlmostEqual(sum(vals), sum(a[i][i] for i in range(n)), places=8)     # trace
+        for lam, v in zip(vals, vecs):
+            av = [sum(a[i][j] * v[j] for j in range(n)) for i in range(n)]
+            for x, y in zip(av, v):
+                self.assertAlmostEqual(x, lam * y, places=8)
+            self.assertAlmostEqual(sum(x * x for x in v), 1.0, places=9)
+        for i in range(n):
+            for j in range(i):
+                self.assertAlmostEqual(sum(x * y for x, y in zip(vecs[i], vecs[j])), 0.0, places=9)
+
+    def test_jacobi_rejects_asymmetric(self):
+        with self.assertRaises(RuntimeError):
+            tool.jacobi_eigh([[1.0, 2.0], [0.0, 1.0]])
+
+    def test_eastward_wave_in_band_is_accepted(self):
+        m = self.block(self.wave(9.0))                       # 45-day eastward wave
+        eof, phase, amp = tool.derive_mjo_eof(m)
+        v = eof["validation"]
+        self.assertGreater(eof["variance12Pct"], 98)
+        self.assertGreater(eof["pairRatio"], 0.6)       # ~0.69: uneven station spacing, not the wave
+        self.assertAlmostEqual(v["periodDays"]["value"], 45.0, delta=1.0)
+        self.assertAlmostEqual(v["medianAdvanceDegPerPentad"], 40.0, delta=1.0)
+        self.assertGreater(v["patternEastwardNetDeg"], 180)
+        self.assertEqual(len(phase), self.N)
+        self.assertEqual(len(amp), self.N)
+        self.assertTrue(all(-math.pi <= p <= math.pi for p in phase))
+        self.assertTrue(all(a >= 0 for a in amp))
+        # whichever raw EOF signs fell out, the emitted phase moves forward in time
+        steps = [(phase[i + 1] - phase[i] + math.pi) % (2 * math.pi) - math.pi for i in range(self.N - 1)]
+        self.assertGreater(sum(s > 0 for s in steps) / len(steps), 0.95)
+
+    def test_missing_pentads_get_null_phase(self):
+        m = self.block(self.wave(9.0))
+        m["series"]["100E"][50] = None                       # one longitude missing
+        for lon in LONS_EAST:
+            m["series"][lon][60] = None                      # whole row missing
+        eof, phase, amp = tool.derive_mjo_eof(m)
+        for i in range(self.N):
+            absent = i in (50, 60)
+            self.assertEqual(phase[i] is None, absent, i)
+            self.assertEqual(amp[i] is None, absent, i)
+        self.assertEqual(eof["decomposition"]["pentads"], self.N - 2)
+
+    def test_boundary_phase_never_exceeds_pi_after_rounding(self):
+        # rounding 3.14159265 to 4 places gives 3.1416 > pi; the emitter must not do that
+        m = self.block(self.wave(9.0), n=2000, noise=0.0)
+        _eof, phase, _amp = tool.derive_mjo_eof(m)
+        self.assertLessEqual(max(phase), math.pi)
+        self.assertGreaterEqual(min(phase), -math.pi)
+
+    def test_westward_wave_is_refused(self):
+        # same band, same variance structure, wrong direction: pc2Sign would be chosen to make the
+        # angle advance in time, so only the loadings-based pattern check can catch it
+        m = self.block(self.wave(9.0, direction=-1))
+        with self.assertRaises(RuntimeError) as cm:
+            tool.derive_mjo_eof(m)
+        self.assertIn("west", str(cm.exception))
+
+    def test_independent_noise_fails_the_variance_check(self):
+        rng = random.Random(3)
+        m = self.block(lambda t, lam: rng.gauss(0, 1), noise=0.0)
+        with self.assertRaises(RuntimeError) as cm:
+            tool.derive_mjo_eof(m)
+        self.assertIn("EOF1+EOF2 explain", str(cm.exception))
+
+    def test_variance_threshold_is_the_one_that_fires(self):
+        # a wave plus enough noise that EOF1+EOF2 fall just below 90% must be refused...
+        m = self.block(self.wave(9.0), noise=1.0, seed=5)
+        try:
+            tool.derive_mjo_eof(m)
+        except RuntimeError as err:
+            self.assertIn("EOF1+EOF2 explain", str(err))
+        else:
+            self.fail("noisy field was accepted")
+        # ...and the same wave with little noise is not
+        tool.derive_mjo_eof(self.block(self.wave(9.0), noise=0.2, seed=5))
+
+    def test_standing_oscillation_fails_the_pair_check(self):
+        # one mode oscillating in place: EOF1 holds nearly everything, so the 90% variance test
+        # passes and only the pair-balance (and direction) checks can reject it
+        m = self.block(lambda t, lam: math.cos(math.radians(lam - 100)) * math.sin(2 * math.pi * t / 9.0),
+                       noise=0.03)
+        with self.assertRaises(RuntimeError) as cm:
+            tool.derive_mjo_eof(m)
+        self.assertIn("EOF2/EOF1", str(cm.exception))      # so the 90% variance test had passed
+
+    def test_period_outside_the_mjo_band_is_refused(self):
+        for period, label in ((24.0, "slow, 120 d"), (4.0, "fast, 20 d")):
+            with self.subTest(label):
+                m = self.block(self.wave(period))
+                with self.assertRaises(RuntimeError) as cm:
+                    tool.derive_mjo_eof(m)
+                self.assertIn("implied period", str(cm.exception))
+                self.assertIn("band", str(cm.exception))
+
+    def test_period_band_edges_are_the_documented_ones(self):
+        self.assertEqual(tool.MJO_EOF_PERIOD_BAND_DAYS, (25.0, 70.0))
+        for period in (6.0, 13.0):        # 30 d and 65 d: inside the band
+            tool.derive_mjo_eof(self.block(self.wave(period)))
+
+    def test_too_few_pentads_is_refused(self):
+        with self.assertRaises(RuntimeError) as cm:
+            tool.derive_mjo_eof(self.block(self.wave(9.0), n=tool.MJO_EOF_MIN_PENTADS - 1))
+        self.assertIn("pentads", str(cm.exception))
+
+    def test_phase_amplitude_reproduce_from_provenance(self):
+        m = self.block(self.wave(9.0))
+        eof, phase, amp = tool.derive_mjo_eof(m)
+        l1, l2 = eof["loadings"]["eof1"], eof["loadings"]["eof2"]
+        for i in (0, 123, 456, 799):
+            x = {l: m["series"][l][i] - eof["means"][l] for l in LONS_EAST}
+            z1 = sum(l1[l] * x[l] for l in LONS_EAST) / eof["pcStd"]["pc1"]
+            z2 = sum(l2[l] * x[l] for l in LONS_EAST) / eof["pcStd"]["pc2"]
+            ph = math.atan2(eof["signConvention"]["pc2Sign"] * z2, z1)
+            self.assertLess(abs((ph - phase[i] + math.pi) % (2 * math.pi) - math.pi), 1e-4)
+            self.assertAlmostEqual(math.hypot(z1, z2), amp[i], delta=1e-3)
+
+    def test_wave1_min_lon(self):
+        lons = [20, 70, 80, 100, 120, 140, 160, 240, 320, 350]
+        for centre in (10.0, 100.0, 215.0, 300.0):
+            field = [-math.cos(math.radians(x - centre)) for x in lons]
+            got, r2 = tool.wave1_min_lon(lons, field)
+            self.assertAlmostEqual(got, centre, delta=1e-6)
+            self.assertAlmostEqual(r2, 1.0, places=9)
 
 
 if __name__ == "__main__":
