@@ -4,26 +4,25 @@
 Why this exists: the archive's explosive-cyclogenesis events need large-scale
 context - ENSO phase, the NAO/PNA/AO state around genesis, and where the MJO
 was a week or two earlier. This script fetches those indices once, at build
-time, and writes them as plain daily/monthly time series. It does NOT do any
-per-event attribution; whoever attributes events looks values up in this file.
+time, and writes them as plain time series. It does NOT do any per-event
+attribution; whoever attributes events looks values up in this file.
 
-Sources (all fetched here; the site itself makes no runtime requests):
-    ONI   NOAA CPC, 3-month overlapping seasons (monthly)
+Sources (all fetched here; the site itself makes no runtime requests; all are
+NOAA Climate Prediction Center, U.S. Government work, public domain):
+    ONI   3-month overlapping seasons (monthly)
           https://www.cpc.ncep.noaa.gov/data/indices/oni.ascii.txt
-    NAO, PNA, AO   NOAA CPC daily, 1950-01-01 on
+    NAO, PNA, AO   daily, 1950-01-01 on
           https://ftp.cpc.ncep.noaa.gov/cwlinks/norm.daily.{nao,pna,ao}.index.b500101.current.ascii
-    MJO   Australian Bureau of Meteorology RMM, daily, 1974-06-01 on
-          https://www.bom.gov.au/climate/mjo/graphics/rmm.74toRealtime.txt
-CPC/NOAA data are U.S. Government work, public domain. The BoM file is NOT
-automatically public domain - it is Commonwealth of Australia material under
-the Bureau's own copyright notice - so its attribution/licence is recorded as
-UNCONFIRMED in the output and main() prints that on every run. BoM's server
-also answers a plain scripted request with a "does not support web scraping"
-block page (HTTP 403); a User-Agent is required, and even with one the fetch
-may be refused. If it is, download the file by hand (BoM points automated
-users at its anonymous FTP service, which is subject to the same copyright
-notice) and pass --rmm-input FILE, or build without MJO using --no-mjo. This
-tool never disguises its User-Agent to get past that block.
+    MJO   ten CPC velocity-potential MJO indices, PENTAD rows, 1978 on
+          https://www.cpc.ncep.noaa.gov/products/precip/CWlink/daily_mjo_index/proj_norm_order.ascii
+
+The MJO series is NOT the Wheeler-Hendon RMM index. There is no phase 1-8 and
+no amplitude. CPC builds ten indices from an extended EOF of 200-hPa velocity
+potential (CHI200, ENSO-neutral and weak-ENSO Nov-Apr winters, 1979-2000); each
+index is named for the longitude at the centre of enhanced convection in one
+of the ten time-lagged patterns of the first EEOF (20E, 70E, 80E, 100E, 120E,
+140E, 160E, 120W, 40W, 10W). Consumers must composite on the longitude series
+directly; anything that assumes an 8-phase diagram is wrong for this data.
 
 Things that are easy to get wrong, and are handled explicitly:
 
@@ -33,18 +32,39 @@ Things that are easy to get wrong, and are handled explicitly:
   uses a regex that does not need a separator. The only sentinel actually
   present in these three files is -99.000 (2 days in NAO and PNA, 1 in AO);
   any other implausible value stops the build rather than being guessed at.
-* The RMM index is NOT one homogeneous definition. Per the file's own header,
-  1974-06-01 to 2013-12-31 has both SST1 (ENSO-related) variability and the
-  120-day mean removed (method WH04), while 2014-01-01 on has only the
-  120-day mean removed (method Gottschalk10). The trailing method column
-  switches at that boundary. Every RMM day carries an epoch id into the
-  "epochs" list so a consumer can restrict a composite to a single definition;
-  an unrecognised method label stops the build instead of being merged in.
-* RMM stops well before the CPC series do. The output's mjo block carries
-  "noDataAfter" (the last day with a valid RMM value) and its arrays end
-  there - they are never padded with nulls out to the CPC end date, because a
-  null run would read as "quiet MJO" rather than "no data". Trailing sentinel
-  rows are trimmed; sentinel rows in the interior (1.E36 / 999) become null.
+* The MJO file is PENTAD data, not daily. Each row is a calendar pentad
+  (days 1-5, 6-10, ... of the year) labelled by its CENTRE date: 19780103,
+  19780108, ... 73 rows a year. parse_mjo() checks that every label really is a
+  pentad centre (day-of-year 3, 8, 13 ... not counting Feb 29), so steps are 5
+  days except one 6-day step per leap year (Feb 27 -> Mar 4); a file that does
+  not follow that pattern stops the build. Pentads are kept as pentads - an
+  explicit "dates" array, no interpolation to daily, which would invent
+  precision the source does not have.
+* The MJO column headers are NOT in numeric order (INDEX_9 INDEX_10 INDEX_1 ...
+  INDEX_8, with the longitude on the second header line). Column position is
+  not the index number, so the header is parsed and every series is keyed by
+  LONGITUDE; nothing is hardcoded to the current order. The mapping read from
+  the header is cross-checked against the one CPC documents on its MJO page,
+  and a disagreement prints a warning.
+* Missing MJO values are "*****", and the file is pre-allocated to the end of
+  the current year. Trailing all-missing rows are trimmed (the series ends at
+  the last pentad with data and is never padded - a null tail would read as
+  "quiet MJO"); interior missing rows become null. The summary prints where
+  real data ends, and the block carries noDataAfter.
+* SIGN CONVENTION. The numbers are velocity-potential projections, where
+  negative means upper-level divergence (enhanced convection) and positive
+  means suppressed convection - unless CPC flipped the sign. That is checked
+  from the data at every build (verify_convention) and the result is written
+  into the payload ("convention", "conventionEvidence"), and the build stops
+  if the data contradict it:
+    - ENSO: during El Nino the Maritime Continent / western Pacific is anomalously
+      DRY (suppressed convection), so under "positive = suppressed" the 100E,
+      120E and 140E indices correlate POSITIVELY with ONI. They do (about +0.5).
+    - Propagation: for index pairs 60-100 degrees apart, the lag at which the
+      western index best predicts the eastern one must not be negative
+      (eastward). Sign-independent, so it checks the longitude mapping, not
+      the sign. At pentad resolution the lags are coarse (0 to +4 pentads), so
+      this confirms direction, not a 5 m/s phase speed.
 * The ONI season for a date is the 3-month season CENTERED on the date's
   calendar month (15 Jan 2016 -> DJF 2016, i.e. Dec 2015 - Feb 2016, the file's
   own labelling: YR is the year of the centre month). Phase is the threshold
@@ -53,23 +73,24 @@ Things that are easy to get wrong, and are handled explicitly:
   separate "episode" flag says whether the season sits in such a run (1), does
   not (0), or cannot be told because the data ends mid-run (null).
 
-Output shape (decision, with reasons): every series is a DENSE array, one slot
-per calendar day (ONI: per month) from "start", nulls for missing. That makes
+Output shape (decision, with reasons): the daily series (NAO/PNA/AO) are DENSE
+arrays, one slot per calendar day from "start", nulls for missing. That makes
 the date key implicit and exact - index = days since start - so a consumer
-windows it with plain array arithmetic and cannot get a gap wrong. It is also
-what keeps the payload small: carrying a date string per value would roughly
-triple it. Antecedent means and lagged MJO values are NOT pre-computed: the
-5-day mean is a trivial window over the daily array, and the MJO lag (5-15
-days is a research choice - one lag, a range, a composite) would multiply the
-payload by the number of lags to save a few array reads. The one definition
-every consumer must share is written into the payload ("derived.mean5"):
-mean of days d-4..d inclusive, null unless all five are present.
+windows it with plain array arithmetic and cannot get a gap wrong, and it is
+what keeps the payload small. ONI is dense per month. The MJO is a dense array
+per pentad ROW with an explicit "dates" array (the row spacing is not constant
+across leap years, so it cannot be implied). The 5-day antecedent mean is NOT
+pre-computed (a trivial window over the daily array). MJO lags are NOT
+pre-computed either: a pentad is already a 5-day mean, and a lag of 1, 2 or 3
+pentad rows is 5, 10 or 15 days, which spans the usual extratropical response
+window - the consumer just steps back through the rows. The definitions every
+consumer must share are written into the payload ("derived").
 
-Trimming: the source series start in 1950 / 1974; the archive only needs 2001
+Trimming: the source series start in 1950 / 1978; the archive only needs 2001
 on, so daily series start at --start (default 2001-05-01, a month ahead of the
-first 1 June season so the antecedent window and MJO lags up to ~31 days have
-data for the earliest events). ONI is trimmed to the same start month. The
-CPC end date and the ONI end are whatever the source holds.
+first 1 June season so the antecedent window and MJO pentad lags have data for
+the earliest events). ONI is trimmed to the same start month and the MJO to
+the pentad containing --start. The end dates are whatever the sources hold.
 
 Writes:
     docs/data/teleconnections.js     window.HF_TELECONNECTIONS = {...}   (works from file://)
@@ -78,8 +99,6 @@ Writes:
 Usage:
     python3 tools/build_teleconnections.py                  # fetch, build, write
     python3 tools/build_teleconnections.py --check           # build, but write nothing
-    python3 tools/build_teleconnections.py --rmm-input FILE  # local RMM file (BoM blocked)
-    python3 tools/build_teleconnections.py --no-mjo          # build without MJO
     python3 tools/build_teleconnections.py --coverage        # also print per-season counts
 """
 
@@ -104,15 +123,17 @@ SCHEMA_VERSION = 1
 ONI_URL = "https://www.cpc.ncep.noaa.gov/data/indices/oni.ascii.txt"
 CPC_DAILY_URL = ("https://ftp.cpc.ncep.noaa.gov/cwlinks/"
                  "norm.daily.{name}.index.b500101.current.ascii")
-RMM_URL = "https://www.bom.gov.au/climate/mjo/graphics/rmm.74toRealtime.txt"
-BOM_COPYRIGHT_URL = "http://www.bom.gov.au/other/copyright.shtml"
+MJO_URL = ("https://www.cpc.ncep.noaa.gov/products/precip/CWlink/"
+           "daily_mjo_index/proj_norm_order.ascii")
+MJO_DOC_URL = ("https://www.cpc.ncep.noaa.gov/products/precip/CWlink/"
+               "daily_mjo_index/mjo_index.shtml")
 
-# Honest, descriptive UA. BoM refuses requests without one.
+# Descriptive UA, so the request is attributable.
 USER_AGENT = "awips-tools/build_teleconnections (build-time research data fetch; no runtime scraping)"
 
 DEFAULT_START = "2001-05-01"
 
-ROUND_DIGITS = 3               # CPC publishes 3 decimals; RMM is rounded to match
+ROUND_DIGITS = 3               # CPC daily files publish 3 decimals
 
 # ONI thresholds - the standard CPC definition. Inclusive on both sides.
 EL_NINO_MIN = 0.5
@@ -126,21 +147,27 @@ CPC_EPISODE_MIN_SEASONS = 5    # consecutive overlapping seasons for an official
 CPC_SENTINEL_AT_OR_BELOW = -90.0
 CPC_PLAUSIBLE_ABS = 20.0       # observed extremes are |AO| ~ 7.4
 
-# RMM missing-value markers: 1.E36 in the component/amplitude columns, 999 in
-# phase. Anything this large is a sentinel; real components are O(1-5).
-RMM_SENTINEL_AT_OR_ABOVE = 900.0
+# MJO pentad file. Values are normalized indices (observed extremes about +-3);
+# anything past this is neither data nor the "*****" missing marker, so it stops
+# the build.
+MJO_PLAUSIBLE_ABS = 20.0
+MJO_PENTADS_PER_YEAR = 73
 
-# RMM method labels as they appear in the trailing column, keyed by the id
-# written to the output. Order here is chronological. The definition text
-# mirrors the file's own header (also captured verbatim into sourceHeader).
-RMM_METHODS = [
-    {"id": "WH04", "pattern": re.compile(r"WH04", re.I), "label": "WH04_method",
-     "expectedStart": "1974-06-01", "expectedEnd": "2013-12-31",
-     "definition": "Both SST1 variability (ENSO) and the 120-day mean removed"},
-    {"id": "Gottschalk10", "pattern": re.compile(r"Gottschalk", re.I), "label": "Gottschalk10_method",
-     "expectedStart": "2014-01-01", "expectedEnd": None,
-     "definition": "Only the 120-day mean removed (ENSO-related SST1 variability NOT removed)"},
-]
+# CPC's own index-number -> longitude table, from the MJO page. Cross-check
+# ONLY: the emitted mapping always comes from the file's header lines.
+MJO_DOCUMENTED_LON = {1: "80E", 2: "100E", 3: "120E", 4: "140E", 5: "160E",
+                      6: "120W", 7: "40W", 8: "10W", 9: "20E", 10: "70E"}
+
+# What verify_convention() looks for, and the string it licenses. Thresholds
+# are far inside what the data show (mean ONI r about +0.5; 13 of 14 pairs
+# with a positive peak lag, none negative), so a real flip is unmistakable.
+MJO_CONVENTION = ("negative = enhanced convection (upper-level divergence, velocity-potential sign); "
+                  "positive = suppressed convection")
+MJO_ENSO_LONS = ("100E", "120E", "140E")   # Maritime Continent / W Pacific: dry in El Nino
+MJO_ENSO_MIN_MEAN_R = 0.25
+MJO_PAIR_SEP_DEG = (60, 100)               # eastward separation for the propagation pairs
+MJO_PAIR_MAX_LAG = 4                       # pentads
+MJO_PAIR_MIN_POSITIVE_FRAC = 0.75
 
 ONI_SEASONS = ["DJF", "JFM", "FMA", "MAM", "AMJ", "MJJ", "JJA", "JAS", "ASO", "SON", "OND", "NDJ"]
 
@@ -150,19 +177,13 @@ FETCH_TIMEOUT_S = 60
 _CPC_RE = re.compile(r"^\s*(\d{4})\s+(\d{1,2})\s+(\d{1,2})\s*(-?\d+(?:\.\d+)?)\s*$")
 
 
-class FetchBlocked(RuntimeError):
-    """The server answered, but refused (4xx). Not retried: retrying a
-    refusal just repeats it."""
-
-
 # ---------------------------------------------------------------------------
 # Fetch
 # ---------------------------------------------------------------------------
 
 def http_get(url: str) -> str:
     """GET with retry/backoff on network errors and 5xx. A 4xx is a refusal,
-    not a glitch, so it raises FetchBlocked immediately (BoM's 403 for an
-    automated client is the case that matters here)."""
+    not a glitch, so it raises immediately rather than repeating it."""
     ctx = ssl.create_default_context()
     last_err = None
     for attempt in range(FETCH_RETRIES):
@@ -172,7 +193,7 @@ def http_get(url: str) -> str:
                 return resp.read().decode("utf-8", errors="replace")
         except urllib.error.HTTPError as err:
             if 400 <= err.code < 500:
-                raise FetchBlocked(f"{url}: HTTP {err.code} {err.reason}") from err
+                raise RuntimeError(f"{url}: HTTP {err.code} {err.reason}") from err
             last_err = err
         except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as err:
             last_err = err
@@ -257,57 +278,80 @@ def parse_oni(text: str):
     return out
 
 
-def parse_rmm(text: str):
-    """BoM RMM file -> (header_lines, rows, sentinel Counter). Each row is a
-    dict: date, rmm1, rmm2, phase, amp, method (id or None). Header lines are
-    whatever precedes the first data row; once data starts, anything
-    unparseable is an error. Method is resolved from the trailing label and
-    must be one of RMM_METHODS for any row that carries a valid value."""
-    header, rows = [], []
-    sentinels = Counter()
-    prev = None
-    for lineno, line in enumerate(text.splitlines(), 1):
-        s = line.strip()
-        if not s:
-            continue
-        parts = [p for p in re.split(r"[,\s]+", s) if p]
-        try:
-            y, mo, d = int(parts[0]), int(parts[1]), int(parts[2])
-            r1, r2, ph, amp = (float(parts[3]), float(parts[4]),
-                               float(parts[5]), float(parts[6]))
-        except (ValueError, IndexError):
-            if rows:
-                raise RuntimeError(f"RMM: line {lineno} unparseable after data began: {s!r}")
-            header.append(s)
-            continue
-        note = " ".join(parts[7:])
-        day = dt.date(y, mo, d)
-        if prev is not None and (day - prev).days != 1:
-            raise RuntimeError(f"RMM: line {lineno}: {day} does not follow {prev} by one day")
-        prev = day
+def pentad_centre_ok(d: dt.date) -> bool:
+    """True if d is the centre of a calendar pentad: day-of-year 3, 8, 13 ...
+    counting without Feb 29 (a leap year's later days are shifted back one so
+    Mar 4 stays a pentad centre). This is what the label pattern in the file
+    actually is, checked rather than assumed."""
+    doy = d.timetuple().tm_yday
+    leap = (d.year % 4 == 0 and d.year % 100 != 0) or d.year % 400 == 0
+    if leap and d >= dt.date(d.year, 3, 1):
+        doy -= 1
+    return (doy - 3) % 5 == 0
 
-        missing = (abs(r1) >= RMM_SENTINEL_AT_OR_ABOVE or abs(r2) >= RMM_SENTINEL_AT_OR_ABOVE
-                   or abs(amp) >= RMM_SENTINEL_AT_OR_ABOVE or abs(ph) >= RMM_SENTINEL_AT_OR_ABOVE)
-        if missing:
-            for tok in parts[3:7]:
-                if abs(float(tok)) >= RMM_SENTINEL_AT_OR_ABOVE:
-                    sentinels[tok] += 1
-            rows.append({"date": day, "rmm1": None, "rmm2": None, "phase": None,
-                         "amp": None, "method": None})
-            continue
-        if ph != int(ph) or not (1 <= int(ph) <= 8):
-            raise RuntimeError(f"RMM: line {lineno}: phase {parts[5]} is neither 1-8 nor a "
-                               f"known sentinel: {s!r}")
-        method = next((m["id"] for m in RMM_METHODS if m["pattern"].search(note)), None)
-        if method is None:
-            raise RuntimeError(f"RMM: line {lineno}: unrecognised method label {note!r} - the "
-                               f"definition may have changed again; add it to RMM_METHODS "
-                               f"deliberately rather than merging it into an existing epoch")
-        rows.append({"date": day, "rmm1": round(r1, ROUND_DIGITS), "rmm2": round(r2, ROUND_DIGITS),
-                     "phase": int(ph), "amp": round(amp, ROUND_DIGITS), "method": method})
-    if not rows:
-        raise RuntimeError("RMM: no data rows parsed")
-    return header, rows, sentinels
+
+def parse_mjo(text: str):
+    """CPC MJO pentad file -> (columns, rows). Line 1 holds INDEX_n names
+    in the file's own (non-numeric) order, line 2 the matching longitudes;
+    columns is [{"index": n, "lon": "80E"}, ...] in file order, read from the
+    header. rows is [(date, [value-or-None, ...])] with values in that column
+    order. A cell of asterisks is missing -> None; a whole row of them is a
+    pre-allocated or missing pentad."""
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    if len(lines) < 3:
+        raise RuntimeError("MJO: file too short")
+    names = lines[0].split()
+    head2 = lines[1].split()
+    if not head2 or head2[0].upper() != "PENTAD":
+        raise RuntimeError(f"MJO: second header line should start with PENTAD: {lines[1]!r}")
+    lons = head2[1:]
+    if len(names) != len(lons):
+        raise RuntimeError(f"MJO: {len(names)} index names but {len(lons)} longitudes in the header")
+    columns = []
+    for nm, lon in zip(names, lons):
+        m = re.fullmatch(r"INDEX_(\d+)", nm)
+        if not m or not re.fullmatch(r"\d{1,3}[EW]", lon):
+            raise RuntimeError(f"MJO: unexpected header pair {nm!r} / {lon!r}")
+        columns.append({"index": int(m.group(1)), "lon": lon})
+    if len({c["lon"] for c in columns}) != len(columns) or len({c["index"] for c in columns}) != len(columns):
+        raise RuntimeError("MJO: duplicate index or longitude in header")
+
+    rows = []
+    prev = None
+    for lineno, line in enumerate(lines[2:], 3):
+        parts = line.split()
+        if len(parts) != len(columns) + 1 or not re.fullmatch(r"\d{8}", parts[0]):
+            raise RuntimeError(f"MJO: line {lineno}: expected a YYYYMMDD label and "
+                               f"{len(columns)} values: {line!r}")
+        day = dt.datetime.strptime(parts[0], "%Y%m%d").date()
+        if not pentad_centre_ok(day):
+            raise RuntimeError(f"MJO: line {lineno}: {day} is not a calendar-pentad centre - the "
+                               f"file's labelling is not what this tool was written against")
+        if prev is not None:
+            step = (day - prev).days
+            leap_step = (prev.month == 2 and prev.day == 27 and day.month == 3 and day.day == 4
+                         and (prev.year % 4 == 0 and prev.year % 100 != 0 or prev.year % 400 == 0))
+            if step != (6 if leap_step else 5):
+                raise RuntimeError(f"MJO: line {lineno}: {day} follows {prev} by {step} days")
+        prev = day
+        vals = []
+        for tok in parts[1:]:
+            if re.fullmatch(r"\*+", tok):
+                vals.append(None)
+                continue
+            v = float(tok)
+            if abs(v) > MJO_PLAUSIBLE_ABS:
+                raise RuntimeError(f"MJO: line {lineno}: value {tok} is implausible for a "
+                                   f"normalized index - inspect the source")
+            vals.append(round(v, 2))
+        rows.append((day, vals))
+    return columns, rows
+
+
+def lon_deg_east(lon: str) -> int:
+    """'80E' -> 80, '120W' -> 240: degrees east, 0-360."""
+    n = int(lon[:-1])
+    return n % 360 if lon[-1] == "E" else (360 - n) % 360
 
 
 # ---------------------------------------------------------------------------
@@ -419,98 +463,182 @@ def build_cpc(name: str, label: str, rows, sentinels: Counter, start: dt.date, r
         "missingInSource": sum(1 for _d, v in rows if v is None)}
 
 
-def build_mjo(header, rows, sentinels: Counter, start: dt.date, retrieved: str, source_note: str):
-    valid = [r for r in rows if r["method"] is not None]
-    if not valid:
-        raise RuntimeError("RMM: every row is a missing-value sentinel")
-    src_start, src_end = rows[0]["date"], rows[-1]["date"]
-    last_valid = valid[-1]["date"]
-    trailing_missing = (src_end - last_valid).days
+def pearson(xs, ys):
+    n = len(xs)
+    if n < 3:
+        raise RuntimeError("MJO: too few overlapping points to correlate")
+    mx, my = sum(xs) / n, sum(ys) / n
+    sxx = sum((x - mx) ** 2 for x in xs)
+    syy = sum((y - my) ** 2 for y in ys)
+    if sxx == 0 or syy == 0:
+        raise RuntimeError("MJO: constant series - cannot correlate")
+    return sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / (sxx * syy) ** 0.5
 
-    # Epochs, discovered from the data rather than assumed, then checked
-    # against the boundary the file header declares.
-    seen = []
-    for r in valid:
-        if not seen or seen[-1]["id"] != r["method"]:
-            if any(e["id"] == r["method"] for e in seen):
-                raise RuntimeError(f"RMM: method {r['method']} reappears after another - "
-                                   f"epochs are not contiguous; refusing to guess")
-            seen.append({"id": r["method"], "start": r["date"], "end": r["date"], "n": 0})
-        seen[-1]["end"] = r["date"]
-        seen[-1]["n"] += 1
-    epochs = []
-    boundary_warnings = []
-    for i, e in enumerate(seen):
-        meta = next(m for m in RMM_METHODS if m["id"] == e["id"])
-        if iso(e["start"]) != meta["expectedStart"]:
-            boundary_warnings.append(f"{e['id']} starts {iso(e['start'])}, header says {meta['expectedStart']}")
-        if meta["expectedEnd"] and iso(e["end"]) != meta["expectedEnd"]:
-            boundary_warnings.append(f"{e['id']} ends {iso(e['end'])}, header says {meta['expectedEnd']}")
-        epochs.append({"id": i, "name": e["id"], "method": meta["label"],
-                       "definition": meta["definition"],
-                       "start": iso(e["start"]), "end": iso(e["end"]), "nValid": e["n"]})
-    ep_index = {e["name"]: e["id"] for e in epochs}
 
-    first = max(start, src_start)
-    by_day = {r["date"]: r for r in rows if r["date"] <= last_valid}
-    n = (last_valid - first).days + 1
-    cols = {"rmm1": [], "rmm2": [], "phase": [], "amp": [], "epoch": []}
-    for i in range(n):
-        r = by_day.get(first + dt.timedelta(days=i))
-        if r is None or r["method"] is None:
-            for c in cols.values():
-                c.append(None)
-        else:
-            cols["rmm1"].append(r["rmm1"])
-            cols["rmm2"].append(r["rmm2"])
-            cols["phase"].append(r["phase"])
-            cols["amp"].append(r["amp"])
-            cols["epoch"].append(ep_index[r["method"]])
-    n_missing = sum(1 for v in cols["phase"] if v is None)
+def lagged_pairs(a, b, lag):
+    """Pairs (a[t], b[t+lag]) skipping any with a missing end."""
+    if lag >= 0:
+        pairs = zip(a[:len(a) - lag] if lag else a, b[lag:])
+    else:
+        pairs = zip(a[-lag:], b[:len(b) + lag])
+    pairs = [(x, y) for x, y in pairs if x is not None and y is not None]
+    return [x for x, _ in pairs], [y for _, y in pairs]
 
+
+def verify_convention(columns, rows, oni_rows):
+    """Establish from the data, at every build, which way the MJO numbers
+    point, and refuse to continue if they contradict MJO_CONVENTION. Two
+    self-contained checks (no external data beyond the ONI already fetched):
+
+    ENSO. El Nino suppresses convection over the Maritime Continent / western
+    Pacific (upper-level convergence, positive velocity potential), so if
+    positive = suppressed, the 100E-140E indices correlate positively with
+    ONI. Monthly means of the pentad rows vs the ONI season centred on the
+    same month, whole record. This is the sign check.
+
+    Propagation. For index pairs 60-100 degrees apart (eastward), the lag at
+    which the western index best predicts the eastern one must not be
+    negative. This does not depend on the sign; it checks that the longitude
+    labels were attached to the right columns. Peak lag is in pentads, so it
+    shows direction, not a phase speed."""
+    col = {c["lon"]: j for j, c in enumerate(columns)}
+    for lon in MJO_ENSO_LONS:
+        if lon not in col:
+            raise RuntimeError(f"MJO: header has no {lon} column - cannot verify the sign convention")
+    oni = {(y, m): v for y, m, v in oni_rows if v is not None}
+    by_month = {}
+    for day, vals in rows:
+        slot = by_month.setdefault((day.year, day.month), [[] for _ in columns])
+        for j, v in enumerate(vals):
+            if v is not None:
+                slot[j].append(v)
+    r_by_lon, n_months = {}, 0
+    for c in sorted(columns, key=lambda c: lon_deg_east(c["lon"])):
+        xs, ys = [], []
+        for key, slot in sorted(by_month.items()):
+            j = col[c["lon"]]
+            if key in oni and len(slot[j]) >= 4:
+                xs.append(sum(slot[j]) / len(slot[j]))
+                ys.append(oni[key])
+        r_by_lon[c["lon"]] = round(pearson(xs, ys), 3)
+        n_months = len(xs)
+    mean_r = sum(r_by_lon[lon] for lon in MJO_ENSO_LONS) / len(MJO_ENSO_LONS)
+    if mean_r < MJO_ENSO_MIN_MEAN_R:
+        raise RuntimeError(
+            f"MJO: mean correlation of the {'/'.join(MJO_ENSO_LONS)} indices with ONI is "
+            f"{mean_r:+.2f}, expected >= {MJO_ENSO_MIN_MEAN_R:+.2f} if positive = suppressed "
+            f"convection. The sign convention may have changed - inspect the source before "
+            f"publishing anything composited on it.")
+
+    series = [[vals[j] for _d, vals in rows] for j in range(len(columns))]
+    pairs, lo, hi = [], *MJO_PAIR_SEP_DEG
+    for ca in columns:
+        for cb in columns:
+            sep = (lon_deg_east(cb["lon"]) - lon_deg_east(ca["lon"])) % 360
+            if not lo <= sep <= hi:
+                continue
+            a, b = series[col[ca["lon"]]], series[col[cb["lon"]]]
+            cs = {}
+            for lag in range(-MJO_PAIR_MAX_LAG, MJO_PAIR_MAX_LAG + 1):
+                x, y = lagged_pairs(a, b, lag)
+                cs[lag] = pearson(x, y)
+            peak = max(cs, key=lambda k: cs[k])
+            pairs.append({"from": ca["lon"], "to": cb["lon"], "eastDeg": sep,
+                          "peakLag": peak, "r": round(cs[peak], 2)})
+    pos = sum(p["peakLag"] > 0 for p in pairs)
+    zero = sum(p["peakLag"] == 0 for p in pairs)
+    neg = sum(p["peakLag"] < 0 for p in pairs)
+    if not pairs or neg or pos / len(pairs) < MJO_PAIR_MIN_POSITIVE_FRAC:
+        raise RuntimeError(
+            f"MJO: eastward-propagation check failed ({pos} positive, {zero} zero, {neg} negative "
+            f"peak lags over {len(pairs)} pairs) - the longitude mapping of the columns may be wrong.")
     return {
-        "available": True,
-        "source": "Australian Bureau of Meteorology, Real-time Multivariate MJO (RMM) index (Wheeler and Hendon 2004; daily series 1974 to near-real-time)",
-        "url": RMM_URL,
-        "retrieved": retrieved,
-        "retrievedFrom": source_note,
-        "license": "UNCONFIRMED - Commonwealth of Australia / Bureau of Meteorology material, not automatically public domain; confirm terms before publication",
-        "licenseReference": BOM_COPYRIGHT_URL,
-        "attribution": "Australian Bureau of Meteorology (RMM index of Wheeler and Hendon, 2004) - wording to be confirmed with BoM",
-        "units": "RMM1/RMM2 normalized PC amplitudes; amp = sqrt(RMM1^2 + RMM2^2); phase 1-8",
-        "sourceHeader": header,
-        "epochs": epochs,
-        "epochNote": ("The definition changed within this record: restrict composites to a single "
-                      "epoch for a homogeneous sample. epoch[i] is the id (index into epochs) of "
-                      "the definition in force on day i; null where RMM is missing."),
-        "start": iso(first),
-        "end": iso(last_valid),
-        "noDataAfter": iso(last_valid),
-        "coverageNote": (f"No MJO data after {iso(last_valid)}: the arrays end there and are not "
-                         f"padded - a day past the end is missing, not a quiet MJO. "
-                         f"Weak-MJO days (amp < 1) are real data with low amplitude."),
-        "n": n,
-        "missing": n_missing,
-        "rmm1": cols["rmm1"], "rmm2": cols["rmm2"],
-        "phase": cols["phase"], "amp": cols["amp"],
-        "epoch": cols["epoch"],
-    }, {"sourceSpan": (iso(src_start), iso(src_end)), "lastValid": iso(last_valid),
-        "trailingMissingRows": trailing_missing,
-        "sentinels": dict(sentinels),
-        "epochs": epochs, "boundaryWarnings": boundary_warnings,
-        "missingInWindow": n_missing}
-
-
-def mjo_unavailable(reason: str):
-    return {
-        "available": False,
-        "reason": reason,
-        "source": "Australian Bureau of Meteorology, Real-time Multivariate MJO (RMM) index",
-        "url": RMM_URL,
-        "license": "UNCONFIRMED - Commonwealth of Australia / Bureau of Meteorology material, not automatically public domain; confirm terms before publication",
-        "licenseReference": BOM_COPYRIGHT_URL,
-        "coverageNote": "MJO data were not baked into this build; there is no MJO information here, quiet or otherwise.",
+        "enso": {
+            "test": ("Pearson r of each index's monthly mean (pentad rows binned by label month) with the "
+                     "ONI season centred on that month. El Nino dries the Maritime Continent / W Pacific "
+                     "(suppressed convection), so r > 0 at 100E-140E means positive = suppressed."),
+            "months": n_months,
+            "period": f"{rows[0][0].isoformat()[:7]}..{rows[-1][0].isoformat()[:7]} (rows with data)",
+            "r": r_by_lon,
+            "meanR100E_140E": round(mean_r, 3),
+        },
+        "propagation": {
+            "test": ("Pairs of indices 60-100 degrees apart eastward; peak lag of corr(west(t), east(t+lag)), "
+                     "lags -4..+4 pentads. Peak lag >= 0 means the eastern index follows: eastward. "
+                     "Sign-independent; checks the longitude mapping. Pentad resolution: direction only."),
+            "unit": "pentads", "positive": pos, "zero": zero, "negative": neg, "pairs": pairs,
+        },
     }
+
+
+def pentad_row(labels, d: dt.date):
+    """Index of the pentad row containing date d: the last row whose label is
+    <= d + 2 days (labels are pentad centres). None if d is before the first
+    row. A Feb 29 falls in the Feb-27 pentad (the 6-day one) - that is the
+    one assumption here, since the file does not say where it goes."""
+    limit = d + dt.timedelta(days=2)
+    idx = None
+    for i, lab in enumerate(labels):
+        if lab <= limit:
+            idx = i
+        else:
+            break
+    return idx
+
+
+def build_mjo(columns, rows, evidence, start: dt.date, retrieved: str):
+    live = [i for i, (_d, vals) in enumerate(rows) if any(v is not None for v in vals)]
+    if not live:
+        raise RuntimeError("MJO: every row is missing")
+    last = live[-1]
+    trailing = len(rows) - 1 - last
+    labels = [d for d, _ in rows]
+    i0 = pentad_row(labels[:last + 1], start) or 0
+    kept = rows[i0:last + 1]
+    order = sorted(columns, key=lambda c: lon_deg_east(c["lon"]))
+    col = {c["lon"]: j for j, c in enumerate(columns)}
+    interior_missing = [d.isoformat() for d, vals in kept if all(v is None for v in vals)]
+    cells_missing = sum(v is None for _d, vals in kept for v in vals)
+    return {
+        "kind": "CPC 200-hPa velocity-potential MJO indices (ten longitude-keyed indices), PENTAD resolution",
+        "notRmm": ("This is NOT the Wheeler-Hendon RMM index. There is no phase 1-8 and no amplitude. "
+                   "Composite on the longitude series directly; anything written assuming an 8-phase "
+                   "diagram is wrong for this data."),
+        "method": ("Extended EOF of pentad 200-hPa velocity potential (ENSO-neutral and weak-ENSO Nov-Apr "
+                   "winters 1979-2000); ten indices from regressing data onto the ten time-lagged patterns "
+                   "of the first EEOF, each named for the longitude of enhanced convection in its pattern; "
+                   f"normalized (per CPC, {MJO_DOC_URL})."),
+        "source": "NOAA Climate Prediction Center, MJO indices (proj_norm_order.ascii)",
+        "url": MJO_URL,
+        "docUrl": MJO_DOC_URL,
+        "retrieved": retrieved,
+        "license": "U.S. Government work; public domain",
+        "attribution": "NOAA/NWS Climate Prediction Center",
+        "units": "normalized index (dimensionless), 2 decimals",
+        "convention": MJO_CONVENTION,
+        "conventionEvidence": evidence,
+        "cadence": "pentad",
+        "pentadLabel": ("dates[i] is the CENTRE date of a calendar pentad (day-of-year 3, 8, 13 ...; 73 rows a "
+                        "year; Feb 29 not counted), so the row covers dates[i]-2 .. dates[i]+2 days. Spacing is "
+                        "5 days, or 6 across a leap day (Feb 27 -> Mar 4). Whether a row is exactly the mean over "
+                        "that window is CPC's definition, not stated in the file. Not interpolated to daily."),
+        "start": kept[0][0].isoformat(),
+        "end": kept[-1][0].isoformat(),
+        "noDataAfter": kept[-1][0].isoformat(),
+        "coverageNote": (f"No MJO data after the pentad centred {kept[-1][0].isoformat()}: the arrays end there. "
+                         f"The source file is pre-allocated ({trailing} trailing all-missing row(s) trimmed); "
+                         f"a date past the end is missing, not a quiet MJO."),
+        "n": len(kept),
+        "missing": len(interior_missing),
+        "sourceColumns": columns,
+        "longitudes": [c["lon"] for c in order],
+        "lonDegE": {c["lon"]: lon_deg_east(c["lon"]) for c in order},
+        "dates": [int(d.strftime("%Y%m%d")) for d, _ in kept],
+        "series": {c["lon"]: [vals[col[c["lon"]]] for _d, vals in kept] for c in order},
+    }, {"sourceSpan": (rows[0][0].isoformat(), rows[-1][0].isoformat()), "sourceRows": len(rows),
+        "lastValid": rows[last][0].isoformat(), "trailingMissingRows": trailing,
+        "interiorMissing": interior_missing, "cellsMissing": cells_missing,
+        "dropped": i0}
 
 
 def season_label(d: dt.date) -> int:
@@ -521,8 +649,6 @@ def season_label(d: dt.date) -> int:
 
 def coverage_table(payload, first_year=2001, last_year=2025):
     def counts(block, key):
-        if not block or block.get("available") is False:
-            return None
         start = dt.date.fromisoformat(block["start"])
         c = Counter()
         for i, v in enumerate(block[key]):
@@ -530,14 +656,19 @@ def coverage_table(payload, first_year=2001, last_year=2025):
                 c[season_label(start + dt.timedelta(days=i))] += 1
         return c
     cols = {k: counts(payload[k], "values") for k in ("nao", "pna", "ao")}
-    cols["rmm"] = counts(payload["mjo"], "phase")
-    lines = ["season     days   NAO   PNA    AO   RMM"]
+    m = payload["mjo"]
+    mjo_ok, mjo_rows = Counter(), Counter()
+    for i, date_int in enumerate(m["dates"]):
+        d = dt.datetime.strptime(str(date_int), "%Y%m%d").date()
+        mjo_rows[season_label(d)] += 1
+        if any(m["series"][lon][i] is not None for lon in m["longitudes"]):
+            mjo_ok[season_label(d)] += 1
+    lines = ["season     days   NAO   PNA    AO   MJO pentads (with data/rows)"]
     for y in range(first_year, last_year + 1):
         days = (dt.date(y + 1, 6, 1) - dt.date(y, 6, 1)).days
-        cells = []
-        for k in ("nao", "pna", "ao", "rmm"):
-            cells.append("    -" if cols[k] is None else f"{cols[k].get(y, 0):5d}")
-        lines.append(f"{y}-{(y + 1) % 100:02d}  {days:5d} " + " ".join(cells))
+        cells = [f"{cols[k].get(y, 0):5d}" for k in ("nao", "pna", "ao")]
+        lines.append(f"{y}-{(y + 1) % 100:02d}  {days:5d} " + " ".join(cells)
+                     + f"   {mjo_ok.get(y, 0):3d}/{mjo_rows.get(y, 0):<3d}")
     return "\n".join(lines)
 
 
@@ -552,16 +683,23 @@ def build(args):
     payload = {
         "schema": SCHEMA_VERSION,
         "note": ("Plain time series of climate teleconnection indices, baked at build time; no per-event "
-                 "attribution here. Daily series (nao, pna, ao, mjo) are dense arrays - slot i is "
-                 "start + i days - with null for missing; oni is dense per month. A date lookup is "
-                 "index = days since start. Do not read a value past a block's end as zero or quiet."),
+                 "attribution here. nao/pna/ao are daily dense arrays - slot i is start + i days - with null "
+                 "for missing; oni is dense per month; mjo is PENTAD rows with an explicit dates array. "
+                 "Do not read a value past a block's end as zero or quiet."),
         "derived": {
-            "mean5": ("5-day antecedent mean ending on day d = mean of days d-4..d inclusive; "
-                      "null unless all five values are present. Computed by the consumer from "
-                      "the daily array."),
-            "mjoLag": ("Lagged MJO at lag L days = the mjo arrays at day d-L (L ~ 5-15 for the "
-                       "extratropical response). Not pre-computed; null if d-L precedes mjo.start."),
-            "dayIndex": "index = days between block.start and the date (UTC calendar days)",
+            "dayIndex": "daily blocks: index = days between block.start and the date (UTC calendar days)",
+            "mean5": ("NAO/PNA/AO only (genuinely daily): 5-day antecedent mean ending on day d = mean of days "
+                      "d-4..d inclusive; null unless all five values are present. Computed by the consumer."),
+            "mjoRow": ("MJO attribution is by pentad: the row containing date d is the last row of mjo.dates "
+                       "whose label is <= d + 2 days (labels are pentad centres). A Feb 29 is taken to fall in "
+                       "the Feb-27 pentad (unverified)."),
+            "mjoLag": ("A pentad is already a ~5-day mean, so the MJO has no separate antecedent mean. Lag k "
+                       "is row i-k: k = 1, 2, 3 are 5, 10, 15 days between pentad centres (6 across a leap "
+                       "day), spanning the usual extratropical response window. The event can sit anywhere "
+                       "in its own pentad, so a lag is good to about +-2 days. Null / unavailable if i-k "
+                       "precedes mjo.dates[0]."),
+            "mjoNotRmm": ("The MJO block is not Wheeler-Hendon RMM: no phase 1-8, no amplitude. Use the "
+                          "longitude-keyed series with the stated mjo.convention."),
         },
         "start": args.start,
         "oni": oni,
@@ -570,25 +708,13 @@ def build(args):
         rows, sentinels = parse_cpc_daily(http_get(CPC_DAILY_URL.format(name=name)), name)
         payload[name], info[name] = build_cpc(name, label, rows, sentinels, start, retrieved)
 
-    if args.no_mjo:
-        payload["mjo"] = mjo_unavailable("built with --no-mjo")
-        info["mjo"] = None
-    else:
-        if args.rmm_input:
-            with open(args.rmm_input, encoding="utf-8") as fh:
-                text = fh.read()
-            note = f"local file {os.path.basename(args.rmm_input)}"
-        else:
-            try:
-                text = http_get(RMM_URL)
-            except FetchBlocked as err:
-                raise RuntimeError(
-                    f"BoM refused the RMM download ({err}). BoM does not support automated "
-                    f"scraping; fetch the file by other means and re-run with --rmm-input FILE, "
-                    f"or use --no-mjo. This tool does not work around the block.") from err
-            note = "fetched at build time"
-        header, rrows, rsent = parse_rmm(text)
-        payload["mjo"], info["mjo"] = build_mjo(header, rrows, rsent, start, retrieved, note)
+    columns, mrows = parse_mjo(http_get(MJO_URL))
+    mapped = {c["index"]: c["lon"] for c in columns}
+    info["mjoMappingWarnings"] = [
+        f"INDEX_{k}: header says {mapped.get(k)}, CPC's MJO page says {v}"
+        for k, v in MJO_DOCUMENTED_LON.items() if mapped.get(k) != v]
+    evidence = verify_convention(columns, mrows, oni_rows)
+    payload["mjo"], info["mjo"] = build_mjo(columns, mrows, evidence, start, retrieved)
     return payload, info
 
 
@@ -602,29 +728,30 @@ def print_summary(payload, info, coverage: bool):
         print(f"{name.upper():5s} source {i['sourceSpan'][0]}..{i['sourceSpan'][1]} ({i['sourceDays']} days)  "
               f"kept {b['start']}..{b['end']} ({b['n']} days, {i['trimmedDays']} trimmed)  "
               f"sentinels -> null: {sent}")
-    m = payload["mjo"]
-    if m.get("available"):
-        i = info["mjo"]
-        sent = ", ".join(f"{k} x{v}" for k, v in i["sentinels"].items()) or "none"
-        print(f"MJO   source {i['sourceSpan'][0]}..{i['sourceSpan'][1]}  kept {m['start']}..{m['end']} "
-              f"({m['n']} days, {m['missing']} missing)  sentinels -> null: {sent}")
-        print(f"      NO MJO DATA AFTER {m['noDataAfter']} "
-              f"({i['trailingMissingRows']} trailing sentinel row(s) trimmed); "
-              f"CPC series run to {payload['nao']['end']}")
-        for e in i["epochs"]:
-            print(f"      RMM epoch {e['id']}: {e['name']} ({e['method']}) {e['start']}..{e['end']} "
-                  f"- {e['definition']}")
-        if len(i["epochs"]) > 1:
-            print(f"      definition changes at {i['epochs'][1]['start']}; "
-                  f"do not composite across it without accounting for the change")
-        for w in i["boundaryWarnings"]:
-            print(f"      WARNING: epoch boundary differs from the file header: {w}")
-    else:
-        print(f"MJO   NOT INCLUDED: {m['reason']}  (payload marks mjo.available = false)")
-    print("licence: ONI/NAO/PNA/AO - NOAA CPC, U.S. Government work, public domain (as stated by the "
-          "project brief; not independently verified here).")
-    print("licence: MJO RMM - Australian BoM. NOT automatically public domain. ATTRIBUTION/LICENCE "
-          f"NEEDS CONFIRMING BEFORE PUBLICATION (terms: {BOM_COPYRIGHT_URL}).")
+    m, i = payload["mjo"], info["mjo"]
+    print(f"MJO   PENTAD rows, NOT daily and NOT Wheeler-Hendon RMM (no phase 1-8, no amplitude)")
+    print(f"      source {i['sourceSpan'][0]}..{i['sourceSpan'][1]} ({i['sourceRows']} rows, pre-allocated)  "
+          f"kept {m['start']}..{m['end']} ({m['n']} pentads, {i['dropped']} dropped before start)")
+    print(f"      REAL DATA ENDS at the pentad centred {i['lastValid']}; {i['trailingMissingRows']} trailing "
+          f"all-'*****' rows trimmed; CPC daily series run to {payload['nao']['end']}")
+    print(f"      interior missing pentads in kept span: "
+          f"{', '.join(i['interiorMissing']) if i['interiorMissing'] else 'none'}; "
+          f"missing cells: {i['cellsMissing']}")
+    print("      header column order -> longitude: " +
+          ", ".join(f"INDEX_{c['index']}={c['lon']}" for c in m["sourceColumns"]))
+    print(f"      emitted keyed by longitude, eastward: {' '.join(m['longitudes'])}")
+    for w in info["mjoMappingWarnings"]:
+        print(f"      WARNING: header mapping differs from CPC's documented table: {w}")
+    ev = m["conventionEvidence"]
+    print(f"      convention (verified): {m['convention']}")
+    print("      ENSO check r(index, ONI): " +
+          " ".join(f"{k}={v:+.2f}" for k, v in ev["enso"]["r"].items()) +
+          f"  | mean r at {'/'.join(MJO_ENSO_LONS)} = {ev['enso']['meanR100E_140E']:+.2f} ({ev['enso']['months']} months)")
+    p = ev["propagation"]
+    print(f"      propagation check: {p['positive']} of {len(p['pairs'])} eastward pairs peak at a positive "
+          f"pentad lag, {p['zero']} at zero, {p['negative']} negative")
+    print("licence: ONI/NAO/PNA/AO/MJO - all NOAA CPC, U.S. Government work, public domain "
+          "(as stated by the project brief; not independently verified here).")
     if coverage:
         print()
         print(coverage_table(payload))
@@ -635,16 +762,10 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--check", action="store_true", help="build but write nothing")
     ap.add_argument("--start", default=DEFAULT_START, metavar="YYYY-MM-DD",
-                    help=f"first day kept in the daily series (default {DEFAULT_START})")
-    ap.add_argument("--rmm-input", metavar="FILE",
-                    help="use a local BoM RMM file instead of downloading it")
-    ap.add_argument("--no-mjo", action="store_true",
-                    help="skip the MJO entirely; the payload says so explicitly")
+                    help=f"first day kept in the series (default {DEFAULT_START})")
     ap.add_argument("--coverage", action="store_true",
-                    help="also print per-season valid-day counts for 2001-02 .. 2025-26")
+                    help="also print per-season valid counts for 2001-02 .. 2025-26")
     args = ap.parse_args()
-    if args.no_mjo and args.rmm_input:
-        ap.error("--no-mjo and --rmm-input are mutually exclusive")
 
     payload, info = build(args)
     print_summary(payload, info, args.coverage)
@@ -659,8 +780,8 @@ def main():
     js_path = os.path.join(data_dir, "teleconnections.js")
     with open(js_path, "w", encoding="utf-8") as fh:
         fh.write("/* generated by tools/build_teleconnections.py - do not edit */\n")
-        fh.write("/* ONI/NAO/PNA/AO: NOAA CPC, US Government work, public domain. "
-                  "MJO RMM: Australian BoM - licence/attribution UNCONFIRMED. */\n")
+        fh.write("/* ONI, NAO, PNA, AO and CPC pentad MJO indices: NOAA Climate Prediction Center, "
+                  "US Government work, public domain. */\n")
         fh.write("window.HF_TELECONNECTIONS = " + compact + ";\n")
     json_path = os.path.join(data_dir, "teleconnections.json")
     with open(json_path, "w", encoding="utf-8") as fh:
