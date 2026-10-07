@@ -146,6 +146,29 @@ window.HF = window.HF || {};
     // recordStart (HF_DATA.recordStart); null means "use everything", which
     // is only right for an archive with no ramp-up, and says so in warnings.
     minSeason: null,
+
+    // How the events design permutes labels. 'auto' (the default) shuffles
+    // only WITHIN a (season, month, basin) block; 'season' shuffles anywhere
+    // in the season, which is what this file did before and is almost always
+    // wrong for an index-defined subset.
+    //
+    // Why: the events design asks "if these events had been labelled at
+    // random, how often would the track look this different?" Permuting
+    // freely within a season answers that only if every event in the season
+    // is exchangeable - and they are not. The daily indices persist for 1-2
+    // weeks, so a tercile subset is clustered in time, and it inherits a
+    // month and basin mix that differs from the archive's: NAO-lower events
+    // are 18.4% October against the archive's 9.1%, and 8.4% February
+    // against 17.2%. The storm track moves a long way between October and
+    // February, so a free permutation attributes that seasonal difference to
+    // the index. Blocking by month and basin holds both fixed under the null,
+    // so what remains is the index's own effect rather than when and where
+    // its events happened to fall.
+    //
+    // The cost is power: blocks are smaller, so fewer distinct permutations
+    // exist and the test is more conservative. That is the right trade - a
+    // confounded significant result is worse than an honest null.
+    stratify: 'auto',
     design: 'auto'
   };
 
@@ -159,6 +182,9 @@ window.HF = window.HF || {};
       throw new Error("design must be 'auto', 'seasons' or 'events'");
     }
     if (!(o.latStep > 0 && o.latStep <= 90)) throw new Error('latStep must be in (0, 90]');
+    if (o.stratify !== 'auto' && o.stratify !== 'season' && typeof o.stratify !== 'function') {
+      throw new Error("stratify must be 'auto', 'season' or a function(low) -> key");
+    }
     if (o.minSeason != null && !isFinite(o.minSeason)) throw new Error('minSeason must be a number or null');
     if (!isFinite(o.seed)) throw new Error('seed must be a finite number');
     if (!(o.iterations >= 1) || o.iterations !== Math.floor(o.iterations)) {
@@ -299,6 +325,19 @@ window.HF = window.HF || {};
       Events with no usable fixes are KEPT (they still count as events, just
       with no cells), because dropping them would make n_events disagree with
       the table the user is looking at. */
+  /** The block a permutation may move an event within. Month comes from the
+      event's own start date rather than its season, because the season says
+      nothing about where in the cool season the storm sat - which is exactly
+      the thing being held fixed. Basin is included because the two basins'
+      tracks are in different places, so a subset drawn disproportionately
+      from one would differ from the archive wherever the other one lives. */
+  function stratumKey(low, o) {
+    if (o.stratify === 'season' || !o.stratify) return String(low.season);
+    if (typeof o.stratify === 'function') return String(o.stratify(low));
+    var mo = Math.floor((low.start || 0) / 10000) % 100;
+    return low.season + '|' + (mo || 0) + '|' + (low.basin || '?');
+  }
+
   function binLows(lows, grid, o) {
     var catSet = null, i, f;
     if (o.cats) { catSet = {}; for (i = 0; i < o.cats.length; i++) catSet[o.cats[i]] = true; }
@@ -318,7 +357,8 @@ window.HF = window.HF || {};
       var ids = Object.keys(counts).map(Number).sort(function (a, b) { return a - b; });
       var cnt = [], total = 0;
       for (var k = 0; k < ids.length; k++) { cnt.push(counts[ids[k]]); total += counts[ids[k]]; }
-      events.push({ season: low.season, ids: ids, counts: cnt, total: total });
+      events.push({ season: low.season, stratum: stratumKey(low, o),
+                    ids: ids, counts: cnt, total: total });
     }
     return { events: events, droppedFixes: dropped, noSeason: noSeason };
   }
@@ -732,9 +772,30 @@ window.HF = window.HF || {};
     if (identical) {
       for (i = 0; i < CT; i++) { cellP.rate[testedIdx[i]] = 1; cellP.shape[testedIdx[i]] = 1; }
     } else if (inference) {
+      // The events design permutes within strata, so it needs its own index
+      // and its own per-stratum subset counts. The season-based subPer above
+      // stays as it is: the season design, the whole-season detection and the
+      // validation checks all still reason in seasons.
+      var stratumIdx = {}, nStrata = 0, subPerStratum = null, ei;
+      if (design !== 'seasons') {
+        for (ei = 0; ei < allEv.length; ei++) {
+          if (stratumIdx[allEv[ei].stratum] === undefined) stratumIdx[allEv[ei].stratum] = nStrata++;
+        }
+        subPerStratum = zeros(nStrata);
+        for (ei = 0; ei < subEv.length; ei++) {
+          var sk = stratumIdx[subEv[ei].stratum];
+          if (sk !== undefined) subPerStratum[sk]++;
+        }
+        out.strata = { n: nStrata, scheme: (typeof o.stratify === 'function' ? 'custom' : o.stratify) };
+        if (o.stratify !== 'season') {
+          out.warnings.push('Labels were permuted within (season, month, basin) blocks, so the null holds the ' +
+                            "subset's seasonal and basin mix fixed. Without that, a subset drawn disproportionately " +
+                            'from one month or basin looks like an index effect.');
+        }
+      }
       var res = design === 'seasons'
         ? nullSeasons(allEv, seasonIdx, N, k, testedIdx, compact, tpos, CT, dRate, dShape, shapeOk, o)
-        : nullEvents(allEv, subPer, seasonIdx, N, testedIdx, compact, tpos, CT, T, Ttot, dRate, dShape, shapeOk, o);
+        : nullEvents(allEv, subPerStratum, stratumIdx, N, testedIdx, compact, tpos, CT, T, Ttot, dRate, dShape, shapeOk, o);
       for (i = 0; i < CT; i++) {
         cellP.rate[testedIdx[i]] = (1 + res.exRate[i]) / (o.iterations + 1);
         cellP.shape[testedIdx[i]] = shapeOk ? (1 + res.exShape[i]) / (o.iterations + 1) : NaN;
@@ -847,10 +908,18 @@ window.HF = window.HF || {};
   }
 
   /** Events design null: within-season permutation of the subset label. */
-  function nullEvents(allEv, subPer, seasonIdx, N, testedIdx, compact, tpos, CT, T, Ttot, dRate, dShape, shapeOk, o) {
-    var bySeason = [], s, e, j, c;
-    for (s = 0; s < N; s++) bySeason.push([]);
-    for (e = 0; e < allEv.length; e++) bySeason[seasonIdx[allEv[e].season]].push(e);
+  /** `subPer` counts subset events per STRATUM, and N is the number of
+      SEASONS. The two are deliberately different: strata bound what a
+      permutation may move (see the `stratify` option), while rates stay per
+      season because that is the unit the whole module reports in. Dividing a
+      stratified count by the stratum count instead would silently rescale
+      every rate. */
+  function nullEvents(allEv, subPer, stratumIdx, N, testedIdx, compact, tpos, CT, T, Ttot, dRate, dShape, shapeOk, o) {
+    var byStratum = [], s, e, j, c;
+    var S = 0, kkey;
+    for (kkey in stratumIdx) if (stratumIdx[kkey] + 1 > S) S = stratumIdx[kkey] + 1;
+    for (s = 0; s < S; s++) byStratum.push([]);
+    for (e = 0; e < allEv.length; e++) byStratum[stratumIdx[allEv[e].stratum]].push(e);
     var evC = [], evN = [];                           // tested-cell ids / counts per event
     for (e = 0; e < allEv.length; e++) {
       var cs = [], ns = [];
@@ -872,8 +941,8 @@ window.HF = window.HF || {};
     for (var b = 0; b < B; b++) {
       var stot = 0;
       for (c = 0; c < CT; c++) SS[c] = 0;
-      for (s = 0; s < N; s++) {
-        var arr = bySeason[s], want = subPer[s], m = arr.length;
+      for (s = 0; s < S; s++) {
+        var arr = byStratum[s], want = subPer[s], m = arr.length;
         // Partial Fisher-Yates: the first `want` slots of a uniformly dealt
         // permutation are a uniformly random `want`-subset. Reusing the array
         // in whatever order the last draw left it is fine for the same reason.
