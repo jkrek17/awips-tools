@@ -135,3 +135,60 @@ svg.is-hovering .c-dot.is-hover { opacity: 1; }
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   border-top: 3px solid var(--accent); height: 12px; border-radius: 0;
 }
+
+/* ------------------------------------------------------ coefficient plot
+   charts.coefPlot (charts.js). The emphasis form: one accent for what the
+   sample CAN resolve, muted ink for what it cannot, a neutral band for the
+   detection floor. Shape carries the state first (filled dot / hollow ring /
+   no dot) and the row's own words second; colour is the third channel.
+   Accent vs muted ink: >= 3:1 on both surfaces, normal-vision delta E 28.1
+   light / 17.2 dark, CVD 25.6 / 16.6 (dataviz validator). Every colour is a
+   token, so both themes follow. */
+.c-coef { overflow: visible; }
+.c-zero-line { stroke: var(--ink-2); stroke-width: 1.25; }
+.c-grid-zero-ghost { opacity: 0; }
+.c-ends { fill: var(--ink-2); font-size: var(--fs-xs, 11px); }
+.c-group { fill: var(--ink-2); font-size: var(--fs-micro, 10.5px); font-weight: 650; text-transform: uppercase; letter-spacing: .05em; }
+
+.c-coef-hit { fill: transparent; cursor: default; }
+.c-coef-row:hover .c-coef-hit,
+.c-coef-row:focus .c-coef-hit { fill: var(--surface-2, #f4f4f1); }
+.c-coef-row:focus { outline: none; }
+.c-coef-row:focus-visible .c-coef-hit { stroke: var(--accent); stroke-width: 2; fill: var(--surface-2, #f4f4f1); }
+
+.c-coef-label { fill: var(--ink); font-size: 12.5px; font-weight: 650; }
+.c-coef-state { fill: var(--ink-2); font-size: 11px; font-weight: 500; }
+.c-coef-row.is-detected .c-coef-state { fill: var(--ink); font-weight: 650; }
+.c-coef-val { fill: var(--ink); font-size: 12.5px; }
+.c-coef-sub { fill: var(--ink-2); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+
+/* The floor: a quiet band and two firm ends, so "inside it" is a shape. */
+.c-floor { fill: var(--ink-muted); fill-opacity: .28; }
+.c-floor-end { stroke: var(--ink-muted); stroke-width: 1.5; }
+.c-floor-label { fill: var(--ink-2); font-size: 10px; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
+.c-mark { stroke: var(--ink-2); stroke-width: 1.5; }
+
+/* interval and estimate. Detected: accent, filled. Below floor: muted, hollow.
+   The 2px surface ring keeps a dot legible where it crosses a whisker or band. */
+.c-ci { stroke-width: 2; stroke-linecap: round; }
+.c-ci-cap { stroke-width: 2; stroke-linecap: round; }
+.c-coef-row.is-detected .c-ci, .c-coef-row.is-detected .c-ci-cap { stroke: var(--accent); }
+.c-coef-row.is-below .c-ci, .c-coef-row.is-below .c-ci-cap { stroke: var(--ink-muted); }
+.c-coef-row.is-detected .c-pt { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+.c-coef-row.is-below .c-pt { fill: var(--surface); stroke: var(--ink-muted); stroke-width: 2.5; }
+.c-na { fill: var(--ink-muted); font-size: 11px; font-style: italic; }
+
+/* legend keys */
+.c-coef-legend { margin-top: var(--sp-3, 12px); row-gap: var(--sp-1, 4px); }
+.chart-legend .c-key-pt-on { width: 11px; height: 11px; border-radius: 50%; background: var(--accent); }
+.chart-legend .c-key-pt-off { width: 11px; height: 11px; border-radius: 50%; background: var(--surface); border: 2.5px solid var(--ink-muted); box-sizing: border-box; }
+.chart-legend .c-key-floor { width: 18px; height: 12px; border-radius: 0; background: color-mix(in srgb, var(--ink-muted) 28%, transparent); border-left: 1.5px solid var(--ink-muted); border-right: 1.5px solid var(--ink-muted); }
+.chart-legend .c-key-ci { width: 18px; height: 0; border-top: 2px solid var(--ink-2); border-radius: 0; background: none; }
+
+@media (forced-colors: active) {
+  .c-floor { fill: none; stroke: CanvasText; stroke-dasharray: 3 2; }
+  .c-coef-row.is-detected .c-pt { fill: Highlight; }
+  .c-coef-row.is-below .c-pt { fill: Canvas; stroke: CanvasText; }
+  .c-coef-row.is-detected .c-ci, .c-coef-row.is-detected .c-ci-cap { stroke: Highlight; }
+  .c-coef-row.is-below .c-ci, .c-coef-row.is-below .c-ci-cap { stroke: CanvasText; }
+}
