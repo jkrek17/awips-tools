@@ -16,8 +16,9 @@ NOAA Climate Prediction Center, U.S. Government work, public domain):
     MJO   ten CPC velocity-potential MJO indices, PENTAD rows, 1978 on
           https://www.cpc.ncep.noaa.gov/products/precip/CWlink/daily_mjo_index/proj_norm_order.ascii
 
-The MJO series is NOT the Wheeler-Hendon RMM index. There is no phase 1-8 and
-no amplitude. CPC builds ten indices from an extended EOF of 200-hPa velocity
+The MJO series is NOT the Wheeler-Hendon RMM index. There is no RMM phase 1-8
+and no RMM amplitude (a separate, locally derived phase/amplitude is described
+under "Derived MJO phase space" below). CPC builds ten indices from an extended EOF of 200-hPa velocity
 potential (CHI200, ENSO-neutral and weak-ENSO Nov-Apr winters, 1979-2000); each
 index is named for the longitude at the centre of enhanced convection in one
 of the ten time-lagged patterns of the first EEOF (20E, 70E, 80E, 100E, 120E,
@@ -107,9 +108,11 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import math
 import os
 import re
 import ssl
+import statistics
 import sys
 import time
 import urllib.error
@@ -168,6 +171,26 @@ MJO_ENSO_MIN_MEAN_R = 0.25
 MJO_PAIR_SEP_DEG = (60, 100)               # eastward separation for the propagation pairs
 MJO_PAIR_MAX_LAG = 4                       # pentads
 MJO_PAIR_MIN_POSITIVE_FRAC = 0.75
+
+# Derived MJO phase space (derive_mjo_eof). Leading two EOFs of the ten-longitude
+# anomaly field; phase = atan2(PC2, PC1), amplitude = hypot(PC1, PC2), each PC
+# divided by its own standard deviation. These gates are what make that a
+# statement about the MJO rather than about whatever field happens to be there;
+# the build stops if any fails. Measured on the 2001-2026 record: EOF1+EOF2 =
+# 98.8%, EOF2/EOF1 = 0.88, 91% of steps forward, period ~48 d.
+MJO_EOF_MIN_PENTADS = 365            # 5 years of fully-populated pentads
+MJO_EOF_MIN_VAR12 = 0.90             # a propagating wave puts ~all variance in a pair
+MJO_EOF_MIN_PAIR_RATIO = 0.50        # lambda2/lambda1: standing mode ~0; an ideal wave sampled at THESE ten
+                                     # uneven stations gives ~0.69 (clustered 70-160E, 80-degree gap), real 0.88
+MJO_EOF_PERIOD_BAND_DAYS = (25.0, 70.0)   # MJO is 30-60 d; margin for a noisy median
+MJO_EOF_MIN_FORWARD_FRAC = 0.75      # steps with amplitude >= floor that move the right way
+MJO_EOF_AMP_FLOOR = 1.0              # phase is only meaningful when amplitude is not small
+MJO_EOF_MIN_STEPS = 100              # steps behind the median / forward fraction
+MJO_EOF_ROUND = 6                    # provenance digits; emission uses the ROUNDED values
+MJO_EOF_PHASE_DIGITS = 4
+MJO_EOF_AMP_DIGITS = 3
+MJO_EOF_SIGN_REF = {1: ("100E", "120E"), 2: ("70E",)}   # raw EOF sign: mean loading here > 0
+MJO_EOF_TABLE_STEP_DEG = 30          # continuous-angle table; deliberately NOT eight 45-degree bins
 
 ONI_SEASONS = ["DJF", "JFM", "FMA", "MAM", "AMJ", "MJJ", "JJA", "JAS", "ASO", "SON", "OND", "NDJ"]
 
@@ -601,9 +624,11 @@ def build_mjo(columns, rows, evidence, start: dt.date, retrieved: str):
     cells_missing = sum(v is None for _d, vals in kept for v in vals)
     return {
         "kind": "CPC 200-hPa velocity-potential MJO indices (ten longitude-keyed indices), PENTAD resolution",
-        "notRmm": ("This is NOT the Wheeler-Hendon RMM index. There is no phase 1-8 and no amplitude. "
-                   "Composite on the longitude series directly; anything written assuming an 8-phase "
-                   "diagram is wrong for this data."),
+        "notRmm": ("This is NOT the Wheeler-Hendon RMM index. There is no RMM phase 1-8 and no RMM "
+                   "amplitude. Composite on the longitude series directly; anything written assuming an "
+                   "8-phase diagram is wrong for this data. eofPhase / eofAmplitude, if present, are a "
+                   "separate construction derived locally from these ten series (see mjo.eof): a "
+                   "continuous angle, not an octant."),
         "method": ("Extended EOF of pentad 200-hPa velocity potential (ENSO-neutral and weak-ENSO Nov-Apr "
                    "winters 1979-2000); ten indices from regressing data onto the ten time-lagged patterns "
                    "of the first EEOF, each named for the longitude of enhanced convection in its pattern; "
@@ -639,6 +664,309 @@ def build_mjo(columns, rows, evidence, start: dt.date, retrieved: str):
         "lastValid": rows[last][0].isoformat(), "trailingMissingRows": trailing,
         "interiorMissing": interior_missing, "cellsMissing": cells_missing,
         "dropped": i0}
+
+
+# ---------------------------------------------------------------------------
+# Derived MJO phase space
+# ---------------------------------------------------------------------------
+
+def jacobi_eigh(a, tol=1e-22, max_sweeps=100):
+    """Eigen-decomposition of a real symmetric matrix (list of lists) by cyclic
+    Jacobi rotations. Returns (values, vectors): values descending, vectors[k]
+    the unit eigenvector of values[k] (a row, one entry per matrix column).
+    Eigenvector SIGN is arbitrary - callers must fix it. Raises if it does not
+    converge."""
+    n = len(a)
+    if any(len(r) != n for r in a):
+        raise RuntimeError("jacobi_eigh: matrix is not square")
+    for i in range(n):
+        for j in range(i + 1, n):
+            if abs(a[i][j] - a[j][i]) > 1e-9 * (1 + abs(a[i][j])):
+                raise RuntimeError("jacobi_eigh: matrix is not symmetric")
+    a = [list(map(float, r)) for r in a]
+    v = [[float(i == j) for j in range(n)] for i in range(n)]
+    for _sweep in range(max_sweeps):
+        off = sum(a[i][j] ** 2 for i in range(n) for j in range(i + 1, n))
+        if off < tol:
+            break
+        for p in range(n - 1):
+            for q in range(p + 1, n):
+                if a[p][q] == 0.0:
+                    continue
+                theta = (a[q][q] - a[p][p]) / (2.0 * a[p][q])
+                t = (1.0 if theta >= 0 else -1.0) / (abs(theta) + math.sqrt(theta * theta + 1.0))
+                c = 1.0 / math.sqrt(t * t + 1.0)
+                s = t * c
+                for k in range(n):                       # columns p, q
+                    akp, akq = a[k][p], a[k][q]
+                    a[k][p], a[k][q] = c * akp - s * akq, s * akp + c * akq
+                for k in range(n):                       # rows p, q
+                    apk, aqk = a[p][k], a[q][k]
+                    a[p][k], a[q][k] = c * apk - s * aqk, s * apk + c * aqk
+                for k in range(n):                       # accumulate eigenvectors (columns)
+                    vkp, vkq = v[k][p], v[k][q]
+                    v[k][p], v[k][q] = c * vkp - s * vkq, s * vkp + c * vkq
+    else:
+        raise RuntimeError("jacobi_eigh: no convergence")
+    order = sorted(range(n), key=lambda i: -a[i][i])
+    return [a[i][i] for i in order], [[v[k][i] for k in range(n)] for i in order]
+
+
+def wave1_min_lon(lon_deg, field):
+    """Longitude (deg E, 0-360) of the minimum of the zonal-wavenumber-1
+    least-squares fit f = a cos(lon) + b sin(lon) + c through (lon_deg, field),
+    and the fraction of the field's variance that fit explains. The ten
+    stations are unevenly spaced (an 80-degree gap east of 160E), so the
+    harmonic is a steadier read of 'where is the pattern centred' than the
+    nearest station."""
+    x = [[math.cos(math.radians(d)), math.sin(math.radians(d)), 1.0] for d in lon_deg]
+    m = [[sum(r[i] * r[j] for r in x) for j in range(3)] + [sum(r[i] * f for r, f in zip(x, field))]
+         for i in range(3)]
+    for i in range(3):
+        piv = max(range(i, 3), key=lambda r: abs(m[r][i]))
+        m[i], m[piv] = m[piv], m[i]
+        if abs(m[i][i]) < 1e-12:
+            raise RuntimeError("wave1_min_lon: degenerate longitudes")
+        for r in range(3):
+            if r != i:
+                k = m[r][i] / m[i][i]
+                m[r] = [u - k * w for u, w in zip(m[r], m[i])]
+    a_, b_, c_ = (m[i][3] / m[i][i] for i in range(3))
+    mean = sum(field) / len(field)
+    ss = sum((f - mean) ** 2 for f in field)
+    res = sum((f - (a_ * r[0] + b_ * r[1] + c_)) ** 2 for f, r in zip(field, x))
+    return (math.degrees(math.atan2(b_, a_)) + 180.0) % 360.0, (1.0 - res / ss) if ss > 0 else 0.0
+
+
+def _wrap_pi(x):
+    return (x + math.pi) % (2.0 * math.pi) - math.pi
+
+
+def derive_mjo_eof(mjo):
+    """Phase / amplitude for the MJO block from the leading two EOFs of its
+    ten-longitude anomaly field, plus the provenance to reproduce them.
+    Takes the block build_mjo() emits (series, dates, longitudes, lonDegE).
+    Returns (eof, phase, amplitude): `eof` the provenance dict, phase and
+    amplitude lists aligned with mjo["dates"], null wherever any of the ten
+    longitudes is null. Raises RuntimeError - emitting nothing - if the field
+    is not a propagating wave in the MJO band or the construction does not
+    advance eastward (see the MJO_EOF_* constants).
+
+    Method. Anomaly = each longitude minus its mean over the decomposition
+    pentads (those with all ten present). Covariance across longitudes (n-1),
+    Jacobi eigendecomposition. PCk = sum_j loading_k[j] * anomaly[j]; z_k =
+    PCk / std(PCk). Then
+        phase     = atan2(pc2Sign * z2, z1)     radians
+        amplitude = hypot(z1, z2)               dimensionless
+    EOF signs are arbitrary, so they are pinned: EOF1 so its mean loading at
+    100E/120E is positive, EOF2 so its loading at 70E is positive (the loadings
+    emitted are in that raw sign). pc2Sign is then chosen FROM THE DATA so
+    phase ADVANCES WITH TIME (median advance over steps with amplitude >=
+    MJO_EOF_AMP_FLOOR at both ends > 0); with the raw signs the advance is
+    westward-looking, i.e. pc2Sign comes out -1. That only makes the angle
+    increase with time; whether the PATTERN moves east as the angle increases
+    is checked separately from the loadings (convectionLonByPhase) and the
+    build stops if it does not, so a westward-propagating field cannot be
+    labelled eastward just because pc2Sign was chosen to make time run
+    forward.
+
+    Everything emitted is computed from the ROUNDED loadings / means / stds
+    in the payload, so the payload alone reproduces phase and amplitude to
+    their emitted rounding."""
+    lons = list(mjo["longitudes"])
+    series, dates = mjo["series"], mjo["dates"]
+    nrow, p = len(dates), len(lons)
+    deg = [mjo["lonDegE"][lon] for lon in lons]
+    day = [dt.datetime.strptime(str(d), "%Y%m%d").date() for d in dates]
+    full = [i for i in range(nrow) if all(series[lon][i] is not None for lon in lons)]
+    n = len(full)
+    if n < MJO_EOF_MIN_PENTADS:
+        raise RuntimeError(f"MJO EOF: only {n} pentads have all {p} longitudes; need "
+                           f">= {MJO_EOF_MIN_PENTADS} for a stable decomposition")
+    x = [[series[lon][i] for lon in lons] for i in full]
+    mean = [round(sum(r[j] for r in x) / n, MJO_EOF_ROUND) for j in range(p)]
+    anom = [[r[j] - mean[j] for j in range(p)] for r in x]
+    cov = [[sum(r[a] * r[b] for r in anom) / (n - 1) for b in range(p)] for a in range(p)]
+    for a in range(p):
+        for b in range(a):
+            cov[a][b] = cov[b][a] = 0.5 * (cov[a][b] + cov[b][a])
+    lam, vec = jacobi_eigh(cov)
+    total = sum(lam)
+    if total <= 0 or min(lam) < -1e-9 * total:
+        raise RuntimeError("MJO EOF: covariance matrix is not positive semi-definite")
+    frac = [v / total for v in lam]
+    var12, ratio = frac[0] + frac[1], lam[1] / lam[0]
+    if var12 < MJO_EOF_MIN_VAR12:
+        raise RuntimeError(
+            f"MJO EOF: EOF1+EOF2 explain {100 * var12:.1f}% of variance ({100 * frac[0]:.1f}% + "
+            f"{100 * frac[1]:.1f}%), need >= {100 * MJO_EOF_MIN_VAR12:.0f}%. The ten-longitude field is "
+            f"not dominated by one propagating wave, so a phase/amplitude pair would not describe it.")
+    if ratio < MJO_EOF_MIN_PAIR_RATIO:
+        raise RuntimeError(
+            f"MJO EOF: EOF2/EOF1 variance ratio is {ratio:.2f}, need >= {MJO_EOF_MIN_PAIR_RATIO:.2f}. "
+            f"A propagating wave gives a near-equal pair in quadrature; a lopsided pair is a standing "
+            f"or stationary mode, not an MJO.")
+
+    # Pin the arbitrary eigenvector signs (the raw sign convention).
+    col = {lon: j for j, lon in enumerate(lons)}
+    load = []
+    for k in (0, 1):
+        refs = MJO_EOF_SIGN_REF[k + 1]
+        if any(r not in col for r in refs):
+            raise RuntimeError(f"MJO EOF: no {'/'.join(refs)} column to fix the sign of EOF{k + 1}")
+        ref = sum(vec[k][col[r]] for r in refs) / len(refs)
+        if abs(ref) < 1e-6:
+            raise RuntimeError(f"MJO EOF: EOF{k + 1} has ~zero loading at {'/'.join(refs)}; cannot fix its sign")
+        load.append([round(c * (1.0 if ref > 0 else -1.0), MJO_EOF_ROUND) for c in vec[k]])
+
+    def pcs(row_anomalies):
+        return [[sum(l[j] * r[j] for j in range(p)) for r in row_anomalies] for l in load]
+    pc1, pc2 = pcs(anom)
+    std = [round(math.sqrt(sum(v * v for v in pc) / (n - 1)), MJO_EOF_ROUND) for pc in (pc1, pc2)]
+    z = {i: (a / std[0], b / std[1]) for i, a, b in zip(full, pc1, pc2)}
+
+    # Time direction -> pc2Sign. Steps are consecutive complete rows; rates are
+    # per calendar day (a pentad is 5 days, 6 across a leap day).
+    steps = []
+    for i in full:
+        j = i + 1
+        if j in z and math.hypot(*z[i]) >= MJO_EOF_AMP_FLOOR and math.hypot(*z[j]) >= MJO_EOF_AMP_FLOOR:
+            d = math.degrees(_wrap_pi(math.atan2(z[j][1], z[j][0]) - math.atan2(z[i][1], z[i][0])))
+            steps.append(d / (day[j] - day[i]).days)
+    if len(steps) < MJO_EOF_MIN_STEPS:
+        raise RuntimeError(f"MJO EOF: only {len(steps)} consecutive pentad pairs with amplitude >= "
+                           f"{MJO_EOF_AMP_FLOOR:g}; need >= {MJO_EOF_MIN_STEPS} to establish the direction")
+    raw_med = statistics.median(steps)
+    if raw_med == 0:
+        raise RuntimeError("MJO EOF: zero median phase advance - the field does not propagate")
+    sgn = 1 if raw_med > 0 else -1
+    rates = [sgn * r for r in steps]                     # deg/day with pc2Sign applied (flips every step)
+    med = statistics.median(rates)
+    fwd = sum(r > 0 for r in rates) / len(rates)
+    period = 360.0 / med
+    lo, hi = MJO_EOF_PERIOD_BAND_DAYS
+    if not lo <= period <= hi:
+        raise RuntimeError(
+            f"MJO EOF: implied period is {period:.1f} days (median advance {5 * med:+.1f} deg/pentad), "
+            f"outside the {lo:g}-{hi:g} day band. This is not the MJO.")
+    if fwd < MJO_EOF_MIN_FORWARD_FRAC:
+        raise RuntimeError(
+            f"MJO EOF: only {100 * fwd:.0f}% of phase steps go the same way (need >= "
+            f"{100 * MJO_EOF_MIN_FORWARD_FRAC:.0f}%) - no coherent propagation.")
+
+    # Does the PATTERN move east as the angle increases? Built from the loadings
+    # alone: field(theta) = std1 cos(theta) EOF1 + std2 pc2Sign sin(theta) EOF2.
+    # Enhanced convection = most negative velocity potential (MJO_CONVENTION).
+    table, fits = [], []
+    for a_deg in range(0, 360, MJO_EOF_TABLE_STEP_DEG):
+        t = math.radians(a_deg)
+        field = [std[0] * math.cos(t) * load[0][j] + sgn * std[1] * math.sin(t) * load[1][j] for j in range(p)]
+        lon_min, r2 = wave1_min_lon(deg, field)
+        near = min(range(p), key=lambda j: field[j])
+        table.append((a_deg, lon_min, lons[near]))
+        fits.append(r2)
+    moves = [_wrap_pi(math.radians(table[(k + 1) % len(table)][1] - table[k][1]))
+             for k in range(len(table))]
+    east_steps = sum(m > 0 for m in moves)
+    net_deg = math.degrees(sum(moves))
+    if net_deg < 180.0 or east_steps < len(moves) - 1:
+        raise RuntimeError(
+            f"MJO EOF: with phase advancing in time the enhanced-convection longitude moves "
+            f"{'west' if net_deg < 0 else 'inconsistently'} as phase increases (net {net_deg:+.0f} deg over a "
+            f"full cycle, {east_steps}/{len(moves)} steps east). The field propagates westward or is "
+            f"not a clean wave; refusing to label it eastward.")
+
+    # Emit, from the rounded provenance only.
+    phase, amp = [None] * nrow, [None] * nrow
+    for i in full:
+        z1, z2 = z[i]
+        ph = math.atan2(sgn * z2, z1)
+        r = round(ph, MJO_EOF_PHASE_DIGITS)
+        if abs(r) > math.pi:                              # 3.1416 > pi: round toward zero instead
+            r = math.copysign(math.floor(abs(ph) * 10 ** MJO_EOF_PHASE_DIGITS) / 10 ** MJO_EOF_PHASE_DIGITS, ph)
+        phase[i] = r
+        amp[i] = round(math.hypot(z1, z2), MJO_EOF_AMP_DIGITS)
+
+    lon0, st0 = round(table[0][1], 1), table[0][2]
+    lon_pi = round(table[len(table) // 2][1], 1)
+    west = lambda lon_e: f" = {360 - round(lon_e):d}W" if lon_e > 180 else ""
+    ordered = lambda v: {lon: round(c, MJO_EOF_ROUND) for lon, c in zip(lons, v)}
+    eof = {
+        "kind": "Derived MJO phase space: leading two EOFs of the ten-longitude anomaly field",
+        "notRmm": ("DERIVED LOCALLY by this build from mjo.series. This is NOT the Wheeler-Hendon RMM "
+                   "index: different input field (CPC's ten longitude-keyed velocity-potential indices, not "
+                   "OLR + 850/200-hPa winds), EOFs of this 2001-onward record rather than WH's 1979-2001 "
+                   "base period, no RMM phase 1-8 and no RMM amplitude threshold convention. Phase is a "
+                   "continuous angle, not an octant. Do not label it RMM or bin it into eight phases."),
+        "method": ("anomaly[j] = series[lon j] - means[lon j]; covariance over the longitudes with divisor n-1; "
+                   "Jacobi eigendecomposition; PCk = sum_j loadings.eofk[j] * anomaly[j]; zk = PCk / pcStd.pck; "
+                   "eofPhase = atan2(pc2Sign * z2, z1); eofAmplitude = hypot(z1, z2). Pure-Python, no numpy."),
+        "pcFormula": "z1 = sum_j loadings.eof1[j]*(x[j]-means[j]) / pcStd.pc1; z2 likewise with eof2 / pc2",
+        "longitudes": lons,
+        "decomposition": {
+            "pentads": n, "of": nrow,
+            "rule": ("only pentads where all ten longitudes are present; eofPhase / eofAmplitude are emitted "
+                     "for exactly those pentads and null elsewhere"),
+            "first": dates[full[0]], "last": dates[full[-1]],
+        },
+        "means": ordered(mean),
+        "eigenvalues": [round(v, MJO_EOF_ROUND) for v in lam[:3]],
+        "totalVariance": round(total, MJO_EOF_ROUND),
+        "varianceExplainedPct": [round(100 * f, 2) for f in frac[:3]],
+        "variance12Pct": round(100 * var12, 2),
+        "pairRatio": round(ratio, 3),
+        "loadings": {"eof1": ordered(load[0]), "eof2": ordered(load[1])},
+        "loadingsNote": ("unit-norm eigenvectors in their RAW sign (before pc2Sign). Raw sign pinned so that the "
+                         "mean EOF1 loading at 100E/120E and the EOF2 loading at 70E are positive."),
+        "pcStd": {"pc1": std[0], "pc2": std[1]},
+        "signConvention": {
+            "eof1": "raw sign pinned: mean loading at 100E/120E > 0",
+            "eof2": "raw sign pinned: loading at 70E > 0",
+            "pc2Sign": sgn,
+            "why": (f"With the raw EOF signs, phase = atan2(+z2, z1) moved {'eastward' if raw_med > 0 else 'WESTWARD'}-"
+                    f"looking in time (median {5 * raw_med:+.1f} deg/pentad); pc2Sign = {sgn:+d} makes the angle "
+                    f"INCREASE with time. Chosen from the data at every build, then cross-checked against the "
+                    f"loadings: with it, the enhanced-convection longitude moves east as phase increases "
+                    f"(convectionLonByPhase)."),
+        },
+        "phaseConvention": {
+            "units": "radians, atan2 range [-pi, pi]",
+            "advances": ("EASTWARD: phase increases with time as the MJO convective envelope moves east "
+                         "(counter-clockwise in the (z1, z2) plane), and the longitude of enhanced "
+                         "convection increases with phase"),
+            "phase0": (f"phase 0 = (z1 > 0, z2 = 0): enhanced convection (negative velocity potential, per "
+                       f"mjo.convention) centred near {lon0:g}E{west(lon0)} (nearest station {st0}), suppressed "
+                       f"convection near 100E-120E. Phase +/-pi is the opposite: enhanced convection near "
+                       f"{lon_pi:g}E{west(lon_pi)}. Longitude from the zonal-wavenumber-1 least-squares fit "
+                       f"through the ten stations (fit explains >= {100 * min(fits):.0f}% of the pattern "
+                       f"variance at every angle tabulated)."),
+            "phase0ConvectionLonDegE": lon0,
+            "phase0NearestStation": st0,
+            "convectionLonByPhase": {
+                "note": ("continuous-angle lookup at 30-degree steps, amplitude 1: longitude (deg E, wavenumber-1 "
+                         "fit) of enhanced convection (field minimum) and the nearest station. Not octants."),
+                "phaseDeg": [t[0] for t in table],
+                "convectionLonDegE": [round(t[1], 1) for t in table],
+                "nearestStation": [t[2] for t in table],
+            },
+            "amplitude": ("dimensionless; 1 = one standard deviation of each PC. Phase is poorly defined near "
+                          "amplitude 0; the validation below only uses steps with amplitude >= "
+                          f"{MJO_EOF_AMP_FLOOR:g}."),
+        },
+        "validation": {
+            "note": "The build stops if any of these fails; the numbers are what it measured.",
+            "variance12Pct": {"value": round(100 * var12, 2), "min": 100 * MJO_EOF_MIN_VAR12},
+            "pairRatio": {"value": round(ratio, 3), "min": MJO_EOF_MIN_PAIR_RATIO},
+            "periodDays": {"value": round(period, 1), "min": lo, "max": hi,
+                           "of": "360 / median phase advance per day, steps with amplitude >= floor at both ends"},
+            "medianAdvanceDegPerPentad": round(5 * med, 2),
+            "forwardStepFraction": {"value": round(fwd, 3), "min": MJO_EOF_MIN_FORWARD_FRAC},
+            "steps": len(steps), "amplitudeFloor": MJO_EOF_AMP_FLOOR,
+            "patternEastwardNetDeg": round(net_deg, 1),
+            "fractionAmplitudeAtLeastFloor": round(sum(math.hypot(*v) >= MJO_EOF_AMP_FLOOR for v in z.values()) / n, 3),
+        },
+    }
+    return eof, phase, amp
 
 
 def season_label(d: dt.date) -> int:
@@ -698,8 +1026,9 @@ def build(args):
                        "day), spanning the usual extratropical response window. The event can sit anywhere "
                        "in its own pentad, so a lag is good to about +-2 days. Null / unavailable if i-k "
                        "precedes mjo.dates[0]."),
-            "mjoNotRmm": ("The MJO block is not Wheeler-Hendon RMM: no phase 1-8, no amplitude. Use the "
-                          "longitude-keyed series with the stated mjo.convention."),
+            "mjoNotRmm": ("The MJO block is not Wheeler-Hendon RMM: no phase 1-8, no RMM amplitude. Use the "
+                          "longitude-keyed series with the stated mjo.convention. mjo.eofPhase / "
+                          "mjo.eofAmplitude are a locally derived EOF phase space (mjo.eof), not RMM."),
         },
         "start": args.start,
         "oni": oni,
@@ -715,6 +1044,8 @@ def build(args):
         for k, v in MJO_DOCUMENTED_LON.items() if mapped.get(k) != v]
     evidence = verify_convention(columns, mrows, oni_rows)
     payload["mjo"], info["mjo"] = build_mjo(columns, mrows, evidence, start, retrieved)
+    eof, phase, amp = derive_mjo_eof(payload["mjo"])
+    payload["mjo"]["eofPhase"], payload["mjo"]["eofAmplitude"], payload["mjo"]["eof"] = phase, amp, eof
     return payload, info
 
 
@@ -729,7 +1060,7 @@ def print_summary(payload, info, coverage: bool):
               f"kept {b['start']}..{b['end']} ({b['n']} days, {i['trimmedDays']} trimmed)  "
               f"sentinels -> null: {sent}")
     m, i = payload["mjo"], info["mjo"]
-    print(f"MJO   PENTAD rows, NOT daily and NOT Wheeler-Hendon RMM (no phase 1-8, no amplitude)")
+    print(f"MJO   PENTAD rows, NOT daily and NOT Wheeler-Hendon RMM (no RMM phase 1-8; eofPhase/eofAmplitude are local)")
     print(f"      source {i['sourceSpan'][0]}..{i['sourceSpan'][1]} ({i['sourceRows']} rows, pre-allocated)  "
           f"kept {m['start']}..{m['end']} ({m['n']} pentads, {i['dropped']} dropped before start)")
     print(f"      REAL DATA ENDS at the pentad centred {i['lastValid']}; {i['trailingMissingRows']} trailing "
@@ -750,6 +1081,19 @@ def print_summary(payload, info, coverage: bool):
     p = ev["propagation"]
     print(f"      propagation check: {p['positive']} of {len(p['pairs'])} eastward pairs peak at a positive "
           f"pentad lag, {p['zero']} at zero, {p['negative']} negative")
+    e, v = m["eof"], m["eof"]["validation"]
+    sc = e["signConvention"]
+    print(f"      EOF phase space (derived locally, NOT RMM): {e['decomposition']['pentads']} of {m['n']} pentads "
+          f"used; variance EOF1/2/3 = " + " / ".join(f"{x:.1f}%" for x in e["varianceExplainedPct"]) +
+          f"  (EOF1+2 = {e['variance12Pct']:.1f}%, EOF2/EOF1 = {e['pairRatio']:.2f})")
+    print(f"      phase advances EASTWARD (pc2Sign = {sc['pc2Sign']:+d}: raw-sign EOFs ran "
+          f"{'eastward' if sc['pc2Sign'] > 0 else 'westward'}): median {v['medianAdvanceDegPerPentad']:+.1f} deg/pentad "
+          f"-> period {v['periodDays']['value']:.1f} d (band {v['periodDays']['min']:g}-{v['periodDays']['max']:g}); "
+          f"{100 * v['forwardStepFraction']['value']:.0f}% of {v['steps']} steps forward; "
+          f"amplitude >= {v['amplitudeFloor']:g} in {100 * v['fractionAmplitudeAtLeastFloor']:.0f}% of pentads")
+    print(f"      phase 0 = enhanced convection near {e['phaseConvention']['phase0ConvectionLonDegE']:g}E "
+          f"(nearest station {e['phaseConvention']['phase0NearestStation']}); pentad EOF std PC1/PC2 = "
+          f"{e['pcStd']['pc1']:.3f}/{e['pcStd']['pc2']:.3f}")
     print("licence: ONI/NAO/PNA/AO/MJO - all NOAA CPC, U.S. Government work, public domain "
           "(as stated by the project brief; not independently verified here).")
     if coverage:

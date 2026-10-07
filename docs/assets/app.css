@@ -961,6 +961,74 @@ fieldset.tele-field, .tele-field { margin: 0 0 var(--sp-3); }
   .tele-scale-ends { flex-direction: column; }
 }
 
+/* ---------------------------------------------------- regression view
+   The Regression view of the Teleconnections tab (docs/index.html
+   #teleRegView, app.js "regression view", charts.js coefPlot). Tokens only.
+   Detected / below floor / unavailable never ride on colour: each has its own
+   glyph and word, and in the plot its own marker shape. */
+.tele-viewcard { margin-bottom: var(--sp-4); }
+.tele-viewcard .tele-note { margin-top: var(--sp-1); max-width: 78ch; color: var(--ink); font-size: var(--fs-base); }
+#teleRegView > .card, #teleRegView > .reg-grid { margin-bottom: var(--sp-4); }
+
+.reg-controls-row { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-6); align-items: flex-start; }
+.reg-controls-row > .tele-field { flex: 0 1 260px; min-width: 200px; }
+.filter > label.check {
+  text-transform: none; letter-spacing: 0; font-size: var(--fs-base); font-weight: 600; color: var(--ink);
+}
+.filter > label.check input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+.reg-lag { margin: var(--sp-2) 0 0; padding-top: var(--sp-3); border-top: 1px solid var(--border); }
+.reg-lag .tele-hint { max-width: 74ch; margin-bottom: var(--sp-2); }
+.reg-lag .btn { align-self: flex-start; }
+.reg-lag .btn:disabled { cursor: progress; opacity: .6; }
+.reg-sweep { margin-top: var(--sp-2); }
+.reg-sweep:focus { outline: none; }
+.reg-sweep .tele-t { max-width: 520px; }
+
+.reg-main { border-top: 3px solid var(--accent); }
+.reg-main.is-pending #regBody, #regLower.is-pending { opacity: .5; }
+.reg-headline {
+  margin: 0 0 var(--sp-3); padding: var(--sp-2) var(--sp-3); font-size: var(--fs-md); font-weight: 600; color: var(--ink);
+  border-left: 4px solid var(--accent); background: var(--surface-2); border-radius: var(--radius-sm); max-width: 86ch;
+}
+.reg-plot { margin: var(--sp-2) 0 0; }
+
+.reg-grid {
+  display: grid; gap: var(--sp-4); align-items: start;
+  grid-template-columns: minmax(0, 6fr) minmax(320px, 5fr);
+}
+.reg-terms { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-3); }
+.reg-term { padding: var(--sp-2) var(--sp-3); border-left: 4px solid var(--border-strong); background: var(--surface); }
+.reg-term.is-detected { border-left-color: var(--accent); border-left-style: solid; background: var(--accent-soft); }
+.reg-term.is-below { border-left-color: var(--ink-muted); border-left-style: dashed; }
+.reg-term.is-unavailable { border-left-color: var(--ink-muted); border-left-style: dotted; }
+.reg-term p { margin: 0; }
+.reg-term-head { font-size: var(--fs-md); color: var(--ink); }
+.reg-term-glyph { display: inline-block; width: 1.3em; }
+.reg-term-claim { margin-top: var(--sp-1) !important; font-size: var(--fs-base); color: var(--ink); max-width: 68ch; }
+.reg-term-read { margin-top: var(--sp-1) !important; font-size: var(--fs-sm); color: var(--ink-2); max-width: 68ch; }
+
+/* R-squared: calendar alone / added by the indices / unexplained, as shares of one bar. */
+.reg-r2 { display: flex; height: 14px; border: 1px solid var(--border-strong); border-radius: 2px; overflow: hidden; gap: 2px; background: var(--surface); }
+.reg-r2-seg { min-width: 2px; flex-basis: 0; }
+.reg-r2-base, .reg-r2-swatch.reg-r2-base { background: var(--ink-muted); }
+.reg-r2-add, .reg-r2-swatch.reg-r2-add { background: var(--accent); }
+.reg-r2-rest, .reg-r2-swatch.reg-r2-rest { background: var(--surface-sunk); box-shadow: inset 0 0 0 1px var(--border-strong); }
+.reg-r2-key { list-style: none; margin: var(--sp-2) 0 0; padding: 0; font-size: var(--fs-sm); color: var(--ink); display: grid; gap: 2px; }
+.reg-r2-key li { display: flex; align-items: center; gap: var(--sp-2); }
+.reg-r2-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 2px; flex: none; }
+
+.reg-mjo-lead { margin: 0 0 var(--sp-2); font-size: var(--fs-base); font-weight: 600; color: var(--ink); }
+.reg-mjo-list { margin: var(--sp-2) 0 0; padding-left: var(--sp-5); font-size: var(--fs-sm); color: var(--ink); }
+.reg-mjo-geo { margin: 0; font-size: var(--fs-base); color: var(--ink); }
+.reg-mjo-plot { margin: 0; }
+
+@media (max-width: 900px) {
+  .reg-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 620px) {
+  .reg-controls-row > .tele-field { flex-basis: 100%; }
+}
+
 /* ------------------------------------------------------------------ print */
 
 @media print {

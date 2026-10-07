@@ -560,7 +560,9 @@
   /** Only animate while the map tab is actually on screen. Call after
       anything that can change the active tab. */
   function syncMapMode() {
-    var showsGlobe = state.tab === 'map' || state.tab === 'tele';   // Teleconnections hosts the same canvas
+    // Teleconnections hosts the same canvas, but only its composite view
+    // shows the map; the regression view has no globe to animate.
+    var showsGlobe = state.tab === 'map' || (state.tab === 'tele' && tele.view === 'composite');
     HF.globe.setVisible(showsGlobe);
     if (showsGlobe) resizeActiveView();
   }
@@ -1753,7 +1755,10 @@
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(function () {
         if (state.tab === 'clim') renderCharts(filtered());
-        if (state.tab === 'tele') renderTeleSeries();
+        if (state.tab === 'tele') {
+          if (tele.view === 'regress') { if (reg.shown && !reg.shown.error) { renderRegPlot(reg.shown); renderRegMjo(reg.shown); } }
+          else renderTeleSeries();
+        }
         HF.globe.resize();
       }, 180);
     });
@@ -1810,7 +1815,8 @@
     cache: {}, order: [],
     want: null, timer: null,
     shown: null,            // the bundle the card, map and chart are showing
-    built: false
+    built: false,
+    view: 'composite'       // 'composite' | 'regress': two ways of asking, one tab
   };
 
   function tEl(id) { return document.getElementById(id); }
@@ -2579,8 +2585,9 @@
       'days ending on the day the storm’s first fix was analyzed' +
       (sp ? ' (they run to ' + sp.nao.end + ')' : '') + '. The MJO index is the CPC 200-hPa velocity-potential ' +
       'index at pentad resolution, one series for each of ten longitudes' + (sp ? ' (to ' + sp.mjo.end + ')' : '') +
-      ': it is not the Wheeler–Hendon RMM index, so there is no phase 1–8 and no amplitude. Negative values ' +
-      'are enhanced convection. “Enhanced” and “suppressed” mean at or beyond ±' +
+      ': it is not the Wheeler–Hendon RMM index, so there are no RMM phases 1–8 (no octants). A phase and an ' +
+      'amplitude of its own are derived locally from the ten-longitude field and used by the regression view, but they are ' +
+      'not comparable with a published RMM phase. Negative values of the single-longitude series are enhanced convection. “Enhanced” and “suppressed” mean at or beyond ±' +
       (tc ? tc.defaultThreshold.toFixed(1) : '0.5') + ' and “neutral” means inside it. A storm with no index value ' +
       'on its day (a missing day or pentad) is left out of the subset, never counted as zero.');
     item('Lag',
@@ -2619,6 +2626,8 @@
         r.addEventListener('change', function () { if (r.checked) apply(r.value); });
       });
     }
+    radios('teleView', function (v) { setTeleView(v); });
+    tEl('teleViewNote').textContent = TELE_VIEW_NOTES[tele.view];
     radios('teleIndex', function (v) { tele.index = v; teleRequest(); });
     radios('teleEnso', function (v) { tele.enso = v; teleRequest(); });
     radios('teleTerc', function (v) { tele.terc = v; teleRequest(); });
@@ -2664,6 +2673,7 @@
       computation only when there is none for the current selection. */
   function renderTele() {
     buildTele();
+    if (tele.view === 'regress') { renderRegress(); return; }
     syncTeleControls();
     var key = tele.engine ? teleKey(teleSpec()) : null;
     if (!tele.engine) {
@@ -2677,6 +2687,695 @@
       return;
     }
     teleRequest(true);
+  }
+
+  /* ------------------------------------------------- regression view
+     The same question as the composite, asked a second way. The composite
+     sorts storms into thirds of an index and tests ~150 map cells; this view
+     keeps the index continuous and asks one question of one number: "per
+     standard deviation of the NAO, how far does the average storm move?"
+     HF.regress.fit does the work (season-block bootstrap, month fixed
+     effects, one model per basin); this section only chooses the controls,
+     draws the coefficient plot, and decides how each result is SAID.
+
+     The sentence that matters most is not any of the coefficients. It is the
+     difference between two readings of an interval that includes zero:
+     "there is no effect" and "this sample could not have seen an effect that
+     size". Every term carries its detection floor (the MDE80), the plot
+     draws it as a band behind the interval, and the plain-language list
+     never says "no effect" for a term below its floor. On this archive the
+     NAO's pull on Atlantic track latitude sits far outside its floor, and
+     every interaction term sits inside its own: that second half is an
+     answer to "do these teleconnections interact?", and the answer is "the
+     archive is too short to say", not "no".
+
+     Nothing is recomputed here. Numbers are formatted from the result object
+     untouched, every warning is printed, and a result is cached by its
+     options (the seed is fixed, so the same options give the same answer),
+     so going back to a previous selection is instant.
+
+     Cost: ~0.1 s for the default model, ~0.4 s with the MJO permutation
+     test. That is fast enough to run on a control change, but the card is
+     still marked pending at once (aria-busy, the old numbers dimmed and
+     labelled as the previous selection) and the run starts after a short
+     debounce so dragging the lag slider is one fit per pause, not seven. */
+
+  var REG_DEBOUNCE_MS = 140;
+  var REG_CACHE_MAX = 40;
+  var REG_BASINS = { atl: 'Atlantic', pac: 'Pacific' };
+  var REG_GLYPH = { detected: '●', below: '○', unavailable: '×' };
+  var REG_STATE = { detected: 'Detected', below: 'Below floor', unavailable: 'Unavailable' };
+
+  /* What each response is, in the units that mean something. `up` / `down`
+     say what a positive / negative coefficient does to the storm. */
+  var REG_RESP = {
+    lat: {
+      title: 'track latitude', units: 'degrees', axisUnits: 'degrees of latitude',
+      ends: ['equatorward (south)', 'poleward (north)'],
+      hint: 'Mean latitude of the storm’s fixes. Positive means further north.',
+      sentence: function (c, bas) { return bas + ' tracks sit ' + fnum(Math.abs(c), 2) + ' degrees ' + (c >= 0 ? 'further poleward (north)' : 'further equatorward (south)'); },
+      up: 'further poleward', down: 'further equatorward'
+    },
+    lon: {
+      title: 'track longitude', units: 'degrees', axisUnits: 'degrees of longitude',
+      ends: ['west', 'east'],
+      hint: 'Circular mean longitude of the fixes, laid on a continuous branch so the dateline is not a seam. Positive means further east.',
+      sentence: function (c, bas) { return bas + ' tracks sit ' + fnum(Math.abs(c), 2) + ' degrees of longitude further ' + (c >= 0 ? 'east' : 'west'); },
+      up: 'further east', down: 'further west'
+    },
+    minP: {
+      title: 'minimum central pressure', units: 'hPa', axisUnits: 'hPa',
+      ends: ['deeper (lower pressure)', 'shallower (higher pressure)'],
+      hint: 'Lowest analysed central pressure; events with none (such as tip jets) are left out. Negative means deeper.',
+      sentence: function (c, bas) { return bas + ' lows reach a minimum pressure ' + fnum(Math.abs(c), 2) + ' hPa ' + (c >= 0 ? 'higher (shallower)' : 'lower (deeper)'); },
+      up: 'a higher (shallower) minimum pressure', down: 'a lower (deeper) minimum pressure'
+    },
+    hfH: {
+      title: 'time at hurricane force', units: 'hours', axisUnits: 'hours',
+      ends: ['less time at hurricane force', 'more time at hurricane force'],
+      hint: 'Hours spent at hurricane force. The distribution is right-skewed: a few long-lived storms carry much of the mean.',
+      sentence: function (c, bas) { return bas + ' lows spend ' + fnum(Math.abs(c), 2) + ' hours ' + (c >= 0 ? 'more' : 'less') + ' at hurricane force'; },
+      up: 'more time at hurricane force', down: 'less time at hurricane force'
+    }
+  };
+
+  var REG_INDEX_WORDS = {
+    nao: 'NAO (the 5-day mean ending on the day of the storm’s first fix)',
+    pna: 'PNA (the 5-day mean ending on the day of the storm’s first fix)',
+    oni: 'ONI (the Oceanic Niño Index for the month the storm began)'
+  };
+
+  var REG_RELIABILITY = {
+    ok: ['Adequate', 'Enough seasons for the bootstrap interval and the detection floor to mean something.'],
+    low: ['Low', 'Few seasons or few events per parameter, so intervals and floors are themselves uncertain. Read the warnings.'],
+    none: ['None', 'The interval could not be computed, so there is no detection floor and nothing to read.']
+  };
+
+  var reg = {
+    basin: 'atl', response: 'lat', inter: false, mjo: false, lag: 0,
+    cache: {}, order: [], want: null, timer: null, shown: null, built: false,
+    sweepToken: 0
+  };
+
+  function rEl(id) { return document.getElementById(id); }
+  /** Unsigned-plus formatting with a true minus sign, for intervals. */
+  function fnum(v, d) { return (v < 0 ? '−' : '') + Math.abs(v).toFixed(d); }
+  function pText(p) { return p < 0.001 ? 'p < 0.001' : 'p = ' + p.toFixed(3); }
+
+  function regOptions() {
+    return {
+      basin: reg.basin, response: reg.response, interactions: reg.inter,
+      mjo: reg.mjo ? { lag: reg.lag } : false,
+      teleconnect: tele.engine, seed: 1
+    };
+  }
+  function regKey() {
+    return [reg.basin, reg.response, reg.inter ? 'x' : '-', reg.mjo ? 'm' + reg.lag : '-'].join('|');
+  }
+  function regLabel() {
+    return REG_BASINS[reg.basin] + ', ' + REG_RESP[reg.response].title +
+      (reg.inter ? ', with interactions' : '') +
+      (reg.mjo ? ', MJO at lag ' + pentadText(reg.lag) : '');
+  }
+
+  function regCompute() {
+    var b = { key: regKey(), label: regLabel(), basin: reg.basin, response: reg.response,
+              inter: reg.inter, mjoOn: reg.mjo, lag: reg.lag, result: null, error: null, ms: 0 };
+    var t0 = Date.now();
+    try {
+      if (!HF.regress) throw new Error('regress.js did not load');
+      b.result = HF.regress.fit(LOWS, regOptions());
+    } catch (err) {
+      b.error = String(err && err.message ? err.message : err);
+    }
+    b.ms = Date.now() - t0;
+    return b;
+  }
+
+  function regRequest(soon) {
+    if (!teleEngine()) { renderRegFailure('The teleconnection data or scripts did not load (' + (tele.failed || 'unknown error') + '), so nothing can be fitted here.'); return; }
+    var key = regKey();
+    reg.want = key;
+    clearTimeout(reg.timer);
+    reg.timer = null;
+    syncRegControls();
+    if (reg.cache[key]) { regShow(reg.cache[key]); return; }
+    regSetPending(true);
+    reg.timer = setTimeout(function () {
+      reg.timer = null;
+      if (reg.want !== key || state.tab !== 'tele' || tele.view !== 'regress') return;
+      var b = regCompute();
+      if (!b.error) {
+        reg.cache[key] = b;
+        reg.order.push(key);
+        while (reg.order.length > REG_CACHE_MAX) delete reg.cache[reg.order.shift()];
+      }
+      if (reg.want === key) regShow(b);
+    }, soon ? 30 : REG_DEBOUNCE_MS);
+  }
+
+  function regSetPending(on) {
+    var card = rEl('regMain');
+    card.setAttribute('aria-busy', on ? 'true' : 'false');
+    card.classList.toggle('is-pending', on);
+    rEl('regLower').classList.toggle('is-pending', on);
+    var p = rEl('regPending');
+    p.hidden = !on;
+    if (!on) return;
+    p.textContent = reg.shown
+      ? 'Fitting ' + regLabel() + '. The numbers below are still for ' + reg.shown.label + ' and are out of date until this finishes.'
+      : 'Fitting ' + regLabel() + '…';
+  }
+
+  function regShow(b) {
+    reg.shown = b;
+    regSetPending(false);
+    if (b.error) { renderRegFailure('The model could not be fitted for ' + b.label + ': ' + b.error); return; }
+    renderRegPlot(b);
+    renderRegReading(b);
+    renderRegFit(b);
+    renderRegMjo(b);
+    renderRegWarn(b);
+    renderRegTable(b);
+    announceReg(b);
+  }
+
+  function renderRegFailure(message) {
+    rEl('regShowing').textContent = '';
+    var hl = HF.clear(rEl('regHeadline'));
+    hl.textContent = message;
+    HF.clear(rEl('regPlot'));
+    HF.clear(rEl('regReading'));
+    HF.clear(rEl('regFit'));
+    HF.clear(rEl('regWarn'));
+    HF.clear(rEl('regMjoBody'));
+    rEl('regMjoCard').hidden = true;
+    var tb = rEl('regTableEl');
+    HF.clear(tb.querySelector('thead')); HF.clear(tb.querySelector('tbody'));
+    rEl('teleLive').textContent = 'Not fitted. ' + message;
+  }
+
+  /* ------------------------------------------------------------ the words */
+
+  function termState(t) {
+    if (t.flag === 'detected') return 'detected';
+    if (t.flag === 'below-floor') return 'below';
+    return 'unavailable';
+  }
+
+  function termName(t) { return t.label.replace(/ x /g, ' × '); }
+
+  /** "per standard deviation of the NAO, Atlantic tracks sit 1.88 degrees
+      further poleward", or for a product term, what it is. */
+  function termClaim(t, b) {
+    var R = REG_RESP[b.response], bas = REG_BASINS[b.basin], c = t.coef;
+    if (t.kind === 'interaction') {
+      var parts = t.name.split('*');
+      var A = parts[0].toUpperCase(), B = parts[1].toUpperCase();
+      return 'Product of the ' + A + ' and the ' + B + ': for each standard deviation higher the ' + B + ', the effect of the ' + A +
+             ' on ' + R.title + ' changes by ' + signed(c, 2) + ' ' + R.units + ' per standard deviation of the ' + A + '.';
+    }
+    var sd = t.unit && t.unit.sd != null ? ' (one SD is ' + t.unit.sd.toFixed(2) + (t.name === 'oni' ? ' °C' : '') + ' in this sample)' : '';
+    return 'For each standard deviation of the ' + (REG_INDEX_WORDS[t.name] || t.label) + sd + ', ' + R.sentence(c, bas) + '.';
+  }
+
+  function termReading(t, b) {
+    var R = REG_RESP[b.response];
+    var st = termState(t);
+    var floor = t.mde80 != null ? t.mde80.toFixed(2) : null;
+    var iv = t.ci ? '[' + fnum(t.ci[0], 2) + ', ' + fnum(t.ci[1], 2) + ']' : null;
+    if (st === 'unavailable') {
+      return 'No interval could be computed' + (t.note ? ': ' + t.note : '.') + ' Nothing can be said about this term.';
+    }
+    if (st === 'detected') {
+      return 'This sample could resolve an effect this large. The 95% interval is ' + iv + ', clear of zero, and the estimate is above ' +
+             'the ±' + floor + ' ' + R.units + ' this sample can detect.' +
+             ' It describes an association in this archive; it does not show what causes it.';
+    }
+    var s = 'Not resolved, which is not the same as absent. The estimate (' + signed(t.coef, 2) + ') is smaller than the ±' + floor + ' ' +
+            R.units + ' per SD that this sample could detect, so it cannot tell “no effect” from an effect up to about that size. ' +
+            'The interval ' + iv + ' is consistent with both.';
+    if (t.excludesZero) {
+      s += ' The interval does clear zero, but an estimate this small that clears it has probably been inflated by chance, ' +
+           'so do not quote ' + signed(t.coef, 2) + ' as the size of the effect.';
+    }
+    return s;
+  }
+
+  function regRows(b) {
+    var r = b.result, R = REG_RESP[b.response];
+    return r.terms.map(function (t) {
+      var st = termState(t);
+      var hasCi = !!t.ci;
+      var floor = t.mde80 != null ? t.mde80.toFixed(2) : null;
+      var valueText = signed(t.coef, 2);
+      var rangeText = hasCi ? '[' + fnum(t.ci[0], 2) + ', ' + fnum(t.ci[1], 2) + ']' : 'no interval';
+      var floorText = floor ? 'floor ±' + floor : 'no floor';
+      var aria = termName(t) + ': ' + REG_STATE[st].toLowerCase() + '. ' +
+        'Estimate ' + signed(t.coef, 2) + ' ' + R.units + ' per standard deviation' +
+        (hasCi ? ', 95 percent interval ' + fnum(t.ci[0], 2) + ' to ' + fnum(t.ci[1], 2) +
+          ', detection floor plus or minus ' + floor + '.' : ', no interval.') +
+        (st === 'below' ? ' The sample cannot resolve an effect this size.' : '');
+      var tip = '<b>' + termName(t) + '</b>' +
+        '<div class="t-row">' + REG_GLYPH[st] + ' ' + REG_STATE[st] + '</div>' +
+        '<div class="t-row">Estimate ' + signed(t.coef, 2) + ' ' + R.units + ' per SD</div>' +
+        (hasCi ? '<div class="t-row">95% interval ' + rangeText + '</div><div class="t-row">Floor ±' + floor + '</div>' : '<div class="t-row">No interval</div>') +
+        (st === 'below' ? '<div class="t-row">Cannot resolve an effect this size</div>' : '');
+      return {
+        key: t.name, label: termName(t), est: t.coef, lo: hasCi ? t.ci[0] : null, hi: hasCi ? t.ci[1] : null,
+        floor: t.mde80, floorShort: floor, state: st, stateGlyph: REG_GLYPH[st], stateText: REG_STATE[st],
+        valueText: valueText, rangeText: rangeText, floorText: floorText, aria: aria, tip: tip,
+        group: t.kind === 'interaction' ? 'Interactions' : 'Main effects'
+      };
+    });
+  }
+
+  function regHeadline(b) {
+    var r = b.result, R = REG_RESP[b.response];
+    if (r.status !== 'ok') {
+      return 'This model could not be fully fitted (' + r.status + '). ' +
+        (r.terms.length && !r.terms.some(function (t) { return t.ci; }) ? 'Estimates are shown but their intervals and detection floors are withheld, so none of them can be called detected or not. ' : '') +
+        'See the warnings.';
+    }
+    var det = r.terms.filter(function (t) { return t.flag === 'detected'; });
+    var low = r.terms.filter(function (t) { return t.flag === 'below-floor'; });
+    var names = function (a) {
+      var n = a.map(termName);
+      return n.length > 1 ? n.slice(0, -1).join(', ') + ' and ' + n[n.length - 1] : n[0];
+    };
+    var s;
+    if (!det.length) {
+      s = 'No term clears its detection floor. For every one, this sample cannot tell “no effect” from an effect up to the width of its grey band.';
+    } else {
+      s = names(det) + (det.length === 1 ? ' is' : ' are') + ' detected: ' + (det.length === 1 ? 'its' : 'their') +
+          ' interval ' + (det.length === 1 ? 'sits' : 'sit') + ' clear of zero and ' + (det.length === 1 ? 'its' : 'their') +
+          ' estimate beyond the floor.';
+      if (low.length) {
+        s += ' ' + names(low) + (low.length === 1 ? ' sits' : ' sit') + ' inside ' + (low.length === 1 ? 'its own floor' : 'their own floors') +
+             ': the sample cannot resolve an effect that small, which is different from showing there is none.';
+      }
+    }
+    return s;
+  }
+
+  /* ------------------------------------------------------------ the plot */
+
+  function renderRegPlot(b) {
+    var r = b.result, R = REG_RESP[b.response];
+    rEl('regShowing').textContent = 'Showing: ' + b.label;
+    rEl('regHeadline').textContent = regHeadline(b);
+    var rows = regRows(b);
+    var bas = REG_BASINS[b.basin];
+    HF.charts.coefPlot(rEl('regPlot'), {
+      rows: rows,
+      axisTitle: 'Change in ' + R.title + ' per 1 SD of the index (' + R.axisUnits + ')',
+      ends: R.ends,
+      fmtTick: function (v) { return (v > 0 ? '+' : v < 0 ? '−' : '') + String(parseFloat(Math.abs(v).toFixed(2))); },
+      floorLegend: 'Detection floor (±MDE80): the smallest true effect this sample would find 80% of the time',
+      ariaLabel: 'Coefficient plot: ' + bas + ' ' + R.title + '. One row per term, each with its estimate, 95 percent interval and detection floor. ' +
+                 'The table view below holds the same numbers.'
+    });
+  }
+
+  function renderRegTable(b) {
+    var r = b.result, R = REG_RESP[b.response];
+    var tbl = rEl('regTableEl');
+    var thead = HF.clear(tbl.querySelector('thead')), tbody = HF.clear(tbl.querySelector('tbody'));
+    rEl('regTableCap').textContent = 'Terms of the ' + b.label + ' model: estimate per standard deviation in ' + R.units +
+      ', 95% interval, detection floor and state.';
+    var tr = tx('tr');
+    ['Term', 'Estimate (' + R.units + ' per SD)', '95% interval, low', '95% interval, high', 'Detection floor (±)', 'State'].forEach(function (h, i) {
+      var th = tx('th', i ? 'num' : '', h); th.setAttribute('scope', 'col'); tr.appendChild(th);
+    });
+    thead.appendChild(tr);
+    r.terms.forEach(function (t) {
+      var row = tx('tr');
+      var th = tx('th', '', termName(t)); th.setAttribute('scope', 'row'); row.appendChild(th);
+      row.appendChild(tx('td', 'num', signed(t.coef, 2)));
+      row.appendChild(tx('td', 'num', t.ci ? fnum(t.ci[0], 2) : '—'));
+      row.appendChild(tx('td', 'num', t.ci ? fnum(t.ci[1], 2) : '—'));
+      row.appendChild(tx('td', 'num', t.mde80 != null ? t.mde80.toFixed(2) : '—'));
+      row.appendChild(tx('td', '', REG_GLYPH[termState(t)] + ' ' + REG_STATE[termState(t)] + (t.flag === 'below-floor' && t.excludesZero ? ' (interval excludes 0)' : '')));
+      tbody.appendChild(row);
+    });
+  }
+
+  function renderRegReading(b) {
+    var box = HF.clear(rEl('regReading'));
+    var r = b.result;
+    if (!r.terms.length) { box.appendChild(tx('p', 'tele-note', 'No terms were fitted.')); return; }
+    var ul = tx('ul', 'reg-terms');
+    r.terms.forEach(function (t) {
+      var st = termState(t);
+      var li = tx('li', 'reg-term is-' + st);
+      var head = tx('p', 'reg-term-head');
+      head.appendChild(tx('span', 'reg-term-glyph', REG_GLYPH[st]));
+      head.lastChild.setAttribute('aria-hidden', 'true');
+      head.appendChild(tx('strong', '', termName(t)));
+      head.appendChild(document.createTextNode(' — ' + REG_STATE[st].toLowerCase()));
+      li.appendChild(head);
+      li.appendChild(tx('p', 'reg-term-claim', termClaim(t, b)));
+      li.appendChild(tx('p', 'reg-term-read', termReading(t, b)));
+      ul.appendChild(li);
+    });
+    box.appendChild(ul);
+    box.appendChild(tx('p', 'tele-note', 'Units: ' + REG_RESP[b.response].title + ' is in ' + REG_RESP[b.response].units +
+      '. Each coefficient is the change in that per one standard deviation of the index, with the month held fixed and the other indices in the model.'));
+  }
+
+  function pct(v) { return (v * 100).toFixed(1) + '%'; }
+
+  function renderRegFit(b) {
+    var box = HF.clear(rEl('regFit'));
+    var r = b.result, n = r.n, R = REG_RESP[b.response];
+    box.appendChild(teleTable('Events and seasons in this fit',
+      ['Measure', 'Value'],
+      [['Events', fmtInt(n.events)], ['Seasons (the resampling unit)', fmtInt(n.seasons)],
+       ['Estimated parameters', fmtInt(n.params)],
+       ['Complete seasons from', r.recordStart != null ? HF.seasonLabel(r.recordStart) : '—']]));
+    var rel = REG_RELIABILITY[r.reliability] || [String(r.reliability), ''];
+    var relP = tx('p', 'tele-reliability is-' + r.reliability);
+    relP.appendChild(tx('strong', '', 'Reliability: ' + rel[0] + '.'));
+    relP.appendChild(document.createTextNode(' ' + rel[1]));
+    relP.style.marginTop = 'var(--sp-3)';
+    box.appendChild(relP);
+
+    box.appendChild(tx('h3', '', 'How much the indices explain'));
+    var base = r.r2Base != null ? r.r2Base : 0, full = r.r2 != null ? r.r2 : 0;
+    var added = Math.max(0, full - base), rest = Math.max(0, 1 - Math.max(full, base));
+    var bar = tx('div', 'reg-r2');
+    bar.setAttribute('aria-hidden', 'true');
+    [['reg-r2-base', base], ['reg-r2-add', added], ['reg-r2-rest', rest]].forEach(function (seg) {
+      var s = tx('span', 'reg-r2-seg ' + seg[0]);
+      s.style.flexGrow = String(Math.max(seg[1], 0.0001));
+      bar.appendChild(s);
+    });
+    box.appendChild(bar);
+    var ul = tx('ul', 'reg-r2-key');
+    [['reg-r2-base', 'Calendar alone (month): ' + pct(base)],
+     ['reg-r2-add', (b.mjoOn ? 'Added by the climate terms and MJO: ' : 'Added by the climate terms: ') + pct(added)],
+     ['reg-r2-rest', 'Unexplained: ' + pct(rest)]].forEach(function (k) {
+      var li = tx('li');
+      li.appendChild(tx('i', 'reg-r2-swatch ' + k[0]));
+      li.lastChild.setAttribute('aria-hidden', 'true');
+      li.appendChild(document.createTextNode(k[1]));
+      ul.appendChild(li);
+    });
+    box.appendChild(ul);
+    box.appendChild(tx('p', 'tele-note',
+      'R² with everything in the model is ' + pct(full) + '; month alone gives ' + pct(base) + '. ' +
+      'The season of the year does most of what the model explains, and ' + pct(rest) + ' of the variation in ' + R.title +
+      ' is left to everything else. A detected index moves the average storm; it does not predict any one storm.'));
+  }
+
+  function renderRegWarn(b) {
+    var box = HF.clear(rEl('regWarn'));
+    var w = b.result.warnings || [];
+    if (!w.length) { box.appendChild(tx('p', 'tele-note', 'None.')); return; }
+    var ul = tx('ul', 'tele-warnings');
+    w.forEach(function (x) { ul.appendChild(tx('li', '', x)); });
+    box.appendChild(ul);
+  }
+
+  /* ------------------------------------------------------------ the MJO */
+
+  function lonText(d) {
+    if (d == null || !isFinite(d)) return 'unknown';
+    var e = Math.round(((d % 360) + 360) % 360);
+    return e + '°E' + (e > 180 ? ' (' + (360 - e) + '°W)' : '');
+  }
+  /** A rough name for the sector, so "316°E" can be placed on a map. */
+  function lonSector(d) {
+    var e = ((d % 360) + 360) % 360;
+    if (e >= 340 || e < 30) return 'Africa';
+    if (e < 100) return 'the Indian Ocean';
+    if (e < 160) return 'the Maritime Continent';
+    if (e < 220) return 'the western and central Pacific';
+    if (e < 280) return 'the eastern Pacific';
+    return 'South America and the tropical Atlantic';
+  }
+
+  function renderRegMjo(b) {
+    var card = rEl('regMjoCard');
+    var box = HF.clear(rEl('regMjoBody'));
+    card.hidden = !b.mjoOn;
+    if (!b.mjoOn) return;
+    var r = b.result, m = r.mjo, R = REG_RESP[b.response];
+    if (!m || m.status !== 'ok') {
+      box.appendChild(tx('p', 'tele-note', 'The MJO term was not fitted: ' + ((m && (m.reason || m.note)) || 'no reason given') + '.'));
+      return;
+    }
+    var st = m.flag === 'detected' ? 'detected' : m.flag === 'below-floor' ? 'below' : 'unavailable';
+    var sig = m.p < 0.05;
+    var lagTxt = pentadText(m.lag) + ' before the storm’s first fix';
+
+    box.appendChild(tx('p', 'reg-mjo-lead',
+      'Does the MJO phase move ' + R.title + '? ' + pText(m.p) + ' (permutation, ' + fmtInt(m.nPerm) + ' shuffles). ' +
+      'Read ' + lagTxt + '.'));
+
+    // R against its own floor, on the same one-sided scale as the coefficient plot
+    var plot = tx('div', 'chart reg-mjo-plot');
+    box.appendChild(plot);
+    HF.charts.coefPlot(plot, {
+      oneSided: true,
+      rows: [{
+        key: 'mjo', label: 'MJO R', est: m.R, lo: m.ciR ? m.ciR[0] : null, hi: m.ciR ? m.ciR[1] : null, floor: m.mde80,
+        floorShort: m.mde80 != null ? m.mde80.toFixed(2) : '', state: st, stateGlyph: REG_GLYPH[st], stateText: REG_STATE[st],
+        valueText: m.R.toFixed(2), rangeText: m.ciR ? '[' + m.ciR[0].toFixed(2) + ', ' + m.ciR[1].toFixed(2) + ']' : '',
+        floorText: m.mde80 != null ? 'floor ' + m.mde80.toFixed(2) : '',
+        aria: 'MJO amplitude of response R ' + m.R.toFixed(2) + ' ' + R.units + ' per unit MJO amplitude, ' + REG_STATE[st].toLowerCase() +
+              '; detection floor ' + (m.mde80 != null ? m.mde80.toFixed(2) : 'unavailable') + '; ' + pText(m.p) + '.'
+      }],
+      marks: m.rNull95 != null ? [{ row: 'mjo', value: m.rNull95, label: 'null 95th pct' }] : [],
+      axisTitle: 'R, the size of the response (' + R.units + ' per unit MJO amplitude)',
+      floorWord: 'detection floor', floorLegend: 'Detection floor for R', ciLegend: '95% interval for R',
+      fmtTick: function (v) { return String(parseFloat(v.toFixed(2))); },
+      ariaLabel: 'MJO response amplitude R against its detection floor and the 95th percentile of the no-effect permutation distribution'
+    });
+
+    var statements = tx('ul', 'reg-mjo-list');
+    function li(text) { statements.appendChild(tx('li', '', text)); }
+    li('R = ' + m.R.toFixed(2) + ' ' + R.units + ' per unit MJO amplitude (95% interval ' +
+       (m.ciR ? m.ciR[0].toFixed(2) + ' to ' + m.ciR[1].toFixed(2) : 'withheld') + '). Detection floor ' +
+       (m.mde80 != null ? m.mde80.toFixed(2) : 'unavailable') + '. Under no effect, 95% of the shuffles stay below ' +
+       (m.rNull95 != null ? m.rNull95.toFixed(2) : 'n/a') + '.');
+    if (sig && m.belowFloor) {
+      li('Nominally significant, but R is under the floor. The sample could not reliably resolve an amplitude this small, so ' +
+         'the size is probably overstated, and this is one lag of seven you could have chosen.');
+    } else if (!sig) {
+      li('Not significant. With R under the floor ' + (m.belowFloor ? 'as well, ' : 'not, ') +
+         'this reads as unresolved at this lag, not as no MJO effect.');
+    } else {
+      li('Significant and above the floor at this lag.');
+    }
+    box.appendChild(statements);
+
+    // where convection is at the phase of the largest response
+    if (m.convectionLonDegE != null) {
+      var opp = HF.regress.convectionLonAt(m.convectionLonByPhase, m.angleDeg + 180);
+      var hi = lonText(m.convectionLonDegE), lo = opp != null ? lonText(opp) : null;
+      box.appendChild(tx('h3', '', 'Where the convection is'));
+      var geo = tx('p', 'reg-mjo-geo');
+      geo.appendChild(document.createTextNode('The response is largest (' + R.up + ') when enhanced MJO convection is near '));
+      geo.appendChild(tx('strong', '', hi));
+      geo.appendChild(document.createTextNode(', over ' + lonSector(m.convectionLonDegE) + '.'));
+      if (lo) {
+        geo.appendChild(document.createTextNode(' It is smallest (' + R.down + ') with convection near '));
+        geo.appendChild(tx('strong', '', lo));
+        geo.appendChild(document.createTextNode(', over ' + lonSector(opp) + '.'));
+      }
+      box.appendChild(geo);
+      if (m.convectionLonCI && m.convectionLonCI[0] != null && m.convectionLonCI[1] != null) {
+        box.appendChild(tx('p', 'tele-note',
+          '95% interval for that longitude: from ' + lonText(m.convectionLonCI[0]) + ' eastward to ' + lonText(m.convectionLonCI[1]) +
+          ' (an arc of about ' + Math.round(m.angleCIWidth) + '° of phase).' +
+          (sig ? '' : ' Because the effect itself is not significant, the longitude at which it peaks is not reliably located; do not read it as a finding.')));
+      }
+    }
+    box.appendChild(tx('p', 'tele-note',
+      'This is a locally derived phase from the CPC 200-hPa velocity-potential field at ten longitudes, and it is NOT Wheeler–Hendon RMM. ' +
+      'There are no RMM octants here. Phase 0 is enhanced convection near 314°E (46°W), not the Maritime Continent, and the phase ' +
+      'advances eastward with time. Only the joint size R is a result; the cosine and sine parts depend on where phase 0 was put.'));
+  }
+
+  /* ----------------------------------------------------- lag comparison */
+
+  function sweepLagsStart() {
+    var out = HF.clear(rEl('regSweepOut'));
+    var token = ++reg.sweepToken;
+    var btn = rEl('regSweep');
+    btn.disabled = true;
+    var rows = [], lag = 0;
+    var status = tx('p', 'tele-note', 'Comparing lag 0 of 7…');
+    out.appendChild(status);
+    out.setAttribute('aria-busy', 'true');
+    function step() {
+      if (token !== reg.sweepToken) return;                 // controls changed: abandon
+      if (lag > 6) { finish(); return; }
+      status.textContent = 'Comparing lag ' + (lag + 1) + ' of 7…';
+      setTimeout(function () {
+        if (token !== reg.sweepToken) return;
+        var saved = reg.lag;
+        reg.lag = lag;
+        var key = regKey(), b = reg.cache[key];
+        if (!b) {
+          b = regCompute();
+          if (!b.error) { reg.cache[key] = b; reg.order.push(key); }
+        }
+        reg.lag = saved;
+        rows.push({ lag: lag, b: b });
+        lag++;
+        step();
+      }, 0);
+    }
+    function finish() {
+      btn.disabled = false;
+      out.removeAttribute('aria-busy');
+      HF.clear(out);
+      var hits = 0;
+      var trs = rows.map(function (x) {
+        var m = x.b.result && x.b.result.mjo;
+        if (!m || m.status !== 'ok') return [pentadText(x.lag), '—', '—', 'not fitted'];
+        if (m.p < 0.05) hits++;
+        var s = m.flag === 'detected' ? 'detected' : 'below floor';
+        return [pentadText(x.lag) + (x.lag === reg.lag ? ' (shown above)' : ''), m.R.toFixed(2), m.p.toFixed(3) + (m.p < 0.05 ? ' *' : ''), s];
+      });
+      out.appendChild(teleTable('MJO result at each lag from 0 to 6 pentads for ' + regLabel(),
+        ['Lag', 'R (' + REG_RESP[reg.response].units + ')', 'Permutation p', 'State'], trs));
+      var msg = hits + ' of 7 lags have p below 0.05 (marked *). Seven lags is seven looks at the same storms: ' +
+        'if the MJO did nothing, about 30% of the time at least one lag would pass anyway (a little less in practice, because neighbouring lags are correlated). ' +
+        'A single p of 0.025 at the lag you happened to pick is weaker evidence than it looks.';
+      out.appendChild(tx('p', 'tele-note', msg));
+      rEl('teleLive').textContent = 'MJO lag comparison for ' + regLabel() + ': ' + msg;
+    }
+    step();
+  }
+
+  function sweepReset() {
+    reg.sweepToken++;
+    HF.clear(rEl('regSweepOut')).removeAttribute('aria-busy');
+    var btn = rEl('regSweep');
+    if (btn) btn.disabled = false;
+  }
+
+  /* ---------------------------------------------------------- live region */
+
+  function announceReg(b) {
+    var r = b.result, R = REG_RESP[b.response];
+    var parts = [b.label + ': ' + fmtInt(r.n.events) + ' events in ' + r.n.seasons + ' seasons.'];
+    r.terms.forEach(function (t) {
+      var st = termState(t);
+      if (st === 'unavailable') { parts.push(termName(t) + ' unavailable.'); return; }
+      parts.push(termName(t) + ' ' + REG_STATE[st].toLowerCase() + ', ' + signed(t.coef, 2) + ' ' + R.units +
+                 ' per standard deviation, floor plus or minus ' + t.mde80.toFixed(2) + '.');
+    });
+    if (b.mjoOn && r.mjo && r.mjo.status === 'ok') {
+      parts.push('MJO at lag ' + r.mjo.lag + ': R ' + r.mjo.R.toFixed(2) + ', ' + pText(r.mjo.p) +
+                 (r.mjo.convectionLonDegE != null ? ', largest response with convection near ' + lonText(r.mjo.convectionLonDegE) : '') + '.');
+    }
+    parts.push('R squared ' + pct(r.r2) + ', of which calendar alone ' + pct(r.r2Base) + '.');
+    parts.push('A term below its floor means this sample cannot resolve an effect that size, not that there is none.');
+    rEl('teleLive').textContent = parts.join(' ');
+  }
+
+  /* ------------------------------------------------------------ controls */
+
+  function syncRegControls() {
+    rEl('regLagWrap').hidden = !reg.mjo;
+    var lagWord = pentadText(reg.lag);
+    rEl('regLagOut').textContent = lagWord;
+    rEl('regLag').setAttribute('aria-valuetext', lagWord + ' before the storm');
+    rEl('regRespHint').textContent = REG_RESP[reg.response].hint;
+  }
+
+  function buildReg() {
+    if (reg.built) return;
+    reg.built = true;
+    function radios(name, apply) {
+      Array.prototype.forEach.call(document.querySelectorAll('input[name="' + name + '"]'), function (r) {
+        r.addEventListener('change', function () { if (r.checked) apply(r.value); });
+      });
+    }
+    radios('regBasin', function (v) { reg.basin = v; sweepReset(); regRequest(); });
+    rEl('regResponse').addEventListener('change', function (e) { reg.response = e.target.value; sweepReset(); regRequest(); });
+    rEl('regInter').addEventListener('change', function (e) { reg.inter = e.target.checked; sweepReset(); regRequest(); });
+    rEl('regMjo').addEventListener('change', function (e) { reg.mjo = e.target.checked; sweepReset(); regRequest(); });
+    rEl('regLag').addEventListener('input', function (e) { reg.lag = Number(e.target.value); regRequest(); });
+    rEl('regSweep').addEventListener('click', sweepLagsStart);
+    renderRegMethod();
+  }
+
+  function renderRegMethod() {
+    var box = HF.clear(rEl('regMethodBody'));
+    function item(term, text) { box.appendChild(tx('h3', '', term)); box.appendChild(tx('p', '', text)); }
+    item('Two ways of asking',
+      'The composite map asks where the density of storms differs when an index is in a given state: it sorts events into thirds and ' +
+      'tests about 150 map cells. The regression asks whether the index moves the whole distribution: it keeps the index as a number and ' +
+      'asks one question of one number, such as the average latitude of a storm. They use the same events. The regression is the more ' +
+      'powerful test of the second question, because it keeps the size of the index and does not spend its power across a map, which is why ' +
+      'it can find an effect the map cannot. They do not contradict each other.');
+    item('The grey band',
+      'Beside every interval is the smallest true effect this sample would detect 80% of the time at the 5% level (the MDE80, 2.8 standard errors). ' +
+      'The estimate and its interval are drawn against it. If they sit clear of the band, an effect of that size could be resolved and was. ' +
+      'If they sit inside it, the sample could not have resolved an effect that small whatever the truth is.');
+    item('Below the floor is not “no effect”',
+      'An interval that includes zero is often read as “there is no effect”. For a sample this size that is the wrong reading: the interval ' +
+      'is wide enough to include real effects as large as the floor. This is why every interaction term is shown with its floor. On this archive ' +
+      'they sit inside it, which means the archive is too short to say whether these indices interact, not that they do not.');
+    item('Units and standardising',
+      'Each index is standardised over the events in the fit, so a coefficient is a change in the response per one standard deviation of the index, ' +
+      'in the response’s own units (degrees, hPa or hours). NAO and PNA are the 5-day mean ending on the day of the first fix; ONI is the ' +
+      'value for the month the storm began.');
+    item('What is held fixed and what is resampled',
+      'Month is a fixed effect, because the track moves hundreds of kilometres between October and February and the indices have their own seasonal ' +
+      'cycle. Intervals come from resampling whole seasons (2,000 draws, fixed seed), since storms in a season share a background state. Only complete ' +
+      'seasons are used, and each basin is its own model.');
+    item('Looking at many models',
+      'Two basins, four responses, interactions on or off, and seven MJO lags make dozens of models from the same storms. Each fit is honest about ' +
+      'itself; none of them is corrected for the others. A single detected term found by trying several is a lead to confirm. The effects that stay ' +
+      'put across responses and specifications are the ones to trust.');
+    item('The MJO',
+      'The phase is derived locally from the CPC 200-hPa velocity potential at ten longitudes and is not Wheeler–Hendon RMM, so there are no octants. ' +
+      'It enters as a cosine and sine pair weighted by amplitude, and the pair is tested jointly by shuffling phase among storms in the same season and ' +
+      'month. The result is reported as the longitude of the enhanced convection at the phase where the response is largest.');
+  }
+
+  function renderRegress() {
+    buildReg();
+    syncRegControls();
+    if (!teleEngine()) {
+      renderRegFailure('The teleconnection data or scripts did not load (' + (tele.failed || 'unknown error') + '), so nothing can be fitted here.');
+      return;
+    }
+    if (reg.shown && reg.shown.key === regKey() && !reg.shown.error) {
+      regSetPending(false);
+      renderRegPlot(reg.shown);          // new theme or width: same result, redrawn
+      renderRegMjo(reg.shown);
+      return;
+    }
+    regRequest(true);
+  }
+
+  var TELE_VIEW_NOTES = {
+    composite: 'Composite map: asks where the density of storms differs. It sorts events into thirds (or phases) of an index and tests about 150 map ' +
+      'cells, so it spends its power across the map and throws away how large the index was. On this archive it usually finds no significant cells.',
+    regress: 'Regression: asks whether the index moves the whole distribution, such as the average latitude, longitude or depth of a storm. It keeps ' +
+      'the index as a number and asks one question of one number, so it is the more powerful test of that question, and it says how large an effect ' +
+      'this sample could have seen. Same events, a different question: a shift of the whole track can be real when no single map cell passes.'
+  };
+
+  function setTeleView(v) {
+    tele.view = v;
+    var comp = v === 'composite';
+    tEl('teleCompView').hidden = !comp;
+    tEl('teleRegView').hidden = comp;
+    tEl('teleViewNote').textContent = TELE_VIEW_NOTES[v];
+    syncMapMode();
+    renderTele();
+    // Coming back to the composite: its result is already held and redrawn,
+    // so say what is on screen again (the live region still holds the
+    // regression's sentence, which is no longer visible).
+    if (comp && tele.shown && !tele.shown.error) announceTele(tele.shown);
   }
 
   /* ----------------------------------------------------------------- theme */

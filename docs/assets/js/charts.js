@@ -889,4 +889,246 @@ window.HF = window.HF || {};
     }
   };
 
+  /* ------------------------------------------------------- coefficient plot */
+
+  function escHtml(v) {
+    return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  /** A dot-and-whisker plot of regression coefficients, each with its own
+      detection floor. The floor is the point of the chart.
+
+      WHY A FLOOR ON THE PLOT. An interval that includes zero reads as "no
+      effect" to almost everyone, and for an underpowered sample that is the
+      wrong reading: the honest one is "an effect this big could not have been
+      seen here". So every row carries, behind its interval, a band from
+      -floor to +floor (the MDE80: the smallest true effect this sample would
+      find 80% of the time). The reader's whole job is then one glance per
+      row: is the dot, and the interval around it, inside its own band
+      (cannot be resolved) or clear of it (could be, and was)? Because the
+      floor differs row by row (it is 2.8 standard errors, and an interaction
+      term has a larger one than a main effect), each row's band is its own.
+
+      THREE STATES, NEVER COLOUR ALONE. Detected is a filled dot in the
+      accent colour; below-floor is a hollow ring in the muted ink; unavailable
+      has no dot at all, only the words "no interval". The state is also
+      spelled in the row's own label, with a glyph, and again in the aria-label
+      and the table view. Colour is the third channel here, not the first:
+      (accent vs muted ink: contrast >= 3:1 on both surfaces, normal-vision
+      delta E 28.1 light / 17.2 dark, CVD 25.6 / 16.6, from the dataviz
+      validator; the lightness-band and chroma checks it also prints are
+      categorical-palette tests and fail a gray by design.) A single signed
+      axis carries direction and size, so no second hue is needed for sign.
+
+      spec: {
+        rows: [{ key, label, sub, est, lo, hi, floor,
+                 state: 'detected' | 'below' | 'unavailable',
+                 stateText, valueText, rangeText, floorText, group, aria, tip }],
+        oneSided: false,        // true: axis starts at 0 and the band runs 0..floor (a magnitude, e.g. MJO R)
+        axisTitle: '',          // what x measures, with units
+        ends: ['', ''],         // plain-language meaning of the two directions (two-sided only)
+        fmtTick: fn(v),
+        marks: [{ row: key, value, label }],   // extra labelled tick on one row (oneSided: the null's 95th percentile)
+        legend: true, ariaLabel: '', floorWord: 'Detection floor'
+      }                                                                                    */
+  charts.coefPlot = function (container, spec) {
+    var rows = spec.rows || [];
+    if (!rows.length) return empty(container, spec.emptyText || 'Nothing to plot.', 120);
+    HF.clear(container);
+
+    var w = widthOf(container);
+    var wide = w >= 560;
+    var ROW = 54, GROUP = 26, TOP = 6;
+    var oneSided = !!spec.oneSided;
+
+    // Left gutter: wide enough for the longest label and its state line.
+    var gl = 0;
+    rows.forEach(function (r) {
+      gl = Math.max(gl, textWidth(r.label, 12.5, 650), textWidth((r.stateGlyph || '') + ' ' + (r.stateText || ''), 11, 500) + 4);
+    });
+    var LG = Math.min(Math.max(72, Math.ceil(gl) + 12), Math.floor(w * 0.34));
+    var RG = wide ? 104 : 8;
+    var plotX0 = LG, plotX1 = w - RG - 10, plotW = Math.max(120, plotX1 - plotX0);
+
+    // Domain: symmetric about zero so left and right have the same scale, and
+    // wide enough for every interval AND every floor.
+    var m = 0;
+    rows.forEach(function (r) {
+      [r.est, r.lo, r.hi, r.floor].forEach(function (v) { if (v != null && isFinite(v)) m = Math.max(m, Math.abs(v)); });
+    });
+    (spec.marks || []).forEach(function (k) { if (isFinite(k.value)) m = Math.max(m, Math.abs(k.value)); });
+    if (!(m > 0)) m = 1;
+    var step = niceStep(m * (oneSided ? 1 : 2), 5);
+    var dmax = Math.ceil(m * 1.06 / step) * step;
+    var dmin = oneSided ? 0 : -dmax;
+    function X(v) { return plotX0 + ((v - dmin) / (dmax - dmin)) * plotW; }
+
+    // Axis furniture, measured first so a narrow card wraps instead of
+    // clipping: the title breaks onto two lines when it is wider than the
+    // plot, and the two direction labels stack when they would touch.
+    var titleLines = [], xt = spec.axisTitle || '';
+    if (xt) {
+      if (textWidth(xt, 11, 600) <= plotW) titleLines = [xt];
+      else {
+        var cut = xt.lastIndexOf(' (');
+        titleLines = cut > 0 ? [xt.slice(0, cut), xt.slice(cut + 1)] : [xt];
+      }
+    }
+    var hasEnds = !oneSided && spec.ends && spec.ends[0];
+    var stackEnds = hasEnds && textWidth('← ' + spec.ends[0], 11) + textWidth(spec.ends[1] + ' →', 11) + 16 > plotW;
+    var AXIS = 20 + titleLines.length * 14 + (hasEnds ? (stackEnds ? 32 : 18) : 4);
+
+    // vertical layout, with a header row whenever the group changes
+    var y = TOP, layout = [], lastGroup = null, nGroups = 0;
+    rows.forEach(function (r) { if (r.group && (r.group !== lastGroup)) { nGroups++; lastGroup = r.group; } });
+    lastGroup = null;
+    rows.forEach(function (r) {
+      if (nGroups > 1 && r.group && r.group !== lastGroup) {
+        layout.push({ header: r.group, y: y });
+        y += GROUP;
+      }
+      lastGroup = r.group;
+      layout.push({ row: r, y: y });
+      y += ROW;
+    });
+    var plotBot = y, H2 = plotBot + AXIS;
+
+    var svg = svgEl('svg', { viewBox: '0 0 ' + w + ' ' + H2, width: w, height: H2, role: 'group', 'class': 'c-coef' });
+    svg.setAttribute('aria-label', spec.ariaLabel || 'Coefficient plot');
+    svg.style.width = '100%';
+    svg.style.height = H2 + 'px';
+    container.appendChild(svg);
+    var g = svgEl('g', {});
+    svg.appendChild(g);
+
+    // gridlines and tick labels
+    var t, fmt = spec.fmtTick || function (v) { return String(Math.round(v * 100) / 100); };
+    for (t = dmin; t <= dmax + 1e-9; t += step) {
+      var tv = Math.abs(t) < 1e-9 ? 0 : t;
+      g.appendChild(svgEl('line', { 'class': tv === 0 && !oneSided ? 'c-grid c-grid-zero-ghost' : 'c-grid', x1: X(tv), x2: X(tv), y1: TOP, y2: plotBot }));
+      var tl = svgEl('text', { 'class': 'c-tick', x: X(tv), y: plotBot + 14, 'text-anchor': 'middle' });
+      tl.textContent = fmt(tv);
+      g.appendChild(tl);
+    }
+    // the zero line: solid, heavier than the grid, because "no effect" lives here
+    g.appendChild(svgEl('line', { 'class': 'c-zero-line', x1: X(0), x2: X(0), y1: TOP, y2: plotBot }));
+    g.appendChild(svgEl('line', { 'class': 'c-axis', x1: plotX0, x2: plotX0 + plotW, y1: plotBot, y2: plotBot }));
+
+    titleLines.forEach(function (ln, k) {
+      axisTitle(g, ln, plotX0 + plotW / 2, plotBot + 30 + k * 14, 'middle', false, plotW);
+    });
+    if (hasEnds) {
+      var ey = plotBot + 30 + titleLines.length * 14 + 2;
+      var eL = svgEl('text', { 'class': 'c-ends', x: plotX0, y: ey, 'text-anchor': 'start' });
+      eL.textContent = '← ' + spec.ends[0];
+      var eR = svgEl('text', { 'class': 'c-ends', x: plotX0 + plotW, y: ey + (stackEnds ? 14 : 0), 'text-anchor': 'end' });
+      eR.textContent = spec.ends[1] + ' →';
+      g.appendChild(eL); g.appendChild(eR);
+    }
+
+    var labelledFloor = false;
+    layout.forEach(function (it) {
+      if (it.header) {
+        var hd = svgEl('text', { 'class': 'c-group', x: 4, y: it.y + 17 });
+        hd.textContent = it.header;
+        g.appendChild(hd);
+        g.appendChild(svgEl('line', { 'class': 'c-grid', x1: 0, x2: w - 8, y1: it.y + GROUP - 4, y2: it.y + GROUP - 4 }));
+        return;
+      }
+      var r = it.row, cy = it.y + ROW / 2;
+      var rg = svgEl('g', { 'class': 'c-coef-row is-' + r.state, tabindex: '0', role: 'img' });
+      rg.setAttribute('aria-label', r.aria || (r.label + ': ' + (r.stateText || '')));
+      g.appendChild(rg);
+
+      rg.appendChild(svgEl('rect', { 'class': 'c-coef-hit', x: 0, y: it.y, width: w - 4, height: ROW, rx: 4 }));
+
+      // left: name, then the state in words with its glyph
+      var nm = svgEl('text', { 'class': 'c-coef-label', x: 4, y: cy - 2 });
+      nm.textContent = r.label;
+      rg.appendChild(nm);
+      var st = svgEl('text', { 'class': 'c-coef-state', x: 4, y: cy + 13 });
+      st.textContent = (r.stateGlyph ? r.stateGlyph + ' ' : '') + (r.stateText || '');
+      rg.appendChild(st);
+
+      // the detection floor: a band, with a firm tick at each end
+      if (r.floor != null && isFinite(r.floor) && r.floor > 0) {
+        var fx0 = oneSided ? X(0) : X(-r.floor), fx1 = X(r.floor);
+        rg.appendChild(svgEl('rect', { 'class': 'c-floor', x: fx0, y: cy - 15, width: Math.max(1, fx1 - fx0), height: 30 }));
+        rg.appendChild(svgEl('line', { 'class': 'c-floor-end', x1: fx1, x2: fx1, y1: cy - 18, y2: cy + 18 }));
+        if (!oneSided) rg.appendChild(svgEl('line', { 'class': 'c-floor-end', x1: fx0, x2: fx0, y1: cy - 18, y2: cy + 18 }));
+        if (!labelledFloor && spec.floorWord !== false) {
+          labelledFloor = true;
+          var flText = (spec.floorWord || 'detection floor') + (oneSided ? '' : ' ±' + (r.floorShort || ''));
+          var flW = textWidth(flText, 10);
+          var fl = svgEl('text', { 'class': 'c-floor-label', x: Math.max(4, Math.min(fx1 + 4, w - 6 - flW)), y: it.y + 9, 'text-anchor': 'start' });
+          fl.textContent = flText;
+          rg.appendChild(fl);
+        }
+      }
+
+      // an extra labelled tick (the permutation null's 95th percentile)
+      (spec.marks || []).forEach(function (k) {
+        if (k.row !== r.key || !isFinite(k.value)) return;
+        rg.appendChild(svgEl('line', { 'class': 'c-mark', x1: X(k.value), x2: X(k.value), y1: cy - 20, y2: cy + 20 }));
+        var mt = svgEl('text', { 'class': 'c-floor-label', x: X(k.value) + 3, y: it.y + ROW - 4, 'text-anchor': 'start' });
+        mt.textContent = k.label;
+        rg.appendChild(mt);
+      });
+
+      if (r.state === 'unavailable' || r.est == null || !isFinite(r.est) || r.lo == null) {
+        var na = svgEl('text', { 'class': 'c-na', x: X(0) + 8, y: cy + 4, 'text-anchor': 'start' });
+        na.textContent = 'no interval';
+        rg.appendChild(na);
+      } else {
+        // the interval, with end caps, then the estimate on top
+        rg.appendChild(svgEl('line', { 'class': 'c-ci', x1: X(r.lo), x2: X(r.hi), y1: cy, y2: cy }));
+        rg.appendChild(svgEl('line', { 'class': 'c-ci-cap', x1: X(r.lo), x2: X(r.lo), y1: cy - 5, y2: cy + 5 }));
+        rg.appendChild(svgEl('line', { 'class': 'c-ci-cap', x1: X(r.hi), x2: X(r.hi), y1: cy - 5, y2: cy + 5 }));
+        rg.appendChild(svgEl('circle', { 'class': 'c-pt', cx: X(r.est), cy: cy, r: 5.5 }));
+      }
+
+      // right: the numbers, as text, so the plot is never the only place to read them
+      if (wide) {
+        var v1 = svgEl('text', { 'class': 'c-value c-coef-val', x: w - RG + 2, y: cy - 6, 'text-anchor': 'start' });
+        v1.textContent = r.valueText || '';
+        rg.appendChild(v1);
+        var v2 = svgEl('text', { 'class': 'c-coef-sub', x: w - RG + 2, y: cy + 8, 'text-anchor': 'start' });
+        v2.textContent = r.rangeText || '';
+        rg.appendChild(v2);
+        var v3 = svgEl('text', { 'class': 'c-coef-sub', x: w - RG + 2, y: cy + 21, 'text-anchor': 'start' });
+        v3.textContent = r.floorText || '';
+        rg.appendChild(v3);
+      }
+
+      // hover and keyboard focus show the same details
+      var tipHtml = r.tip ? r.tip : '<b>' + escHtml(r.label) + '</b><div class="t-row">' + escHtml(r.aria || '') + '</div>';
+      rg.addEventListener('mouseenter', function (e) { HF.showTip(tipHtml, e); });
+      rg.addEventListener('mousemove', HF.moveTip);
+      rg.addEventListener('mouseleave', HF.hideTip);
+      rg.addEventListener('focus', function () {
+        var bb = rg.getBoundingClientRect();
+        HF.showTip(tipHtml, { clientX: bb.left + Math.min(bb.width, 260), clientY: bb.top });
+      });
+      rg.addEventListener('blur', HF.hideTip);
+    });
+
+    // legend: a key for every mark in use (shape first, colour second)
+    if (spec.legend !== false) {
+      var used = {};
+      rows.forEach(function (r) { used[r.state] = true; });
+      var box = HF.el('p', { 'class': 'chart-legend c-coef-legend' });
+      function key(cls, text) {
+        var span = HF.el('span');
+        span.appendChild(HF.el('i', { 'class': 'c-key ' + cls }));
+        span.appendChild(document.createTextNode(text));
+        box.appendChild(span);
+      }
+      if (used.detected) key('c-key-pt-on', 'Detected: interval excludes zero and the estimate is above the floor');
+      if (used.below) key('c-key-pt-off', 'Below floor: this sample cannot resolve an effect this size');
+      key('c-key-floor', spec.floorLegend || 'Detection floor: the smallest true effect this sample would find 80% of the time');
+      key('c-key-ci', spec.ciLegend || '95% interval');
+      container.appendChild(box);
+    }
+  };
+
 })(window.HF.charts = window.HF.charts || {}, window.HF);
