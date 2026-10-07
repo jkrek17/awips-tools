@@ -11,9 +11,9 @@
 # with GitHub Pages from main at the root.
 #
 # Other projects may publish their own folders to the public repository
-# (listed in KEEP_FOLDERS, for example phillies/ from jkrek17/codex). Because
-# the push replaces the whole branch, those folders are copied forward from
-# the current public main before each push.
+# (listed in KEEP_FOLDERS, for example phillies/ from jkrek17/codex and lsr/
+# from jkrek17/lsrMap). Because the push replaces the whole branch, those
+# folders are copied forward from the current public main before each push.
 #
 # Runs after every live data export and daily collection, on a push that
 # changes the page, and by hand. Skips quietly when the variable or the
@@ -114,7 +114,7 @@ jobs:
         env:
           REPO: ${{ vars.PUBLIC_SITE_REPO }}
           TOKEN: ${{ secrets.WEB_TOKEN }}
-          KEEP_FOLDERS: phillies
+          KEEP_FOLDERS: phillies lsr
         run: |
           current="$RUNNER_TEMP/current"
           rm -rf "$current"
