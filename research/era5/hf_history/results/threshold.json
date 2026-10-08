@@ -1,0 +1,5 @@
+{
+ "metric": "g800",
+ "threshold_kt": 71.7,
+ "auc": 0.9896
+}

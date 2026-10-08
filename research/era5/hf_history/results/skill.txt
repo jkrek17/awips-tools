@@ -1,0 +1,22 @@
+Calibration seasons 2021-22 .. 2025-26: 469 archive events, 453 matched to an ERA5 track
+Index: max ERA5 instantaneous 10 m gust over ocean within 800 km of the centre, max over the track
+AUC 0.990 over 8138 tracks
+Threshold (forecast count = archive count): 71.7 kt
+  n_obs=456  n_fc=453  bias=0.99  pod=0.77  far=0.23  csi=0.63  hss=0.76
+
+Leave-one-season-out (threshold refitted without the held-out season)
+  2021-22  thr=71.7  n_obs=95  n_fc=94  bias=0.99  pod=0.76  far=0.23  csi=0.62  hss=0.75
+  2022-23  thr=71.7  n_obs=81  n_fc=80  bias=0.99  pod=0.79  far=0.20  csi=0.66  hss=0.78
+  2023-24  thr=71.4  n_obs=91  n_fc=107  bias=1.18  pod=0.86  far=0.27  csi=0.65  hss=0.77
+  2024-25  thr=71.6  n_obs=84  n_fc=89  bias=1.06  pod=0.71  far=0.33  csi=0.53  hss=0.68
+  2025-26  thr=72.3  n_obs=105  n_fc=85  bias=0.81  pod=0.70  far=0.13  csi=0.64  hss=0.77
+
+By basin, calibration seasons
+  atl  n_obs=236  n_fc=249  bias=1.06  pod=0.79  far=0.25  csi=0.62  hss=0.75
+  pac  n_obs=219  n_fc=204  bias=0.93  pod=0.75  far=0.20  csi=0.63  hss=0.76
+
+Transfer to earlier archive seasons at the fixed threshold
+  2001-2006  n_obs=205  n_fc=421  bias=2.05  pod=0.70  far=0.66  csi=0.30  hss=0.44  (own count-matching thr 77.5)
+  2006-2011  n_obs=416  n_fc=442  bias=1.06  pod=0.69  far=0.36  csi=0.50  hss=0.65  (own count-matching thr 72.3)
+  2011-2016  n_obs=421  n_fc=491  bias=1.17  pod=0.76  far=0.35  csi=0.54  hss=0.68  (own count-matching thr 73.5)
+  2016-2021  n_obs=388  n_fc=461  bias=1.19  pod=0.77  far=0.35  csi=0.54  hss=0.69  (own count-matching thr 73.2)
