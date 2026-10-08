@@ -1,0 +1,197 @@
+ERA5 hurricane-force-equivalent criterion: cross-period transfer test
+========================================================================
+The criterion is a PROXY: it reproduces what OPC's archive called hurricane
+force from ERA5 cyclone features. It cannot be validated before 2001. These
+results are a necessary condition for backward use, not a sufficient one.
+
+Seasons fetched: [2002, 2003, 2004, 2005, 2021, 2022, 2023, 2024, 2025]   (season N = 1 Sep N to 31 May N+1)
+Early window used: (2004, 2005) (both basins; archive RECORD_START = 2004)
+Late window used : (2021, 2022, 2023, 2024, 2025)
+Sensitivity S2   : early window plus Pacific (2002, 2003)
+NOT the nominal 2001-2005: the archive is short-counted before 2004-05 (Pacific
+begins Feb 2002, Atlantic Sep 2003), so uncovered HF cyclones would be labelled
+negative and the label noise would differ by period. Windows are 2 and 5 seasons.
+
+1. CANDIDATE AND POSITIVE COUNTS
+   cand = ERA5 closed lows >=4 hPa deep and <1005 hPa (month.py detector)
+   fit  = cand with smoothed centre <= 990 hPa; pos/neg/gray as in event_fields.py
+   tracks = linked cyclone tracks among fit candidates
+   season basin   cand    fit    pos    neg   gray  tracks  pos-rate(pos/(pos+neg))
+   2002  atl    4562   2078      0   2078      0     389   0.000   (archive not complete: excluded)
+   2002  pac    3892   1934     61   1618    255     307   0.036
+   2003  atl    4587   1870     30   1699    141     384   0.017   (archive not complete: excluded)
+   2003  pac    3934   1897     61   1500    336     321   0.039
+   2004  atl    4294   1613    108   1130    375     351   0.087
+   2004  pac    3942   1709     86   1345    278     309   0.060
+   2005  atl    4508   1812     97   1474    241     349   0.062
+   2005  pac    4097   1862     85   1514    263     373   0.053
+   2021  atl    4228   1882    177   1251    454     372   0.124
+   2021  pac    3936   1728     88   1293    347     301   0.064
+   2022  atl    4290   2047    101   1540    406     383   0.062
+   2022  pac    3855   1565    102   1192    271     287   0.079
+   2023  atl    4715   2038    101   1541    396     384   0.062
+   2023  pac    4063   1747    129   1192    426     323   0.098
+   2024  atl    4304   1797     94   1307    396     358   0.067
+   2024  pac    4070   1850     99   1383    368     325   0.067
+   2025  atl    4566   2176    170   1422    584     426   0.107
+   2025  pac    3639   1538     71   1244    223     292   0.054
+
+2. DETECTION OF ARCHIVE HF FIXES
+   An archive HF fix is 'detected' if an ERA5 candidate (>=4 hPa deep, <1005 hPa)
+   lies within 400 km at the same valid time. Fixes outside the domains or at
+   time steps ERA5 failed to serve are not counted. The pilot reported 95%.
+   Archive event class matters: 'tipjet' and 'nocentre' HF fixes have no analysed
+   cyclone centre (Greenland terrain jets mostly), so no centre detector can find
+   them; 'low' is the population a cyclone criterion is about.
+   season basin  low fixes  detected   rate   (centre<=990)   | tipjet/nocentre fixes  detected
+   2002  pac        68        61   89.7%    89.7%        |          0                 0
+   2003  atl        30        30  100.0%   100.0%        |          0                 0   (archive incomplete)
+   2003  pac        62        61   98.4%    98.4%        |          0                 0
+   2004  atl       126       115   91.3%    85.7%        |          8                 2
+   2004  pac        89        87   97.8%    96.6%        |          0                 0
+   2005  atl       106        98   92.5%    91.5%        |          0                 0
+   2005  pac        87        85   97.7%    97.7%        |          0                 0
+   2021  atl       195       181   92.8%    90.8%        |         13                 4
+   2021  pac        95        93   97.9%    92.6%        |          0                 0
+   2022  atl       106       102   96.2%    95.3%        |          3                 2
+   2022  pac       112       110   98.2%    93.8%        |          0                 0
+   2023  atl       111       102   91.9%    91.0%        |          2                 0
+   2023  pac       129       129  100.0%   100.0%        |          0                 0
+   2024  atl       104       100   96.2%    90.4%        |         15                 0
+   2024  pac       100        99   99.0%    99.0%        |          0                 0
+   2025  atl       179       176   98.3%    95.0%        |         25                 0
+   2025  pac        77        74   96.1%    92.2%        |          0                 0
+   TOTAL all   'low' HF fixes 1746, detected 1673 (95.8%), detected with centre <=990 hPa 1633 (93.5%); tipjet/nocentre 66, detected 8 (12.1%)
+   TOTAL early 'low' HF fixes 408, detected 385 (94.4%), detected with centre <=990 hPa 376 (92.2%); tipjet/nocentre 8, detected 2 (25.0%)
+   TOTAL late  'low' HF fixes 1208, detected 1166 (96.5%), detected with centre <=990 hPa 1135 (94.0%); tipjet/nocentre 58, detected 6 (10.3%)
+   EVENT level, class low     : 577 archive HF events with a fix in the domains; 555 have >=1 fix detected (96.2%)
+   EVENT level, class tipjet  : 12 archive HF events with a fix in the domains; 2 have >=1 fix detected (16.7%)
+   EVENT level, class nocentre: 4 archive HF events with a fix in the domains; 3 have >=1 fix detected (75.0%)
+
+3. ANALYSIS SAMPLE (fit population, pos + neg only)
+   early n=5839  pos=376  neg=5463  tracks=1381  pos-rate=0.064
+   late  n=14497  pos=1132  neg=13365  tracks=3443  pos-rate=0.078
+   gray (excluded from the primary fit): early 1157, late 3871
+
+   Feature medians (descriptive only; nothing here chose the model)
+                    gust kt area64 km2      grad  pmin hPa
+   early    pos        71.6     41424     11.70     964.4
+   early    neg        50.0         0      7.43     982.2
+   late     pos        74.8     55574     12.95     964.3
+   late     neg        50.0         0      7.23     982.3
+   Univariate AUC, pos vs neg, in-period (descriptive; pilot reported track-level 0.93):
+     gust        early 0.951   late 0.975
+     log area64  early 0.887   late 0.953
+     gradient    early 0.768   late 0.821
+     -pmin       early 0.881   late 0.883
+
+4. COEFFICIENTS: fit once per period, bootstrap SE over cyclone tracks (400 reps)
+   logit P(HF-equivalent) = b0 + sum(b_i x_i); x in the fixed units listed in the header
+   M1
+   term                   early      se      late      se late-early      se       z
+   b0                   -10.155   1.201   -11.391   1.059    -1.236   1.602   -0.77
+   gust/10kt              1.127   0.206     1.272   0.184     0.145   0.276    0.52
+   ln(1+A64/1e3km2)       0.452   0.111     0.686   0.085     0.234   0.140    1.68
+   grad hPa/100km        -0.046   0.024    -0.052   0.016    -0.006   0.029   -0.21
+   (pmin-980)/10         -0.859   0.134    -0.714   0.096     0.146   0.165    0.88
+   M0
+   term                   early      se      late      se late-early      se       z
+   b0                   -15.363   1.034   -19.109   0.809    -3.747   1.313   -2.85
+   gust/10kt              2.078   0.162     2.633   0.123     0.555   0.203    2.73
+   M0 gust at which P = 0.5 (kt): early 73.9 (se 1.1), late 72.6 (se 0.4), shift -1.4 kt (se 1.1)
+   Scale of that shift: in the late window 987 fit-population candidates have gust >= 73.9 kt and 1188 have >= 72.6 kt (20.4% more)
+   (the P=0.5 point sits where the class mix is, so it moves with the pos-rate;
+    the slope on gust is the cleaner drift measure)
+   M1 predicted P at pooled-mean cyclone: early-fit 0.012, late-fit 0.007
+   M1 predicted P at typical HF moment (pos median): early-fit 0.684, late-fit 0.775
+
+5. TRANSFER TEST (fit on one window, evaluate on the other; 95% CI from track bootstrap of both sets, 400 reps)
+   calibration: ratio = mean predicted / observed rate; slope = calibration slope
+   (1 = perfect, <1 = the fitted model is too extreme for the new period); shift =
+   log-odds offset the new period needs at slope 1.
+   mod direction                    AUC        AUC 95% CI     obs    pred   ratio   slope   shift ratio 95% CI
+   M1  fit early -> test late     0.980  [0.974, 0.983]   0.078   0.077    0.98    1.19    0.04  [0.86, 1.11]  slope CI [1.02, 1.35]
+   M1  fit late -> test early     0.960  [0.946, 0.970]   0.064   0.064    0.99    0.83    0.03  [0.86, 1.15]  slope CI [0.73, 0.93]
+   M0  fit early -> test late     0.975  [0.971, 0.979]   0.078   0.077    0.99    1.27    0.02  [0.84, 1.13]  slope CI [1.07, 1.51]
+   M0  fit late -> test early     0.951  [0.937, 0.963]   0.064   0.063    0.98    0.79    0.05  [0.83, 1.15]  slope CI [0.66, 0.94]
+
+   In-sample reference (fit and score on the same window; optimistic):
+     M1 early AUC 0.960
+     M1 late  AUC 0.981
+     M0 early AUC 0.951
+     M0 late  AUC 0.975
+
+   Reliability, M1, five equal-count bins of predicted probability on the test window
+   fit early -> test late
+     bin   n    predicted   observed
+     1   2900    0.001       0.000
+     2   2900    0.004       0.000
+     3   2899    0.008       0.001
+     4   2899    0.021       0.010
+     5   2899    0.350       0.380
+   fit late -> test early
+     bin   n    predicted   observed
+     1   1168    0.001       0.000
+     2   1168    0.002       0.001
+     3   1168    0.005       0.004
+     4   1168    0.011       0.016
+     5   1167    0.300       0.301
+
+   By basin (M1, same coefficients, AUC on that basin's test candidates)
+     fit early -> test late   atl 0.973 (n=7704, pos=643)   pac 0.987 (n=6793, pos=489)
+     fit late -> test early   atl 0.943 (n=2809, pos=205)   pac 0.977 (n=3030, pos=171)
+
+6. WITHIN-PERIOD BASELINE: leave one season out (fit on the window's other seasons)
+   M1 early hold out 2004 (train n=3170): AUC 0.953  pred/obs 1.02  cal-slope 0.86
+   M1 early hold out 2005 (train n=2669): AUC 0.965  pred/obs 1.00  cal-slope 1.15
+   M1 early mean AUC 0.959 (folds 0.953-0.965), mean pred/obs 1.01 (folds 1.00-1.02)
+   M1 late  hold out 2021 (train n=11688): AUC 0.980  pred/obs 0.96  cal-slope 0.96
+   M1 late  hold out 2022 (train n=11562): AUC 0.986  pred/obs 1.08  cal-slope 1.12
+   M1 late  hold out 2023 (train n=11534): AUC 0.982  pred/obs 1.02  cal-slope 1.10
+   M1 late  hold out 2024 (train n=11614): AUC 0.980  pred/obs 1.09  cal-slope 0.92
+   M1 late  hold out 2025 (train n=11590): AUC 0.975  pred/obs 0.88  cal-slope 0.93
+   M1 late  mean AUC 0.981 (folds 0.975-0.986), mean pred/obs 1.01 (folds 0.88-1.09)
+   M0 early hold out 2004 (train n=3170): AUC 0.949  pred/obs 0.98  cal-slope 0.85
+   M0 early hold out 2005 (train n=2669): AUC 0.953  pred/obs 1.03  cal-slope 1.17
+   M0 early mean AUC 0.951 (folds 0.949-0.953), mean pred/obs 1.01 (folds 0.98-1.03)
+   M0 late  hold out 2021 (train n=11688): AUC 0.976  pred/obs 0.97  cal-slope 0.93
+   M0 late  hold out 2022 (train n=11562): AUC 0.981  pred/obs 1.09  cal-slope 1.07
+   M0 late  hold out 2023 (train n=11534): AUC 0.976  pred/obs 0.99  cal-slope 1.16
+   M0 late  hold out 2024 (train n=11614): AUC 0.974  pred/obs 1.09  cal-slope 0.98
+   M0 late  hold out 2025 (train n=11590): AUC 0.967  pred/obs 0.89  cal-slope 0.91
+   M0 late  mean AUC 0.975 (folds 0.967-0.981), mean pred/obs 1.01 (folds 0.89-1.09)
+
+   Size-matched baseline for fit early -> test late: fit on any 2 late seasons,
+   test on the other 3 (10 combinations). Early window has only 2 seasons, so
+   the plain LOSO above trains the early window on 1 season and flatters nothing.
+   M1 train 2 late seasons -> test other 3: AUC mean 0.980 (range 0.977-0.983), pred/obs mean 1.00 (range 0.89-1.13)
+   M0 train 2 late seasons -> test other 3: AUC mean 0.975 (range 0.972-0.978), pred/obs mean 1.00 (range 0.89-1.11)
+
+7. HOW THE CROSS-PERIOD NUMBERS READ AGAINST THE WITHIN-PERIOD ONES
+   M1 fit early -> test late   cross AUC 0.980 vs within-late LOSO mean 0.981 (folds 0.975-0.986): gap -0.001;  pred/obs 0.98 vs within 1.01 (folds 0.88-1.09)
+   M1 fit late -> test early   cross AUC 0.960 vs within-early LOSO mean 0.959 (folds 0.953-0.965): gap +0.002;  pred/obs 0.99 vs within 1.01 (folds 1.00-1.02)
+   M0 fit early -> test late   cross AUC 0.975 vs within-late LOSO mean 0.975 (folds 0.967-0.981): gap +0.000;  pred/obs 0.99 vs within 1.01 (folds 0.89-1.09)
+   M0 fit late -> test early   cross AUC 0.951 vs within-early LOSO mean 0.951 (folds 0.949-0.953): gap +0.000;  pred/obs 0.98 vs within 1.01 (folds 0.98-1.03)
+
+8. PRE-SPECIFIED SENSITIVITIES (reported whatever they show; the primary result is Section 5)
+   S1 gray as negative, M1 fit early -> test late   AUC 0.964  pred/obs 1.09  slope 1.08  (n test 18368, pos 1132)
+   S1 gray as negative, M1 fit late -> test early   AUC 0.948  pred/obs 0.89  slope 0.90  (n test 6996, pos 376)
+   S2 early window + Pacific 2002-03: n=9079 pos=498
+   S2 M1 fit early2 -> test late  AUC 0.979  pred/obs 0.86  slope 1.16
+   S2 M1 fit late -> test early2  AUC 0.966  pred/obs 1.15  slope 0.85
+   S2 M1 within early2 LOSO (4 folds): AUC mean 0.974 (folds 0.952/0.965/0.996/0.983), pred/obs 0.80/0.76/2.02/1.13
+
+9. POST-HOC (added AFTER seeing that full-population AUC sits near 0.95-0.98; NOT part of the
+   pre-specified analysis, and the model is NOT refit or altered - only the test set is narrowed)
+   The primary negatives are mostly weak lows (median gust ~50 kt), which any gust feature
+   separates easily. Here the same primary-fit models are scored only on 'contender'
+   cyclones, raw minimum pressure <= 975 hPa, where the HF/non-HF call is genuinely hard.
+   M1 fit early -> test late   n=3879 pos=935 (83% of pos) AUC 0.956  obs 0.241 pred 0.238 ratio 0.99 slope 1.15
+   M1 fit late -> test early   n=1534 pos=319 (85% of pos) AUC 0.917  obs 0.208 pred 0.202 ratio 0.97 slope 0.73
+   M1 within-early LOSO on contenders: AUC mean 0.914 (folds 0.917/0.912), pred/obs 1.03/0.94
+   M1 within-late LOSO on contenders: AUC mean 0.957 (folds 0.950/0.973/0.959/0.956/0.949), pred/obs 0.95/1.10/0.99/1.07/0.89
+   M0 fit early -> test late   n=3879 pos=935 (83% of pos) AUC 0.947  obs 0.241 pred 0.195 ratio 0.81 slope 1.14
+   M0 fit late -> test early   n=1534 pos=319 (85% of pos) AUC 0.905  obs 0.208 pred 0.169 ratio 0.81 slope 0.67
+   M0 within-early LOSO on contenders: AUC mean 0.905 (folds 0.905/0.904), pred/obs 0.80/0.78
+   M0 within-late LOSO on contenders: AUC mean 0.946 (folds 0.942/0.955/0.952/0.947/0.936), pred/obs 0.85/0.96/0.83/0.93/0.75
+

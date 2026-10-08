@@ -45,3 +45,8 @@ data/hf_lows/hsf_lows.csv
 # re-downloadable and tens of MB each - three separate large files have come
 # within one `git add -A` of this history already.
 *.whl
+
+# research/era5/event_fields.csv is the labelled table criterion.py rebuilds in
+# seconds from the per-season event_fields_<season>.csv caches. Those caches are
+# kept because reproducing them cost 52 GB of ERA5 streaming; the join is cheap.
+research/era5/event_fields.csv

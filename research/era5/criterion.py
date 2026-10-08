@@ -80,7 +80,9 @@ def fit_logit(X, y, iters=50, ridge=1e-6, offset=None):
         w = np.maximum(p * (1 - p), 1e-9)
         H = A.T @ (A * w[:, None]) + pen
         g = A.T @ (y - p) - pen @ b
-        step = np.linalg.solve(H, g)
+        # lstsq + a capped step: calibration regressions on extreme predicted
+        # probabilities (near-zero weights) can make H singular
+        step = np.clip(np.linalg.lstsq(H + 1e-9 * np.eye(k + 1), g, rcond=None)[0], -3, 3)
         b = b + step
         if np.max(np.abs(step)) < 1e-8:
             break
@@ -328,6 +330,10 @@ def run():
             gb_l = -bs_l[:, 0] / bs_l[:, 1] * 10
             P("   M0 gust at which P = 0.5 (kt): early %.1f (se %.1f), late %.1f (se %.1f), shift %.1f kt (se %.1f)" % (
                 ge, gb_e.std(), gl, gb_l.std(), gl - ge, math.hypot(gb_e.std(), gb_l.std())))
+            allg = np.array([c["g500"] for c in covered if c["p"] <= P_FIT and c["season"] in LATE])
+            nhi, nlo = (allg >= max(ge, gl)).sum(), (allg >= min(ge, gl)).sum()
+            P("   Scale of that shift: in the late window %d fit-population candidates have gust >= %.1f kt and %d have >= %.1f kt (%.1f%% more)" % (
+                nhi, max(ge, gl), nlo, min(ge, gl), 100 * (nlo - nhi) / nhi))
             P("   (the P=0.5 point sits where the class mix is, so it moves with the pos-rate;")
             P("    the slope on gust is the cleaner drift measure)")
     # M1 shift expressed in decision terms: log-odds difference at the pooled mean feature vector
@@ -352,19 +358,20 @@ def run():
             p = predict(b, te_.X[:, cols])
             a = auc(te_.y, p)
             cal = calib(te_.y, p)
-            ba, br = [], []
+            ba, br, bsl = [], [], []
             for _ in range(NBOOT):
                 i1, i2 = boot_idx(tr_), boot_idx(te_)
                 bb = fit_logit(tr_.X[i1][:, cols], tr_.y[i1])
                 pp = predict(bb, te_.X[i2][:, cols])
                 ba.append(auc(te_.y[i2], pp))
                 br.append(pp.mean() / te_.y[i2].mean())
-            res[(mname, tn)] = (a, cal, np.percentile(ba, [2.5, 97.5]), np.percentile(br, [2.5, 97.5]))
+                bsl.append(calib(te_.y[i2], pp)["slope"])
+            res[(mname, tn)] = (a, cal, np.percentile(ba, [2.5, 97.5]), np.percentile(br, [2.5, 97.5]), np.percentile(bsl, [2.5, 97.5]))
     P("   %-3s %-24s %7s %17s %7s %7s %7s %7s %7s %s" % (
         "mod", "direction", "AUC", "AUC 95% CI", "obs", "pred", "ratio", "slope", "shift", "ratio 95% CI"))
-    for (mname, tn), (a, c, ci, cr) in res.items():
-        P("   %-3s %-24s %7.3f  [%5.3f, %5.3f] %7.3f %7.3f %7.2f %7.2f %7.2f  [%.2f, %.2f]" % (
-            mname, tn, a, ci[0], ci[1], c["obs"], c["pred"], c["ratio"], c["slope"], c["shift"], cr[0], cr[1]))
+    for (mname, tn), (a, c, ci, cr, cs) in res.items():
+        P("   %-3s %-24s %7.3f  [%5.3f, %5.3f] %7.3f %7.3f %7.2f %7.2f %7.2f  [%.2f, %.2f]  slope CI [%.2f, %.2f]" % (
+            mname, tn, a, ci[0], ci[1], c["obs"], c["pred"], c["ratio"], c["slope"], c["shift"], cr[0], cr[1], cs[0], cs[1]))
     P("")
     P("   In-sample reference (fit and score on the same window; optimistic):")
     for mname, cols in MODELS.items():
@@ -431,7 +438,7 @@ def run():
     P("7. HOW THE CROSS-PERIOD NUMBERS READ AGAINST THE WITHIN-PERIOD ONES")
     for mname in MODELS:
         for tn, nm in (("fit early -> test late", "late"), ("fit late -> test early", "early")):
-            a, c, ci, cr = res[(mname, tn)]
+            a, c, ci, cr, cs = res[(mname, tn)]
             bm = base[(mname, nm)]
             P("   %s %-24s cross AUC %.3f vs within-%s LOSO mean %.3f (folds %.3f-%.3f): gap %+.3f;  pred/obs %.2f vs within %.2f (folds %.2f-%.2f)" % (
                 mname, tn, a, nm, bm[0], bm[1], bm[2], a - bm[0], c["ratio"], bm[3], bm[4], bm[5]))
@@ -470,6 +477,32 @@ def run():
             np.mean(aucs), "/".join("%.3f" % a for a in aucs), "/".join("%.2f" % r for r in ratios)))
     else:
         P("   S2 skipped (Pacific 2002/2003 not fetched)")
+    P("")
+    # ---- 9. post-hoc harder subset
+    P("9. POST-HOC (added AFTER seeing that full-population AUC sits near 0.95-0.98; NOT part of the")
+    P("   pre-specified analysis, and the model is NOT refit or altered - only the test set is narrowed)")
+    P("   The primary negatives are mostly weak lows (median gust ~50 kt), which any gust feature")
+    P("   separates easily. Here the same primary-fit models are scored only on 'contender'")
+    P("   cyclones, raw minimum pressure <= 975 hPa, where the HF/non-HF call is genuinely hard.")
+    for mname, cols in MODELS.items():
+        for tn, tr_, te_ in (("fit early -> test late", early, late), ("fit late -> test early", late, early)):
+            b = fitmodel(tr_, cols)
+            m = (te_.X[:, 3] * 10 + 980) <= 975
+            p = predict(b, te_.X[m][:, cols])
+            c = calib(te_.y[m], p)
+            P("   %s %-24s n=%d pos=%d (%.0f%% of pos) AUC %.3f  obs %.3f pred %.3f ratio %.2f slope %.2f" % (
+                mname, tn, m.sum(), te_.y[m].sum(), 100 * te_.y[m].sum() / te_.y.sum(),
+                auc(te_.y[m], p), c["obs"], c["pred"], c["ratio"], c["slope"]))
+        for nm, d, ss in (("early", early, EARLY), ("late", late, LATE)):
+            aucs, ratios = [], []
+            for s in ss:
+                te = subset(d, d.season == s)
+                tr_ = subset(d, d.season != s)
+                m = (te.X[:, 3] * 10 + 980) <= 975
+                p = predict(fitmodel(tr_, cols), te.X[m][:, cols])
+                aucs.append(auc(te.y[m], p)); ratios.append(p.mean() / te.y[m].mean())
+            P("   %s within-%s LOSO on contenders: AUC mean %.3f (folds %s), pred/obs %s" % (
+                mname, nm, np.mean(aucs), "/".join("%.3f" % a for a in aucs), "/".join("%.2f" % r for r in ratios)))
     P("")
     open(OUT, "w").write(buf.getvalue())
     print("wrote", OUT)
