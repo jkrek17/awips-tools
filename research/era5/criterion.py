@@ -128,6 +128,13 @@ class D:
     pass
 
 
+def feature_matrix(rows):
+    """The four model features, in the fixed units of the header (columns match
+    FEATS). Single definition shared by build() and series.py."""
+    return np.array([[c["g500"] / 10.0, math.log1p(c["a64"] / 1000.0), c["gradmax"],
+                      (c["pmin"] - 980.0) / 10.0] for c in rows]).reshape(len(rows), 4)
+
+
 def build(cands, seasons, cls=("pos", "neg"), pac_only_seasons=()):
     rows = []
     for c in cands:
@@ -141,8 +148,7 @@ def build(cands, seasons, cls=("pos", "neg"), pac_only_seasons=()):
     d = D()
     d.rows = rows
     d.y = np.array([1 if c["cls"] == "pos" else 0 for c in rows], float)
-    d.X = np.array([[c["g500"] / 10.0, math.log1p(c["a64"] / 1000.0) , c["gradmax"],
-                     (c["pmin"] - 980.0) / 10.0] for c in rows])
+    d.X = feature_matrix(rows)
     d.season = np.array([c["season"] for c in rows])
     d.basin = np.array([c["basin"] for c in rows])
     tr = {}
