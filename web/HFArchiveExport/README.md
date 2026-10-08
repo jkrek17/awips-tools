@@ -19,8 +19,9 @@ user who deployed it** (the sheet's owner, who already has access) and to be
 **accessible to anyone**. The deployed `/exec` URL then runs with the
 owner's read access no matter who requests it, reads the two tabs, and
 re-serves them as plain CSV text. The restricted sheet itself never changes
-its sharing; only this narrow, read-only, two-tabs-and-nothing-else output
-is reachable from outside NOAA. A shared token is required on every request
+its sharing; only this narrow, two-tabs-and-nothing-else output is
+reachable from outside NOAA. (The one write path, the site's QC edits, is
+off until `setupQc()` mints its own token; see **QC edits from the site**.) A shared token is required on every request
 so the URL isn't immediately useful to anyone who happens to see it in a
 log or a browser history - see **Security** below for exactly what that
 does and does not protect.
@@ -35,7 +36,8 @@ exactly one hand-ported set of rules to keep in sync, not two.
 ## Files
 
 - `Code.gs` - server side: `doGet()` entry point, token check, loose tab-name
-  matching, CSV rendering, `setup()` and `runSelfTest()`.
+  matching, CSV rendering, `setup()` and `runSelfTest()`; plus `doPost()`
+  and `setupQc()` for the site's QC edits (see **QC edits from the site**).
 - `appsscript.json` - manifest. `webapp.access` is `ANYONE_ANONYMOUS` and
   `webapp.executeAs` is `USER_DEPLOYING`; see **Security** for exactly what
   that combination means.
@@ -121,7 +123,9 @@ rename that breaks the match is easy to diagnose.
 
 ## Security
 
-Read this before putting anything new in the spreadsheet.
+Read this before putting anything new in the spreadsheet. Everything here
+is about the read path; the QC write path has its own token and its own
+notes under **QC edits from the site**.
 
 - **What this exposes.** Anyone who has both the deployment URL and the
   current token can fetch the full, current contents of the "HF Data - Atl"
@@ -175,3 +179,36 @@ Read this before putting anything new in the spreadsheet.
    publishing box's config, replacing the old one.
 3. No redeploy is required - Script Properties are read live on every
    request, not baked into a deployment.
+
+## QC edits from the site
+
+The site has a QC mode (open the page with `?qc`; `?qc=0` turns it off
+again in that browser). It lists suspect archive data and lets the
+archive's owner correct a fix in place. Corrections are written to this
+sheet by `doPost()`, so the sheet stays the one source of truth and the
+next `tools/publish.py` run picks them up.
+
+**Turning it on.** After pushing this version (`clasp push`), run
+`setupQc()` once from the editor. It mints `QC_TOKEN`, a second secret
+separate from `EXPORT_TOKEN`, and logs it. Redeploy in place so the `/exec`
+URL stays the same, then open the site with `?qc`, open the QC tab, and
+paste the `/exec` URL and the QC token into its settings. Both stay in that
+browser's local storage; neither is ever part of the published page.
+
+**What a write can do.** Only change the date, latitude, longitude,
+category or pressure of one existing row in the Atlantic or Pacific tab.
+The row must be the only one with that ID and time (a duplicated time is
+told apart by the values the page shows), and each changed value must still
+match the sheet, so a page built before someone else's correction cannot
+overwrite it. Values are range-checked. Every edit, and every flag marked
+"fine", is appended to a `QC log` tab (created on first use) with the old
+and new values; the page reads that tab to know what has been handled.
+
+**Security.** The export token cannot write: the publishing box holds it,
+and it must never be able to edit the archive. Treat the QC token like a
+password to the sheet. Rotate it by re-running `setupQc()`; delete the
+`QC_TOKEN` script property to turn editing off entirely.
+
+`tests/qc/test_qc.js` runs this write path under node against an in-memory
+sheet, and `tests/qc/serve_mock.js` serves it locally for trying the page
+without touching the real sheet.

@@ -870,6 +870,7 @@
       note.appendChild(ul);
       body.appendChild(note);
     }
+    if (HF.qc) HF.qc.decorateDetail(low, body);
   }
 
   /* ------------------------------------------------------------- view mode
@@ -2181,6 +2182,8 @@
       // composite deliberately ignores (see the teleconnections section), so
       // they are hidden there rather than left to look like they apply.
       document.body.classList.toggle('tele-active', state.tab === 'tele');
+      // QC lists the whole archive's flags, so the filters do not apply either.
+      document.body.classList.toggle('qc-active', state.tab === 'qc');
       if (state.tab !== 'map') setPlaying(false, true);   // nothing to watch; do not run unseen
       placeGlobe();
       syncMapMode();
@@ -3922,6 +3925,15 @@
       loadingEl.hidden = true;
       if (mainEl) mainEl.hidden = false;
       if (kpisEl) kpisEl.hidden = false;
+
+      if (HF.qc) {
+        HF.qc.init(DATA, {
+          select: function (key) {
+            var low = LOWS.filter(function (l) { return l.key === key; })[0];
+            if (low) select(low);
+          }
+        });
+      }
 
       HF.globe.init('globe', select);
       HF.globe.applyTheme();

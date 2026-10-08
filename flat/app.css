@@ -857,7 +857,8 @@ input.pb-scrub::-moz-range-thumb {
 /* The Filters bar, active-filter chips and KPI strip describe the filtered
    archive; a composite ignores them (it is the whole archive's complete
    seasons against a subset), so they step aside rather than look live. */
-.tele-active .filters, .tele-active .active-filters, .tele-active .kpis { display: none; }
+.tele-active .filters, .tele-active .active-filters, .tele-active .kpis,
+.qc-active .filters, .qc-active .active-filters, .qc-active .kpis { display: none; }
 
 .tele-grid {
   display: grid; gap: var(--sp-4); align-items: start;
@@ -1097,3 +1098,26 @@ fieldset.tele-field, .tele-field { margin: 0 0 var(--sp-3); }
 .practice-table tbody th { text-align: left; font-weight: 600; }
 .practice-table .practice-sub { display: block; font-size: var(--fs-xs); color: var(--ink-muted); }
 #practiceH:focus { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* ------------------------------------------------------------- QC mode
+   assets/js/qc.js; present only when the page is opened with ?qc. */
+.btn-sm { height: auto; min-height: 28px; padding: 2px var(--sp-2); font-size: var(--fs-sm); }
+.qc-settings { padding: var(--sp-3) var(--sp-4); margin: 0 0 var(--sp-4); }
+.qc-settings summary { cursor: pointer; font-weight: 600; }
+.qc-settings-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-2); }
+.qc-input-wide, .qc-form input {
+  font: inherit; font-size: var(--fs-base); color: var(--ink); background: var(--surface);
+  border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 0 var(--sp-2);
+  height: var(--control-h);
+}
+.qc-input-wide { flex: 1 1 260px; min-width: 0; }
+.qc-table td { vertical-align: top; }
+.qc-detail { color: var(--ink-2); font-size: var(--fs-sm); max-width: 60ch; }
+.qc-drawer { margin-top: var(--sp-4); }
+.qc-flaglist { margin: 0 0 var(--sp-3); padding-left: 1.2em; font-size: var(--fs-sm); }
+.qc-flaglist li + li { margin-top: var(--sp-1); }
+.qc-fixes tr.qc-marked td { background: var(--badge-bg); }
+.qc-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sp-2); padding: var(--sp-2) 0; }
+.qc-form label { display: flex; flex-direction: column; font-size: var(--fs-xs); color: var(--ink-muted); }
+.qc-form label input { width: auto; }
+.qc-form .tool-note { flex-basis: 100%; }

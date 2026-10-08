@@ -63,6 +63,7 @@
   <button type="button" role="tab" class="tab" data-panel="events" aria-selected="false">Events</button>
   <button type="button" role="tab" class="tab" data-panel="tele" aria-selected="false">Teleconnections</button>
   <button type="button" role="tab" class="tab" data-panel="method" aria-selected="false">Method</button>
+  <button type="button" role="tab" class="tab" data-panel="qc" aria-selected="false" id="tab-qc-btn" hidden>QC</button>
 </nav>
 </div>
 
@@ -573,6 +574,14 @@
   </section>
 
   <!-- Method ----------------------------------------------------------- -->
+  <!-- QC ----------------------------------------------------------------
+       Only present when the page is opened with ?qc (assets/js/qc.js removes
+       this panel and its tab otherwise). Lists suspect archive data and saves
+       corrections to the Google Sheet through web/HFArchiveExport. -->
+  <section class="panel" id="panel-qc" role="tabpanel">
+    <div id="qcRoot"></div>
+  </section>
+
   <section class="panel" id="panel-method" role="tabpanel">
     <div class="card prose">
       <h2>What is in the archive</h2>
@@ -778,6 +787,7 @@
 <script src="coastlines.js"></script>
 <script src="currents.js"></script>
 <script src="globe.js"></script>
+<script src="qc.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

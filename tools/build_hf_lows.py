@@ -1532,6 +1532,43 @@ def practice_summary(out, qc):
     return summary
 
 
+# Worklists from other tools that the page's QC mode lists beside the build's
+# own notes: tools/track_hsf.py --archive-qc-out (fixes whose High Seas
+# analysis puts the same-pressure low far away) and tools/review_collisions.py
+# (archive ids that the High Seas analyses carry as one storm). Both optional.
+POSITION_SUSPECTS_PATH = os.path.join("data", "hf_lows", "archive_position_suspects.csv")
+COLLISION_PAIRS_PATH = os.path.join("data", "hf_lows", "collision_pairs.csv")
+
+
+def read_qc_worklists():
+    """{"positionSuspects": [...], "collisions": [...]} for the page's QC mode;
+    a missing file gives an empty list."""
+    def rows(rel):
+        path = os.path.join(ROOT, rel)
+        if not os.path.exists(path):
+            return []
+        with open(path, newline="", encoding="utf-8") as fh:
+            return list(csv.DictReader(line for line in fh if not line.startswith("#")))
+
+    def yyyymmddhh(iso):
+        return int(iso[0:4] + iso[5:7] + iso[8:10] + iso[11:13])
+
+    suspects = [{"basin": r["basin"], "id": r["event_id"], "date": yyyymmddhh(r["valid"]),
+                 "lat": float(r["archive_lat"]), "lon": float(r["archive_lon"]),
+                 "pres": float(r["pres"]) if r["pres"] else None,
+                 "hsfLat": float(r["hsf_lat"]), "hsfLon": float(r["hsf_lon"]),
+                 "nm": int(r["distance_nm"]), "ktAsIs": int(r["speed_kt_as_archived"]),
+                 "ktMoved": int(r["speed_kt_if_moved"])}
+                for r in rows(POSITION_SUSPECTS_PATH)]
+    collisions = [{"basin": r["basin"], "id": r["event"], "other": r["other_event"],
+                   "kind": r["kind"], "notes": int(r["notes"]),
+                   "gapH": int(r["gap_h"]) if r["gap_h"] else None,
+                   "linkKt": int(r["link_kt"]) if r["link_kt"] else None,
+                   "minSimNm": int(r["min_sim_nm"]) if r["min_sim_nm"] else None}
+                  for r in rows(COLLISION_PAIRS_PATH)]
+    return {"positionSuspects": suspects, "collisions": collisions}
+
+
 def build(data_source: str | None = None, precursors: str | None = BACKFILL_PATH):
     """Build the payload. `precursors` is the backfill CSV (relative to ROOT, or
     absolute); None, or a path that does not exist, builds without a backfill."""
@@ -1609,7 +1646,8 @@ def build(data_source: str | None = None, precursors: str | None = BACKFILL_PATH
         # Backfill provenance and coverage by season and basin; null when no
         # precursors file was read.
         "backfill": backfill,
-        "qc": {"counts": dict(sorted(qc.counts.items())), "notes": qc.notes},
+        "qc": {"counts": dict(sorted(qc.counts.items())), "notes": qc.notes,
+               **read_qc_worklists()},
     }
     return payload
 
