@@ -1734,7 +1734,7 @@ def main():
 
     data_dir = os.path.join(ROOT, "docs", "data")
     os.makedirs(data_dir, exist_ok=True)
-    compact = json.dumps(payload, separators=(",", ":"), allow_nan=False)
+    compact = compact_json(payload)
 
     with open(os.path.join(data_dir, "hf-lows.json"), "w", encoding="utf-8") as fh:
         fh.write(compact)
@@ -1748,6 +1748,25 @@ def main():
 
     size = os.path.getsize(os.path.join(data_dir, "hf-lows.js"))
     print(f"wrote docs/data/hf-lows.js ({size / 1024:.0f} KB), hf-lows.json, qc-report.txt")
+
+
+def compact_json(payload):
+    """The payload exactly as docs/data/hf-lows.json and the .js twin carry it.
+    tools/publish.py writes through this too, so the two writers agree."""
+    return json.dumps(whole_floats_as_ints(payload), separators=(",", ":"), allow_nan=False)
+
+
+def whole_floats_as_ints(obj):
+    """Write 974.0 as 974. JavaScript has one number type, so the page reads
+    the same values; the payload loses ~80 KB of ".0" on pressures and
+    whole-degree positions."""
+    if isinstance(obj, float) and obj.is_integer():
+        return int(obj)
+    if isinstance(obj, dict):
+        return {k: whole_floats_as_ints(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [whole_floats_as_ints(v) for v in obj]
+    return obj
 
 
 if __name__ == "__main__":
