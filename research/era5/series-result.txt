@@ -5,48 +5,48 @@ archive would have called the cyclone hurricane force, from ERA5 cyclone feature
 extended hurricane-force record, it cannot be validated before the archive's RECORD_START (2004),
 and its seasonal sums are model expectations in cyclone-moments, not observed event counts.
 
-Seasons scored: 1979..2025 (13: 1979, 1980, 1998, 1999, 2002, 2003, 2004, 2005, 2021, 2022, 2023, 2024, 2025)
-Fit seasons   : full (2004, 2005, 2021, 2022, 2023, 2024, 2025) | early (2004, 2005) | late (2021, 2022, 2023, 2024, 2025)
-Pre-2001 seasons in this run: 4 (of 22: 1979-2000).
+Seasons scored: 1979..2025 (47: 1979, 1980, 1981, 1982, 1983, 1984, 1985, 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025)
+Fit seasons   : full (2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025) | early (2004, 2005) | late (2021, 2022, 2023, 2024, 2025)
+Pre-2001 seasons in this run: 22 (of 22: 1979-2000).
 
-Stationarity flags at the 95% level: none raised.
-Borderline (not significant at 95% given the small n, but above |t|=2): sum p_full TRENDS across the pre-2001 seasons available - the ERA5 gate says the fields do not (slope +55.21 /decade, t=4.03, critical 4.30 at n=4)
-Borderline (not significant at 95% given the small n, but above |t|=2): series (all rows) minus archive pos moments TRENDS in the overlap (slope +19.73 /decade, t=2.46, critical 2.57 at n=7)
-Power caveat: 4 pre-2001 season(s) cached; the overlap is two clusters 15 years apart. Read section 5 before using any trend.
-Overlap, mean per season 2004-2005 -> 2021-2025: series sum (all rows) +33%, fitted-population sum +21%, archive pos moments +21%, archive events +25%.
+*** STATIONARITY FLAG(S): ***
+*** sum p_full TRENDS across the pre-2001 seasons available - the ERA5 gate says the fields do not (slope +35.39 /decade, t=3.19 > 2.09 critical, n=22)
+*** series (all rows) minus archive pos moments TRENDS in the overlap (slope +30.39 /decade, t=2.63 > 2.09 critical, n=22)
+Power caveat: 22 pre-2001 season(s) cached; the overlap is two clusters 15 years apart. Read section 5 before using any trend.
+Overlap, mean per season 2004-2005 -> 2021-2025: series sum (all rows) +31%, fitted-population sum +19%, archive pos moments +21%, archive events +25%.
 
 1. COVERAGE AND FITS
    season N = 1 Sep N to 31 May N+1; sampled 6-hourly, both archive domains.
-   seasons cached when this ran : 1979..2025 (13: 1979, 1980, 1998, 1999, 2002, 2003, 2004, 2005, 2021, 2022, 2023, 2024, 2025)
-     pre-2001 (no archive exists)        : 1979..1999 (4: 1979, 1980, 1998, 1999)
-     2001-2003 (archive incomplete)      : 2002..2003 (2: 2002, 2003)
-     2004 onward (archive complete: overlap, fit seasons) : 2004..2025 (7: 2004, 2005, 2021, 2022, 2023, 2024, 2025)
-   p_full  fitted on seasons : (2004, 2005, 2021, 2022, 2023, 2024, 2025)   (n=20336 pos=1508 neg=18828, tracks=4824)
+   seasons cached when this ran : 1979..2025 (47: 1979, 1980, 1981, 1982, 1983, 1984, 1985, 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025)
+     pre-2001 (no archive exists)        : 1979..2000 (22: 1979, 1980, 1981, 1982, 1983, 1984, 1985, 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000)
+     2001-2003 (archive incomplete)      : 2001..2003 (3: 2001, 2002, 2003)
+     2004 onward (archive complete: overlap, fit seasons) : 2004..2025 (22: 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025)
+   p_full  fitted on seasons : (2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025)   (n=64253 pos=4661 neg=59592, tracks=15230)
    p_early fitted on seasons : (2004, 2005)   (n=5839 pos=376 neg=5463, tracks=1381)
    p_late  fitted on seasons : (2021, 2022, 2023, 2024, 2025)   (n=14497 pos=1132 neg=13365, tracks=3443)
    Fits are criterion.py's, unchanged: plain logistic, M1 = gust + ln(1+A64) + gradient + pressure depth,
    M0 = gust alone, population = smoothed centre <= 990 hPa, pos/neg only (gray excluded), Atlantic < 2004 never fitted.
    Pacific 2002-2003 are scored in the series but, as in the primary test, not fitted (archive incomplete).
 
-   Series population: 48299 scored rows (centre <= 990 hPa). 61082 other ERA5 candidates (centre > 990 hPa, weaker lows)
-   are not scored: outside the criterion's fitted domain. Of the 1548 archive-HF-matched candidates in 2004+, 40 (2.6%)
+   Series population: 174700 scored rows (centre <= 990 hPa). 219579 other ERA5 candidates (centre > 990 hPa, weaker lows)
+   are not scored: outside the criterion's fitted domain. Of the 4784 archive-HF-matched candidates in 2004+, 123 (2.6%)
    fall in that unscored group - a floor on what the series can ever represent.
-   Step coverage (ERA5 time steps served / expected): 1979 1096/1096, 1980 1092/1092, 1998 1092/1092, 1999 1096/1096, 2002 1092/1092, 2003 1096/1096, 2004 1092/1092, 2005 1092/1092, 2021 1092/1092, 2022 1092/1092, 2023 1096/1096, 2024 1092/1092, 2025 1092/1092
+   Step coverage (ERA5 time steps served / expected): 1979 1096/1096, 1980 1092/1092, 1981 1092/1092, 1982 1092/1092, 1983 1096/1096, 1984 1092/1092, 1985 1092/1092, 1986 1092/1092, 1987 1096/1096, 1988 1092/1092, 1989 1092/1092, 1990 1092/1092, 1991 1096/1096, 1992 1092/1092, 1993 1092/1092, 1994 1092/1092, 1995 1096/1096, 1996 1092/1092, 1997 1092/1092, 1998 1092/1092, 1999 1096/1096, 2000 1092/1092, 2001 1092/1092, 2002 1092/1092, 2003 1096/1096, 2004 1092/1092, 2005 1092/1092, 2006 1092/1092, 2007 1096/1096, 2008 1092/1092, 2009 1092/1092, 2010 1092/1092, 2011 1096/1096, 2012 1092/1092, 2013 1092/1092, 2014 1092/1092, 2015 1096/1096, 2016 1092/1092, 2017 1092/1092, 2018 1092/1092, 2019 1096/1096, 2020 1092/1092, 2021 1092/1092, 2022 1092/1092, 2023 1096/1096, 2024 1092/1092, 2025 1092/1092
    No missing time steps in any cached season.
 
    Coefficients (logit P = b0 + sum b_i x_i; bootstrap SE over cyclone tracks, 200 reps)
    M1
    term                    full      se     early      se      late      se
-   b0                   -10.994   0.800   -10.155   1.237   -11.391   1.094
-   gust/10kt              1.227   0.137     1.127   0.213     1.272   0.193
-   ln(1+A64/1e3km2)       0.614   0.066     0.452   0.119     0.686   0.088
-   grad hPa/100km        -0.049   0.015    -0.046   0.024    -0.052   0.018
-   (pmin-980)/10         -0.756   0.079    -0.859   0.147    -0.714   0.089
+   b0                   -10.924   0.474   -10.486   1.300   -13.124   1.262
+   gust/10kt              1.202   0.083     1.151   0.222     1.530   0.211
+   ln(1+A64/1e3km2)       0.582   0.036     0.429   0.109     0.573   0.092
+   grad hPa/100km        -0.034   0.010    -0.017   0.024    -0.020   0.016
+   (pmin-980)/10         -0.790   0.043    -0.832   0.137    -0.713   0.091
    M0
    term                    full      se     early      se      late      se
-   b0                   -17.925   0.617   -15.363   1.003   -19.109   0.827
-   gust/10kt              2.460   0.094     2.078   0.159     2.633   0.122
-   M0 gust at P=0.5 (kt):  full 72.9  early 73.9  late 72.6
+   b0                   -17.961   0.386   -15.799   1.144   -20.508   1.018
+   gust/10kt              2.485   0.059     2.161   0.181     2.866   0.154
+   M0 gust at P=0.5 (kt):  full 72.3  early 73.1  late 71.5
    (the early and late columns should equal criterion-result.txt section 4: -10.155/1.127/0.452/-0.046/-0.859 and
     -11.391/1.272/0.686/-0.052/-0.714 for M1)
 
@@ -54,59 +54,59 @@ Overlap, mean per season 2004-2005 -> 2021-2025: series sum (all rows) +33%, fit
    Pearson/Spearman over scored rows. 'contested' = rows where any of the three exceeds 0.01; the bulk of
    rows are weak lows with p near 0 in every fit, which inflates the all-rows figures.
    group                                        pair                 n pearson  spearman   logit-r |       n pearson  spearman
-   all seasons                                  full~early       48299  0.9951    0.9984    0.9975 |   23548  0.9944    0.9933
-   all seasons                                  full~late        48299  0.9994    0.9997    0.9996 |   19812  0.9993    0.9987
-   all seasons                                  early~late       48299  0.9911    0.9969    0.9953 |   23548  0.9899    0.9874
-   pre-2004 (out-of-sample for all three fits)  full~early       22935  0.9948    0.9984    0.9974 |   11269  0.9941    0.9932
-   pre-2004 (out-of-sample for all three fits)  full~late        22935  0.9993    0.9997    0.9996 |    9516  0.9992    0.9987
-   pre-2004 (out-of-sample for all three fits)  early~late       22935  0.9905    0.9968    0.9950 |   11269  0.9892    0.9870
-   2004+ (overlap; in-sample for some fits)     full~early       25364  0.9954    0.9984    0.9977 |   12279  0.9947    0.9935
-   2004+ (overlap; in-sample for some fits)     full~late        25364  0.9994    0.9997    0.9997 |   10296  0.9993    0.9988
-   2004+ (overlap; in-sample for some fits)     early~late       25364  0.9916    0.9969    0.9956 |   12279  0.9904    0.9877
-   2004-2005 (p_early in-sample, p_late out)    full~early        6996  0.9952    0.9983    0.9976 |    3235  0.9945    0.9921
-   2004-2005 (p_early in-sample, p_late out)    full~late         6996  0.9994    0.9997    0.9996 |    2655  0.9993    0.9987
-   2004-2005 (p_early in-sample, p_late out)    early~late        6996  0.9912    0.9966    0.9954 |    3235  0.9901    0.9853
-   2021+ (p_late in-sample, p_early out)        full~early       18368  0.9954    0.9985    0.9977 |    9044  0.9947    0.9938
-   2021+ (p_late in-sample, p_early out)        full~late        18368  0.9994    0.9997    0.9997 |    7641  0.9993    0.9988
-   2021+ (p_late in-sample, p_early out)        early~late       18368  0.9917    0.9970    0.9956 |    9044  0.9904    0.9883
+   all seasons                                  full~early      174700  0.9969    0.9988    0.9983 |   84729  0.9966    0.9963
+   all seasons                                  full~late       174700  0.9974    0.9957    0.9972 |   72965  0.9968    0.9851
+   all seasons                                  early~late      174700  0.9919    0.9948    0.9959 |   84729  0.9908    0.9806
+   pre-2004 (out-of-sample for all three fits)  full~early       94024  0.9969    0.9988    0.9983 |   45637  0.9966    0.9963
+   pre-2004 (out-of-sample for all three fits)  full~late        94024  0.9974    0.9957    0.9971 |   39406  0.9968    0.9847
+   pre-2004 (out-of-sample for all three fits)  early~late       94024  0.9918    0.9947    0.9958 |   45637  0.9907    0.9802
+   2004+ (overlap; in-sample for some fits)     full~early       80676  0.9970    0.9988    0.9983 |   39092  0.9967    0.9963
+   2004+ (overlap; in-sample for some fits)     full~late        80676  0.9974    0.9958    0.9972 |   33559  0.9968    0.9855
+   2004+ (overlap; in-sample for some fits)     early~late       80676  0.9920    0.9949    0.9960 |   39092  0.9908    0.9811
+   2004-2005 (p_early in-sample, p_late out)    full~early        6996  0.9969    0.9986    0.9983 |    3235  0.9967    0.9953
+   2004-2005 (p_early in-sample, p_late out)    full~late         6996  0.9977    0.9951    0.9971 |    2706  0.9971    0.9839
+   2004-2005 (p_early in-sample, p_late out)    early~late        6996  0.9924    0.9943    0.9960 |    3235  0.9914    0.9777
+   2021+ (p_late in-sample, p_early out)        full~early       18368  0.9972    0.9988    0.9984 |    8940  0.9969    0.9963
+   2021+ (p_late in-sample, p_early out)        full~late        18368  0.9974    0.9958    0.9974 |    7701  0.9967    0.9857
+   2021+ (p_late in-sample, p_early out)        early~late       18368  0.9923    0.9950    0.9963 |    8940  0.9911    0.9816
 
    Mean and sum of p by fit (all scored rows) and the largest single-row disagreement:
-   full vs early: mean diff (early-full) -0.00063; max |diff| 0.180 at 2002-12-09 06Z atl season 2002 (p_full 0.579, p_early 0.399)
-   full vs late: mean diff (late-full) -0.00039; max |diff| 0.067 at 2002-12-09 06Z atl season 2002 (p_full 0.579, p_late 0.647)
-   early vs late: mean diff (late-early) +0.00024; max |diff| 0.248 at 2002-12-09 06Z atl season 2002 (p_early 0.399, p_late 0.647)
+   full vs early: mean diff (early-full) +0.00119; max |diff| 0.208 at 2011-02-11 18Z atl season 2010 (p_full 0.553, p_early 0.761)
+   full vs late: mean diff (late-full) +0.00166; max |diff| 0.267 at 2007-11-26 06Z atl season 2007 (p_full 0.505, p_late 0.772)
+   early vs late: mean diff (late-early) +0.00047; max |diff| 0.292 at 2020-02-16 06Z atl season 2019 (p_early 0.602, p_late 0.311)
 
 3. IMPLIED COUNT AT A PROBABILITY CUT: how much the calibration window moves the number above the line
    moments = scored rows (6-hourly cyclone-times) with p >= cut; tracks = linked cyclone tracks whose
    MAX p >= cut (closer to 'a cyclone', still not an event count). % columns are relative to p_full.
-   -- all seasons (48299 rows)
+   -- all seasons (174700 rows)
    cut     mom_full mom_early  mom_late      ear%      lat%  tra_full tra_early  tra_late      ear%      lat%
-   0.05        8699     10120      8116    +16.3%     -6.7%      2436      2668      2353     +9.5%     -3.4%
-   0.10        6732      7248      6514     +7.7%     -3.2%      2027      2072      2013     +2.2%     -0.7%
-   0.25        4854      4724      4880     -2.7%     +0.5%      1539      1467      1557     -4.7%     +1.2%
-   0.50        3239      2907      3343    -10.3%     +3.2%      1069       963      1110     -9.9%     +3.8%
-   0.75        1897      1539      2014    -18.9%     +6.2%       673       533       706    -20.8%     +4.9%
-   0.90         989       734      1092    -25.8%    +10.4%       353       281       399    -20.4%    +13.0%
-   sum p     3911.5    3881.1    3892.7     -0.8%     -0.5%
+   0.05       31773     36769     30099    +15.7%     -5.3%      8643      9533      8555    +10.3%     -1.0%
+   0.10       24095     26317     23809     +9.2%     -1.2%      7140      7440      7231     +4.2%     +1.3%
+   0.25       17000     17025     17580     +0.1%     +3.4%      5317      5236      5573     -1.5%     +4.8%
+   0.50       11363     10579     12169     -6.9%     +7.1%      3695      3439      4012     -6.9%     +8.6%
+   0.75        6626      5771      7539    -12.9%    +13.8%      2261      1984      2611    -12.3%    +15.5%
+   0.90        3389      2714      4187    -19.9%    +23.5%      1234      1022      1554    -17.2%    +25.9%
+   sum p    13878.2   14086.6   14168.7     +1.5%     +2.1%
 
-   -- pre-2004 (out-of-sample for all three fits) (22935 rows)
+   -- pre-2004 (out-of-sample for all three fits) (94024 rows)
    cut     mom_full mom_early  mom_late      ear%      lat%  tra_full tra_early  tra_late      ear%      lat%
-   0.05        4101      4815      3818    +17.4%     -6.9%      1158      1279      1119    +10.4%     -3.4%
-   0.10        3161      3444      3055     +9.0%     -3.4%       964       992       961     +2.9%     -0.3%
-   0.25        2261      2199      2275     -2.7%     +0.6%       726       693       736     -4.5%     +1.4%
-   0.50        1475      1329      1524     -9.9%     +3.3%       496       445       517    -10.3%     +4.2%
-   0.75         849       690       900    -18.7%     +6.0%       301       244       317    -18.9%     +5.3%
-   0.90         421       311       480    -26.1%    +14.0%       153       121       180    -20.9%    +17.6%
-   sum p     1814.0    1807.0    1802.6     -0.4%     -0.6%
+   0.05       16993     19702     16087    +15.9%     -5.3%      4659      5157      4611    +10.7%     -1.0%
+   0.10       12899     14136     12704     +9.6%     -1.5%      3860      4030      3898     +4.4%     +1.0%
+   0.25        9040      9059      9360     +0.2%     +3.5%      2849      2812      3007     -1.3%     +5.5%
+   0.50        5983      5584      6394     -6.7%     +6.9%      1975      1829      2138     -7.4%     +8.3%
+   0.75        3495      3025      3937    -13.4%    +12.6%      1198      1051      1355    -12.3%    +13.1%
+   0.90        1728      1368      2137    -20.8%    +23.7%       649       533       814    -17.9%    +25.4%
+   sum p     7376.6    7500.8    7517.7     +1.7%     +1.9%
 
-   -- 2004+ (overlap; in-sample for some fits) (25364 rows)
+   -- 2004+ (overlap; in-sample for some fits) (80676 rows)
    cut     mom_full mom_early  mom_late      ear%      lat%  tra_full tra_early  tra_late      ear%      lat%
-   0.05        4598      5305      4298    +15.4%     -6.5%      1278      1389      1234     +8.7%     -3.4%
-   0.10        3571      3804      3459     +6.5%     -3.1%      1063      1080      1052     +1.6%     -1.0%
-   0.25        2593      2525      2605     -2.6%     +0.5%       813       774       821     -4.8%     +1.0%
-   0.50        1764      1578      1819    -10.5%     +3.1%       573       518       593     -9.6%     +3.5%
-   0.75        1048       849      1114    -19.0%     +6.3%       372       289       389    -22.3%     +4.6%
-   0.90         568       423       612    -25.5%     +7.7%       200       160       219    -20.0%     +9.5%
-   sum p     2097.5    2074.1    2090.1     -1.1%     -0.4%
+   0.05       14780     17067     14012    +15.5%     -5.2%      3984      4376      3944     +9.8%     -1.0%
+   0.10       11196     12181     11105     +8.8%     -0.8%      3280      3410      3333     +4.0%     +1.6%
+   0.25        7960      7966      8220     +0.1%     +3.3%      2468      2424      2566     -1.8%     +4.0%
+   0.50        5380      4995      5775     -7.2%     +7.3%      1720      1610      1874     -6.4%     +9.0%
+   0.75        3131      2746      3602    -12.3%    +15.0%      1063       933      1256    -12.2%    +18.2%
+   0.90        1661      1346      2050    -19.0%    +23.4%       585       489       740    -16.4%    +26.5%
+   sum p     6501.5    6585.8    6651.1     +1.3%     +2.3%
 
    A continuous reading of the same thing: Sum p (the line above) moves far less between fits than the count
    above a hard cut, which is the point of carrying probabilities rather than a list of events.
@@ -116,19 +116,53 @@ Overlap, mean per season 2004-2005 -> 2021-2025: series sum (all rows) +33%, fit
    criterion (6-hourly candidate fixes), NOT of cyclones and NOT an observed count; one long-lived severe
    cyclone contributes several moments. 'fit' marks seasons that were in the p_full / p_early / p_late fit.
    season fit    steps   rows  mean_pf  sum_pfull sum_pearly  sum_plate  tracks
-   1979   -     1096/1096   3949   0.0690     272.45     274.07     269.59     769
-   1980   -     1092/1092   4065   0.0576     233.98     235.70     231.39     790
-   1998   -     1092/1092   3690   0.0926     341.84     336.20     341.45     714
-   1999   -     1096/1096   3452   0.1087     375.23     374.75     372.75     643
-   2002   -     1092/1092   4012   0.0894     358.69     354.53     357.68     696
-   2003   -     1096/1096   3767   0.0615     231.76     231.80     229.72     705
-   2004   FE    1092/1092   3322   0.0777     258.01     258.90     255.71     660
-   2005   FE    1092/1092   3674   0.0620     227.73     228.03     225.69     722
-   2021   FL    1092/1092   3610   0.1003     362.13     354.82     361.96     673
-   2022   FL    1092/1092   3612   0.0837     302.33     295.55     302.63     670
-   2023   FL    1096/1096   3785   0.0897     339.35     331.03     339.79     707
-   2024   FL    1092/1092   3647   0.0815     297.27     299.55     294.28     683
-   2025   FL    1092/1092   3714   0.0837     310.71     306.21     310.04     718
+   1979   -     1096/1096   3949   0.0655     258.77     266.92     262.46     769
+   1980   -     1092/1092   4065   0.0566     230.21     235.47     232.65     790
+   1981   -     1092/1092   3451   0.0730     251.79     255.41     258.41     659
+   1982   -     1092/1092   3955   0.0814     321.85     325.89     329.07     734
+   1983   -     1096/1096   3552   0.0789     280.39     283.58     286.33     697
+   1984   -     1092/1092   3661   0.0682     249.73     256.60     252.21     708
+   1985   -     1092/1092   3874   0.0722     279.77     283.48     285.94     734
+   1986   -     1092/1092   3946   0.0829     327.00     331.78     330.33     756
+   1987   -     1096/1096   3729   0.0742     276.71     281.48     280.52     686
+   1988   -     1092/1092   3355   0.0844     283.03     289.78     289.28     664
+   1989   -     1092/1092   3828   0.0897     343.27     352.25     345.48     740
+   1990   -     1092/1092   3547   0.0738     261.63     268.29     266.40     734
+   1991   -     1096/1096   3833   0.0856     327.99     332.42     337.61     758
+   1992   -     1092/1092   3825   0.0806     308.30     312.27     316.76     758
+   1993   -     1092/1092   3700   0.0710     262.57     270.41     267.84     725
+   1994   -     1092/1092   3760   0.0815     306.30     314.75     311.41     738
+   1995   -     1096/1096   3601   0.0665     239.36     246.46     242.03     673
+   1996   -     1092/1092   3623   0.0830     300.62     304.60     307.97     680
+   1997   -     1092/1092   4143   0.0839     347.61     348.54     355.36     756
+   1998   -     1092/1092   3690   0.0913     336.77     338.64     347.04     714
+   1999   -     1096/1096   3452   0.1070     369.49     373.73     374.67     643
+   2000   -     1092/1092   3972   0.0848     336.94     340.26     340.59     681
+   2001   -     1092/1092   3734   0.0820     306.22     309.17     315.50     727
+   2002   -     1092/1092   4012   0.0863     346.24     349.74     353.87     696
+   2003   -     1096/1096   3767   0.0595     224.06     228.94     227.95     705
+   2004   FE    1092/1092   3322   0.0762     253.27     258.86     256.68     660
+   2005   FE    1092/1092   3674   0.0612     224.69     229.17     228.56     722
+   2006   F     1092/1092   3913   0.0858     335.65     338.58     343.56     733
+   2007   F     1096/1096   3866   0.0767     296.64     300.17     306.72     735
+   2008   F     1092/1092   3134   0.0746     233.90     238.49     240.30     622
+   2009   F     1092/1092   4074   0.0620     252.78     257.32     253.96     755
+   2010   F     1092/1092   3501   0.0788     275.96     280.25     280.95     641
+   2011   F     1096/1096   3843   0.0783     300.89     305.23     312.19     774
+   2012   F     1092/1092   3439   0.0867     298.29     297.03     307.74     639
+   2013   F     1092/1092   3752   0.0795     298.19     305.09     299.69     708
+   2014   F     1092/1092   3719   0.0792     294.71     300.87     301.44     688
+   2015   F     1096/1096   4150   0.0816     338.77     343.93     343.47     736
+   2016   F     1092/1092   3582   0.0735     263.44     267.75     270.41     708
+   2017   F     1092/1092   3388   0.0785     265.85     270.64     273.66     632
+   2018   F     1092/1092   3829   0.0906     346.76     349.70     354.45     692
+   2019   F     1096/1096   3666   0.0977     358.13     363.20     363.99     703
+   2020   F     1092/1092   3456   0.0871     301.09     303.57     307.44     654
+   2021   FL    1092/1092   3610   0.0989     357.10     360.16     370.30     673
+   2022   FL    1092/1092   3612   0.0808     291.79     292.53     299.72     670
+   2023   FL    1096/1096   3785   0.0859     325.22     325.60     335.70     707
+   2024   FL    1092/1092   3647   0.0789     287.65     294.35     291.37     683
+   2025   FL    1092/1092   3714   0.0810     300.76     303.30     308.75     718
    Rounding: the file carries p to 4 decimals; sums above are from unrounded values.
 
 5. STATIONARITY CHECK ON THE SERIES ITSELF
@@ -136,61 +170,58 @@ Overlap, mean per season 2004-2005 -> 2021-2025: series sum (all rows) +33%, fit
    sum(p_full) trend, or step between eras, beyond what the archive's own counts do? If it did, the criterion
    would be importing a trend the fields do not have. Regressions are OLS on season (per decade).
 
-   5a. pre-2001 seasons available: 1979..1999 (4: 1979, 1980, 1998, 1999)
-   sum p_full (all scored rows)                                   n= 4 slope  +55.207 /decade (95% CI +-58.850)  t=4.03  mean 305.88
-   scored rows (ERA5 candidates alone, no model)                  n= 4 slope -230.525 /decade (95% CI +-289.306)  t=-3.43  mean 3789.00
-       NOTE: 4 pre-2001 season(s) cached when this ran: too few for a trend test of any power.
-       Rerun series.py once the 1979-2000 fetch completes; the emitter picks up whatever is cached.
+   5a. pre-2001 seasons available: 1979..2000 (22: 1979, 1980, 1981, 1982, 1983, 1984, 1985, 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000)
+   sum p_full (all scored rows)                                   n=22 slope  +35.387 /decade (95% CI +-23.209)  t=3.19  mean 295.46
+   scored rows (ERA5 candidates alone, no model)                  n=22 slope  -28.984 /decade (95% CI +-150.396)  t=-0.40  mean 3750.50
 
-   5b. overlap seasons (2004+): 2004..2025 (7: 2004, 2005, 2021, 2022, 2023, 2024, 2025)
-   sum p_full (all scored rows)                                   n= 7 slope  +39.598 /decade (95% CI +-35.219)  t=2.89  mean 299.65
-   sum p_full over pos+neg rows (the fitted population)           n= 7 slope  +18.634 /decade (95% CI +-23.296)  t=2.06  mean 215.43
-   sum p_full, leave-one-season-out, pos+neg rows                 n= 7 slope  +18.682 /decade (95% CI +-22.470)  t=2.14  mean 215.12
-   ARCHIVE: HF-matched candidate moments (pos)                    n= 7 slope  +19.868 /decade (95% CI +-33.375)  t=1.53  mean 221.14
-   ARCHIVE: HF 'low' events with a fix in the domains             n= 7 slope   +8.513 /decade (95% CI +-10.736)  t=2.04  mean 76.57
-   ARCHIVE: those events with a detected candidate                n= 7 slope   +8.673 /decade (95% CI +-10.338)  t=2.16  mean 73.57
-   scored rows (ERA5 candidates alone, no model)                  n= 7 slope +101.313 /decade (95% CI +-143.015)  t=1.82  mean 3623.43
-   sum p_full (pos+neg) MINUS archive pos moments                 n= 7 slope   -1.235 /decade (95% CI +-18.940)  t=-0.17  mean -5.71
+   5b. overlap seasons (2004+): 2004..2025 (22: 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025)
+   sum p_full (all scored rows)                                   n=22 slope  +27.751 /decade (95% CI +-23.703)  t=2.45  mean 295.52
+   sum p_full over pos+neg rows (the fitted population)           n=22 slope  +11.947 /decade (95% CI +-17.467)  t=1.43  mean 211.86
+   sum p_full, leave-one-season-out, pos+neg rows                 n=22 slope  +12.644 /decade (95% CI +-17.612)  t=1.50  mean 211.95
+   ARCHIVE: HF-matched candidate moments (pos)                    n=22 slope   -2.643 /decade (95% CI +-27.611)  t=-0.20  mean 217.45
+   ARCHIVE: HF 'low' events with a fix in the domains             n=22 slope   +2.665 /decade (95% CI +-8.134)  t=0.68  mean 76.18
+   ARCHIVE: those events with a detected candidate                n=22 slope   +3.202 /decade (95% CI +-7.395)  t=0.90  mean 73.77
+   scored rows (ERA5 candidates alone, no model)                  n=22 slope  +12.287 /decade (95% CI +-172.037)  t=0.15  mean 3667.09
+   sum p_full (pos+neg) MINUS archive pos moments                 n=22 slope  +14.590 /decade (95% CI +-23.177)  t=1.32  mean -5.59
        The last line is the test: a slope on (model - archive) means the criterion trends away from the
        archive it was fitted to. In-sample the level is forced to ~0 by the fit; only the slope is informative.
 
-   sum p_full (ALL scored rows) MINUS archive pos moments         n= 7 slope  +19.730 /decade (95% CI +-20.654)  t=2.46  mean 78.50
+   sum p_full (ALL scored rows) MINUS archive pos moments         n=22 slope  +30.394 /decade (95% CI +-24.120)  t=2.63  mean 78.07
        (all rows include gray moments that no fit saw; this is the line where the series could outgrow the archive)
 
    5b'. The overlap is two clusters ([2004, 2005] vs [2021, 2022, 2023, 2024, 2025]), 15 years apart, so a 7-point slope is mostly a difference of two
        means. That comparison, series against the archive's own counts (mean per season):
        quantity                                  2004-2005  2021-2025    change
-       sum p_full, all scored rows                   242.9      322.4    +32.7%
-       sum p_full, pos+neg rows (fitted pop.)        187.7      226.5    +20.7%
-       sum p_full, gray rows only                     55.2       95.8    +73.6%
+       sum p_full, all scored rows                   239.0      312.5    +30.8%
+       sum p_full, pos+neg rows (fitted pop.)        184.2      219.7    +19.3%
+       sum p_full, gray rows only                     54.8       92.8    +69.4%
        ARCHIVE pos moments                           192.5      232.6    +20.8%
        ARCHIVE 'low' events                           65.0       81.2    +24.9%
        scored rows (ERA5 alone)                     3498.0     3673.6     +5.0%
-       series growth minus archive-moment growth: +11.9 percentage points; the gray rows alone grew +73.6%.
+       series growth minus archive-moment growth: +9.9 percentage points; the gray rows alone grew +69.4%.
        By archive label (per-season mean row count, mean p_full per row):
        label     2004-2005 rows / mean p  2021-2025 rows / mean p
-       pos                   188 / 0.554              226 / 0.652
-       gray                  578 / 0.095              774 / 0.124
-       neg                  2732 / 0.031             2673 / 0.029
+       pos                   188 / 0.549              226 / 0.647
+       gray                  578 / 0.095              774 / 0.120
+       neg                  2732 / 0.030             2673 / 0.027
        What this does and does not show: on the fitted population (pos+neg) the model-minus-archive slope is
-       flat (t=-0.17), so the model adds no trend of its own where it can be checked against the archive. The
+       flat (t=1.32), so the model adds no trend of its own where it can be checked against the archive. The
        extra growth sits in the gray rows, which the archive labels non-positive, so the archive cannot adjudicate
        them: more gray rows (cyclones the archive rated HF at another moment) AND a higher mean p on them, and a
        higher mean p on the positives too. Real intensification, a change in how the archive logs HF fixes, and
        ERA5 drift all produce this pattern; 7 seasons in two clusters cannot tell them apart. The flag is therefore
        left standing and the all-rows sum should not be read as a trend estimate.
 
-   5c. all cached seasons together: 1979..2025 (13: 1979, 1980, 1998, 1999, 2002, 2003, 2004, 2005, 2021, 2022, 2023, 2024, 2025)
-   sum p_full (all scored rows)                                   n=13 slope  +11.708 /decade (95% CI +-20.636)  t=1.25  mean 300.88
-   scored rows (ERA5 candidates alone, no model)                  n=13 slope  -57.255 /decade (95% CI +-79.141)  t=-1.59  mean 3715.31
+   5c. all cached seasons together: 1979..2025 (47: 1979, 1980, 1981, 1982, 1983, 1984, 1985, 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025)
+   sum p_full (all scored rows)                                   n=47 slope   +6.391 /decade (95% CI +-8.120)  t=1.54  mean 295.28
+   scored rows (ERA5 candidates alone, no model)                  n=47 slope  -28.195 /decade (95% CI +-46.880)  t=-1.18  mean 3717.02
 
    5d. level step, pre-2001 mean vs 2004+ mean of sum p_full (Welch)
-       pre-2001 mean 305.9 (n=4), 2004+ mean 299.6 (n=7): difference -6.2 (se 36.5, t=-0.17)
+       pre-2001 mean 295.5 (n=22), 2004+ mean 295.5 (n=22): difference +0.1 (se 11.6, t=0.01)
 
-   No stationarity flag at the 95% level.
-   BORDERLINE (|t| > 2 but below the small-sample critical value): sum p_full TRENDS across the pre-2001 seasons available - the ERA5 gate says the fields do not (slope +55.21 /decade, t=4.03, critical 4.30 at n=4)
-   BORDERLINE (|t| > 2 but below the small-sample critical value): series (all rows) minus archive pos moments TRENDS in the overlap (slope +19.73 /decade, t=2.46, critical 2.57 at n=7)
-   Power caveats: only 4 pre-2001 season(s) cached: no power for the era question; the 7 overlap seasons are two clusters 15 years apart.
+   *** STATIONARITY FLAG(S) RAISED ***
+   *** sum p_full TRENDS across the pre-2001 seasons available - the ERA5 gate says the fields do not (slope +35.39 /decade, t=3.19 > 2.09 critical, n=22)
+   *** series (all rows) minus archive pos moments TRENDS in the overlap (slope +30.39 /decade, t=2.63 > 2.09 critical, n=22)
 
 6. OVERLAP: SUM OF p_full AGAINST THE ARCHIVE'S ACTUAL COUNTS (seasons 2004+)
    Moments are the unit the model is calibrated in. The fit is in-sample for p_full on these seasons, so
@@ -198,58 +229,118 @@ Overlap, mean per season 2004-2005 -> 2021-2025: series sum (all rows) +33%, fit
    the per-season and per-basin spread, and the gray/other-class rows the fit never saw. Event-level columns
    compare with archive events, where one event spans several moments - hence the conversion factor.
    season   bsn  pos_mom   S_pf+- S_loso+-    ratio   r_loso | ev_low ev_det  trk_pos S_trkmax S_all_pf
-   2004     atl      108    103.3    103.3     0.96     0.96 |     43     41       41     46.7    138.3
-   2004     pac       86     92.1     92.0     1.07     1.07 |     29     27       27     34.8    119.7
-   2004    both      194    195.3    195.4     1.01     1.01 |     72     68       68     81.6    258.0
-   2005     atl       97     93.5     93.3     0.96     0.96 |     30     28       28     40.6    111.9
-   2005     pac       85     86.5     85.8     1.02     1.01 |     28     28       31     38.3    115.9
-   2005    both      182    180.0    179.0     0.99     0.98 |     58     56       59     78.9    227.7
-   2021     atl      177    179.3    177.3     1.01     1.00 |     53     49       48     61.7    249.5
-   2021     pac       88     77.9     77.5     0.89     0.88 |     38     37       33     34.5    112.6
-   2021    both      265    257.2    254.8     0.97     0.96 |     91     86       81     96.2    362.1
-   2022     atl      101    124.6    126.0     1.23     1.25 |     38     36       38     54.8    178.9
-   2022     pac      102     92.1     92.6     0.90     0.91 |     31     30       31     29.2    123.4
-   2022    both      203    216.7    218.7     1.07     1.08 |     69     66       69     84.0    302.3
-   2023     atl      101    119.0    119.3     1.18     1.18 |     39     37       39     56.4    181.4
-   2023     pac      129    114.5    114.6     0.89     0.89 |     41     41       42     41.3    158.0
-   2023    both      230    233.5    233.9     1.02     1.02 |     80     78       81     97.8    339.3
-   2024     atl       94    112.9    114.1     1.20     1.21 |     41     38       40     54.3    169.9
-   2024     pac       99     95.5     96.9     0.96     0.98 |     36     35       40     39.9    127.4
-   2024    both      193    208.4    211.0     1.08     1.09 |     77     73       80     94.2    297.3
-   2025     atl      170    157.7    155.4     0.93     0.91 |     59     58       63     73.0    229.5
-   2025     pac       71     59.1     57.6     0.83     0.81 |     30     30       32     29.9     81.2
-   2025    both      241    216.8    213.0     0.90     0.88 |     89     88       95    102.8    310.7
+   2004     atl      108     98.9     98.8     0.92     0.91 |     43     41       41     43.8    133.0
+   2004     pac       86     92.6     92.6     1.08     1.08 |     29     27       27     34.7    120.2
+   2004    both      194    191.5    191.4     0.99     0.99 |     72     68       68     78.5    253.3
+   2005     atl       97     90.4     90.3     0.93     0.93 |     30     28       28     37.7    109.0
+   2005     pac       85     86.5     86.3     1.02     1.02 |     28     28       31     37.9    115.7
+   2005    both      182    176.9    176.6     0.97     0.97 |     58     56       59     75.6    224.7
+   2006     atl      197    154.8    152.6     0.79     0.77 |     65     60       64     63.4    222.5
+   2006     pac      108     84.0     82.6     0.78     0.76 |     40     38       38     37.7    113.2
+   2006    both      305    238.8    235.2     0.78     0.77 |    105     98      102    101.0    335.7
+   2007     atl      124    114.0    113.1     0.92     0.91 |     41     40       40     50.2    163.6
+   2007     pac      129    102.4    101.4     0.79     0.79 |     42     40       42     41.5    133.0
+   2007    both      253    216.4    214.5     0.86     0.85 |     83     80       82     91.8    296.6
+   2008     atl      123    115.6    114.8     0.94     0.93 |     48     46       43     54.0    167.4
+   2008     pac       83     52.2     51.6     0.63     0.62 |     26     25       25     20.8     66.5
+   2008    both      206    167.8    166.4     0.81     0.81 |     74     71       68     74.8    233.9
+   2009     atl       83     78.1     77.7     0.94     0.94 |     30     29       29     31.6    105.1
+   2009     pac      127    107.3    106.8     0.85     0.84 |     38     37       39     43.5    147.6
+   2009    both      210    185.5    184.5     0.88     0.88 |     68     66       68     75.0    252.8
+   2010     atl       93    133.0    134.2     1.43     1.44 |     31     31       30     49.1    182.2
+   2010     pac       73     70.9     71.3     0.97     0.98 |     28     28       28     27.9     93.8
+   2010    both      166    203.9    205.5     1.23     1.24 |     59     59       58     77.0    276.0
+   2011     atl      114    132.2    132.5     1.16     1.16 |     37     35       37     53.2    168.7
+   2011     pac      109    102.6    103.0     0.94     0.95 |     43     43       43     44.6    132.2
+   2011    both      223    234.8    235.5     1.05     1.06 |     80     78       80     97.8    300.9
+   2012     atl       89    128.7    129.4     1.45     1.45 |     40     38       38     56.4    173.9
+   2012     pac      109     91.0     91.6     0.83     0.84 |     33     33       34     36.6    124.4
+   2012    both      198    219.7    221.1     1.11     1.12 |     73     71       72     93.0    298.3
+   2013     atl      134    145.8    146.4     1.09     1.09 |     44     43       40     57.3    208.2
+   2013     pac       55     66.2     66.6     1.20     1.21 |     18     17       18     25.9     90.0
+   2013    both      189    211.9    213.1     1.12     1.13 |     62     60       58     83.2    298.2
+   2014     atl      141    136.7    136.6     0.97     0.97 |     55     54       54     59.1    213.8
+   2014     pac       63     60.5     60.3     0.96     0.96 |     24     23       24     26.2     80.9
+   2014    both      204    197.1    196.9     0.97     0.97 |     79     77       78     85.3    294.7
+   2015     atl      120    127.2    126.7     1.06     1.06 |     47     45       44     55.5    180.3
+   2015     pac      145    123.1    122.6     0.85     0.85 |     44     43       44     42.1    158.4
+   2015    both      265    250.2    249.4     0.94     0.94 |     91     88       88     97.6    338.8
+   2016     atl      109    105.6    105.7     0.97     0.97 |     49     48       45     49.1    166.5
+   2016     pac       71     72.9     72.9     1.03     1.03 |     31     31       27     32.6     96.9
+   2016    both      180    178.5    178.6     0.99     0.99 |     80     79       72     81.7    263.4
+   2017     atl      110    123.0    123.8     1.12     1.13 |     44     44       46     56.3    182.0
+   2017     pac       51     64.7     65.2     1.27     1.28 |     20     19       18     27.2     83.8
+   2017    both      161    187.7    189.0     1.17     1.17 |     64     63       64     83.5    265.8
+   2018     atl      115    134.9    136.1     1.17     1.18 |     46     44       41     52.4    190.7
+   2018     pac      102    114.8    115.5     1.13     1.13 |     34     33       33     45.6    156.1
+   2018    both      217    249.8    251.6     1.15     1.16 |     80     77       74     97.9    346.8
+   2019     atl      106    173.3    176.9     1.64     1.67 |     39     39       44     73.7    257.0
+   2019     pac       64     72.0     73.6     1.13     1.15 |     29     29       28     30.8    101.1
+   2019    both      170    245.4    250.5     1.44     1.47 |     68     68       72    104.5    358.1
+   2020     atl       94    100.3    100.3     1.07     1.07 |     35     35       35     42.5    156.9
+   2020     pac      112    106.4    106.5     0.95     0.95 |     39     38       39     40.8    144.2
+   2020    both      206    206.7    206.8     1.00     1.00 |     74     73       74     83.3    301.1
+   2021     atl      177    174.6    173.9     0.99     0.98 |     53     49       48     58.7    243.9
+   2021     pac       88     78.3     78.1     0.89     0.89 |     38     37       33     34.4    113.2
+   2021    both      265    252.9    252.0     0.95     0.95 |     91     86       81     93.1    357.1
+   2022     atl      101    117.1    117.2     1.16     1.16 |     38     36       38     49.3    167.5
+   2022     pac      102     92.6     92.7     0.91     0.91 |     31     30       31     29.2    124.3
+   2022    both      203    209.7    209.9     1.03     1.03 |     69     66       69     78.5    291.8
+   2023     atl      101    111.7    111.4     1.11     1.10 |     39     37       39     51.3    167.6
+   2023     pac      129    114.4    114.3     0.89     0.89 |     41     41       42     41.1    157.7
+   2023    both      230    226.0    225.7     0.98     0.98 |     80     78       81     92.4    325.2
+   2024     atl       94    106.8    107.0     1.14     1.14 |     41     38       40     50.7    159.5
+   2024     pac       99     95.9     96.1     0.97     0.97 |     36     35       40     39.6    128.1
+   2024    both      193    202.6    203.1     1.05     1.05 |     77     73       80     90.3    287.7
+   2025     atl      170    147.9    146.9     0.87     0.86 |     59     58       63     68.2    218.8
+   2025     pac       71     59.4     58.9     0.84     0.83 |     30     30       32     29.5     82.0
+   2025    both      241    207.3    205.8     0.86     0.85 |     89     88       95     97.7    300.8
 
-   Totals over [2004, 2005, 2021, 2022, 2023, 2024, 2025]:
-     atl  pos moments   848 | S(p_full, pos+neg)   890.3 (ratio 1.050) | S(p_loso, pos+neg)   888.7 (ratio 1.048) | tracks with a pos  297 | S(track max p)  387.5 | archive 'low' events  303 | moments per event 2.8
-     pac  pos moments   660 | S(p_full, pos+neg)   617.7 (ratio 0.936) | S(p_loso, pos+neg)   617.1 (ratio 0.935) | tracks with a pos  236 | S(track max p)  247.8 | archive 'low' events  233 | moments per event 2.8
-     both pos moments  1508 | S(p_full, pos+neg)  1508.0 (ratio 1.000) | S(p_loso, pos+neg)  1505.8 (ratio 0.999) | tracks with a pos  533 | S(track max p)  635.3 | archive 'low' events  536 | moments per event 2.8
-   Per-season ratio S/pos: in-sample p_full mean 1.004 (min 0.90, max 1.08); leave-one-season-out mean 1.003 (min 0.88, max 1.09);
-   LOSO ratio > 1 in 4 of 7 seasons, < 1 in 3 (systematic bias would show as all one side).
-   Basin bias of the single pooled fit (LOSO ratio S/pos by season; mean, sd, and t of mean-1 over 7 seasons):
-     atl: ratios 0.96 0.96 1.00 1.25 1.18 1.21 0.91  mean 1.068 sd 0.140 t=1.28  (over: 4 seasons, under: 3)
-     pac: ratios 1.07 1.01 0.88 0.91 0.89 0.98 0.81  mean 0.935 sd 0.088 t=-1.94  (over: 2 seasons, under: 5)
+   Totals over [2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]:
+     atl  pos moments  2600 | S(p_full, pos+neg)  2750.5 (ratio 1.058) | S(p_loso, pos+neg)  2752.5 (ratio 1.059) | tracks with a pos  927 | S(track max p) 1163.4 | archive 'low' events  954 | moments per event 2.7
+     pac  pos moments  2061 | S(p_full, pos+neg)  1910.5 (ratio 0.927) | S(p_loso, pos+neg)  1910.4 (ratio 0.927) | tracks with a pos  716 | S(track max p)  770.0 | archive 'low' events  722 | moments per event 2.9
+     both pos moments  4661 | S(p_full, pos+neg)  4661.0 (ratio 1.000) | S(p_loso, pos+neg)  4662.9 (ratio 1.000) | tracks with a pos 1643 | S(track max p) 1933.5 | archive 'low' events 1676 | moments per event 2.8
+   Per-season ratio S/pos: in-sample p_full mean 1.016 (min 0.78, max 1.44); leave-one-season-out mean 1.017 (min 0.77, max 1.47);
+   LOSO ratio > 1 in 10 of 22 seasons, < 1 in 12 (systematic bias would show as all one side).
+   Basin bias of the single pooled fit (LOSO ratio S/pos by season; mean, sd, and t of mean-1 over 22 seasons):
+     atl: ratios 0.91 0.93 0.77 0.91 0.93 0.94 1.44 1.16 1.45 1.09 0.97 1.06 0.97 1.13 1.18 1.67 1.07 0.98 1.16 1.10 1.14 0.86  mean 1.084 sd 0.212 t=1.85  (over: 12 seasons, under: 10)
+     pac: ratios 1.08 1.02 0.76 0.79 0.62 0.84 0.98 0.95 0.84 1.21 0.96 0.85 1.03 1.28 1.13 1.15 0.95 0.89 0.91 0.89 0.97 0.83  mean 0.950 sd 0.155 t=-1.51  (over: 7 seasons, under: 15)
    The pooled criterion has no basin term (none was in the pre-specified model); a basin offset of this size
    is not corrected here, only reported. Pooled over both basins the ratio is 1 by construction.
 
    Calibration-window effect on the sum, on seasons each narrow fit never saw (pos+neg rows; pos = archive moments):
-     p_early on [2021, 2022, 2023, 2024, 2025]: sum 1111.9 vs pos 1132 (ratio 0.982); p_full-LOSO on same seasons: 1131.4 (ratio 0.999)
-     p_late  on [2004, 2005]: sum 372.1 vs pos 376 (ratio 0.990); p_full-LOSO on same seasons: 374.4 (ratio 0.996)
+     p_early on [2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]: sum 4335.4 vs pos 4285 (ratio 1.012); p_full-LOSO on same seasons: 4294.9 (ratio 1.002)
+     p_late  on [2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020]: sum 3643.2 vs pos 3529 (ratio 1.032); p_full-LOSO on same seasons: 3566.4 (ratio 1.011)
 
    Series-level vs fitted-population sum (all scored rows include gray cyclone-moments and rows no fit saw):
-     2004: S(all rows) 258.0; of which pos+neg 195.3, gray 62.7 (653 rows), archive pos 202
-     2005: S(all rows) 227.7; of which pos+neg 180.0, gray 47.8 (504 rows), archive pos 183
-     2021: S(all rows) 362.1; of which pos+neg 257.2, gray 104.9 (801 rows), archive pos 274
-     2022: S(all rows) 302.3; of which pos+neg 216.7, gray 85.6 (677 rows), archive pos 209
-     2023: S(all rows) 339.3; of which pos+neg 233.5, gray 105.8 (822 rows), archive pos 231
-     2024: S(all rows) 297.3; of which pos+neg 208.4, gray 88.9 (764 rows), archive pos 199
-     2025: S(all rows) 310.7; of which pos+neg 216.8, gray 93.9 (807 rows), archive pos 250
+     2004: S(all rows) 253.3; of which pos+neg 191.5, gray 61.8 (653 rows), archive pos 202
+     2005: S(all rows) 224.7; of which pos+neg 176.9, gray 47.8 (504 rows), archive pos 183
+     2006: S(all rows) 335.7; of which pos+neg 238.8, gray 96.9 (918 rows), archive pos 323
+     2007: S(all rows) 296.6; of which pos+neg 216.4, gray 80.3 (696 rows), archive pos 259
+     2008: S(all rows) 233.9; of which pos+neg 167.8, gray 66.1 (696 rows), archive pos 224
+     2009: S(all rows) 252.8; of which pos+neg 185.5, gray 67.3 (848 rows), archive pos 210
+     2010: S(all rows) 276.0; of which pos+neg 203.9, gray 72.1 (678 rows), archive pos 167
+     2011: S(all rows) 300.9; of which pos+neg 234.8, gray 66.1 (824 rows), archive pos 226
+     2012: S(all rows) 298.3; of which pos+neg 219.7, gray 78.6 (710 rows), archive pos 202
+     2013: S(all rows) 298.2; of which pos+neg 211.9, gray 86.3 (674 rows), archive pos 190
+     2014: S(all rows) 294.7; of which pos+neg 197.1, gray 97.6 (717 rows), archive pos 204
+     2015: S(all rows) 338.8; of which pos+neg 250.2, gray 88.5 (982 rows), archive pos 270
+     2016: S(all rows) 263.4; of which pos+neg 178.5, gray 84.9 (779 rows), archive pos 193
+     2017: S(all rows) 265.8; of which pos+neg 187.7, gray 78.2 (697 rows), archive pos 167
+     2018: S(all rows) 346.8; of which pos+neg 249.8, gray 97.0 (699 rows), archive pos 221
+     2019: S(all rows) 358.1; of which pos+neg 245.4, gray 112.8 (738 rows), archive pos 174
+     2020: S(all rows) 301.1; of which pos+neg 206.7, gray 94.4 (739 rows), archive pos 206
+     2021: S(all rows) 357.1; of which pos+neg 252.9, gray 104.2 (801 rows), archive pos 274
+     2022: S(all rows) 291.8; of which pos+neg 209.7, gray 82.1 (677 rows), archive pos 209
+     2023: S(all rows) 325.2; of which pos+neg 226.0, gray 99.2 (822 rows), archive pos 231
+     2024: S(all rows) 287.7; of which pos+neg 202.6, gray 85.0 (764 rows), archive pos 199
+     2025: S(all rows) 300.8; of which pos+neg 207.3, gray 93.4 (807 rows), archive pos 250
    Gray rows (pre-/post-peak moments of an archive-HF cyclone, or HF no-centre cases) carry real probability
    but are labelled non-positive in the archive; they are why S(all rows) exceeds the archive moment count.
 
 7. THE FILE
    /home/user/awips-tools/research/era5/hf_probability.csv.gz
-   size 1449856 bytes (1.45 MB); limit 15 MB; rows 48299
+   size 5230101 bytes (5.23 MB); limit 15 MB; rows 174700
    no probability floor applied: every scored candidate is in the file
    columns: time_utc, season, basin, lat, lon (deg east, -180..180), centre_hpa (smoothed centre), pmin150_hpa,
    depth_hpa, gust500_kt, area64_km2, grad_hpa100km, track (stable id: basin + first time + ordinal),
@@ -257,16 +348,16 @@ Overlap, mean per season 2004-2005 -> 2021-2025: series sum (all rows) +33%, fit
    fit_in (F/E/L = row's season was in the full/early/late fit, i.e. that probability is in-sample), p_full, p_early, p_late.
    Rounding: positions/features 2 decimals, probabilities 4.
 
-   READ-BACK from the gz: 48299 rows
-   sum p_full from file 3911.49 vs unrounded 3911.49 (4-decimal rounding)
-   archive_label counts in file: pos=1508, neg=18828, gray=5028, blank=22935
-   fit_in counts in file: none=22935, FE=6996, FL=18368
-   columns differ as expected (from the file): rows with |p_full-p_early|>0.01: 11073, |p_full-p_late|>0.01: 5393, |p_early-p_late|>0.01: 13467; max gaps 0.180 / 0.067 / 0.247
-   Spearman from the file: full~early 0.9984, full~late 0.9997, early~late 0.9968
+   READ-BACK from the gz: 174700 rows
+   sum p_full from file 13878.20 vs unrounded 13878.19 (4-decimal rounding)
+   archive_label counts in file: pos=4661, neg=59592, gray=16423, blank=94024
+   fit_in counts in file: none=94024, F=55312, FE=6996, FL=18368
+   columns differ as expected (from the file): rows with |p_full-p_early|>0.01: 36954, |p_full-p_late|>0.01: 25473, |p_early-p_late|>0.01: 49626; max gaps 0.208 / 0.267 / 0.292
+   Spearman from the file: full~early 0.9988, full~late 0.9956, early~late 0.9947
    time_utc   basin      lat        lon        gust500_kt area64_km2 pmin150_hp fit_in     p_full     p_early    p_late    
-   1980-02-11T12:00Z atl        43.00      -55.75     92.06      185391.06  952.28                0.9901     0.9826     0.9920    
-   2025-12-16T12:00Z atl        52.25      -43.50     102.58     309065.50  943.07     FL         0.9993     0.9985     0.9994    
-   2002-12-09T06:00Z atl        63.75      -49.00     80.62      84225.98   988.54                0.5793     0.3991     0.6466    
-   2004-12-06T06:00Z pac        46.25      165.00     67.52      33396.63   972.93     FE         0.3911     0.3212     0.4166    
+   1980-02-11T12:00Z atl        43.00      -55.75     92.06      185391.06  952.28                0.9908     0.9867     0.9960    
+   2025-12-16T12:00Z atl        52.25      -43.50     102.58     309065.50  943.07     FL         0.9992     0.9987     0.9997    
+   2020-02-16T06:00Z atl        61.25      -19.50     55.83      0.00       924.21     F          0.4661     0.6022     0.3105    
+   2002-11-23T06:00Z pac        49.50      168.50     69.29      24679.98   976.63                0.3362     0.2772     0.3626    
    (rows: top p_full in first season, top in last season, row with the largest p_early/p_late gap, a mid-probability row)
 

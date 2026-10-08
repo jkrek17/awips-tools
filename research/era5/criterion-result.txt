@@ -4,7 +4,7 @@ The criterion is a PROXY: it reproduces what OPC's archive called hurricane
 force from ERA5 cyclone features. It cannot be validated before 2001. These
 results are a necessary condition for backward use, not a sufficient one.
 
-Seasons fetched: [2002, 2003, 2004, 2005, 2021, 2022, 2023, 2024, 2025]   (season N = 1 Sep N to 31 May N+1)
+Seasons fetched: [1979, 1980, 1981, 1982, 1983, 1984, 1985, 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]   (season N = 1 Sep N to 31 May N+1)
 Early window used: (2004, 2005) (both basins; archive RECORD_START = 2004)
 Late window used : (2021, 2022, 2023, 2024, 2025)
 Sensitivity S2   : early window plus Pacific (2002, 2003)
@@ -17,6 +17,52 @@ negative and the label noise would differ by period. Windows are 2 and 5 seasons
    fit  = cand with smoothed centre <= 990 hPa; pos/neg/gray as in event_fields.py
    tracks = linked cyclone tracks among fit candidates
    season basin   cand    fit    pos    neg   gray  tracks  pos-rate(pos/(pos+neg))
+   1979  atl    4573   1879      0   1879      0     391   0.000   (archive not complete: excluded)
+   1979  pac    4169   2070      0   2070      0     378   0.000
+   1980  atl    4506   1852      0   1852      0     385   0.000   (archive not complete: excluded)
+   1980  pac    4322   2213      0   2213      0     405   0.000
+   1981  atl    4239   1918      0   1918      0     377   0.000   (archive not complete: excluded)
+   1981  pac    3720   1533      0   1533      0     282   0.000
+   1982  atl    4208   1768      0   1768      0     354   0.000   (archive not complete: excluded)
+   1982  pac    4419   2187      0   2187      0     380   0.000
+   1983  atl    4330   1647      0   1647      0     358   0.000   (archive not complete: excluded)
+   1983  pac    4259   1905      0   1905      0     339   0.000
+   1984  atl    4703   1995      0   1995      0     378   0.000   (archive not complete: excluded)
+   1984  pac    3903   1666      0   1666      0     330   0.000
+   1985  atl    4278   1849      0   1849      0     389   0.000   (archive not complete: excluded)
+   1985  pac    4088   2025      0   2025      0     345   0.000
+   1986  atl    4317   1968      0   1968      0     398   0.000   (archive not complete: excluded)
+   1986  pac    4069   1978      0   1978      0     358   0.000
+   1987  atl    4415   1896      0   1896      0     354   0.000   (archive not complete: excluded)
+   1987  pac    4156   1833      0   1833      0     332   0.000
+   1988  atl    4119   1879      0   1879      0     382   0.000   (archive not complete: excluded)
+   1988  pac    3628   1476      0   1476      0     282   0.000
+   1989  atl    4411   2265      0   2265      0     476   0.000   (archive not complete: excluded)
+   1989  pac    3889   1563      0   1563      0     264   0.000
+   1990  atl    4470   1872      0   1872      0     388   0.000   (archive not complete: excluded)
+   1990  pac    3886   1675      0   1675      0     346   0.000
+   1991  atl    4363   1852      0   1852      0     410   0.000   (archive not complete: excluded)
+   1991  pac    4201   1981      0   1981      0     348   0.000
+   1992  atl    4258   1918      0   1918      0     404   0.000   (archive not complete: excluded)
+   1992  pac    4160   1907      0   1907      0     354   0.000
+   1993  atl    4384   2046      0   2046      0     428   0.000   (archive not complete: excluded)
+   1993  pac    3923   1654      0   1654      0     297   0.000
+   1994  atl    4142   1842      0   1842      0     385   0.000   (archive not complete: excluded)
+   1994  pac    4212   1918      0   1918      0     353   0.000
+   1995  atl    4195   1720      0   1720      0     349   0.000   (archive not complete: excluded)
+   1995  pac    3979   1881      0   1881      0     324   0.000
+   1996  atl    4349   1851      0   1851      0     372   0.000   (archive not complete: excluded)
+   1996  pac    3895   1772      0   1772      0     308   0.000
+   1997  atl    4655   1935      0   1935      0     370   0.000   (archive not complete: excluded)
+   1997  pac    4372   2208      0   2208      0     386   0.000
+   1998  atl    4194   1820      0   1820      0     365   0.000   (archive not complete: excluded)
+   1998  pac    4069   1870      0   1870      0     349   0.000
+   1999  atl    4166   1761      0   1761      0     354   0.000   (archive not complete: excluded)
+   1999  pac    3900   1691      0   1691      0     289   0.000
+   2000  atl    4707   2043      0   2043      0     362   0.000   (archive not complete: excluded)
+   2000  pac    4002   1929      0   1929      0     319   0.000
+   2001  atl    4452   2027      0   2027      0     408   0.000   (archive not complete: excluded)
+   2001  pac    3831   1707      0   1707      0     319   0.000
    2002  atl    4562   2078      0   2078      0     389   0.000   (archive not complete: excluded)
    2002  pac    3892   1934     61   1618    255     307   0.036
    2003  atl    4587   1870     30   1699    141     384   0.017   (archive not complete: excluded)
@@ -25,6 +71,36 @@ negative and the label noise would differ by period. Windows are 2 and 5 seasons
    2004  pac    3942   1709     86   1345    278     309   0.060
    2005  atl    4508   1812     97   1474    241     349   0.062
    2005  pac    4097   1862     85   1514    263     373   0.053
+   2006  atl    4531   2252    197   1500    555     446   0.116
+   2006  pac    3893   1661    108   1190    363     287   0.083
+   2007  atl    4335   1970    124   1482    364     399   0.077
+   2007  pac    3966   1896    129   1435    332     336   0.082
+   2008  atl    4344   1922    123   1299    500     392   0.086
+   2008  pac    3495   1212     83    933    196     230   0.082
+   2009  atl    4575   2016     83   1554    379     382   0.051
+   2009  pac    4395   2058    127   1462    469     373   0.080
+   2010  atl    4359   1902     93   1407    402     365   0.062
+   2010  pac    3983   1599     73   1250    276     276   0.055
+   2011  atl    4180   1986    114   1502    370     400   0.071
+   2011  pac    4190   1857    109   1294    454     374   0.078
+   2012  atl    4632   1958     89   1498    371     381   0.056
+   2012  pac    3785   1481    109   1033    339     258   0.095
+   2013  atl    4507   2150    134   1548    468     406   0.080
+   2013  pac    3941   1602     55   1341    206     302   0.039
+   2014  atl    4311   1929    141   1308    480     395   0.097
+   2014  pac    3832   1790     63   1490    237     293   0.041
+   2015  atl    4516   2043    120   1467    456     397   0.076
+   2015  pac    4116   2107    145   1436    526     339   0.092
+   2016  atl    4371   1830    109   1215    506     376   0.082
+   2016  pac    3985   1752     71   1408    273     332   0.048
+   2017  atl    4635   2073    110   1429    534     392   0.071
+   2017  pac    3590   1315     51   1101    163     240   0.044
+   2018  atl    4498   2055    115   1561    379     388   0.069
+   2018  pac    4008   1774    102   1352    320     304   0.070
+   2019  atl    4582   2090    106   1550    434     412   0.064
+   2019  pac    3851   1576     64   1208    304     291   0.050
+   2020  atl    4275   1829     94   1320    415     342   0.066
+   2020  pac    3630   1627    112   1191    324     312   0.086
    2021  atl    4228   1882    177   1251    454     372   0.124
    2021  pac    3936   1728     88   1293    347     301   0.064
    2022  atl    4290   2047    101   1540    406     383   0.062
@@ -44,6 +120,7 @@ negative and the label noise would differ by period. Windows are 2 and 5 seasons
    cyclone centre (Greenland terrain jets mostly), so no centre detector can find
    them; 'low' is the population a cyclone criterion is about.
    season basin  low fixes  detected   rate   (centre<=990)   | tipjet/nocentre fixes  detected
+   2001  pac         1         0    0.0%     0.0%        |          0                 0
    2002  pac        68        61   89.7%    89.7%        |          0                 0
    2003  atl        30        30  100.0%   100.0%        |          0                 0   (archive incomplete)
    2003  pac        62        61   98.4%    98.4%        |          0                 0
@@ -51,6 +128,36 @@ negative and the label noise would differ by period. Windows are 2 and 5 seasons
    2004  pac        89        87   97.8%    96.6%        |          0                 0
    2005  atl       106        98   92.5%    91.5%        |          0                 0
    2005  pac        87        85   97.7%    97.7%        |          0                 0
+   2006  atl       223       206   92.4%    88.3%        |          3                 0
+   2006  pac       121       117   96.7%    89.3%        |          0                 0
+   2007  atl       148       127   85.8%    83.8%        |          0                 0
+   2007  pac       137       132   96.4%    94.2%        |          0                 0
+   2008  atl       155       140   90.3%    79.4%        |          3                 1
+   2008  pac        89        86   96.6%    95.5%        |          0                 0
+   2009  atl        85        83   97.6%    97.6%        |          0                 0
+   2009  pac       131       128   97.7%    97.7%        |          0                 0
+   2010  atl        96        94   97.9%    96.9%        |          2                 0
+   2010  pac        74        73   98.6%    98.6%        |          0                 0
+   2011  atl       131       116   88.5%    87.0%        |          3                 0
+   2011  pac       111       110   99.1%    98.2%        |          0                 0
+   2012  atl       102        93   91.2%    87.3%        |          2                 0
+   2012  pac       109       109  100.0%   100.0%        |          0                 0
+   2013  atl       150       135   90.0%    89.3%        |          4                 0
+   2013  pac        58        55   94.8%    94.8%        |          0                 0
+   2014  atl       148       141   95.3%    95.3%        |          4                 0
+   2014  pac        64        63   98.4%    98.4%        |          0                 0
+   2015  atl       133       125   94.0%    91.0%        |          2                 0
+   2015  pac       154       149   96.8%    96.1%        |          0                 0
+   2016  atl       124       118   95.2%    87.9%        |          0                 0
+   2016  pac        75        75  100.0%    94.7%        |          0                 0
+   2017  atl       121       115   95.0%    90.9%        |         12                 0
+   2017  pac        53        52   98.1%    96.2%        |          0                 0
+   2018  atl       124       119   96.0%    92.7%        |          0                 0
+   2018  pac       103       102   99.0%    99.0%        |          0                 0
+   2019  atl       114       109   95.6%    93.0%        |          4                 1
+   2019  pac        65        65  100.0%    98.5%        |          0                 0
+   2020  atl        95        94   98.9%    98.9%        |         34                 2
+   2020  pac       114       112   98.2%    98.2%        |          0                 0
    2021  atl       195       181   92.8%    90.8%        |         13                 4
    2021  pac        95        93   97.9%    92.6%        |          0                 0
    2022  atl       106       102   96.2%    95.3%        |          3                 2
@@ -61,12 +168,12 @@ negative and the label noise would differ by period. Windows are 2 and 5 seasons
    2024  pac       100        99   99.0%    99.0%        |          0                 0
    2025  atl       179       176   98.3%    95.0%        |         25                 0
    2025  pac        77        74   96.1%    92.2%        |          0                 0
-   TOTAL all   'low' HF fixes 1746, detected 1673 (95.8%), detected with centre <=990 hPa 1633 (93.5%); tipjet/nocentre 66, detected 8 (12.1%)
+   TOTAL all   'low' HF fixes 5154, detected 4916 (95.4%), detected with centre <=990 hPa 4793 (93.0%); tipjet/nocentre 139, detected 12 (8.6%)
    TOTAL early 'low' HF fixes 408, detected 385 (94.4%), detected with centre <=990 hPa 376 (92.2%); tipjet/nocentre 8, detected 2 (25.0%)
    TOTAL late  'low' HF fixes 1208, detected 1166 (96.5%), detected with centre <=990 hPa 1135 (94.0%); tipjet/nocentre 58, detected 6 (10.3%)
-   EVENT level, class low     : 577 archive HF events with a fix in the domains; 555 have >=1 fix detected (96.2%)
-   EVENT level, class tipjet  : 12 archive HF events with a fix in the domains; 2 have >=1 fix detected (16.7%)
-   EVENT level, class nocentre: 4 archive HF events with a fix in the domains; 3 have >=1 fix detected (75.0%)
+   EVENT level, class low     : 1718 archive HF events with a fix in the domains; 1663 have >=1 fix detected (96.8%)
+   EVENT level, class tipjet  : 29 archive HF events with a fix in the domains; 4 have >=1 fix detected (13.8%)
+   EVENT level, class nocentre: 13 archive HF events with a fix in the domains; 5 have >=1 fix detected (38.5%)
 
 3. ANALYSIS SAMPLE (fit population, pos + neg only)
    early n=5839  pos=376  neg=5463  tracks=1381  pos-rate=0.064
@@ -75,13 +182,13 @@ negative and the label noise would differ by period. Windows are 2 and 5 seasons
 
    Feature medians (descriptive only; nothing here chose the model)
                     gust kt area64 km2      grad  pmin hPa
-   early    pos        71.6     41424     11.70     964.4
-   early    neg        50.0         0      7.43     982.2
-   late     pos        74.8     55574     12.95     964.3
-   late     neg        50.0         0      7.23     982.3
+   early    pos        71.5     40509     11.70     964.4
+   early    neg        49.4         0      7.43     982.2
+   late     pos        74.6     53373     12.95     964.3
+   late     neg        49.5         0      7.23     982.3
    Univariate AUC, pos vs neg, in-period (descriptive; pilot reported track-level 0.93):
-     gust        early 0.951   late 0.975
-     log area64  early 0.887   late 0.953
+     gust        early 0.954   late 0.978
+     log area64  early 0.886   late 0.953
      gradient    early 0.768   late 0.821
      -pmin       early 0.881   late 0.883
 
@@ -89,109 +196,346 @@ negative and the label noise would differ by period. Windows are 2 and 5 seasons
    logit P(HF-equivalent) = b0 + sum(b_i x_i); x in the fixed units listed in the header
    M1
    term                   early      se      late      se late-early      se       z
-   b0                   -10.155   1.201   -11.391   1.059    -1.236   1.602   -0.77
-   gust/10kt              1.127   0.206     1.272   0.184     0.145   0.276    0.52
-   ln(1+A64/1e3km2)       0.452   0.111     0.686   0.085     0.234   0.140    1.68
-   grad hPa/100km        -0.046   0.024    -0.052   0.016    -0.006   0.029   -0.21
-   (pmin-980)/10         -0.859   0.134    -0.714   0.096     0.146   0.165    0.88
+   b0                   -10.486   1.294   -13.124   1.341    -2.638   1.863   -1.42
+   gust/10kt              1.151   0.216     1.530   0.225     0.379   0.312    1.22
+   ln(1+A64/1e3km2)       0.429   0.112     0.573   0.090     0.144   0.144    1.00
+   grad hPa/100km        -0.017   0.024    -0.020   0.016    -0.003   0.029   -0.10
+   (pmin-980)/10         -0.832   0.134    -0.713   0.096     0.119   0.165    0.72
    M0
    term                   early      se      late      se late-early      se       z
-   b0                   -15.363   1.034   -19.109   0.809    -3.747   1.313   -2.85
-   gust/10kt              2.078   0.162     2.633   0.123     0.555   0.203    2.73
-   M0 gust at which P = 0.5 (kt): early 73.9 (se 1.1), late 72.6 (se 0.4), shift -1.4 kt (se 1.1)
-   Scale of that shift: in the late window 987 fit-population candidates have gust >= 73.9 kt and 1188 have >= 72.6 kt (20.4% more)
+   b0                   -15.799   1.133   -20.508   0.920    -4.709   1.460   -3.23
+   gust/10kt              2.161   0.178     2.866   0.140     0.705   0.226    3.12
+   M0 gust at which P = 0.5 (kt): early 73.1 (se 1.0), late 71.5 (se 0.4), shift -1.6 kt (se 1.1)
+   Scale of that shift: in the late window 1022 fit-population candidates have gust >= 73.1 kt and 1232 have >= 71.5 kt (20.5% more)
    (the P=0.5 point sits where the class mix is, so it moves with the pos-rate;
     the slope on gust is the cleaner drift measure)
-   M1 predicted P at pooled-mean cyclone: early-fit 0.012, late-fit 0.007
-   M1 predicted P at typical HF moment (pos median): early-fit 0.684, late-fit 0.775
+   M1 predicted P at pooled-mean cyclone: early-fit 0.011, late-fit 0.006
+   M1 predicted P at typical HF moment (pos median): early-fit 0.692, late-fit 0.789
 
 5. TRANSFER TEST (fit on one window, evaluate on the other; 95% CI from track bootstrap of both sets, 400 reps)
    calibration: ratio = mean predicted / observed rate; slope = calibration slope
    (1 = perfect, <1 = the fitted model is too extreme for the new period); shift =
    log-odds offset the new period needs at slope 1.
    mod direction                    AUC        AUC 95% CI     obs    pred   ratio   slope   shift ratio 95% CI
-   M1  fit early -> test late     0.980  [0.974, 0.983]   0.078   0.077    0.98    1.19    0.04  [0.86, 1.11]  slope CI [1.02, 1.35]
-   M1  fit late -> test early     0.960  [0.946, 0.970]   0.064   0.064    0.99    0.83    0.03  [0.86, 1.15]  slope CI [0.73, 0.93]
-   M0  fit early -> test late     0.975  [0.971, 0.979]   0.078   0.077    0.99    1.27    0.02  [0.84, 1.13]  slope CI [1.07, 1.51]
-   M0  fit late -> test early     0.951  [0.937, 0.963]   0.064   0.063    0.98    0.79    0.05  [0.83, 1.15]  slope CI [0.66, 0.94]
+   M1  fit early -> test late     0.981  [0.976, 0.985]   0.078   0.076    0.98    1.23    0.05  [0.86, 1.10]  slope CI [1.05, 1.39]
+   M1  fit late -> test early     0.963  [0.950, 0.973]   0.064   0.064    0.99    0.81    0.02  [0.86, 1.15]  slope CI [0.71, 0.93]
+   M0  fit early -> test late     0.978  [0.974, 0.982]   0.078   0.077    0.98    1.33    0.04  [0.84, 1.12]  slope CI [1.10, 1.60]
+   M0  fit late -> test early     0.954  [0.941, 0.966]   0.064   0.063    0.99    0.75    0.03  [0.85, 1.16]  slope CI [0.62, 0.91]
 
    In-sample reference (fit and score on the same window; optimistic):
-     M1 early AUC 0.960
-     M1 late  AUC 0.981
-     M0 early AUC 0.951
-     M0 late  AUC 0.975
+     M1 early AUC 0.962
+     M1 late  AUC 0.982
+     M0 early AUC 0.954
+     M0 late  AUC 0.978
 
    Reliability, M1, five equal-count bins of predicted probability on the test window
    fit early -> test late
      bin   n    predicted   observed
      1   2900    0.001       0.000
-     2   2900    0.004       0.000
-     3   2899    0.008       0.001
-     4   2899    0.021       0.010
-     5   2899    0.350       0.380
+     2   2900    0.003       0.000
+     3   2899    0.008       0.000
+     4   2899    0.021       0.008
+     5   2899    0.349       0.382
    fit late -> test early
      bin   n    predicted   observed
-     1   1168    0.001       0.000
-     2   1168    0.002       0.001
-     3   1168    0.005       0.004
-     4   1168    0.011       0.016
-     5   1167    0.300       0.301
+     1   1168    0.000       0.000
+     2   1168    0.001       0.001
+     3   1168    0.004       0.003
+     4   1168    0.011       0.011
+     5   1167    0.304       0.307
 
    By basin (M1, same coefficients, AUC on that basin's test candidates)
-     fit early -> test late   atl 0.973 (n=7704, pos=643)   pac 0.987 (n=6793, pos=489)
-     fit late -> test early   atl 0.943 (n=2809, pos=205)   pac 0.977 (n=3030, pos=171)
+     fit early -> test late   atl 0.976 (n=7704, pos=643)   pac 0.988 (n=6793, pos=489)
+     fit late -> test early   atl 0.947 (n=2809, pos=205)   pac 0.977 (n=3030, pos=171)
 
 6. WITHIN-PERIOD BASELINE: leave one season out (fit on the window's other seasons)
-   M1 early hold out 2004 (train n=3170): AUC 0.953  pred/obs 1.02  cal-slope 0.86
-   M1 early hold out 2005 (train n=2669): AUC 0.965  pred/obs 1.00  cal-slope 1.15
-   M1 early mean AUC 0.959 (folds 0.953-0.965), mean pred/obs 1.01 (folds 1.00-1.02)
-   M1 late  hold out 2021 (train n=11688): AUC 0.980  pred/obs 0.96  cal-slope 0.96
-   M1 late  hold out 2022 (train n=11562): AUC 0.986  pred/obs 1.08  cal-slope 1.12
-   M1 late  hold out 2023 (train n=11534): AUC 0.982  pred/obs 1.02  cal-slope 1.10
-   M1 late  hold out 2024 (train n=11614): AUC 0.980  pred/obs 1.09  cal-slope 0.92
-   M1 late  hold out 2025 (train n=11590): AUC 0.975  pred/obs 0.88  cal-slope 0.93
-   M1 late  mean AUC 0.981 (folds 0.975-0.986), mean pred/obs 1.01 (folds 0.88-1.09)
-   M0 early hold out 2004 (train n=3170): AUC 0.949  pred/obs 0.98  cal-slope 0.85
-   M0 early hold out 2005 (train n=2669): AUC 0.953  pred/obs 1.03  cal-slope 1.17
-   M0 early mean AUC 0.951 (folds 0.949-0.953), mean pred/obs 1.01 (folds 0.98-1.03)
-   M0 late  hold out 2021 (train n=11688): AUC 0.976  pred/obs 0.97  cal-slope 0.93
-   M0 late  hold out 2022 (train n=11562): AUC 0.981  pred/obs 1.09  cal-slope 1.07
-   M0 late  hold out 2023 (train n=11534): AUC 0.976  pred/obs 0.99  cal-slope 1.16
-   M0 late  hold out 2024 (train n=11614): AUC 0.974  pred/obs 1.09  cal-slope 0.98
-   M0 late  hold out 2025 (train n=11590): AUC 0.967  pred/obs 0.89  cal-slope 0.91
-   M0 late  mean AUC 0.975 (folds 0.967-0.981), mean pred/obs 1.01 (folds 0.89-1.09)
+   M1 early hold out 2004 (train n=3170): AUC 0.954  pred/obs 1.02  cal-slope 0.84
+   M1 early hold out 2005 (train n=2669): AUC 0.966  pred/obs 1.00  cal-slope 1.17
+   M1 early mean AUC 0.960 (folds 0.954-0.966), mean pred/obs 1.01 (folds 1.00-1.02)
+   M1 late  hold out 2021 (train n=11688): AUC 0.982  pred/obs 0.99  cal-slope 0.93
+   M1 late  hold out 2022 (train n=11562): AUC 0.986  pred/obs 1.08  cal-slope 1.13
+   M1 late  hold out 2023 (train n=11534): AUC 0.983  pred/obs 1.02  cal-slope 1.09
+   M1 late  hold out 2024 (train n=11614): AUC 0.981  pred/obs 1.09  cal-slope 0.92
+   M1 late  hold out 2025 (train n=11590): AUC 0.979  pred/obs 0.86  cal-slope 0.96
+   M1 late  mean AUC 0.982 (folds 0.979-0.986), mean pred/obs 1.01 (folds 0.86-1.09)
+   M0 early hold out 2004 (train n=3170): AUC 0.951  pred/obs 0.98  cal-slope 0.85
+   M0 early hold out 2005 (train n=2669): AUC 0.957  pred/obs 1.03  cal-slope 1.18
+   M0 early mean AUC 0.954 (folds 0.951-0.957), mean pred/obs 1.01 (folds 0.98-1.03)
+   M0 late  hold out 2021 (train n=11688): AUC 0.979  pred/obs 1.00  cal-slope 0.88
+   M0 late  hold out 2022 (train n=11562): AUC 0.982  pred/obs 1.10  cal-slope 1.07
+   M0 late  hold out 2023 (train n=11534): AUC 0.979  pred/obs 0.99  cal-slope 1.16
+   M0 late  hold out 2024 (train n=11614): AUC 0.976  pred/obs 1.09  cal-slope 0.97
+   M0 late  hold out 2025 (train n=11590): AUC 0.974  pred/obs 0.85  cal-slope 0.98
+   M0 late  mean AUC 0.978 (folds 0.974-0.982), mean pred/obs 1.01 (folds 0.85-1.10)
 
    Size-matched baseline for fit early -> test late: fit on any 2 late seasons,
    test on the other 3 (10 combinations). Early window has only 2 seasons, so
    the plain LOSO above trains the early window on 1 season and flatters nothing.
-   M1 train 2 late seasons -> test other 3: AUC mean 0.980 (range 0.977-0.983), pred/obs mean 1.00 (range 0.89-1.13)
-   M0 train 2 late seasons -> test other 3: AUC mean 0.975 (range 0.972-0.978), pred/obs mean 1.00 (range 0.89-1.11)
+   M1 train 2 late seasons -> test other 3: AUC mean 0.982 (range 0.980-0.984), pred/obs mean 1.00 (range 0.90-1.12)
+   M0 train 2 late seasons -> test other 3: AUC mean 0.978 (range 0.976-0.980), pred/obs mean 1.00 (range 0.89-1.11)
 
 7. HOW THE CROSS-PERIOD NUMBERS READ AGAINST THE WITHIN-PERIOD ONES
-   M1 fit early -> test late   cross AUC 0.980 vs within-late LOSO mean 0.981 (folds 0.975-0.986): gap -0.001;  pred/obs 0.98 vs within 1.01 (folds 0.88-1.09)
-   M1 fit late -> test early   cross AUC 0.960 vs within-early LOSO mean 0.959 (folds 0.953-0.965): gap +0.002;  pred/obs 0.99 vs within 1.01 (folds 1.00-1.02)
-   M0 fit early -> test late   cross AUC 0.975 vs within-late LOSO mean 0.975 (folds 0.967-0.981): gap +0.000;  pred/obs 0.99 vs within 1.01 (folds 0.89-1.09)
-   M0 fit late -> test early   cross AUC 0.951 vs within-early LOSO mean 0.951 (folds 0.949-0.953): gap +0.000;  pred/obs 0.98 vs within 1.01 (folds 0.98-1.03)
+   M1 fit early -> test late   cross AUC 0.981 vs within-late LOSO mean 0.982 (folds 0.979-0.986): gap -0.001;  pred/obs 0.98 vs within 1.01 (folds 0.86-1.09)
+   M1 fit late -> test early   cross AUC 0.963 vs within-early LOSO mean 0.960 (folds 0.954-0.966): gap +0.002;  pred/obs 0.99 vs within 1.01 (folds 1.00-1.02)
+   M0 fit early -> test late   cross AUC 0.978 vs within-late LOSO mean 0.978 (folds 0.974-0.982): gap -0.000;  pred/obs 0.98 vs within 1.01 (folds 0.85-1.10)
+   M0 fit late -> test early   cross AUC 0.954 vs within-early LOSO mean 0.954 (folds 0.951-0.957): gap +0.000;  pred/obs 0.99 vs within 1.01 (folds 0.98-1.03)
 
 8. PRE-SPECIFIED SENSITIVITIES (reported whatever they show; the primary result is Section 5)
-   S1 gray as negative, M1 fit early -> test late   AUC 0.964  pred/obs 1.09  slope 1.08  (n test 18368, pos 1132)
-   S1 gray as negative, M1 fit late -> test early   AUC 0.948  pred/obs 0.89  slope 0.90  (n test 6996, pos 376)
+   S1 gray as negative, M1 fit early -> test late   AUC 0.966  pred/obs 1.08  slope 1.10  (n test 18368, pos 1132)
+   S1 gray as negative, M1 fit late -> test early   AUC 0.951  pred/obs 0.90  slope 0.89  (n test 6996, pos 376)
    S2 early window + Pacific 2002-03: n=9079 pos=498
-   S2 M1 fit early2 -> test late  AUC 0.979  pred/obs 0.86  slope 1.16
-   S2 M1 fit late -> test early2  AUC 0.966  pred/obs 1.15  slope 0.85
-   S2 M1 within early2 LOSO (4 folds): AUC mean 0.974 (folds 0.952/0.965/0.996/0.983), pred/obs 0.80/0.76/2.02/1.13
+   S2 M1 fit early2 -> test late  AUC 0.981  pred/obs 0.85  slope 1.20
+   S2 M1 fit late -> test early2  AUC 0.968  pred/obs 1.16  slope 0.82
+   S2 M1 within early2 LOSO (4 folds): AUC mean 0.975 (folds 0.954/0.966/0.996/0.983), pred/obs 0.80/0.76/2.02/1.12
 
 9. POST-HOC (added AFTER seeing that full-population AUC sits near 0.95-0.98; NOT part of the
    pre-specified analysis, and the model is NOT refit or altered - only the test set is narrowed)
    The primary negatives are mostly weak lows (median gust ~50 kt), which any gust feature
    separates easily. Here the same primary-fit models are scored only on 'contender'
    cyclones, raw minimum pressure <= 975 hPa, where the HF/non-HF call is genuinely hard.
-   M1 fit early -> test late   n=3879 pos=935 (83% of pos) AUC 0.956  obs 0.241 pred 0.238 ratio 0.99 slope 1.15
-   M1 fit late -> test early   n=1534 pos=319 (85% of pos) AUC 0.917  obs 0.208 pred 0.202 ratio 0.97 slope 0.73
-   M1 within-early LOSO on contenders: AUC mean 0.914 (folds 0.917/0.912), pred/obs 1.03/0.94
-   M1 within-late LOSO on contenders: AUC mean 0.957 (folds 0.950/0.973/0.959/0.956/0.949), pred/obs 0.95/1.10/0.99/1.07/0.89
-   M0 fit early -> test late   n=3879 pos=935 (83% of pos) AUC 0.947  obs 0.241 pred 0.195 ratio 0.81 slope 1.14
-   M0 fit late -> test early   n=1534 pos=319 (85% of pos) AUC 0.905  obs 0.208 pred 0.169 ratio 0.81 slope 0.67
-   M0 within-early LOSO on contenders: AUC mean 0.905 (folds 0.905/0.904), pred/obs 0.80/0.78
-   M0 within-late LOSO on contenders: AUC mean 0.946 (folds 0.942/0.955/0.952/0.947/0.936), pred/obs 0.85/0.96/0.83/0.93/0.75
+   M1 fit early -> test late   n=3879 pos=935 (83% of pos) AUC 0.960  obs 0.241 pred 0.236 ratio 0.98 slope 1.19
+   M1 fit late -> test early   n=1534 pos=319 (85% of pos) AUC 0.920  obs 0.208 pred 0.204 ratio 0.98 slope 0.71
+   M1 within-early LOSO on contenders: AUC mean 0.916 (folds 0.917/0.915), pred/obs 1.04/0.95
+   M1 within-late LOSO on contenders: AUC mean 0.960 (folds 0.954/0.974/0.961/0.958/0.954), pred/obs 0.97/1.08/0.99/1.08/0.88
+   M0 fit early -> test late   n=3879 pos=935 (83% of pos) AUC 0.954  obs 0.241 pred 0.196 ratio 0.81 slope 1.21
+   M0 fit late -> test early   n=1534 pos=319 (85% of pos) AUC 0.910  obs 0.208 pred 0.175 ratio 0.84 slope 0.64
+   M0 within-early LOSO on contenders: AUC mean 0.910 (folds 0.907/0.912), pred/obs 0.82/0.79
+   M0 within-late LOSO on contenders: AUC mean 0.953 (folds 0.947/0.964/0.958/0.954/0.944), pred/obs 0.88/0.96/0.84/0.94/0.76
 
+
+========================================================================
+EXTENSION (coordinator's four items). Overlap seasons used: 22 (2004..2025); n=64253 pos=4661 neg=59592 tracks=15230
+========================================================================
+
+10. HSS, POD, FAR AT THE COUNT-MATCHED CUT
+   Unit: a 6-hourly cyclone-moment (fit population, pos/neg). Yes-forecast = p >= cut, where the cut is
+   the probability at which the number of flagged moments EQUALS the archive's HF-moment count in the
+   fit window (so flagged = obs there, and POD = 1 - FAR by construction in-sample). POD = hits/(hits+miss);
+   FAR = false alarms / flagged (a ratio, not a rate); HSS = 2(ad-bc)/[(a+c)(c+d)+(a+b)(b+d)], 0 = no skill
+   over chance, 1 = perfect; CSI = hits/(hits+FA+miss). 'cut ~kt' = the gust the cut equals: exact for M0
+   (a gust-only model IS a gust threshold); for M1 the gust at which M1 reaches the cut with its other
+   features at the median of the training positives. Transfer rows apply the TRAINING window's cut to the
+   other window, so flagged vs obs there is the count error a backward extension would inherit.
+   Intervals in brackets: 95% on HSS, resampling evaluation tracks, fit held fixed (400 reps).
+
+   M1
+   fit early, scored early (in-sample) flagged   376 obs   376  hits   241 FA   135 miss   135  POD 0.641 FAR 0.359 HSS 0.616 [0.535,0.677] CSI 0.472 cut p=0.317 ~61.0 kt
+   fit late, scored late (in-sample)  flagged  1132 obs  1132  hits   876 FA   256 miss   256  POD 0.774 FAR 0.226 HSS 0.755 [0.723,0.782] CSI 0.631 cut p=0.408 ~62.8 kt
+   fit early -> late (cut from early) flagged  1168 obs  1132  hits   883 FA   285 miss   249  POD 0.780 FAR 0.244 HSS 0.748 [0.717,0.779] CSI 0.623 cut p=0.317 ~61.0 kt
+   fit late -> early (cut from late)  flagged   351 obs   376  hits   242 FA   109 miss   134  POD 0.644 FAR 0.311 HSS 0.644 [0.578,0.701] CSI 0.499 cut p=0.408 ~62.8 kt
+   LOSO over all 22 seasons           flagged  4668 obs  4661  hits  3389 FA  1279 miss  1272  POD 0.727 FAR 0.274 HSS 0.705 [0.687,0.723] CSI 0.571
+                                      full-fit cut p=0.369, equivalent gust 60.4 kt (the count-matched criterion over 22 seasons)
+   per held-out season flagged/obs (LOSO): 2004:0.98 2005:0.89 2006:0.80 2007:0.83 2008:0.81 2009:0.85 2010:1.19 2011:1.12 2012:1.16 2013:1.12 2014:0.94 2015:0.96 2016:0.93 2017:1.14 2018:1.12 2019:1.61 2020:0.99 2021:0.99 2022:1.01 2023:1.03 2024:1.03 2025:0.87
+   AUC pooled over LOSO folds 0.972; mean of per-season AUC 0.973
+
+   M0
+   fit early, scored early (in-sample) flagged   376 obs   376  hits   228 FA   148 miss   148  POD 0.606 FAR 0.394 HSS 0.579 [0.510,0.643] CSI 0.435 cut p=0.279 ~68.7 kt
+   fit late, scored late (in-sample)  flagged  1133 obs  1132  hits   848 FA   285 miss   284  POD 0.749 FAR 0.252 HSS 0.727 [0.696,0.757] CSI 0.598 cut p=0.369 ~69.7 kt
+   fit early -> late (cut from early) flagged  1253 obs  1132  hits   896 FA   357 miss   236  POD 0.792 FAR 0.285 HSS 0.729 [0.696,0.760] CSI 0.602 cut p=0.279 ~68.7 kt
+   fit late -> early (cut from late)  flagged   328 obs   376  hits   214 FA   114 miss   162  POD 0.569 FAR 0.348 HSS 0.583 [0.518,0.646] CSI 0.437 cut p=0.369 ~69.7 kt
+   LOSO over all 22 seasons           flagged  4664 obs  4661  hits  3190 FA  1474 miss  1471  POD 0.684 FAR 0.316 HSS 0.659 [0.642,0.677] CSI 0.520
+                                      full-fit cut p=0.336, equivalent gust 69.5 kt (the count-matched criterion over 22 seasons)
+   per held-out season flagged/obs (LOSO): 2004:0.89 2005:0.87 2006:0.76 2007:0.84 2008:0.83 2009:0.82 2010:1.22 2011:1.09 2012:1.19 2013:1.05 2014:0.99 2015:0.93 2016:1.02 2017:1.21 2018:1.14 2019:1.39 2020:0.98 2021:1.02 2022:1.10 2023:1.03 2024:1.07 2025:0.89
+   AUC pooled over LOSO folds 0.965; mean of per-season AUC 0.966
+
+11. TRANSITIONING TROPICAL CYCLONES
+   Flag: an ERA5 candidate within 400 km, at the same valid time, of an IBTrACS v04r01 position (any nature,
+   NA+EP+WP) of a storm that was tropical (NATURE=TS) at some time; then the whole linked track. The archive
+   itself marks only a handful of tropical fixes (category TC), far too few to mask from.
+   IBTrACS: 7540 storms with a tropical record; 4168 candidates (of 394279) within 400 km of one; written to tc_candidates.csv
+   Check against the archive: archive fixes it labels TC (tropical), matched to an ERA5 candidate within 400 km,
+   and whether the IBTrACS flag caught them.
+   archive TC fixes in the cached seasons: 6; with an ERA5 candidate 1; of those on a flagged track 1
+   Fit population (pos+neg, 22 seasons): flagged rows 972 (1.5%); positives on flagged tracks 176 of 4661 (3.8%)
+     early window: flagged rows 1.4% of rows, flagged positives 1.6% of positives
+     late  window: flagged rows 1.4% of rows, flagged positives 4.9% of positives
+     atl   basin : flagged rows 1.7%, flagged positives 4.0% of positives
+     pac   basin : flagged rows 1.3%, flagged positives 3.4% of positives
+   (M0 is a gust threshold, so at a count-matched cut refitting it on fewer rows cannot change which rows are
+   flagged; it is shown once below only to say so.)
+
+   M1, scored on the 63281 non-TC rows (LOSO over 22 seasons, cut count-matched on the non-TC training rows)
+   A: fit on all rows (TC included)   flagged  4487 obs  4485  hits  3280 FA  1207 miss  1205  POD 0.731 FAR 0.269 HSS 0.711 CSI 0.576
+   B: fit on non-TC rows only         flagged  4489 obs  4485  hits  3289 FA  1200 miss  1196  POD 0.733 FAR 0.267 HSS 0.713 CSI 0.579
+   AUC A 0.9736  B 0.9739   B-A +0.0003 [+0.0001, +0.0005];  HSS B-A +0.0020 [-0.0006, +0.0042]
+   coefficients, full fit: all rows -10.924 1.202 0.582 -0.034 -0.790 | non-TC rows -12.298 1.420 0.517 -0.026 -0.766
+   Model A on the TC-flagged rows alone: n=972 pos=176, AUC 0.888 (non-TC rows: 0.974); mean p 0.221 vs observed 0.181
+
+   M0, scored on the 63281 non-TC rows (LOSO over 22 seasons, cut count-matched on the non-TC training rows)
+   A: fit on all rows (TC included)   flagged  4487 obs  4485  hits  3109 FA  1378 miss  1376  POD 0.693 FAR 0.307 HSS 0.670 CSI 0.530
+   B: fit on non-TC rows only         flagged  4487 obs  4485  hits  3109 FA  1378 miss  1376  POD 0.693 FAR 0.307 HSS 0.670 CSI 0.530
+   AUC A 0.9670  B 0.9670   B-A -0.0000 [-0.0000, +0.0000];  HSS B-A +0.0000 [+0.0000, +0.0000]
+   coefficients, full fit: all rows -17.961 2.485 | non-TC rows -19.072 2.655
+
+12. BASIN TERM (a priori: the basins differ in cyclone structure and in land influence; model M1B = M1 + 1[Pacific])
+   full-fit coefficients with the basin term (bootstrap se over tracks):
+     b0                  -11.244  se 0.502  z -22.4
+     gust/10kt             1.215  se 0.086  z 14.1
+     ln(1+A64/1e3km2)      0.579  se 0.037  z 15.5
+     grad hPa/100km       -0.027  se 0.010  z -2.7
+     (pmin-980)/10        -0.786  se 0.042  z -18.8
+     Pacific               0.370  se 0.094  z 3.9
+   without: -10.924 1.202 0.582 -0.034 -0.790
+   LOSO calibration by basin: sum of held-out p over pos+neg rows divided by archive HF moments
+   basin model      sum p      obs    ratio | per-season ratios; mean sd t(mean-1)
+   atl   M1        2752.5     2600    1.059 | mean 1.084 sd 0.212 t=1.85 (over 12, under 10 of 22 seasons)
+   atl   M1B       2602.1     2600    1.001 | mean 1.024 sd 0.205 t=0.55 (over 11, under 11 of 22 seasons)
+   pac   M1        1910.4     2061    0.927 | mean 0.950 sd 0.155 t=-1.51 (over 7, under 15 of 22 seasons)
+   pac   M1B       2061.1     2061    1.000 | mean 1.027 sd 0.170 t=0.75 (over 12, under 10 of 22 seasons)
+   M1   LOSO pooled AUC 0.9723; HSS 0.705 POD 0.727 FAR 0.274 at the count-matched cut (flagged 4668, obs 4661)
+        atl basin: flagged 2776 obs 2600  POD 0.722 FAR 0.324 HSS 0.672  AUC 0.9644
+        pac basin: flagged 1892 obs 2061  POD 0.734 FAR 0.201 HSS 0.749  AUC 0.9813
+   M1B  LOSO pooled AUC 0.9719; HSS 0.705 POD 0.727 FAR 0.273 at the count-matched cut (flagged 4664, obs 4661)
+        atl basin: flagged 2647 obs 2600  POD 0.705 FAR 0.308 HSS 0.673  AUC 0.9645
+        pac basin: flagged 2017 obs 2061  POD 0.755 FAR 0.228 HSS 0.747  AUC 0.9814
+
+14. DOES THE MASKED CRITERION STILL DEPEND ON LAND NEARBY? (the position-contamination concern)
+   Held-out (LOSO) M1 probability summed over pos+neg rows divided by archive HF moments, by the land share
+   of the 500 km disc around the centre (land500; the gust features see sea only). A criterion free of
+   land/orographic leakage should sit near 1.00 in every stratum; the sea-only mask removes the land gusts
+   but cannot remove a centre's proximity to land from the other features, so this is a check, not a guarantee.
+   stratum (land500)      rows    obs   sum p  ratio    AUC
+   0.00 <= land < 0.05   30502   3374  3130.5   0.93  0.972
+   0.05 <= land < 0.20   12539    833   962.5   1.16  0.960
+   0.20 <= land < 0.40   10363    359   418.7   1.17  0.964
+   0.40 <= land < 1.00   10849     95   151.2   1.59  0.955
+   by centre latitude:
+   30 <= lat < 40       1747    308   309.4   1.00  0.932
+   40 <= lat < 50      14338   1812  1589.8   0.88  0.973
+   50 <= lat < 60      28389   1851  1695.7   0.92  0.974
+   60 <= lat < 71      19779    690  1068.0   1.55  0.968
+   exposure left after masking, all scored rows (centre <= 990 hPa): land500 > 0.10 in 41% of rows, > 0.30 in 22%
+   archive-HF positives: median land500 0.00, share with land500 > 0.30: 4%
+
+13. SERIES-LEVEL STATIONARITY CHECK, WITH AND WITHOUT THE BASIN TERM
+   Same quantities as series.py section 5, computed here for both M1 and M1B so they are comparable.
+   p is the full-overlap fit (in-sample, all 22 seasons 2004+) applied to EVERY scored row (centre <= 990 hPa)
+   in every cached season; 'sum' is per season; archive pos = HF-matched candidate moments (all pressures).
+   --- M1
+   sum p, all scored rows, 22 overlap seasons                 n=22 slope   +27.75 /decade (+-23.70) t=2.45 crit 2.09 SIGNIFICANT
+   sum p, pos+neg rows (fitted population)                    n=22 slope   +11.95 /decade (+-17.47) t=1.43 crit 2.09 
+   ARCHIVE HF-matched moments (same for both models)          n=22 slope    -2.64 /decade (+-27.61) t=-0.20 crit 2.09 
+   (sum p, pos+neg) MINUS archive moments                     n=22 slope   +14.59 /decade (+-23.18) t=1.32 crit 2.09 
+   (sum p, ALL scored rows) MINUS archive moments  [the series.py flag line] n=22 slope   +30.39 /decade (+-24.12) t=2.63 crit 2.09 SIGNIFICANT
+   sum p, gray rows only                                      n=22 slope   +15.80 /decade (+-8.52) t=3.88 crit 2.09 SIGNIFICANT
+   sum p, all rows, ALL 47 seasons 1979..2025                 n=47 slope    +6.39 /decade (+-8.12) t=1.54 crit 1.96 
+   sum p, all rows, pre-2001 (22 seasons)                     n=22 slope   +35.39 /decade (+-23.21) t=3.19 crit 2.09 SIGNIFICANT
+   level step pre-2001 -> 2004+ (Welch)                       pre-2001 mean 295.5, 2004+ mean 295.5, diff +0.1 (se 11.6, t=0.01)
+   scored rows alone (no model), all seasons                  n=47 slope   -28.19 /decade (+-46.88) t=-1.18 crit 1.96 
+   --- M1B
+   sum p, all scored rows, 22 overlap seasons                 n=22 slope   +27.03 /decade (+-23.65) t=2.39 crit 2.09 SIGNIFICANT
+   sum p, pos+neg rows (fitted population)                    n=22 slope   +11.68 /decade (+-17.41) t=1.40 crit 2.09 
+   ARCHIVE HF-matched moments (same for both models)          n=22 slope    -2.64 /decade (+-27.61) t=-0.20 crit 2.09 
+   (sum p, pos+neg) MINUS archive moments                     n=22 slope   +14.32 /decade (+-23.03) t=1.30 crit 2.09 
+   (sum p, ALL scored rows) MINUS archive moments  [the series.py flag line] n=22 slope   +29.67 /decade (+-24.00) t=2.58 crit 2.09 SIGNIFICANT
+   sum p, gray rows only                                      n=22 slope   +15.35 /decade (+-8.34) t=3.85 crit 2.09 SIGNIFICANT
+   sum p, all rows, ALL 47 seasons 1979..2025                 n=47 slope    +6.28 /decade (+-8.17) t=1.51 crit 1.96 
+   sum p, all rows, pre-2001 (22 seasons)                     n=22 slope   +36.33 /decade (+-23.57) t=3.22 crit 2.09 SIGNIFICANT
+   level step pre-2001 -> 2004+ (Welch)                       pre-2001 mean 295.3, 2004+ mean 294.9, diff -0.4 (se 11.7, t=-0.03)
+
+   Robustness of the flag line, (sum p ALL rows) MINUS archive moments, M1:
+     Theil-Sen slope +25.88 /decade; Mann-Kendall z +1.80 (|z|>1.96 is significant at 95%)
+     leave-one-season-out OLS: slope range +25.4 .. +38.9 /decade, t range 2.19 .. 3.38 (dropping 2006 gives the smallest |t|)
+   sum p, gray rows ON an HF-matched track (not tip-jet related) n=22 slope   +15.75 /decade (+-8.56) t=3.84 crit 2.09 SIGNIFICANT
+   sum p, gray rows near an archive tip-jet / no-centre HF fix n=22 slope    +0.06 /decade (+-0.25) t=0.48 crit 2.09 
+   per season (M1): archive moments | sum p pos+neg | gray on HF track | gray tip-jet | all rows | all - archive | M1B all rows
+     2004    202 |   191.5 |    61.3 |    0.5 |   253.3 |   +51.3 |   254.3
+     2005    183 |   176.9 |    47.8 |    0.0 |   224.7 |   +41.7 |   226.6
+     2006    323 |   238.8 |    96.9 |    0.0 |   335.7 |   +12.7 |   333.1
+     2007    259 |   216.4 |    80.3 |    0.0 |   296.6 |   +37.6 |   299.3
+     2008    224 |   167.8 |    65.1 |    1.0 |   233.9 |    +9.9 |   230.3
+     2009    210 |   185.5 |    67.3 |    0.0 |   252.8 |   +42.8 |   255.5
+     2010    167 |   203.9 |    72.1 |    0.0 |   276.0 |  +109.0 |   274.2
+     2011    226 |   234.8 |    66.1 |    0.0 |   300.9 |   +74.9 |   304.0
+     2012    202 |   219.7 |    78.6 |    0.0 |   298.3 |   +96.3 |   298.1
+     2013    190 |   211.9 |    86.3 |    0.0 |   298.2 |  +108.2 |   294.5
+     2014    204 |   197.1 |    97.6 |    0.0 |   294.7 |   +90.7 |   291.4
+     2015    270 |   250.2 |    88.5 |    0.0 |   338.8 |   +68.8 |   338.4
+     2016    193 |   178.5 |    84.9 |    0.0 |   263.4 |   +70.4 |   262.5
+     2017    167 |   187.7 |    78.2 |    0.0 |   265.8 |   +98.8 |   262.8
+     2018    221 |   249.8 |    97.0 |    0.0 |   346.8 |  +125.8 |   347.7
+     2019    174 |   245.4 |   112.8 |    0.0 |   358.1 |  +184.1 |   354.5
+     2020    206 |   206.7 |    93.6 |    0.8 |   301.1 |   +95.1 |   302.7
+     2021    274 |   252.9 |   103.4 |    0.8 |   357.1 |   +83.1 |   356.0
+     2022    209 |   209.7 |    81.2 |    0.9 |   291.8 |   +82.8 |   290.1
+     2023    231 |   226.0 |    99.2 |    0.0 |   325.2 |   +94.2 |   325.5
+     2024    199 |   202.6 |    85.0 |    0.0 |   287.7 |   +88.7 |   289.5
+     2025    250 |   207.3 |    93.4 |    0.0 |   300.8 |   +50.8 |   297.2
+
+   Where does the gray growth come from? Archive side vs ERA5 side (22 overlap seasons):
+   ARCHIVE: HF 'low' events with a fix in the domains         n=22 slope    +2.67 /decade (+-8.13) t=0.68 crit 2.09 
+   ARCHIVE: HF fixes in the domains (all, incl. undetected)   n=22 slope    -7.58 /decade (+-30.59) t=-0.52 crit 2.09 
+   ARCHIVE: HF fixes per event                                n=22 slope    -0.20 /decade (+-0.17) t=-2.53 crit 2.09 SIGNIFICANT
+   ERA5: linked tracks containing an archive-HF match         n=22 slope    +4.21 /decade (+-7.83) t=1.12 crit 2.09 
+   ERA5: gray rows on those tracks (count)                    n=22 slope   +36.96 /decade (+-69.82) t=1.11 crit 2.09 
+   ERA5: gray rows per HF track                               n=22 slope    -0.06 /decade (+-0.76) t=-0.18 crit 2.09 
+   ERA5: mean p per gray row (M1)                             n=22 slope    +0.02 /decade (+-0.01) t=2.92 crit 2.09 SIGNIFICANT
+
+   Model-free: do the ERA5 FEATURES trend over the overlap seasons? Rows are scored cyclone-moments (centre <= 990 hPa).
+   rows scored [22 seasons]                                   n=22 slope   +12.29 /decade (+-172.04) t=0.15 crit 2.09 
+   rows with pmin <= 960 hPa (depth only) [22 seasons]        n=22 slope   +23.25 /decade (+-30.43) t=1.60 crit 2.09 
+   rows with sea gust >= 64 kt [22 seasons]                   n=22 slope   +28.43 /decade (+-43.25) t=1.37 crit 2.09 
+   rows with sea gust >= 64 kt and pmin > 975 hPa [22 seasons] n=22 slope    +4.67 /decade (+-18.61) t=0.52 crit 2.09 
+   mean sea gust, rows with 955 <= pmin <= 975 (kt) [22 seasons] n=22 slope    +0.39 /decade (+-0.86) t=0.95 crit 2.09 
+   mean ln(1+A64), rows with 955 <= pmin <= 975 [22 seasons]  n=22 slope    +0.04 /decade (+-0.09) t=0.94 crit 2.09 
+   rows with pmin <= 960 hPa (depth only) [all 47 seasons]    n=47 slope    -1.93 /decade (+-10.28) t=-0.37 crit 1.96 
+   rows with sea gust >= 64 kt [all 47 seasons]               n=47 slope    +9.63 /decade (+-13.19) t=1.43 crit 1.96 
+   rows with sea gust >= 64 kt and pmin > 975 hPa [all 47 seasons] n=47 slope    +5.16 /decade (+-4.96) t=2.04 crit 1.96 SIGNIFICANT
+   The same model-free features in the 1979-2000 seasons alone (22 seasons, before any archive exists):
+   rows with pmin <= 960 hPa (depth only) [pre-2001]          n=22 slope   +25.03 /decade (+-31.69) t=1.65 crit 2.09 
+   rows with sea gust >= 64 kt [pre-2001]                     n=22 slope   +50.37 /decade (+-37.46) t=2.81 crit 2.09 SIGNIFICANT
+   rows with sea gust >= 64 kt and pmin > 975 hPa [pre-2001]  n=22 slope    +4.34 /decade (+-15.17) t=0.60 crit 2.09 
+   mean sea gust, rows with 955 <= pmin <= 975 (kt) [pre-2001] n=22 slope    +0.64 /decade (+-0.55) t=2.45 crit 2.09 SIGNIFICANT
+   mean ln(1+A64), rows with 955 <= pmin <= 975 [pre-2001]    n=22 slope    +0.08 /decade (+-0.06) t=2.76 crit 2.09 SIGNIFICANT
+   sum p (M1, all rows) [pre-2001]                            n=22 slope   +35.39 /decade (+-23.21) t=3.19 crit 2.09 SIGNIFICANT
+
+   Per season, all 47: sum p (M1, all rows) | rows pmin<=960 | rows gust>=64 kt | rows gust>=64 & pmin>975 | mean gust (955<=pmin<=975)
+     1979    258.8 |   231 |   546 |   198 |  57.6
+     1980    230.2 |   151 |   462 |   154 |  57.0
+     1981    251.8 |   164 |   475 |   150 |  58.4
+     1982    321.9 |   244 |   628 |   193 |  57.2
+     1983    280.4 |   201 |   558 |   174 |  59.0
+     1984    249.7 |   198 |   470 |   138 |  57.4
+     1985    279.8 |   185 |   558 |   193 |  58.1
+     1986    327.0 |   274 |   605 |   163 |  57.8
+     1987    276.7 |   213 |   555 |   185 |  57.5
+     1988    283.0 |   241 |   542 |   169 |  59.0
+     1989    343.3 |   344 |   597 |   144 |  58.3
+     1990    261.6 |   212 |   506 |   154 |  58.0
+     1991    328.0 |   252 |   638 |   196 |  58.3
+     1992    308.3 |   222 |   626 |   219 |  57.9
+     1993    262.6 |   173 |   540 |   157 |  58.8
+     1994    306.3 |   249 |   607 |   177 |  57.6
+     1995    239.4 |   236 |   470 |   168 |  56.4
+     1996    300.6 |   213 |   588 |   191 |  58.9
+     1997    347.6 |   208 |   635 |   171 |  58.8
+     1998    336.8 |   223 |   636 |   204 |  59.6
+     1999    369.5 |   335 |   638 |   156 |  60.0
+     2000    336.9 |   235 |   632 |   175 |  58.7
+     2001    306.2 |   185 |   616 |   190 |  58.7
+     2002    346.2 |   266 |   650 |   207 |  57.3
+     2003    224.1 |   114 |   456 |   154 |  58.1
+     2004    253.3 |   195 |   500 |   159 |  58.2   (archive overlap)
+     2005    224.7 |   127 |   485 |   156 |  58.5   (archive overlap)
+     2006    335.7 |   245 |   679 |   228 |  58.1   (archive overlap)
+     2007    296.6 |   160 |   613 |   230 |  59.0   (archive overlap)
+     2008    233.9 |   149 |   474 |   161 |  59.8   (archive overlap)
+     2009    252.8 |   186 |   493 |   183 |  56.3   (archive overlap)
+     2010    276.0 |   193 |   532 |   156 |  59.3   (archive overlap)
+     2011    300.9 |   196 |   625 |   216 |  59.0   (archive overlap)
+     2012    298.3 |   172 |   610 |   221 |  60.5   (archive overlap)
+     2013    298.2 |   274 |   535 |   145 |  57.5   (archive overlap)
+     2014    294.7 |   221 |   553 |   168 |  57.4   (archive overlap)
+     2015    338.8 |   271 |   626 |   178 |  57.2   (archive overlap)
+     2016    263.4 |   179 |   550 |   197 |  56.9   (archive overlap)
+     2017    265.8 |   164 |   535 |   185 |  59.1   (archive overlap)
+     2018    346.8 |   265 |   657 |   220 |  59.4   (archive overlap)
+     2019    358.1 |   281 |   629 |   164 |  59.7   (archive overlap)
+     2020    301.1 |   210 |   570 |   187 |  59.5   (archive overlap)
+     2021    357.1 |   223 |   687 |   208 |  61.4   (archive overlap)
+     2022    291.8 |   167 |   546 |   183 |  58.9   (archive overlap)
+     2023    325.2 |   193 |   627 |   215 |  58.9   (archive overlap)
+     2024    287.7 |   272 |   532 |   175 |  57.5   (archive overlap)
+     2025    300.8 |   191 |   575 |   190 |  59.3   (archive overlap)
+   Reading: the trend in (series - archive) over the overlap is the test. The archive counts are the
+   benchmark; a slope beyond what they do means the criterion imports a trend the fields lack.

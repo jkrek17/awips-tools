@@ -43,10 +43,13 @@ candidates, because the 6-hourly candidates of one storm are not independent.
 
 Nothing here is a validation for backward use. It is a necessary condition.
 """
+import csv
+import datetime
 import io
 import math
 import os
 import sys
+import tempfile
 
 import numpy as np
 
@@ -189,6 +192,486 @@ def concat(a, b):
     s.track = np.array([tr.setdefault(k, len(tr)) for k in keys])
     s.groups = [np.where(s.track == k)[0] for k in range(len(tr))]
     return s
+
+
+# --- extension: forecaster skill scores, TC contaminant, basin term, series check ---
+#
+# Everything below was specified before it was run (the coordinator's four items):
+#   10. HSS / POD / FAR at the probability cut that makes the flagged count equal
+#       the archive count in the fit window;
+#   11. transitioning-tropical-cyclone contaminant: mask, refit, compare skill;
+#   12. an a-priori basin indicator (Pacific = 1), with and without;
+#   13. the series-level stationarity check on all overlap seasons, with and
+#       without the basin term.
+# None of these changes the primary transfer test (sections 1-9), which is
+# unchanged in design and re-run on ocean-masked gust features.
+
+IBTRACS_DIR = os.environ.get("IBTRACS_DIR", os.path.join(tempfile.gettempdir(), "ibtracs"))
+IBTRACS_URL = ("https://www.ncei.noaa.gov/data/international-best-track-archive-for-climate-"
+               "stewardship-ibtracs/v04r01/access/csv/ibtracs.%s.list.v04r01.csv")
+TC_MATCH_KM = 400.0
+TC_CSV = os.path.join(HERE, "tc_candidates.csv")
+
+
+def design(d, model):
+    if model == "M0":
+        return d.X[:, [0]]
+    if model == "M1":
+        return d.X
+    if model == "M1B":                       # M1 + Pacific indicator
+        return np.column_stack([d.X, (d.basin == "pac").astype(float)])
+    raise KeyError(model)
+
+
+def count_cut(p, n):
+    """Cut at which n of the values in p are flagged (p >= cut), up to ties."""
+    n = int(min(max(n, 1), len(p)))
+    return float(np.sort(p)[::-1][n - 1])
+
+
+def skill(y, flag):
+    y = np.asarray(y) == 1
+    a = int((flag & y).sum())
+    b = int((flag & ~y).sum())
+    c = int((~flag & y).sum())
+    d_ = int((~flag & ~y).sum())
+    den = (a + c) * (c + d_) + (a + b) * (b + d_)
+    nan = float("nan")
+    return dict(hits=a, fa=b, miss=c, cn=d_, flagged=a + b, obs=a + c,
+                pod=a / (a + c) if a + c else nan, far=b / (a + b) if a + b else nan,
+                hss=2.0 * (a * d_ - b * c) / den if den else nan,
+                csi=a / (a + b + c) if a + b + c else nan)
+
+
+def boot_skill(d, flag, key, nboot=NBOOT):
+    """95% interval of one skill key, resampling whole tracks of the evaluation
+    set (the fit is held fixed, so refit noise is not in this interval)."""
+    vals = []
+    for _ in range(nboot):
+        i = boot_idx(d)
+        vals.append(skill(d.y[i], flag[i])[key])
+    return np.nanpercentile(vals, [2.5, 97.5])
+
+
+def gust_equiv(b, model, cut, x_ref):
+    """Gust (kt) at which the model reaches `cut`, other features at x_ref.
+    M0: exact (the model is a gust threshold). M1/M1B: x_ref = median of the
+    training positives for the non-gust terms."""
+    t = logit(np.array([cut]))[0] - b[0]
+    rest = 0.0 if model == "M0" else float(np.dot(b[2:5], x_ref[1:4]))
+    return (t - rest) / b[1] * 10.0
+
+
+def loso(d, model, fit_mask=None, eval_mask=None):
+    """Leave one season out. Training cut = count-matched on the training rows
+    that would be evaluated (flagged count = positives there). Returns held-out
+    p and flag for every row (NaN / False where the row is not evaluated)."""
+    X = design(d, model)
+    p = np.full(len(d.y), np.nan)
+    flag = np.zeros(len(d.y), bool)
+    fm = np.ones(len(d.y), bool) if fit_mask is None else fit_mask
+    em = np.ones(len(d.y), bool) if eval_mask is None else eval_mask
+    for s in sorted(set(d.season.tolist())):
+        te = d.season == s
+        tr = ~te & fm
+        b = fit_logit(X[tr], d.y[tr])
+        trm = ~te & em
+        cut = count_cut(predict(b, X[trm]), int(d.y[trm].sum()))
+        p[te] = predict(b, X[te])
+        flag[te] = p[te] >= cut
+    return p, flag
+
+
+def fmt_sk(lab, s, cut=None, g=None, ci=None):
+    return "   %-34s flagged %5d obs %5d  hits %5d FA %5d miss %5d  POD %.3f FAR %.3f HSS %.3f%s CSI %.3f%s%s" % (
+        lab, s["flagged"], s["obs"], s["hits"], s["fa"], s["miss"], s["pod"], s["far"], s["hss"],
+        (" [%.3f,%.3f]" % tuple(ci)) if ci is not None else "", s["csi"],
+        (" cut p=%.3f" % cut) if cut is not None else "",
+        (" ~%.1f kt" % g) if g is not None else "")
+
+
+def ibtracs_storms():
+    """sid -> list of (time_index, lat, lon, nature) for storms with at least one
+    NATURE == 'TS' record, synoptic hours, Sep-May, 1979 onward. Downloads the
+    NA / EP / WP lists from NCEI into IBTRACS_DIR if they are not there."""
+    os.makedirs(IBTRACS_DIR, exist_ok=True)
+    storms, tropical = {}, set()
+    for b in ("NA", "EP", "WP"):
+        path = os.path.join(IBTRACS_DIR, "ibtracs.%s.list.v04r01.csv" % b)
+        if not os.path.exists(path):
+            import urllib.request
+            urllib.request.urlretrieve(IBTRACS_URL % b, path)
+        with open(path, newline="") as f:
+            r = csv.reader(f)
+            hdr = next(r)
+            next(r)                                   # units row
+            ix = {h: i for i, h in enumerate(hdr)}
+            i_sid, i_t, i_n, i_la, i_lo = (ix[k] for k in ("SID", "ISO_TIME", "NATURE", "LAT", "LON"))
+            for row in r:
+                nat = row[i_n]
+                if nat == "TS":
+                    tropical.add(row[i_sid])
+                ts = row[i_t]
+                y, mo, hh = int(ts[:4]), int(ts[5:7]), int(ts[11:13])
+                if y < 1978 or hh % 6 or not (mo >= 9 or mo <= 5) or not row[i_la].strip():
+                    continue
+                t = ef.tidx(datetime.datetime(y, mo, int(ts[8:10]), hh))
+                storms.setdefault(row[i_sid], []).append((t, float(row[i_la]), float(row[i_lo]), nat))
+    return {k: v for k, v in storms.items() if k in tropical}, len(tropical)
+
+
+def tag_tc(cands):
+    """Mark candidates within TC_MATCH_KM of an IBTrACS point (any nature) of a
+    storm that was tropical at some time, at the same valid time ('tc'), then
+    the whole linked track of any marked candidate ('tctrack'). Writes the
+    marked candidates to tc_candidates.csv. Returns (n_storms, n_marked)."""
+    storms, ntrop = ibtracs_storms()
+    byt = {}
+    for sid, pts in storms.items():
+        for t, la, lo, nat in pts:
+            byt.setdefault(t, []).append((la, lo, sid))
+    for c in cands:
+        c["tc"] = 0
+        c["sid"] = ""
+        best = None
+        for la, lo, sid in byt.get(c["t"], []):
+            dd = ef.hav1(c["lat"], c["lon"], la, lo)
+            if dd <= TC_MATCH_KM and (best is None or dd < best[0]):
+                best = (dd, sid)
+        if best:
+            c["tc"], c["sid"] = 1, best[1]
+    bad = {(c["basin"], c["season"], c["track"]) for c in cands if c["tc"]}
+    for c in cands:
+        c["tctrack"] = int((c["basin"], c["season"], c["track"]) in bad)
+    with open(TC_CSV, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["time_utc", "basin", "lat", "lon", "ibtracs_sid"])
+        for c in sorted((c for c in cands if c["tc"]), key=lambda c: (c["t"], c["basin"], c["lat"])):
+            lon = ((c["lon"] + 180.0) % 360.0) - 180.0
+            w.writerow([ef.idx_to_dt(c["t"]).strftime("%Y-%m-%dT%H:%MZ"), c["basin"],
+                        "%.2f" % c["lat"], "%.2f" % lon, c["sid"]])
+    return ntrop, int(sum(c["tc"] for c in cands))
+
+
+def extended(P, cands, seasons):
+    ovl = [s for s in seasons if s >= 2004]
+    covered = [c for c in cands if not (c["basin"] == "atl" and c["season"] < 2004)]
+    dall = build(covered, tuple(ovl))
+    d_e, d_l = subset(dall, np.isin(dall.season, EARLY)), subset(dall, np.isin(dall.season, LATE))
+    P("")
+    P("=" * 72)
+    P("EXTENSION (coordinator's four items). Overlap seasons used: %d (%d..%d); n=%d pos=%d neg=%d tracks=%d" % (
+        len(ovl), ovl[0], ovl[-1], len(dall.y), dall.y.sum(), len(dall.y) - dall.y.sum(), len(dall.groups)))
+    P("=" * 72)
+
+    # ------------------------------------------------------------- 10 HSS/POD/FAR
+    P("")
+    P("10. HSS, POD, FAR AT THE COUNT-MATCHED CUT")
+    P("   Unit: a 6-hourly cyclone-moment (fit population, pos/neg). Yes-forecast = p >= cut, where the cut is")
+    P("   the probability at which the number of flagged moments EQUALS the archive's HF-moment count in the")
+    P("   fit window (so flagged = obs there, and POD = 1 - FAR by construction in-sample). POD = hits/(hits+miss);")
+    P("   FAR = false alarms / flagged (a ratio, not a rate); HSS = 2(ad-bc)/[(a+c)(c+d)+(a+b)(b+d)], 0 = no skill")
+    P("   over chance, 1 = perfect; CSI = hits/(hits+FA+miss). 'cut ~kt' = the gust the cut equals: exact for M0")
+    P("   (a gust-only model IS a gust threshold); for M1 the gust at which M1 reaches the cut with its other")
+    P("   features at the median of the training positives. Transfer rows apply the TRAINING window's cut to the")
+    P("   other window, so flagged vs obs there is the count error a backward extension would inherit.")
+    P("   Intervals in brackets: 95%% on HSS, resampling evaluation tracks, fit held fixed (%d reps)." % NBOOT)
+    for model in ("M1", "M0"):
+        P("")
+        P("   %s" % model)
+        Xall = design(dall, model)
+        rows = []
+        for lab, tr_, te_ in (("fit early, scored early (in-sample)", d_e, d_e),
+                              ("fit late, scored late (in-sample)", d_l, d_l),
+                              ("fit early -> late (cut from early)", d_e, d_l),
+                              ("fit late -> early (cut from late)", d_l, d_e)):
+            b = fit_logit(design(tr_, model), tr_.y)
+            cut = count_cut(predict(b, design(tr_, model)), int(tr_.y.sum()))
+            flag = predict(b, design(te_, model)) >= cut
+            xref = np.median(tr_.X[tr_.y == 1], 0)
+            g = gust_equiv(b, model, cut, xref)
+            sk = skill(te_.y, flag)
+            P(fmt_sk(lab, sk, cut, g, boot_skill(te_, flag, "hss")))
+        p, flag = loso(dall, model)
+        sk = skill(dall.y, flag)
+        bfull = fit_logit(Xall, dall.y)
+        cutf = count_cut(predict(bfull, Xall), int(dall.y.sum()))
+        gf = gust_equiv(bfull, model, cutf, np.median(dall.X[dall.y == 1], 0))
+        P(fmt_sk("LOSO over all %d seasons" % len(ovl), sk, None, None, boot_skill(dall, flag, "hss")))
+        P("   %-34s full-fit cut p=%.3f, equivalent gust %.1f kt (the count-matched criterion over %d seasons)" % (
+            "", cutf, gf, len(ovl)))
+        ps = [skill(dall.y[dall.season == s], flag[dall.season == s]) for s in ovl]
+        P("   per held-out season flagged/obs (LOSO): " + " ".join("%d:%.2f" % (s, x["flagged"] / max(1, x["obs"])) for s, x in zip(ovl, ps)))
+        P("   AUC pooled over LOSO folds %.3f; mean of per-season AUC %.3f" % (
+            auc(dall.y, p), np.mean([auc(dall.y[dall.season == s], p[dall.season == s]) for s in ovl])))
+
+    # ------------------------------------------------------------- 11 TC contaminant
+    P("")
+    P("11. TRANSITIONING TROPICAL CYCLONES")
+    P("   Flag: an ERA5 candidate within %d km, at the same valid time, of an IBTrACS v04r01 position (any nature," % TC_MATCH_KM)
+    P("   NA+EP+WP) of a storm that was tropical (NATURE=TS) at some time; then the whole linked track. The archive")
+    P("   itself marks only a handful of tropical fixes (category TC), far too few to mask from.")
+    try:
+        ntrop, nmark = tag_tc(cands)
+    except Exception as e:                                      # no network, say so
+        P("   IBTrACS unavailable (%r): section 11 NOT RUN." % (e,))
+        ntrop = None
+    if ntrop is not None:
+        P("   IBTrACS: %d storms with a tropical record; %d candidates (of %d) within %d km of one; written to %s" % (
+            ntrop, nmark, len(cands), TC_MATCH_KM, os.path.basename(TC_CSV)))
+        P("   Check against the archive: archive fixes it labels TC (tropical), matched to an ERA5 candidate within 400 km,")
+        P("   and whether the IBTrACS flag caught them.")
+        byt = {}
+        for c in cands:
+            byt.setdefault((c["basin"], c["t"]), []).append(c)
+        n_tc = n_cand = n_flag = 0
+        for f in ef.load_archive():
+            if f["cat"] != "TC" or f["season"] not in seasons:
+                continue
+            n_tc += 1
+            best = None
+            for c in byt.get((f["basin"], f["t"]), []):
+                dd = ef.hav1(f["lat"], f["lon"], c["lat"], c["lon"])
+                if dd <= ef.MATCH_KM and (best is None or dd < best[0]):
+                    best = (dd, c)
+            if best:
+                n_cand += 1
+                n_flag += best[1]["tctrack"]
+        P("   archive TC fixes in the cached seasons: %d; with an ERA5 candidate %d; of those on a flagged track %d" % (n_tc, n_cand, n_flag))
+        tcm = np.array([r["tctrack"] for r in dall.rows], bool)
+        P("   Fit population (pos+neg, %d seasons): flagged rows %d (%.1f%%); positives on flagged tracks %d of %d (%.1f%%)" % (
+            len(ovl), tcm.sum(), 100 * tcm.mean(), int((tcm & (dall.y == 1)).sum()), int(dall.y.sum()),
+            100 * (tcm & (dall.y == 1)).sum() / dall.y.sum()))
+        for lab, ss in (("early", EARLY), ("late", LATE)):
+            m = np.isin(dall.season, ss)
+            P("     %-5s window: flagged rows %.1f%% of rows, flagged positives %.1f%% of positives" % (
+                lab, 100 * tcm[m].mean(), 100 * (tcm & m & (dall.y == 1)).sum() / max(1, (m & (dall.y == 1)).sum())))
+        for bs in ("atl", "pac"):
+            m = dall.basin == bs
+            P("     %-5s basin : flagged rows %.1f%%, flagged positives %.1f%% of positives" % (
+                bs, 100 * tcm[m].mean(), 100 * (tcm & m & (dall.y == 1)).sum() / max(1, (m & (dall.y == 1)).sum())))
+        keep = ~tcm
+        # model A: fit on everything, scored on the non-TC rows. model B: fit on non-TC rows, scored on them.
+        P("   (M0 is a gust threshold, so at a count-matched cut refitting it on fewer rows cannot change which rows are")
+        P("   flagged; it is shown once below only to say so.)")
+        for model in ("M1", "M0"):
+            pA, fA = loso(dall, model, None, keep)
+            pB, fB = loso(dall, model, keep, keep)
+            dk = subset(dall, keep)
+            yk = dall.y[keep]
+            sA, sB = skill(yk, fA[keep]), skill(yk, fB[keep])
+            aA, aB = auc(yk, pA[keep]), auc(yk, pB[keep])
+            dh, da = [], []
+            for _ in range(NBOOT):
+                i = boot_idx(dk)
+                a_, b_ = skill(yk[i], fA[keep][i]), skill(yk[i], fB[keep][i])
+                dh.append(b_["hss"] - a_["hss"])
+                da.append(auc(yk[i], pB[keep][i]) - auc(yk[i], pA[keep][i]))
+            P("")
+            P("   %s, scored on the %d non-TC rows (LOSO over %d seasons, cut count-matched on the non-TC training rows)" % (model, keep.sum(), len(ovl)))
+            P(fmt_sk("A: fit on all rows (TC included)", sA))
+            P(fmt_sk("B: fit on non-TC rows only", sB))
+            P("   AUC A %.4f  B %.4f   B-A %+.4f [%+.4f, %+.4f];  HSS B-A %+.4f [%+.4f, %+.4f]" % (
+                aA, aB, aB - aA, *np.percentile(da, [2.5, 97.5]), sB["hss"] - sA["hss"], *np.percentile(dh, [2.5, 97.5])))
+            cols_ = MODELS[model] if model in MODELS else [0]
+            bA = fit_logit(design(dall, model), dall.y)
+            bB = fit_logit(design(dall, model)[keep], dall.y[keep])
+            P("   coefficients, full fit: all rows " + " ".join("%.3f" % v for v in bA) + " | non-TC rows " + " ".join("%.3f" % v for v in bB))
+            if model == "M1":
+                tcrows = tcm
+                pT = loso(dall, model)[0]
+                P("   Model A on the TC-flagged rows alone: n=%d pos=%d, AUC %.3f (non-TC rows: %.3f); mean p %.3f vs observed %.3f" % (
+                    tcrows.sum(), int(dall.y[tcrows].sum()), auc(dall.y[tcrows], pT[tcrows]) if dall.y[tcrows].sum() else float("nan"),
+                    auc(yk, pT[keep]), pT[tcrows].mean(), dall.y[tcrows].mean()))
+
+    # ------------------------------------------------------------- 12 basin term
+    P("")
+    P("12. BASIN TERM (a priori: the basins differ in cyclone structure and in land influence; model M1B = M1 + 1[Pacific])")
+    pM, fM = loso(dall, "M1")
+    pB, fB = loso(dall, "M1B")
+    bB = fit_logit(design(dall, "M1B"), dall.y)
+    bM = fit_logit(design(dall, "M1"), dall.y)
+    bs = np.array([fit_logit(design(dall, "M1B")[i], dall.y[i]) for i in [boot_idx(dall) for _ in range(NBOOT // 2)]])
+    se = bs.std(0)
+    P("   full-fit coefficients with the basin term (bootstrap se over tracks):")
+    for nm, v, s_ in zip(["b0", "gust/10kt", "ln(1+A64/1e3km2)", "grad hPa/100km", "(pmin-980)/10", "Pacific"], bB, se):
+        P("     %-18s %8.3f  se %.3f  z %.1f" % (nm, v, s_, v / s_))
+    P("   without: " + " ".join("%.3f" % v for v in bM))
+    P("   LOSO calibration by basin: sum of held-out p over pos+neg rows divided by archive HF moments")
+    P("   %-5s %-7s %8s %8s %8s | %s" % ("basin", "model", "sum p", "obs", "ratio", "per-season ratios; mean sd t(mean-1)"))
+    for bsn in ("atl", "pac"):
+        for nm, pp in (("M1", pM), ("M1B", pB)):
+            m = dall.basin == bsn
+            rr = np.array([pp[m & (dall.season == s)].sum() / max(1, dall.y[m & (dall.season == s)].sum()) for s in ovl])
+            P("   %-5s %-7s %8.1f %8d %8.3f | mean %.3f sd %.3f t=%.2f (over %d, under %d of %d seasons)" % (
+                bsn, nm, pp[m].sum(), int(dall.y[m].sum()), pp[m].sum() / dall.y[m].sum(), rr.mean(), rr.std(ddof=1),
+                (rr.mean() - 1) / (rr.std(ddof=1) / math.sqrt(len(rr))), int((rr > 1).sum()), int((rr < 1).sum()), len(rr)))
+    for nm, pp, ff in (("M1", pM, fM), ("M1B", pB, fB)):
+        s_ = skill(dall.y, ff)
+        P("   %-4s LOSO pooled AUC %.4f; HSS %.3f POD %.3f FAR %.3f at the count-matched cut (flagged %d, obs %d)" % (
+            nm, auc(dall.y, pp), s_["hss"], s_["pod"], s_["far"], s_["flagged"], s_["obs"]))
+        for bsn in ("atl", "pac"):
+            m = dall.basin == bsn
+            s2 = skill(dall.y[m], ff[m])
+            P("        %s basin: flagged %d obs %d  POD %.3f FAR %.3f HSS %.3f  AUC %.4f" % (
+                bsn, s2["flagged"], s2["obs"], s2["pod"], s2["far"], s2["hss"], auc(dall.y[m], pp[m])))
+
+    # ------------------------------------------------------------- 14 position check (placed before 13 in code)
+    land = np.array([r["land500"] for r in dall.rows])
+    P("")
+    P("14. DOES THE MASKED CRITERION STILL DEPEND ON LAND NEARBY? (the position-contamination concern)")
+    P("   Held-out (LOSO) M1 probability summed over pos+neg rows divided by archive HF moments, by the land share")
+    P("   of the 500 km disc around the centre (land500; the gust features see sea only). A criterion free of")
+    P("   land/orographic leakage should sit near 1.00 in every stratum; the sea-only mask removes the land gusts")
+    P("   but cannot remove a centre's proximity to land from the other features, so this is a check, not a guarantee.")
+    P("   stratum (land500)      rows    obs   sum p  ratio    AUC")
+    for lo_, hi_ in ((0.0, 0.05), (0.05, 0.2), (0.2, 0.4), (0.4, 1.01)):
+        m = (land >= lo_) & (land < hi_)
+        P("   %.2f <= land < %.2f %7d %6d %7.1f %6.2f %6.3f" % (
+            lo_, min(hi_, 1.0), m.sum(), int(dall.y[m].sum()), pM[m].sum(), pM[m].sum() / max(1, dall.y[m].sum()),
+            auc(dall.y[m], pM[m]) if dall.y[m].sum() else float("nan")))
+    lat_ = np.array([r["lat"] for r in dall.rows])
+    P("   by centre latitude:")
+    for lo_, hi_ in ((30, 40), (40, 50), (50, 60), (60, 71)):
+        m = (lat_ >= lo_) & (lat_ < hi_)
+        P("   %2d <= lat < %2d    %7d %6d %7.1f %6.2f %6.3f" % (
+            lo_, hi_, m.sum(), int(dall.y[m].sum()), pM[m].sum(), pM[m].sum() / max(1, dall.y[m].sum()),
+            auc(dall.y[m], pM[m]) if dall.y[m].sum() else float("nan")))
+    allc = [c for c in cands if c["p"] <= P_FIT]
+    la_ = np.array([c["land500"] for c in allc])
+    P("   exposure left after masking, all scored rows (centre <= %d hPa): land500 > 0.10 in %.0f%% of rows, > 0.30 in %.0f%%" % (
+        P_FIT, 100 * (la_ > 0.10).mean(), 100 * (la_ > 0.30).mean()))
+    pos_ = np.array([r["land500"] for r, y in zip(dall.rows, dall.y) if y == 1])
+    P("   archive-HF positives: median land500 %.2f, share with land500 > 0.30: %.0f%%" % (np.median(pos_), 100 * (pos_ > 0.30).mean()))
+
+    # ------------------------------------------------------------- 13 series check
+    P("")
+    P("13. SERIES-LEVEL STATIONARITY CHECK, WITH AND WITHOUT THE BASIN TERM")
+    P("   Same quantities as series.py section 5, computed here for both M1 and M1B so they are comparable.")
+    P("   p is the full-overlap fit (in-sample, all %d seasons 2004+) applied to EVERY scored row (centre <= %d hPa)" % (len(ovl), P_FIT))
+    P("   in every cached season; 'sum' is per season; archive pos = HF-matched candidate moments (all pressures).")
+    import series as S
+    R = [c for c in cands if c["p"] <= P_FIT]
+    Xr = feature_matrix(R)
+    Xr5 = np.column_stack([Xr, [1.0 if c["basin"] == "pac" else 0.0 for c in R]])
+    seas = sorted({c["season"] for c in R})
+    season = np.array([c["season"] for c in R])
+    cls = np.array([c["cls"] if c["season"] >= 2004 else "" for c in R])
+    pos_mom = {s: sum(1 for c in cands if c["season"] == s and c["cls"] == "pos") for s in ovl}
+    out = {}
+    for nm, X_, b_ in (("M1", Xr, bM), ("M1B", Xr5, bB)):
+        pr = predict(b_, X_)
+        sums = {s: float(pr[season == s].sum()) for s in seas}
+        sfit = {s: float(pr[(season == s) & np.isin(cls, ["pos", "neg"])].sum()) for s in ovl}
+        out[nm] = (pr, sums, sfit)
+    def reg(label, ss, dct):
+        r = S.ols(ss, [dct[s] for s in ss])
+        crit = S.tcrit(r["n"] - 2)
+        P("   %-58s n=%2d slope %+8.2f /decade (+-%.2f) t=%s crit %.2f %s" % (
+            label, r["n"], 10 * r["b"], 10 * r["ci"], S.fmt_t(r["t"]), crit,
+            "SIGNIFICANT" if abs(r["t"]) > crit else ("borderline" if abs(r["t"]) > 2 else "")))
+        return r
+    for nm in ("M1", "M1B"):
+        pr, sums, sfit = out[nm]
+        P("   --- %s" % nm)
+        reg("sum p, all scored rows, %d overlap seasons" % len(ovl), ovl, sums)
+        reg("sum p, pos+neg rows (fitted population)", ovl, sfit)
+        reg("ARCHIVE HF-matched moments (same for both models)", ovl, pos_mom)
+        reg("(sum p, pos+neg) MINUS archive moments", ovl, {s: sfit[s] - pos_mom[s] for s in ovl})
+        r_all = reg("(sum p, ALL scored rows) MINUS archive moments  [the series.py flag line]", ovl,
+                    {s: sums[s] - pos_mom[s] for s in ovl})
+        gray = {s: float(pr[(season == s) & (cls == "gray")].sum()) for s in ovl}
+        reg("sum p, gray rows only", ovl, gray)
+        reg("sum p, all rows, ALL %d seasons %d..%d" % (len(seas), seas[0], seas[-1]), seas, sums)
+        pre = [s for s in seas if s <= 2000]
+        reg("sum p, all rows, pre-2001 (%d seasons)" % len(pre), pre, sums)
+        post = [s for s in seas if s >= 2004]
+        w = S.welch([sums[s] for s in pre], [sums[s] for s in post])
+        P("   %-58s pre-2001 mean %.1f, 2004+ mean %.1f, diff %+.1f (se %.1f, t=%s)" % (
+            "level step pre-2001 -> 2004+ (Welch)", np.mean([sums[s] for s in pre]), np.mean([sums[s] for s in post]),
+            w["d"], w["se"], S.fmt_t(w["t"])))
+        # the same by tercile of the full record for a model-free feel
+        scored = {s: int((season == s).sum()) for s in seas}
+        if nm == "M1":
+            reg("scored rows alone (no model), all seasons", seas, scored)
+    # ---- robustness of the flag line, and where the trend sits
+    pr, sums, sfit = out["M1"]
+    gap = {s: sums[s] - pos_mom[s] for s in ovl}
+    xs = np.array(ovl, float)
+    ys = np.array([gap[s] for s in ovl])
+    slopes = [(ys[j] - ys[i]) / (xs[j] - xs[i]) for i in range(len(xs)) for j in range(i + 1, len(xs))]
+    sgn = sum(np.sign(ys[j] - ys[i]) for i in range(len(xs)) for j in range(i + 1, len(xs)))
+    nn = len(xs)
+    mk = (sgn - np.sign(sgn)) / math.sqrt(nn * (nn - 1) * (2 * nn + 5) / 18.0)
+    jk = []
+    for k in range(nn):
+        m = np.arange(nn) != k
+        r = S.ols(xs[m], ys[m])
+        jk.append((r["t"], 10 * r["b"], int(xs[k])))
+    P("")
+    P("   Robustness of the flag line, (sum p ALL rows) MINUS archive moments, M1:")
+    P("     Theil-Sen slope %+.2f /decade; Mann-Kendall z %+.2f (|z|>1.96 is significant at 95%%)" % (10 * np.median(slopes), mk))
+    P("     leave-one-season-out OLS: slope range %+.1f .. %+.1f /decade, t range %.2f .. %.2f (dropping %d gives the smallest |t|)" % (
+        min(j[1] for j in jk), max(j[1] for j in jk), min(j[0] for j in jk), max(j[0] for j in jk), min(jk, key=lambda j: abs(j[0]))[2]))
+    # where the model sum sits: subtype of gray rows, per-season table
+    amb = np.array([bool(c["amb"]) for c in R])
+    gtrk = lambda s: float(pr[(season == s) & (cls == "gray") & ~amb].sum())
+    gamb = lambda s: float(pr[(season == s) & (cls == "gray") & amb].sum())
+    pre_sum = lambda s: float(pr[(season == s) & (cls == "")].sum())
+    reg("sum p, gray rows ON an HF-matched track (not tip-jet related)", ovl, {s: gtrk(s) for s in ovl})
+    reg("sum p, gray rows near an archive tip-jet / no-centre HF fix", ovl, {s: gamb(s) for s in ovl})
+    P("   per season (M1): archive moments | sum p pos+neg | gray on HF track | gray tip-jet | all rows | all - archive | M1B all rows")
+    for s in ovl:
+        P("     %d  %5d | %7.1f | %7.1f | %6.1f | %7.1f | %+7.1f | %7.1f" % (
+            s, pos_mom[s], sfit[s], gtrk(s), gamb(s), sums[s], gap[s], out["M1B"][1][s]))
+    # archive-side and track-side decomposition of the gray growth
+    det_, ev_ = ef.detection(seasons)
+    ev_n = {s: sum(1 for k in ev_ if k[0] == s and k[3] == "low") for s in ovl}
+    ev_fix = {s: sum(v[0] for k, v in ev_.items() if k[0] == s and k[3] == "low") for s in ovl}
+    ngray = {s: float(((season == s) & (cls == "gray") & ~amb).sum()) for s in ovl}
+    ptrk = {s: float(len({(c["basin"], c["track"]) for c in R if c["season"] == s and c["cls"] == "pos"})) for s in ovl}
+    P("")
+    P("   Where does the gray growth come from? Archive side vs ERA5 side (22 overlap seasons):")
+    reg("ARCHIVE: HF 'low' events with a fix in the domains", ovl, ev_n)
+    reg("ARCHIVE: HF fixes in the domains (all, incl. undetected)", ovl, ev_fix)
+    reg("ARCHIVE: HF fixes per event", ovl, {s: ev_fix[s] / ev_n[s] for s in ovl})
+    reg("ERA5: linked tracks containing an archive-HF match", ovl, ptrk)
+    reg("ERA5: gray rows on those tracks (count)", ovl, ngray)
+    reg("ERA5: gray rows per HF track", ovl, {s: ngray[s] / ptrk[s] for s in ovl})
+    reg("ERA5: mean p per gray row (M1)", ovl, {s: gtrk(s) / ngray[s] for s in ovl})
+    # does ERA5's own sea-gust field trend, given the pressure? (model-free)
+    P("")
+    P("   Model-free: do the ERA5 FEATURES trend over the overlap seasons? Rows are scored cyclone-moments (centre <= %d hPa)." % P_FIT)
+    g500 = np.array([c["g500"] for c in R])
+    pm = np.array([c["pmin"] for c in R])
+    a64 = np.array([c["a64"] for c in R])
+    band = (pm >= 955) & (pm <= 975)
+    def per(f):
+        return {s: float(f(season == s)) for s in seas}
+    feats = [("rows scored", per(lambda m: m.sum())),
+             ("rows with pmin <= 960 hPa (depth only)", per(lambda m: (m & (pm <= 960)).sum())),
+             ("rows with sea gust >= 64 kt", per(lambda m: (m & (g500 >= 64)).sum())),
+             ("rows with sea gust >= 64 kt and pmin > 975 hPa", per(lambda m: (m & (g500 >= 64) & (pm > 975)).sum())),
+             ("mean sea gust, rows with 955 <= pmin <= 975 (kt)", per(lambda m: g500[m & band].mean())),
+             ("mean ln(1+A64), rows with 955 <= pmin <= 975", per(lambda m: np.log1p(a64[m & band] / 1000.0).mean()))]
+    for lab, dct in feats:
+        reg(lab + " [%d seasons]" % len(ovl), ovl, dct)
+    for lab, dct in feats[1:4]:
+        reg(lab + " [all %d seasons]" % len(seas), seas, dct)
+    pre_ = [s for s in seas if s <= 2000]
+    if len(pre_) >= 6:
+        P("   The same model-free features in the 1979-2000 seasons alone (%d seasons, before any archive exists):" % len(pre_))
+        for lab, dct in feats[1:]:
+            reg(lab + " [pre-2001]", pre_, dct)
+        reg("sum p (M1, all rows) [pre-2001]", pre_, sums)
+    P("")
+    P("   Per season, all %d: sum p (M1, all rows) | rows pmin<=960 | rows gust>=64 kt | rows gust>=64 & pmin>975 | mean gust (955<=pmin<=975)" % len(seas))
+    for s in seas:
+        P("     %d  %7.1f | %5d | %5d | %5d | %5.1f%s" % (
+            s, sums[s], feats[1][1][s], feats[2][1][s], feats[3][1][s], feats[4][1][s], "   (archive overlap)" if s >= 2004 else ""))
+    P("   Reading: the trend in (series - archive) over the overlap is the test. The archive counts are the")
+    P("   benchmark; a slope beyond what they do means the criterion imports a trend the fields lack.")
+    return dict(dall=dall, bM=bM, bB=bB)
 
 
 # --- report ---------------------------------------------------------------------
@@ -510,6 +993,7 @@ def run():
             P("   %s within-%s LOSO on contenders: AUC mean %.3f (folds %s), pred/obs %s" % (
                 mname, nm, np.mean(aucs), "/".join("%.3f" % a for a in aucs), "/".join("%.2f" % r for r in ratios)))
     P("")
+    extended(P, cands, seasons)
     open(OUT, "w").write(buf.getvalue())
     print("wrote", OUT)
 
