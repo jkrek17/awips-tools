@@ -351,7 +351,7 @@ def run_build(data_source: str | None = None):
 
     data_dir = os.path.join(DOCS_DIR, "data")
     os.makedirs(data_dir, exist_ok=True)
-    compact = json.dumps(payload, separators=(",", ":"), allow_nan=False)
+    compact = build_hf_lows.compact_json(payload)
     with open(os.path.join(data_dir, "hf-lows.json"), "w", encoding="utf-8") as fh:
         fh.write(compact)
     with open(os.path.join(data_dir, "hf-lows.js"), "w", encoding="utf-8") as fh:
