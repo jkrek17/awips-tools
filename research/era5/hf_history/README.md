@@ -51,6 +51,25 @@ Known false-alarm source: tropical cyclones crossing into the domain before
 transition (a handful per season). Masking tropical-season fixes south of
 33-38N did not improve skill, so they are left in.
 
+## Probability of hurricane force
+
+The catalog also carries `p_hf` and `p_hf_basin`: the probability that OPC
+would have warned the cyclone as hurricane force, from a logistic fit of
+"matched to an archive HF event" on the gust index over every ERA5 track in
+the calibration seasons (8,144 tracks, 440 positives). `p_hf_basin` adds a
+Pacific term. Full report: `results/probability.txt`.
+
+    p_hf        P = 0.5 at 73.6 kt; Atlantic over-predicted 5.9%, Pacific under 6.1%
+    p_hf_basin  P = 0.5 at 74.2 kt (Atlantic), 73.0 kt (Pacific); both basins sum to observed
+    basin term  likelihood ratio 4.91 on 1 df (p = 0.03); held-out log-likelihood
+                improves by only 1.0 over five seasons, so treat it as marginal
+
+The probabilities are a function of the index and basin alone, so they apply to
+any catalog row. Summing them over the catalog does **not** give an expected HF
+count: the catalog holds events and their null cases, not every sub-threshold
+cyclone. 16 of the 469 calibration archive events have no ERA5 track and are
+outside the fit.
+
 ## Results
 
 4,157 events (Atlantic 2,254, Pacific 1,903) and 4,154 null cases across 47
@@ -116,6 +135,7 @@ correlate at r = 0.62 (Atlantic) and 0.70 (Pacific).
     results/era5_hf_counts_by_season.csv the table above, with null counts
     results/skill.txt                    calibration and transfer report
     results/threshold.json
+    results/probability.txt, probability.json  the P(HF) fits
 
 Catalog columns: `role` (event / null_case), `null_for` (the event track a
 null is matched to), `gust800_kt` (track index), `minp` (hPa), `peak_*` (the
@@ -132,3 +152,4 @@ processes. Intermediate files go to `work/` (or `$ERA5_WORK`).
     python3 track.py 197906 202605 work/track_points.csv
     python3 calibrate.py              # fits and scores the threshold
     python3 apply.py work/track_points.csv 71.7 results
+    python3 probability.py work/track_points.csv results/era5_hf_catalog.csv

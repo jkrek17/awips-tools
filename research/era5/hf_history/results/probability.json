@@ -1,0 +1,19 @@
+{
+ "p_hf": {
+  "coef": [
+   -1.13632,
+   0.31155
+  ],
+  "basin_term": false,
+  "centre_kt": 70.0
+ },
+ "p_hf_basin": {
+  "coef": [
+   -1.33039,
+   0.3148,
+   0.37486
+  ],
+  "basin_term": true,
+  "centre_kt": 70.0
+ }
+}

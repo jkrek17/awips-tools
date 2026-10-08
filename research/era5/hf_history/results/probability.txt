@@ -1,0 +1,30 @@
+Seasons 2021-22 .. 2025-26: 8144 ERA5 tracks, 440 matched to archive HF events (16 archive events have no ERA5 track and are not in the fit)
+Model: logit P(HF) = b0 + b1 (gust index - 70 kt) [+ b2 Pacific]
+
+p_hf:  b0=-1.136 (se 0.084)  b1=+0.312 (se 0.014)
+  P = 0.5 at 73.6 kt
+  log-likelihood -488.8   Brier 0.0177
+  atl: sum p 237.2 vs observed 224 (+5.9%)
+  pac: sum p 202.8 vs observed 216 (-6.1%)
+  leave-one-season-out log-likelihood -496.4
+
+p_hf_basin:  b0=-1.330 (se 0.124)  b1=+0.315 (se 0.014)  b2=+0.375 (se 0.170)
+  P = 0.5 at 74.2 kt (Atlantic), 73.0 kt (Pacific)
+  log-likelihood -486.4   Brier 0.0176
+  atl: sum p 224.0 vs observed 224 (-0.0%)
+  pac: sum p 216.0 vs observed 216 (+0.0%)
+  leave-one-season-out log-likelihood -495.4
+
+Basin term: likelihood-ratio statistic 4.91 on 1 df (3.84 is p = 0.05)
+
+Reliability, p_hf (deciles of predicted probability among tracks with p >= 0.01)
+  n= 167  mean p 0.012  observed 0.000
+  n= 153  mean p 0.018  observed 0.013
+  n= 167  mean p 0.026  observed 0.006
+  n= 154  mean p 0.040  observed 0.026
+  n= 159  mean p 0.066  observed 0.057
+  n= 160  mean p 0.117  observed 0.138
+  n= 161  mean p 0.232  observed 0.248
+  n= 160  mean p 0.462  observed 0.550
+  n= 160  mean p 0.790  observed 0.781
+  n= 158  mean p 0.971  observed 0.937
