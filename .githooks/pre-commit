@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Refuse commits that stage oversized files or build artefacts.
+#
+# The ERA5 and High Seas work nearly committed a 67 MB parsed intermediate and
+# 51 MB of pip wheels, both via `git add -A`. Stage files by name; this hook is
+# the backstop. Enabled per clone with:  git config core.hooksPath .githooks
+#
+# Limit in bytes: HOOK_MAX_BYTES (default 10 MB). Bypass once, deliberately,
+# with `git commit --no-verify`.
+
+max=${HOOK_MAX_BYTES:-10485760}
+bad=0
+
+# Added, copied, modified or renamed paths; NUL-separated so odd names survive.
+git diff --cached --name-only --diff-filter=ACMR -z | {
+  while IFS= read -r -d '' path; do
+    case "$path" in
+      *.whl|*.egg|*.tar.gz|*.zip)
+        echo "pre-commit: refusing build artefact: $path" >&2
+        bad=1
+        continue ;;
+    esac
+    size=$(git cat-file -s ":$path" 2>/dev/null) || continue
+    if [ "$size" -gt "$max" ]; then
+      echo "pre-commit: $path is $size bytes (limit $max)" >&2
+      bad=1
+    fi
+  done
+  if [ "$bad" -ne 0 ]; then
+    echo "pre-commit: unstage with 'git restore --staged <path>', gitignore it, or commit with --no-verify if it really belongs in history." >&2
+    exit 1
+  fi
+}
