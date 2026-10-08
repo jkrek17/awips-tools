@@ -50,3 +50,10 @@ data/hf_lows/hsf_lows.csv
 # seconds from the per-season event_fields_<season>.csv caches. Those caches are
 # kept because reproducing them cost 52 GB of ERA5 streaming; the join is cheap.
 research/era5/event_fields.csv
+
+# research/era5/event_fields_<season>.csv are per-season cyclone-feature caches.
+# Expensive to rebuild (about 190 GB of ERA5 streaming for the 47 seasons) but
+# fully reproducible from event_fields.py, and they are invalidated whenever the
+# feature definition changes - which it just did, to mask gusts to ocean. The
+# committed artefacts are the scripts and the derived hf_probability.csv.gz.
+research/era5/event_fields_[0-9]*.csv
