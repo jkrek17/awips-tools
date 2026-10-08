@@ -10,7 +10,8 @@ archive's two domains (Atlantic 30-70N 80W-10E; Pacific 30-67N 160E-120W):
      1005 hPa, at least 4 hPa deeper than the 450-650 km ring around it);
   2. compute the features a wind criterion would key on, from the GUST field
      (`instantaneous_10m_wind_gust`), not sustained wind - the pilot found 0 of
-     103 archive events reach 64 kt in ERA5 10 m wind;
+     103 archive events reach 64 kt in ERA5 10 m wind. Gust features use SEA
+     POINTS ONLY (see "Ocean mask" below);
   3. cache the lot to one CSV per season (resumable; a finished season is
      never refetched).
 
@@ -35,9 +36,38 @@ archive's two domains (Atlantic 30-70N 80W-10E; Pacific 30-67N 160E-120W):
         excluded from the primary fit; reported, and used in one pre-specified
         sensitivity.
 
+Ocean mask
+----------
+Every gust-derived feature (g300, g500, a64, a50) is taken over sea points
+only, sea meaning the store's `land_sea_mask` < 0.5 (a cell that is at least
+half water counts as sea; the mask is a land fraction, 0 to 1, and is identical
+at every time index, so it is read once). Pressure features (p, pmin, depth,
+lap, gradmax) are NOT masked.
+
+Why gust is masked and pressure is not. OPC issues hurricane-force warnings for
+marine areas, so the archive is a statement about wind over water; and ERA5
+gusts over land and high terrain (Greenland, the Rockies, Alaska, Iceland,
+Scandinavia) are orographic, set by the surface and unrelated to the
+cyclone's own wind field. Left in, they correlate with POSITION, and position
+is what the downstream teleconnection analysis measures: a criterion partly
+learning "is this cyclone near Greenland" instead of "is this cyclone
+intense" could manufacture or mask a storm-track signal. A closed low is a
+closed low wherever it sits: central pressure, depth, Laplacian and gradient
+are properties of the pressure field itself, not contaminated the same way, so
+they are left alone (the MSLP reduction over high terrain is a separate,
+smaller problem and is not addressed here). Terrain height is deliberately not
+screened on top of the mask: once the gust sample is sea-only, orography is
+excluded by construction.
+
+A centre over land keeps its row; its gust features come from whatever sea lies
+within the radius (0 if none). `land500` records the land share of the 500 km
+disc (area weighted) so the exposure can be read back from the table.
+
 Usage
 -----
     python event_fields.py fetch 2004 2005 2021 2022 2023 2024 2025
+    python event_fields.py fetch --budget 540 1979 1980 ...
+                                            # stop starting seasons once 540 s are used
     python event_fields.py label            # writes event_fields.csv
 
 Concurrency is a ThreadPoolExecutor of 6, as in stationarity2.py. Do not raise
@@ -89,7 +119,9 @@ HF_MS = 64 * 0.514444
 SF_MS = 50 * 0.514444
 
 COLS = ["t", "basin", "lat", "lon", "p", "pmin", "depth", "lap", "g300", "g500",
-        "a64", "a50", "gradmax"]
+        "a64", "a50", "gradmax", "land500"]
+SEA_BELOW = 0.5      # land_sea_mask < this is sea (the mask is a land fraction)
+_SEA = []
 
 
 def tidx(t):
@@ -116,6 +148,15 @@ def field(var, idx, tries=4):
             if k == tries - 1:
                 raise
             time.sleep(2 * (k + 1))
+
+
+def sea_mask():
+    """Boolean 721x1440, True at sea (land_sea_mask < SEA_BELOW). Time invariant
+    in the store, so any valid index serves; 2020-01-01 as the coordinator used."""
+    if not _SEA:
+        lsm = field("land_sea_mask", tidx(datetime.datetime(2020, 1, 1)))
+        _SEA.append(lsm < SEA_BELOW)
+    return _SEA[0]
 
 
 # --- grid helpers -----------------------------------------------------------
@@ -183,10 +224,12 @@ def step(idx):
     """All candidates and their features, both basins, for one valid time."""
     mfull = field("mean_sea_level_pressure", idx)
     gfull = field("instantaneous_10m_wind_gust", idx)
+    seafull = sea_mask()
     out = []
     for b, G in GRID.items():
         m = mfull[G["rs"]][:, G["cols"]].astype(np.float64) / 100.0
         g = gfull[G["rs"]][:, G["cols"]].astype(np.float64)
+        sea = seafull[G["rs"]][:, G["cols"]]
         la, lo = G["lat"], G["lon"]
         ms = box(m, 5)
         mn = minfilt(ms, 17)
@@ -218,14 +261,17 @@ def step(idx):
             lap = 4 * float(ms[a0:a1, c0:c1][r3].mean() - ms[a, c]) / 9.0  # hPa/(100 km)^2
             near = Dk <= R_MIN
             rg = Dk <= R_GUST
-            gg = g[a0:a1, c0:c1]
+            # gust features: sea points only (see "Ocean mask" in the docstring)
+            sw = sea[a0:a1, c0:c1]
+            gg = np.where(sw, g[a0:a1, c0:c1], 0.0)
             ca = cellarea[a0:a1]
+            land500 = float((ca * rg * ~sw).sum() / (ca * rg).sum())
             out.append((idx, b, float(la[a]), float(lo[c]), float(ms[a, c]),
                         float(m[a0:a1, c0:c1][near].min()), depth, lap,
                         float(gg[Dk <= 300].max()) * KT, float(gg[rg].max()) * KT,
                         float((ca * (gg >= HF_MS) * rg).sum()),
                         float((ca * (gg >= SF_MS) * rg).sum()),
-                        float(grad[a0:a1, c0:c1][rg].max())))
+                        float(grad[a0:a1, c0:c1][rg].max()), land500))
     return out
 
 
@@ -452,9 +498,23 @@ def write_labelled(seasons, path=None):
 def main():
     cmd = sys.argv[1]
     if cmd == "fetch":
+        args = sys.argv[2:]
+        budget = None
+        if args and args[0] == "--budget":
+            budget, args = float(args[1]), args[2:]
         pool = ThreadPoolExecutor(max_workers=WORKERS)
-        for s in map(int, sys.argv[2:]):
+        t0, longest = time.time(), 0.0
+        for s in map(int, args):
+            if os.path.exists(raw_path(s)):
+                print("season %d cached" % s, flush=True)
+                continue
+            # a call is time-limited: never start a season that cannot finish
+            if budget is not None and time.time() - t0 + 1.3 * longest > budget:
+                print("budget reached before season %d; rerun to continue" % s, flush=True)
+                break
+            t1 = time.time()
             fetch_season(s, pool)
+            longest = max(longest, time.time() - t1)
     elif cmd == "label":
         seasons = sorted(int(f[13:17]) for f in os.listdir(HERE)
                          if f.startswith("event_fields_") and f.endswith(".csv")
