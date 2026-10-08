@@ -4,7 +4,9 @@
 # (cyclone_phase_space/article/live/, served at /cyclone/ with its data under
 # /cyclone/data/), the forecasters' explainer
 # (cyclone_phase_space/article/forecasters/), the article with its figures
-# (cyclone_phase_space/article/{index.html,style.css,figures/}), the newest
+# (cyclone_phase_space/article/{index.html,style.css,figures/}), the HF
+# extratropical low archive (docs/, with its data rebuilt from data/hf_lows/
+# as in pages.yml, served at /hf-lows/), the newest
 # live data (the latest/ and storms/ trees of the cps-live branch) and nothing else; it is pushed as the
 # single commit of the public repository's main branch with the token in the
 # secret WEB_TOKEN (a fine-grained personal access token scoped to the public
@@ -39,6 +41,9 @@ on:
       - 'cyclone_phase_space/article/figures/**'
       - '.github/workflows/site_publish.yml'
       - 'tools/build_site_index.py'
+      - 'docs/**'
+      - 'data/hf_lows/**'
+      - 'tools/build_hf_lows.py'
   workflow_dispatch:
 
 permissions:
@@ -90,7 +95,7 @@ jobs:
           rm -rf "$site"
           # The live map with its data beside it, served at /cyclone/; the
           # site root is the projects index (built after the kept folders).
-          mkdir -p "$site/cyclone/data"
+          mkdir -p "$site/cyclone/data" "$site/hf-lows"
           cp -r cyclone_phase_space/article/live/. "$site/cyclone/"
           # The plain-language explainer for forecasters, self-contained
           # (its own stylesheet and figure copies), served at /forecasters/.
@@ -101,6 +106,12 @@ jobs:
           mkdir -p "$site/article/figures"
           cp cyclone_phase_space/article/index.html cyclone_phase_space/article/style.css "$site/article/"
           cp -r cyclone_phase_space/article/figures/. "$site/article/figures/"
+          # The HF extratropical low archive, served at /hf-lows/. Its data
+          # is rebuilt from the CSVs first, as the Pages deploy does, so the
+          # copy never lags data/hf_lows/.
+          python3 tools/build_hf_lows.py
+          cp -r docs/. "$site/hf-lows/"
+          rm -f "$site/hf-lows/README.md"
           if [ -d "$RUNNER_TEMP/live/latest" ]; then
             cp -r "$RUNNER_TEMP/live/latest" "$site/cyclone/data/latest"
           fi
@@ -121,9 +132,10 @@ jobs:
         env:
           REPO: ${{ vars.PUBLIC_SITE_REPO }}
           TOKEN: ${{ secrets.WEB_TOKEN }}
-          # Folders this workflow writes, plus data/, fonts/ and basemap/,
+          # Folders this workflow writes (cyclone, article, forecasters,
+          # hf-lows), plus data/, fonts/ and basemap/,
           # which the map used at the root before it moved to /cyclone/.
-          OWN_FOLDERS: cyclone article forecasters data fonts basemap
+          OWN_FOLDERS: cyclone article forecasters hf-lows data fonts basemap
         run: |
           current="$RUNNER_TEMP/current"
           rm -rf "$current"
