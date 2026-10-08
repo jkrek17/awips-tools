@@ -56,6 +56,13 @@ python3 tools/build_hf_lows.py
 
 Preview locally with `python3 -m http.server 8000 --directory docs`.
 
+Stage files by name rather than with `git add -A`: several regenerable
+intermediates (the 67 MB parsed High Seas lows, the ERA5 caches) sit next to
+committed data. `.githooks/pre-commit` refuses staged files over 10 MB and pip
+wheels or archives; enable it once per clone with
+`git config core.hooksPath .githooks` (Claude Code sessions do this on start
+via `.claude/settings.json`).
+
 This published Pages site is a **preview of the code and of whatever data
 happens to be committed** - it is not the operational page, and it can lag or
 lead the real archive depending on when someone last exported and committed.
