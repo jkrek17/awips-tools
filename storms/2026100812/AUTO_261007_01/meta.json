@@ -1,0 +1,34 @@
+{
+  "cycle": "2026100812",
+  "name": "AUTO_261007_01",
+  "status": "ok",
+  "seed": {
+    "lat": 55.12,
+    "lon": 159.39,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "track of 2026100712 at +24 h"
+  },
+  "start_fhr": 0,
+  "end_fhr": 0,
+  "fixes": 1,
+  "start": {
+    "lat": 55.59,
+    "lon": 156.02,
+    "mslp_hpa": 972.4
+  },
+  "end": {
+    "lat": 55.59,
+    "lon": 156.02,
+    "mslp_hpa": 972.4
+  },
+  "min_mslp_hpa": 972.4,
+  "onset_standard_h": null,
+  "completion_standard_h": null,
+  "onset_hart_h": null,
+  "completion_hart_h": null,
+  "class_sequence": "0 0",
+  "fsu_number": null,
+  "fsu": null,
+  "track_end": "no minimum within 600 km of 55.6,156.0 at or below 984 hPa and within 1080 km of the last fix at +12 h"
+}

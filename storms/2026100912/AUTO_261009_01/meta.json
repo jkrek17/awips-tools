@@ -1,0 +1,52 @@
+{
+  "cycle": "2026100912",
+  "name": "AUTO_261009_01",
+  "status": "ok",
+  "seed": {
+    "lat": 19.89,
+    "lon": 154.22,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "automatic discovery at 0 h of 2026100912"
+  },
+  "start_fhr": 0,
+  "end_fhr": 66,
+  "fixes": 12,
+  "start": {
+    "lat": 19.89,
+    "lon": 154.22,
+    "mslp_hpa": 963.5
+  },
+  "end": {
+    "lat": 29.19,
+    "lon": 147.92,
+    "mslp_hpa": 980.2
+  },
+  "min_mslp_hpa": 959.5,
+  "onset_standard_h": null,
+  "completion_standard_h": null,
+  "onset_hart_h": null,
+  "completion_hart_h": null,
+  "class_sequence": "0 0-66",
+  "fsu_number": 3,
+  "fsu": {
+    "number": 3,
+    "lat": 20.2,
+    "lon": 154.06,
+    "distance_km": 38,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100912/3.html"
+  },
+  "track_end": "merged into EPAC at +72 h",
+  "merged_into": {
+    "name": "EPAC",
+    "fhr": 72,
+    "distance_km": 0
+  },
+  "note": "merged into EPAC at +72 h",
+  "discovered": {
+    "lat": 19.89,
+    "lon": 154.22,
+    "mslp_hpa": 963.5,
+    "basin": "TROP"
+  }
+}

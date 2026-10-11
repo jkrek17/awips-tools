@@ -1,0 +1,40 @@
+{
+  "cycle": "2026092612",
+  "name": "LABRADOR",
+  "status": "ok",
+  "seed": {
+    "lat": 56.31,
+    "lon": -25.95,
+    "fhr0": 0,
+    "fhr1": 48,
+    "source": "stored seed"
+  },
+  "start_fhr": 0,
+  "end_fhr": 48,
+  "fixes": 8,
+  "start": {
+    "lat": 56.51,
+    "lon": -25.98,
+    "mslp_hpa": 986.7
+  },
+  "end": {
+    "lat": 69.6,
+    "lon": -7.01,
+    "mslp_hpa": 991.5
+  },
+  "min_mslp_hpa": 984.1,
+  "onset_standard_h": 30,
+  "completion_standard_h": 36,
+  "onset_hart_h": 0,
+  "completion_hart_h": 36,
+  "class_sequence": "4 0, - 12-18, 3 24, - 30-36, 4 42, 3 48",
+  "fsu_number": 17,
+  "fsu": {
+    "number": 17,
+    "lat": 56.62,
+    "lon": -25.94,
+    "distance_km": 12,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092612/17.html"
+  },
+  "track_end": "FHR1 48 h reached"
+}
