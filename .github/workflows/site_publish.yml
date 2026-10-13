@@ -5,7 +5,10 @@
 # /cyclone/data/), the forecasters' explainer
 # (cyclone_phase_space/article/forecasters/), the article with its figures
 # (cyclone_phase_space/article/{index.html,style.css,figures/}), the
-# newest live data (the latest/ and storms/ trees of the cps-live branch) and nothing else; it is pushed as the
+# newest live data (the latest/ and storms/ trees of the cps-live branch), the
+# North Atlantic marine wind page (marine_wind/page/, served at /marine-wind/
+# with the latest/ tree of the marine-wind-live branch as its data/) and
+# nothing else; it is pushed as the
 # single commit of the public repository's main branch with the token in the
 # secret WEB_TOKEN (a fine-grained personal access token scoped to the public
 # repository with Contents: read and write). The public repository serves it
@@ -31,7 +34,7 @@ name: Publish public site
 
 on:
   workflow_run:
-    workflows: ["CPS live map data", "CPS daily collection"]
+    workflows: ["CPS live map data", "CPS daily collection", "Marine wind data"]
     types: [completed]
   push:
     branches: [main]
@@ -41,6 +44,7 @@ on:
       - 'cyclone_phase_space/article/index.html'
       - 'cyclone_phase_space/article/style.css'
       - 'cyclone_phase_space/article/figures/**'
+      - 'marine_wind/page/**'
       - '.github/workflows/site_publish.yml'
       - 'tools/build_site_index.py'
   workflow_dispatch:
@@ -86,6 +90,13 @@ jobs:
             git --work-tree="$RUNNER_TEMP/live" checkout origin/cps-live -- . 2>/dev/null || true
             git reset -q
           fi
+          git fetch --depth 1 origin marine-wind-live || echo "no marine-wind-live branch yet"
+          rm -rf "$RUNNER_TEMP/marine"
+          mkdir -p "$RUNNER_TEMP/marine"
+          if git rev-parse --verify -q origin/marine-wind-live >/dev/null; then
+            git --work-tree="$RUNNER_TEMP/marine" checkout origin/marine-wind-live -- . 2>/dev/null || true
+            git reset -q
+          fi
 
       - name: Assemble the site
         if: steps.cfg.outputs.ready == 'true'
@@ -111,12 +122,19 @@ jobs:
           if [ -d "$RUNNER_TEMP/live/storms" ]; then
             cp -r "$RUNNER_TEMP/live/storms" "$site/cyclone/data/storms"
           fi
+          # The marine wind page with the newest run beside it, at /marine-wind/.
+          mkdir -p "$site/marine-wind/data"
+          cp -r marine_wind/page/. "$site/marine-wind/"
+          if [ -d "$RUNNER_TEMP/marine/latest" ]; then
+            cp -r "$RUNNER_TEMP/marine/latest/." "$site/marine-wind/data/"
+          fi
           # Stamp the page's own script and style links with the commit so a
           # browser holding a cached index.html never pairs it with stale
           # files (Pages serves everything with a 10 minute max-age).
           v="${GITHUB_SHA::8}"
           sed -i -E "s/(href|src)=\"(style\.css|basemap\.js|card\.js|storms\.js|space3d\.js|app\.js)\"/\1=\"\2?v=$v\"/g" "$site/cyclone/index.html"
           grep -c "?v=$v" "$site/cyclone/index.html"
+          sed -i -E "s/(href|src)=\"(style\.css|coast\.js|app\.js)\"/\1=\"\2?v=$v\"/g" "$site/marine-wind/index.html"
           touch "$site/.nojekyll"
           du -sh "$site"
 
@@ -125,10 +143,11 @@ jobs:
         env:
           REPO: ${{ vars.PUBLIC_SITE_REPO }}
           TOKEN: ${{ secrets.WEB_TOKEN }}
-          # Folders this workflow writes (cyclone, article, forecasters),
+          # Folders this workflow writes (cyclone, article, forecasters,
+          # marine-wind),
           # plus data/, fonts/ and basemap/,
           # which the map used at the root before it moved to /cyclone/.
-          OWN_FOLDERS: cyclone article forecasters data fonts basemap
+          OWN_FOLDERS: cyclone article forecasters marine-wind data fonts basemap
         run: |
           current="$RUNNER_TEMP/current"
           rm -rf "$current"
