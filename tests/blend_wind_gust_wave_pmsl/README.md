@@ -58,7 +58,12 @@ GFS to the box server-side, ECMWF fields come by byte range from each step's
 python3 run_real_data.py                                 # W Atlantic 30-50N 80-50W, from now, 90 h
 python3 run_real_data.py --box 30,55,-150,-120 --hours 72 --weights GFS=1,ECMWF=1
 python3 run_real_data.py --start 2026101306              # a fixed start time
+python3 run_real_data.py --source aws                    # from the AWS mirrors instead
 ```
+
+`--source aws` reads GFS and GFS Wave from the `noaa-gfs-bdp-pds` bucket and
+ECMWF from `ecmwf-forecasts`, for networks that block NOMADS or
+data.ecmwf.int. The mirrors post each run a little later than the originals.
 
 Needs `numpy`, `matplotlib`, `requests` and `eccodes` (`pip install eccodes`
 brings the ecCodes library with it). It checks every written grid - no
@@ -68,7 +73,9 @@ model beside the blend, and a time series of the blend's extremes.
 
 On the first run (13 Oct 2026, 03Z) both models used their 18Z runs: the 00Z
 runs had nothing posted yet, so the procedure passed over them. All 124 grids
-(4 elements x 31 times) passed the checks.
+(4 elements x 31 times) passed the checks. A rerun from the AWS mirrors at about 03:30Z picked
+the same runs and passed again, as did a 72 h NE Pacific run (30-55N,
+150-120W, equal weights, 100 grids).
 
 Two details of the open data the script handles: ECMWF's gust is `10fg`
 through 90 h and `10fg3` after it, and NOMADS answers 403, not 404, for a

@@ -43,6 +43,8 @@ def parse_args():
     a.add_argument("--hours", type=int, default=90, help="length of the period (default 90)")
     a.add_argument("--weights", default="GFS=2,ECMWF=3", help="model weights (default GFS=2,ECMWF=3)")
     a.add_argument("--cycles", type=int, default=3, help="newest cycles offered per model (default 3)")
+    a.add_argument("--source", choices=("direct", "aws"), default="direct",
+                   help="direct: NOMADS and data.ecmwf.int (default); aws: their S3 open-data mirrors")
     return a.parse_args()
 
 
@@ -116,7 +118,7 @@ def build_store(t0, t1, n_cycles):
 def main():
     args = parse_args()
     lat0, lat1, lon0, lon1 = (float(x) for x in args.box.split(","))
-    M.configure(os.path.join(OUT, "cache"), lat0, lat1, lon0, lon1)
+    M.configure(os.path.join(OUT, "cache"), lat0, lat1, lon0, lon1, args.source)
     weights = {k: float(v) for k, v in (kv.split("=") for kv in args.weights.split(","))}
     if args.start:
         t0 = calendar.timegm(time.strptime(args.start, "%Y%m%d%H"))
