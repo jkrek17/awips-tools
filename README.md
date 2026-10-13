@@ -17,6 +17,8 @@ AWIPS tools and procedures.
 | `GFE/procedures/CreateXML.py` | The site's chart XML procedure, now filling isobars and Highs/Lows from 17N up to the GFE grid's edge from a seam-matched model blend. See below. |
 | `GFE/utilities/PressureGapFill.py` | The gap-fill module that does it. |
 | `tests/pressure_gap_fill/` | Its checks, an end-to-end run of CreateXML.py, and a synthetic WPAC plot. |
+| `GFE/procedures/Blend_WindGustWavePmsl.py` | Blends Wind, WindGust, WaveHeight and pmsl from one set of model weights, using each model's newest complete run; writes nothing if any model grid is missing or empty. |
+| `tests/blend_wind_gust_wave_pmsl/` | Its scenario checks on a fake GFE, and a run on the newest real GFS and ECMWF data with maps. |
 | `web/TCWind_JTWC/` | Google Apps Script web app for that tool: live JTWC and NHC bulletins, a best-track archive, and the verification findings. |
 | `web/HFArchiveExport/` | Google Apps Script web app that exports the restricted HF low sheet as CSV for `tools/publish.py`. |
 | `data/hf_lows/` | CSV exports of the hurricane force extratropical low archive workbook, committed here on purpose (see below). |

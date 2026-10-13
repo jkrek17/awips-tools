@@ -10,7 +10,7 @@ a single implementation.
 
 from __future__ import annotations
 
-from typing import Generator, Iterable, List, Optional, Sequence
+from typing import Dict, Generator, Iterable, List, Optional, Sequence, Tuple
 
 import model_aliases
 
@@ -234,6 +234,95 @@ def get_vector_grid(
     )
 
 
+def model_run_time(model_id: str) -> Optional[int]:
+    """
+    Cycle time of a database in unix seconds, parsed from its identifier.
+
+    Identifiers end in ``_YYYYMMDD_HHMM`` (``XXX_GRID_D2D_GFS_20261013_1200``);
+    a singleton database such as ``Fcst`` has no time and returns ``None``.
+    """
+
+    import calendar
+    import time as _time
+
+    parts = (model_id or "").split("_")
+    if len(parts) < 2:
+        return None
+    try:
+        stamp = _time.strptime(parts[-2] + parts[-1], "%Y%m%d%H%M")
+    except ValueError:
+        return None
+    return calendar.timegm(stamp)
+
+
+def list_model_runs(
+    smart_script,
+    alias: str,
+    *,
+    dataset: str = "atmo",
+    run_depth: int = 3,
+) -> List[Tuple[int, Dict[str, str]]]:
+    """
+    Every run of ``alias`` the server has, newest cycle first.
+
+    Each entry is ``(cycle_unix, {database_name: model_id})``: one cycle may
+    live in several databases (a GFE smartInit copy and the D2D original),
+    and they are grouped so a caller can keep to one model cycle while
+    pulling elements from whichever database carries them.  A database that
+    exists but holds no grids yet is still listed - whether a run is usable
+    is for the caller to decide from its inventory, not from its existence.
+    """
+
+    try:
+        candidates = model_aliases.get_database_candidates(alias, dataset=dataset)
+    except Exception:
+        candidates = ()
+
+    runs: Dict[int, Dict[str, str]] = {}
+    for base in candidates:
+        for offset in range(0, -run_depth, -1):
+            try:
+                db = smart_script.findDatabase(base, offset)
+            except Exception:
+                db = None
+            if db is None:
+                continue
+            try:
+                model_id = db.modelIdentifier()
+            except Exception:
+                continue
+            cycle = model_run_time(model_id)
+            if cycle is None:
+                continue
+            runs.setdefault(cycle, {}).setdefault(base, model_id)
+
+    return sorted(runs.items(), key=lambda item: item[0], reverse=True)
+
+
+def grid_times(smart_script, model_id: str, element: str, level: str, time_range) -> List[Tuple[int, int, object]]:
+    """
+    Inventory of one element in one database over ``time_range``.
+
+    Returns ``(start_unix, end_unix, grid_time_range)`` per grid, sorted by
+    start; an element the database does not carry gives an empty list.
+    """
+
+    try:
+        infos = smart_script.getGridInfo(model_id, element, level, time_range)
+    except Exception:
+        return []
+
+    out = []
+    for info in infos or []:
+        try:
+            tr = info.gridTime()
+            out.append((tr.startTime().unixTime(), tr.endTime().unixTime(), tr))
+        except Exception:
+            continue
+    out.sort(key=lambda item: item[0])
+    return out
+
+
 def get_forecast_grid(smart_script, element: str, level: str, time_range, **kwargs):
     """
     Convenience helper for the Fcst database.
@@ -256,5 +345,8 @@ __all__ = [
     "get_vector_grid",
     "get_forecast_grid",
     "get_official_grid",
+    "model_run_time",
+    "list_model_runs",
+    "grid_times",
 ]
 

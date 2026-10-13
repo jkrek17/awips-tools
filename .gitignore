@@ -24,3 +24,4 @@ tests/create_xml_windhazards/out/
 tests/pressure_gap_fill/out/
 tests/tcwind_jtwc/out/
 tests/tc_pressure/out/
+tests/blend_wind_gust_wave_pmsl/out/
