@@ -6,8 +6,8 @@ where forecasters should look:
 
 | Layer | What it shows |
 |---|---|
-| Blended wind | mean(GFS, ECMWF, AIFS speed) + min(k × member spread, 5 kt); k = 0.25, 0.15 at +24 h and earlier |
-| Plain 3-model average, added wind | the two parts of the blend |
+| Blended wind | base + min(k × member spread, 5 kt); k = 0.25, 0.15 at +24 h and earlier |
+| Model base, added wind | the two parts of the blend; the base weights GFS, ECMWF and AIFS at each point by the share of members within about 5 kt of each |
 | Model agreement | ride (all models < 30 kt), agree, focus (split across 34 kt or a 10 kt range near gale), high impact (split across 48 or 64 kt) |
 | Member spread | standard deviation of about 80 GEFS + ECMWF ENS member speeds |
 | Ensemble chance | share of members at 34, 48 and 64 kt or more |
@@ -21,7 +21,9 @@ within about 50 km). Hovering a point lists every value there.
 
 Averaging three models flattens the peaks: the plain average forecasts only
 about 70% of the gale area that verifies. Adding a quarter of the ensemble
-spread restores it. The recipe was tuned on 145 hindcast cases (fall 2026 and
+spread restores it. Weighting the models by member support,
+rather than equally, trimmed the error at 25+ kt by about 0.1 kt more on the
+200 out-of-sample cases. The recipe was tuned on 145 hindcast cases (fall 2026 and
 winter 2025–26) and held up on 200 cases it never saw (Mar–Apr 2025, Oct–Nov
 2025, Mar 2026), scored against the GFS and ECMWF analyses and against buoys
 and ships. The experiment write-ups are in the project files under

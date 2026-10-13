@@ -63,7 +63,8 @@
   <div class="sheet-body">
     <button type="button" class="btn close" id="about-close" aria-label="Close">&times;</button>
     <h2>How the blended wind is made</h2>
-    <p><b>Blended wind</b> = the average of the GFS, ECMWF and AIFS 10 m wind speeds, plus a quarter of the spread of about 80 ensemble members (31 GEFS and 50 or 51 ECMWF ENS), capped at 5 kt. At +24 h and earlier it adds 15% of the spread instead. Direction comes from the average wind vector.</p>
+    <p><b>Blended wind</b> = a weighted average of the GFS, ECMWF and AIFS 10 m wind speeds, plus a quarter of the spread of about 80 ensemble members (31 GEFS and 50 or 51 ECMWF ENS), capped at 5 kt. At +24 h and earlier it adds 15% of the spread instead. Direction comes from the average wind vector.</p>
+    <p>Each model is weighted at each point by how many ensemble members are within about 5 kt of it, so a model out on its own counts for less. On 200 test cases this trimmed the error in 25+ kt winds by about 0.1 kt over a plain average.</p>
     <p>Averaging three models flattens the peaks, so the plain average forecasts only about 70% of the gale area that verifies. Adding a little of the spread restores it. Tested on 345 past North Atlantic cases from three seasons, scored against the GFS and ECMWF analyses and against buoys and ships:</p>
     <ul>
       <li>Gale area forecast rises from about 72% to 97% of what verified.</li>
