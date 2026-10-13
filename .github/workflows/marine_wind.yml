@@ -1,0 +1,84 @@
+# Data for the North Atlantic marine wind page (marine_wind/pipeline/build.py).
+# Twice a day, once the 00 and 12 UTC ECMWF ensemble's +120 h is on the AWS
+# open-data mirror (about 8 h after the cycle), the newest cycle with GFS,
+# GEFS, ECMWF IFS, AIFS and ENS all complete is built into a manifest and one
+# small binary per lead time, and published as the single commit of the orphan
+# branch marine-wind-live under latest/. Publish public site copies it to
+# /marine-wind/data/.
+#
+# The branch is rebuilt from nothing and force-pushed every run (about 6 MB),
+# so it never accumulates history, and main is never touched. Run it by hand
+# (Actions > Marine wind data > Run workflow) with a cycle to publish a
+# particular run.
+
+name: Marine wind data
+
+on:
+  schedule:
+    - cron: '30 8,20 * * *'
+  workflow_dispatch:
+    inputs:
+      cycle:
+        description: 'Cycle YYYYMMDDHH, 00 or 12 (blank: the newest complete cycle)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: marine-wind
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: marine_wind/pipeline/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r marine_wind/pipeline/requirements.txt
+
+      - name: Build
+        id: build
+        working-directory: marine_wind/pipeline
+        env:
+          CYCLE: ${{ github.event.inputs.cycle }}
+        run: |
+          out="$RUNNER_TEMP/marine-wind"
+          rm -rf "$out"
+          args=(--out "$out")
+          if [ -n "$CYCLE" ]; then args+=(--cycle "$CYCLE"); fi
+          python3 build.py "${args[@]}"
+          rm -f "$out"/f*.json
+          echo "out=$out" >> "$GITHUB_OUTPUT"
+          echo "cycle=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["cycle"])' "$out/manifest.json")" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to the marine-wind-live branch
+        env:
+          CYCLE: ${{ steps.build.outputs.cycle }}
+          OUT: ${{ steps.build.outputs.out }}
+          REMOTE: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
+        run: |
+          work="$RUNNER_TEMP/marine-wind-live"
+          rm -rf "$work"
+          mkdir -p "$work/latest"
+          cp -r "$OUT"/. "$work/latest/"
+          cd "$work"
+          git init -q
+          git checkout -q --orphan marine-wind-live
+          git config user.name "marine-wind-live"
+          git config user.email "marine-wind-live@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Marine wind data $CYCLE"
+          git remote add origin "$REMOTE"
+          git push --force origin marine-wind-live
