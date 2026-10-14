@@ -11,6 +11,7 @@
 <script src="coast.js" defer></script>
 <script src="coast_npac.js" defer></script>
 <script src="app.js" defer></script>
+<script src="scorecard.js" defer></script>
 </head>
 <body class="loading">
 
@@ -22,6 +23,7 @@
     <a data-basin="natl" href="./">Atlantic</a><a data-basin="npac" href="?basin=npac">Pacific</a>
   </nav>
   <p class="run" id="run">Loading the latest run</p>
+  <button type="button" class="btn" id="score-btn" aria-controls="scorecard" aria-expanded="false">Model scorecard</button>
   <button type="button" class="btn" id="about-btn" aria-controls="about" aria-expanded="false">How it's made</button>
 </header>
 
@@ -88,6 +90,23 @@
     <h3>Change since yesterday's run</h3>
     <p>The 3-model average wind now minus the same models' run 24 h earlier, valid at the same time. It is shown only where either run has 25 kt or more, so light-wind noise doesn't hide the changes that matter. In testing, the truth fell back about a fifth of this change toward the earlier run. Where two runs in a row weakened a system, it verified 4&ndash;5 kt stronger than the latest run. A run that just jumped is worth a second look, and a system that two runs in a row weakened should not be dropped too quickly.</p>
     <p class="fine">Data: NOAA GFS and GEFS and ECMWF open data, from the AWS open-data mirrors, 0.25 degree grid, 30&ndash;67N, 75W&ndash;0 (Atlantic) and 160E&ndash;115W (Pacific). Updated twice a day. Guidance only, not an official forecast.</p>
+  </div>
+</div>
+
+<div class="sheet" id="scorecard" hidden>
+  <div class="sheet-body wide" role="dialog" aria-labelledby="sc-title">
+    <button type="button" class="btn close" id="sc-close" aria-label="Close">&times;</button>
+    <h2 id="sc-title">Model scorecard</h2>
+    <p class="sc-note">For awareness only; it does not change the blend. In a 151-run winter test, the model that had led over the past 3, 7 or 15 days was no more likely to lead the next run than its season-long ranking already said.</p>
+    <div class="sc-controls">
+      <div class="sc-tabs" role="tablist" aria-label="Field">
+        <button type="button" role="tab" data-tab="msl" aria-selected="true">Sea-level pressure</button><button type="button" role="tab" data-tab="z" aria-selected="false">500 mb height</button>
+      </div>
+      <div class="sc-leads" role="group" aria-label="Forecast day">
+        <button type="button" data-lead="24">Day 1</button><button type="button" data-lead="48">2</button><button type="button" data-lead="72" aria-pressed="true">3</button><button type="button" data-lead="96">4</button><button type="button" data-lead="120">5</button>
+      </div>
+    </div>
+    <div id="sc-content"></div>
   </div>
 </div>
 

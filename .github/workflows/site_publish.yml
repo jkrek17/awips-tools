@@ -7,7 +7,8 @@
 # (cyclone_phase_space/article/{index.html,style.css,figures/}), the
 # newest live data (the latest/ and storms/ trees of the cps-live branch), the
 # North Atlantic and North Pacific marine wind page (marine_wind/page/, served at /marine-wind/
-# with the latest/ tree of the marine-wind-live branch as its data/) and
+# with the latest/ tree of the marine-wind-live branch as its data/, plus the
+# model scorecard from the marine-wind-scorecard branch) and
 # nothing else; it is pushed as the
 # single commit of the public repository's main branch with the token in the
 # secret WEB_TOKEN (a fine-grained personal access token scoped to the public
@@ -34,7 +35,7 @@ name: Publish public site
 
 on:
   workflow_run:
-    workflows: ["CPS live map data", "CPS daily collection", "Marine wind data"]
+    workflows: ["CPS live map data", "CPS daily collection", "Marine wind data", "Marine wind scorecard"]
     types: [completed]
   push:
     branches: [main]
@@ -97,6 +98,10 @@ jobs:
             git --work-tree="$RUNNER_TEMP/marine" checkout origin/marine-wind-live -- . 2>/dev/null || true
             git reset -q
           fi
+          git fetch --depth 1 origin marine-wind-scorecard || echo "no marine-wind-scorecard branch yet"
+          if git rev-parse --verify -q origin/marine-wind-scorecard >/dev/null; then
+            git show origin/marine-wind-scorecard:scores.json > "$RUNNER_TEMP/scorecard.json" || rm -f "$RUNNER_TEMP/scorecard.json"
+          fi
 
       - name: Assemble the site
         if: steps.cfg.outputs.ready == 'true'
@@ -129,13 +134,17 @@ jobs:
           if [ -d "$RUNNER_TEMP/marine/latest" ]; then
             cp -r "$RUNNER_TEMP/marine/latest/." "$site/marine-wind/data/"
           fi
+          # The model scorecard (marine-wind-scorecard branch), both basins in one file.
+          if [ -f "$RUNNER_TEMP/scorecard.json" ]; then
+            cp "$RUNNER_TEMP/scorecard.json" "$site/marine-wind/data/scorecard.json"
+          fi
           # Stamp the page's own script and style links with the commit so a
           # browser holding a cached index.html never pairs it with stale
           # files (Pages serves everything with a 10 minute max-age).
           v="${GITHUB_SHA::8}"
           sed -i -E "s/(href|src)=\"(style\.css|basemap\.js|card\.js|storms\.js|space3d\.js|app\.js)\"/\1=\"\2?v=$v\"/g" "$site/cyclone/index.html"
           grep -c "?v=$v" "$site/cyclone/index.html"
-          sed -i -E "s/(href|src)=\"(style\.css|coast\.js|coast_npac\.js|app\.js)\"/\1=\"\2?v=$v\"/g" "$site/marine-wind/index.html"
+          sed -i -E "s/(href|src)=\"(style\.css|coast\.js|coast_npac\.js|app\.js|scorecard\.js)\"/\1=\"\2?v=$v\"/g" "$site/marine-wind/index.html"
           touch "$site/.nojekyll"
           du -sh "$site"
 

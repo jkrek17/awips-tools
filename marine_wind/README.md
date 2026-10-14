@@ -120,3 +120,43 @@ pip install -r marine_wind/verify/requirements.txt
 python3 marine_wind/verify/verify.py --valid 20261012 --out day.csv
 python3 marine_wind/verify/verify.py --summary day.csv --md summary.md
 ```
+
+## Model scorecard
+
+The "Model scorecard" button opens how GFS, ECMWF and AIFS have handled the
+pattern over the last 7 and 30 days, for the page's basin, by forecast day
+(1 to 5). It is for awareness only and does not feed the blend: in a winter
+2025–26 test on 151 North Atlantic runs, the model that had led over the past
+3, 7 or 15 days was no more likely to lead the next run than its season-long
+ranking already said, and weighting the blend by recent skill did not help.
+
+| Field | Area | Scores |
+|---|---|---|
+| Sea-level pressure | the high seas the blend was tested on: 30–67N, Atlantic 75W–0, Pacific 160E–115W | RMSE; position and central-pressure error of analysed lows under 1000 hPa (matched within 800 km) and the share missed; 34 and 48 kt hit scores (CSI) for 10 m wind on open water |
+| 500 mb height | 25–75N, Atlantic 130W–10E, Pacific 100E–110W (the basin plus upstream) | anomaly correlation against the ERA5 1990–2019 climatology, and RMSE |
+
+Truth is the mean of the GFS and ECMWF analyses at 12 UTC, so no model is
+scored against its own. The hit scores sit next to the pressure scores because
+AIFS's smooth fields score well on pressure error but have the weakest storm
+cores. A 30-day strip of the headline score shades days when all three models
+did worse than their own usual, which points to a hard pattern rather than one
+bad model.
+
+```
+marine_wind/scorecard/
+  scorecard.py     score one 12 UTC valid day (or --backfill N days) into scores.json
+  make_climo.py    one-time build of z500_clim.npz from WeatherBench 2's ERA5 climatology
+  z500_clim.npz    500 mb height climatology, 12 UTC, 18–82N, 1.5 deg, by day of year
+page/scorecard.js  the scorecard sheet
+```
+
+`.github/workflows/marine_wind_scorecard.yml` runs at 21:45 UTC. It rescores
+the last three days into `scores.json` (newest 60 days kept; 30 days are
+backfilled the first time) and force-pushes it as the single commit of the
+orphan branch `marine-wind-scorecard`. Publish public site copies it to
+`/marine-wind/data/scorecard.json`.
+
+```
+pip install -r marine_wind/pipeline/requirements.txt
+python3 marine_wind/scorecard/scorecard.py --backfill 30 --scores marine_wind/page/data/scorecard.json
+```

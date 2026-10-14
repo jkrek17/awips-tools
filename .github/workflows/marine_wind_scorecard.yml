@@ -1,0 +1,84 @@
+# Model scorecard for the marine wind page (marine_wind/scorecard/scorecard.py).
+# Once a day, after the 12 UTC GFS and ECMWF analyses are on AWS, scores the
+# GFS, ECMWF and AIFS runs valid at 12 UTC today (day 1 to 5) on sea-level
+# pressure and 500 mb height for the North Atlantic and the North Pacific, and
+# adds them to scores.json (the newest 60 days). It rescores the two days before
+# too, which fills in a day a late analysis or a failed run left out. If there is
+# no scores.json yet, it backfills 30 days.
+#
+# scores.json is the single commit of the orphan branch marine-wind-scorecard,
+# force-pushed each run, so main is never touched and the branch never grows
+# history. Publish public site copies it to /marine-wind/data/scorecard.json.
+
+name: Marine wind scorecard
+
+on:
+  schedule:
+    - cron: '45 21 * * *'
+  workflow_dispatch:
+    inputs:
+      backfill:
+        description: 'Days to (re)score ending today (blank: the last 3, or 30 if there are no scores yet)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: marine-wind-scorecard
+  cancel-in-progress: false
+
+jobs:
+  score:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: marine_wind/pipeline/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r marine_wind/pipeline/requirements.txt
+
+      - name: Get the scores so far
+        run: |
+          mkdir -p "$RUNNER_TEMP/s"
+          if git fetch -q origin marine-wind-scorecard 2>/dev/null; then
+            git show FETCH_HEAD:scores.json > "$RUNNER_TEMP/s/scores.json"
+          fi
+
+      - name: Score
+        working-directory: marine_wind/scorecard
+        env:
+          BACKFILL: ${{ github.event.inputs.backfill }}
+        run: |
+          n="$BACKFILL"
+          if [ -z "$n" ]; then
+            if [ -f "$RUNNER_TEMP/s/scores.json" ]; then n=3; else n=30; fi
+          fi
+          python3 scorecard.py --valid "$(date -u +%Y%m%d)" --backfill "$n" --scores "$RUNNER_TEMP/s/scores.json"
+
+      - name: Publish to the marine-wind-scorecard branch
+        env:
+          REMOTE: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
+        run: |
+          s="$RUNNER_TEMP/s"
+          test -f "$s/scores.json" || { echo "nothing to publish"; exit 0; }
+          work="$RUNNER_TEMP/branch"
+          rm -rf "$work"; mkdir -p "$work"
+          cp "$s/scores.json" "$work/"
+          cd "$work"
+          git init -q
+          git checkout -q --orphan marine-wind-scorecard
+          git config user.name "marine-wind-scorecard"
+          git config user.email "marine-wind-scorecard@users.noreply.github.com"
+          git add scores.json
+          git commit -q -m "Marine wind scorecard $(date -u +%Y-%m-%d)"
+          git push -q -f "$REMOTE" marine-wind-scorecard
