@@ -46,6 +46,15 @@
     cats: [["Ride", "rgba(0,0,0,0)"], ["Agree", "#3a4049"], ["Focus", "#d9a640"], ["High impact", "#d2483b"]],
     title: "Where to look"
   };
+  var TREND_MIN = 25;   // run change is drawn only where either run has this much wind
+  // what an all-clear layer means, so a blank map doesn't read as a failed load
+  var EMPTY = {
+    p34: "No point reaches a 5% chance of 34 kt at this hour",
+    p48: "No point reaches a 5% chance of 48 kt at this hour",
+    p64: "No point reaches a 5% chance of 64 kt at this hour",
+    trend: "No change of 3 kt or more in 25+ kt wind since the run 24 h earlier",
+    focus: "Models agree everywhere at this hour"
+  };
   var MODEL_COLOR = ["", "#f08a5d", "#7fb0ee", "#c3a6f0"];
   var MODEL_NAME = ["", "GFS", "ECMWF", "AIFS"];
 
@@ -143,13 +152,27 @@
   function drawField(buf) {
     var pal = layerDef(state.layer)[2];
     var nx = grid.nx, ny = grid.ny, data = getField(buf, state.layer), tab = colorTable(pal);
+    // run change: only where either run has 25 kt or more (3-model mean now, or now minus the change)
+    var keep = null;
+    if (state.layer === "trend") {
+      var g = getField(buf, "gfs"), e = getField(buf, "ecmwf"), a = getField(buf, "aifs");
+      var ms = man.fields[fieldIx.gfs].scale, tf = man.fields[fieldIx.trend];
+      keep = function (i) {
+        var now = (g[i] + e[i] + a[i]) / (3 * ms), was = now - (data[i] / tf.scale - (tf.offset || 0));
+        return now >= TREND_MIN || was >= TREND_MIN;
+      };
+    }
     off.width = nx; off.height = ny;
-    var img = offCtx.createImageData(nx, ny), d = img.data;
+    var img = offCtx.createImageData(nx, ny), d = img.data, shown = 0;
     for (var i = 0; i < nx * ny; i++) {
-      var o = data[i] * 4;
-      d[i * 4] = tab[o]; d[i * 4 + 1] = tab[o + 1]; d[i * 4 + 2] = tab[o + 2]; d[i * 4 + 3] = tab[o + 3];
+      var o = data[i] * 4, al = keep && !keep(i) ? 0 : tab[o + 3];
+      d[i * 4] = tab[o]; d[i * 4 + 1] = tab[o + 1]; d[i * 4 + 2] = tab[o + 2]; d[i * 4 + 3] = al;
+      if (al) shown++;
     }
     offCtx.putImageData(img, 0, 0);
+    var note = EMPTY[state.layer], el = $("empty");
+    el.textContent = note && !shown ? note : "";
+    el.hidden = !(note && !shown);
     ctx.imageSmoothingEnabled = false;
     // one screen row at a time so the lat-lon grid lands on Mercator rows
     var top = Math.floor(view.y0), bot = Math.ceil(view.y0 + view.h);
@@ -189,10 +212,10 @@
       ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
       ctx.fillText(lonText(lon, 0), b[0] + 3, b[1] - 4);
     }
-    for (var lat = 30; lat <= 65; lat += 5) {
+    for (var lat = Math.ceil(grid.south / 5) * 5; lat <= grid.north; lat += 5) {
       var c = px(grid.west - 0.125, lat), e = px(grid.east + 0.125, lat);
       ctx.beginPath(); ctx.moveTo(c[0], c[1]); ctx.lineTo(e[0], e[1]); ctx.stroke();
-      if (lat > 30) ctx.fillText(lat + "N", c[0] + 3, c[1] - 3);
+      if (lat > grid.south + 2) ctx.fillText(lat + "N", c[0] + 3, c[1] - 3);
     }
     ctx.restore();
   }
@@ -237,7 +260,13 @@
     var get = function (i, j) { return m[j * nx + i] + 900; };
     ctx.save();
     ctx.strokeStyle = "rgba(233,232,227,0.42)"; ctx.lineWidth = 0.8;
-    for (var lev = 940; lev <= 1052; lev += 4) strokeSegs(contour(get, lev - 0.5));
+    var labels = [];
+    for (var lev = 940; lev <= 1052; lev += 4) {
+      var segs = contour(get, lev - 0.5);
+      strokeSegs(segs);
+      if (lev % 8 === 0) labels = labels.concat(isobarLabels(buf, segs, lev, labels));
+    }
+    drawIsobarLabels(labels);
     // H and L centres found by build.py on the full-precision field
     var fam = getComputedStyle(document.body).fontFamily, st = man.steps[state.step];
     ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = "rgba(233,232,227,0.85)";
@@ -247,6 +276,33 @@
       ctx.font = "10px " + fam; ctx.fillText(Math.round(c[3]), p[0], p[1] + 13);
     });
     ctx.restore();
+  }
+
+  // a few labels per isobar, kept apart from each other, the H/L centres, the map edge
+  // and any 30+ kt wind, so a label never sits on a gale area
+  function isobarLabels(buf, segs, lev, placed) {
+    var out = [], st = man.steps[state.step], small = view.w < 600, gap = small ? 120 : 160, most = small ? 2 : 4;
+    var w = getField(buf, "wind"), sc = man.fields[fieldIx.wind].scale;
+    var avoid = (st.centres || []).map(function (c) { return px(c[2], c[1]); });
+    for (var k = 0; k < segs.length && out.length < most; k += 7) {
+      var gi = Math.round(segs[k][0][0]), gj = Math.round(segs[k][0][1]), a = gpx(segs[k][0][0], segs[k][0][1]);
+      if (a[0] < view.x0 + 36 || a[0] > view.x0 + view.w - 24 || a[1] < view.y0 + 12 || a[1] > view.y0 + view.h - 18) continue;
+      if (w[gj * grid.nx + gi] / sc >= 30) continue;
+      var near = function (q, r) { return Math.abs(q[0] - a[0]) < r && Math.abs(q[1] - a[1]) < r; };
+      if (avoid.some(function (q) { return near(q, 40); })) continue;
+      if (placed.concat(out).some(function (q) { return near(q, q[2] === lev ? gap : 28); })) continue;
+      out.push([a[0], a[1], lev]);
+    }
+    return out;
+  }
+  function drawIsobarLabels(labels) {
+    ctx.font = "10px " + getComputedStyle(document.body).fontFamily;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    labels.forEach(function (l) {
+      var t = String(l[2]), w = ctx.measureText(t).width + 4;
+      ctx.fillStyle = "rgba(23,24,27,0.8)"; ctx.fillRect(l[0] - w / 2, l[1] - 6, w, 12);
+      ctx.fillStyle = "rgba(233,232,227,0.75)"; ctx.fillText(t, l[0], l[1]);
+    });
   }
 
   function drawEdges(buf) {
@@ -371,15 +427,23 @@
   function legend() {
     var def = layerDef(state.layer), pal = def[2], el = $("legend"), h = "";
     if (pal.cats) {
-      h = '<div class="t">' + pal.title + '</div><div class="keys">' + pal.cats.map(function (c, k) {
+      h = '<div class="scale"><div class="t">' + pal.title + '</div><div class="keys">' + pal.cats.map(function (c, k) {
         return '<span><i style="background:' + (k ? c[1] : "transparent") + ';border:1px solid var(--rule-strong)"></i>' + c[0] + "</span>";
-      }).join("") + "</div>";
+      }).join("") + "</div></div>";
     } else {
-      h = '<div class="t">' + (def[1] === "Blended wind" || pal !== WIND ? pal.title : def[1] + " (kt)") + '</div><div class="bar">' +
+      h = '<div class="scale"><div class="t">' + (def[1] === "Blended wind" || pal !== WIND ? pal.title : def[1] + " (kt)") +
+        (state.layer === "trend" ? ", where either run has " + TREND_MIN + "+ kt" : "") + '</div><div class="bar">' +
         pal.colors.map(function (c) { return '<span style="background:' + c + '"></span>'; }).join("") +
-        '</div><div class="ticks">' + (pal.labels || pal.stops).map(function (s) { return "<span>" + s + "</span>"; }).join("") + "</div>";
+        '</div><div class="ticks">' + (pal.labels || pal.stops).map(function (s) { return "<span>" + s + "</span>"; }).join("") + "</div></div>";
     }
-    if (state.lone) h += '<div class="keys" style="margin-top:6px"><span><i style="border:2px dashed ' + MODEL_COLOR[1] + '"></i>lone 48 kt</span><span><i style="border:2px solid ' + MODEL_COLOR[1] + '"></i>lone 64 kt</span><span style="color:var(--faint)">GFS / <span style="color:' + MODEL_COLOR[2] + '">ECMWF</span> / <span style="color:' + MODEL_COLOR[3] + '">AIFS</span></span></div>';
+    var keys = [];
+    if (state.edges && state.layer !== "focus") keys.push('<span><i class="ln" style="border-top:1px dashed #fff"></i>34 kt edge</span>',
+      '<span><i class="ln" style="border-top:2px solid #fff"></i>48 kt edge</span>');
+    if (state.msl) keys.push('<span><i class="ln" style="border-top:1px solid rgba(233,232,227,0.5)"></i>Isobars, 4 hPa</span>');
+    if (state.lone) keys.push('<span><i class="ln" style="border-top:2px dashed var(--text)"></i>Lone 48 kt</span>',
+      '<span><i class="ln" style="border-top:2px solid var(--text)"></i>Lone 64 kt</span>',
+      '<span class="m">outline colour: ' + [1, 2, 3].map(function (m) { return '<span style="color:' + MODEL_COLOR[m] + '">' + MODEL_NAME[m] + "</span>"; }).join(" / ") + "</span>");
+    if (keys.length) h += '<div class="keys">' + keys.join("") + "</div>";
     el.innerHTML = h;
   }
 
@@ -418,7 +482,7 @@
     if ((lone >> 2) & 3) notes.push(MODEL_NAME[(lone >> 2) & 3] + " alone at 64 kt");
     var foc = FOCUS.cats[getField(b, "focus")[k]][0];
     var lat = grid.north - j * grid.res, lon = grid.west + i * grid.res;
-    var p48r = fieldIx.p48raw !== undefined ? " (members " + fmt(V("p48raw")) + " / " + fmt(V("p64raw")) + "%)" : "";
+    var p48r = fieldIx.p48raw !== undefined ? fmt(V("p48raw")) + " / " + fmt(V("p64raw")) + "%" : "";
     var tr = fieldIx.trend !== undefined && man.steps[state.step].trend ? '<tr><td>Since run 24 h earlier</td><td>' + (V("trend") >= 0 ? "+" : "") + V("trend").toFixed(1) + " kt</td></tr>" : "";
     box.innerHTML = '<div class="h">' + Math.abs(lat).toFixed(2) + "N " + lonText(lon, 2) + "</div><table>" +
       "<tr><td>Blended wind</td><td>" + fmt(V("wind")) + " kt " + Math.round(V("dir") / 10) * 10 + "°</td></tr>" +
@@ -429,7 +493,7 @@
       "<tr><td>AIFS</td><td>" + fmt(V("aifs")) + " kt</td></tr>" +
       '<tr class="sep"><td>Member spread</td><td>' + V("sigma").toFixed(1) + " kt</td></tr>" +
       "<tr><td>Chance 34 / 48 / 64</td><td>" + fmt(V("p34")) + " / " + fmt(V("p48")) + " / " + fmt(V("p64")) + "%</td></tr>" +
-      (p48r ? "<tr><td></td><td>" + p48r + "</td></tr>" : "") + tr +
+      (p48r ? "<tr><td>Raw members 48 / 64</td><td>" + p48r + "</td></tr>" : "") + tr +
       "<tr><td>Agreement</td><td>" + foc + "</td></tr>" +
       "<tr><td>Pressure</td><td>" + V("msl") + " hPa</td></tr></table>" +
       (notes.length ? '<div class="note">' + notes.join("; ") + "</div>" : "");
@@ -520,6 +584,14 @@
     $("about-close").addEventListener("click", closeAbout);
     $("about").addEventListener("click", function (e) { if (e.target === this) closeAbout(); });
   }
+  // builds run about 8.5 h after each cycle, so a run is up to ~21 h old in normal service;
+  // past a day a build has been missed
+  function runAge(cycle) {
+    var h = Math.floor((Date.now() - cycle.getTime()) / 3600000), el = $("age");
+    if (!el || h < 0) return;
+    el.textContent = "(" + h + " h old" + (h > 24 ? ", a newer run is overdue" : "") + ")";
+    el.className = h > 24 ? "old" : "";
+  }
   function closeAbout() { $("about").hidden = true; $("about-btn").setAttribute("aria-expanded", "false"); }
 
   // ------------------------------------------------------------------- start
@@ -531,8 +603,9 @@
     if (layerDef("trend") && !m.fields.some(function (f) { return f.name === "trend"; })) LAYERS.splice(LAYERS.indexOf(layerDef("trend")), 1);
     m.fields.forEach(function (f, i) { fieldIx[f.name] = i; });
     var c = new Date(m.cycle);
-    $("run").textContent = fmtTime(m.cycle, true) + " " + c.getUTCFullYear() + " run · GFS, ECMWF, AIFS + " + m.steps[0].members + " members" +
+    $("run").innerHTML = fmtTime(m.cycle, true) + " " + c.getUTCFullYear() + ' run <span id="age"></span> · GFS, ECMWF, AIFS + ' + m.steps[0].members + " members" +
       (m.steps[0].prob_members > m.steps[0].members ? " (" + m.steps[0].prob_members + " with the AIFS ensemble for chances)" : "");
+    runAge(c); setInterval(function () { runAge(c); }, 60000);
     readHash();
     buildControls();
     document.body.classList.remove("loading");

@@ -1,7 +1,7 @@
 # Marine wind page (North Atlantic and North Pacific)
 
 A public web page, served at `/marine-wind/` on the public site, that shows a
-blended 10 m wind forecast for the North Atlantic (30–67N, 75W–0, 0.25°) and
+blended 10 m wind forecast for the North Atlantic (18–67N, 95W–10E, 0.25°) and
 where forecasters should look:
 
 | Layer | What it shows |
@@ -69,7 +69,7 @@ ny × nx, row-major, north row first, in manifest order. The stored value is
 
 ## North Pacific, recalibrated chances, run-to-run change (Oct 2026)
 
-- `?basin=npac` shows the North Pacific (30–67N, 160E–115W, longitudes kept
+- `?basin=npac` shows the North Pacific (18–67N, 135E–115W, longitudes kept
   0–360 across the date line). The data workflow builds it from the same run
   into `latest/npac/`, published at `/marine-wind/data/npac/`. A hindcast on
   733 cases per basin (Sep 2025–Oct 2026) found the blend works there without
@@ -85,10 +85,19 @@ ny × nx, row-major, north row first, in manifest order. The stored value is
 - Fields can carry an `offset` in the manifest: value = byte / scale − offset.
 - The hindcast write-up is in the project files under `wind-focus/basins/`.
 
+## Wider boxes (Oct 2026)
+
+Both boxes now match the OPC 48 h surface chart areas: 18–67N, 95W–10E and
+18–67N, 135E–115W (`pipeline/domain.py`; the Atlantic runs −95 to 10 across the
+prime meridian). The blend, the storm-chance recalibration and the lone-model
+rule were tuned and tested on 30–67N, 75W–0 and 30–67N, 160E–115W; the added
+strips (subtropics, Gulf of Mexico, Caribbean, NW Europe, Sea of Japan) use them
+untested. Tropical cyclones are outside what the recipe was tuned for.
+
 ## Daily verification (North Atlantic and North Pacific)
 
 `verify/verify.py` scores the blend every day for both basins: the North
-Atlantic box above and a North Pacific box (30–67N, 160E–115W). After the
+Atlantic box above and the North Pacific box (18–67N, 135E–115W). After the
 12 UTC analyses are on AWS, it rebuilds the +24 to +120 h forecasts valid at
 12 UTC from the AWS mirrors and scores them against:
 
