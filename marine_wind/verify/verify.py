@@ -11,6 +11,9 @@ Methods scored:
   blend      the page: models weighted by member support + min(k x GEFS/ENS spread, 5 kt),
              k = 0.15 at +24 h, 0.25 after (PR #88)
   blend_eq   equal-weight mean + the same boost (the page before PR #88)
+  nomem      the deterministic blend (a GFE candidate): the 3 models weighted by support among
+             9 runs (the 3 models from this 12 UTC run, the 00 UTC run 12 h later and the
+             previous 12 UTC run, all valid at the same time) + min(0.3 x their spread, 5 kt)
   gfs, ecmwf, aifs
 Chances P34/P48/P64 from GEFS + ENS + AIFS ENS members are scored with the Brier score.
 
@@ -25,6 +28,7 @@ import requests
 KT = 1.943844
 STEPS = [24, 48, 72, 96, 120]
 CAP_KT, SUPPORT_KT = 5.0, 5.0
+NOMEM_K = 0.3
 HERE = os.path.dirname(os.path.abspath(__file__))
 GFS = "https://noaa-gfs-bdp-pds.s3.amazonaws.com"
 GEFS = "https://noaa-gefs-pds.s3.amazonaws.com"
@@ -97,9 +101,9 @@ def ncep(url, keys):
 UV = {"UGRD:10 m above ground": "u", "VGRD:10 m above ground": "v"}
 
 
-def ec(model, stream, typ, ymd, step, params=("10u", "10v")):
+def ec(model, stream, typ, ymd, step, params=("10u", "10v"), hh="12"):
     """[(member, 'u'|'v'|..., {dom: arr})] or None."""
-    base = "%s/%s/12z/%s/0p25/%s/%s120000-%dh-%s-%s" % (EC, ymd, model, stream, ymd, step, stream, typ)
+    base = "%s/%s/%sz/%s/0p25/%s/%s%s0000-%dh-%s-%s" % (EC, ymd, hh, model, stream, ymd, hh, step, stream, typ)
     r = get(base + ".index")
     if r is None:
         return None
@@ -125,10 +129,31 @@ def spd(x):
     return {dom: np.hypot(x["u"][dom], x["v"][dom]) * KT for dom in DOMS}
 
 
-def forecast(cyc, step):
-    """{dom: {'speeds': [3,y,x], 'ge': [n,y,x], 'all': [n,y,x]}} or None if incomplete."""
+def dets_at(ymd, hh, step):
+    """GFS, ECMWF, AIFS speeds {dom: [3,y,x]} from one run, or None."""
     from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(3) as ex:
+        g = ex.submit(ncep, "%s/gfs.%s/%s/atmos/gfs.t%sz.pgrb2.0p25.f%03d" % (GFS, ymd, hh, hh, step), UV)
+        e = ex.submit(ec, "ifs", "oper", "fc", ymd, step, hh=hh)
+        a = ex.submit(ec, "aifs-single", "oper", "fc", ymd, step, hh=hh)
+        try:
+            g, e, a = g.result(), e.result(), a.result()
+        except RuntimeError as x:  # a lagged run only feeds nomem; don't lose the day over it
+            print("lagged run %s %sZ +%dh: %s" % (ymd, hh, step, x), flush=True)
+            return None
+    if g is None or e is None or a is None:
+        return None
+    sp = [spd(g), spd(members_uv(e)[0]), spd(members_uv(a)[0])]
+    return {dom: np.array([x[dom] for x in sp]) for dom in DOMS}
+
+
+def forecast(cyc, step):
+    """{dom: {'speeds': [3,y,x], 'ge': [n,y,x], 'all': [n,y,x], 'lag': [3-9,y,x]}} or None if incomplete."""
+    from concurrent.futures import ThreadPoolExecutor
+    prv = (dt.datetime.strptime(cyc, "%Y%m%d") - dt.timedelta(days=1)).strftime("%Y%m%d")
     with ThreadPoolExecutor(8) as ex:
+        # the runs 12 h and 24 h earlier, valid at the same time
+        lag_f = [ex.submit(dets_at, cyc, "00", step + 12), ex.submit(dets_at, prv, "12", step + 24)]
         g = ex.submit(ncep, "%s/gfs.%s/12/atmos/gfs.t12z.pgrb2.0p25.f%03d" % (GFS, cyc, step), UV)
         gm = [ex.submit(ncep, "%s/gefs.%s/12/atmos/pgrb2sp25/ge%s.t12z.pgrb2s.0p25.f%03d" % (GEFS, cyc, m, step), UV)
               for m in ["c00"] + ["p%02d" % i for i in range(1, 31)]]
@@ -150,6 +175,9 @@ def forecast(cyc, step):
         out[dom] = {"speeds": np.array([d[dom] for d in dets]), "ge": np.array([m[dom] for m in ge])}
         out[dom]["all"] = np.concatenate([out[dom]["ge"], np.array([m[dom] for m in ae])]) if ae else out[dom]["ge"]
         out[dom]["n_aifs_ens"] = len(ae)
+    lags = [f.result() for f in lag_f if f is not None]
+    for dom in DOMS:
+        out[dom]["lag"] = np.concatenate([out[dom]["speeds"]] + [x[dom] for x in lags if x is not None])
     return out
 
 
@@ -251,8 +279,13 @@ def methods(f, step):
     w = np.array([np.exp(-0.5 * ((ge - s[None]) / SUPPORT_KT) ** 2).mean(0) for s in sp]) + 1e-6
     boost = np.minimum(k_for(step) * ge.std(0), CAP_KT)
     m3 = sp.mean(0)
-    return {"blend": (w * sp).sum(0) / w.sum(0) + boost, "blend_eq": m3 + boost, "mean3": m3,
-            "gfs": sp[0], "ecmwf": sp[1], "aifs": sp[2]}
+    lag = f["lag"]
+    wl = np.array([np.exp(-0.5 * ((lag - s[None]) / SUPPORT_KT) ** 2).mean(0) for s in sp]) + 1e-6
+    out = {"blend": (w * sp).sum(0) / w.sum(0) + boost, "blend_eq": m3 + boost, "mean3": m3,
+           "gfs": sp[0], "ecmwf": sp[1], "aifs": sp[2]}
+    if len(lag) == 9:  # score it only with all 9 runs, as tested
+        out["nomem"] = (wl * sp).sum(0) / wl.sum(0) + np.minimum(NOMEM_K * lag.std(0), CAP_KT)
+    return out
 
 
 FIELDS = ["valid", "basin", "lead", "method", "referee", "n", "n25", "ae25", "bias25", "se",
@@ -328,7 +361,7 @@ def summarize(path, md):
             ndays = len({r["valid"] for r in sel})
             out += ["## %s, %s (%d days)" % (names[dom], plabel, ndays), "",
                     "| method | MAE25 vs analysis | CSI34 | CSI48 | CSI64 | MAE25 vs buoys | CSI34 ships+buoys |", "|---|---|---|---|---|---|---|"]
-            for meth in ("blend", "blend_eq", "mean3", "gfs", "ecmwf", "aifs"):
+            for meth in ("blend", "nomem", "blend_eq", "mean3", "gfs", "ecmwf", "aifs"):
                 agg = {}
                 for ref in ("analysis", "buoys", "ships+buoys"):
                     rr = [r for r in sel if r["method"] == meth and r["referee"] == ref]
@@ -340,7 +373,7 @@ def summarize(path, md):
                     return "%.3f" % (a["h%d" % t] / d) if d else "-"
                 def mae(a):
                     return "%.2f" % (a["ae25"] / a["n25"]) if a and a["n25"] else "-"
-                out.append("| %s | %s | %s | %s | %s | %s | %s |" % (meth, mae(agg["analysis"]), csi(agg["analysis"], 34), csi(agg["analysis"], 48),
+                out.append("| %s | %s | %s | %s | %s | %s | %s |" % ({"nomem": "deterministic"}.get(meth, meth), mae(agg["analysis"]), csi(agg["analysis"], 34), csi(agg["analysis"], 48),
                                                                    csi(agg["analysis"], 64), mae(agg["buoys"]), csi(agg["ships+buoys"], 34)))
             bss = []
             for t in (34, 48, 64):

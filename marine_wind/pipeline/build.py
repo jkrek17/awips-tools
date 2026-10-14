@@ -17,6 +17,13 @@ North Atlantic, npac for the North Pacific; see domain.py):
                        2025-26 hindcast (calibration.json; the raw shares stay in p48raw, p64raw)
     trend     change of the 3-model mean since the 12Z/00Z run 24 h earlier, valid at the
               same time (the truth fell back about a fifth of this change in the hindcast)
+    nomem     the deterministic blend, a candidate for GFE where the ensemble members may not be
+              available: the 3 models weighted by support among 9 runs (these 3 and the same
+              models from the runs 12 h and 24 h earlier, valid at the same time) +
+              min(0.3 x spread of the 9, 5 kt). On 265 hindcast cases it kept about 90% of
+              the member blend's gain against the analyses but only about 40% of its gale
+              hits at ships and buoys.
+    nomemdiff nomem minus wind
     focus     0 ride (all models < 30 kt), 1 agree, 2 focus (models split across
               34 kt, or a 10 kt range near gale), 3 high impact (split across 48 or 64)
     lone      a single model at storm (48) or hurricane (64) force that the other
@@ -56,6 +63,7 @@ MODELS = ("GFS", "ECMWF", "AIFS")
 CAP_KT = 5.0
 RIDE_BELOW, SPREAD_KT, TOL_CELLS = 30.0, 10.0, 2
 SUPPORT_KT = 5.0
+NOMEM_K = 0.3         # chosen leave-one-cycle-out for the 9-run spread; 0.3 in every fold
 
 TREND_OFFSET = 64.0   # trend is stored as (kt + 64) x 2, so -64..+63.5 kt
 
@@ -75,6 +83,8 @@ FIELDS = [
     ("p48raw", 1, "%", "Members at 48 kt or more"),
     ("p64raw", 1, "%", "Members at 64 kt or more"),
     ("trend", 2, "kt", "Change of the 3-model mean since the run 24 h earlier", TREND_OFFSET),
+    ("nomem", 2, "kt", "Deterministic blend: 3 models weighted by support among 9 lagged runs + min(0.3 x their spread, 5 kt)"),
+    ("nomemdiff", 2, "kt", "Deterministic blend minus the blended wind", TREND_OFFSET),
     ("focus", 1, "", "0 ride, 1 agree, 2 focus, 3 high impact"),
     ("lone", 1, "", "Lone model: bits 0-1 at 48 kt, bits 2-3 at 64 kt (1 GFS, 2 ECMWF, 3 AIFS)"),
     ("msl", 1, "hPa-900", "3-model mean sea-level pressure minus 900 hPa"),
@@ -150,24 +160,31 @@ def centres(msl):
     return out
 
 
-def prior_mean(ymd, hh, step):
-    """3-model mean speed from the run 24 h earlier at the same valid time, or None."""
-    p = dt.datetime.strptime(ymd + hh, "%Y%m%d%H") - dt.timedelta(hours=24)
-    py, ph = p.strftime("%Y%m%d"), p.strftime("%H")
+def prior_speeds(ymd, hh, step, hours):
+    """GFS, ECMWF, AIFS speeds [3, y, x] from the run `hours` earlier at the same valid time, or None."""
+    p = dt.datetime.strptime(ymd + hh, "%Y%m%d%H") - dt.timedelta(hours=hours)
+    py, ph, s = p.strftime("%Y%m%d"), p.strftime("%H"), step + hours
     try:
         with ThreadPoolExecutor(3) as ex:
-            dets = [f.result() for f in (ex.submit(fetch.gfs, py, ph, step + 24), ex.submit(fetch.ec_det, "ifs", py, ph, step + 24),
-                                         ex.submit(fetch.ec_det, "aifs-single", py, ph, step + 24))]
+            dets = [f.result() for f in (ex.submit(fetch.gfs, py, ph, s), ex.submit(fetch.ec_det, "ifs", py, ph, s),
+                                         ex.submit(fetch.ec_det, "aifs-single", py, ph, s))]
     except Exception as e:
-        print("previous run +%dh unavailable: %s" % (step + 24, e), flush=True)
+        print("run %dh earlier +%dh unavailable: %s" % (hours, s, e), flush=True)
         return None
     if any(d is None for d in dets):
         return None
-    return np.mean([np.hypot(d["u"], d["v"]) * KT for d in dets], 0)
+    return np.array([np.hypot(d["u"], d["v"]) * KT for d in dets])
+
+
+def nomem_blend(speeds, lagged):
+    """The deterministic blend from the 3 current models and the lagged runs that are there."""
+    runs = np.concatenate([speeds] + lagged)
+    return support_base(speeds, runs) + np.minimum(NOMEM_K * runs.std(0), CAP_KT)
 
 
 def step_fields(ymd, hh, step):
-    prev = prior_mean(ymd, hh, step)
+    lag12, lag24 = prior_speeds(ymd, hh, step, 12), prior_speeds(ymd, hh, step, 24)
+    prev = None if lag24 is None else lag24.mean(0)
     with ThreadPoolExecutor(12) as ex:
         det_f = [ex.submit(fetch.gfs, ymd, hh, step), ex.submit(fetch.ec_det, "ifs", ymd, hh, step),
                  ex.submit(fetch.ec_det, "aifs-single", ymd, hh, step)]
@@ -204,17 +221,21 @@ def step_fields(ymd, hh, step):
     msl = np.mean([d["msl"] for d in dets], 0) / 100.0
     p48raw, p64raw = 100 * (pmem >= 48).mean(0), 100 * (pmem >= 64).mean(0)
     trend = np.zeros_like(mean) if prev is None else speeds.mean(0) - prev
+    lagged = [x for x in (lag12, lag24) if x is not None]
+    nomem = nomem_blend(speeds, lagged)
     vals = {
         "wind": mean + boost, "dir": wdir, "mean": mean, "boost": boost, "sigma": sigma,
         "gfs": speeds[0], "ecmwf": speeds[1], "aifs": speeds[2],
         "p34": 100 * (pmem >= 34).mean(0), "p48": calibrate(p48raw, 48, step), "p64": calibrate(p64raw, 64, step),
         "p48raw": p48raw, "p64raw": p64raw, "trend": trend,
+        "nomem": nomem, "nomemdiff": nomem - (mean + boost),
         "focus": focus_grid(speeds), "lone": lone_flags(speeds), "msl": msl - 900.0,
     }
     packed = np.stack([np.clip(np.rint((vals[f[0]] + (f[4] if len(f) > 4 else 0)) * f[1]), 0, 255).astype(np.uint8)
                        for f in FIELDS])
     stats = dict(step=step, members=len(mu), gefs=len(gefs), ens=0 if ens is None else len(ens["u"]),
                  aifs_ens=0 if aens is None else len(aens["u"]), prob_members=len(pmem), trend=prev is not None,
+                 nomem_runs=3 * (1 + len(lagged)),
                  max_wind=round(float(vals["wind"].max()), 1), gale_cells=int((vals["wind"] >= 34).sum()),
                  focus_cells=int((vals["focus"] >= 2).sum()), lone_cells=int((vals["lone"] > 0).sum()),
                  centres=centres(msl))
