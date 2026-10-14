@@ -148,21 +148,27 @@ def ec_det(model, ymd, hh, step):
     return out if len(out) == 3 else None
 
 
-def ec_ens(ymd, hh, step):
-    """All ENS members' (50 perturbed, plus the control when posted) 10 m u and v -> {'u': [n,y,x], 'v': [n,y,x]} or None."""
-    base = _ec_base("ifs", "enfo", "ef", ymd, hh, step)
-    recs = _ec_records(base)
-    if recs is None:
-        return None
-    want = [r for r in recs if r.get("levtype") == "sfc" and r["param"] in ("10u", "10v")]
+def ec_ens(ymd, hh, step, model="ifs"):
+    """All members' 10 m u and v -> {'u': [n,y,x], 'v': [n,y,x]} or None.
+    model "ifs": ENS, 50 perturbed plus the control when posted, in one -ef file.
+    model "aifs-ens": AIFS ensemble, the control (-cf) and 50 perturbed (-pf) files."""
+    typs = ("ef",) if model == "ifs" else ("cf", "pf")
+    jobs = []
+    for typ in typs:
+        base = _ec_base(model, "enfo", typ, ymd, hh, step)
+        recs = _ec_records(base)
+        if recs is None:
+            return None
+        jobs += [(base, r) for r in recs if r.get("levtype") == "sfc" and r["param"] in ("10u", "10v")]
 
-    def one(r):
+    def one(job):
+        base, r = job
         return int(r.get("number", 0)), EC_PARAMS[r["param"]], decode(
             get(base + ".grib2", (r["_offset"], r["_offset"] + r["_length"] - 1)).content)
 
     mem = {}
     with ThreadPoolExecutor(6) as ex:
-        for m, name, v in ex.map(one, want):
+        for m, name, v in ex.map(one, jobs):
             mem.setdefault(m, {})[name] = v
     keys = sorted(k for k, d in mem.items() if len(d) == 2)
     if not keys:

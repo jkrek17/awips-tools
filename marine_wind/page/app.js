@@ -500,7 +500,8 @@
     man = m; grid = m.grid;
     m.fields.forEach(function (f, i) { fieldIx[f.name] = i; });
     var c = new Date(m.cycle);
-    $("run").textContent = fmtTime(m.cycle, true) + " " + c.getUTCFullYear() + " run · GFS, ECMWF, AIFS + " + m.steps[0].members + " members";
+    $("run").textContent = fmtTime(m.cycle, true) + " " + c.getUTCFullYear() + " run · GFS, ECMWF, AIFS + " + m.steps[0].members + " members" +
+      (m.steps[0].prob_members > m.steps[0].members ? " (" + m.steps[0].prob_members + " with the AIFS ensemble for chances)" : "");
     readHash();
     buildControls();
     document.body.classList.remove("loading");

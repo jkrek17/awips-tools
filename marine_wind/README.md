@@ -10,7 +10,7 @@ where forecasters should look:
 | Model base, added wind | the two parts of the blend; the base weights GFS, ECMWF and AIFS at each point by the share of members within about 5 kt of each |
 | Model agreement | ride (all models < 30 kt), agree, focus (split across 34 kt or a 10 kt range near gale), high impact (split across 48 or 64 kt) |
 | Member spread | standard deviation of about 80 GEFS + ECMWF ENS member speeds |
-| Ensemble chance | share of members at 34, 48 and 64 kt or more |
+| Ensemble chance | share of members at 34, 48 and 64 kt or more: GEFS + ENS plus the 51-member AIFS ensemble (Brier score 6% better at 34 kt and 11% at 48 kt on 265 hindcast cases) |
 | Single models | GFS, ECMWF, AIFS |
 
 Overlays: sea-level pressure, the blend's 34 and 48 kt edges, wind arrows, and
