@@ -64,3 +64,30 @@ python3 -m http.server -d marine_wind/page 8000
 and the lead times. `data/fFFF.bin` holds one uint8 array per field, each
 ny × nx, row-major, north row first, in manifest order. The stored value is
 `round(value × scale)`, except `msl`, which is hPa − 900.
+
+## Daily verification (North Atlantic and North Pacific)
+
+`verify/verify.py` scores the blend every day for both basins: the North
+Atlantic box above and a North Pacific box (30–67N, 160E–115W). After the
+12 UTC analyses are on AWS, it rebuilds the +24 to +120 h forecasts valid at
+12 UTC from the AWS mirrors and scores them against:
+
+- the GFS + ECMWF analysis mean and the ECMWF analysis alone, on open, ice-free water
+- moored buoys, and ships plus buoys, from the GDAS marine monitoring file
+  (first guess plus O−B; buoys raised to 10 m, ships scaled onto the buoy basis;
+  stations with a persistent bias are listed in `verify/obs_blacklist.txt`)
+
+It scores the page's blend, the equal-weight blend, the plain 3-model mean and
+each model. The 34/48/64 kt chances get a Brier score.
+
+`.github/workflows/marine_wind_verify.yml` runs it at 22:15 UTC. It keeps
+`scores.csv` (one row per day, basin, lead, method and referee) and
+`summary.md` (last 7 days, last 30 days, all) as the single commit of the
+orphan branch `marine-wind-verify`. To backfill, run the workflow by hand with
+a start date.
+
+```
+pip install -r marine_wind/verify/requirements.txt
+python3 marine_wind/verify/verify.py --valid 20261012 --out day.csv
+python3 marine_wind/verify/verify.py --summary day.csv --md summary.md
+```
