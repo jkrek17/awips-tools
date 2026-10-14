@@ -42,6 +42,13 @@
     labels: ["", "-15", "-10", "-6", "-3", "+3", "+6", "+10", "+15"],
     unit: "kt", title: "Change since the run 24 h earlier (kt)"
   };
+  var DIFF = {
+    stops: [-99, -6, -4, -2, -1, 1, 2, 4, 6],
+    colors: ["#2b5fa8", "#3874b8", "#5a93c6", "#8fb4d2", "rgba(0,0,0,0)",
+             "#d9a274", "#d47647", "#c6512f", "#a8301f"],
+    labels: ["", "-6", "-4", "-2", "-1", "+1", "+2", "+4", "+6"],
+    unit: "kt", title: "No-member blend minus blended wind (kt)"
+  };
   var FOCUS = {
     cats: [["Ride", "rgba(0,0,0,0)"], ["Agree", "#3a4049"], ["Focus", "#d9a640"], ["High impact", "#d2483b"]],
     title: "Where to look"
@@ -53,6 +60,7 @@
     p48: "No point reaches a 5% chance of 48 kt at this hour",
     p64: "No point reaches a 5% chance of 64 kt at this hour",
     trend: "No change of 3 kt or more in 25+ kt wind since the run 24 h earlier",
+    nomemdiff: "The two blends are within 1 kt everywhere either has 25+ kt",
     focus: "Models agree everywhere at this hour"
   };
   var MODEL_COLOR = ["", "#f08a5d", "#7fb0ee", "#c3a6f0"];
@@ -67,6 +75,9 @@
     ["focus", "Model agreement", FOCUS],
     ["sigma", "Member spread", SPREAD],
     ["trend", "Change since yesterday's run", TREND],
+    ["No-member blend (GFE test)"],
+    ["nomem", "No-member blend", WIND],
+    ["nomemdiff", "Difference from blended wind", DIFF],
     ["Ensemble chance"],
     ["p34", "Gale, 34 kt+", PROB],
     ["p48", "Storm, 48 kt+", PROB],
@@ -154,6 +165,10 @@
     var nx = grid.nx, ny = grid.ny, data = getField(buf, state.layer), tab = colorTable(pal);
     // run change: only where either run has 25 kt or more (3-model mean now, or now minus the change)
     var keep = null;
+    if (state.layer === "nomemdiff") {
+      var wf = getField(buf, "wind"), nf = getField(buf, "nomem"), ws = man.fields[fieldIx.wind].scale, ns = man.fields[fieldIx.nomem].scale;
+      keep = function (i) { return wf[i] / ws >= TREND_MIN || nf[i] / ns >= TREND_MIN; };
+    }
     if (state.layer === "trend") {
       var g = getField(buf, "gfs"), e = getField(buf, "ecmwf"), a = getField(buf, "aifs");
       var ms = man.fields[fieldIx.gfs].scale, tf = man.fields[fieldIx.trend];
@@ -432,7 +447,8 @@
       }).join("") + "</div></div>";
     } else {
       h = '<div class="scale"><div class="t">' + (def[1] === "Blended wind" || pal !== WIND ? pal.title : def[1] + " (kt)") +
-        (state.layer === "trend" ? ", where either run has " + TREND_MIN + "+ kt" : "") + '</div><div class="bar">' +
+        (state.layer === "trend" ? ", where either run has " + TREND_MIN + "+ kt" : "") +
+        (state.layer === "nomemdiff" ? ", where either has " + TREND_MIN + "+ kt" : "") + '</div><div class="bar">' +
         pal.colors.map(function (c) { return '<span style="background:' + c + '"></span>'; }).join("") +
         '</div><div class="ticks">' + (pal.labels || pal.stops).map(function (s) { return "<span>" + s + "</span>"; }).join("") + "</div></div>";
     }
@@ -484,10 +500,11 @@
     var lat = grid.north - j * grid.res, lon = grid.west + i * grid.res;
     var p48r = fieldIx.p48raw !== undefined ? fmt(V("p48raw")) + " / " + fmt(V("p64raw")) + "%" : "";
     var tr = fieldIx.trend !== undefined && man.steps[state.step].trend ? '<tr><td>Since run 24 h earlier</td><td>' + (V("trend") >= 0 ? "+" : "") + V("trend").toFixed(1) + " kt</td></tr>" : "";
+    var nm = fieldIx.nomem !== undefined ? "<tr><td>No-member blend</td><td>" + fmt(V("nomem")) + " kt</td></tr>" : "";
     box.innerHTML = '<div class="h">' + Math.abs(lat).toFixed(2) + "N " + lonText(lon, 2) + "</div><table>" +
       "<tr><td>Blended wind</td><td>" + fmt(V("wind")) + " kt " + Math.round(V("dir") / 10) * 10 + "°</td></tr>" +
       "<tr><td>Model base</td><td>" + fmt(V("mean")) + " kt</td></tr>" +
-      "<tr><td>Added</td><td>+" + V("boost").toFixed(1) + " kt</td></tr>" +
+      "<tr><td>Added</td><td>+" + V("boost").toFixed(1) + " kt</td></tr>" + nm +
       '<tr class="sep"><td>GFS</td><td>' + fmt(V("gfs")) + " kt</td></tr>" +
       "<tr><td>ECMWF</td><td>" + fmt(V("ecmwf")) + " kt</td></tr>" +
       "<tr><td>AIFS</td><td>" + fmt(V("aifs")) + " kt</td></tr>" +
@@ -601,6 +618,8 @@
   }).then(function (m) {
     man = m; grid = m.grid;
     if (layerDef("trend") && !m.fields.some(function (f) { return f.name === "trend"; })) LAYERS.splice(LAYERS.indexOf(layerDef("trend")), 1);
+    if (!m.fields.some(function (f) { return f.name === "nomem"; }))   // a run built before the no-member blend
+      LAYERS = LAYERS.filter(function (L) { return ["No-member blend (GFE test)", "nomem", "nomemdiff"].indexOf(L[0]) < 0; });
     m.fields.forEach(function (f, i) { fieldIx[f.name] = i; });
     var c = new Date(m.cycle);
     $("run").innerHTML = fmtTime(m.cycle, true) + " " + c.getUTCFullYear() + ' run <span id="age"></span> · GFS, ECMWF, AIFS + ' + m.steps[0].members + " members" +
