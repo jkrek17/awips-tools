@@ -42,7 +42,7 @@
   var LAYERS = [
     ["Forecast"],
     ["wind", "Blended wind", WIND],
-    ["mean", "Plain 3-model average", WIND],
+    ["mean", "Model base (weighted average)", WIND],
     ["boost", "Added wind", BOOST],
     ["Where to look"],
     ["focus", "Model agreement", FOCUS],
@@ -404,7 +404,7 @@
     var lat = grid.north - j * grid.res, lon = grid.west + i * grid.res;
     box.innerHTML = '<div class="h">' + Math.abs(lat).toFixed(2) + "N " + Math.abs(lon).toFixed(2) + "W</div><table>" +
       "<tr><td>Blended wind</td><td>" + fmt(V("wind")) + " kt " + Math.round(V("dir") / 10) * 10 + "°</td></tr>" +
-      "<tr><td>3-model average</td><td>" + fmt(V("mean")) + " kt</td></tr>" +
+      "<tr><td>Model base</td><td>" + fmt(V("mean")) + " kt</td></tr>" +
       "<tr><td>Added</td><td>+" + V("boost").toFixed(1) + " kt</td></tr>" +
       '<tr class="sep"><td>GFS</td><td>' + fmt(V("gfs")) + " kt</td></tr>" +
       "<tr><td>ECMWF</td><td>" + fmt(V("ecmwf")) + " kt</td></tr>" +
@@ -500,7 +500,8 @@
     man = m; grid = m.grid;
     m.fields.forEach(function (f, i) { fieldIx[f.name] = i; });
     var c = new Date(m.cycle);
-    $("run").textContent = fmtTime(m.cycle, true) + " " + c.getUTCFullYear() + " run · GFS, ECMWF, AIFS + " + m.steps[0].members + " members";
+    $("run").textContent = fmtTime(m.cycle, true) + " " + c.getUTCFullYear() + " run · GFS, ECMWF, AIFS + " + m.steps[0].members + " members" +
+      (m.steps[0].prob_members > m.steps[0].members ? " (" + m.steps[0].prob_members + " with the AIFS ensemble for chances)" : "");
     readHash();
     buildControls();
     document.body.classList.remove("loading");
