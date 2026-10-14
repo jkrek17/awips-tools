@@ -189,10 +189,10 @@
       ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
       ctx.fillText(lonText(lon, 0), b[0] + 3, b[1] - 4);
     }
-    for (var lat = 30; lat <= 65; lat += 5) {
+    for (var lat = Math.ceil(grid.south / 5) * 5; lat <= grid.north; lat += 5) {
       var c = px(grid.west - 0.125, lat), e = px(grid.east + 0.125, lat);
       ctx.beginPath(); ctx.moveTo(c[0], c[1]); ctx.lineTo(e[0], e[1]); ctx.stroke();
-      if (lat > 30) ctx.fillText(lat + "N", c[0] + 3, c[1] - 3);
+      if (lat > grid.south + 2) ctx.fillText(lat + "N", c[0] + 3, c[1] - 3);
     }
     ctx.restore();
   }
