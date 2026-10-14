@@ -29,10 +29,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 GFS = "https://noaa-gfs-bdp-pds.s3.amazonaws.com"
 GEFS = "https://noaa-gefs-pds.s3.amazonaws.com"
 EC = "https://ecmwf-forecasts.s3.eu-central-1.amazonaws.com"
-DOMS = {"natl": (67.0, 30.0, 285.0, 359.75), "npac": (67.0, 30.0, 160.0, 245.0)}
-CROP = {k: (slice(int((90 - n) * 4), int((90 - s) * 4) + 1), slice(int(w * 4), int(e * 4) + 1)) for k, (n, s, w, e) in DOMS.items()}
+# the page's boxes (pipeline/domain.py); longitudes run on past 360 across the prime meridian
+DOMS = {"natl": (67.0, 18.0, 265.0, 370.0), "npac": (67.0, 18.0, 135.0, 245.0)}
+CROP = {k: (slice(int((90 - n) * 4), int((90 - s) * 4) + 1), np.arange(int(w * 4), int(e * 4) + 1) % 1440) for k, (n, s, w, e) in DOMS.items()}
 LATS = {k: np.linspace(DOMS[k][0], DOMS[k][1], CROP[k][0].stop - CROP[k][0].start) for k in DOMS}
-LONS = {k: np.arange(CROP[k][1].start, CROP[k][1].stop) * 0.25 for k in DOMS}
+LONS = {k: np.arange(int(DOMS[k][2] * 4), int(DOMS[k][3] * 4) + 1) * 0.25 for k in DOMS}
 S = requests.Session()
 S.mount("https://", requests.adapters.HTTPAdapter(pool_maxsize=32))
 
@@ -165,7 +166,7 @@ def analysis(ymd):
 # ------------------------------------------------------------------ obs
 def sample(grid, dom, lat, lon):
     lon = np.asarray(lon, float) % 360
-    fy = (LATS[dom][0] - np.asarray(lat, float)) / 0.25; fx = (lon - LONS[dom][0]) / 0.25
+    fy = (LATS[dom][0] - np.asarray(lat, float)) / 0.25; fx = ((lon - LONS[dom][0]) % 360) / 0.25
     ny, nx = grid.shape
     y0 = np.clip(np.floor(fy).astype(int), 0, ny - 2); x0 = np.clip(np.floor(fx).astype(int), 0, nx - 2)
     wy = np.clip(fy - y0, 0, 1); wx = np.clip(fx - x0, 0, 1)
@@ -213,7 +214,7 @@ def observations(ymd):
     out = {}
     for dom, (n, s, w, e) in DOMS.items():
         lat, lon = m.latitude.to_numpy(float), m.Longitude.to_numpy(float) % 360
-        k = (lat >= s) & (lat <= n) & (lon >= w) & (lon <= e)
+        k = (lat >= s) & (lat <= n) & ((lon - w) % 360 <= e - w)
         lat, lon, h = lat[k], lon[k], dth[k]
         sid = m.Station_id.astype(str).to_numpy()[k]
         sid = np.array([x[:2] + x[4:] if (len(x) == 7 and x.isdigit() and x[2:4] == "00") else x for x in sid])

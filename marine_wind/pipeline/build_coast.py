@@ -14,8 +14,8 @@ import urllib.request
 SRC = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_land.geojson"
 PAGE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page")
 # (box with a margin around the grid, output file, JS variable, shift west longitudes by 360)
-TARGETS = [((-85.0, 25.0, 10.0, 72.0), "coast.js", "MW_COAST", False),
-           ((150.0, 25.0, 255.0, 72.0), "coast_npac.js", "MW_COAST_NPAC", True)]
+TARGETS = [((-105.0, 13.0, 20.0, 72.0), "coast.js", "MW_COAST", False),
+           ((125.0, 13.0, 255.0, 72.0), "coast_npac.js", "MW_COAST_NPAC", True)]
 
 
 def clip(ring, box):
