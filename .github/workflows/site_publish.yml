@@ -6,7 +6,7 @@
 # (cyclone_phase_space/article/forecasters/), the article with its figures
 # (cyclone_phase_space/article/{index.html,style.css,figures/}), the
 # newest live data (the latest/ and storms/ trees of the cps-live branch), the
-# North Atlantic marine wind page (marine_wind/page/, served at /marine-wind/
+# North Atlantic and North Pacific marine wind page (marine_wind/page/, served at /marine-wind/
 # with the latest/ tree of the marine-wind-live branch as its data/) and
 # nothing else; it is pushed as the
 # single commit of the public repository's main branch with the token in the
@@ -135,7 +135,7 @@ jobs:
           v="${GITHUB_SHA::8}"
           sed -i -E "s/(href|src)=\"(style\.css|basemap\.js|card\.js|storms\.js|space3d\.js|app\.js)\"/\1=\"\2?v=$v\"/g" "$site/cyclone/index.html"
           grep -c "?v=$v" "$site/cyclone/index.html"
-          sed -i -E "s/(href|src)=\"(style\.css|coast\.js|app\.js)\"/\1=\"\2?v=$v\"/g" "$site/marine-wind/index.html"
+          sed -i -E "s/(href|src)=\"(style\.css|coast\.js|coast_npac\.js|app\.js)\"/\1=\"\2?v=$v\"/g" "$site/marine-wind/index.html"
           touch "$site/.nojekyll"
           du -sh "$site"
 

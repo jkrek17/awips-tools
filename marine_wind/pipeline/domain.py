@@ -1,10 +1,24 @@
-"""The page's grid: the 0.25 degree North Atlantic box the method was tested on
-(30-67N, 75W-0), cut from the global 0.25 degree grids (lat 90..-90, lon 0..359.75)."""
+"""The page's grids, cut from the global 0.25 degree grids (lat 90..-90, lon 0..359.75).
+
+    natl  North Atlantic 30-67N, 75W-0    (the box the blend was tuned on)
+    npac  North Pacific  30-67N, 160E-115W (tested on the same 733 hindcast cases)
+
+The basin comes from the MARINE_DOMAIN environment variable (build.py --domain sets
+it before anything imports this module). Longitudes are kept continuous across the
+date line: the Pacific box runs 160 to 245 (= 115W)."""
+import os
+
 import numpy as np
 
-NORTH, SOUTH, WEST, EAST = 67.0, 30.0, -75.0, -0.25
-IY = slice(int((90 - NORTH) * 4), int((90 - SOUTH) * 4) + 1)   # 149 rows, north first
-IX = slice(int((360 + WEST) * 4), int((360 + EAST) * 4) + 1)  # 300 columns, west first
+BASINS = {
+    "natl": dict(name="North Atlantic", north=67.0, south=30.0, west=-75.0, east=-0.25),
+    "npac": dict(name="North Pacific", north=67.0, south=30.0, west=160.0, east=245.0),
+}
+KEY = os.environ.get("MARINE_DOMAIN", "natl")
+BASIN = BASINS[KEY]
+NORTH, SOUTH, WEST, EAST = BASIN["north"], BASIN["south"], BASIN["west"], BASIN["east"]
+IY = slice(int((90 - NORTH) * 4), int((90 - SOUTH) * 4) + 1)          # north first
+IX = slice(int((WEST % 360) * 4), int((WEST % 360) * 4) + int(round((EAST - WEST) * 4)) + 1)  # west first
 LATS = np.linspace(NORTH, SOUTH, IY.stop - IY.start)
 LONS = np.linspace(WEST, EAST, IX.stop - IX.start)
 NY, NX = len(LATS), len(LONS)

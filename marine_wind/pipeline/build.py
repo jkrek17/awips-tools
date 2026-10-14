@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Build the marine wind page's data for one model cycle.
 
-For each lead time this computes, on the 0.25 degree North Atlantic grid:
+For each lead time this computes, on the basin's 0.25 degree grid (--domain natl for the
+North Atlantic, npac for the North Pacific; see domain.py):
 
     wind      base + min(k * sigma, 5 kt), the blend tested on 345 hindcast cases
               (k = 0.25; 0.15 at +24 h and earlier)
@@ -10,8 +11,12 @@ For each lead time this computes, on the 0.25 degree North Atlantic grid:
     boost     the added wind, min(k * sigma, 5 kt)
     sigma     standard deviation of the GEFS + ENS member speeds (about 80)
     gfs, ecmwf, aifs   each model's speed
-    p34, p48, p64      share of members at or above gale, storm, hurricane force, from the
-                       GEFS + ENS members plus the AIFS ensemble (51) when it is posted
+    p34, p48, p64      chance of gale, storm, hurricane force from the GEFS + ENS members plus
+                       the AIFS ensemble (51) when it is posted. p34 is the share of members;
+                       p48 and p64 are that share recalibrated to how often it verified in the
+                       2025-26 hindcast (calibration.json; the raw shares stay in p48raw, p64raw)
+    trend     change of the 3-model mean since the 12Z/00Z run 24 h earlier, valid at the
+              same time (the truth fell back about a fifth of this change in the hindcast)
     focus     0 ride (all models < 30 kt), 1 agree, 2 focus (models split across
               34 kt, or a 10 kt range near gale), 3 high impact (split across 48 or 64)
     lone      a single model at storm (48) or hurricane (64) force that the other
@@ -22,7 +27,8 @@ For each lead time this computes, on the 0.25 degree North Atlantic grid:
 and writes OUT/manifest.json plus one OUT/fFFF.bin per lead (uint8 fields,
 row-major, north row first, in the order of manifest["fields"]).
 
-    python3 build.py --out site_data                # newest complete cycle
+    python3 build.py --out site_data                # newest complete cycle, North Atlantic
+    python3 build.py --domain npac --out site_data/npac
     python3 build.py --cycle 2026101312 --out site_data
 """
 from __future__ import annotations
@@ -38,8 +44,11 @@ import numpy as np
 from scipy import ndimage
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# the basin must be known before domain.py is imported (fetch.py crops with it)
+if "--domain" in sys.argv:
+    os.environ["MARINE_DOMAIN"] = sys.argv[sys.argv.index("--domain") + 1]
 import fetch  # noqa: E402
-from domain import EAST, NORTH, NX, NY, SOUTH, WEST  # noqa: E402
+from domain import BASIN, EAST, KEY, NORTH, NX, NY, SOUTH, WEST  # noqa: E402
 
 KT = 1.943844
 STEPS = list(range(12, 121, 12))
@@ -48,7 +57,9 @@ CAP_KT = 5.0
 RIDE_BELOW, SPREAD_KT, TOL_CELLS = 30.0, 10.0, 2
 SUPPORT_KT = 5.0
 
-# name, scale (stored = round(value * scale)), unit, description
+TREND_OFFSET = 64.0   # trend is stored as (kt + 64) x 2, so -64..+63.5 kt
+
+# name, scale (stored = round((value + offset) * scale)), unit, description[, offset]
 FIELDS = [
     ("wind", 2, "kt", "Blended wind: support-weighted 3-model base + min(k x member spread, 5 kt)"),
     ("dir", 0.5, "deg", "Direction the wind blows from (3-model mean vector)"),
@@ -59,12 +70,25 @@ FIELDS = [
     ("ecmwf", 2, "kt", "ECMWF"),
     ("aifs", 2, "kt", "AIFS"),
     ("p34", 1, "%", "Members at 34 kt or more"),
-    ("p48", 1, "%", "Members at 48 kt or more"),
-    ("p64", 1, "%", "Members at 64 kt or more"),
+    ("p48", 1, "%", "Chance of 48 kt or more (member share, recalibrated)"),
+    ("p64", 1, "%", "Chance of 64 kt or more (member share, recalibrated)"),
+    ("p48raw", 1, "%", "Members at 48 kt or more"),
+    ("p64raw", 1, "%", "Members at 64 kt or more"),
+    ("trend", 2, "kt", "Change of the 3-model mean since the run 24 h earlier", TREND_OFFSET),
     ("focus", 1, "", "0 ride, 1 agree, 2 focus, 3 high impact"),
     ("lone", 1, "", "Lone model: bits 0-1 at 48 kt, bits 2-3 at 64 kt (1 GFS, 2 ECMWF, 3 AIFS)"),
     ("msl", 1, "hPa-900", "3-model mean sea-level pressure minus 900 hPa"),
 ]
+
+
+CALIB = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "calibration.json")))
+
+
+def calibrate(pct, thr, step):
+    """Member share (%) -> chance (%) from the hindcast table for this basin and lead."""
+    g = "le48" if step <= 48 else ("72" if step <= 84 else "ge96")
+    t = CALIB["thresholds"][str(thr)][KEY][g]
+    return np.interp(pct, t["raw"], t["cal"])
 
 
 def k_for(step):
@@ -126,7 +150,24 @@ def centres(msl):
     return out
 
 
+def prior_mean(ymd, hh, step):
+    """3-model mean speed from the run 24 h earlier at the same valid time, or None."""
+    p = dt.datetime.strptime(ymd + hh, "%Y%m%d%H") - dt.timedelta(hours=24)
+    py, ph = p.strftime("%Y%m%d"), p.strftime("%H")
+    try:
+        with ThreadPoolExecutor(3) as ex:
+            dets = [f.result() for f in (ex.submit(fetch.gfs, py, ph, step + 24), ex.submit(fetch.ec_det, "ifs", py, ph, step + 24),
+                                         ex.submit(fetch.ec_det, "aifs-single", py, ph, step + 24))]
+    except Exception as e:
+        print("previous run +%dh unavailable: %s" % (step + 24, e), flush=True)
+        return None
+    if any(d is None for d in dets):
+        return None
+    return np.mean([np.hypot(d["u"], d["v"]) * KT for d in dets], 0)
+
+
 def step_fields(ymd, hh, step):
+    prev = prior_mean(ymd, hh, step)
     with ThreadPoolExecutor(12) as ex:
         det_f = [ex.submit(fetch.gfs, ymd, hh, step), ex.submit(fetch.ec_det, "ifs", ymd, hh, step),
                  ex.submit(fetch.ec_det, "aifs-single", ymd, hh, step)]
@@ -161,15 +202,19 @@ def step_fields(ymd, hh, step):
     v = np.mean([d["v"] for d in dets], 0)
     wdir = (np.degrees(np.arctan2(-u, -v)) + 360.0) % 360.0
     msl = np.mean([d["msl"] for d in dets], 0) / 100.0
+    p48raw, p64raw = 100 * (pmem >= 48).mean(0), 100 * (pmem >= 64).mean(0)
+    trend = np.zeros_like(mean) if prev is None else speeds.mean(0) - prev
     vals = {
         "wind": mean + boost, "dir": wdir, "mean": mean, "boost": boost, "sigma": sigma,
         "gfs": speeds[0], "ecmwf": speeds[1], "aifs": speeds[2],
-        "p34": 100 * (pmem >= 34).mean(0), "p48": 100 * (pmem >= 48).mean(0), "p64": 100 * (pmem >= 64).mean(0),
+        "p34": 100 * (pmem >= 34).mean(0), "p48": calibrate(p48raw, 48, step), "p64": calibrate(p64raw, 64, step),
+        "p48raw": p48raw, "p64raw": p64raw, "trend": trend,
         "focus": focus_grid(speeds), "lone": lone_flags(speeds), "msl": msl - 900.0,
     }
-    packed = np.stack([np.clip(np.rint(vals[n] * s), 0, 255).astype(np.uint8) for n, s, _, _ in FIELDS])
+    packed = np.stack([np.clip(np.rint((vals[f[0]] + (f[4] if len(f) > 4 else 0)) * f[1]), 0, 255).astype(np.uint8)
+                       for f in FIELDS])
     stats = dict(step=step, members=len(mu), gefs=len(gefs), ens=0 if ens is None else len(ens["u"]),
-                 aifs_ens=0 if aens is None else len(aens["u"]), prob_members=len(pmem),
+                 aifs_ens=0 if aens is None else len(aens["u"]), prob_members=len(pmem), trend=prev is not None,
                  max_wind=round(float(vals["wind"].max()), 1), gale_cells=int((vals["wind"] >= 34).sum()),
                  focus_cells=int((vals["focus"] >= 2).sum()), lone_cells=int((vals["lone"] > 0).sum()),
                  centres=centres(msl))
@@ -194,6 +239,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--cycle", help="YYYYMMDDHH (default: newest complete 00/12Z cycle)")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--domain", default=KEY, choices=["natl", "npac"], help="basin (default natl)")
     a = ap.parse_args()
     cycle = a.cycle or newest_cycle()
     ymd, hh = cycle[:8], cycle[8:]
@@ -217,9 +263,10 @@ def main():
         print("+%03dh members %d max %.0f kt gale cells %d focus %d lone %d" % (
             step, stats["members"], stats["max_wind"], stats["gale_cells"], stats["focus_cells"], stats["lone_cells"]), flush=True)
     manifest = dict(
+        basin=KEY, basin_name=BASIN["name"],
         cycle=base.strftime("%Y-%m-%dT%H:00Z"), built=dt.datetime.now(dt.timezone.utc).replace(tzinfo=None).strftime("%Y-%m-%dT%H:%MZ"),
         grid=dict(north=NORTH, south=SOUTH, west=WEST, east=EAST, ny=NY, nx=NX, res=0.25),
-        fields=[dict(name=n, scale=s, unit=u, desc=d) for n, s, u, d in FIELDS],
+        fields=[dict(name=f[0], scale=f[1], unit=f[2], desc=f[3], offset=f[4] if len(f) > 4 else 0) for f in FIELDS],
         cap_kt=CAP_KT, steps=steps)
     with open(os.path.join(a.out, "manifest.json"), "w") as f:
         json.dump(manifest, f, indent=1)

@@ -1,4 +1,4 @@
-# North Atlantic marine wind page
+# Marine wind page (North Atlantic and North Pacific)
 
 A public web page, served at `/marine-wind/` on the public site, that shows a
 blended 10 m wind forecast for the North Atlantic (30–67N, 75W–0, 0.25°) and
@@ -66,3 +66,48 @@ python3 -m http.server -d marine_wind/page 8000
 and the lead times. `data/fFFF.bin` holds one uint8 array per field, each
 ny × nx, row-major, north row first, in manifest order. The stored value is
 `round(value × scale)`, except `msl`, which is hPa − 900.
+
+## North Pacific, recalibrated chances, run-to-run change (Oct 2026)
+
+- `?basin=npac` shows the North Pacific (30–67N, 160E–115W, longitudes kept
+  0–360 across the date line). The data workflow builds it from the same run
+  into `latest/npac/`, published at `/marine-wind/data/npac/`. A hindcast on
+  733 cases per basin (Sep 2025–Oct 2026) found the blend works there without
+  retuning.
+- `p48` and `p64` are the member shares recalibrated by basin and lead
+  (`pipeline/calibration.json`, fitted on that hindcast against the GFS+IFS and
+  IFS analyses). Raw shares stay in `p48raw` and `p64raw`. On months it was not
+  fitted to, the recalibration cut the day 1–2 storm-force Brier error by about
+  15% and later leads by 2–7%. `p34` stays the raw share, because buoys and
+  ships say it is already about right.
+- `trend` is the 3-model mean minus the run 24 h earlier at the same valid time.
+  In the hindcast the truth fell back about a fifth of this change.
+- Fields can carry an `offset` in the manifest: value = byte / scale − offset.
+- The hindcast write-up is in the project files under `wind-focus/basins/`.
+
+## Daily verification (North Atlantic and North Pacific)
+
+`verify/verify.py` scores the blend every day for both basins: the North
+Atlantic box above and a North Pacific box (30–67N, 160E–115W). After the
+12 UTC analyses are on AWS, it rebuilds the +24 to +120 h forecasts valid at
+12 UTC from the AWS mirrors and scores them against:
+
+- the GFS + ECMWF analysis mean and the ECMWF analysis alone, on open, ice-free water
+- moored buoys, and ships plus buoys, from the GDAS marine monitoring file
+  (first guess plus O−B; buoys raised to 10 m, ships scaled onto the buoy basis;
+  stations with a persistent bias are listed in `verify/obs_blacklist.txt`)
+
+It scores the page's blend, the equal-weight blend, the plain 3-model mean and
+each model. The 34/48/64 kt chances get a Brier score.
+
+`.github/workflows/marine_wind_verify.yml` runs it at 22:15 UTC. It keeps
+`scores.csv` (one row per day, basin, lead, method and referee) and
+`summary.md` (last 7 days, last 30 days, all) as the single commit of the
+orphan branch `marine-wind-verify`. To backfill, run the workflow by hand with
+a start date.
+
+```
+pip install -r marine_wind/verify/requirements.txt
+python3 marine_wind/verify/verify.py --valid 20261012 --out day.csv
+python3 marine_wind/verify/verify.py --summary day.csv --md summary.md
+```

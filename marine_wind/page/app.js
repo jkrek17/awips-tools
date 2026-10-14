@@ -1,11 +1,14 @@
-/* North Atlantic Marine Wind: draws one layer of the newest run's grids
-   (data/manifest.json + data/fFFF.bin, made by marine_wind/pipeline/build.py)
+/* Marine Wind: draws one layer of the newest run's grids for the North Atlantic
+   (data/) or, with ?basin=npac, the North Pacific (data/npac/)
+   (manifest.json + fFFF.bin, made by marine_wind/pipeline/build.py)
    on a Mercator canvas, with pressure, the blend's 34/48 kt edges, wind
    arrows and lone-model storm signals on top, and a point readout. */
 (function () {
   "use strict";
 
-  var DATA = "data/";
+  var BASIN = /[?&]basin=npac\b/.test(location.search) ? "npac" : "natl";
+  var DATA = BASIN === "npac" ? "data/npac/" : "data/";
+  var BASIN_NAME = { natl: "North Atlantic", npac: "North Pacific" };
   var $ = function (id) { return document.getElementById(id); };
 
   // ---------------------------------------------------------------- palettes
@@ -19,7 +22,7 @@
     stops: [0, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90],
     colors: ["rgba(0,0,0,0)", "#24354a", "#2c4a6a", "#2f6a8a", "#3c8a96", "#5aa58c",
              "#8fbb6e", "#c9c35a", "#e8a93f", "#e06f2e", "#c9372c"],
-    unit: "%", title: "Chance (% of members)"
+    unit: "%", title: "Chance (%)"
   };
   var BOOST = {
     stops: [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5],
@@ -31,6 +34,13 @@
     stops: [0, 2, 4, 6, 8, 10, 12, 15],
     colors: ["#1b1d21", "#25303a", "#2f4552", "#3b5d68", "#4a787b", "#6b9479", "#a3ab64", "#d8b44c"],
     unit: "kt", title: "Member spread (kt)"
+  };
+  var TREND = {
+    stops: [-99, -15, -10, -6, -3, 3, 6, 10, 15],
+    colors: ["#2b5fa8", "#3874b8", "#5a93c6", "#8fb4d2", "rgba(0,0,0,0)",
+             "#d9a274", "#d47647", "#c6512f", "#a8301f"],
+    labels: ["", "-15", "-10", "-6", "-3", "+3", "+6", "+10", "+15"],
+    unit: "kt", title: "Change since the run 24 h earlier (kt)"
   };
   var FOCUS = {
     cats: [["Ride", "rgba(0,0,0,0)"], ["Agree", "#3a4049"], ["Focus", "#d9a640"], ["High impact", "#d2483b"]],
@@ -47,6 +57,7 @@
     ["Where to look"],
     ["focus", "Model agreement", FOCUS],
     ["sigma", "Member spread", SPREAD],
+    ["trend", "Change since yesterday's run", TREND],
     ["Ensemble chance"],
     ["p34", "Gale, 34 kt+", PROB],
     ["p48", "Storm, 48 kt+", PROB],
@@ -97,7 +108,7 @@
   function value(buf, name, idx) {
     var f = man.fields[fieldIx[name]];
     var v = getField(buf, name)[idx];
-    return name === "msl" ? v + 900 : v / f.scale;
+    return name === "msl" ? v + 900 : v / f.scale - (f.offset || 0);
   }
   function loadStep(i) {
     var st = man.steps[i];
@@ -120,7 +131,7 @@
       var c;
       if (pal.cats) c = cols[Math.min(b, cols.length - 1)];
       else {
-        var v = b / f.scale, k = 0;
+        var v = b / f.scale - (f.offset || 0), k = 0;
         while (k + 1 < pal.stops.length && v >= pal.stops[k + 1]) k++;
         c = cols[k];
       }
@@ -151,7 +162,7 @@
   }
 
   function drawLand() {
-    var rings = window.MW_COAST || [];
+    var rings = (BASIN === "npac" ? window.MW_COAST_NPAC : window.MW_COAST) || [];
     ctx.save();
     ctx.beginPath();
     ctx.rect(view.x0, view.y0, view.w, view.h);
@@ -173,10 +184,10 @@
     ctx.save();
     ctx.strokeStyle = "rgba(255,255,255,0.07)"; ctx.lineWidth = 1;
     ctx.fillStyle = "rgba(233,232,227,0.45)"; ctx.font = "10px " + getComputedStyle(document.body).fontFamily;
-    for (var lon = -70; lon <= 0; lon += 10) {
+    for (var lon = Math.ceil(grid.west / 10) * 10; lon <= grid.east; lon += 10) {
       var a = px(lon, grid.north + 0.125), b = px(lon, grid.south - 0.125);
       ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
-      ctx.fillText(Math.abs(lon) + "W", b[0] + 3, b[1] - 4);
+      ctx.fillText(lonText(lon, 0), b[0] + 3, b[1] - 4);
     }
     for (var lat = 30; lat <= 65; lat += 5) {
       var c = px(grid.west - 0.125, lat), e = px(grid.east + 0.125, lat);
@@ -184,6 +195,11 @@
       if (lat > 30) ctx.fillText(lat + "N", c[0] + 3, c[1] - 3);
     }
     ctx.restore();
+  }
+
+  function lonText(lon, dp) {
+    var l = ((lon + 540) % 360) - 180;   // -180..180
+    return Math.abs(l).toFixed(dp) + (l < 0 ? "W" : l > 0 && l < 180 ? "E" : "");
   }
 
   // marching squares: segments of the level-`lev` contour of values f(i,j)
@@ -361,7 +377,7 @@
     } else {
       h = '<div class="t">' + (def[1] === "Blended wind" || pal !== WIND ? pal.title : def[1] + " (kt)") + '</div><div class="bar">' +
         pal.colors.map(function (c) { return '<span style="background:' + c + '"></span>'; }).join("") +
-        '</div><div class="ticks">' + pal.stops.map(function (s) { return "<span>" + s + "</span>"; }).join("") + "</div>";
+        '</div><div class="ticks">' + (pal.labels || pal.stops).map(function (s) { return "<span>" + s + "</span>"; }).join("") + "</div>";
     }
     if (state.lone) h += '<div class="keys" style="margin-top:6px"><span><i style="border:2px dashed ' + MODEL_COLOR[1] + '"></i>lone 48 kt</span><span><i style="border:2px solid ' + MODEL_COLOR[1] + '"></i>lone 64 kt</span><span style="color:var(--faint)">GFS / <span style="color:' + MODEL_COLOR[2] + '">ECMWF</span> / <span style="color:' + MODEL_COLOR[3] + '">AIFS</span></span></div>';
     el.innerHTML = h;
@@ -402,7 +418,9 @@
     if ((lone >> 2) & 3) notes.push(MODEL_NAME[(lone >> 2) & 3] + " alone at 64 kt");
     var foc = FOCUS.cats[getField(b, "focus")[k]][0];
     var lat = grid.north - j * grid.res, lon = grid.west + i * grid.res;
-    box.innerHTML = '<div class="h">' + Math.abs(lat).toFixed(2) + "N " + Math.abs(lon).toFixed(2) + "W</div><table>" +
+    var p48r = fieldIx.p48raw !== undefined ? " (members " + fmt(V("p48raw")) + " / " + fmt(V("p64raw")) + "%)" : "";
+    var tr = fieldIx.trend !== undefined && man.steps[state.step].trend ? '<tr><td>Since run 24 h earlier</td><td>' + (V("trend") >= 0 ? "+" : "") + V("trend").toFixed(1) + " kt</td></tr>" : "";
+    box.innerHTML = '<div class="h">' + Math.abs(lat).toFixed(2) + "N " + lonText(lon, 2) + "</div><table>" +
       "<tr><td>Blended wind</td><td>" + fmt(V("wind")) + " kt " + Math.round(V("dir") / 10) * 10 + "°</td></tr>" +
       "<tr><td>Model base</td><td>" + fmt(V("mean")) + " kt</td></tr>" +
       "<tr><td>Added</td><td>+" + V("boost").toFixed(1) + " kt</td></tr>" +
@@ -411,6 +429,7 @@
       "<tr><td>AIFS</td><td>" + fmt(V("aifs")) + " kt</td></tr>" +
       '<tr class="sep"><td>Member spread</td><td>' + V("sigma").toFixed(1) + " kt</td></tr>" +
       "<tr><td>Chance 34 / 48 / 64</td><td>" + fmt(V("p34")) + " / " + fmt(V("p48")) + " / " + fmt(V("p64")) + "%</td></tr>" +
+      (p48r ? "<tr><td></td><td>" + p48r + "</td></tr>" : "") + tr +
       "<tr><td>Agreement</td><td>" + foc + "</td></tr>" +
       "<tr><td>Pressure</td><td>" + V("msl") + " hPa</td></tr></table>" +
       (notes.length ? '<div class="note">' + notes.join("; ") + "</div>" : "");
@@ -453,6 +472,17 @@
     if (layerDef(m[1]) && layerDef(m[1]).length > 1) state.layer = m[1];
     man.steps.forEach(function (s, i) { if (s.step === +m[2]) state.step = i; });
   }
+
+  function buildBasin() {
+    document.title = BASIN_NAME[BASIN] + " Marine Wind";
+    $("title").textContent = BASIN_NAME[BASIN] + " Marine Wind";
+    $("map").setAttribute("aria-label", "Map of the selected wind layer over the " + BASIN_NAME[BASIN]);
+    Array.prototype.forEach.call(document.querySelectorAll("[data-basin]"), function (a) {
+      a.setAttribute("aria-current", a.dataset.basin === BASIN ? "page" : "false");
+      a.href = (a.dataset.basin === "npac" ? "?basin=npac" : "./") + location.hash;
+    });
+  }
+  buildBasin();
 
   function buildControls() {
     var box = $("layers");
@@ -498,6 +528,7 @@
     return r.json();
   }).then(function (m) {
     man = m; grid = m.grid;
+    if (layerDef("trend") && !m.fields.some(function (f) { return f.name === "trend"; })) LAYERS.splice(LAYERS.indexOf(layerDef("trend")), 1);
     m.fields.forEach(function (f, i) { fieldIx[f.name] = i; });
     var c = new Date(m.cycle);
     $("run").textContent = fmtTime(m.cycle, true) + " " + c.getUTCFullYear() + " run · GFS, ECMWF, AIFS + " + m.steps[0].members + " members" +
