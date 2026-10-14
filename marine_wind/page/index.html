@@ -17,7 +17,6 @@
 <header class="topbar">
   <div class="brand">
     <h1 id="title">North Atlantic Marine Wind</h1>
-    <span class="tag">blend</span>
   </div>
   <nav class="basins" aria-label="Basin">
     <a data-basin="natl" href="./">Atlantic</a><a data-basin="npac" href="?basin=npac">Pacific</a>
@@ -31,8 +30,9 @@
     <canvas id="map" aria-label="Map of the selected wind layer over the North Atlantic"></canvas>
     <div class="readout" id="readout" hidden></div>
     <p class="status" id="status" role="status"></p>
+    <p class="empty" id="empty" hidden></p>
+    <div class="legend" id="legend"></div>
   </main>
-  <div class="legend" id="legend"></div>
 
   <aside class="side" aria-label="Layers and forecast time">
     <section class="block">
@@ -45,6 +45,8 @@
       </div>
       <p class="valid" id="valid"></p>
     </section>
+
+    <section class="block summary" id="summary"></section>
 
     <section class="block">
       <h2>Layer</h2>
@@ -59,7 +61,6 @@
       <label class="check"><input type="checkbox" id="ov-edges" checked> 34 and 48 kt edges of the blend</label>
     </section>
 
-    <section class="block summary" id="summary"></section>
   </aside>
 </div>
 
@@ -85,7 +86,7 @@
     <p>Built from the ensemble members at that grid point: the 31 GEFS and about 50 ECMWF ENS members plus the 51-member AIFS ensemble. Adding the AIFS ensemble made these chances 6% (34 kt) and 11% (48 kt) more accurate in testing. It is left out of the blended wind, where its smaller spread and smoother mean did not help.</p>
     <p>The gale chance is the plain share of members. The storm and hurricane-force chances are that share adjusted to how often it verified in 2025&ndash;26, by basin and lead time. Raw member shares understate likely storms and overstate unlikely ones: in testing, 40&ndash;50% of members at 48 kt verified 54&ndash;79% of the time at that point and about 95% within 100 km, while 10&ndash;20% verified about 7%. The adjustment cut the day 1&ndash;2 storm-force error by about 15% on months it was not fitted to. Hover a point to see the raw member shares too. The 64 kt chance is still poor at a single point; read it as somewhere in this storm, not here.</p>
     <h3>Change since yesterday's run</h3>
-    <p>The 3-model average wind now minus the same models' run 24 h earlier, valid at the same time. In testing, the truth fell back about a fifth of this change toward the earlier run. Where two runs in a row weakened a system, it verified 4&ndash;5 kt stronger than the latest run. A run that just jumped is worth a second look, and a system that two runs in a row weakened should not be dropped too quickly.</p>
+    <p>The 3-model average wind now minus the same models' run 24 h earlier, valid at the same time. It is shown only where either run has 25 kt or more, so light-wind noise doesn't hide the changes that matter. In testing, the truth fell back about a fifth of this change toward the earlier run. Where two runs in a row weakened a system, it verified 4&ndash;5 kt stronger than the latest run. A run that just jumped is worth a second look, and a system that two runs in a row weakened should not be dropped too quickly.</p>
     <p class="fine">Data: NOAA GFS and GEFS and ECMWF open data, from the AWS open-data mirrors, 0.25 degree grid, 30&ndash;67N, 75W&ndash;0 (Atlantic) and 160E&ndash;115W (Pacific). Updated twice a day. Guidance only, not an official forecast.</p>
   </div>
 </div>

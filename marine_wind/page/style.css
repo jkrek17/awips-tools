@@ -37,8 +37,8 @@ a { color: var(--accent); }
 .topbar { display: flex; align-items: center; gap: 16px; padding: 8px 12px; border-bottom: 1px solid var(--rule); flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: 8px; }
 .brand h1 { font-size: 15px; }
-.tag { font: 11px/16px var(--mono); padding: 0 6px; border: 1px solid var(--rule-strong); border-radius: var(--r); color: var(--muted); }
 .run { margin: 0; color: var(--muted); font-family: var(--mono); font-size: 12px; flex: 1; }
+.run .old { color: var(--warn); }
 .basins { display: flex; border: 1px solid var(--rule); border-radius: var(--r); overflow: hidden; }
 .basins a { padding: 3px 10px; color: var(--muted); text-decoration: none; background: var(--raise); }
 .basins a + a { border-left: 1px solid var(--rule); }
@@ -50,8 +50,8 @@ a { color: var(--accent); }
 .btn.icon { padding: 2px 8px; min-width: 32px; }
 
 .layout { position: relative; flex: 1; display: flex; min-height: 0; }
-.mapwrap { position: relative; flex: 1; min-width: 0; background: var(--sea); }
-#map { display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
+.mapwrap { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--sea); }
+#map { display: block; width: 100%; flex: 1; min-height: 0; cursor: crosshair; touch-action: none; }
 
 .side { width: 280px; border-left: 1px solid var(--rule); overflow-y: auto; padding: 4px 12px 12px; }
 .block { padding: 12px 0; border-bottom: 1px solid var(--rule); }
@@ -74,7 +74,10 @@ a { color: var(--accent); }
 .summary p { margin: 0 0 6px; color: var(--muted); }
 .summary b { color: var(--text); font-weight: 400; font-family: var(--mono); }
 
-.legend { position: absolute; left: 12px; bottom: 12px; background: rgba(23, 24, 27, 0.92); border: 1px solid var(--rule); border-radius: var(--r); padding: 8px 10px; font-size: 11px; line-height: 16px; max-width: calc(100% - 24px); }
+/* a strip under the map, so it never hides the coastal and offshore waters */
+.legend { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px 24px; background: var(--panel); border-top: 1px solid var(--rule); padding: 8px 12px; font-size: 11px; line-height: 16px; }
+.legend .scale { min-width: 320px; max-width: 100%; }
+.legend .bar, .legend .ticks { width: 320px; max-width: 100%; }
 .legend .t { color: var(--muted); margin-bottom: 4px; }
 .legend .bar { display: flex; }
 .legend .bar span { flex: 1; height: 10px; min-width: 22px; }
@@ -82,6 +85,8 @@ a { color: var(--accent); }
 .legend .ticks span { flex: 1; min-width: 22px; }
 .legend .keys { display: flex; flex-wrap: wrap; gap: 4px 12px; }
 .legend .keys i { display: inline-block; width: 10px; height: 10px; margin-right: 4px; vertical-align: -1px; border-radius: 2px; }
+.legend .keys i.ln { width: 18px; height: 0; border-radius: 0; vertical-align: 3px; border-top: 2px solid var(--text); }
+.legend .keys .m { color: var(--faint); }
 
 .readout { position: absolute; pointer-events: none; background: rgba(23, 24, 27, 0.96); border: 1px solid var(--rule-strong); border-radius: var(--r); padding: 6px 8px; font-size: 12px; line-height: 17px; min-width: 170px; }
 .readout .h { color: var(--faint); font-family: var(--mono); margin-bottom: 2px; }
@@ -93,6 +98,8 @@ a { color: var(--accent); }
 
 .status { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); margin: 0; color: var(--muted); }
 .status:empty { display: none; }
+.empty { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); margin: 0; padding: 4px 10px; background: rgba(23, 24, 27, 0.92); border: 1px solid var(--rule); border-radius: var(--r); color: var(--muted); white-space: nowrap; max-width: calc(100% - 24px); overflow: hidden; text-overflow: ellipsis; }
+.empty[hidden] { display: none; }
 
 .sheet { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 10; }
 .sheet[hidden] { display: none; }
@@ -106,10 +113,11 @@ a { color: var(--accent); }
 
 body.loading .side, body.loading .legend { opacity: 0.4; }
 
-@media (max-width: 760px) {
+/* stacked under about 1000 px (tablets, narrow laptops, phones) or in a tall window */
+@media (max-width: 1000px), (max-aspect-ratio: 1 / 1) {
   .layout { flex-direction: column; }
-  .mapwrap { flex: none; height: auto; aspect-ratio: 5 / 4; }
-  .legend { position: static; margin: 0; border-width: 1px 0; border-radius: 0; max-width: none; }
+  .mapwrap { flex: none; }
+  #map { flex: none; aspect-ratio: 5 / 4; }
   .side { width: auto; border-left: 0; border-top: 1px solid var(--rule); padding: 0 16px 16px; }
   .run { flex-basis: 100%; order: 3; }
 }
