@@ -39,6 +39,11 @@ a { color: var(--accent); }
 .brand h1 { font-size: 15px; }
 .tag { font: 11px/16px var(--mono); padding: 0 6px; border: 1px solid var(--rule-strong); border-radius: var(--r); color: var(--muted); }
 .run { margin: 0; color: var(--muted); font-family: var(--mono); font-size: 12px; flex: 1; }
+.basins { display: flex; border: 1px solid var(--rule); border-radius: var(--r); overflow: hidden; }
+.basins a { padding: 3px 10px; color: var(--muted); text-decoration: none; background: var(--raise); }
+.basins a + a { border-left: 1px solid var(--rule); }
+.basins a:hover { background: var(--press); }
+.basins a[aria-current="page"] { color: var(--text); background: var(--press); }
 
 .btn { background: var(--raise); border: 1px solid var(--rule); border-radius: var(--r); padding: 4px 10px; cursor: pointer; }
 .btn:hover { background: var(--press); }

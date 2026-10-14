@@ -1,4 +1,4 @@
-# North Atlantic marine wind page
+# Marine wind page (North Atlantic and North Pacific)
 
 A public web page, served at `/marine-wind/` on the public site, that shows a
 blended 10 m wind forecast for the North Atlantic (30–67N, 75W–0, 0.25°) and
@@ -66,6 +66,24 @@ python3 -m http.server -d marine_wind/page 8000
 and the lead times. `data/fFFF.bin` holds one uint8 array per field, each
 ny × nx, row-major, north row first, in manifest order. The stored value is
 `round(value × scale)`, except `msl`, which is hPa − 900.
+
+## North Pacific, recalibrated chances, run-to-run change (Oct 2026)
+
+- `?basin=npac` shows the North Pacific (30–67N, 160E–115W, longitudes kept
+  0–360 across the date line). The data workflow builds it from the same run
+  into `latest/npac/`, published at `/marine-wind/data/npac/`. A hindcast on
+  733 cases per basin (Sep 2025–Oct 2026) found the blend works there without
+  retuning.
+- `p48` and `p64` are the member shares recalibrated by basin and lead
+  (`pipeline/calibration.json`, fitted on that hindcast against the GFS+IFS and
+  IFS analyses). Raw shares stay in `p48raw` and `p64raw`. On months it was not
+  fitted to, the recalibration cut the day 1–2 storm-force Brier error by about
+  15% and later leads by 2–7%. `p34` stays the raw share, because buoys and
+  ships say it is already about right.
+- `trend` is the 3-model mean minus the run 24 h earlier at the same valid time.
+  In the hindcast the truth fell back about a fifth of this change.
+- Fields can carry an `offset` in the manifest: value = byte / scale − offset.
+- The hindcast write-up is in the project files under `wind-focus/basins/`.
 
 ## Daily verification (North Atlantic and North Pacific)
 

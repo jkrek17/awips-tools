@@ -1,4 +1,5 @@
-# Data for the North Atlantic marine wind page (marine_wind/pipeline/build.py).
+# Data for the marine wind page (marine_wind/pipeline/build.py): the North
+# Atlantic under latest/ and the North Pacific, from the same run, under latest/npac/.
 # Twice a day, once the 00 and 12 UTC ECMWF ensemble's +120 h is on the AWS
 # open-data mirror (about 8 h after the cycle), the newest cycle with GFS,
 # GEFS, ECMWF IFS, AIFS and ENS all complete is built into a manifest and one
@@ -33,7 +34,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
         with:
@@ -59,7 +60,10 @@ jobs:
           args=(--out "$out")
           if [ -n "$CYCLE" ]; then args+=(--cycle "$CYCLE"); fi
           python3 build.py "${args[@]}"
-          rm -f "$out"/f*.json
+          cycle=$(python3 -c 'import json,sys,datetime as d; print(d.datetime.strptime(json.load(open(sys.argv[1]))["cycle"], "%Y-%m-%dT%H:00Z").strftime("%Y%m%d%H"))' "$out/manifest.json")
+          # the North Pacific from the same run, under npac/
+          python3 build.py --domain npac --cycle "$cycle" --out "$out/npac"
+          rm -f "$out"/f*.json "$out"/npac/f*.json
           echo "out=$out" >> "$GITHUB_OUTPUT"
           echo "cycle=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["cycle"])' "$out/manifest.json")" >> "$GITHUB_OUTPUT"
 
