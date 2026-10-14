@@ -25,3 +25,10 @@ tests/pressure_gap_fill/out/
 tests/tcwind_jtwc/out/
 tests/tc_pressure/out/
 tests/blend_wind_gust_wave_pmsl/out/
+
+# Marine wind page data written by a local build (marine_wind/pipeline/build.py
+# --out marine_wind/page/data); the live data comes from the marine-wind-live
+# branch. Kept here, not in marine_wind/page/, because site_publish.yml copies
+# that folder into the public repository and a .gitignore there kept data/ from
+# ever being committed (the /marine-wind/ "manifest 404").
+marine_wind/page/data/
