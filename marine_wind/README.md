@@ -132,7 +132,7 @@ ranking already said, and weighting the blend by recent skill did not help.
 
 | Field | Area | Scores |
 |---|---|---|
-| Sea-level pressure | the page's box (30–67N) | RMSE; position and central-pressure error of analysed lows under 1000 hPa (matched within 800 km) and the share missed; 34 and 48 kt hit scores (CSI) for 10 m wind on open water |
+| Sea-level pressure | the high seas the blend was tested on: 30–67N, Atlantic 75W–0, Pacific 160E–115W | RMSE; position and central-pressure error of analysed lows under 1000 hPa (matched within 800 km) and the share missed; 34 and 48 kt hit scores (CSI) for 10 m wind on open water |
 | 500 mb height | 25–75N, Atlantic 130W–10E, Pacific 100E–110W (the basin plus upstream) | anomaly correlation against the ERA5 1990–2019 climatology, and RMSE |
 
 Truth is the mean of the GFS and ECMWF analyses at 12 UTC, so no model is

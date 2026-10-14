@@ -184,7 +184,7 @@
     var n30 = data.days.filter(function (d) { return dayNum(d) > dayNum(data.days[data.days.length - 1]) - 30; }).length;
     body.innerHTML = table() + strip() +
       '<p class="sc-fine">' + n30 + " of the last 30 days scored, newest valid " + fmtDay(data.days[data.days.length - 1]) + " 12 UTC. " +
-      (st.tab === "msl" ? "Pressure over 30&ndash;67N of the page's box; lows are analysed centres under 1000 hPa, matched within 800 km. Hit scores are for 10 m wind on open water."
+      (st.tab === "msl" ? "Pressure over the high seas, 30&ndash;67N, " + (BASIN === "natl" ? "75W&ndash;0" : "160E&ndash;115W") + " (the area the blend was tested on); lows are analysed centres under 1000 hPa, matched within 800 km. Hit scores are for 10 m wind on open water."
         : "500 mb over 25&ndash;75N, " + (BASIN === "natl" ? "130W&ndash;10E (North America upstream)" : "100E&ndash;110W (East Asia and the west Pacific upstream)") + ", against the ERA5 1990&ndash;2019 climatology.") +
       " Truth: the mean of the GFS and ECMWF analyses, so no model is scored against its own. Best value in each column is brighter.</p>";
   }

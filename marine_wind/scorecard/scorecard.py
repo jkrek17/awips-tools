@@ -7,7 +7,9 @@ For one 12 UTC valid day it fetches the GFS and IFS analyses and the 12 UTC runs
 of each model from 1 to 5 days earlier (AWS open-data mirrors), and scores, by
 basin, model and lead:
 
-  sea-level pressure (basin box, 0.25 deg; truth = mean of the GFS and IFS analyses)
+  sea-level pressure (the high-seas box the blend was tested on, 30-67N, 0.25 deg;
+               not the page's wider OPC chart area, so it stays comparable with the
+               winter hindcast; truth = mean of the GFS and IFS analyses)
     msl_rmse   cos-latitude weighted RMSE, hPa
     lows       each analysed low < 1000 hPa is matched to the nearest forecast low
                within 800 km: low_n analysed, low_hit matched, pos_sum km and
