@@ -47,7 +47,7 @@
     colors: ["#2b5fa8", "#3874b8", "#5a93c6", "#8fb4d2", "rgba(0,0,0,0)",
              "#d9a274", "#d47647", "#c6512f", "#a8301f"],
     labels: ["", "-6", "-4", "-2", "-1", "+1", "+2", "+4", "+6"],
-    unit: "kt", title: "No-member blend minus blended wind (kt)"
+    unit: "kt", title: "Deterministic blend minus blended wind (kt)"
   };
   var FOCUS = {
     cats: [["Ride", "rgba(0,0,0,0)"], ["Agree", "#3a4049"], ["Focus", "#d9a640"], ["High impact", "#d2483b"]],
@@ -75,8 +75,8 @@
     ["focus", "Model agreement", FOCUS],
     ["sigma", "Member spread", SPREAD],
     ["trend", "Change since yesterday's run", TREND],
-    ["No-member blend (GFE test)"],
-    ["nomem", "No-member blend", WIND],
+    ["Deterministic blend (GFE test)"],
+    ["nomem", "Deterministic blend", WIND],
     ["nomemdiff", "Difference from blended wind", DIFF],
     ["Ensemble chance"],
     ["p34", "Gale, 34 kt+", PROB],
@@ -500,7 +500,7 @@
     var lat = grid.north - j * grid.res, lon = grid.west + i * grid.res;
     var p48r = fieldIx.p48raw !== undefined ? fmt(V("p48raw")) + " / " + fmt(V("p64raw")) + "%" : "";
     var tr = fieldIx.trend !== undefined && man.steps[state.step].trend ? '<tr><td>Since run 24 h earlier</td><td>' + (V("trend") >= 0 ? "+" : "") + V("trend").toFixed(1) + " kt</td></tr>" : "";
-    var nm = fieldIx.nomem !== undefined ? "<tr><td>No-member blend</td><td>" + fmt(V("nomem")) + " kt</td></tr>" : "";
+    var nm = fieldIx.nomem !== undefined ? "<tr><td>Deterministic blend</td><td>" + fmt(V("nomem")) + " kt</td></tr>" : "";
     box.innerHTML = '<div class="h">' + Math.abs(lat).toFixed(2) + "N " + lonText(lon, 2) + "</div><table>" +
       "<tr><td>Blended wind</td><td>" + fmt(V("wind")) + " kt " + Math.round(V("dir") / 10) * 10 + "°</td></tr>" +
       "<tr><td>Model base</td><td>" + fmt(V("mean")) + " kt</td></tr>" +
@@ -618,8 +618,8 @@
   }).then(function (m) {
     man = m; grid = m.grid;
     if (layerDef("trend") && !m.fields.some(function (f) { return f.name === "trend"; })) LAYERS.splice(LAYERS.indexOf(layerDef("trend")), 1);
-    if (!m.fields.some(function (f) { return f.name === "nomem"; }))   // a run built before the no-member blend
-      LAYERS = LAYERS.filter(function (L) { return ["No-member blend (GFE test)", "nomem", "nomemdiff"].indexOf(L[0]) < 0; });
+    if (!m.fields.some(function (f) { return f.name === "nomem"; }))   // a run built before the deterministic blend
+      LAYERS = LAYERS.filter(function (L) { return ["Deterministic blend (GFE test)", "nomem", "nomemdiff"].indexOf(L[0]) < 0; });
     m.fields.forEach(function (f, i) { fieldIx[f.name] = i; });
     var c = new Date(m.cycle);
     $("run").innerHTML = fmtTime(m.cycle, true) + " " + c.getUTCFullYear() + ' run <span id="age"></span> · GFS, ECMWF, AIFS + ' + m.steps[0].members + " members" +

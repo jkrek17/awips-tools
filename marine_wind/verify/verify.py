@@ -11,7 +11,7 @@ Methods scored:
   blend      the page: models weighted by member support + min(k x GEFS/ENS spread, 5 kt),
              k = 0.15 at +24 h, 0.25 after (PR #88)
   blend_eq   equal-weight mean + the same boost (the page before PR #88)
-  nomem      the no-member blend (a GFE candidate): the 3 models weighted by support among
+  nomem      the deterministic blend (a GFE candidate): the 3 models weighted by support among
              9 runs (the 3 models from this 12 UTC run, the 00 UTC run 12 h later and the
              previous 12 UTC run, all valid at the same time) + min(0.3 x their spread, 5 kt)
   gfs, ecmwf, aifs
@@ -373,7 +373,7 @@ def summarize(path, md):
                     return "%.3f" % (a["h%d" % t] / d) if d else "-"
                 def mae(a):
                     return "%.2f" % (a["ae25"] / a["n25"]) if a and a["n25"] else "-"
-                out.append("| %s | %s | %s | %s | %s | %s | %s |" % (meth, mae(agg["analysis"]), csi(agg["analysis"], 34), csi(agg["analysis"], 48),
+                out.append("| %s | %s | %s | %s | %s | %s | %s |" % ({"nomem": "deterministic"}.get(meth, meth), mae(agg["analysis"]), csi(agg["analysis"], 34), csi(agg["analysis"], 48),
                                                                    csi(agg["analysis"], 64), mae(agg["buoys"]), csi(agg["ships+buoys"], 34)))
             bss = []
             for t in (34, 48, 64):

@@ -17,7 +17,7 @@ North Atlantic, npac for the North Pacific; see domain.py):
                        2025-26 hindcast (calibration.json; the raw shares stay in p48raw, p64raw)
     trend     change of the 3-model mean since the 12Z/00Z run 24 h earlier, valid at the
               same time (the truth fell back about a fifth of this change in the hindcast)
-    nomem     the no-member blend, a candidate for GFE where the ensemble members may not be
+    nomem     the deterministic blend, a candidate for GFE where the ensemble members may not be
               available: the 3 models weighted by support among 9 runs (these 3 and the same
               models from the runs 12 h and 24 h earlier, valid at the same time) +
               min(0.3 x spread of the 9, 5 kt). On 265 hindcast cases it kept about 90% of
@@ -83,8 +83,8 @@ FIELDS = [
     ("p48raw", 1, "%", "Members at 48 kt or more"),
     ("p64raw", 1, "%", "Members at 64 kt or more"),
     ("trend", 2, "kt", "Change of the 3-model mean since the run 24 h earlier", TREND_OFFSET),
-    ("nomem", 2, "kt", "No-member blend: 3 models weighted by support among 9 lagged runs + min(0.3 x their spread, 5 kt)"),
-    ("nomemdiff", 2, "kt", "No-member blend minus the blended wind", TREND_OFFSET),
+    ("nomem", 2, "kt", "Deterministic blend: 3 models weighted by support among 9 lagged runs + min(0.3 x their spread, 5 kt)"),
+    ("nomemdiff", 2, "kt", "Deterministic blend minus the blended wind", TREND_OFFSET),
     ("focus", 1, "", "0 ride, 1 agree, 2 focus, 3 high impact"),
     ("lone", 1, "", "Lone model: bits 0-1 at 48 kt, bits 2-3 at 64 kt (1 GFS, 2 ECMWF, 3 AIFS)"),
     ("msl", 1, "hPa-900", "3-model mean sea-level pressure minus 900 hPa"),
@@ -177,7 +177,7 @@ def prior_speeds(ymd, hh, step, hours):
 
 
 def nomem_blend(speeds, lagged):
-    """The no-member blend from the 3 current models and the lagged runs that are there."""
+    """The deterministic blend from the 3 current models and the lagged runs that are there."""
     runs = np.concatenate([speeds] + lagged)
     return support_base(speeds, runs) + np.minimum(NOMEM_K * runs.std(0), CAP_KT)
 
