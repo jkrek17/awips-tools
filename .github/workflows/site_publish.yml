@@ -125,6 +125,7 @@ jobs:
           # The marine wind page with the newest run beside it, at /marine-wind/.
           mkdir -p "$site/marine-wind/data"
           cp -r marine_wind/page/. "$site/marine-wind/"
+          rm -f "$site/marine-wind/.gitignore"
           if [ -d "$RUNNER_TEMP/marine/latest" ]; then
             cp -r "$RUNNER_TEMP/marine/latest/." "$site/marine-wind/data/"
           fi
