@@ -79,7 +79,11 @@ jobs:
             fi
             d=$(date -u -d "$d + 1 day" +%Y%m%d)
           done
-          python3 verify.py --summary "$v/scores.csv" --md "$v/summary.md"
+          # Before the first scored day (e.g. a run before today's 12 UTC
+          # analyses are on AWS) there is nothing to summarize yet.
+          if [ -f "$v/scores.csv" ]; then
+            python3 verify.py --summary "$v/scores.csv" --md "$v/summary.md"
+          fi
 
       - name: Publish to the marine-wind-verify branch
         env:
