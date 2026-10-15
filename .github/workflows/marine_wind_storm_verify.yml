@@ -1,0 +1,105 @@
+# Daily verification of the storm layers on the marine wind page
+# (marine_wind/verify/storm_verify.py): the most likely wind with storm cores
+# kept, the gale/storm/hurricane-force possible lines and the ensemble low
+# track with its cone. The valid day is two days back so the RSS ASCAT day is
+# complete; the +24 to +120 h forecasts are rebuilt with the page's pipeline
+# and scored against ASCAT and the GFS + IFS analysis. One row per basin,
+# lead, referee and product goes into storm_scores.csv and storm_summary.md is
+# regenerated.
+#
+# Both files are the single commit of the orphan branch
+# marine-wind-storm-verify, force-pushed each run. Run it by hand with a
+# start date to backfill.
+
+name: Marine wind storm verification
+
+on:
+  schedule:
+    - cron: '45 23 * * *'
+  workflow_dispatch:
+    inputs:
+      start:
+        description: 'Backfill from YYYYMMDD through two days ago (blank: two days ago only)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: marine-wind-storm-verify
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: marine_wind/pipeline/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r marine_wind/pipeline/requirements.txt
+
+      - name: Get the scores so far
+        run: |
+          mkdir -p "$RUNNER_TEMP/v"
+          if git fetch -q origin marine-wind-storm-verify 2>/dev/null; then
+            git show FETCH_HEAD:storm_scores.csv > "$RUNNER_TEMP/v/storm_scores.csv"
+          fi
+
+      - name: Verify
+        working-directory: marine_wind/verify
+        env:
+          START: ${{ github.event.inputs.start }}
+        run: |
+          v="$RUNNER_TEMP/v"
+          last=$(date -u -d "2 days ago" +%Y%m%d)
+          d=${START:-$last}
+          while [ "$d" -le "$last" ]; do
+            for b in natl npac; do
+              if python3 storm_verify.py --basin "$b" --valid "$d" --out "$v/new_${d}_$b.csv"; then
+                python3 - "$v/storm_scores.csv" "$v/new_${d}_$b.csv" "$d" "$b" <<'PY'
+          import csv, os, sys
+          old, new, day, basin = sys.argv[1:]
+          rows = [r for r in csv.DictReader(open(old))] if os.path.exists(old) else []
+          rows = [r for r in rows if not (r["valid"] == day and r["basin"] == basin)] + list(csv.DictReader(open(new)))
+          rows.sort(key=lambda r: (r["valid"], r["basin"], int(r["lead"]), r["referee"], r["product"]))
+          with open(old, "w", newline="") as f:
+              w = csv.DictWriter(f, list(csv.DictReader(open(new)).fieldnames))
+              w.writeheader(); w.writerows(rows)
+          PY
+              else
+                echo "::warning::no storm verification for $d $b"
+              fi
+            done
+            d=$(date -u -d "$d + 1 day" +%Y%m%d)
+          done
+          if [ -f "$v/storm_scores.csv" ]; then
+            python3 storm_verify.py --summary "$v/storm_scores.csv" --md "$v/storm_summary.md"
+          fi
+
+      - name: Publish to the marine-wind-storm-verify branch
+        env:
+          REMOTE: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
+        run: |
+          v="$RUNNER_TEMP/v"
+          test -f "$v/storm_scores.csv" || { echo "nothing to publish"; exit 0; }
+          work="$RUNNER_TEMP/branch"
+          rm -rf "$work"; mkdir -p "$work"
+          cp "$v/storm_scores.csv" "$v/storm_summary.md" "$work/"
+          cd "$work"
+          git init -q
+          git checkout -q --orphan marine-wind-storm-verify
+          git config user.name "marine-wind-verify"
+          git config user.email "marine-wind-verify@users.noreply.github.com"
+          git add storm_scores.csv storm_summary.md
+          git commit -q -m "Storm layers verification through $(tail -n 1 storm_scores.csv | cut -d, -f1)"
+          git push -q -f "$REMOTE" marine-wind-storm-verify

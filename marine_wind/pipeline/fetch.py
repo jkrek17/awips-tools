@@ -112,9 +112,20 @@ def gfs(ymd, hh, fh):
     return _ncep(gfs_url(ymd, hh, fh), UVP)
 
 
-def gefs(ymd, hh, fh, mem):
+# extra GFS fields for the storm layers' core model (storm.py): low-level wind and temperature,
+# 2 m and surface temperature, and the land / sea-ice masks
+GFS_LOW = {"TMP:2 m above ground": "t2", "TMP:surface": "skt", "UGRD:925 mb": "u925", "VGRD:925 mb": "v925",
+           "TMP:925 mb": "t925", "UGRD:850 mb": "u850", "VGRD:850 mb": "v850", "TMP:850 mb": "t850",
+           "LAND:surface": "land", "ICEC:surface": "ice"}
+
+
+def gfs_low(ymd, hh, fh):
+    return _ncep(gfs_url(ymd, hh, fh), GFS_LOW)
+
+
+def gefs(ymd, hh, fh, mem, msl=False):
     url = "%s/gefs.%s/%s/atmos/pgrb2sp25/ge%s.t%sz.pgrb2s.0p25.f%03d" % (GEFS, ymd, hh, mem, hh, fh)
-    return _ncep(url, UV)
+    return _ncep(url, UVP if msl else UV)
 
 
 EC_PARAMS = {"10u": "u", "10v": "v", "msl": "msl"}
@@ -148,8 +159,28 @@ def ec_det(model, ymd, hh, step):
     return out if len(out) == 3 else None
 
 
-def ec_ens(ymd, hh, step, model="ifs"):
-    """All members' 10 m u and v -> {'u': [n,y,x], 'v': [n,y,x]} or None.
+EC_LOW_SFC = {"2t": "t2", "skt": "skt"}
+EC_LOW_PL = {(p, lev): p + lev for p in ("u", "v", "t") for lev in ("925", "850")}
+
+
+def ec_low(model, ymd, hh, step):
+    """model 'ifs' or 'aifs-single' -> {'t2','skt','u925','v925','t925','u850','v850','t850'} or None."""
+    base = _ec_base(model, "oper", "fc", ymd, hh, step)
+    recs = _ec_records(base)
+    if recs is None:
+        return None
+    want = []
+    for r in recs:
+        if r.get("levtype") == "sfc" and r["param"] in EC_LOW_SFC:
+            want.append((EC_LOW_SFC[r["param"]], r))
+        elif r.get("levtype") == "pl" and (r["param"], str(r.get("levelist"))) in EC_LOW_PL:
+            want.append((EC_LOW_PL[(r["param"], str(r.get("levelist")))], r))
+    out = {n: decode(get(base + ".grib2", (r["_offset"], r["_offset"] + r["_length"] - 1)).content) for n, r in want}
+    return out if len(out) == 8 else None
+
+
+def ec_ens(ymd, hh, step, model="ifs", msl=False):
+    """All members' 10 m u and v (and msl if asked) -> {'u': [n,y,x], 'v': [n,y,x](, 'msl')} or None.
     model "ifs": ENS, 50 perturbed plus the control when posted, in one -ef file.
     model "aifs-ens": AIFS ensemble, the control (-cf) and 50 perturbed (-pf) files."""
     typs = ("ef",) if model == "ifs" else ("cf", "pf")
@@ -159,7 +190,8 @@ def ec_ens(ymd, hh, step, model="ifs"):
         recs = _ec_records(base)
         if recs is None:
             return None
-        jobs += [(base, r) for r in recs if r.get("levtype") == "sfc" and r["param"] in ("10u", "10v")]
+        want = ("10u", "10v", "msl") if msl else ("10u", "10v")
+        jobs += [(base, r) for r in recs if r.get("levtype") == "sfc" and r["param"] in want]
 
     def one(job):
         base, r = job
@@ -170,7 +202,11 @@ def ec_ens(ymd, hh, step, model="ifs"):
     with ThreadPoolExecutor(6) as ex:
         for m, name, v in ex.map(one, jobs):
             mem.setdefault(m, {})[name] = v
-    keys = sorted(k for k, d in mem.items() if len(d) == 2)
+    need = 3 if msl else 2
+    keys = sorted(k for k, d in mem.items() if len(d) == need)
     if not keys:
         return None
-    return {"u": np.array([mem[k]["u"] for k in keys]), "v": np.array([mem[k]["v"] for k in keys])}
+    out = {"u": np.array([mem[k]["u"] for k in keys]), "v": np.array([mem[k]["v"] for k in keys])}
+    if msl:
+        out["msl"] = np.array([mem[k]["msl"] for k in keys])
+    return out
