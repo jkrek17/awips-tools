@@ -1,11 +1,11 @@
 /* Model scorecard sheet for the marine wind page: how GFS, ECMWF and AIFS have
    handled sea-level pressure and 500 mb height over the last 7 and 30 days, for
-   the page's basin. Reads data/scorecard.json (marine_wind/scorecard/scorecard.py),
+   the basin the map is centred on (app.js sets window.MW_scoreBasin). Reads data/scorecard.json (marine_wind/scorecard/scorecard.py),
    one file for both basins, rows of one 12 UTC valid day x basin x model x lead. */
 (function () {
   "use strict";
 
-  var BASIN = /[?&]basin=npac\b/.test(location.search) ? "npac" : "natl";
+  var BASIN = "natl";
   var BASIN_NAME = { natl: "North Atlantic", npac: "North Pacific" };
   var MODELS = ["GFS", "ECMWF", "AIFS"];
   var $ = function (id) { return document.getElementById(id); };
@@ -45,12 +45,13 @@
         return r.json();
       }).then(function (d) {
         data = d;
-        data.recs = d.rows.map(function (row) { var o = {}; d.cols.forEach(function (c, i) { o[c] = row[i]; }); return o; })
-          .filter(function (r) { return r.basin === BASIN; });
-        data.days = Array.from(new Set(data.recs.map(function (r) { return r.valid; }))).sort();
+        data.all = d.rows.map(function (row) { var o = {}; d.cols.forEach(function (c, i) { o[c] = row[i]; }); return o; });
       });
     }
-    return loading;
+    return loading.then(function () {
+      data.recs = data.all.filter(function (r) { return r.basin === BASIN; });
+      data.days = Array.from(new Set(data.recs.map(function (r) { return r.valid; }))).sort();
+    });
   }
 
   function rowsFor(model, lead, ndays) {
@@ -190,6 +191,7 @@
   }
 
   function open() {
+    BASIN = window.MW_scoreBasin ? window.MW_scoreBasin() : (/[?&]basin=npac\b/.test(location.search) ? "npac" : "natl");
     $("scorecard").hidden = false; $("score-btn").setAttribute("aria-expanded", "true");
     $("sc-title").textContent = "Model scorecard · " + BASIN_NAME[BASIN];
     $("sc-content").innerHTML = '<p class="sc-ref">Loading scores</p>';
