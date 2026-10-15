@@ -1,5 +1,6 @@
 # Daily verification of the marine wind blend for the North Atlantic and the
-# North Pacific (marine_wind/verify/verify.py). After the 12 UTC GFS and ECMWF
+# North Pacific, plus the tropics and the Southern Ocean where the global page
+# runs it untested (marine_wind/verify/verify.py). After the 12 UTC GFS and ECMWF
 # analyses and the GDAS marine observation file are on AWS, the +24 to +120 h
 # forecasts valid at 12 UTC today are rebuilt from the AWS mirrors and scored
 # against the analyses, buoys and ships. One row per basin, lead, method and

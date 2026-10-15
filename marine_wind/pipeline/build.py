@@ -41,6 +41,14 @@ row-major, north row first, in the order of manifest["fields"]).
     python3 build.py --out site_data                # newest complete cycle, North Atlantic
     python3 build.py --domain npac --out site_data/npac
     python3 build.py --cycle 2026101312 --out site_data
+
+--domain glob builds the whole globe, the page's grid since Oct 2026, and writes each field
+on its own (OUT/fFFF/NAME.gz: one uint8 byte per cell, each row stored as differences from
+the cell to its west, gzipped; see write_global). --boxes DIR also cuts the two OPC boxes from
+it in the older per-basin format into DIR/ (North Atlantic) and DIR/npac/, without fetching
+anything again:
+
+    python3 build.py --domain glob --out site_data/global --boxes site_data
 """
 from __future__ import annotations
 
@@ -49,6 +57,7 @@ import datetime as dt
 import json
 import os
 import sys
+import gzip
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
@@ -60,7 +69,7 @@ if "--domain" in sys.argv:
     os.environ["MARINE_DOMAIN"] = sys.argv[sys.argv.index("--domain") + 1]
 import fetch  # noqa: E402
 import storm  # noqa: E402
-from domain import BASIN, EAST, KEY, LATS, LONS, NORTH, NX, NY, SOUTH, WEST  # noqa: E402
+from domain import BASIN, BASINS, EAST, GLOBAL, KEY, LATS, LONS, NORTH, NX, NY, SOUTH, TESTED, WEST  # noqa: E402
 
 KT = 1.943844
 STEPS = list(range(12, 121, 12))
@@ -99,16 +108,37 @@ FIELDS = [
 ]
 TRACK_STEPS = (24, 48, 72, 96, 120)
 CORE_MODEL = storm.load_model()
+storm.WRAP = GLOBAL   # the global grid wraps round the date line
 
 
 CALIB = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "calibration.json")))
+# the filters wrap round the date line on the global grid
+FMODE = ("reflect", "wrap") if GLOBAL else "reflect"
+
+
+def in_box(box, lats=None, lons=None):
+    """[y, x] mask of the cells of this grid inside a box (longitudes continuous, west < east)."""
+    lats = LATS if lats is None else lats
+    lons = LONS if lons is None else lons
+    lat_ok = (lats >= box["south"]) & (lats <= box["north"])
+    lon_ok = (lons - box["west"]) % 360 <= box["east"] - box["west"]
+    return lat_ok[:, None] & lon_ok[None, :]
 
 
 def calibrate(pct, thr, step):
-    """Member share (%) -> chance (%) from the hindcast table for this basin and lead."""
+    """Member share (%) -> chance (%) from the hindcast table for this basin and lead.
+    On the global grid each OPC box uses its own basin's table and everywhere else the
+    average of the two (untested there)."""
     g = "le48" if step <= 48 else ("72" if step <= 84 else "ge96")
-    t = CALIB["thresholds"][str(thr)][KEY][g]
-    return np.interp(pct, t["raw"], t["cal"])
+    tab = CALIB["thresholds"][str(thr)]
+    cal = {b: np.interp(pct, tab[b][g]["raw"], tab[b][g]["cal"]) for b in ("natl", "npac")}
+    if not GLOBAL:
+        return cal[KEY]
+    out = (cal["natl"] + cal["npac"]) / 2
+    for b in ("natl", "npac"):
+        m = in_box(BASINS[b])
+        out[m] = cal[b][m]
+    return out
 
 
 def k_for(step):
@@ -121,7 +151,7 @@ def focus_grid(speeds):
     so a gale edge drawn 25 km differently is not flagged."""
     cats = (34.0, 48.0, 64.0)
     mx = speeds.max(0)
-    near = np.array([ndimage.maximum_filter(s, size=2 * TOL_CELLS + 1) for s in speeds])
+    near = np.array([ndimage.maximum_filter(s, size=2 * TOL_CELLS + 1, mode=FMODE) for s in speeds])
     cmax, cmin = np.digitize(speeds, cats).max(0), np.digitize(near, cats).min(0)
     out = np.ones(mx.shape, np.uint8)
     out[mx < RIDE_BELOW] = 0
@@ -145,7 +175,7 @@ def lone_flags(speeds):
     out = np.zeros(speeds.shape[1:], np.uint8)
     for shift, thr in ((0, 48.0), (2, 64.0)):
         has = speeds >= thr
-        near = np.array([ndimage.maximum_filter(h, size=2 * TOL_CELLS + 1) for h in has])
+        near = np.array([ndimage.maximum_filter(h, size=2 * TOL_CELLS + 1, mode=FMODE) for h in has])
         for i in range(3):
             others = [j for j in range(3) if j != i]
             lone = has[i] & ~near[others[0]] & ~near[others[1]]
@@ -155,16 +185,19 @@ def lone_flags(speeds):
 
 def centres(msl):
     """H and L labels: ['L'|'H', lat, lon, hPa] at the extreme of a ~6 degree box
-    that stands at least 2 hPa off the box mean, away from the domain edge."""
-    from domain import LATS, LONS
+    that stands at least 2 hPa off the box mean, away from the domain edge (on the global grid: within 80 degrees of the equator)."""
     out = []
     size, edge = 25, 4
-    mean = ndimage.uniform_filter(msl, size=size, mode="nearest")
-    for kind, ext, sign in (("L", ndimage.minimum_filter(msl, size=size, mode="nearest"), -1),
-                            ("H", ndimage.maximum_filter(msl, size=size, mode="nearest"), 1)):
+    mode = ("nearest", "wrap") if GLOBAL else "nearest"
+    mean = ndimage.uniform_filter(msl, size=size, mode=mode)
+    for kind, ext, sign in (("L", ndimage.minimum_filter(msl, size=size, mode=mode), -1),
+                            ("H", ndimage.maximum_filter(msl, size=size, mode=mode), 1)):
         hit = (msl == ext) & (sign * (msl - mean) >= 2.0)
-        hit[:edge] = hit[-edge:] = False
-        hit[:, :edge] = hit[:, -edge:] = False
+        if GLOBAL:
+            hit[np.abs(LATS) > 80] = False
+        else:
+            hit[:edge] = hit[-edge:] = False
+            hit[:, :edge] = hit[:, -edge:] = False
         for j, i in zip(*np.nonzero(hit)):
             out.append([kind, round(float(LATS[j]), 2), round(float(LONS[i]), 2), round(float(msl[j, i]), 1)])
     return out
@@ -272,8 +305,12 @@ def core_layers(step, wind, boost, speeds, members, aens, lowx, dets, gefs, ens)
             low[k] = np.mean([x[k] for x in lowx], 0) * KT
         ocean = (lowx[0]["land"] < 0.5) & ~(lowx[0]["ice"] >= 0.5)
         asp = None if aens is None else np.hypot(aens["u"], aens["v"]) * KT
-        feats = storm.core_features(LATS, wind, boost, speeds, members, asp, low)
+        # the core model was trained on 30-67N only, with latitude an input: the Southern
+        # Hemisphere uses |lat|, and the tropics (|lat| < 25, tropical cyclones) get no core,
+        # so no core lift and no storm or hurricane-force line there; the gale line stays
+        feats = storm.core_features(np.abs(LATS), wind, boost, speeds, members, asp, low)
         core = storm.core_grid(feats, ocean, CORE_MODEL)
+        core[np.abs(LATS) < 25] = 0
     else:
         print("core +%dh: low-level fields missing" % step, flush=True)
     windcore, hazard = storm.products(wind, core, members)
@@ -300,45 +337,117 @@ def newest_cycle(now=None):
     raise RuntimeError("no complete cycle in the last three days")
 
 
+def write_global(out, step, packed):
+    """One file per field, OUT/fFFF/NAME.gz: each row as differences from the cell to its west
+    (uint8, wrapping), gzipped. The page undoes it with a running sum along each row. The
+    differences make wind fields about 15% smaller than gzip alone, about as small as PNG."""
+    d = os.path.join(out, "f%03d" % step)
+    os.makedirs(d, exist_ok=True)
+    for f, a in zip(FIELDS, packed):
+        diff = np.diff(a, axis=1, prepend=np.uint8(0)).astype(np.uint8)
+        with open(os.path.join(d, f[0] + ".gz"), "wb") as fh:
+            fh.write(gzip.compress(diff.tobytes(), 6, mtime=0))
+
+
+def field_list():
+    return [dict(name=f[0], scale=f[1], unit=f[2], desc=f[3], offset=f[4] if len(f) > 4 else 0) for f in FIELDS]
+
+
+def write_boxes(root, base, steps, packs):
+    """Cut the two OPC boxes from the global build, in the older per-basin format
+    (root/ North Atlantic, root/npac/ North Pacific: manifest.json + fFFF.bin)."""
+    wind = [f[0] for f in FIELDS].index("wind")
+    focus, lone = [f[0] for f in FIELDS].index("focus"), [f[0] for f in FIELDS].index("lone")
+    for key in ("natl", "npac"):
+        b = BASINS[key]
+        out = root if key == "natl" else os.path.join(root, "npac")
+        os.makedirs(out, exist_ok=True)
+        iy = slice(int(round((NORTH - b["north"]) * 4)), int(round((NORTH - b["south"]) * 4)) + 1)
+        ix = (int(round((b["west"] - WEST) * 4)) + np.arange(int(round((b["east"] - b["west"]) * 4)) + 1)) % NX
+        bsteps = []
+        for st, packed in zip(steps, packs):
+            crop = packed[:, iy][:, :, ix]
+            with open(os.path.join(out, "f%03d.bin" % st["step"]), "wb") as f:
+                f.write(np.ascontiguousarray(crop).tobytes())
+            w = crop[wind] / 2.0
+            cs = [c for c in st["centres"] if b["south"] <= c[1] <= b["north"] and (c[2] - b["west"]) % 360 <= b["east"] - b["west"]]
+            cs = [[c[0], c[1], c[2] % 360 if key == "npac" else c[2], c[3]] for c in cs]   # npac runs 135-245
+            st = {k: v for k, v in st.items() if k != "lows"}   # low positions are global grid indices
+            bsteps.append(dict(st, max_wind=round(float(w.max()), 1), gale_cells=int((w >= 34).sum()),
+                               focus_cells=int((crop[focus] >= 2).sum()), lone_cells=int((crop[lone] > 0).sum()), centres=cs))
+        manifest = dict(basin=key, basin_name=b["name"], cycle=base.strftime("%Y-%m-%dT%H:00Z"),
+                        built=dt.datetime.now(dt.timezone.utc).replace(tzinfo=None).strftime("%Y-%m-%dT%H:%MZ"),
+                        grid=dict(north=b["north"], south=b["south"], west=b["west"], east=b["east"],
+                                  ny=iy.stop - iy.start, nx=len(ix), res=0.25),
+                        fields=field_list(), cap_kt=CAP_KT, steps=bsteps)
+        with open(os.path.join(out, "manifest.json"), "w") as f:
+            json.dump(manifest, f, indent=1)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--cycle", help="YYYYMMDDHH (default: newest complete 00/12Z cycle)")
     ap.add_argument("--out", required=True)
-    ap.add_argument("--domain", default=KEY, choices=["natl", "npac"], help="basin (default natl)")
+    ap.add_argument("--domain", default=KEY, choices=list(BASINS), help="glob, natl or npac (default natl)")
+    ap.add_argument("--boxes", help="with --domain glob: also write the two OPC boxes in the per-basin format here")
     a = ap.parse_args()
+    if a.boxes and not GLOBAL:
+        ap.error("--boxes needs --domain glob")
     cycle = a.cycle or newest_cycle()
     ymd, hh = cycle[:8], cycle[8:]
     os.makedirs(a.out, exist_ok=True)
     base = dt.datetime.strptime(cycle, "%Y%m%d%H")
-    steps = []
+    steps, packs = [], []
     for step in STEPS:
         path = os.path.join(a.out, "f%03d.bin" % step)
         done = os.path.join(a.out, "f%03d.json" % step)
-        if os.path.exists(path) and os.path.exists(done):  # resume a partial run of the same cycle
-            steps.append(json.load(open(done)))
-            continue
+        if os.path.exists(done) and (GLOBAL or os.path.exists(path)):  # resume a partial run of the same cycle
+            st = json.load(open(done))
+            if st.get("cycle") == cycle:
+                steps.append(st)
+                packs.append(np.load(path + ".npy") if a.boxes else None)
+                continue
         packed, stats = step_fields(ymd, hh, step)
-        with open(path, "wb") as f:
-            f.write(packed.tobytes())
+        if GLOBAL:
+            write_global(a.out, step, packed)
+            if a.boxes:   # kept until the boxes are cut, then removed
+                np.save(path + ".npy", packed)
+        else:
+            with open(path, "wb") as f:
+                f.write(packed.tobytes())
         stats["valid"] = (base + dt.timedelta(hours=step)).strftime("%Y-%m-%dT%H:00Z")
         stats["k"] = k_for(step)
+        stats["cycle"] = cycle
         steps.append(stats)
+        packs.append(packed if a.boxes else None)
         with open(done, "w") as f:
             json.dump(stats, f)
         print("+%03dh members %d max %.0f kt gale cells %d focus %d lone %d" % (
             step, stats["members"], stats["max_wind"], stats["gale_cells"], stats["focus_cells"], stats["lone_cells"]), flush=True)
+    for st in steps:
+        st.pop("cycle", None)
     tracks = storm.link_tracks(LATS, LONS, {s["step"]: s.get("lows", []) for s in steps if s["step"] in TRACK_STEPS})
+    track_doc = dict(cycle=base.strftime("%Y-%m-%dT%H:00Z"), tracks=tracks,
+                     note="Ensemble low track: median of the GEFS+ENS members' own lows; cone_km holds the analysed low about 2 in 3")
     with open(os.path.join(a.out, "tracks.json"), "w") as f:
-        json.dump(dict(cycle=base.strftime("%Y-%m-%dT%H:00Z"), tracks=tracks,
-                       note="Ensemble low track: median of the GEFS+ENS members' own lows; cone_km holds the analysed low about 2 in 3"), f)
+        json.dump(track_doc, f)
+    grid = dict(north=NORTH, south=SOUTH, west=WEST, east=EAST, ny=NY, nx=NX, res=0.25)
+    if GLOBAL:
+        grid["tested"] = TESTED
     manifest = dict(
         basin=KEY, basin_name=BASIN["name"],
         cycle=base.strftime("%Y-%m-%dT%H:00Z"), built=dt.datetime.now(dt.timezone.utc).replace(tzinfo=None).strftime("%Y-%m-%dT%H:%MZ"),
-        grid=dict(north=NORTH, south=SOUTH, west=WEST, east=EAST, ny=NY, nx=NX, res=0.25),
-        fields=[dict(name=f[0], scale=f[1], unit=f[2], desc=f[3], offset=f[4] if len(f) > 4 else 0) for f in FIELDS],
-        cap_kt=CAP_KT, steps=steps, tracks="tracks.json")
+        grid=grid, fields=field_list(), cap_kt=CAP_KT, steps=steps, tracks="tracks.json")
+    if GLOBAL:
+        manifest["format"] = "fFFF/NAME.gz, rows as west-to-east differences, gzipped"
     with open(os.path.join(a.out, "manifest.json"), "w") as f:
         json.dump(manifest, f, indent=1)
+    if a.boxes:
+        write_boxes(a.boxes, base, steps, packs)
+        for step in STEPS:
+            p = os.path.join(a.out, "f%03d.bin.npy" % step)
+            if os.path.exists(p):
+                os.remove(p)
 
 
 if __name__ == "__main__":

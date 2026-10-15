@@ -32,6 +32,11 @@ LIFT_KT, LIFT_P = 5.0, 0.35
 GALE_P, STORM_P, HF_P, HF_M48 = 0.30, 0.30, 0.90, 0.30
 CONE_K = {24: 1.02, 48: 1.13, 72: 1.17, 96: 1.27, 120: 1.33}
 NB = (9, 13)          # ~100 km box on the 0.25 degree grid
+WRAP = False          # True on the global grid (build.py --domain glob): filters wrap round the date line
+
+
+def _mode():
+    return ("nearest", "wrap") if WRAP else "nearest"
 
 
 def load_model(path=os.path.join(HERE, "core_model.json")):
@@ -57,7 +62,7 @@ def core_predict(X, model):
 
 def _sm(a, s=1.5):
     a = np.asarray(a, np.float32)
-    return ndimage.gaussian_filter(np.nan_to_num(a, nan=float(np.nanmean(a))), s)
+    return ndimage.gaussian_filter(np.nan_to_num(a, nan=float(np.nanmean(a))), s, mode=_mode())
 
 
 def core_features(lats, wind, boost, speeds, members, aens, low):
@@ -76,9 +81,9 @@ def core_features(lats, wind, boost, speeds, members, aens, low):
          "pa48": (aens >= 48).mean(0) if aens is not None and len(aens) else np.full(wind.shape, np.nan),
          "m90": np.percentile(members, 90, axis=0), "mmean": members.mean(0), "lat": LAT}
     for k in ("p48", "p34", "m90"):
-        c[k + "_nb"] = ndimage.maximum_filter(c[k], size=NB, mode="nearest")
-    c["modmax_nb"] = ndimage.maximum_filter(c["mod_max"], size=NB, mode="nearest")
-    c["r10_nbmax"] = ndimage.maximum_filter(wind, size=(21, 31), mode="nearest")
+        c[k + "_nb"] = ndimage.maximum_filter(c[k], size=NB, mode=_mode())
+    c["modmax_nb"] = ndimage.maximum_filter(c["mod_max"], size=NB, mode=_mode())
+    c["r10_nbmax"] = ndimage.maximum_filter(wind, size=(21, 31), mode=_mode())
     c["s925"] = np.hypot(low["u925"], low["v925"])
     c["s925_minus_r10"] = c["s925"] - wind
     c["dT"] = low["t2"] - low["skt"]; c["sst_t850"] = low["skt"] - low["t850"]; c["sst_t925"] = low["skt"] - low["t925"]
@@ -104,9 +109,9 @@ def core_grid(feats, ocean, model):
 def products(wind, P, members):
     """windcore (kt) and the hazard bit field."""
     windcore = np.where(P >= LIFT_P, wind + LIFT_KT, wind)
-    pc = ndimage.gaussian_filter(P.astype(np.float32), 1.0)
-    p34 = ndimage.gaussian_filter((members >= 34).mean(0).astype(np.float32), 1.0)
-    p48 = ndimage.gaussian_filter((members >= 48).mean(0).astype(np.float32), 1.0)
+    pc = ndimage.gaussian_filter(P.astype(np.float32), 1.0, mode=_mode())
+    p34 = ndimage.gaussian_filter((members >= 34).mean(0).astype(np.float32), 1.0, mode=_mode())
+    p48 = ndimage.gaussian_filter((members >= 48).mean(0).astype(np.float32), 1.0, mode=_mode())
     hz = (p34 >= GALE_P).astype(np.uint8) | ((pc >= STORM_P).astype(np.uint8) << 1) | \
          (((pc >= HF_P) & (p48 >= HF_M48)).astype(np.uint8) << 2)
     return windcore, hz
@@ -116,11 +121,11 @@ def products(wind, P, members):
 
 def lows(msl, thr):
     """Low centres (row, col, hPa) from a smoothed MSLP field (hPa), as in the study."""
-    s = ndimage.gaussian_filter(np.asarray(msl, np.float32), 2.0)
-    mn = ndimage.minimum_filter(s, size=(17, 25), mode="nearest")
+    s = ndimage.gaussian_filter(np.asarray(msl, np.float32), 2.0, mode=_mode())
+    mn = ndimage.minimum_filter(s, size=(17, 25), mode=_mode())
     ny, nx = s.shape
     rr, cc = np.where((s == mn) & (s < thr))
-    return [(int(r), int(c), float(s[r, c])) for r, c in zip(rr, cc) if 3 <= r < ny - 3 and 3 <= c < nx - 3]
+    return [(int(r), int(c), float(s[r, c])) for r, c in zip(rr, cc) if 3 <= r < ny - 3 and (WRAP or 3 <= c < nx - 3)]
 
 
 def km(lats, lons, r1, c1, r2, c2):
@@ -176,7 +181,9 @@ def link_tracks(lats, lons, by_step):
             last = pts[-1]
             if len(pts) >= 2:
                 pr = int(np.clip(last["r"] + 0.6 * (last["r"] - pts[-2]["r"]), 0, len(lats) - 1))
-                pc_ = int(np.clip(last["c"] + 0.6 * (last["c"] - pts[-2]["c"]), 0, len(lons) - 1))
+                dc = (last["c"] - pts[-2]["c"] + len(lons) // 2) % len(lons) - len(lons) // 2 if WRAP else last["c"] - pts[-2]["c"]
+                pc_ = int(last["c"] + 0.6 * dc)
+                pc_ = pc_ % len(lons) if WRAP else int(np.clip(pc_, 0, len(lons) - 1))
             else:
                 pr, pc_ = last["r"], last["c"]
             best, cost = None, 1e9
@@ -194,8 +201,15 @@ def link_tracks(lats, lons, by_step):
             if key in claimed:
                 break
             claimed.add(key)
-        tracks.append([dict(step=p["step"], lat=round(float(lats[p["r"]]), 2), lon=round(float(lons[p["c"]]), 2),
+        # longitudes kept continuous along a track, so one crossing the date line has no jump
+        out, prev = [], None
+        for p in pts:
+            lon = float(lons[p["c"]])
+            if prev is not None:
+                lon = prev + (lon - prev + 180.0) % 360.0 - 180.0
+            prev = lon
+            out.append(dict(step=p["step"], lat=round(float(lats[p["r"]]), 2), lon=round(lon, 2),
                             hpa=round(p["p"], 1), spread_km=round(p["spread"]), members=p["n"], of=p["nmem"],
-                            cone_km=round(CONE_K.get(p["step"], 1.2) * max(p["spread"], 30.0)))
-                       for p in pts])
+                            cone_km=round(CONE_K.get(p["step"], 1.2) * max(p["spread"], 30.0))))
+        tracks.append(out)
     return tracks
