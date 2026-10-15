@@ -1,8 +1,11 @@
-# Marine wind page (North Atlantic and North Pacific)
+# Marine wind page (global)
 
 A public web page, served at `/marine-wind/` on the public site, that shows a
-blended 10 m wind forecast for the North Atlantic (18–67N, 95W–10E, 0.25°) and
-where forecasters should look:
+blended 10 m wind forecast for the whole globe (0.25°, shown to 85N and 85S) on a
+map that pans and zooms, and where forecasters should look. Buttons jump to the
+OPC Atlantic (18–67N, 95W–10E) and Pacific (18–67N, 135E–115W) chart areas. The
+blend was tuned and tested only on 30–67N in those two basins; the page outlines
+that area and the readout flags points outside it.
 
 | Layer | What it shows |
 |---|---|
@@ -16,7 +19,8 @@ where forecasters should look:
 
 Overlays: sea-level pressure, the blend's 34 and 48 kt edges, wind arrows, and
 lone-model signals (one model at 48 or 64 kt that neither other model has
-within about 50 km). Hovering a point lists every value there.
+within about 50 km), and the tested area. Hovering a point lists every value there.
+The side panel sums up what is in view.
 
 ## Why this blend
 
@@ -40,22 +44,28 @@ when half or more of the members also reached 48 kt.
 marine_wind/
   pipeline/build.py     fetch one cycle from the AWS mirrors, compute, write data/
   pipeline/fetch.py     byte-range GRIB fetch and decode to the domain
-  pipeline/domain.py    the grid
-  pipeline/build_coast.py  regenerate page/coast.js (Natural Earth 50m land)
-  page/                 the static page (index.html, style.css, app.js, coast.js)
+  pipeline/domain.py    the grids (global, and the two OPC boxes)
+  pipeline/build_coast.py  regenerate page/land.json (Natural Earth 50m land)
+  page/                 the static page (index.html, style.css, app.js, scorecard.js, land.json)
+  page/lib/             MapLibre GL JS 5.24.0 (BSD-3-Clause, same build as /ndfd/), kept here so the page needs no CDN
 ```
 
-`.github/workflows/marine_wind.yml` runs `build.py` at 08:30 and 20:30 UTC.
-By then the 00 and 12 UTC ECMWF ensemble is on AWS. The workflow force-pushes
-the output to the orphan branch `marine-wind-live` under `latest/`. "Publish
-public site" (`site_publish.yml`) then copies `page/` to `/marine-wind/` and
-`latest/` to `/marine-wind/data/`.
+`.github/workflows/marine_wind.yml` runs `build.py --domain glob` at 08:30 and
+20:30 UTC. By then the 00 and 12 UTC ECMWF ensemble is on AWS. One global build
+replaces the two basin builds: the pipeline always downloaded each model's whole
+global GRIB record and cropped it, so the build time is set by the download and
+the globe costs about what one box did (about 2 minutes a lead, 2.6 GB of memory).
+The workflow force-pushes the output to the orphan branch `marine-wind-live`
+under `latest/` (the globe in `latest/global/`, the two boxes cut from it in the
+older format in `latest/` and `latest/npac/`). "Publish public site"
+(`site_publish.yml`) then copies `page/` to `/marine-wind/` and `latest/` to
+`/marine-wind/data/`.
 
 Run it locally:
 
 ```
 pip install -r marine_wind/pipeline/requirements.txt
-python3 marine_wind/pipeline/build.py --out marine_wind/page/data   # newest complete cycle
+python3 marine_wind/pipeline/build.py --domain glob --out marine_wind/page/data/global --boxes marine_wind/page/data
 python3 -m http.server -d marine_wind/page 8000
 ```
 
@@ -63,10 +73,42 @@ python3 -m http.server -d marine_wind/page 8000
 
 ## Data format
 
-`data/manifest.json` lists the cycle, the grid, the fields (name, scale, unit)
-and the lead times. `data/fFFF.bin` holds one uint8 array per field, each
-ny × nx, row-major, north row first, in manifest order. The stored value is
-`round(value × scale)`, except `msl`, which is hPa − 900.
+`data/global/manifest.json` lists the cycle, the grid (with the tested boxes),
+the fields (name, scale, unit, offset) and the lead times, with the H and L
+centres for each. `data/global/fFFF/NAME.gz` holds one field: 721 × 1440 uint8
+(90N to 90S, 180W to 179.75E), row-major, north row first, each row stored as
+differences from the cell to its west (mod 256) and gzipped. The page fetches
+the 19 fields of a lead (about 3.5 MB) and undoes the differences with a running
+sum. The stored value is `round((value + offset) × scale)`, except `msl`, which
+is hPa − 900.
+
+The older per-basin files (`data/manifest.json` + `data/fFFF.bin`, and the same
+under `data/npac/`) hold every field of a lead in one file, ny × nx per field in
+manifest order.
+
+## The map
+
+`page/app.js` draws on a MapLibre GL JS (WebGL) globe over the Esri World Ocean
+basemap, styled like the site's `/ndfd/` page (top bar with the valid time,
+layers panel, legend card, timeline). The page loads no map fonts. The field is
+coloured in the browser into 256 px raster tiles made on demand from the grid (a
+`mwfield://` tile protocol), with land (`land.json`) cut out of each tile so the
+basemap's land and a sharp coast show; the GPU wraps them onto the globe.
+Isobars, the 34 and 48 kt edges and the lone-model outlines are contoured in the
+browser once per lead and drawn as line layers. Text (H and L, isobar values,
+lone-model labels, graticule labels) and the wind arrows go on a 2D canvas over
+the map, leaving out anything on the far side of the globe or crowded on its rim.
+The view is kept in the link (`#layer/lead/zoom/lat/lon`); older `?basin=npac`
+links open the Pacific area. The Model scorecard opens for the basin the map is centred on.
+
+## Outside the tested area (Oct 2026)
+
+The blend, the storm-chance recalibration and the lone-model rule are applied
+everywhere unchanged. `p48` and `p64` use each basin's table inside its OPC box
+and the average of the two tables elsewhere. Nothing outside 30–67N in the two
+basins has been tested; tropical cyclones are beyond what the recipe was built
+for. The daily verification scores the tropics (18S–18N) and the Southern Ocean
+(30–67S) alongside the two boxes so evidence builds up.
 
 ## North Pacific, recalibrated chances, run-to-run change (Oct 2026)
 
@@ -95,10 +137,11 @@ rule were tuned and tested on 30–67N, 75W–0 and 30–67N, 160E–115W; the a
 strips (subtropics, Gulf of Mexico, Caribbean, NW Europe, Sea of Japan) use them
 untested. Tropical cyclones are outside what the recipe was tuned for.
 
-## Daily verification (North Atlantic and North Pacific)
+## Daily verification
 
-`verify/verify.py` scores the blend every day for both basins: the North
-Atlantic box above and the North Pacific box (18–67N, 135E–115W). After the
+`verify/verify.py` scores the blend every day for the North Atlantic and North
+Pacific boxes above, and for the tropics (18S–18N) and the Southern Ocean
+(30–67S), where the global page runs it untested. After the
 12 UTC analyses are on AWS, it rebuilds the +24 to +120 h forecasts valid at
 12 UTC from the AWS mirrors and scores them against:
 

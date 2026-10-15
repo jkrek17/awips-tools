@@ -2,73 +2,154 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>North Atlantic Marine Wind</title>
-<meta name="description" content="A blended 10 m wind forecast for the North Atlantic and North Pacific from GFS, ECMWF and AIFS plus about 130 ensemble members, with where the models disagree on gale, storm and hurricane force, the ensemble's chance of each, and lone-model storm signals.">
+<title>Marine Wind · Global model blend</title>
+<meta name="description" content="A global blended 10 m wind forecast from GFS, ECMWF and AIFS plus about 130 ensemble members, with where the models disagree on gale, storm and hurricane force, the ensemble's chance of each, and lone-model storm signals.">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a1120">
 <meta name="color-scheme" content="dark">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Cpath d=%22M2 5h8a2 2 0 1 0-2-2M2 8h11a2 2 0 1 1-2 2M2 11h6%22 fill=%22none%22 stroke=%22%237fb0ee%22 stroke-width=%221.4%22 stroke-linecap=%22round%22/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Cpath d=%22M2 5h8a2 2 0 1 0-2-2M2 8h11a2 2 0 1 1-2 2M2 11h6%22 fill=%22none%22 stroke=%22%2338bdf8%22 stroke-width=%221.4%22 stroke-linecap=%22round%22/%3E%3C/svg%3E">
+<link rel="stylesheet" href="lib/maplibre-gl.css">
 <link rel="stylesheet" href="style.css">
-<script src="coast.js" defer></script>
-<script src="coast_npac.js" defer></script>
+<script src="lib/maplibre-gl.js" defer></script>
 <script src="app.js" defer></script>
 <script src="scorecard.js" defer></script>
 </head>
 <body class="loading">
+<div id="app">
+  <div id="map" role="region" aria-label="Forecast map on a globe; drag to turn it, scroll or pinch to zoom, hover or tap the ocean for point values"></div>
+  <canvas id="overlay" aria-hidden="true"></canvas>
+  <div class="progress" id="progress" aria-hidden="true"></div>
 
-<header class="topbar">
-  <div class="brand">
-    <h1 id="title">North Atlantic Marine Wind</h1>
-  </div>
-  <nav class="basins" aria-label="Basin">
-    <a data-basin="natl" href="./">Atlantic</a><a data-basin="npac" href="?basin=npac">Pacific</a>
-  </nav>
-  <p class="run" id="run">Loading the latest run</p>
-  <button type="button" class="btn" id="score-btn" aria-controls="scorecard" aria-expanded="false">Model scorecard</button>
-  <button type="button" class="btn" id="about-btn" aria-controls="about" aria-expanded="false">How it's made</button>
-</header>
-
-<div class="layout">
-  <main class="mapwrap" id="mapwrap">
-    <canvas id="map" aria-label="Map of the selected wind layer over the North Atlantic"></canvas>
-    <div class="readout" id="readout" hidden></div>
-    <p class="status" id="status" role="status"></p>
-    <p class="empty" id="empty" hidden></p>
-    <div class="legend" id="legend"></div>
-  </main>
-
-  <aside class="side" aria-label="Layers and forecast time">
-    <section class="block">
-      <h2>Forecast time</h2>
-      <div class="lead">
-        <button type="button" class="btn icon" id="prev" aria-label="Earlier lead">&#8249;</button>
-        <input type="range" id="lead" min="0" max="9" step="1" value="0" aria-label="Lead time">
-        <button type="button" class="btn icon" id="next" aria-label="Later lead">&#8250;</button>
-        <button type="button" class="btn icon" id="play" aria-label="Play">&#9654;</button>
+  <header class="topbar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+        <circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" stroke-width="2"/>
+        <path d="M7 12h11a3 3 0 1 0-3-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        <path d="M7 17h15a3 3 0 1 1-3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        <path d="M7 22h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".55"/>
+      </svg>
+      <div class="brand-text">
+        <h1 id="title">Marine Wind</h1>
+        <p>Model blend · GFS, ECMWF, AIFS + ensembles</p>
       </div>
-      <p class="valid" id="valid"></p>
+    </div>
+
+    <div class="valid" aria-live="polite">
+      <span class="eyebrow">Valid</span>
+      <span id="validTime" class="valid-time">&mdash;</span>
+      <span id="validRel" class="valid-rel"></span>
+    </div>
+
+    <div class="topbar-actions">
+      <div class="segmented views" role="radiogroup" aria-label="Map view">
+        <button type="button" role="radio" data-view="global" aria-checked="false">Global</button>
+        <button type="button" role="radio" data-view="natl" aria-checked="false" title="OPC Atlantic chart area">Atlantic</button>
+        <button type="button" role="radio" data-view="npac" aria-checked="false" title="OPC Pacific chart area">Pacific</button>
+      </div>
+      <div class="chips" aria-live="polite">
+        <span class="chip" id="chipRun" data-state="loading" title="Age of the newest model run on this page"><i></i><span>Run</span></span>
+      </div>
+      <button type="button" class="btn btn-ghost" id="score-btn" aria-controls="scorecard" aria-expanded="false">Scorecard</button>
+      <button type="button" class="btn btn-ghost" id="about-btn" aria-controls="about" aria-expanded="false">How it's made</button>
+      <a class="btn btn-ghost" id="homeLink" href="../">All projects</a>
+      <button type="button" class="icon-btn" id="btnLayers" aria-label="Layers" aria-controls="panel" aria-expanded="true" title="Layers (L)"></button>
+      <button type="button" class="icon-btn" id="btnHelp" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)"></button>
+    </div>
+  </header>
+
+  <div class="scrim" id="scrim" hidden></div>
+
+  <aside class="panel" id="panel" aria-label="Layers">
+    <div class="panel-head">
+      <h2>Layers</h2>
+      <button type="button" class="icon-btn icon-btn-sm" id="btnPanelClose" aria-label="Close layers"></button>
+    </div>
+
+    <section class="panel-section">
+      <h3>Map layer <span class="hint">10 m wind</span></h3>
+      <div class="product-list" id="layers" role="radiogroup" aria-label="Map layer"></div>
+      <label class="slider-row">
+        <span>Opacity</span>
+        <input type="range" id="opacity" min="0.3" max="1" step="0.05" value="0.85">
+        <output id="opacityOut">85%</output>
+      </label>
     </section>
 
-    <section class="block summary" id="summary"></section>
-
-    <section class="block">
-      <h2>Layer</h2>
-      <div class="layers" id="layers" role="radiogroup" aria-label="Map layer"></div>
+    <section class="panel-section">
+      <h3>Overlays</h3>
+      <label class="switch-row"><span><i class="swatch swatch-lone"></i>Lone-model storm signals</span><input type="checkbox" class="switch" id="ov-lone" checked><kbd>S</kbd></label>
+      <label class="switch-row"><span><i class="swatch swatch-isobars"></i>Sea-level pressure</span><input type="checkbox" class="switch" id="ov-msl" checked><kbd>I</kbd></label>
+      <label class="switch-row"><span><i class="swatch swatch-arrows"></i>Wind direction</span><input type="checkbox" class="switch" id="ov-arrows"><kbd>A</kbd></label>
+      <label class="switch-row"><span><i class="swatch swatch-edges"></i>34 and 48 kt edges</span><input type="checkbox" class="switch" id="ov-edges" checked><kbd>E</kbd></label>
+      <label class="switch-row"><span><i class="swatch swatch-tested"></i>Area the blend was tested on</span><input type="checkbox" class="switch" id="ov-tested" checked><kbd>T</kbd></label>
     </section>
 
-    <section class="block">
-      <h2>Overlays</h2>
-      <label class="check"><input type="checkbox" id="ov-lone" checked> Lone-model storm signals</label>
-      <label class="check"><input type="checkbox" id="ov-msl" checked> Sea-level pressure</label>
-      <label class="check"><input type="checkbox" id="ov-arrows"> Wind direction</label>
-      <label class="check"><input type="checkbox" id="ov-edges" checked> 34 and 48 kt edges of the blend</label>
-    </section>
+    <section class="panel-section summary" id="summary"></section>
 
+    <footer class="panel-foot">
+      Hover or tap the ocean for every model's wind, the chances and the pressure at that point.<br>
+      Data: NOAA GFS &amp; GEFS, ECMWF open data · Basemap: Esri
+    </footer>
   </aside>
+
+  <div class="readout" id="readout" hidden></div>
+  <div class="notes">
+    <p class="note" id="status" role="status"></p>
+    <p class="note" id="empty" hidden></p>
+  </div>
+  <div class="legend" id="legend" aria-live="polite"></div>
+
+  <footer class="timeline" id="timeline">
+    <div class="tl-buttons">
+      <button type="button" class="icon-btn" id="prev" aria-label="Earlier forecast hour" title="Previous (&larr;)"></button>
+      <button type="button" class="icon-btn icon-btn-primary" id="play" aria-label="Play" title="Play / pause (Space)"></button>
+      <button type="button" class="icon-btn" id="next" aria-label="Later forecast hour" title="Next (&rarr;)"></button>
+    </div>
+    <div class="tl-readout">
+      <span id="tlHour" class="tl-hour">+0 h</span>
+      <span id="tlCycle" class="tl-cycle"></span>
+    </div>
+    <div class="tl-track">
+      <div class="tl-rail">
+        <div class="tl-avail" id="tlAvail"></div>
+        <div class="tl-ticks" id="tlTicks"></div>
+        <div class="tl-now" id="tlNow" hidden><span>Now</span></div>
+      </div>
+      <input type="range" id="lead" min="0" max="9" step="1" value="0" aria-label="Forecast hour">
+    </div>
+    <div class="tl-key">
+      <span id="runInfo" class="tl-run"></span>
+      <span id="coords" class="coords"></span>
+    </div>
+  </footer>
+
+  <dialog id="helpDialog" class="dialog" aria-labelledby="helpTitle">
+    <div class="dialog-head">
+      <h2 id="helpTitle">Keyboard shortcuts</h2>
+      <button type="button" class="icon-btn icon-btn-sm" id="btnHelpClose" aria-label="Close"></button>
+    </div>
+    <dl class="shortcuts">
+      <dt><kbd>&larr;</kbd> <kbd>&rarr;</kbd></dt><dd>Earlier / later forecast hour</dd>
+      <dt><kbd>Space</kbd></dt><dd>Play / pause</dd>
+      <dt><kbd>Home</kbd> <kbd>End</kbd></dt><dd>First / last hour</dd>
+      <dt><kbd>1</kbd>&ndash;<kbd>4</kbd></dt><dd>Blended wind, model agreement, 34 kt chance, 48 kt chance</dd>
+      <dt><kbd>S</kbd> <kbd>I</kbd> <kbd>A</kbd> <kbd>E</kbd> <kbd>T</kbd></dt><dd>Lone signals, isobars, arrows, edges, tested area</dd>
+      <dt><kbd>G</kbd> <kbd>N</kbd> <kbd>P</kbd></dt><dd>Global, Atlantic, Pacific view</dd>
+      <dt><kbd>L</kbd></dt><dd>Show / hide layers panel</dd>
+      <dt><kbd>Esc</kbd></dt><dd>Close a panel or sheet</dd>
+    </dl>
+    <p class="dialog-note">The blend covers the whole globe but was tuned and tested only on 30&ndash;67N in the North Atlantic and North Pacific, outlined in gold on the map. New runs arrive twice a day.</p>
+  </dialog>
+
+  <div class="fatal" id="fatal" hidden>
+    <h2>Map could not start</h2>
+    <p id="fatalMsg">This page needs a browser with WebGL enabled.</p>
+  </div>
 </div>
 
 <div class="sheet" id="about" hidden>
   <div class="sheet-body">
-    <button type="button" class="btn close" id="about-close" aria-label="Close">&times;</button>
+    <button type="button" class="icon-btn icon-btn-sm close" id="about-close" aria-label="Close"></button>
     <h2>How the blended wind is made</h2>
     <p><b>Blended wind</b> = a weighted average of the GFS, ECMWF and AIFS 10 m wind speeds, plus a quarter of the spread of about 80 ensemble members (31 GEFS and 50 or 51 ECMWF ENS), capped at 5 kt. At +24 h and earlier it adds 15% of the spread instead. Direction comes from the average wind vector.</p>
     <p>Each model is weighted at each point by how many ensemble members are within about 5 kt of it, so a model out on its own counts for less. On 200 test cases this trimmed the error in 25+ kt winds by about 0.1 kt over a plain average.</p>
@@ -91,13 +172,15 @@
     <p>The 3-model average wind now minus the same models' run 24 h earlier, valid at the same time. It is shown only where either run has 25 kt or more, so light-wind noise doesn't hide the changes that matter. In testing, the truth fell back about a fifth of this change toward the earlier run. Where two runs in a row weakened a system, it verified 4&ndash;5 kt stronger than the latest run. A run that just jumped is worth a second look, and a system that two runs in a row weakened should not be dropped too quickly.</p>
     <h3>Deterministic blend (GFE test)</h3>
     <p>A blend from the deterministic models only, with no ensemble members, for GFE offices whose D2D may not have them. It uses only GFS, ECMWF and AIFS, from this run and the runs 12 h and 24 h earlier, valid at the same time: 9 runs. Each current model is weighted by how many of the 9 runs are within about 5 kt of it, and 30% of the spread of the 9 is added, capped at 5 kt. On 265 past cases it kept about 90% of the full blend's gain against the analyses, but only about 40% of its extra gale hits at ships and buoys. It was tested on 12 UTC runs only. The difference layer shows where it departs from the blended wind, only where either has 25 kt or more. It is scored every day alongside the blend in the daily verification.</p>
-    <p class="fine">Data: NOAA GFS and GEFS and ECMWF open data, from the AWS open-data mirrors, 0.25 degree grid, 18&ndash;67N, 95W&ndash;10E (Atlantic) and 18&ndash;67N, 135E&ndash;115W (Pacific). Updated twice a day. Guidance only, not an official forecast.</p>
+    <h3>Outside the tested area</h3>
+    <p>The map covers the whole globe, but the blend was tuned and tested only on 30&ndash;67N in the North Atlantic (75W&ndash;0) and North Pacific (160E&ndash;115W), outlined on the map. Everywhere else, including the subtropics, the tropics and the Southern Ocean, it uses the same recipe untested. The storm and hurricane-force chances there use the average of the two basins&rsquo; adjustments. Tropical cyclones are beyond what this blend was built for: the models&rsquo; 0.25 degree winds understate their cores. The daily verification now scores the tropics and the Southern Ocean too, so evidence builds up.</p>
+    <p class="fine">Data: NOAA GFS and GEFS and ECMWF open data, from the AWS open-data mirrors, global 0.25 degree grid (shown to 85N and 85S). Atlantic and Pacific open the OPC surface chart areas. Updated twice a day. Guidance only, not an official forecast. Map drawn with MapLibre GL JS; basemap from Esri; land outline from Natural Earth.</p>
   </div>
 </div>
 
 <div class="sheet" id="scorecard" hidden>
   <div class="sheet-body wide" role="dialog" aria-labelledby="sc-title">
-    <button type="button" class="btn close" id="sc-close" aria-label="Close">&times;</button>
+    <button type="button" class="icon-btn icon-btn-sm close" id="sc-close" aria-label="Close"></button>
     <h2 id="sc-title">Model scorecard</h2>
     <p class="sc-note">For awareness only; it does not change the blend. In a 151-run winter test, the model that had led over the past 3, 7 or 15 days was no more likely to lead the next run than its season-long ranking already said.</p>
     <div class="sc-controls">
