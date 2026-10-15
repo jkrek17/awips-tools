@@ -73,12 +73,22 @@
   var MODEL_COLOR = ["", "#f08a5d", "#7fb0ee", "#c3a6f0"];
   var MODEL_NAME = ["", "GFS", "ECMWF", "AIFS"];
   var TESTED_COLOR = "#e8c46a";
+  var CORE = {
+    stops: [0, 10, 20, 30, 35, 50, 70, 90],
+    colors: ["rgba(0,0,0,0)", "#2c4a6a", "#3c8a96", "#c9c35a", "#e8a93f", "#e06f2e", "#c9372c", "#c86fd8"],
+    unit: "%", title: "Storm core chance (%)"
+  };
+  // the storm layers' "possible" lines (hazard bits 1, 2, 4)
+  var HAZARD = [[1, "Gale possible", "#fbbf24"], [2, "Storm possible", "#f97316"], [4, "HF possible", "#e879f9"]];
 
   var LAYERS = [
     ["Forecast"],
     ["wind", "Blended wind", WIND],
     ["mean", "Model base (weighted average)", WIND],
     ["boost", "Added wind", BOOST],
+    ["Storm layers (test)"],
+    ["windcore", "Most likely wind, cores kept", WIND],
+    ["core", "Storm core chance", CORE],
     ["Where to look"],
     ["focus", "Model agreement", FOCUS],
     ["sigma", "Member spread", SPREAD],
@@ -105,7 +115,7 @@
 
   // ------------------------------------------------------------------- state
   var man = null, grid = null, fieldIx = {}, cache = {}, order = [], frame = null;
-  var state = { layer: "wind", step: 0, lone: true, msl: true, arrows: false, edges: true, tested: true, view: "global", opacity: 0.85 };
+  var state = { layer: "wind", step: 0, lone: true, msl: true, arrows: false, edges: true, tested: true, view: "global", opacity: 0.85, hazard: true, track: true };
   var map = null, overlay = $("overlay"), octx = overlay.getContext("2d");
   var hover = null, playTimer = null, lines = null, areas = [], labels = [];
   var MAXLAT = 85.0511, TILE = 256, paint = null, paintVersion = 0;
@@ -361,7 +371,11 @@
     var ed = contour(function (i, j) { return w[j * nx + i] / sc; }, [34, 48], 0, J0, nx, J1, true);
     var isoLines = {};
     levs.forEach(function (l) { if (iso[l].length) isoLines[l + 0.5] = polylines(iso[l]); });
-    return { iso: isoLines, e34: polylines(ed[34]), e48: polylines(ed[48]) };
+    var hz = {}, h = buf.hazard;
+    if (h) HAZARD.forEach(function (d) {
+      hz[d[0]] = polylines(contour(function (i, j) { return h[j * nx + i] & d[0] ? 1 : 0; }, [0.5], 0, J0, nx, J1, true)[0.5]);
+    });
+    return { iso: isoLines, e34: polylines(ed[34]), e48: polylines(ed[48]), hz: hz };
   }
 
   // lone-model areas: connected components of each (model, threshold) mask
@@ -414,6 +428,69 @@
     var showEdges = state.edges && state.layer !== "focus";
     setData("edges", featureColl(showEdges ? [multiLine(lines.e34, { lev: 34 }), multiLine(lines.e48, { lev: 48 })] : []));
     setData("lone", featureColl(state.lone ? areas.map(function (a) { return multiLine(a.lines, { thr: a.thr, color: MODEL_COLOR[a.model] }); }) : []));
+    setData("hazard", featureColl(state.hazard && hasStorm() ? HAZARD.map(function (d) { return multiLine(lines.hz[d[0]] || [], { bit: d[0], color: d[2] }); }) : []));
+    updateTracks();
+  }
+  function hasStorm() { return fieldIx.hazard !== undefined; }
+
+  // ------------------------------------------------------- ensemble low tracks
+  // tracks.json: each track a list of 24-hourly points {step, lat, lon, hpa, cone_km, ...}.
+  // At the shown lead: solid line up to it, dashed beyond, dots every 24 h with the
+  // central pressure, and the cone (radius cone_km) round the dashed part.
+  var tracks = [];
+  function trackAt(t, step) {   // position at a lead, between two points
+    if (step < t[0].step || step > t[t.length - 1].step) return null;
+    for (var k = 1; k < t.length; k++) if (step <= t[k].step) {
+      var a = t[k - 1], b = t[k], f = (step - a.step) / (b.step - a.step);
+      return { step: step, lat: a.lat + f * (b.lat - a.lat), lon: a.lon + f * (b.lon - a.lon), cone_km: a.cone_km + f * (b.cone_km - a.cone_km) };
+    }
+    return t[0];
+  }
+  // the cone: a band of half-width cone_km along the track (sampled every 6 h), with round ends
+  function cone(pts) {
+    var dense = [];
+    for (var k = 0; k + 1 < pts.length; k++) {
+      var a = pts[k], b = pts[k + 1];
+      for (var f = 0; f < 1; f += 0.25) dense.push({ lat: a.lat + f * (b.lat - a.lat), lon: a.lon + f * (b.lon - a.lon), r: a.cone_km + f * (b.cone_km - a.cone_km) });
+    }
+    var e = pts[pts.length - 1];
+    dense.push({ lat: e.lat, lon: e.lon, r: e.cone_km });
+    if (dense.length < 2) return null;
+    function off(p, brg, r) {   // the point r km from p on bearing brg (radians)
+      var dlat = r * Math.cos(brg) / 111.2, dlon = r * Math.sin(brg) / (111.2 * Math.max(0.2, Math.cos(p.lat * Math.PI / 180)));
+      return [p.lon + dlon, Math.max(-85, Math.min(85, p.lat + dlat))];
+    }
+    function brg(a, b) { return Math.atan2((b.lon - a.lon) * Math.cos((a.lat + b.lat) * Math.PI / 360), b.lat - a.lat); }
+    var left = [], right = [], n = dense.length;
+    dense.forEach(function (p, k) {
+      var h = brg(dense[Math.max(0, k - 1)], dense[Math.min(n - 1, k + 1)]);
+      left.push(off(p, h - Math.PI / 2, p.r)); right.push(off(p, h + Math.PI / 2, p.r));
+    });
+    var hEnd = brg(dense[n - 2], dense[n - 1]), hStart = brg(dense[0], dense[1]), ring = left.slice();
+    for (var q = 1; q < 12; q++) ring.push(off(dense[n - 1], hEnd - Math.PI / 2 + q * Math.PI / 12, dense[n - 1].r));
+    ring = ring.concat(right.reverse());
+    for (var q2 = 1; q2 < 12; q2++) ring.push(off(dense[0], hStart + Math.PI / 2 + q2 * Math.PI / 12, dense[0].r));
+    ring.push(ring[0]);
+    return ring;
+  }
+  function updateTracks() {
+    var on = state.track && tracks.length, step = man.steps[state.step].step, past = [], ahead = [], cones = [], dots = [];
+    if (on) tracks.forEach(function (t) {
+      var now = trackAt(t, step), done = t.filter(function (p) { return p.step <= step; }), next = t.filter(function (p) { return p.step > step; });
+      if (now && done.length && done[done.length - 1].step !== step) done.push(now);
+      if (done.length > 1) past.push(done.map(function (p) { return [p.lon, p.lat]; }));
+      var fut = (now ? [now] : []).concat(next);
+      if (fut.length > 1) {
+        ahead.push(fut.map(function (p) { return [p.lon, p.lat]; }));
+        var c = cone(fut);
+        if (c) cones.push({ type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [c] } });
+      }
+      t.forEach(function (p) { dots.push({ type: "Feature", properties: { past: p.step <= step ? 1 : 0 }, geometry: { type: "Point", coordinates: [p.lon, p.lat] } }); });
+      if (now) dots.push({ type: "Feature", properties: { now: 1 }, geometry: { type: "Point", coordinates: [now.lon, now.lat] } });
+    });
+    setData("cone", featureColl(cones));
+    setData("track", featureColl([multiLine(past, { past: 1 }), multiLine(ahead, { past: 0 })]));
+    setData("trackpts", featureColl(dots));
   }
 
   // ------------------------------------------------------------- map setup
@@ -451,6 +528,7 @@
     if (start.bounds) { opts.bounds = start.bounds; opts.fitBoundsOptions = { padding: viewPadding() }; }
     else { opts.center = start.center; opts.zoom = start.zoom; }
     map = new maplibregl.Map(opts);
+    window.MW_map = map;   // for console diagnostics
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
     map.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: "NOAA GFS, GEFS &middot; ECMWF open data &middot; Natural Earth" }), "bottom-left");
     map.addControl(new maplibregl.ScaleControl({ unit: "nautical" }), "bottom-left");
@@ -461,17 +539,29 @@
       map.addLayer({ id: "graticule", type: "line", source: "graticule", paint: { "line-color": "rgba(231,238,248,0.12)", "line-width": 0.8 } });
       map.addSource("tested", { type: "geojson", data: testedArea() });
       map.addLayer({ id: "tested", type: "line", source: "tested", paint: { "line-color": TESTED_COLOR, "line-opacity": 0.85, "line-width": 1.4, "line-dasharray": [1, 2.5] } });
-      ["isobars", "edges", "lone"].forEach(function (id) { map.addSource(id, { type: "geojson", data: featureColl([]), tolerance: 0.2 }); });
+      ["cone", "isobars", "edges", "hazard", "lone", "track", "trackpts"].forEach(function (id) { map.addSource(id, { type: "geojson", data: featureColl([]), tolerance: 0.2 }); });
+      map.addLayer({ id: "cone", type: "fill", source: "cone", paint: { "fill-color": "#e7eef8", "fill-opacity": 0.2 } });
+      map.addLayer({ id: "cone-edge", type: "line", source: "cone", paint: { "line-color": "rgba(255,255,255,0.8)", "line-width": 1.1 } });
       // every 8 hPa zoomed out, every 4 hPa once zoomed in
       var iso = { "line-color": "rgba(231,238,248,0.55)", "line-width": 0.9 };
       map.addLayer({ id: "isobars8", type: "line", source: "isobars", filter: ["==", ["%", ["get", "lev"], 8], 0], paint: iso });
       map.addLayer({ id: "isobars4", type: "line", source: "isobars", minzoom: 2.5, filter: ["!=", ["%", ["get", "lev"], 8], 0], paint: iso });
       map.addLayer({ id: "edge34", type: "line", source: "edges", filter: ["==", ["get", "lev"], 34], paint: { "line-color": "rgba(255,255,255,0.9)", "line-width": 1, "line-dasharray": [4, 3] } });
       map.addLayer({ id: "edge48", type: "line", source: "edges", filter: ["==", ["get", "lev"], 48], paint: { "line-color": "rgba(255,255,255,0.9)", "line-width": 1.6 } });
+      map.addLayer({ id: "hazard-halo", type: "line", source: "hazard", paint: { "line-color": "rgba(5,10,20,0.7)", "line-width": 3.4 } });
+      map.addLayer({ id: "hazard", type: "line", source: "hazard", paint: { "line-color": ["get", "color"], "line-width": 1.6 } });
       // dark halo first so the outline reads on top of the warm wind colours
       map.addLayer({ id: "lone-halo", type: "line", source: "lone", paint: { "line-color": "rgba(5,10,20,0.85)", "line-width": ["case", ["==", ["get", "thr"], 64], 4.8, 4] } });
       map.addLayer({ id: "lone48", type: "line", source: "lone", filter: ["==", ["get", "thr"], 48], paint: { "line-color": ["get", "color"], "line-width": 1.6, "line-dasharray": [3, 2] } });
       map.addLayer({ id: "lone64", type: "line", source: "lone", filter: ["==", ["get", "thr"], 64], paint: { "line-color": ["get", "color"], "line-width": 2.4 } });
+      // the ensemble low track: solid up to the shown lead, dashed beyond (OPC style)
+      map.addLayer({ id: "track-halo", type: "line", source: "track", layout: { "line-cap": "round" }, paint: { "line-color": "rgba(5,10,20,0.8)", "line-width": 4.2 } });
+      map.addLayer({ id: "track-past", type: "line", source: "track", filter: ["==", ["get", "past"], 1], layout: { "line-cap": "round" }, paint: { "line-color": "#ffffff", "line-width": 2.2 } });
+      map.addLayer({ id: "track-ahead", type: "line", source: "track", filter: ["==", ["get", "past"], 0], paint: { "line-color": "#ffffff", "line-width": 2, "line-dasharray": [2, 1.6] } });
+      map.addLayer({ id: "trackpts", type: "circle", source: "trackpts", paint: {
+        "circle-radius": ["case", ["has", "now"], 5.5, 3.5],
+        "circle-color": ["case", ["has", "now"], "#38bdf8", ["==", ["get", "past"], 1], "#ffffff", "#0f1829"],
+        "circle-stroke-color": "#ffffff", "circle-stroke-width": ["case", ["has", "now"], 2, 1.5] } });
       setTested();
       // the data credits start folded to the (i) button, so they never cover the map
       var at = document.querySelector(".maplibregl-ctrl-attrib");
@@ -544,6 +634,7 @@
     if (state.msl) drawCentres(fam);
     if (state.msl) drawIsobarLabels(fam);
     if (state.lone) drawLoneLabels(fam);
+    if (state.track) drawTrackLabels(fam);
     if (hover) {
       proj(hover.lon, hover.lat).forEach(function (p) {
         octx.strokeStyle = "#fff"; octx.lineWidth = 1.2;
@@ -668,6 +759,25 @@
       });
     });
   }
+  // the central pressure by each 24 h dot, with the day when zoomed in
+  function drawTrackLabels(fam) {
+    var z = map.getZoom();
+    octx.textAlign = "left"; octx.textBaseline = "middle";
+    var step = man.steps[state.step].step;
+    tracks.forEach(function (t) {
+      var nextPt = t.filter(function (p) { return p.step >= step; })[0] || t[t.length - 1];
+      t.forEach(function (p) {
+        if (z < 3 && p !== nextPt) return;   // the whole globe in view: one label a track
+        proj(p.lon, p.lat).forEach(function (q) {
+          var tx = Math.round(p.hpa) + (z >= 3 ? "  " + fmtTime(man.steps.filter(function (s) { return s.step === p.step; }).map(function (s) { return s.valid; })[0] || man.cycle, true).replace(/ \d+ \w+$/, "") : "");
+          octx.font = "700 11px " + fam;
+          var w = octx.measureText(tx).width + 8;
+          octx.fillStyle = "rgba(10,17,32,0.85)"; octx.fillRect(q.x + 7, q.y - 8, w, 16);
+          octx.fillStyle = "#ffffff"; octx.fillText(tx, q.x + 11, q.y);
+        });
+      });
+    });
+  }
   function drawLoneLabels(fam) {
     octx.font = "600 11px " + fam; octx.textAlign = "left"; octx.textBaseline = "bottom";
     var boxes = [];
@@ -708,6 +818,9 @@
       '<span><i style="border-top:2px solid #fff"></i>48 kt edge</span>');
     if (state.msl) keys.push('<span><i style="border-top:1px solid rgba(231,238,248,0.6)"></i>Isobars, 4 hPa</span>');
     if (state.tested) keys.push('<span><i style="border-top:2px dotted ' + TESTED_COLOR + '"></i>Tested area</span>');
+    if (state.hazard && hasStorm()) keys.push.apply(keys, HAZARD.map(function (d) { return '<span><i style="border-top:2px solid ' + d[2] + '"></i>' + d[1] + "</span>"; }));
+    if (state.track && tracks.length) keys.push('<span><i style="border-top:2px dashed #fff"></i>Low track, hPa</span>',
+      '<span><i style="border:0;height:9px;vertical-align:-1px;background:rgba(231,238,248,0.3);box-shadow:0 0 0 1px rgba(255,255,255,0.8) inset"></i>Cone, 2 in 3</span>');
     if (state.lone) keys.push('<span><i style="border-top:2px dashed var(--text)"></i>Lone 48 kt</span>',
       '<span><i style="border-top:2px solid var(--text)"></i>Lone 64 kt</span>',
       '<span class="wide">Lone outline colour: ' + [1, 2, 3].map(function (m) { return '<b style="color:' + MODEL_COLOR[m] + ';font-weight:600">' + MODEL_NAME[m] + "</b>"; }).join(" / ") + "</span>");
@@ -753,6 +866,16 @@
       "<p>Highest blended wind <b>" + Math.round(mx) + " kt</b>" + where + "</p>" +
       "<p>Gale area <b>" + area(gale) + "</b>, storm area <b>" + area(storm) + "</b></p>" +
       "<p>Focus or high-impact area <b>" + area(foc) + "</b></p>";
+    if (hasStorm()) {
+      var hzA = { 2: 0, 4: 0 };
+      viewCells(function (k, j) { var hb = frame.hazard[k]; if (hb & 2) hzA[2] += 27.8 * 27.8 * Math.cos(gLat(j) * Math.PI / 180); if (hb & 4) hzA[4] += 27.8 * 27.8 * Math.cos(gLat(j) * Math.PI / 180); });
+      h += "<p>Storm possible <b>" + area(hzA[2]) + "</b>, hurricane force possible <b>" + area(hzA[4]) + "</b></p>";
+    }
+    if (tracks.length) {
+      var step = man.steps[state.step].step, tv = tracks.map(function (t) { return trackAt(t, step); }).filter(function (p) { return p && inView(p.lon, p.lat); });
+      var deep = tracks.map(function (t) { var p = t.filter(function (q) { return q.step >= step; })[0]; return p && inView(p.lon, p.lat) ? p : null; }).filter(Boolean).sort(function (a, b) { return a.hpa - b.hpa; })[0];
+      h += "<p>Tracked lows <b>" + tv.length + "</b>" + (deep ? ", deepest <b>" + Math.round(deep.hpa) + " hPa</b> at +" + deep.step + " h" : "") + "</p>";
+    }
     var vis = areas.filter(function (a) { return inView(gLon(a.peak % grid.nx), gLat((a.peak / grid.nx) | 0)); });
     if (vis.length) {
       h += "<p>Lone-model signals, strongest first:</p>" + vis.slice(0, 5).map(function (a) {
@@ -792,7 +915,11 @@
       "<tr><td>Chance 34 / 48 / 64</td><td>" + fmt(V("p34")) + " / " + fmt(V("p48")) + " / " + fmt(V("p64")) + "%</td></tr>" +
       "<tr><td>Raw members 48 / 64</td><td>" + fmt(V("p48raw")) + " / " + fmt(V("p64raw")) + "%</td></tr>" + tr +
       "<tr><td>Agreement</td><td>" + foc + "</td></tr>" +
-      "<tr><td>Pressure</td><td>" + V("msl") + " hPa</td></tr></table>" +
+      "<tr><td>Pressure</td><td>" + V("msl") + " hPa</td></tr>" +
+      (hasStorm() ? '<tr class="sep"><td>Most likely, cores kept</td><td>' + fmt(V("windcore")) + " kt</td></tr>" +
+        "<tr><td>Storm core chance</td><td>" + (Math.abs(lat) < 25 ? "not made" : fmt(V("core")) + "%") + "</td></tr>" +
+        (b.hazard[k] ? "<tr><td>Possible</td><td>" + HAZARD.filter(function (d) { return b.hazard[k] & d[0]; }).map(function (d) { return d[1].replace(" possible", ""); }).join(", ") + "</td></tr>" : "") : "") +
+      "</table>" +
       (notes.length ? '<div class="note-line">' + notes.join("; ") + "</div>" : "");
     box.hidden = false;
     var r = $("map").getBoundingClientRect(), bw = box.offsetWidth, bh = box.offsetHeight;
@@ -955,7 +1082,12 @@
   var HOTKEYS = { wind: "1", focus: "2", p34: "3", p48: "4" };
   function buildControls() {
     var box = $("layers");
-    LAYERS.forEach(function (L) {
+    LAYERS.filter(function (L, i) {
+      // only the layers this run has (older runs lack the storm fields)
+      if (L.length > 1) return fieldIx[L[0]] !== undefined;
+      var nxt = LAYERS[i + 1];
+      return nxt && nxt.length > 1 && fieldIx[nxt[0]] !== undefined;
+    }).forEach(function (L) {
       if (L.length === 1) { var g = document.createElement("div"); g.className = "grp"; g.textContent = L[0]; box.appendChild(g); return; }
       var b = document.createElement("button");
       b.type = "button"; b.className = "product"; b.setAttribute("role", "radio"); b.dataset.layer = L[0];
@@ -985,7 +1117,9 @@
     $("prev").addEventListener("click", function () { setStep(state.step - 1); });
     $("next").addEventListener("click", function () { setStep(state.step + 1); });
     $("play").addEventListener("click", togglePlay);
-    var OV = [["ov-lone", "lone", "s"], ["ov-msl", "msl", "i"], ["ov-arrows", "arrows", "a"], ["ov-edges", "edges", "e"], ["ov-tested", "tested", "t"]];
+    var OV = [["ov-lone", "lone", "s"], ["ov-msl", "msl", "i"], ["ov-arrows", "arrows", "a"], ["ov-edges", "edges", "e"], ["ov-tested", "tested", "t"],
+              ["ov-hazard", "hazard", "h"], ["ov-track", "track", "c"]];
+    if (!hasStorm()) { $("storm-sec").hidden = true; OV = OV.slice(0, 5); }
     function overlayChanged() { legend(); setTested(); if (frame) { updateLines(); placeLabels(); drawOverlay(); } }
     OV.forEach(function (p) {
       $(p[0]).checked = state[p[1]];
@@ -1069,6 +1203,10 @@
     $("runInfo").textContent = "GFS, ECMWF, AIFS + " + m.steps[0].members + " members" +
       (m.steps[0].prob_members > m.steps[0].members ? " (" + m.steps[0].prob_members + " for chances)" : "");
     runAge(c); setInterval(function () { runAge(c); }, 60000);
+    if (m.tracks) fetch(DATA + m.tracks + "?c=" + encodeURIComponent(m.cycle)).then(function (r) { return r.ok ? r.json() : null; }).then(function (t) {
+      tracks = (t && t.tracks || []).filter(function (x) { return x.length; });
+      if (map && frame) { updateTracks(); legend(); summary(); drawOverlay(); }
+    }).catch(function () {});
     var start = readHash();
     buildControls();
     setView(start.key);

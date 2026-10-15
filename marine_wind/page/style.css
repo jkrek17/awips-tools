@@ -227,6 +227,8 @@ input[type="range"]::-moz-range-thumb { width: 10px; height: 10px; border-radius
 .swatch-isobars { height: 2px; background: #cbd5e1; }
 .swatch-edges { height: 0; border-radius: 0; border-top: 2px solid #fff; box-shadow: 0 4px 0 -1px rgba(255, 255, 255, .6); }
 .swatch-lone { background: transparent; border: 2px dashed #f08a5d; }
+.swatch-hazard { background: transparent; border: 2px solid #f97316; box-shadow: 0 0 0 2px rgba(232, 121, 249, .5) inset; }
+.swatch-track { height: 0; border-radius: 0; border-top: 2px dashed #fff; }
 .swatch-tested { height: 0; border-radius: 0; border-top: 2px dotted var(--tested); }
 .swatch-arrows {
   height: 10px;

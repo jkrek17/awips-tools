@@ -98,7 +98,10 @@ Isobars, the 34 and 48 kt edges and the lone-model outlines are contoured in the
 browser once per lead and drawn as line layers. Text (H and L, isobar values,
 lone-model labels, graticule labels) and the wind arrows go on a 2D canvas over
 the map, leaving out anything on the far side of the globe or crowded on its rim.
-The view is kept in the link (`#layer/lead/zoom/lat/lon`); older `?basin=npac`
+The storm layers (from `storm.py`, live since #97) add two map layers (most
+likely wind with cores kept, storm core chance), the gale/storm/HF possible
+lines contoured from the `hazard` bits, and the ensemble low tracks from
+`tracks.json`: solid to the shown lead, dashed beyond, with the cone. The view is kept in the link (`#layer/lead/zoom/lat/lon`); older `?basin=npac`
 links open the Pacific area. The Model scorecard opens for the basin the map is centred on.
 
 ## Outside the tested area (Oct 2026)
