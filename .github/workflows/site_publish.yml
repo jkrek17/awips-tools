@@ -144,7 +144,7 @@ jobs:
           v="${GITHUB_SHA::8}"
           sed -i -E "s/(href|src)=\"(style\.css|basemap\.js|card\.js|storms\.js|space3d\.js|app\.js)\"/\1=\"\2?v=$v\"/g" "$site/cyclone/index.html"
           grep -c "?v=$v" "$site/cyclone/index.html"
-          sed -i -E "s/(href|src)=\"(style\.css|app\.js|scorecard\.js|lib/maplibre-gl\.js|lib/maplibre-gl\.css)\"/\1=\"\2?v=$v\"/g" "$site/marine-wind/index.html"
+          sed -i -E "s#(href|src)=\"(style\.css|app\.js|scorecard\.js|lib/maplibre-gl\.js|lib/maplibre-gl\.css)\"#\1=\"\2?v=$v\"#g" "$site/marine-wind/index.html"
           touch "$site/.nojekyll"
           du -sh "$site"
 
