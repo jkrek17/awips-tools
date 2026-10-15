@@ -305,8 +305,12 @@ def core_layers(step, wind, boost, speeds, members, aens, lowx, dets, gefs, ens)
             low[k] = np.mean([x[k] for x in lowx], 0) * KT
         ocean = (lowx[0]["land"] < 0.5) & ~(lowx[0]["ice"] >= 0.5)
         asp = None if aens is None else np.hypot(aens["u"], aens["v"]) * KT
-        feats = storm.core_features(LATS, wind, boost, speeds, members, asp, low)
+        # the core model was trained on 30-67N only, with latitude an input: the Southern
+        # Hemisphere uses |lat|, and the tropics (|lat| < 25, tropical cyclones) get no core,
+        # so no core lift and no storm or hurricane-force line there; the gale line stays
+        feats = storm.core_features(np.abs(LATS), wind, boost, speeds, members, asp, low)
         core = storm.core_grid(feats, ocean, CORE_MODEL)
+        core[np.abs(LATS) < 25] = 0
     else:
         print("core +%dh: low-level fields missing" % step, flush=True)
     windcore, hazard = storm.products(wind, core, members)
