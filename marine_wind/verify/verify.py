@@ -1,4 +1,6 @@
-"""Daily verification of the marine wind blend, North Atlantic and North Pacific.
+"""Daily verification of the marine wind blend: the North Atlantic and North Pacific OPC boxes,
+and, since the page went global (Oct 2026), the tropics (18S-18N) and the Southern Ocean
+(30-67S), where the blend runs untested.
 
 For one 12 UTC valid time (default: today's), the forecasts from the 12 UTC runs 1 to 5 days
 earlier (+24 to +120 h) are rebuilt from the AWS open-data mirrors and scored against
@@ -33,8 +35,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 GFS = "https://noaa-gfs-bdp-pds.s3.amazonaws.com"
 GEFS = "https://noaa-gefs-pds.s3.amazonaws.com"
 EC = "https://ecmwf-forecasts.s3.eu-central-1.amazonaws.com"
-# the page's boxes (pipeline/domain.py); longitudes run on past 360 across the prime meridian
-DOMS = {"natl": (67.0, 18.0, 265.0, 370.0), "npac": (67.0, 18.0, 135.0, 245.0)}
+# the OPC boxes (pipeline/domain.py) plus two untested regions; longitudes run on past 360
+# across the prime meridian
+DOMS = {"natl": (67.0, 18.0, 265.0, 370.0), "npac": (67.0, 18.0, 135.0, 245.0),
+        "trop": (18.0, -18.0, 0.0, 359.75), "soc": (-30.0, -67.0, 0.0, 359.75)}
+NAMES = {"natl": "North Atlantic", "npac": "North Pacific", "trop": "Tropics 18S-18N (untested)",
+         "soc": "Southern Ocean 30-67S (untested)"}
 CROP = {k: (slice(int((90 - n) * 4), int((90 - s) * 4) + 1), np.arange(int(w * 4), int(e * 4) + 1) % 1440) for k, (n, s, w, e) in DOMS.items()}
 LATS = {k: np.linspace(DOMS[k][0], DOMS[k][1], CROP[k][0].stop - CROP[k][0].start) for k in DOMS}
 LONS = {k: np.arange(int(DOMS[k][2] * 4), int(DOMS[k][3] * 4) + 1) * 0.25 for k in DOMS}
@@ -202,7 +208,8 @@ def sample(grid, dom, lat, lon):
             + wy * (1 - wx) * grid[y0 + 1, x0] + wy * wx * grid[y0 + 1, x0 + 1])
 
 
-BUOY_BLOCKS = {"13", "21", "22", "31", "32", "41", "42", "44", "45", "46", "48", "61", "62", "63", "64"}
+# moored-buoy WMO blocks; 15, 23, 51, 52 are the tropical arrays (PIRATA, RAMA, TAO)
+BUOY_BLOCKS = {"13", "15", "21", "22", "23", "31", "32", "41", "42", "44", "45", "46", "48", "51", "52", "61", "62", "63", "64"}
 
 
 def charnock(spd_ms, z_from, z_to=10.0, alpha=0.011, nu=1.5e-5, k=0.4, g=9.81):
@@ -349,17 +356,16 @@ def summarize(path, md):
     periods = [("last 7 days", (lv - dt.timedelta(days=6)).strftime("%Y%m%d")),
                ("last 30 days", (lv - dt.timedelta(days=29)).strftime("%Y%m%d")),
                ("all", "00000000")]
-    names = {"natl": "North Atlantic", "npac": "North Pacific"}
     out = ["# Marine wind verification", "", "Through %s 12 UTC. Scores pooled over the period and leads +24 to +120 h unless shown by lead." % last,
            "MAE25: mean absolute error (kt) where forecast or truth is 25+ kt. CSI: hits / (hits + false alarms + misses).",
            "Brier skill: the blend's member chances against the period's base rate (1 perfect, 0 no skill).", ""]
-    for dom in ("natl", "npac"):
+    for dom in DOMS:
         for plabel, start in periods:
             sel = [r for r in rows if r["basin"] == dom and r["valid"] >= start]
             if not sel:
                 continue
             ndays = len({r["valid"] for r in sel})
-            out += ["## %s, %s (%d days)" % (names[dom], plabel, ndays), "",
+            out += ["## %s, %s (%d days)" % (NAMES[dom], plabel, ndays), "",
                     "| method | MAE25 vs analysis | CSI34 | CSI48 | CSI64 | MAE25 vs buoys | CSI34 ships+buoys |", "|---|---|---|---|---|---|---|"]
             for meth in ("blend", "nomem", "blend_eq", "mean3", "gfs", "ecmwf", "aifs"):
                 agg = {}

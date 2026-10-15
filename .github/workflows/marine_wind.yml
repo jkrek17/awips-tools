@@ -1,5 +1,7 @@
-# Data for the marine wind page (marine_wind/pipeline/build.py): the North
-# Atlantic under latest/ and the North Pacific, from the same run, under latest/npac/.
+# Data for the marine wind page (marine_wind/pipeline/build.py): the whole globe
+# under latest/global/ (what the page shows), plus the two OPC boxes cut from it
+# in the older per-basin format, the North Atlantic under latest/ and the North
+# Pacific under latest/npac/.
 # Twice a day, once the 00 and 12 UTC ECMWF ensemble's +120 h is on the AWS
 # open-data mirror (about 8 h after the cycle), the newest cycle with GFS,
 # GEFS, ECMWF IFS, AIFS and ENS all complete is built into a manifest and one
@@ -7,7 +9,7 @@
 # branch marine-wind-live under latest/. Publish public site copies it to
 # /marine-wind/data/.
 #
-# The branch is rebuilt from nothing and force-pushed every run (about 6 MB),
+# The branch is rebuilt from nothing and force-pushed every run (about 50 MB),
 # so it never accumulates history, and main is never touched. Run it by hand
 # (Actions > Marine wind data > Run workflow) with a cycle to publish a
 # particular run.
@@ -57,13 +59,10 @@ jobs:
         run: |
           out="$RUNNER_TEMP/marine-wind"
           rm -rf "$out"
-          args=(--out "$out")
+          args=(--domain glob --out "$out/global" --boxes "$out")
           if [ -n "$CYCLE" ]; then args+=(--cycle "$CYCLE"); fi
           python3 build.py "${args[@]}"
-          cycle=$(python3 -c 'import json,sys,datetime as d; print(d.datetime.strptime(json.load(open(sys.argv[1]))["cycle"], "%Y-%m-%dT%H:00Z").strftime("%Y%m%d%H"))' "$out/manifest.json")
-          # the North Pacific from the same run, under npac/
-          python3 build.py --domain npac --cycle "$cycle" --out "$out/npac"
-          rm -f "$out"/f*.json "$out"/npac/f*.json
+          rm -f "$out"/global/f*.json
           echo "out=$out" >> "$GITHUB_OUTPUT"
           echo "cycle=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["cycle"])' "$out/manifest.json")" >> "$GITHUB_OUTPUT"
 
