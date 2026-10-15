@@ -30,6 +30,10 @@ North Atlantic, npac for the North Pacific; see domain.py):
               two do not have anywhere within about 50 km
     dir       direction the wind blows from, from the 3-model mean wind vector
     msl       3-model mean sea-level pressure
+    core      storm layers (storm.py): chance (%) that ASCAT sees 48+ kt within ~50 km
+    windcore  wind + 5 kt where core >= 35% (the "most likely" wind with storm cores kept)
+    hazard    bit 1 gale possible, bit 2 storm possible, bit 4 hurricane force possible
+              (plus tracks.json: the ensemble low tracks with central pressure and cone size)
 
 and writes OUT/manifest.json plus one OUT/fFFF.bin per lead (uint8 fields,
 row-major, north row first, in the order of manifest["fields"]).
@@ -55,7 +59,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if "--domain" in sys.argv:
     os.environ["MARINE_DOMAIN"] = sys.argv[sys.argv.index("--domain") + 1]
 import fetch  # noqa: E402
-from domain import BASIN, EAST, KEY, NORTH, NX, NY, SOUTH, WEST  # noqa: E402
+import storm  # noqa: E402
+from domain import BASIN, EAST, KEY, LATS, LONS, NORTH, NX, NY, SOUTH, WEST  # noqa: E402
 
 KT = 1.943844
 STEPS = list(range(12, 121, 12))
@@ -88,7 +93,12 @@ FIELDS = [
     ("focus", 1, "", "0 ride, 1 agree, 2 focus, 3 high impact"),
     ("lone", 1, "", "Lone model: bits 0-1 at 48 kt, bits 2-3 at 64 kt (1 GFS, 2 ECMWF, 3 AIFS)"),
     ("msl", 1, "hPa-900", "3-model mean sea-level pressure minus 900 hPa"),
+    ("core", 1, "%", "Core likelihood: chance of 48+ kt within about 50 km (ASCAT-trained)"),
+    ("windcore", 2, "kt", "Most likely wind with storm cores kept: wind + 5 kt where core likelihood >= 35%"),
+    ("hazard", 1, "", "Possible: bit 1 gale (30%+ of members 34+), bit 2 storm (core 30%+), bit 4 hurricane force (core 90%+ and 30%+ of members 48+)"),
 ]
+TRACK_STEPS = (24, 48, 72, 96, 120)
+CORE_MODEL = storm.load_model()
 
 
 CALIB = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "calibration.json")))
@@ -186,12 +196,16 @@ def step_fields(ymd, hh, step):
     lag12, lag24 = prior_speeds(ymd, hh, step, 12), prior_speeds(ymd, hh, step, 24)
     prev = None if lag24 is None else lag24.mean(0)
     with ThreadPoolExecutor(12) as ex:
+        track = step in TRACK_STEPS   # members' MSL only where the low track has a point
         det_f = [ex.submit(fetch.gfs, ymd, hh, step), ex.submit(fetch.ec_det, "ifs", ymd, hh, step),
                  ex.submit(fetch.ec_det, "aifs-single", ymd, hh, step)]
-        gefs_f = [ex.submit(fetch.gefs, ymd, hh, step, m) for m in fetch.GEFS_MEMBERS]
-        ens_f = ex.submit(fetch.ec_ens, ymd, hh, step)
+        low_f = [ex.submit(fetch.gfs_low, ymd, hh, step), ex.submit(fetch.ec_low, "ifs", ymd, hh, step),
+                 ex.submit(fetch.ec_low, "aifs-single", ymd, hh, step)]
+        gefs_f = [ex.submit(fetch.gefs, ymd, hh, step, m, track) for m in fetch.GEFS_MEMBERS]
+        ens_f = ex.submit(fetch.ec_ens, ymd, hh, step, "ifs", track)
         aens_f = ex.submit(fetch.ec_ens, ymd, hh, step, "aifs-ens")
         dets = [f.result() for f in det_f]
+        lowx = [f.result() for f in low_f]
         gefs = [f.result() for f in gefs_f]
         ens = ens_f.result()
         try:
@@ -223,6 +237,8 @@ def step_fields(ymd, hh, step):
     trend = np.zeros_like(mean) if prev is None else speeds.mean(0) - prev
     lagged = [x for x in (lag12, lag24) if x is not None]
     nomem = nomem_blend(speeds, lagged)
+    # storm layers: core likelihood, core-lifted wind, possible areas, low positions for the track
+    core, windcore, hazard, lows = core_layers(step, mean + boost, boost, speeds, members, aens, lowx, dets, gefs, ens)
     vals = {
         "wind": mean + boost, "dir": wdir, "mean": mean, "boost": boost, "sigma": sigma,
         "gfs": speeds[0], "ecmwf": speeds[1], "aifs": speeds[2],
@@ -230,6 +246,7 @@ def step_fields(ymd, hh, step):
         "p48raw": p48raw, "p64raw": p64raw, "trend": trend,
         "nomem": nomem, "nomemdiff": nomem - (mean + boost),
         "focus": focus_grid(speeds), "lone": lone_flags(speeds), "msl": msl - 900.0,
+        "core": 100 * core, "windcore": windcore, "hazard": hazard,
     }
     packed = np.stack([np.clip(np.rint((vals[f[0]] + (f[4] if len(f) > 4 else 0)) * f[1]), 0, 255).astype(np.uint8)
                        for f in FIELDS])
@@ -238,8 +255,35 @@ def step_fields(ymd, hh, step):
                  nomem_runs=3 * (1 + len(lagged)),
                  max_wind=round(float(vals["wind"].max()), 1), gale_cells=int((vals["wind"] >= 34).sum()),
                  focus_cells=int((vals["focus"] >= 2).sum()), lone_cells=int((vals["lone"] > 0).sum()),
-                 centres=centres(msl))
+                 centres=centres(msl), core_model=all(x is not None for x in lowx), lows=lows,
+                 storm_cells=int(((hazard & 2) > 0).sum()), hf_cells=int(((hazard & 4) > 0).sum()))
     return packed, stats
+
+
+def core_layers(step, wind, boost, speeds, members, aens, lowx, dets, gefs, ens):
+    """Core likelihood (0-1), core-lifted wind, hazard bits and (at track leads) low positions.
+    Without the extra low-level fields the core is left at 0, so windcore = wind and only the
+    gale line is drawn."""
+    core = np.zeros(wind.shape, np.float32)
+    ocean = np.ones(wind.shape, bool)
+    if all(x is not None for x in lowx):
+        low = {k: np.mean([x[k] for x in lowx], 0) for k in ("t2", "skt", "t925", "t850")}
+        for k in ("u925", "v925", "u850", "v850"):
+            low[k] = np.mean([x[k] for x in lowx], 0) * KT
+        ocean = (lowx[0]["land"] < 0.5) & ~(lowx[0]["ice"] >= 0.5)
+        asp = None if aens is None else np.hypot(aens["u"], aens["v"]) * KT
+        feats = storm.core_features(LATS, wind, boost, speeds, members, asp, low)
+        core = storm.core_grid(feats, ocean, CORE_MODEL)
+    else:
+        print("core +%dh: low-level fields missing" % step, flush=True)
+    windcore, hazard = storm.products(wind, core, members)
+    hazard = np.where(ocean, hazard, 0).astype(np.uint8)
+    lows = []
+    if step in TRACK_STEPS:
+        mem_msl = [g["msl"] / 100.0 for g in gefs if "msl" in g] + ([] if ens is None or "msl" not in ens else list(ens["msl"] / 100.0))
+        if len(mem_msl) >= 20:
+            lows = storm.step_lows(LATS, LONS, [d["msl"] / 100.0 for d in dets], speeds, mem_msl)
+    return core, windcore, hazard, lows
 
 
 def newest_cycle(now=None):
@@ -283,12 +327,16 @@ def main():
             json.dump(stats, f)
         print("+%03dh members %d max %.0f kt gale cells %d focus %d lone %d" % (
             step, stats["members"], stats["max_wind"], stats["gale_cells"], stats["focus_cells"], stats["lone_cells"]), flush=True)
+    tracks = storm.link_tracks(LATS, LONS, {s["step"]: s.get("lows", []) for s in steps if s["step"] in TRACK_STEPS})
+    with open(os.path.join(a.out, "tracks.json"), "w") as f:
+        json.dump(dict(cycle=base.strftime("%Y-%m-%dT%H:00Z"), tracks=tracks,
+                       note="Ensemble low track: median of the GEFS+ENS members' own lows; cone_km holds the analysed low about 2 in 3"), f)
     manifest = dict(
         basin=KEY, basin_name=BASIN["name"],
         cycle=base.strftime("%Y-%m-%dT%H:00Z"), built=dt.datetime.now(dt.timezone.utc).replace(tzinfo=None).strftime("%Y-%m-%dT%H:%MZ"),
         grid=dict(north=NORTH, south=SOUTH, west=WEST, east=EAST, ny=NY, nx=NX, res=0.25),
         fields=[dict(name=f[0], scale=f[1], unit=f[2], desc=f[3], offset=f[4] if len(f) > 4 else 0) for f in FIELDS],
-        cap_kt=CAP_KT, steps=steps)
+        cap_kt=CAP_KT, steps=steps, tracks="tracks.json")
     with open(os.path.join(a.out, "manifest.json"), "w") as f:
         json.dump(manifest, f, indent=1)
 
