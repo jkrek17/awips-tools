@@ -2,7 +2,7 @@
 
 For one 12 UTC valid time (default: two days ago, so the RSS ASCAT day is complete), the
 +24 to +120 h forecasts from the 12 UTC runs are rebuilt with the page's own pipeline
-(build.step_fields) and scored:
+(the page job's forecast record, else a rebuild; packed as build.pack) and scored:
 
   ascat     Metop-B/C ASCAT within 90 min of 12 UTC (RSS bytemaps, no login), rain-flagged
             cells dropped, one ob per cell (nearest 12 UTC), equivalent-neutral wind turned
@@ -173,7 +173,7 @@ def track_row(valid, basin, lead, fc_lows, anl_lows, lats, lons, storm):
 def run(valid, basin):
     os.environ["MARINE_DOMAIN"] = basin
     sys.path.insert(0, PIPE)
-    import build, fetch, storm
+    import build, fetch, record, storm
     from domain import LATS, LONS
     g, e, gl = fetch.gfs(valid, "12", 0), fetch.ec_det("ifs", valid, "12", 0), fetch.gfs_low(valid, "12", 0)
     if g is None or e is None or gl is None:
@@ -192,7 +192,8 @@ def run(valid, basin):
     for lead in STEPS:
         cyc = (dt.datetime.strptime(valid, "%Y%m%d") - dt.timedelta(hours=lead)).replace(hour=12)
         try:
-            packed, stats = build.step_fields(cyc.strftime("%Y%m%d"), "12", lead)
+            vals, stats, _ = record.load_or_build(cyc.strftime("%Y%m%d") + "12", lead)
+            packed = build.pack(vals)
         except Exception as ex:
             print("  +%dh: build failed (%s)" % (lead, ex), flush=True)
             continue

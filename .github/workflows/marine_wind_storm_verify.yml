@@ -25,6 +25,7 @@ on:
 
 permissions:
   contents: write
+  actions: read   # finds the forecast record artifacts (pipeline/record.py)
 
 concurrency:
   group: marine-wind-storm-verify
@@ -59,6 +60,7 @@ jobs:
         working-directory: marine_wind/verify
         env:
           START: ${{ github.event.inputs.start }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           v="$RUNNER_TEMP/v"
           last=$(date -u -d "2 days ago" +%Y%m%d)

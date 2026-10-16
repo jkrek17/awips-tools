@@ -12,7 +12,7 @@ from . import sources
 from .cycles import cycle_list, newest_cycle, wait_for_quiet
 from .grib import decode
 from .http import exists, get
-from .index import ec_records, ncep_index, ncep_records, span
+from .index import ec_records, forget, ncep_index, ncep_records, span
 
 __all__ = ["get", "exists", "decode", "ncep", "ec_fields", "fields", "gefs_members", "ec_ens",
            "ncep_index", "ncep_records", "ec_records", "span", "sources", "cycle_list",
@@ -32,7 +32,11 @@ def ncep(url, want, crop=None):
                 key = "MSLET:mean sea level"
             else:
                 return None
-        out[name] = decode(get(url, idx[key]).content, crop)
+        r = get(url, idx[key])
+        if r is None:   # index posted but the record not (yet) reachable: skip, and re-read the index next time
+            forget(url + ".idx")
+            return None
+        out[name] = decode(r.content, crop)
     return out
 
 
@@ -48,7 +52,11 @@ def ec_fields(base, select, crop=None):
         lev = r.get("levelist")
         name = select.get((r.get("levtype"), r["param"], None if lev is None else str(lev)))
         if name is not None:
-            out[name] = decode(get(base + ".grib2", span(r)).content, crop)
+            g = get(base + ".grib2", span(r))
+            if g is None:   # callers see the field missing
+                forget(base + ".index")
+                continue
+            out[name] = decode(g.content, crop)
     return out
 
 
@@ -97,12 +105,14 @@ def ec_ens(model, ymd, hh, step, select, crop=None, workers=6):
 
     def one(job):
         base, r = job
-        return int(r.get("number", 0)), select[r["param"]], decode(get(base + ".grib2", span(r)).content, crop)
+        g = get(base + ".grib2", span(r))
+        return int(r.get("number", 0)), select[r["param"]], None if g is None else decode(g.content, crop)
 
     mem = {}
     with ThreadPoolExecutor(workers) as ex:
         for m, name, v in ex.map(one, jobs):
-            mem.setdefault(m, {})[name] = v
+            if v is not None:   # a member with a missing field is dropped below
+                mem.setdefault(m, {})[name] = v
     keys = sorted(k for k, d in mem.items() if len(d) == len(select))
     if not keys:
         return None

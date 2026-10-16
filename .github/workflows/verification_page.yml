@@ -35,6 +35,7 @@ on:
 
 permissions:
   contents: write
+  actions: read   # finds the forecast record artifacts (pipeline/record.py)
 
 jobs:
   plan:
@@ -111,6 +112,7 @@ jobs:
           BASIN: ${{ matrix.basin }}
           START: ${{ matrix.start }}
           END: ${{ matrix.end }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           out="$RUNNER_TEMP/out"
           mkdir -p "$out"
