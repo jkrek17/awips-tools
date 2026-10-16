@@ -224,6 +224,15 @@ to backfill: the days are split into chunks scored in parallel jobs. The tables
 the orphan branch `verification-data`; Publish public site serves `data/` at
 `/verification/data/`.
 
+The forecasts it scores are the page's own: every Marine wind data run keeps the
++24 to +120 h leads (all page fields, ensemble means and stats, global, about
+58 MB per lead) as Actions artifacts `forecast-record-YYYYMMDDHH-fLLL` for 14
+days (`build.py --record`, `pipeline/record.py`). The scorers read those and
+rebuild a forecast from AWS only when there is no record (backfills, a failed
+upload). A record cut to a basin can differ slightly from a rebuild on the basin
+box in the core-lifted wind and storm layers near the box edge, because the page
+computes them on the whole globe; the record is what the page showed.
+
 ```
 pip install -r marine_wind/pipeline/requirements.txt pandas
 cd marine_wind/verify

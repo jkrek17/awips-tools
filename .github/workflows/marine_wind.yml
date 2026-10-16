@@ -80,12 +80,81 @@ jobs:
         run: |
           out="$RUNNER_TEMP/marine-wind"
           rm -rf "$out"
-          args=(--domain glob --out "$out/global" --boxes "$out")
+          args=(--domain glob --out "$out/global" --boxes "$out" --record "$RUNNER_TEMP/record")
           if [ -n "$CYCLE" ]; then args+=(--cycle "$CYCLE"); fi
           python3 build.py "${args[@]}"
           rm -f "$out"/global/f*.json
           echo "out=$out" >> "$GITHUB_OUTPUT"
           echo "cycle=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["cycle"])' "$out/manifest.json")" >> "$GITHUB_OUTPUT"
+          echo "cycle_id=$(python3 -c 'import json,sys; c=json.load(open(sys.argv[1]))["cycle"]; print(c[0:4]+c[5:7]+c[8:10]+c[11:13])' "$out/manifest.json")" >> "$GITHUB_OUTPUT"
+
+      # The page's own forecasts at +24..+120 h (build.py --record), one artifact per lead, for the
+      # verification jobs (marine_wind/pipeline/record.py). Kept outside $out, so never published.
+      # A failure here never holds up the page.
+      - name: Keep the forecast record +24 h
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: forecast-record-${{ steps.build.outputs.cycle_id }}-f024
+          path: |
+            ${{ runner.temp }}/record/f024.npz
+            ${{ runner.temp }}/record/f024.json
+          retention-days: 14
+          compression-level: 0
+          if-no-files-found: ignore
+
+      - name: Keep the forecast record +48 h
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: forecast-record-${{ steps.build.outputs.cycle_id }}-f048
+          path: |
+            ${{ runner.temp }}/record/f048.npz
+            ${{ runner.temp }}/record/f048.json
+          retention-days: 14
+          compression-level: 0
+          if-no-files-found: ignore
+
+      - name: Keep the forecast record +72 h
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: forecast-record-${{ steps.build.outputs.cycle_id }}-f072
+          path: |
+            ${{ runner.temp }}/record/f072.npz
+            ${{ runner.temp }}/record/f072.json
+          retention-days: 14
+          compression-level: 0
+          if-no-files-found: ignore
+
+      - name: Keep the forecast record +96 h
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: forecast-record-${{ steps.build.outputs.cycle_id }}-f096
+          path: |
+            ${{ runner.temp }}/record/f096.npz
+            ${{ runner.temp }}/record/f096.json
+          retention-days: 14
+          compression-level: 0
+          if-no-files-found: ignore
+
+      - name: Keep the forecast record +120 h
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: forecast-record-${{ steps.build.outputs.cycle_id }}-f120
+          path: |
+            ${{ runner.temp }}/record/f120.npz
+            ${{ runner.temp }}/record/f120.json
+          retention-days: 14
+          compression-level: 0
+          if-no-files-found: ignore
 
       # First-guess High Seas Forecast text from the North Pacific box just built
       # (marine_wind/hsf/), plus GFS-Wave seas. Never holds up the wind page:

@@ -107,6 +107,7 @@ FIELDS = [
     ("hazard", 1, "", "Possible: bit 1 gale (30%+ of members 34+), bit 2 storm (core 30%+), bit 4 hurricane force (core 90%+ and 30%+ of members 48+)"),
 ]
 TRACK_STEPS = (24, 48, 72, 96, 120)
+RECORD_STEPS = (24, 48, 72, 96, 120)   # leads kept for the verification (--record)
 CORE_MODEL = storm.load_model()
 storm.WRAP = GLOBAL   # the global grid wraps round the date line
 
@@ -225,11 +226,15 @@ def nomem_blend(speeds, lagged):
     return support_base(speeds, runs) + np.minimum(NOMEM_K * runs.std(0), CAP_KT)
 
 
+def pack(vals):
+    """The page's fields as uint8 grids, one per FIELDS entry."""
+    return np.stack([np.clip(np.rint((vals[f[0]] + (f[4] if len(f) > 4 else 0)) * f[1]), 0, 255).astype(np.uint8)
+                     for f in FIELDS])
+
+
 def step_fields(ymd, hh, step):
     vals, stats, _ = step_values(ymd, hh, step)
-    packed = np.stack([np.clip(np.rint((vals[f[0]] + (f[4] if len(f) > 4 else 0)) * f[1]), 0, 255).astype(np.uint8)
-                       for f in FIELDS])
-    return packed, stats
+    return pack(vals), stats
 
 
 def step_values(ymd, hh, step):
@@ -401,9 +406,12 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--domain", default=KEY, choices=list(BASINS), help="glob, natl or npac (default natl)")
     ap.add_argument("--boxes", help="with --domain glob: also write the two OPC boxes in the per-basin format here")
+    ap.add_argument("--record", help="with --domain glob: also keep each lead in RECORD_STEPS (vals, extras, stats) here, for the verification")
     a = ap.parse_args()
     if a.boxes and not GLOBAL:
         ap.error("--boxes needs --domain glob")
+    if a.record and not GLOBAL:
+        ap.error("--record needs --domain glob")
     cycle = a.cycle or newest_cycle()
     ymd, hh = cycle[:8], cycle[8:]
     os.makedirs(a.out, exist_ok=True)
@@ -418,7 +426,8 @@ def main():
                 steps.append(st)
                 packs.append(np.load(path + ".npy") if a.boxes else None)
                 continue
-        packed, stats = step_fields(ymd, hh, step)
+        vals, stats, extra = step_values(ymd, hh, step)
+        packed = pack(vals)
         if GLOBAL:
             write_global(a.out, step, packed)
             if a.boxes:   # kept until the boxes are cut, then removed
@@ -433,6 +442,12 @@ def main():
         packs.append(packed if a.boxes else None)
         with open(done, "w") as f:
             json.dump(stats, f)
+        if a.record and step in RECORD_STEPS:
+            try:
+                import record
+                record.save(a.record, cycle, step, vals, stats, extra)
+            except Exception as e:   # never fails the build
+                print("forecast record +%dh not saved: %s" % (step, e), flush=True)
         print("+%03dh members %d max %.0f kt gale cells %d focus %d lone %d" % (
             step, stats["members"], stats["max_wind"], stats["gale_cells"], stats["focus_cells"], stats["lone_cells"]), flush=True)
     for st in steps:

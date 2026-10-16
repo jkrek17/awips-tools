@@ -63,6 +63,16 @@ def test_ncep_mslet_fallback(monkeypatch):
     assert nwp.ncep("u", {"PRMSL:mean sea level": "p"}) is None
 
 
+def test_record_missing_after_index(monkeypatch):
+    """Index posted, record 404 (a half-posted file): None, not a crash, and the index is re-read next time."""
+    calls = fake_get(monkeypatch, {"u.idx": R(IDX), "b.index": R('{"param":"10u","levtype":"sfc","_offset":10,"_length":5}')})
+    monkeypatch.setattr(nwp, "get", lambda url, rng: None)
+    assert nwp.ncep("u", {"UGRD:10 m above ground": "u"}) is None
+    nwp.ncep_index("u")
+    assert [c[0] for c in calls].count("u.idx") == 2
+    assert nwp.ec_fields("b", {("sfc", "10u", None): "u"}) == {}
+
+
 def test_index_read_once_and_bounded(monkeypatch):
     calls = fake_get(monkeypatch, {"u.idx": R(IDX)})
     index.ncep_index("u"); index.ncep_records("u")

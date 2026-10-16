@@ -4,8 +4,8 @@ did against every truth source we use, one basin and one valid time per run.
     North Atlantic  valid 12 UTC, forecasts from the 12 UTC runs 1 to 5 days earlier
     North Pacific   valid 00 UTC, forecasts from the 00 UTC runs 1 to 5 days earlier
 
-Forecasts are rebuilt with the marine wind page's own pipeline (build.step_values), so the
-blends are exactly what the page showed (or would have shown, before it went live):
+Forecasts come from the page job's forecast record (pipeline/record.py), else are rebuilt with the page's
+own pipeline (build.step_values), so the blends are exactly what the page showed (or would have shown):
 
     windcore      page wind: the blend + 5 kt where the core likelihood is 35%+
     blend         the blend before the core lift: support-weighted 3 models + min(k x spread, 5 kt)
@@ -235,7 +235,7 @@ def run(valid_ymd, basin):
     os.environ["MARINE_DOMAIN"] = basin
     sys.path.insert(0, PIPE)
     sys.path.insert(0, HERE)
-    import build, fetch, storm
+    import build, fetch, record, storm
     import storm_verify as sv
     from domain import LATS, LONS
     hh = "%02d" % HOUR[basin]
@@ -266,7 +266,7 @@ def run(valid_ymd, basin):
     for lead in STEPS:
         cyc = valid - dt.timedelta(hours=lead)
         try:
-            vals, stats, extra = build.step_values(cyc.strftime("%Y%m%d"), hh, lead)
+            vals, stats, extra = record.load_or_build(cyc.strftime("%Y%m%d") + hh, lead)
         except Exception as ex:
             print("  +%dh: build failed (%s)" % (lead, ex), flush=True)
             continue
