@@ -20,6 +20,18 @@
     "2026-10-16-pressure-d5-7": "Day 5-7 pressure",
     "2026-10-16-warning-forecast": "Warning forecast"
   };
+  // Per-study note, shown as a tag beside the heading with its line beneath.
+  var STUDY_NOTES = {
+    "2026-10-16-warning-forecast": { tag: "Provisional", text: "Rules and intervals are placeholders until the study picks its final rules; the interval used a different ASCAT matching." }
+  };
+  // Known "missing input" notes from preset_status.csv, in plain words. First match wins; an unmatched
+  // note is shown as reported, minus paths and function names.
+  var MISSING_WORDS = [
+    [/\+(144|168) h MSLP/, "Day 6 and 7 model pressure are not in the shared store yet."],
+    [/^vote\b/, "The member vote needs every ensemble member's lows; the store keeps member statistics only."],
+    [/^desk\b/, "The desk's issued warning areas have no reader yet, so there is no desk comparison."],
+    [/every member's 10 m speed/, "Rules built from every member's wind need member winds in the store."]
+  ];
   var STUDY_ORDER = ["2026-10-16-pressure-d5-7", "2026-10-16-warning-forecast"];
 
   // Metric families. A trailing _dN is the forecast day. better: which way is good.
@@ -188,7 +200,10 @@
   function studySection(id) {
     var sec = h("section", { class: "card", "aria-labelledby": "h-" + id });
     var head = h("div", { class: "card-head" }, h("h2", { id: "h-" + id, text: studyTitle(id) }));
+    var sn = STUDY_NOTES[id];
+    if (sn) head.appendChild(h("span", { class: "tag", text: sn.tag }));
     sec.appendChild(head);
+    if (sn) sec.appendChild(h("p", { class: "sub", text: sn.text }));
     var sd = studyData(id);
     if (!sd.weeks.length) {
       sec.appendChild(h("p", { class: "sub", text: "No scores for this choice yet." }));
@@ -320,10 +335,15 @@
     if (!items.length) { box.hidden = !box.children.length; return box; }
     box.appendChild(h("h3", { text: "Not scored yet" }));
     var ul = h("ul", { class: "plain" });
+    var shown = [];
     items.forEach(function (t) {
-      var cut = t.search(/[:;(]/), head = cut > 0 ? t.slice(0, cut) : t;
-      ul.appendChild(h("li", null, h("b", { text: head }), cut > 0 ? t.slice(cut) : ""));
+      var txt = null;
+      MISSING_WORDS.some(function (w) { if (w[0].test(t)) { txt = w[1]; return true; } });
+      // fallback: the raw text without parenthesised paths, file names and RK_* / rk.* names
+      if (!txt) txt = t.replace(/\s*\([^)]*\)/g, "").replace(/\/[\w.\-\/<>]+/g, "").replace(/\b(RK_\w+|rk\.[\w.]+|\w+\.(py|csv|json|npz))\b/g, "").replace(/\s+([,.;:])/g, "$1").replace(/\s{2,}/g, " ").trim();
+      if (shown.indexOf(txt) < 0) shown.push(txt);
     });
+    shown.forEach(function (txt) { ul.appendChild(h("li", { text: txt })); });
     box.appendChild(ul);
     return box;
   }
