@@ -395,6 +395,7 @@ body.loading .panel, body.loading .legend { opacity: .5; }
 }
 @media (max-width: 760px) {
   :root { --gap: 8px; --timeline-h: 70px; --topbar-h: 92px; }
+  #verifLink { display: none; }
   .brand h1 { font-size: 14px; }
   .brand-mark { width: 24px; height: 24px; }
   .valid-time { font-size: 14px; }
