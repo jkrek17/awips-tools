@@ -193,3 +193,16 @@ def test_newest_cycle_and_wait(monkeypatch):
     monkeypatch.setattr(cycles, "_session", type("S", (), {"head": lambda s, u, timeout=None: R(headers={"ETag": str(next(t))})})())
     clock = iter(range(0, 10000, 30))
     assert cycles.wait_for_quiet("u", every=30, timeout=100, sleep=lambda s: None, clock=lambda: next(clock)) is False
+
+
+def test_ndfd_issued_after(monkeypatch):
+    import datetime as dt
+    from nwp import ndfd
+    snaps = {dt.date(2026, 10, 16): [(dt.datetime(2026, 10, 16, h, 8), "k%02d" % h) for h in (10, 13, 16, 19, 22)],
+             dt.date(2026, 10, 17): [(dt.datetime(2026, 10, 17, 1, 6), "k01n"), (dt.datetime(2026, 10, 17, 4, 7), "k04n")]}
+    monkeypatch.setattr(ndfd, "snapshots", lambda day, product="YCYZ98": snaps.get(day, []))
+    assert ndfd.issued_after(dt.datetime(2026, 10, 16, 12, 30)) == "k13"
+    assert ndfd.issued_after(dt.datetime(2026, 10, 16, 13, 8)) == "k13"          # at or after
+    assert ndfd.issued_after(dt.datetime(2026, 10, 16, 22, 30)) == "k01n"        # next date
+    assert ndfd.issued_after(dt.datetime(2026, 10, 16, 13, 9), within_h=1) is None
+    assert ndfd.issued_after(dt.datetime(2026, 10, 18, 0, 0)) is None
