@@ -364,8 +364,8 @@
       el("text", { x: (Lm + W - R) / 2, y: H, "text-anchor": "middle", class: "lbl" }, svg).textContent = "Chance the page gave";
       el("line", { x1: X(0), y1: Y(0), x2: X(1), y2: Y(1), class: "zero", "stroke-dasharray": "4 4" }, svg);
       var pts = bins.map(function (bn, j) { return bn.n >= 10 ? { x: bn.p / bn.n, y: bn.e / bn.n, n: bn.n, e: bn.e, j: j } : null; }).filter(Boolean);
-      var blue = color(MBY.windcore);
-      if (pts.length) {
+      var blue = color(MBY.windcore), seen = bins.reduce(function (a, bn) { return a + bn.e; }, 0);
+      if (pts.length && seen) {
         el("path", { d: pts.map(function (p, j) { return (j ? "L" : "M") + X(p.x).toFixed(1) + " " + Y(p.y).toFixed(1); }).join(""), class: "series", stroke: blue }, svg);
         var tip = document.createElement("div"); tip.className = "tip"; tip.hidden = true; plot.appendChild(tip);
         pts.forEach(function (p) {
@@ -379,7 +379,7 @@
           });
           hit.addEventListener("mouseleave", function () { tip.hidden = true; });
         });
-      } else el("text", { x: W / 2, y: H / 2, "text-anchor": "middle", class: "empty" }, svg).textContent = "Too few cases in this period.";
+      } else el("text", { x: W / 2, y: H / 2, "text-anchor": "middle", class: "empty" }, svg).textContent = pts.length ? "None seen at this force in this period." : "Too few cases in this period.";
       var rows = LEADS.filter(function (l) { return byLead[l]; }).map(function (l) {
         var s = byLead[l], base = s.ev / s.n, bss = base > 0 && base < 1 ? 1 - (s.bs / s.n) / (base * (1 - base)) : null;
         return "<tr><td>+" + l + " h</td><td>" + s.ev.toLocaleString() + "</td><td>" + (bss == null ? "–" : bss.toFixed(2)) + "</td><td>" +
