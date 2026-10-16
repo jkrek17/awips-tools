@@ -762,13 +762,22 @@ without guessing.
   (too short-lived, or over terrain) has no `"track"` property.
 - `frames/fHHH/mslp.geojson`: isobars every 4 hPa as LineString
   features with `{"level": hPa}`, from contourpy on the global field
-  (the first column repeated at 180 so lines reach the dateline and end
-  there), simplified with a 0.15 degree tolerance. Closed rings less
+  smoothed for display by a Gaussian of 2 grid cells (sigma, about
+  55 km; the lows and their pressures come from the raw field), with
+  the first column repeated at 180 so lines reach the dateline and end
+  there, simplified with a 0.15 degree tolerance. Closed rings less
   than 1 degree across centered where the surface pressure is below
   950 hPa are dropped: over high terrain the extrapolated MSLP breaks
   into many such rings. A file over 400 KB is redone with the
-  tolerance raised in 0.05 degree steps (none of the 34 frames of
-  2026092418 needed it; they are 300 to 350 KB).
+  tolerance raised in 0.05 degree steps (smoothed, the frames of
+  2026101518 are 130 to 150 KB; unsmoothed they were about 280 KB).
+- `frames/fHHH/z500.geojson`, `thick.geojson`: the 500 hPa height and
+  the 1000-500 hPa thickness every 6 dam, `{"level": dam}`, the same
+  way with a 3 cell Gaussian (display overlays; HGT 1000 mb is fetched
+  only for the thickness). About 60 KB each.
+- `frames/fHHH/jet250.png`: 250 hPa wind speed in 20 kt bands from
+  70 kt (`JET_BANDS_KT`, colors `JET_COLORS`, both also in index.json's
+  `jet`), clear below 70 kt, on the raster geometry below. About 50 KB.
 - `frames/fHHH/hb.webp`, `hvtl.webp`, `hvtu.webp`: the field through a
   continuous diverging ramp made for the dark basemap (`WEB_RAMPS`:
   blue to red for the thermal winds over -300 to 300 m, teal to purple
