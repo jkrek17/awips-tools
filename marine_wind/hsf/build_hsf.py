@@ -5,9 +5,9 @@ Reads the per-basin box the page build already writes (manifest.json + fFFF.bin:
 Core Lifted wind, i.e. storm cores kept, and the 3-model mean pressure), adds GFS-Wave significant wave height
 from the same cycle, and writes the draft with the writer in writer.py.
 
-Valid times: the page holds leads every 12 h, so cycle C feeds the issuance whose synopsis is
-C+12 h (06Z run -> 2230Z issuance, synopsis 18Z), with 24 and 48 h forecasts and a 12 h step
-in between when a low's warning level goes up.
+Valid times: the boxes hold leads every 6 h to +60 h, so cycle C feeds the issuance whose
+synopsis is C+6 h (00Z run -> the 06Z forecast due 1030Z), with 24 and 48 h forecasts and a
+6 h step in between when a low's warning level goes up.
 
 usage: python3 build_hsf.py --box DIR [--basin pac] --out DIR
 """
@@ -22,13 +22,17 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from areas import AREAS, inside, multipolygon, outline  # noqa: E402
+from areas import AREAS, inside, outline  # noqa: E402
 from writer import WARN, Grid, Rules, write_product  # noqa: E402
 
-SYN_LEAD = 12                 # page lead of the synopsis
-HOURS = (0, 12, 24, 36, 48)   # HSF hours carried by the page's 12-hourly leads
+# (box lead of the synopsis, HSF hours): run C writes the C+6 h issuance from 6-hourly box
+# leads; a box with only 12-hourly leads (built before BOX_STEPS) gives the C+12 h one
+TIMING = ((6, tuple(range(0, 49, 6))), (12, (0, 12, 24, 36, 48)))
 LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 BASIN_DOMAIN = {"pac": "npac", "atl": "natl"}
+# wind grids a draft can be written from: key -> (box field, label)
+SOURCES = {"corelift": ("windcore", "Core Lifted wind (storm cores kept)"), "gfs": ("gfs", "GFS wind"),
+           "ecmwf": ("ecmwf", "ECMWF IFS wind"), "aifs": ("aifs", "ECMWF AIFS wind")}
 
 
 def read_box(box):
@@ -42,7 +46,7 @@ def read_box(box):
     for st in man["steps"]:
         raw = np.fromfile(os.path.join(box, "f%03d.bin" % st["step"]), np.uint8).reshape(len(names), g["ny"], g["nx"])
         out[st["step"]] = {f["name"]: raw[i] / float(f["scale"]) - f["offset"]
-                           for i, f in enumerate(man["fields"]) if f["name"] in ("windcore", "wind", "msl")}
+                           for i, f in enumerate(man["fields"]) if f["name"] in ("windcore", "wind", "msl", "gfs", "ecmwf", "aifs")}
     cycle = dt.datetime.strptime(man["cycle"], "%Y-%m-%dT%H:00Z")
     return out, lats, lons, cycle
 
@@ -101,32 +105,6 @@ def product(syn_time, warn, syn):
     return "%s\n\n.WARNINGS.\n\n%s\n\n.SYNOPSIS AND FORECAST.\n\n%s\n" % (head, wrap(warn) or "NONE.", wrap(syn) or "NONE.")
 
 
-def geojson(doc, syn_time):
-    """The forecast area, every draft area, the lows and the warning lows' tracks as one GeoJSON FeatureCollection.
-    Longitudes run continuously west of 0 (the Pacific crosses the date line, so its
-    western part goes below -180, e.g. 160E = -200)."""
-    lon = (lambda x: x - 360 if x > 0 else x) if doc["basin"] == "pac" else (lambda x: x - 360 if x > 180 else x)
-    fix = lambda ring: [[round(lon(x), 3), y] for x, y in ring]
-    valid = lambda h: (syn_time + dt.timedelta(hours=h)).strftime("%Y-%m-%dT%H:00Z")
-    b = fix(AREAS[doc["basin"]])
-    feats = [dict(type="Feature", properties=dict(kind="forecast_area", basin=doc["basin"]),
-                  geometry=dict(type="Polygon", coordinates=[b + [b[0]]]))]
-    for ar in doc["areas"]:
-        feats.append(dict(type="Feature",
-                          properties=dict(kind="area", hour=ar["hour"], valid=valid(ar["hour"]), warning=ar["warning"],
-                                          id=ar["letter"], wind_kt=ar["wind"], seas_m=ar["seas"], text=ar["text"]),
-                          geometry=dict(type="MultiPolygon", coordinates=[[fix(r) for r in p] for p in multipolygon(ar["rings"])])))
-    for lo in doc["lows"]:
-        feats.append(dict(type="Feature", properties=dict(kind="low", hour=lo["hour"], valid=valid(lo["hour"]), mb=lo["mb"]),
-                          geometry=dict(type="Point", coordinates=[lon(lo["lon"]), lo["lat"]])))
-    for t in doc["tracks"]:
-        feats.append(dict(type="Feature", properties=dict(kind="track", warning=t["warning"], hours=[p["hour"] for p in t["points"]],
-                                                          mb=[p["mb"] for p in t["points"]]),
-                          geometry=dict(type="LineString", coordinates=[[lon(p["lon"]), p["lat"]] for p in t["points"]])))
-    return dict(type="FeatureCollection", properties=dict(basin=doc["basin"], cycle=doc["cycle"], synopsis=doc["synopsis"]),
-                features=feats)
-
-
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--box", required=True, help="page box folder (manifest.json + fFFF.bin)")
@@ -135,29 +113,36 @@ def main():
     a = ap.parse_args()
     os.environ.setdefault("MARINE_DOMAIN", BASIN_DOMAIN[a.basin])
     box, lats, lons, cycle = read_box(a.box)
-    leads = [SYN_LEAD + h for h in HOURS]
-    missing = [s for s in leads if s not in box]
-    if missing:
-        raise SystemExit("page box lacks leads %s" % missing)
+    for SYN_LEAD, HOURS in TIMING:
+        leads = [SYN_LEAD + h for h in HOURS]
+        if all(s in box for s in leads):
+            break
+    else:
+        raise SystemExit("page box lacks the leads for a draft: has %s" % sorted(box))
     hs = wave_heights(cycle, leads)
-    fields = {h: dict(wind=box[SYN_LEAD + h]["windcore"], msl=box[SYN_LEAD + h]["msl"] + 900.0, hs=hs[SYN_LEAD + h]) for h in HOURS}
-    warn, syn, areas, lows, tracks = draft(fields, lats, lons, a.basin)
     syn_time = cycle + dt.timedelta(hours=SYN_LEAD)
-    text = product(syn_time, warn, syn)
     os.makedirs(a.out, exist_ok=True)
-    with open(os.path.join(a.out, "%s.txt" % a.basin), "w") as f:
-        f.write(text)
-    doc = dict(basin=a.basin, cycle=cycle.strftime("%Y-%m-%dT%H:00Z"), synopsis=syn_time.strftime("%Y-%m-%dT%H:00Z"),
-               built=dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
-               source="Marine wind page: Core Lifted wind (storm cores kept), 3-model mean pressure; GFS-Wave seas",
-               hours=list(HOURS), text=text, areas=areas, lows=lows, tracks=tracks,
-               boundary=[[x - 360 if a.basin == "atl" else x, y] for x, y in AREAS[a.basin]], box_leads={h: SYN_LEAD + h for h in HOURS})
-    with open(os.path.join(a.out, "%s.json" % a.basin), "w") as f:
-        json.dump(doc, f, separators=(",", ":"))
-    with open(os.path.join(a.out, "%s.geojson" % a.basin), "w") as f:
-        json.dump(geojson(doc, syn_time), f, separators=(",", ":"))
-    print("HSF draft %s from %s: %d areas" % (a.basin, doc["cycle"], len(areas)))
-
+    # one draft per wind source, same seas and pressure, so the desk can see what each
+    # model's wind would say; Core Lifted keeps the plain file names (pac.txt, pac.json)
+    for key, (field, label) in SOURCES.items():
+        if field not in box[leads[0]]:
+            continue
+        fields = {h: dict(wind=box[SYN_LEAD + h][field], msl=box[SYN_LEAD + h]["msl"] + 900.0, hs=hs[SYN_LEAD + h]) for h in HOURS}
+        warn, syn, areas, lows, tracks = draft(fields, lats, lons, a.basin)
+        text = product(syn_time, warn, syn)
+        name = a.basin if key == "corelift" else "%s-%s" % (a.basin, key)
+        with open(os.path.join(a.out, "%s.txt" % name), "w") as f:
+            f.write(text)
+        doc = dict(basin=a.basin, wind_source=key, wind_field=field, cycle=cycle.strftime("%Y-%m-%dT%H:00Z"),
+                   synopsis=syn_time.strftime("%Y-%m-%dT%H:00Z"),
+                   built=dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
+                   source="Marine wind page: %s, 3-model mean pressure; GFS-Wave seas" % label,
+                   hours=list(HOURS), text=text, areas=areas, lows=lows, tracks=tracks,
+                   boundary=[[x - 360 if a.basin == "atl" else x, y] for x, y in AREAS[a.basin]],
+                   box_leads={h: SYN_LEAD + h for h in HOURS})
+        with open(os.path.join(a.out, "%s.json" % name), "w") as f:
+            json.dump(doc, f, separators=(",", ":"))
+        print("HSF draft %s (%s) from %s: %d areas" % (a.basin, key, doc["cycle"], len(areas)))
 
 if __name__ == "__main__":
     main()

@@ -108,6 +108,10 @@ FIELDS = [
 ]
 TRACK_STEPS = (24, 48, 72, 96, 120)
 RECORD_STEPS = (24, 48, 72, 96, 120)   # leads kept for the verification (--record)
+# extra leads cut into the two OPC boxes only (--boxes), not the global page: with STEPS they
+# give 6-hourly grids to +60 h, so run C feeds the High Seas draft whose synopsis is C+6 h
+# (the 00Z run -> the 06Z synopsis forecast due 1030Z)
+BOX_STEPS = (6, 18, 30, 42, 54)
 CORE_MODEL = storm.load_model()
 storm.WRAP = GLOBAL   # the global grid wraps round the date line
 
@@ -418,19 +422,26 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     base = dt.datetime.strptime(cycle, "%Y%m%d%H")
     steps, packs = [], []
-    for step in STEPS:
+    bsteps, bpacks = [], []   # what the boxes get: STEPS plus BOX_STEPS
+    for step in sorted(set(STEPS) | (set(BOX_STEPS) if a.boxes else set())):
+        page = step in STEPS
         path = os.path.join(a.out, "f%03d.bin" % step)
         done = os.path.join(a.out, "f%03d.json" % step)
         if os.path.exists(done) and (GLOBAL or os.path.exists(path)):  # resume a partial run of the same cycle
             st = json.load(open(done))
             if st.get("cycle") == cycle:
-                steps.append(st)
-                packs.append(np.load(path + ".npy") if a.boxes else None)
+                pk = np.load(path + ".npy") if a.boxes else None
+                if page:
+                    steps.append(st)
+                    packs.append(pk)
+                bsteps.append(st)
+                bpacks.append(pk)
                 continue
         vals, stats, extra = step_values(ymd, hh, step)
         packed = pack(vals)
         if GLOBAL:
-            write_global(a.out, step, packed)
+            if page:
+                write_global(a.out, step, packed)
             if a.boxes:   # kept until the boxes are cut, then removed
                 np.save(path + ".npy", packed)
         else:
@@ -439,11 +450,14 @@ def main():
         stats["valid"] = (base + dt.timedelta(hours=step)).strftime("%Y-%m-%dT%H:00Z")
         stats["k"] = k_for(step)
         stats["cycle"] = cycle
-        steps.append(stats)
-        packs.append(packed if a.boxes else None)
+        if page:
+            steps.append(stats)
+            packs.append(packed if a.boxes else None)
+        bsteps.append(stats)
+        bpacks.append(packed if a.boxes else None)
         with open(done, "w") as f:
             json.dump(stats, f)
-        if a.record and step in RECORD_STEPS:
+        if a.record and page and step in RECORD_STEPS:
             try:
                 import record
                 record.save(a.record, cycle, step, vals, stats, extra)
@@ -451,7 +465,7 @@ def main():
                 print("forecast record +%dh not saved: %s" % (step, e), flush=True)
         print("+%03dh members %d max %.0f kt gale cells %d focus %d lone %d" % (
             step, stats["members"], stats["max_wind"], stats["gale_cells"], stats["focus_cells"], stats["lone_cells"]), flush=True)
-    for st in steps:
+    for st in bsteps:
         st.pop("cycle", None)
     tracks = storm.link_tracks(LATS, LONS, {s["step"]: s.get("lows", []) for s in steps if s["step"] in TRACK_STEPS})
     track_doc = dict(cycle=base.strftime("%Y-%m-%dT%H:00Z"), tracks=tracks,
@@ -470,8 +484,8 @@ def main():
     with open(os.path.join(a.out, "manifest.json"), "w") as f:
         json.dump(manifest, f, indent=1)
     if a.boxes:
-        write_boxes(a.boxes, base, steps, packs)
-        for step in STEPS:
+        write_boxes(a.boxes, base, bsteps, bpacks)
+        for step in set(STEPS) | set(BOX_STEPS):
             p = os.path.join(a.out, "f%03d.bin.npy" % step)
             if os.path.exists(p):
                 os.remove(p)

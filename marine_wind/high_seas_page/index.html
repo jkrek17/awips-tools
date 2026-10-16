@@ -25,6 +25,10 @@
   .hs-legend { display: flex; gap: 12px; padding: 0 16px 8px; font-size: 11.5px; color: var(--text-2); flex-wrap: wrap; }
   .hs-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
   .hs-basins { display: flex; gap: 4px; }
+  .hs-src { display: flex; align-items: center; gap: 8px; padding: 0 16px 8px; font-size: 11.5px; color: var(--text-3); flex-wrap: wrap; }
+  .hs-src nav { display: flex; gap: 4px; flex-wrap: wrap; }
+  .hs-src a { font: 600 12px var(--font); padding: 4px 9px; border-radius: var(--radius-sm); border: 1px solid var(--border); color: var(--text-2); text-decoration: none; }
+  .hs-src a[aria-current="true"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
   .hs-basins a[aria-current="true"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
   @media (max-width: 760px) { .hs-card { top: auto; height: 48%; } .hs-text { font-size: 11px; } .brand p { display: none; } }
 </style>
@@ -53,11 +57,11 @@
       <h2 id="runLine">Loading the draft&hellip;</h2>
       <button type="button" class="btn" id="copyBtn">Copy text</button>
       <a class="btn btn-ghost" id="plainLink" href="../marine-wind/data/hsf/pac.txt" target="_blank" rel="noopener">Plain text</a>
-      <a class="btn btn-ghost" id="geoLink" href="../marine-wind/data/hsf/pac.geojson" download>GeoJSON</a>
     </div>
+    <div class="hs-src"><span>Wind grid</span><nav id="sources" aria-label="Wind grid the draft is written from"></nav></div>
     <div class="hs-steps" id="steps" role="group" aria-label="Time shown on the map"></div>
-    <div class="hs-legend"><span><i style="background:#a855f7"></i>64+ kt</span><span><i style="background:#ef4444"></i>48-63</span><span><i style="background:#f59e0b"></i>34-47</span><span><i style="background:#38bdf8"></i>25-33</span><span>Shading: Core Lifted wind · outlines: draft areas · L: lows in the text · white line: warning low tracks (12 h dots) · dashed: forecast area</span></div>
-    <p class="hs-note">Written automatically by rules from the wind page's Core Lifted wind (the most likely wind, storm cores kept) and GFS-Wave seas. A draft for the forecaster to edit, not the official forecast.</p>
+    <div class="hs-legend"><span><i style="background:#a855f7"></i>64+ kt</span><span><i style="background:#ef4444"></i>48-63</span><span><i style="background:#f59e0b"></i>34-47</span><span><i style="background:#38bdf8"></i>25-33</span><span>Shading: <span id="shadeName">Core Lifted wind</span> · outlines: draft areas · L: lows in the text · white line: warning low tracks · yellow dashed: High Seas forecast area</span></div>
+    <p class="hs-note">Written automatically by rules from the chosen wind grid (Core Lifted: the most likely wind, storm cores kept), the 3-model mean pressure and GFS-Wave seas. A draft for the forecaster to edit, not the official forecast.</p>
     <pre class="hs-text" id="text"></pre>
   </section>
 </div>
