@@ -73,13 +73,26 @@ jobs:
         env:
           REPO: ${{ vars.PUBLIC_SITE_REPO }}
           TOKEN: ${{ secrets.WEB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          WF_NAME: ${{ github.event.workflow_run.name }}
+          WF_STARTED: ${{ github.event.workflow_run.run_started_at }}
         run: |
           if [ -z "$REPO" ] || [ -z "$TOKEN" ]; then
             echo "PUBLIC_SITE_REPO or WEB_TOKEN not set; nothing to publish."
             echo "ready=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          # Marine wind data checks hourly and most runs publish nothing: skip
+          # those (marine-wind-live's commit is older than the run).
+          if [ "$WF_NAME" = "Marine wind data" ]; then
+            pushed=$(gh api "repos/$GITHUB_REPOSITORY/commits/marine-wind-live" --jq .commit.committer.date || true)
+            if [ -n "$pushed" ] && [ "$(date -d "$pushed" +%s)" -lt "$(date -d "$WF_STARTED" +%s)" ]; then
+              echo "Marine wind data published nothing new (marine-wind-live $pushed, run started $WF_STARTED)."
+              echo "ready=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v4
         if: steps.cfg.outputs.ready == 'true'
