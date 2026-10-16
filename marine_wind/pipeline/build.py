@@ -324,16 +324,16 @@ def core_layers(step, wind, boost, speeds, members, aens, lowx, dets, gefs, ens)
 
 
 def newest_cycle(now=None):
-    """Newest 00/12Z cycle whose +120 h is on AWS for all three models and the ENS."""
+    """Newest 00/06/12/18Z cycle whose +120 h is on AWS for all three models and the ENS."""
     now = now or dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
-    t = now.replace(minute=0, second=0, microsecond=0, hour=12 if now.hour >= 12 else 0)
-    for _ in range(6):
+    t = now.replace(minute=0, second=0, microsecond=0, hour=now.hour // 6 * 6)
+    for _ in range(12):
         ymd, hh = t.strftime("%Y%m%d"), t.strftime("%H")
         urls = [fetch.gfs_url(ymd, hh, 120) + ".idx", fetch.ec_url("ifs", ymd, hh, 120),
                 fetch.ec_url("aifs-single", ymd, hh, 120), fetch.ec_url("ifs", ymd, hh, 120, "enfo", "ef")]
         if all(fetch.exists(u) for u in urls):
             return ymd + hh
-        t -= dt.timedelta(hours=12)
+        t -= dt.timedelta(hours=6)
     raise RuntimeError("no complete cycle in the last three days")
 
 
@@ -386,7 +386,7 @@ def write_boxes(root, base, steps, packs):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--cycle", help="YYYYMMDDHH (default: newest complete 00/12Z cycle)")
+    ap.add_argument("--cycle", help="YYYYMMDDHH (default: newest complete 00/06/12/18Z cycle)")
     ap.add_argument("--out", required=True)
     ap.add_argument("--domain", default=KEY, choices=list(BASINS), help="glob, natl or npac (default natl)")
     ap.add_argument("--boxes", help="with --domain glob: also write the two OPC boxes in the per-basin format here")
