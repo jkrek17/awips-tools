@@ -92,9 +92,13 @@ manifest order.
 
 `page/app.js` draws on a MapLibre GL JS (WebGL) globe over the Esri World Ocean
 basemap, styled like the site's `/ndfd/` page (top bar with the valid time,
-layers panel, legend card, timeline). The page loads no map fonts. The field is
+layers panel, legend card, timeline). MapLibre, the shared look, the map setup,
+the overlay canvas, the timeline rail and the land outline come from the globe
+kit (`globe_kit/`, published at `/globe-kit/` and loaded as `../globe-kit/`; to
+run the page locally, serve a folder with `marine-wind/` and `globe-kit/` side by
+side). The page loads no map fonts. The field is
 coloured in the browser into 256 px raster tiles made on demand from the grid (a
-`mwfield://` tile protocol), with land (`land.json`) cut out of each tile so the
+`mwfield://` tile protocol), with land (the kit's `land.json`) cut out of each tile so the
 basemap's land and a sharp coast show; the GPU wraps them onto the globe.
 Isobars, the 34 and 48 kt edges and the lone-model outlines are contoured in the
 browser once per lead and drawn as line layers. Text (H and L, isobar values,

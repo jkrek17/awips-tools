@@ -1,21 +1,28 @@
 /* Cyclone Phase Space, live: the map, frames, timeline and controls.
    The low centers, MSLP contours, the thermal asymmetry and thermal wind
    rasters and the storm tracks, animated over the forecast hours of the
-   latest cycle.
-   storms.js (storm panel, follow mode), space3d.js (the 3-D phase space)
-   and card.js (readout at a low) use
-   the globals defined here; this file loads last and starts the page.
+   latest cycle, on a MapLibre GL (WebGL) globe from the site's globe kit
+   (../globe-kit/globe-kit.js, window.GlobeKit), in the look of the /ndfd/
+   globe page.
+
+   The rasters (Mercator images of the whole map, 85N to 85S) are one
+   image layer; the contours, footprints, circles, tracks and low dots are
+   GeoJSON layers; names and numbers go on the kit's 2D overlay canvas,
+   since the page loads no map fonts, skipping the far side of the globe.
+   storms.js (tracks, names, selection, follow mode), card.js (legend,
+   tooltip and the phase space card) and space3d.js (the 3-D phase space)
+   use the globals defined here; this file loads last and starts the page.
    Plain ES2020, no build step. */
 'use strict';
 
+const K = window.GlobeKit;
 const FALLBACK_DATA = 'https://raw.githubusercontent.com/jkrek17/awips-tools/cps-live/latest/';
 const LOCAL_DATA = 'data/latest/';  // beside the page when served from the web repository
 const ARTICLE_URL = 'https://jkrek17.github.io/web/article/';  // published with this page
-const SPACE_URL = ARTICLE_URL + 'figures/phase_space_3d.html';
 const GUIDE_URL = 'https://jkrek17.github.io/web/forecasters/';  // the plain-language explainer, published with this page
-const LABEL_ZOOM = 4;            // MSLP labels at centers and on contours from this zoom
+const LABEL_ZOOM = 3;            // pressures at the lows, contour labels and every isobar from this zoom
 const WIDE_CINT = 8;             // below LABEL_ZOOM, isobars thinned to every 8 hPa
-const HALO_ZOOM = 2;             // 200 km circles from this zoom (below it they shrink under the dot)
+const HALO_ZOOM = 1;             // 200 km circles from this zoom (below it they shrink under the dot)
 const SPEEDS = { slow: 1200, normal: 700, fast: 350 };  // ms per frame
 const MAX_RASTER_FRAMES = 12;    // decoded raster frames kept in memory
 const MATCH_KM = 300;            // center to storm matching radius, for entries without run ids
@@ -23,15 +30,14 @@ const HALO_KM = 200;             // radius of the circle drawn at each low
 const DEEP_HPA = 980;            // lows below this get a larger dot
 const TERRAIN_HPA = 850;         // surface pressure below this: a false low over high ground
 const STALE_H = 12;              // hours before the data is called stale
-const OFFSETS = [-360, 0, 360];  // world copies, so overlays wrap the dateline
 const RASTERS = ['hb', 'hvtl', 'hvtu'];
 const FIELDS = ['class', ...RASTERS];
 const LAYER_KEYS = { contours: 'c', circles: 'h', footprint: 'p', tracks: 'k', terrain: 'g', fade: 'x' };
-// Letters in the hash's l= list name the layers that are on, except the
-// fade, whose letter means off, so links written before it existed keep it on.
+// Keys present in the link when the layer is off: the fade is on by default
+// and older links never carried it.
 const INVERTED_KEYS = new Set(['fade']);
+const HOTKEYS = { i: 'contours', k: 'tracks', o: 'circles', p: 'footprint', g: 'terrain', x: 'fade' };
 
-// Display names for the class codes; hex always comes from legend.json.
 const CLASS_NAMES = [
   'Symmetric deep warm core', 'Symmetric shallow warm core',
   'Asymmetric deep warm core', 'Asymmetric shallow warm core',
@@ -41,7 +47,6 @@ const FALLBACK_HEX = ['#d92626', '#cc33bf', '#fad91a', '#33ad40', '#2680e6', '#5
 
 const MINUS = '−';
 
-// The three Hart terms: a plain name, the symbol (HTML), and the layer.
 const TERM = {
   hb: { name: 'Thermal asymmetry', sym: 'B', band: '900 to 600 hPa' },
   hvtl: { name: 'Lower thermal wind', sym: `${MINUS}V<sub>T</sub><sup>L</sup>`, band: '925 to 700 hPa' },
@@ -49,7 +54,9 @@ const TERM = {
 };
 const termHTML = (f) => `${TERM[f].name} (${TERM[f].sym})`;
 
-// Legend titles (HTML).
+// The field list in the layers panel: [key, name, hotkey].
+const FIELD_LIST = [['class', 'Class at the low center', '1'], ['hb', `${termHTML('hb')}`, '2'],
+  ['hvtl', `${termHTML('hvtl')}`, '3'], ['hvtu', `${termHTML('hvtu')}`, '4']];
 const TITLES = {
   class: 'Hart class at the low center',
   hb: `${termHTML('hb')}, ${TERM.hb.band}`,
@@ -75,21 +82,21 @@ const CLEAR_OLD = {
   hvtu: 'Transparent within about 37 m of zero.',
 };
 
-const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const DOW = K.DAYS;
+const MON = K.MONS;
 
 const $ = (id) => document.getElementById(id);
 const pad = (n, w = 2) => String(n).padStart(w, '0');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-const narrow = () => innerWidth <= 760;
+const narrow = () => K.isMobile();
 
 const S = {
   base: null, index: null, legend: null, classes: new Map(),
   i: 0, field: 'class', playing: false, timer: 0, token: 0,
-  speed: 'normal', loop: true, basemap: 'plain', bust: '',
+  speed: 'normal', bust: '',
   opacity: { hb: 0.7, hvtl: 0.7, hvtu: 0.7 },  // the ramps are opaque from 10% of the half range
   layers: { contours: true, circles: true, footprint: false, tracks: true, terrain: false, fade: true },
-  centers: [], offs: OFFSETS, sel: null, follow: null, perf: [], cstep: null, cevery: null, ready: false,
+  centers: [], lows: null, mslp: null, sel: null, follow: null, ready: false, sideOpen: true,
 };
 
 /* ---------- small utilities ---------- */
@@ -177,8 +184,8 @@ function loadImg(url, h) {
 /* The fade: a field's alpha multiplied by the frame's mask.png (1 inside
    the closed-low footprints, raster.mask_dim far from them). The field is
    drawn on a canvas at its own size, the mask scaled over it with
-   "destination-in", and the result encoded to a blob URL that the overlays
-   load like any image. Decoding is createImageBitmap's (off the main
+   "destination-in", and the result encoded to a blob URL that the map
+   loads like any image. Decoding is createImageBitmap's (off the main
    thread), the canvas an OffscreenCanvas where there is one, the encoding
    asynchronous; each (frame, field) is composited once and cached with
    the plain images, its blob URL revoked when the frame is evicted. */
@@ -243,10 +250,6 @@ function fadedImg(h, f) {
       const blob = await canvasBlob(c);
       e.url = URL.createObjectURL(blob);
       if (e.gone) { URL.revokeObjectURL(e.url); throw new Error('evicted'); }
-      // Decode it now, as the plain images are, so the swap does not wait.
-      e.im = new Image();
-      e.im.src = e.url;
-      await e.im.decode().catch(() => {});
       return e.url;
     })();
     return e;
@@ -292,11 +295,11 @@ function fmt(v, d = 0, u = '', signed = false) {
   const x = +(+v).toFixed(d);
   const s = Math.abs(x).toFixed(d);
   const sign = x < 0 ? MINUS : signed && x > 0 ? '+' : '';
-  return `${sign}${s}${u ? ` ${u}` : ''}`;
+  return `${sign}${s}${u ? ` ${u}` : ''}`;
 }
 const hpa = (v) => fmt(v, 1, 'hPa');
 function pos(lat, lon) {
-  const w = ((((lon + 180) % 360) + 360) % 360) - 180;
+  const w = K.wrapLon(lon);
   return `${Math.abs(lat).toFixed(1)}°${lat >= 0 ? 'N' : 'S'} ${Math.abs(w).toFixed(1)}°${w >= 0 ? 'E' : 'W'}`;
 }
 
@@ -309,7 +312,6 @@ function utc(d) {
   return Number.isNaN(t.getTime()) ? null : t;
 }
 const fmtDay = (d) => `${DOW[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}`;
-const fmtValid = (d) => `${fmtDay(d)} ${d.getUTCFullYear()}, ${pad(d.getUTCHours())} UTC`;
 function fmtCycle(c) {
   const d = utc(c);
   return d ? `${d.getUTCDate()} ${MON[d.getUTCMonth()]} ${d.getUTCFullYear()} ${pad(d.getUTCHours())} UTC` : String(c ?? '');
@@ -325,241 +327,177 @@ function validAt(i) {
   return c ? new Date(c.getTime() + S.index.hours[i] * 3600e3) : null;
 }
 
-let toastTimer = 0;
-function toast(msg) {
-  const t = $('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), 3600);
-}
-
 /* ---------- map ---------- */
 
-let map, basemap, contourG, clabelG, haloG, footG, lowG, nameG, selG, trackG, tailG;
-let contourR, haloR, footR, trackR, tailR;
+let map, ov, rail;
+const EMPTY = { type: 'FeatureCollection', features: [] };
+const setData = (id, fc) => map?.getSource(id)?.setData(fc);
 
-function initMap(zoom) {
-  map = L.map('map', {
-    worldCopyJump: true, minZoom: 1, maxZoom: 10, zoomControl: false,
-    center: [30, -40], zoom, zoomSnap: 0.5,
-    maxBounds: [[-88, -1e5], [88, 1e5]], maxBoundsViscosity: 1,
-  });
-  map.attributionControl.setPrefix('<a href="https://leafletjs.com">Leaflet</a>');
-  map.attributionControl.setPosition('bottomleft');
-  L.control.zoom({ position: 'bottomleft' }).addTo(map);
-
-  // Panes, bottom to top: rasters, contours, footprints, circles, tracks,
-  // tile labels, contour labels; markers and tooltips sit above.
-  [['rasters', 350], ['contours', 380], ['footprints', 400], ['halos', 405],
-    ['tracks', 420], ['labels', 450], ['clabels', 460]]
-    .forEach(([n, z]) => { map.createPane(n).style.zIndex = z; });
-  map.getPane('labels').style.pointerEvents = 'none';
-  map.getPane('clabels').style.pointerEvents = 'none';
-
-  basemap = CPSBasemap.create(map, { insets: chromeInsets });
-
-  contourR = L.canvas({ pane: 'contours', padding: 0.3 });
-  footR = L.svg({ pane: 'footprints', padding: 0.3 });
-  haloR = L.svg({ pane: 'halos', padding: 0.3 });
-  trackR = L.svg({ pane: 'tracks', padding: 0.3 });
-  tailR = L.canvas({ pane: 'tracks', padding: 0.3 });
-  contourG = L.layerGroup().addTo(map);
-  clabelG = L.layerGroup().addTo(map);
-  footG = L.layerGroup().addTo(map);
-  haloG = L.layerGroup().addTo(map);
-  tailG = L.layerGroup().addTo(map);
-  trackG = L.layerGroup().addTo(map);
-  selG = L.layerGroup().addTo(map);
-  lowG = L.layerGroup().addTo(map);
-  nameG = L.layerGroup().addTo(map);
-
-  const zoomClass = () => {
-    const box = map.getContainer().classList;
-    box.toggle('labels-off', map.getZoom() < LABEL_ZOOM);
-    box.toggle('halos-off', map.getZoom() < HALO_ZOOM);
-  };
-  map.on('zoomend', () => {
-    zoomClass();
-    if (!S.ready) return;
-    if (contourEvery() !== S.cevery) drawContours(S.mslp);
-    drawNames();  // label collisions depend on the zoom
-  });
-  zoomClass();
-  map.on('moveend', () => { checkOffsets(); drawContourLabels(); writeHash(); });
-  map.on('dragstart', () => document.querySelectorAll('[data-basin]').forEach((c) => c.removeAttribute('aria-pressed')));
+// Room for the floating cards round the map: the top bar, the timeline, the
+// layers panel on the left and the phase space on the right (wide screens).
+function viewPadding() {
+  const r = document.documentElement.getBoundingClientRect();
+  const tb = document.querySelector('.topbar').getBoundingClientRect();
+  const tl = $('timeline').getBoundingClientRect();
+  const wide = r.width > 760;
+  const panel = wide && K.panelOpen() ? $('panel').getBoundingClientRect().right + 12 : 16;
+  const side = wide && S.sideOpen ? r.width - $('side').getBoundingClientRect().left + 12 : 16;
+  return { top: tb.bottom + 8, bottom: r.height - tl.top + 8, left: panel, right: side };
 }
 
-const shift = (o) => (c) => L.latLng(c[1], c[0] + o);
-
-// World copies that touch the view, padded by up to 30 degrees; frame
-// layers draw only these, and a pan that needs another copy redraws them.
-function viewOffsets() {
-  const b = map.getBounds();
-  const pad = Math.min((b.getEast() - b.getWest()) / 2, 30);
-  const w = b.getWest() - pad;
-  const e = b.getEast() + pad;
-  return OFFSETS.filter((o) => o - 180 < e && o + 180 > w);
-}
-function checkOffsets() {
-  const offs = viewOffsets();
-  if (!S.index || offs.join() === S.offs.join()) return;
-  S.offs = offs;
-  drawContours(S.mslp);
-  drawFootprints(S.lows);
-  drawLows();
-  drawSelection();
-  drawTails();
-  drawNames();
-}
-
-// Center a point in the part of the map not covered by panels, without
-// animation, on the world copy nearest the current view.
+// Center a point in the part of the map not covered by the cards, without animation.
 function centerOn(lat, lon, zoom) {
-  const z = zoom ?? map.getZoom();
-  const c = map.getCenter();
-  const lng = lon + 360 * Math.round((c.lng - lon) / 360);
-  const ins = visibleInsets();
-  const p = map.project([lat, lng], z).add(L.point((ins.right - ins.left) / 2, (ins.bottom - ins.top) / 2));
-  map.setView(map.unproject(p, z), z, { animate: false });
+  const p = viewPadding();
+  const off = [(p.left - p.right) / 2, (p.top - p.bottom) / 2];
+  // keep near the current center's longitude, so the globe turns the short way
+  const c = map.getCenter().lng;
+  const lng = c + K.wrapLon(lon - c);
+  map.easeTo({ center: [lng, lat], zoom: zoom ?? map.getZoom(), offset: off, duration: 0 });
 }
 
-/* ---------- rasters: two overlay sets, crossfaded ---------- */
-
-const RS = { sets: [], front: 0, url: null, tok: 0 };
-
-function rasterSets(url) {
-  if (RS.sets.length) return;
-  const [[s, w], [n, e]] = S.index.raster?.bounds || [[-85, -180], [85, 180]];
-  RS.sets = [0, 1].map(() => OFFSETS.map((o) => L.imageOverlay(url, [[s, w + o], [n, e + o]],
-    { pane: 'rasters', opacity: 0, interactive: false, alt: '', className: 'raster' }).addTo(map)));
-  RS.sets[1].forEach((ov) => { ov._cpsBlank = true; });
-}
-
-function overlayReady(ov, url) {
-  const im = ov.getElement();
-  if (ov._url === url && !ov._cpsBlank && im?.complete && im.naturalWidth) return Promise.resolve();
-  ov._cpsBlank = false;
-  return new Promise((res) => {
-    ov.once('load error', res);
-    if (ov._url === url && im && !im.complete) return;
-    ov.setUrl(url);
+function buildMap(start) {
+  map = K.createMap({ start, credits: 'NOAA GFS &middot; Natural Earth', nav: 'bottom-left', maxZoom: 9 });
+  window.CPS_map = map;   // for console checks
+  ov = K.overlay(map, $('overlay'));
+  map.on('load', () => {
+    const r = S.index.raster || {};
+    const [[s, w], [n, e]] = r.bounds || [[-85, -180], [85, 180]];
+    map.addSource('field', { type: 'image', url: blankImage(), coordinates: [[w, n], [e, n], [e, s], [w, s]] });
+    map.addLayer({ id: 'field', type: 'raster', source: 'field', layout: { visibility: 'none' },
+      paint: { 'raster-opacity': 0.7, 'raster-fade-duration': 0, 'raster-resampling': 'linear' } });
+    map.addSource('coast', { type: 'geojson', data: EMPTY });
+    map.addLayer({ id: 'coast', type: 'line', source: 'coast', paint: { 'line-color': 'rgba(231,238,248,0.35)', 'line-width': 0.6 } });
+    K.land().then((g) => setData('coast', g)).catch(() => {});
+    map.addSource('graticule', { type: 'geojson', data: K.graticule() });
+    map.addLayer({ id: 'graticule', type: 'line', source: 'graticule', paint: K.GRATICULE_PAINT });
+    for (const id of ['contours', 'footprints', 'halos', 'tails', 'track', 'trackpts', 'lows', 'sel']) {
+      map.addSource(id, { type: 'geojson', data: EMPTY, tolerance: 0.2 });
+    }
+    // isobars: bold every 16 hPa; every 8 hPa zoomed out, all of them from LABEL_ZOOM
+    const lev = ['get', 'level'];
+    const iso = (op, w) => ({ 'line-color': `rgba(231,238,248,${op})`, 'line-width': w });
+    map.addLayer({ id: 'iso-minor8', type: 'line', source: 'contours',
+      filter: ['all', ['==', ['%', lev, WIDE_CINT], 0], ['!=', ['%', lev, 16], 0]], paint: iso(0.32, 0.8) });
+    map.addLayer({ id: 'iso-minor', type: 'line', source: 'contours', minzoom: LABEL_ZOOM,
+      filter: ['!=', ['%', lev, WIDE_CINT], 0], paint: iso(0.32, 0.8) });
+    map.addLayer({ id: 'iso-major', type: 'line', source: 'contours', filter: ['==', ['%', lev, 16], 0], paint: iso(0.6, 1.2) });
+    map.addLayer({ id: 'footprints', type: 'line', source: 'footprints',
+      paint: { 'line-color': ['get', 'hex'], 'line-width': 1, 'line-opacity': 0.9, 'line-dasharray': [2, 2] } });
+    map.addLayer({ id: 'halos-fill', type: 'fill', source: 'halos', minzoom: HALO_ZOOM, paint: { 'fill-color': ['get', 'hex'], 'fill-opacity': 0.06 } });
+    map.addLayer({ id: 'halos', type: 'line', source: 'halos', minzoom: HALO_ZOOM,
+      paint: { 'line-color': ['get', 'hex'], 'line-opacity': 0.7, 'line-width': ['case', ['get', 'deep'], 1.5, 1] } });
+    map.addLayer({ id: 'tails', type: 'line', source: 'tails', layout: { 'line-cap': 'round' },
+      paint: { 'line-color': ['get', 'hex'], 'line-width': 1.25, 'line-opacity': 0.55 } });
+    map.addLayer({ id: 'track-casing', type: 'line', source: 'track', layout: { 'line-cap': 'round' },
+      paint: { 'line-color': 'rgba(5,10,20,0.75)', 'line-width': ['+', ['get', 'w'], 2.2] } });
+    map.addLayer({ id: 'track', type: 'line', source: 'track', layout: { 'line-cap': 'round' },
+      paint: { 'line-color': ['get', 'hex'], 'line-width': ['get', 'w'] } });
+    map.addLayer({ id: 'trackpts', type: 'circle', source: 'trackpts',
+      paint: { 'circle-radius': 2.4, 'circle-color': ['get', 'hex'], 'circle-stroke-color': '#0b1220', 'circle-stroke-width': 0.8 } });
+    map.addLayer({ id: 'lows', type: 'circle', source: 'lows', paint: {
+      'circle-radius': ['interpolate', ['linear'], ['zoom'], 0, ['case', ['get', 'deep'], 4.8, 3.2], LABEL_ZOOM, ['case', ['get', 'deep'], 6.5, 4.8]],
+      'circle-color': ['case', ['get', 'terrain'], 'rgba(0,0,0,0)', ['get', 'hex']],
+      'circle-stroke-color': ['case', ['get', 'terrain'], '#a3b3c9', '#0b1220'],
+      'circle-stroke-width': ['case', ['get', 'terrain'], 1.2, 1],
+    } });
+    map.addLayer({ id: 'sel', type: 'circle', source: 'sel',
+      paint: { 'circle-radius': 11, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': '#e7eef8', 'circle-stroke-width': 1.6 } });
+    S.mapReady = true;
+    ready();
+  });
+  map.on('render', drawOverlay);
+  map.on('moveend', () => { placeContourLabels(); drawOverlay(); writeHash(); });
+  map.on('movestart', (e) => { if (e.originalEvent) setView(null); });
+  map.on('mousemove', (e) => hoverAt(e.point, e.lngLat));
+  map.on('click', (e) => {
+    const c = lowAt(e.point);
+    if (c) selectLow(c);
+  });
+  map.on('error', (e) => {
+    const sid = e.sourceId || e.source?.id;
+    if (sid === 'ocean') K.note('Basemap tiles failed to load; the products still show.');
+    else if (e?.error) console.error(e.error);
+  });
+  map.getCanvas().addEventListener('mouseleave', () => {
+    $('readout').hidden = true;
+    $('coords').textContent = '';
+    hoverStorm(null);
   });
 }
 
-// Swap the displayed raster: load the hidden set, then crossfade (CSS, 150 ms).
+// A transparent pixel for the image source before the first raster arrives.
+function blankImage() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 1;
+  return c.toDataURL('image/png');
+}
+
+/* ---------- the field raster ---------- */
+
+const RS = { url: null };
+
 function swapRaster(url) {
-  const tok = ++RS.tok;
-  const op = S.opacity[S.field] ?? 0.8;
+  if (!map?.getLayer('field')) return;
   if (!url) {
-    RS.sets.flat().forEach((ov) => ov.setOpacity(0));
+    map.setLayoutProperty('field', 'visibility', 'none');
     RS.url = null;
     return;
   }
-  rasterSets(url);
-  if (url === RS.url) {
-    RS.sets[RS.front].forEach((ov) => ov.setOpacity(op));
-    return;
-  }
-  const back = RS.front === 0 && RS.url === null && !RS.sets[0][0]._cpsShown ? 0 : 1 - RS.front;
-  Promise.all(RS.sets[back].map((ov) => overlayReady(ov, url))).then(() => {
-    if (tok !== RS.tok) return;
-    RS.sets[back].forEach((ov) => { ov.setOpacity(op); ov._cpsShown = true; });
-    if (back !== RS.front) RS.sets[RS.front].forEach((ov) => ov.setOpacity(0));
-    RS.front = back;
+  map.setPaintProperty('field', 'raster-opacity', S.opacity[S.field] ?? 0.7);
+  // a faded image's blob URL stays valid until its frame leaves the cache
+  if (url !== RS.url) {
     RS.url = url;
-  });
+    map.getSource('field').updateImage({ url });
+  }
+  map.setLayoutProperty('field', 'visibility', 'visible');
 }
 
 function setOpacity(v) {
   if (S.field === 'class') return;
   S.opacity[S.field] = v;
-  $('opacity-out').textContent = v.toFixed(2);
-  if (RS.url) RS.sets[RS.front].forEach((ov) => ov.setOpacity(v));
+  $('opacityOut').textContent = `${Math.round(v * 100)}%`;
+  if (map?.getLayer('field')) map.setPaintProperty('field', 'raster-opacity', v);
 }
 
 /* ---------- contours ---------- */
 
-// Contours come as many short LineStrings; draw them as two polylines per
-// world copy (major every 16 hPa, minor between) to keep the frame swap cheap.
-// Below LABEL_ZOOM only every WIDE_CINT hPa is drawn, so a global view stays legible.
-const contourEvery = () => (S.cstep && map.getZoom() < LABEL_ZOOM ? Math.max(S.cstep, WIDE_CINT) : S.cstep);
-
-function drawContours(fc) {
-  contourG.clearLayers();
-  S.cmids = [];
-  if (!fc || !S.layers.contours) { S.cevery = null; cintText(); drawContourLabels(); return; }
-  const feats = [];
-  const levels = new Set();
-  for (const f of fc.features) {
-    if (!f.geometry) continue;
-    const lv = Math.round(f.properties?.level);
-    levels.add(lv);
-    feats.push([lv, f.geometry]);
-  }
-  const lv = [...levels].sort((a, b) => a - b);
+// The contour interval in the data (the smallest gap between levels).
+function cstep(fc) {
+  const lv = [...new Set((fc?.features || []).map((f) => Math.round(f.properties?.level)))].sort((a, b) => a - b);
   let step = Infinity;
   for (let k = 1; k < lv.length; k++) step = Math.min(step, lv[k] - lv[k - 1]);
-  if (Number.isFinite(step)) S.cstep = step;
-  const every = contourEvery();
-  S.cevery = every;
-  const lines = { major: [], minor: [] };
-  for (const [lv, g] of feats) {
-    if (every && lv % every !== 0) continue;
-    const parts = g.type === 'MultiLineString' ? g.coordinates : [g.coordinates];
-    const major = lv % 16 === 0;
-    for (const p of parts) {
-      (major ? lines.major : lines.minor).push(p);
-      if (major && p.length >= 8) {
-        const m = p[Math.floor(p.length / 2)];
-        S.cmids.push({ lat: m[1], lon: m[0], lv });
-      }
-    }
-  }
-  cintText();
-  const style = {
-    major: { color: '#dcdcd8', weight: 1.2, opacity: 0.62 },
-    minor: { color: '#dcdcd8', weight: 0.8, opacity: 0.3 },
-  };
-  for (const o of S.offs) {
-    for (const k of ['minor', 'major']) {
-      const ll = lines[k].map((p) => p.map(shift(o)));
-      contourG.addLayer(L.polyline(ll, { ...style[k], renderer: contourR, interactive: false, smoothFactor: 1 }));
-    }
-  }
-  drawContourLabels();
+  return Number.isFinite(step) ? step : null;
 }
 
-// The contour note in the bar follows the interval drawn at this zoom.
-function cintText() {
-  const [a, b] = [$('cint-a'), $('cint-b')];
-  if (!S.layers.contours) {
-    a.textContent = 'MSLP contours off';
-    b.textContent = '\u00a0';
-    return;
-  }
-  const every = contourEvery();
-  if (!every) return;
-  a.textContent = `MSLP every ${every} hPa, bold 16`;
-  b.textContent = every > S.cstep ? `every ${S.cstep} hPa zoomed in`
-    : S.cstep < WIDE_CINT ? `every ${WIDE_CINT} hPa zoomed out` : '\u00a0';
+function drawContours() {
+  setData('contours', S.layers.contours && S.mslp ? S.mslp : EMPTY);
+  S.cstep = cstep(S.mslp);
+  placeContourLabels();
 }
 
-// One label per major contour line, at its middle vertex, zoom 4 and up.
-function drawContourLabels() {
-  clabelG.clearLayers();
-  if (!S.cmids?.length || !S.layers.contours || map.getZoom() < LABEL_ZOOM) return;
-  const b = map.getBounds().pad(0.05);
+// One label per bold (16 hPa) line at its middle vertex, from LABEL_ZOOM,
+// kept clear of the lows, the map edge and each other. Placed when the
+// map stops moving; drawn at their lon/lat while it moves.
+let clabels = [];
+function placeContourLabels() {
+  clabels = [];
+  if (!map || !S.mslp || !S.layers.contours || map.getZoom() < LABEL_ZOOM) return;
+  const w = ov.w(), h = ov.h(), placed = [];
   const lows = S.centers.filter(shown);
-  let n = 0;
-  for (const m of S.cmids) {
-    if (lows.some((c) => Math.abs(c.lat - m.lat) < 3 && km(c.lat, c.lon, m.lat, m.lon) < 250)) continue;  // keep clear of low labels
-    for (const o of S.offs) {
-      const ll = L.latLng(m.lat, m.lon + o);
-      if (!b.contains(ll)) continue;
-      clabelG.addLayer(L.tooltip({ permanent: true, direction: 'center', className: 'clabel', pane: 'clabels', interactive: false })
-        .setLatLng(ll).setContent(String(m.lv)));
-      if (++n >= 120) return;
+  for (const f of S.mslp.features) {
+    const lv = Math.round(f.properties?.level);
+    if (lv % 16 !== 0 || !f.geometry) continue;
+    const parts = f.geometry.type === 'MultiLineString' ? f.geometry.coordinates : [f.geometry.coordinates];
+    for (const p of parts) {
+      if (p.length < 8) continue;
+      const m = p[Math.floor(p.length / 2)];
+      if (lows.some((c) => Math.abs(c.lat - m[1]) < 3 && km(c.lat, c.lon, m[1], m[0]) < 250)) continue;
+      const q = ov.proj(m[0], m[1])[0];
+      if (!q || q.x < 30 || q.x > w - 30 || q.y < 12 || q.y > h - 12) continue;
+      if (placed.some((o) => Math.abs(o.x - q.x) < 60 && Math.abs(o.y - q.y) < 24)) continue;
+      placed.push(q);
+      clabels.push({ lon: m[0], lat: m[1], lv });
+      if (clabels.length >= 120) return;
     }
   }
 }
@@ -579,66 +517,112 @@ function centersOf(fc) {
   return out;
 }
 const shown = (c) => S.layers.terrain || !c.terrain;
+const isDeep = (c) => !blank(c.mslp) && +c.mslp < DEEP_HPA;
 
-function lowIcon(c) {
-  const hex = cls(c.cls).hex;
-  const deep = !blank(c.mslp) && +c.mslp < DEEP_HPA;
-  return L.divIcon({
-    className: `low${deep ? ' deep' : ''}${c.terrain ? ' terrain' : ''}`,
-    iconSize: [24, 24], iconAnchor: [12, 12],
-    html: `<i style="--c:${hex}"></i>${blank(c.mslp) ? '' : `<b>${Math.round(+c.mslp)}</b>`}`,
-  });
+// A circle of radius r km round a point, as a polygon ring.
+function circle(lat, lon, r) {
+  const ring = [];
+  const d = r / 6371;
+  const la = lat * Math.PI / 180;
+  for (let k = 0; k <= 48; k++) {
+    const b = (k / 48) * 2 * Math.PI;
+    const la2 = Math.asin(Math.sin(la) * Math.cos(d) + Math.cos(la) * Math.sin(d) * Math.cos(b));
+    const lo2 = lon * Math.PI / 180 + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(la), Math.cos(d) - Math.sin(la) * Math.sin(la2));
+    ring.push([lo2 * 180 / Math.PI, la2 * 180 / Math.PI]);
+  }
+  return ring;
 }
 
 function drawLows() {
-  lowG.clearLayers();
-  haloG.clearLayers();
-  for (const c of S.centers) {
-    if (!shown(c)) continue;
+  const lows = [];
+  const halos = [];
+  S.centers.forEach((c, k) => {
+    if (!shown(c)) return;
     const hex = cls(c.cls).hex;
-    const deep = !blank(c.mslp) && +c.mslp < DEEP_HPA;
-    for (const o of S.offs) {
-      if (S.layers.circles && !c.terrain) {
-        haloG.addLayer(L.circle([c.lat, c.lon + o], {
-          renderer: haloR, radius: (+c.radius_km || HALO_KM) * 1e3, interactive: false,
-          color: hex, weight: deep ? 1.5 : 1, opacity: 0.7, fillColor: hex, fillOpacity: 0.06,
-        }));
-      }
-      const m = L.marker([c.lat, c.lon + o], {
-        icon: lowIcon(c), keyboard: o === 0, riseOnHover: true,
-        alt: `${cls(c.cls).name}, ${hpa(c.mslp)}`,
-      });
-      m.bindTooltip(() => lowTip(c), { direction: 'top', offset: [0, -8], className: 'low-tip', opacity: 1 });
-      m.on('click', () => selectLow(c));
-      m.on('mouseover', () => hoverStorm(stormOf(c)?.key ?? null, true));
-      m.on('mouseout', () => hoverStorm(null));
-      lowG.addLayer(m);
+    const deep = isDeep(c);
+    lows.push({ type: 'Feature', properties: { k, hex, deep, terrain: c.terrain }, geometry: { type: 'Point', coordinates: [c.lon, c.lat] } });
+    if (S.layers.circles && !c.terrain) {
+      halos.push({ type: 'Feature', properties: { hex, deep }, geometry: { type: 'Polygon', coordinates: [circle(c.lat, c.lon, +c.radius_km || HALO_KM)] } });
     }
-  }
+  });
+  setData('lows', { type: 'FeatureCollection', features: lows });
+  setData('halos', { type: 'FeatureCollection', features: halos });
 }
 
 // The product's own square footprint, as CAVE draws it: a dashed outline.
-function drawFootprints(fc) {
-  footG.clearLayers();
-  if (!fc || !S.layers.footprint) return;
-  const blobs = { type: 'FeatureCollection', features: fc.features.filter((f) => f.geometry?.type !== 'Point') };
-  for (const o of S.offs) {
-    footG.addLayer(L.geoJSON(blobs, {
-      renderer: footR, coordsToLatLng: shift(o), interactive: false,
-      style: (f) => ({ color: cls(f.properties.cls).hex, weight: 1, opacity: 0.9, dashArray: '3 3', fill: false }),
-    }));
-  }
+function drawFootprints() {
+  const feats = !S.lows || !S.layers.footprint ? [] : S.lows.features.filter((f) => f.geometry?.type !== 'Point')
+    .map((f) => ({ ...f, properties: { hex: cls(f.properties?.cls).hex } }));
+  setData('footprints', { type: 'FeatureCollection', features: feats });
 }
 
 function drawSelection() {
-  selG.clearLayers();
   const c = S.sel?.c;
-  if (!c) return;
-  for (const o of S.offs) {
-    selG.addLayer(L.circleMarker([c.lat, c.lon + o], {
-      renderer: trackR, radius: 10, color: '#f2f1ec', weight: 1.5, opacity: 1, fill: false, interactive: false,
-    }));
+  setData('sel', c ? { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [c.lon, c.lat] } } : EMPTY);
+}
+
+// The low under the pointer: the nearest dot within a few pixels.
+function lowAt(pt) {
+  if (!map?.getLayer('lows')) return null;
+  const fs = map.queryRenderedFeatures([[pt.x - 9, pt.y - 9], [pt.x + 9, pt.y + 9]], { layers: ['lows'] });
+  let best = null;
+  let bd = Infinity;
+  for (const f of fs) {
+    const c = S.centers[f.properties.k];
+    if (!c) continue;
+    const p = map.project([c.lon, c.lat]);
+    const d = Math.hypot(p.x - pt.x, p.y - pt.y);
+    if (d < bd) { bd = d; best = c; }
   }
+  return best;
+}
+
+function hoverAt(pt, ll) {
+  const onGlobe = map.transform.isPointOnMapSurface(pt);
+  $('coords').textContent = onGlobe ? `${K.latText(ll.lat, 2)} ${K.lonText(ll.lng, 2)}` : '';
+  const c = onGlobe ? lowAt(pt) : null;
+  map.getCanvas().style.cursor = c ? 'pointer' : '';
+  const box = $('readout');
+  hoverStorm(c ? stormOf(c)?.key ?? null : null, true);
+  if (!c) { box.hidden = true; return; }
+  box.innerHTML = lowTip(c);
+  box.hidden = false;
+  const r = $('map').getBoundingClientRect();
+  const bw = box.offsetWidth;
+  const bh = box.offsetHeight;
+  box.style.left = `${pt.x + 14 + bw > r.width ? Math.max(4, pt.x - 14 - bw) : pt.x + 14}px`;
+  const top = document.querySelector('.topbar').getBoundingClientRect().bottom + 6;
+  const bot = $('timeline').getBoundingClientRect().top - 6;
+  box.style.top = `${Math.max(top, Math.min(bot - bh, pt.y - bh / 2))}px`;
+}
+
+/* ---------- overlay text ---------- */
+
+let FAM = 'system-ui, sans-serif';
+function drawOverlay() {
+  if (!map || !S.ready) return;
+  ov.clear();
+  const ctx = ov.ctx;
+  K.graticuleLabels(map, ov, document.querySelector('.topbar').getBoundingClientRect().bottom,
+    $('timeline').getBoundingClientRect().top, FAM);
+  const z = map.getZoom();
+  // contour labels
+  if (S.layers.contours && z >= LABEL_ZOOM) {
+    ctx.font = `10px ${FAM}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const l of clabels) {
+      for (const p of ov.proj(l.lon, l.lat)) {
+        const t = String(l.lv);
+        const w = ctx.measureText(t).width + 4;
+        ctx.fillStyle = 'rgba(10,17,32,0.82)';
+        ctx.fillRect(p.x - w / 2, p.y - 6, w, 12);
+        ctx.fillStyle = 'rgba(231,238,248,0.85)';
+        ctx.fillText(t, p.x, p.y);
+      }
+    }
+  }
+  drawNames(ctx, z);
 }
 
 /* ---------- frames ---------- */
@@ -650,40 +634,38 @@ async function show(i) {
   const h = hours[S.i];
   syncTime();
   const tok = ++S.token;
+  $('progress').classList.add('active');
   const raster = S.field === 'class' ? Promise.resolve(null) : fieldImg(h, S.field);
   const [lows, mslp, img] = await Promise.allSettled(
     [getJSON(lowsUrl(h)), getJSON(fileUrl(h, 'mslp.geojson')), raster]);
   if (tok !== S.token) return true;  // a newer frame was asked for
+  $('progress').classList.remove('active');
 
   const val = (r) => (r.status === 'fulfilled' ? r.value : null);
-  const t0 = performance.now();
-  S.offs = viewOffsets();
   S.lows = val(lows);
   S.mslp = val(mslp);
   S.centers = centersOf(S.lows);
   S.ready = true;
-  drawContours(S.mslp);
-  drawFootprints(S.lows);
+  drawContours();
+  drawFootprints();
   drawLows();
   stormsFrame(S.i);
   followFrame();
   refreshCard();
   drawSelection();
-  S.perf.push(performance.now() - t0);
-  if (S.perf.length > 200) S.perf.shift();
   swapRaster(val(img));
+  drawOverlay();
   writeHash();
 
   prefetch(S.i + 1);
   prefetch(S.i + 2);
   const failed = [lows, mslp, img].some((r) => r.status === 'rejected');
-  if (failed) toast(`Part of forecast hour ${h} could not be loaded; showing what arrived.`);
+  if (failed) K.note(`Part of forecast hour ${h} could not be loaded; showing what arrived.`);
   return !failed;
 }
 
 function prefetch(i) {
   const n = S.index.hours.length;
-  if (!S.loop && i >= n) return;
   const h = S.index.hours[((i % n) + n) % n];
   const quiet = (p) => p.catch(() => {});
   quiet(getJSON(lowsUrl(h)));
@@ -694,106 +676,66 @@ function prefetch(i) {
 /* ---------- timeline ---------- */
 
 function syncTime() {
-  const slider = $('frame');
   const h = S.index.hours[S.i];
   const v = validAt(S.i);
-  const label = v ? fmtValid(v) : `Hour ${h}`;
-  slider.value = S.i;
-  slider.setAttribute('aria-valuetext', `${label}, forecast hour ${h}`);
-  $('when-valid').textContent = label;
   const c = utc(S.index.cycle);
-  const run = c ? `${c.getUTCDate()} ${MON[c.getUTCMonth()]} ${pad(c.getUTCHours())} UTC ` : '';
-  $('when-fhr').innerHTML = `F${pad(h, 3)}, ${h}&thinsp;h after the <span class="fhr-run">${run}</span>run`;
-}
-
-// Day ticks under the scrubber: a tall tick and label at each 00 UTC frame.
-function buildScrubTicks() {
-  if (!S.index) return;
-  const n = S.index.hours.length;
-  const box = $('scrub-ticks');
-  if (n < 2) { box.innerHTML = ''; return; }
-  const w = box.getBoundingClientRect().width || 600;
-  const days = [];
-  let html = '';
-  for (let k = 0; k < n; k++) {
-    const v = validAt(k);
-    const f = k / (n - 1);
-    const day = v && v.getUTCHours() === 0;
-    html += `<i class="${day ? 'day' : ''}" style="left:calc(6px + (100% - 12px) * ${f.toFixed(4)})"></i>`;
-    if (day) days.push({ f, v });
-  }
-  const gap = days.length > 1 ? (days[1].f - days[0].f) * (w - 12) : w;
-  const long = gap >= 52;
-  for (const { f, v } of days) {
-    if (f > 0.97) continue;
-    html += `<span style="left:calc(6px + (100% - 12px) * ${f.toFixed(4)})">${long ? `${DOW[v.getUTCDay()]} ${v.getUTCDate()}` : v.getUTCDate()}</span>`;
-  }
-  box.innerHTML = html;
-}
-
-// The present wall-clock time on the scrubber, when it falls inside the run.
-function placeNow() {
-  const mark = $('now-mark');
-  const desc = $('now-desc');
-  const n = S.index?.hours.length ?? 0;
-  const v0 = n ? validAt(0) : null;
-  const v1 = n ? validAt(n - 1) : null;
-  const now = Date.now();
-  const inside = n > 1 && v0 && v1 && now >= v0.getTime() && now <= v1.getTime();
-  mark.hidden = !inside;
-  if (!inside) { desc.textContent = ''; return; }
-  const f = (now - v0) / (v1 - v0);
-  const d = new Date(now);
-  const hr = (now - v0) / 3600e3 + S.index.hours[0];
-  const text = `Now, ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC, about F${pad(Math.floor(hr), 3)} of this run`;
-  mark.style.left = `calc(6px + (100% - 12px) * ${f.toFixed(4)})`;
-  mark.title = text;
-  desc.textContent = `${text}.`;
+  $('lead').value = S.i;
+  $('lead').setAttribute('aria-valuetext', `${v ? K.fmtValid(v.toISOString()) : `Hour ${h}`}, forecast hour ${h}`);
+  $('validTime').textContent = v ? K.fmtValid(v.toISOString()) : `Hour ${h}`;
+  $('validRel').textContent = `+${h} h · ${c ? `${K.fmtTime(c.toISOString())} run` : 'this run'}`;
+  $('tlHour').textContent = `+${h} h`;
+  $('tlCycle').textContent = v ? K.fmtTime(v.toISOString(), true) : '';
+  $('prev').disabled = S.i === 0;
+  $('next').disabled = S.i === S.index.hours.length - 1;
+  rail?.done(S.i);
 }
 
 function play(on) {
-  if (on && !S.loop && S.i >= S.index.hours.length - 1) show(0);
   S.playing = on;
   const b = $('play');
-  b.setAttribute('aria-pressed', String(on));
+  b.innerHTML = K.icon(on ? 'pause' : 'play');
   b.setAttribute('aria-label', on ? 'Pause' : 'Play');
   clearTimeout(S.timer);
   if (on) S.timer = setTimeout(tick, SPEEDS[S.speed]);
-  else regroupStorms();  // the panel's order waits for playback to stop
 }
 
 async function tick() {
   const t0 = performance.now();
-  if (!S.loop && S.i >= S.index.hours.length - 1) { play(false); return; }
   await show(S.i + 1);
   if (!S.playing) return;
   S.timer = setTimeout(tick, Math.max(0, SPEEDS[S.speed] - (performance.now() - t0)));
 }
 
+function step(d) {
+  play(false);
+  const n = S.index.hours.length;
+  const k = Math.max(0, Math.min(n - 1, S.i + d));
+  if (k !== S.i) show(k);
+}
+
 function setSpeed(k) {
   if (!SPEEDS[k]) return;
   S.speed = k;
-  document.querySelectorAll('[data-speed]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.speed === k)));
+  document.querySelectorAll('[data-speed]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.speed === k)));
 }
 
-/* ---------- field and legend ---------- */
+/* ---------- field and layers ---------- */
 
 function setField(f, redraw = true) {
   if (!FIELDS.includes(f)) return;
   S.field = f;
-  const input = document.querySelector(`input[name="field"][value="${f}"]`);
-  if (input) input.checked = true;
+  document.querySelectorAll('#fields .product').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.field === f)));
   const raster = f !== 'class';
-  $('opacity-wrap').classList.toggle('off', !raster);
+  $('opacity-row').classList.toggle('off', !raster);
   $('opacity').disabled = !raster;
   if (raster) {
     $('opacity').value = S.opacity[f];
-    $('opacity-out').textContent = S.opacity[f].toFixed(2);
+    $('opacityOut').textContent = `${Math.round(S.opacity[f] * 100)}%`;
   }
-  document.body.classList.toggle('raster-on', raster);
+  $('field-hint').textContent = raster ? 'm, over the whole map' : 'at the low centers';
   syncFadeBox();
   renderLegend();
-  if (redraw) show(S.i);
+  if (redraw && S.index) show(S.i);
 }
 
 // The fade option applies to the three fields, and only when the export has a mask.
@@ -802,7 +744,8 @@ function syncFadeBox() {
   if (!box) return;
   const has = !S.index || !!S.index.raster?.mask;
   box.disabled = S.field === 'class' || !has;
-  box.closest('label').title = has ? '' : 'This cycle was exported without the fade mask';
+  $('fade-row').classList.toggle('off', box.disabled);
+  $('fade-row').title = has ? '' : 'This cycle was exported without the fade mask';
 }
 
 function setLayer(k, on) {
@@ -810,42 +753,51 @@ function setLayer(k, on) {
   S.layers[k] = on;
   const box = document.querySelector(`[data-layer="${k}"]`);
   if (box) box.checked = on;
-  if (!S.index) return;
-  if (k === 'contours') drawContours(S.mslp);
-  if (k === 'footprint') drawFootprints(S.lows);
-  if (k === 'circles' || k === 'terrain') { drawLows(); stormsFrame(S.i); }
+  renderLegend();
+  if (!S.ready) return;
+  if (k === 'contours') drawContours();
+  if (k === 'footprint') drawFootprints();
+  if (k === 'circles' || k === 'terrain') { drawLows(); renderDeepest(); }
   if (k === 'tracks') drawTracks();
-  if (k === 'fade') { renderLegend(); if (S.ready && S.field !== 'class') show(S.i); }
+  if (k === 'fade' && S.field !== 'class') show(S.i);
+  drawOverlay();
   writeHash();
 }
 
-/* ---------- regions, basemap, hash, share ---------- */
+/* ---------- views, hash, share ---------- */
 
-function basinView(key) {
-  const wide = map.getSize().x;
-  const world = Math.max(1, Math.floor(Math.log2(wide / 256) * 2) / 2);
-  return {
-    global: [[20, -30], world],
-    natl: [[40, -45], wide < 700 ? 2 : 3],
-    npac: [[42, -170], wide < 700 ? 2 : 3],
-    south: [[-52, 40], wide < 700 ? 1.5 : 2],
-  }[key];
+// Centers, and zoom beyond the whole-globe view (fitting bounds on a globe
+// tilts the view toward the pole).
+const VIEWS = {
+  global: { center: [-40, 30], zoomAdd: 0 },
+  natl: { center: [-45, 42], zoomAdd: 0.9 },
+  npac: { center: [-170, 42], zoomAdd: 0.9 },
+  south: { center: [50, -50], zoomAdd: 0.5 },
+};
+
+function setView(key) {
+  document.querySelectorAll('[data-view]').forEach((a) => a.setAttribute('aria-checked', String(a.dataset.view === key)));
 }
 
-function setBasemap(key) {
-  S.basemap = basemap.set(key);
-  document.querySelectorAll('[data-base]').forEach((c) =>
-    c.setAttribute('aria-pressed', String(c.dataset.base === S.basemap)));
-  writeHash();
+function goView(key) {
+  const v = VIEWS[key];
+  unfollow();
+  const p = viewPadding();
+  map.flyTo({ center: v.center, zoom: K.globalZoom() + v.zoomAdd, offset: [(p.left - p.right) / 2, (p.top - p.bottom) / 2],
+    bearing: 0, pitch: 0, duration: 900 });
+  setView(key);
 }
 
+// #t=hour&f=field&v=lat,lon,zoom&l=layers[&s=storm]. Links from the older
+// flat map also carry b= (its basemap) and a zoom one step deeper, since
+// its tiles were half the size.
 function readHash() {
   const q = new URLSearchParams(location.hash.slice(1));
   const out = {};
   if (q.has('t')) out.hour = +q.get('t');
   if (FIELDS.includes(q.get('f'))) out.field = q.get('f');
   const v = (q.get('v') || '').split(',').map(Number);
-  if (v.length === 3 && v.every(Number.isFinite)) out.view = v;
+  if (v.length === 3 && v.every(Number.isFinite)) out.view = [v[0], v[1], q.has('b') ? Math.max(0, v[2] - 1) : v[2]];
   if (q.get('s')) out.storm = q.get('s');
   if (q.has('l')) out.layers = q.get('l');
   return out;
@@ -855,13 +807,13 @@ let hashTimer = 0;
 function writeHash() {
   if (!S.index || !map) return;
   clearTimeout(hashTimer);
-  hashTimer = setTimeout(() => history.replaceState(null, '', viewHash()), 250);
+  hashTimer = setTimeout(() => { try { history.replaceState(null, '', viewHash()); } catch { /* file:// */ } }, 250);
 }
 
 function viewHash() {
-  const c = map.getCenter().wrap();
+  const c = map.getCenter();
   const l = Object.entries(LAYER_KEYS).filter(([k]) => (INVERTED_KEYS.has(k) ? !S.layers[k] : S.layers[k])).map(([, v]) => v).join('');
-  return `#t=${S.index.hours[S.i]}&f=${S.field}&b=${S.basemap}&v=${c.lat.toFixed(2)},${c.lng.toFixed(2)},${map.getZoom()}` +
+  return `#t=${S.index.hours[S.i]}&f=${S.field}&v=${c.lat.toFixed(2)},${K.wrapLon(c.lng).toFixed(2)},${map.getZoom().toFixed(2)}` +
     `&l=${l || '-'}${S.follow ? `&s=${encodeURIComponent(followShare())}` : ''}`;
 }
 
@@ -869,227 +821,160 @@ async function share() {
   if (!S.index) return;
   clearTimeout(hashTimer);
   history.replaceState(null, '', viewHash());
+  const b = $('share');
   try {
     await navigator.clipboard.writeText(location.href);
-    const b = $('share');
-    b.classList.add('done');
+    b.innerHTML = K.icon('check');
     b.setAttribute('aria-label', 'Link copied');
     clearTimeout(share.t);
-    share.t = setTimeout(() => { b.classList.remove('done'); b.setAttribute('aria-label', 'Copy a link to this view'); }, 1800);
-    toast('Link to this view copied');
+    share.t = setTimeout(() => { b.innerHTML = K.icon('link'); b.setAttribute('aria-label', 'Copy a link to this view'); }, 1800);
+    K.note('Link to this view copied');
   } catch {
-    toast('Link to this view is in the address bar');
+    K.note('Link to this view is in the address bar');
   }
 }
 
-/* ---------- popovers ---------- */
+/* ---------- the phase space card ---------- */
 
-const pops = [];
-function popover(btn, pop) {
-  pops.push([btn, pop]);
-  btn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const open = pop.hidden;
-    closePops();
-    pop.hidden = !open;
-    btn.setAttribute('aria-expanded', String(open));
-  });
-}
-function closePops(except) {
-  let closed = false;
-  for (const [b, p] of pops) {
-    if (p === except || p.hidden) continue;
-    p.hidden = true;
-    b.setAttribute('aria-expanded', 'false');
-    closed = true;
-  }
-  return closed;
-}
-
-/* ---------- layout ---------- */
-
-function rect(el) {
-  return el && !el.hidden && getComputedStyle(el).display !== 'none' ? el.getBoundingClientRect() : null;
-}
-
-// Map space covered by the page chrome, for centering and the edge labels.
-// Cached between layout changes so a frame swap never forces a layout.
-let insetCache = null;
-const dropInsets = () => { insetCache = null; };
-function visibleInsets() {
-  return (insetCache ??= readInsets());
-}
-function readInsets() {
-  const top = rect($('topbar'));
-  const bar = rect($('bar'));
-  const st = document.body.classList.contains('storms-open') ? rect($('storms')) : null;
-  const card = rect($('card'));
-  const ctl = rect(document.querySelector('.leaflet-bottom.leaflet-left .leaflet-control-zoom'));
-  const wide = !narrow();
-  return {
-    ctl: ctl ? innerHeight - ctl.top : 0,
-    top: top ? top.bottom : 0,
-    bottom: Math.max(bar ? innerHeight - bar.top : 0, !wide && card ? innerHeight - card.top : 0),
-    left: wide && card ? card.right : 0,
-    right: wide && st ? innerWidth - st.left : 0,
-  };
-}
-
-function chromeInsets() {
-  const ins = visibleInsets();
-  return { top: Math.round(ins.top + 4), left: Math.round(ins.top), bottom: Math.round(Math.max(ins.bottom, ins.ctl)) };
-}
-
-// Keep Leaflet's corner controls and toasts clear of the bottom bar.
-function measure() {
-  dropInsets();
-  const root = document.documentElement.style;
-  const bar = $('bar').getBoundingClientRect();
-  root.setProperty('--bar-h', `${Math.round(innerHeight - bar.top)}px`);
-  root.setProperty('--top-h', `${Math.round($('topbar').getBoundingClientRect().bottom)}px`);
-  basemap?.edges();
-}
-
-function setStormsOpen(open) {
-  dropInsets();
-  document.body.classList.toggle('storms-open', open);
-  $('storms-btn').setAttribute('aria-expanded', String(open));
-  if (open && narrow()) {  // the sheet replaces the card, but keeps its low selected in the list
-    const keep = typeof ST !== 'undefined' ? ST.selected : null;
-    closeCard();
-    if (keep) selectStorm(keep);
-  }
-  basemap?.edges();
+function setSideOpen(open) {
+  S.sideOpen = open;
+  document.body.classList.toggle('side-open', open);
+  $('phase-btn').setAttribute('aria-expanded', String(open));
 }
 
 /* ---------- boot ---------- */
 
-function noData(title, msg) {
+function fatal(title, msg, retry) {
   document.body.classList.remove('loading');
-  document.body.classList.add('empty');
-  $('run-meta').textContent = 'No cycle loaded';
-  $('nodata-title').textContent = title;
-  $('nodata-text').innerHTML = msg;
-  $('nodata').classList.remove('hidden');
+  $('fatalTitle').textContent = title;
+  $('fatalMsg').innerHTML = msg;
+  $('retry').hidden = !retry;
+  $('fatal').hidden = false;
 }
 
-function bindControls() {
-  $('frame').addEventListener('input', (e) => { play(false); show(+e.target.value); });
-  $('play').addEventListener('click', () => play(!S.playing));
-  $('loop').addEventListener('change', (e) => { S.loop = e.target.checked; });
-  document.querySelectorAll('[data-speed]').forEach((b) => b.addEventListener('click', () => setSpeed(b.dataset.speed)));
-  document.querySelectorAll('input[name="field"]').forEach((r) =>
-    r.addEventListener('change', () => setField(r.value)));
-  $('opacity').addEventListener('input', (e) => setOpacity(+e.target.value));
-  document.querySelectorAll('[data-layer]').forEach((c) =>
-    c.addEventListener('change', () => setLayer(c.dataset.layer, c.checked)));
-  document.querySelectorAll('[data-basin]').forEach((b) => b.addEventListener('click', () => {
-    const [c, z] = basinView(b.dataset.basin);
-    unfollow();
-    map.setView(c, z, { animate: false });
-    document.querySelectorAll('[data-basin]').forEach((x) =>
-      (x === b ? x.setAttribute('aria-pressed', 'true') : x.removeAttribute('aria-pressed')));
-  }));
-  document.querySelectorAll('[data-base]').forEach((c) =>
-    c.addEventListener('click', () => setBasemap(c.dataset.base)));
+function closeAbout() {
+  $('about').hidden = true;
+  $('about-btn').setAttribute('aria-expanded', 'false');
+}
+
+function buildControls() {
+  const box = $('fields');
+  for (const [f, name, key] of FIELD_LIST) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'product';
+    b.setAttribute('role', 'radio');
+    b.dataset.field = f;
+    b.innerHTML = `<i class="product-ramp" data-ramp="${f}"></i><span class="product-name">${name}</span><kbd class="on">${key}</kbd>`;
+    b.addEventListener('click', () => { setField(f); if (narrow()) K.setPanelOpen(false); });
+    box.append(b);
+  }
+  $('btnLayers').innerHTML = K.icon('layers');
+  $('btnHelp').innerHTML = K.icon('help');
+  $('share').innerHTML = K.icon('link');
+  $('ph-find-i').innerHTML = K.icon('search');
+  for (const id of ['btnPanelClose', 'btnHelpClose', 'about-close', 'phase-close', 'unfollow']) $(id).innerHTML = K.icon('close');
+  $('prev').innerHTML = K.icon('prev');
+  $('next').innerHTML = K.icon('next');
+  $('play').innerHTML = K.icon('play');
+
+  $('btnLayers').addEventListener('click', () => K.setPanelOpen(!K.panelOpen()));
+  $('btnPanelClose').addEventListener('click', () => K.setPanelOpen(false));
+  $('scrim').addEventListener('click', () => K.setPanelOpen(false));
+  $('btnHelp').addEventListener('click', () => $('helpDialog').showModal());
+  $('btnHelpClose').addEventListener('click', () => $('helpDialog').close());
+  $('about-btn').addEventListener('click', () => { $('about').hidden = false; $('about-btn').setAttribute('aria-expanded', 'true'); });
+  $('about-close').addEventListener('click', closeAbout);
+  $('about').addEventListener('click', (e) => { if (e.target === $('about')) closeAbout(); });
+  $('phase-btn').addEventListener('click', () => setSideOpen(!S.sideOpen));
+  $('phase-close').addEventListener('click', () => { closeCard(); if (narrow()) setSideOpen(false); });
   $('share').addEventListener('click', share);
-  $('retry').addEventListener('click', () => { S.base = null; boot(); });
-  $('storms-btn').addEventListener('click', () => setStormsOpen(!document.body.classList.contains('storms-open')));
-  $('storms-close').addEventListener('click', () => setStormsOpen(false));
   $('unfollow').addEventListener('click', () => unfollow());
-  bindStormFilter();
+  $('retry').addEventListener('click', () => location.reload());
 
-  popover($('menu-btn'), $('menu'));
-  popover($('layers-btn'), $('layers'));
-  popover($('legend-btn'), $('key'));
-  document.addEventListener('pointerdown', (e) => {
-    if (!e.target.closest('.popover, .pop-wrap')) closePops();
-  });
+  $('lead').addEventListener('input', (e) => { play(false); show(+e.target.value); });
+  $('prev').addEventListener('click', () => step(-1));
+  $('next').addEventListener('click', () => step(1));
+  $('play').addEventListener('click', () => play(!S.playing));
+  document.querySelectorAll('[data-speed]').forEach((b) => b.addEventListener('click', () => setSpeed(b.dataset.speed)));
+  $('opacity').addEventListener('input', (e) => setOpacity(+e.target.value));
+  document.querySelectorAll('[data-layer]').forEach((c) => c.addEventListener('change', () => setLayer(c.dataset.layer, c.checked)));
+  document.querySelectorAll('[data-view]').forEach((a) => a.addEventListener('click', () => goView(a.dataset.view)));
+  bindSearch();
 
-  // Left and right step frames (captured before Leaflet pans); space plays.
   document.addEventListener('keydown', (e) => {
-    // Escape closes the innermost thing first: a menu, then the readout,
-    // then the phone sheet; focus goes back to what opened it.
     if (e.key === 'Escape') {
-      if (e.target.id === 'sf-q' && e.target.value) return;  // the filter clears itself first
-      const open = pops.find(([, p]) => !p.hidden);
-      const act = document.activeElement;
-      if (open) {
-        closePops();
-        if (open[1].contains(act)) open[0].focus();
-      } else if (!$('card').hidden) {
-        const inCard = $('card').contains(act);
-        closeCard();
-        if (inCard) map.getContainer().focus({ preventScroll: true });
-      } else if (narrow() && document.body.classList.contains('storms-open')) {
-        setStormsOpen(false);
-        $('storms-btn').focus();
-      }
+      if (e.target.id === 'ph-q' && e.target.value) return;  // the search clears itself first
+      if (!$('about').hidden) closeAbout();
+      else if (!$('readout').hidden) $('readout').hidden = true;
+      else if (S.sel || S.follow) closeCard();
+      else if (narrow()) { K.setPanelOpen(false); setSideOpen(false); }
       return;
     }
     if (!S.index || e.altKey || e.ctrlKey || e.metaKey) return;
+    if ($('helpDialog').open || !$('about').hidden) return;
     const t = e.target;
-    if (t.matches?.('input[type="range"], input[type="text"], input[type="search"], textarea')) return;
-    if (e.key.startsWith('Arrow') && t.closest?.('.s3d-canvas')) return;  // the 3-D view rotates with them
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-      e.preventDefault();
-      e.stopPropagation();
-      play(false);
-      const n = S.index.hours.length;
-      const next = S.i + (e.key === 'ArrowRight' ? 1 : -1);
-      if (S.loop || (next >= 0 && next < n)) show(next);
-    } else if (e.key === ' ' && !t.closest?.('button, a, label, .leaflet-marker-icon')) {
-      e.preventDefault();
-      play(!S.playing);
-    } else if (/^[1-4]$/.test(e.key) && !t.closest?.('input')) {
-      setField(FIELDS[+e.key - 1]);
-    } else if ((e.key === 'f' || e.key === 'F') && !t.closest?.('input')) {
-      toggleFollow();
-    }
-  }, true);
-
-  // Phones: speed and loop move into the Layers popover to keep the bar short.
-  const mq = matchMedia('(max-width: 760px)');
-  const placePlayOpts = () => {
-    const opts = $('play-opts');
-    const home = mq.matches ? $('layers-play') : $('layers-btn').parentElement;
-    if (opts.parentElement !== home) (mq.matches ? home.append(opts) : home.before(opts));
-  };
-  mq.addEventListener('change', placePlayOpts);
-  placePlayOpts();
-
-  // The "ago" text, the stale note and the now marker follow the clock.
-  setInterval(() => { if (S.index) { showRunMeta(S.index); placeNow(); } }, 60e3);
-
-  const ro = new ResizeObserver(() => { measure(); buildScrubTicks(); });
-  ro.observe($('bar'));
-  ro.observe($('topbar'));
-  addEventListener('resize', measure);
+    if (t.matches?.('input[type="text"], input[type="search"], textarea')) return;
+    if (t.closest?.('.s3d-canvas')) return;  // the 3-D view rotates with the arrows
+    if (t.closest?.('#map')) return;          // the map pans with the arrows
+    const k = e.key.toLowerCase();
+    let hit = true;
+    if (e.key === 'ArrowRight') step(1);
+    else if (e.key === 'ArrowLeft') step(-1);
+    else if (e.key === 'Home') { play(false); show(0); }
+    else if (e.key === 'End') { play(false); show(S.index.hours.length - 1); }
+    else if (e.key === ' ' && !t.closest?.('button, a, label')) play(!S.playing);
+    else if (/^[1-4]$/.test(e.key)) setField(FIELDS[+e.key - 1]);
+    else if (k === 'f') toggleFollow();
+    else if (k === 'l') K.setPanelOpen(!K.panelOpen());
+    else if (e.key === '?') $('helpDialog').showModal();
+    else if (HOTKEYS[k]) setLayer(HOTKEYS[k], !S.layers[HOTKEYS[k]]);
+    else hit = false;
+    if (hit) e.preventDefault();
+  });
 }
 
 function showRunMeta(ix) {
   const gen = utc(ix.generated);
-  $('run-meta').innerHTML =
-    `<span>${esc(ix.model || 'Model')}</span><span>run ${esc(fmtCycle(ix.cycle))}</span>` +
-    (gen ? `<span class="gen">generated ${gen.getUTCDate()} ${MON[gen.getUTCMonth()]} ${pad(gen.getUTCHours())}:${pad(gen.getUTCMinutes())} UTC (${ago(gen)})</span>` : '');
-  $('methods-model').textContent = ix.model ? ix.model.replace(/\s*deg(ree)?$/i, '') : 'GFS 0.25';
-  const ref = gen || utc(ix.cycle);
+  const cyc = utc(ix.cycle);
+  const model = ix.model ? ix.model.replace(/\s*deg(ree)?$/i, '').replace(/ 0\.25$/, ' 0.25°') : 'GFS 0.25°';
+  $('brand-sub').textContent = `Hart parameters · ${model}`;
+  $('foot-model').textContent = model;
+  $('about-model').textContent = model;
+  const ref = gen || cyc;
   const stale = ref && Date.now() - ref.getTime() > STALE_H * 3600e3;
+  const chip = $('chipRun');
+  if (cyc) {
+    const h = Math.max(0, Math.floor((Date.now() - cyc.getTime()) / 3600e3));
+    chip.dataset.state = stale ? 'warn' : 'ok';
+    chip.lastChild.textContent = `${K.fmtTime(cyc.toISOString())} run · ${h} h old`;
+    chip.title = (gen ? `Generated ${gen.getUTCDate()} ${MON[gen.getUTCMonth()]} ${pad(gen.getUTCHours())}:${pad(gen.getUTCMinutes())} UTC (${ago(gen)})` : 'Age of the model run on this page') +
+      (stale ? '; a newer run is overdue' : '');
+  }
   $('stale').hidden = !stale;
   if (stale) $('stale').textContent = `Data may be stale; last cycle ${fmtCycle(ix.cycle)}, ${gen ? `generated ${ago(gen)}` : 'no generation time'}.`;
 }
 
+// Map and data both in: draw the first frame.
+let want = {};
+async function ready() {
+  if (!S.mapReady || !S.index) return;
+  await show(S.i);
+  document.body.classList.remove('loading');
+  loadAllLows().then(() => { if (want.storm) follow(want.storm, { quiet: !!want.view }); });
+}
+
 async function boot() {
-  $('nodata').classList.add('hidden');
-  document.body.classList.remove('empty');
-  document.body.classList.add('loading');
   S.base ??= await resolveBase();
   try {
     S.index = await fetchJSON(new URL('index.json', S.base).href, { cache: 'no-cache' });
     if (!Array.isArray(S.index.hours) || !S.index.hours.length) throw new Error('no forecast hours');
-  } catch (err) {
+  } catch {
     S.index = null;
-    noData('No live data yet', `The daily run has not published a cycle yet, or it could not be reached. The map will show the latest cycle as soon as one is published. Looked for <code>${esc(S.base)}index.json</code>.`);
+    const chip = $('chipRun');
+    chip.dataset.state = 'error';
+    chip.lastChild.textContent = 'No run available';
+    fatal('No live data yet', `The run has not published a cycle yet, or it could not be reached. The map will show the latest cycle as soon as one is published. Looked for <code>${esc(S.base)}index.json</code>.`, true);
     return;
   }
   try {
@@ -1104,47 +989,43 @@ async function boot() {
 
   const ix = S.index;
   showRunMeta(ix);
-  S.ready = false;
-  const slider = $('frame');
-  slider.max = ix.hours.length - 1;
-  slider.disabled = ix.hours.length < 2;
+  setInterval(() => showRunMeta(ix), 60e3);
+  $('lead').max = ix.hours.length - 1;
+  $('lead').disabled = ix.hours.length < 2;
   $('play').disabled = ix.hours.length < 2;
+  rail = K.timeline(ix.hours.map((h, k) => (validAt(k) || new Date()).toISOString()));
 
-  const want = readHash();
-  if (want.view) map.setView([want.view[0], want.view[1]], want.view[2], { animate: false });
+  want = readHash();
   if (want.layers) {
     for (const [k, v] of Object.entries(LAYER_KEYS)) setLayer(k, INVERTED_KEYS.has(k) ? !want.layers.includes(v) : want.layers.includes(v));
   }
   const hi = ix.hours.indexOf(want.hour);
   S.i = hi >= 0 ? hi : 0;
   setField(want.field || S.field, false);
+  paintRamps();
   initStorms();
-  drawTracks();
-  buildScrubTicks();
-  placeNow();
-  await show(S.i);
-  document.body.classList.remove('loading');
-  measure();
-  loadAllLows().then(() => { if (want.storm) follow(want.storm, { quiet: !!want.view }); });
+  syncTime();
+  const start = want.view ? { center: [want.view[1], want.view[0]], zoom: want.view[2] } : { center: VIEWS.global.center, zoom: K.globalZoom() };
+  setView(want.view ? null : 'global');
+  buildMap(start);
 }
 
 function start() {
   document.querySelectorAll('[data-link]').forEach((a) => {
-    a.href = { article: ARTICLE_URL, space: SPACE_URL, guide: GUIDE_URL }[a.dataset.link];
+    a.href = { article: ARTICLE_URL, guide: GUIDE_URL }[a.dataset.link] || a.href;
   });
-  if (!window.L) {
-    noData('The map could not start', `The map library could not be loaded. Check the connection, or read the <a href="${ARTICLE_URL}">article</a> in the meantime.`);
-    $('retry').addEventListener('click', () => location.reload());
+  FAM = getComputedStyle(document.body).fontFamily;
+  // The class legend at once, from the built-in palette, so nothing reflows on load.
+  FALLBACK_HEX.forEach((hex, code) => S.classes.set(code, { code, hex, name: CLASS_NAMES[code] }));
+  buildControls();
+  K.setPanelOpen(!narrow());
+  setSideOpen(!narrow());
+  setField(S.field, false);
+  renderCard(null, null);
+  if (!K.webgl()) {
+    fatal('Map could not start', `This page needs a browser with WebGL enabled. The <a href="${ARTICLE_URL}">article</a> explains the products.`, false);
     return;
   }
-  // The class legend at once, from the built-in palette, so the bar does not reflow on load.
-  FALLBACK_HEX.forEach((hex, code) => S.classes.set(code, { code, hex, name: CLASS_NAMES[code] }));
-  renderLegend();
-  initMap(narrow() ? 2 : innerWidth < 1200 ? 2.5 : 3);
-  setBasemap(CPSBasemap.saved());
-  setStormsOpen(innerWidth >= 1000);
-  bindControls();
-  measure();
   boot();
 }
 

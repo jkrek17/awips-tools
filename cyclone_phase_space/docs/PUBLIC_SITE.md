@@ -9,7 +9,8 @@ source, tests, figure scripts or collection code go there.
 
 ```
 index.html       the projects index, rebuilt on each publish (tools/build_site_index.py)
-cyclone/         the map page: index.html, style.css, app.js, basemap.js, basemap/, fonts/
+cyclone/         the map page: index.html, style.css, app.js, storms.js, card.js, space3d.js, fonts/
+globe-kit/       MapLibre and the shared globe look and script the map pages load (globe_kit/)
 cyclone/data/latest/   index.json, legend.json, history.json, frames/f{hhh}/...
 cyclone/data/storms/<cycle>/<NAME>/   phase.png, compare.png, meta.json, track.csv
 article/         the article and its figures

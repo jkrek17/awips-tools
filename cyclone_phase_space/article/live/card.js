@@ -1,19 +1,11 @@
 /* Cyclone Phase Space, live: reading the values.
-   The readout card at a selected low (class, MSLP, the three Hart terms
-   as bars on the colormaps' own ranges, the index), the hover tooltip, and
-   the field legends drawn from legend.json's colormap stops. Uses the
-   globals from app.js. */
+   The legend card (drawn from legend.json's colormap stops), the hover
+   tooltip at a low, and the phase space card: the selected or followed
+   low with its whole track in the 3-D phase space (space3d.js), which
+   moves with the timeline. Uses the globals from app.js and storms.js. */
 'use strict';
 
-// Bar scales: the colormaps' ranges, with ticks at the reading thresholds.
-const BARS = {
-  hvtl: { lo: -300, hi: 300, ticks: [-300, -100, 0, 100, 300], d: 0 },
-  hvtu: { lo: -300, hi: 300, ticks: [-300, -100, 0, 100, 300], d: 0 },
-  hb: { lo: -40, hi: 40, ticks: [-40, -10, 0, 10, 40], d: 1 },
-  idx: { lo: -3, hi: 3, ticks: [-3, -2, -1, 0, 1, 2, 3], d: 1 },
-};
-
-/* ---------- legend ---------- */
+/* ---------- colormaps ---------- */
 
 // If legend.json is missing: a subset of the shipped colormaps' stops.
 const CORE_STOPS = [[-300, '#0d2699', 1], [-100, '#6695db', 1], [-60, '#99bae2', 0.4], [-20, '#ccdbeb', 0],
@@ -59,8 +51,8 @@ function fadeBand(f) {
 }
 
 // The ramp as drawn: every stop with its own alpha, and, where the fade
-// band applies, its clear and full-color edges added, since the sixteen
-// stops straddle zero and a gradient between them would tint the band.
+// band applies, its clear and full-color edges added, since the stops
+// straddle zero and a gradient between them would tint the band.
 function drawnStops(f) {
   const { stops } = stopsOf(f);
   if (!stops) return null;
@@ -79,29 +71,13 @@ function drawnStops(f) {
   return keep.sort((x, y) => x[0] - y[0]);
 }
 
-// A ramp with a tick at every colormap stop, a longer one at zero, and
-// labels at the given values. The stops' own alpha is kept over the panel
-// color, so the clear band at zero reads as the map does.
-function rampHTML(f, labels) {
-  const { stops, range: [lo, hi] } = stopsOf(f);
-  if (!stops) return '';
+function gradient(f) {
+  const { range: [lo, hi] } = stopsOf(f);
+  const st = drawnStops(f);
+  if (!st) return 'transparent';
   const pct = (v) => (((v - lo) / (hi - lo)) * 100).toFixed(2);
-  const grad = drawnStops(f).map(([v, c]) => `${c} ${pct(v)}%`).join(', ');
-  const ticks = stops.map(([v]) => `<i style="left:${pct(v)}%"></i>`).join('') +
-    (lo < 0 && hi > 0 ? `<i class="z" style="left:${pct(0)}%"></i>` : '');
-  const end = (v) => (v <= lo ? ' class="lo"' : v >= hi ? ' class="hi"' : '');  // the end values sit inside the bar's ends
-  const lab = labels.map((v) => `<span${end(v)} style="left:${pct(v)}%">${fmt(v, Number.isInteger(v) ? 0 : 1)}</span>`).join('');
-  const onset = f === 'hb' ? `<b class="onset" style="left:${pct(10)}%"></b>` : '';
-  return `<span class="ramp"><span class="ramp-fill" style="background:linear-gradient(to right, ${grad})"></span>${onset}</span>` +
-    `<span class="ramp-ticks">${ticks}</span><span class="ramp-labels">${lab}</span>`;
+  return `linear-gradient(to right, ${st.map(([v, c]) => `${c} ${pct(v)}%`).join(', ')})`;
 }
-
-// Labels on the ramps: in the bar, the ends, zero and the reading
-// thresholds; in the key, even steps.
-const RAMP_LABELS = {
-  short: { hb: [-40, 0, 10, 40], hvtl: [-300, -100, 0, 100, 300], hvtu: [-300, -100, 0, 100, 300] },
-  full: { hb: [-40, -30, -20, -10, 0, 10, 20, 30, 40], hvtl: [-300, -200, -100, 0, 100, 200, 300], hvtu: [-300, -200, -100, 0, 100, 200, 300] },
-};
 
 // The clear band in words, from the fade band or the older exports' own.
 function clearText(f) {
@@ -111,29 +87,52 @@ function clearText(f) {
   return `Clear within ${m(band.clear)} of zero, full color from ${m(band.full)}.`;
 }
 
+/* ---------- legend ---------- */
+
+// The small swatch of each field in the layers panel.
+function paintRamps() {
+  const list = [...S.classes.values()];
+  document.querySelectorAll('[data-ramp]').forEach((el) => {
+    const f = el.dataset.ramp;
+    el.style.background = f === 'class'
+      ? `linear-gradient(90deg, ${list.map((c, k) => `${c.hex} ${(k / list.length * 100).toFixed(1)}% ${((k + 1) / list.length * 100).toFixed(1)}%`).join(', ')})`
+      : gradient(f);
+  });
+}
+
+const RAMP_LABELS = { hb: [-40, -20, 0, 10, 20, 40], hvtl: [-300, -200, -100, 0, 100, 200, 300], hvtu: [-300, -200, -100, 0, 100, 200, 300] };
+
 function renderLegend() {
   const f = S.field;
-  const inline = $('legend-inline');
-  const units = S.legend?.units?.[f] || 'm';
-  const cmap = /\((CPS_[A-Za-z]+)\)/.exec(S.legend?.labels?.[f] || '')?.[1];
-  $('key-title').innerHTML = TITLES[f];
-  $('key-help').textContent = f === 'class' ? HELP[f] : `${HELP[f]} ${clearText(f)}`;
+  const el = $('legend');
+  let h;
   if (f === 'class') {
-    const list = [...S.classes.values()];
-    inline.innerHTML = `<span class="classes-inline">${list.map((c) =>
-      `<span><i style="--c:${c.hex}"></i>${c.code}</span>`).join('')}</span>`;
-    $('key-scale').innerHTML = `<ul class="classes">${list.map((c) =>
-      `<li><i style="--c:${c.hex}"></i><span class="code">${c.code}</span>${esc(c.name)}</li>`).join('')}</ul>`;
-    return;
+    h = `<div class="legend-head"><span>${TITLES.class}</span></div><ul class="legend-classes">${[...S.classes.values()].map((c) =>
+      `<li title="${esc(c.name)}"><i style="--c:${c.hex}"></i><b>${c.code}</b>${esc(SHORT[c.code] ?? c.name)}</li>`).join('')}</ul>`;
+  } else {
+    const { range: [lo, hi] } = stopsOf(f);
+    const units = S.legend?.units?.[f] || 'm';
+    const pct = (v) => (((v - lo) / (hi - lo)) * 100).toFixed(2);
+    const onset = f === 'hb' ? `<b class="onset" style="left:${pct(FIG1.onset)}%" title="Hart's onset, 10 m"></b>` : '';
+    h = `<div class="legend-head"><span>${TITLES[f]}</span><span class="unit">${esc(units)}</span></div>` +
+      `<div class="legend-bar ramp"><span style="background:${gradient(f)}"></span>${onset}</div>` +
+      `<div class="legend-labels">${RAMP_LABELS[f].map((v) => `<span style="left:${pct(v)}%">${fmt(v)}</span>`).join('')}</div>` +
+      `<p class="legend-ends"><span>${MINUS} ${ENDS[f][0]}</span><span>${ENDS[f][1]} +</span></p>`;
   }
-  const { range: [lo, hi] } = stopsOf(f);
+  const help = f === 'class' ? HELP[f] : `${HELP[f]} ${clearText(f)}`;
   const dim = +S.index?.raster?.mask_dim;
-  const fade = fadeOn() ? `<p class="ramp-note">Faded to ${Math.round((dim > 0 ? dim : 0.35) * 100)}% beyond about 300&nbsp;km from the lows (Layers).</p>` : '';
-  inline.innerHTML = `<span class="legend-field"><span class="legend-name">${termHTML(f)}</span>` +
-    `<span class="ramp-wrap">${rampHTML(f, RAMP_LABELS.short[f])}</span></span><span class="ramp-unit">${esc(units)}</span>`;
-  $('key-scale').innerHTML = `<div class="ramp-wrap big">${rampHTML(f, RAMP_LABELS.full[f])}</div>
-    <p class="ramp-ends"><span>${MINUS} ${ENDS[f][0]}</span><span>${ENDS[f][1]} +</span></p>
-    <p class="ramp-note">${fmt(lo)} to ${fmt(hi, 0, '', true)} ${esc(units)}${cmap ? ` on ${cmap}` : ''}; a tick at every colormap stop${f === 'hb' ? '; the bar marks Hart\'s 10 m onset line' : ''}.</p>${fade}`;
+  const fade = f !== 'class' && fadeOn() ? ` Faded to ${Math.round((dim > 0 ? dim : 0.35) * 100)}% beyond about 300 km from the lows.` : '';
+  h += `<p class="legend-note">${esc(help)}${fade}</p>`;
+  const keys = [];
+  keys.push('<span><i class="k-dot"></i>Low center, by class</span>');
+  if (S.layers.contours) keys.push(`<span><i style="border-top:1px solid rgba(231,238,248,0.7)"></i>MSLP, ${WIDE_CINT} hPa, bold 16</span>`);
+  if (S.layers.circles) keys.push('<span><i class="k-halo"></i>200 km circle</span>');
+  if (S.layers.tracks) keys.push('<span><i style="border-top:2px solid #fad91a"></i>Selected track, by class</span>',
+    '<span><i style="border-top:1px solid rgba(231,238,248,0.55)"></i>Last 24 h of motion</span>');
+  if (S.layers.footprint) keys.push('<span><i style="border-top:1px dashed #e7eef8"></i>Product footprint</span>');
+  if (S.layers.terrain) keys.push('<span><i class="k-terrain"></i>Terrain minimum</span>');
+  h += `<div class="legend-keys">${keys.join('')}</div>`;
+  el.innerHTML = h;
 }
 
 /* ---------- tooltip ---------- */
@@ -141,23 +140,29 @@ function renderLegend() {
 function lowTip(c) {
   const k = cls(c.cls);
   const s = stormOf(c, S.i);
-  const term = (f, d) => `<span class="tip-t"><span>${TERM[f].sym}</span><b>${fmt(c[f], d, '', true)}</b></span>`;
-  return `<span class="tip-cls"><i style="--c:${k.hex}"></i>${esc(k.name)}</span>
-    <span class="tip-row"><b>${hpa(c.mslp)}</b>${s ? `<span class="tip-name">${esc(s.label)}${s.fsu != null ? `, FSU ${esc(s.fsu)}` : ''}</span>` : ''}</span>
-    <span class="tip-terms">${term('hvtl', 0)}${term('hvtu', 0)}${term('hb', 1)}<span class="tip-u">m</span></span>` +
-    (c.terrain ? `<span class="tip-note">Terrain minimum${blank(c.psfc) ? '' : `, surface ${fmt(c.psfc, 0, 'hPa')}`}</span>` : '');
+  const row = (f, d, sep = '') => `<tr${sep}><td>${TERM[f].name} (${TERM[f].sym})</td><td>${fmt(c[f], d, 'm', true)}</td></tr>`;
+  return `<div class="h">${s ? esc(s.label) : 'Untracked low'}${s?.fsu != null ? `, FSU ${esc(s.fsu)}` : ''}</div>
+    <p class="tip-cls"><i style="--c:${k.hex}"></i>${esc(k.name)}</p>
+    <table><tr><td>Central pressure</td><td>${hpa(c.mslp)}</td></tr>
+    <tr><td>Center</td><td>${pos(c.lat, c.lon)}</td></tr>
+    ${row('hvtl', 0, ' class="sep"')}${row('hvtu', 0)}${row('hb', 1)}</table>` +
+    (c.terrain ? `<div class="note-line">Terrain minimum${blank(c.psfc) ? '' : `, surface ${fmt(c.psfc, 0, 'hPa')}`}: a false low over high ground</div>` : '') +
+    (s ? '<div class="tip-hint">Click for its track in the phase space</div>' : '');
 }
 
-/* ---------- card ---------- */
+/* ---------- the phase space card ---------- */
+
+const PH = { key: null, view: null };
 
 function selectLow(c, { center = false, zoom } = {}) {
   const s = stormOf(c, S.i);
   if (S.follow && (!s || s.key !== S.follow)) unfollow();
   S.sel = { lat: c.lat, lon: c.lon, c };
-  if (narrow()) setStormsOpen(false);
+  setSideOpen(true);
+  selectStorm(s ? s.key : null);
   renderCard(c, s);
   drawSelection();
-  selectStorm(s ? s.key : null);
+  renderDeepest();
   if (center) centerOn(c.lat, c.lon, zoom);
 }
 
@@ -173,89 +178,77 @@ function refreshCard() {
     return;
   }
   if (!S.sel) return;
-  const c = nearest(S.centers.filter(shown), S.sel.lat, S.sel.lon, 2 * MATCH_KM);
+  // a selected track keeps its card through hours it is absent
+  const st = findStorm(ST.selected);
+  const e = st?.at[S.i];
+  let c;
+  if (st) c = e ? centerOf(st, e) : null;
+  else c = nearest(S.centers.filter(shown), S.sel.lat, S.sel.lon, 2 * MATCH_KM);
   S.sel.c = c;
   if (c) { S.sel.lat = c.lat; S.sel.lon = c.lon; }
-  const s = c ? stormOf(c, S.i) : null;
-  if (s) selectStorm(s.key, { show: false });
-  renderCard(c, s);
+  const s = st || (c ? stormOf(c, S.i) : null);
+  if (s && s.key !== ST.selected) selectStorm(s.key);
+  renderCard(c, s, !!st && !e);
 }
 
 function closeCard() {
-  if ($('card').hidden) return;
-  $('card').hidden = true;
-  dropInsets();
   S.sel = null;
   unfollow();
   selectStorm(null);
+  renderCard(null, null);
   drawSelection();
-  basemap?.edges();
+  renderDeepest();
 }
 
-function barHTML(key, v, axis = true) {
-  const b = BARS[key];
-  const pct = (x) => ((x - b.lo) / (b.hi - b.lo)) * 100;
-  const z = pct(0);
-  let fill = '';
-  let clip = '';
-  if (!blank(v)) {
-    const x = Math.max(b.lo, Math.min(b.hi, +v));
-    const p = pct(x);
-    const color = key === 'idx' ? rampColor('hvtl', x * 100) : rampColor(key, x);
-    fill = `<span class="fill" style="left:${Math.min(p, z).toFixed(2)}%;width:${Math.abs(p - z).toFixed(2)}%;background:${color}"></span>`;
-    if (x !== +v) clip = `<span class="clip ${x > 0 ? 'hi' : 'lo'}" title="beyond the scale"></span>`;
-  }
-  const ticks = b.ticks.map((t) => `<i class="${t === 0 ? 'z' : ''}${key === 'hb' && t === 10 ? ' onset' : ''}" style="left:${pct(t).toFixed(2)}%"></i>`).join('');
-  const labs = axis ? b.ticks.filter((t) => key !== 'idx' || t % 3 === 0)
-    .map((t) => `<span style="left:${pct(t).toFixed(2)}%">${fmt(t)}</span>`).join('') : '';
-  const unit = key === 'idx' ? '' : 'm';
-  const label = TERM[key]
-    ? `<span class="bname">${TERM[key].name} (</span>${TERM[key].sym}<span class="bname">)</span>`
-    : 'Index';
-  return `<div class="brow${axis ? ' axis' : ''}">
-      <span class="blab"${TERM[key] ? ` title="${TERM[key].name}, ${TERM[key].band}"` : ''}>${label}</span>
-      <span class="btrack">${ticks}${fill}${clip}</span>
-      <span class="bval">${fmt(v, b.d, unit, true)}</span>
-      ${axis ? `<span class="bticks">${labs}</span>` : ''}
-    </div>`;
+function phaseFrame() {
+  PH.view?.frame();
 }
 
 function renderCard(c, s, absent = false) {
-  const card = $('card');
-  const link = (u, label) => (u ? `<a href="${esc(new URL(u, S.base).href)}" target="_blank" rel="noopener">${label}</a>` : '');
+  const body = $('ph-body');
+  document.body.classList.toggle('has-sel', !!(c || s));
+  if (!c && !s) {
+    PH.view?.destroy();
+    PH.view = null;
+    PH.key = null;
+    body.innerHTML = `<p class="ph-hint">Click a low on the map, or find one by name, to load its track into the 3-D phase space. ` +
+      'The deepest lows at this hour are listed below.</p>';
+    return;
+  }
+  // The head: the storm, and the low at the hour on screen.
+  let head = body.querySelector('.ph-low');
+  if (!head || PH.key !== (s?.key ?? null)) {
+    PH.view?.destroy();
+    PH.view = null;
+    PH.key = s?.key ?? null;
+    body.innerHTML = '<div class="ph-low"></div><div class="ph-cube"></div><p class="ph-links"></p>';
+    head = body.querySelector('.ph-low');
+    if (s && typeof Space3D !== 'undefined') PH.view = Space3D.create(body.querySelector('.ph-cube'), s);
+  }
   const v = validAt(S.i);
   const when = `F${pad(S.index.hours[S.i], 3)}${v ? `, ${fmtDay(v)} ${pad(v.getUTCHours())} UTC` : ''}`;
   const k = c ? cls(c.cls) : null;
-  const head = k
-    ? `<span class="cls-chip"><i style="--c:${k.hex}"></i><span class="code">${k.code ?? ''}</span>${esc(k.name)}</span>`
-    : `<span class="cls-chip muted">${absent ? 'Not tracked at this hour' : 'No closed low here at this hour'}</span>`;
-  const storm = s
-    ? `<p class="card-name"><b></b>${s.fsu != null ? `<span class="tag">FSU ${esc(s.fsu)}</span>` : ''}<span class="sub">${esc(s.generic ? s.sub : s.fsu != null ? '' : 'not on the FSU page')}</span>
-      <button type="button" class="btn small" id="card-follow" aria-pressed="${S.follow === s.key}">${S.follow === s.key ? 'Following' : 'Follow'}</button></p>`
-    : `<p class="card-name"><span>${c ? 'Untracked low' : ''}</span></p>`;
-  const body = c ? `
-    <div class="card-main">
-      <span class="mslp">${fmt(c.mslp, 1)}<small> hPa</small></span>
-      <span class="where">${pos(c.lat, c.lon)}<br>${when}</span>
-    </div>
-    ${c.terrain ? `<p class="card-warn">Terrain minimum: surface pressure ${blank(c.psfc) ? 'under 850 hPa' : fmt(c.psfc, 0, 'hPa')}; a false low over high ground.</p>` : ''}
-    <div class="bars">
-      ${barHTML('hvtl', c.hvtl, false)}
-      ${barHTML('hvtu', c.hvtu)}
-      ${barHTML('hb', c.hb)}
-      ${barHTML('idx', c.idx)}
-    </div>
-    <p class="card-foot">Thermal winds warm positive, lower ${TERM.hvtl.band}, upper ${TERM.hvtu.band}. Thermal asymmetry over ${TERM.hb.band}; Hart's onset at 10 m.</p>`
-    : `<p class="card-empty">${absent ? `${esc(s?.label)} has no tracked point at ${when}.` : `Nothing within ${2 * MATCH_KM} km of the last position at ${when}.`}</p>`;
-  const links = s && (s.phase || s.compare) ? `<p class="card-links">${link(s.phase, 'Phase diagram')}${link(s.compare, 'Compare with FSU')}</p>` : '';
-  card.innerHTML = `<div class="card-head">${head}
-      <button type="button" class="x" id="card-close" aria-label="Close the readout"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6"/></svg></button>
-    </div>${storm}${body}${links}`;
-  if (s) card.querySelector('.card-name b').textContent = s.label;
-  card.querySelector('#card-close').addEventListener('click', closeCard);
-  card.querySelector('#card-follow')?.addEventListener('click', () => (S.follow === s.key ? unfollow() : follow(s.key)));
-  const was = card.hidden;
-  card.hidden = false;
-  if (was || narrow()) dropInsets();
-  if (was) basemap?.edges();
+  const on = s && S.follow === s.key;
+  const title = s
+    ? `<div class="ph-title"><b></b>${s.fsu != null ? `<span class="tag">FSU ${esc(s.fsu)}</span>` : ''}
+        <button type="button" class="btn btn-sm" id="ph-follow" aria-pressed="${on}" title="Keep this low centered as the hours change (F)">${on ? 'Following' : 'Follow'}</button></div>
+       <p class="ph-sub">${esc(s.sub)}${s.generic || s.fsu != null ? '' : ', not on the FSU page'}</p>`
+    : '<div class="ph-title"><b>Untracked low</b></div>';
+  const now = c
+    ? `<p class="ph-now"><span class="cls-chip"><i style="--c:${k.hex}"></i>${esc(k.name)}</span>
+        <span class="ph-mslp">${fmt(c.mslp, 1)}<small> hPa</small></span><span class="ph-where">${pos(c.lat, c.lon)} · ${when}</span></p>` +
+      (c.terrain ? `<p class="ph-warn">Terrain minimum: surface pressure ${blank(c.psfc) ? 'under 850 hPa' : fmt(c.psfc, 0, 'hPa')}; a false low over high ground.</p>` : '')
+    : `<p class="ph-now muted">${absent ? `Not tracked at ${when}.` : `No closed low near the last position at ${when}.`}</p>`;
+  const lone = !s && c
+    ? `<p class="ph-vals">${TERM.hvtl.sym} <b>${fmt(c.hvtl, 0, '', true)}</b> ${TERM.hvtu.sym} <b>${fmt(c.hvtu, 0, '', true)}</b> B <b>${fmt(c.hb, 1, '', true)}</b> m</p>
+       <p class="ph-hint">This low is not on a track in this run, so it has no path through the phase space.</p>`
+    : '';
+  head.innerHTML = title + now + lone;
+  if (s) head.querySelector('.ph-title b').textContent = s.label;
+  head.querySelector('#ph-follow')?.addEventListener('click', () => (S.follow === s.key ? unfollow() : follow(s.key)));
+  const link = (u, label) => (u ? `<a href="${esc(new URL(u, S.base).href)}" target="_blank" rel="noopener">${label}</a>` : '');
+  const links = body.querySelector('.ph-links');
+  links.innerHTML = s && (s.phase || s.compare) ? [link(s.phase, 'Phase diagram'), link(s.compare, 'Compare with FSU')].filter(Boolean).join(' · ') : '';
+  links.hidden = !links.innerHTML;
+  PH.view?.frame();
 }
