@@ -24,8 +24,8 @@
     </div>
   </div>
   <div class="segmented" id="basin" role="radiogroup" aria-label="Basin">
-    <button type="button" role="radio" data-v="natl" aria-checked="true">Atlantic <small>12 UTC</small></button>
-    <button type="button" role="radio" data-v="npac" aria-checked="false">Pacific <small>00 UTC</small></button>
+    <button type="button" role="radio" data-v="natl" aria-checked="true">Atlantic</button>
+    <button type="button" role="radio" data-v="npac" aria-checked="false">Pacific</button>
   </div>
   <div class="topbar-actions">
     <span class="updated" id="updated"></span>
@@ -46,6 +46,10 @@
       <div class="segmented" id="lead" role="radiogroup" aria-label="Forecast lead"></div>
     </div>
     <div class="ctl">
+      <span class="ctl-label">Valid hour</span>
+      <div class="segmented" id="hour" role="radiogroup" aria-label="Valid hour (UTC)"></div>
+    </div>
+    <div class="ctl">
       <span class="ctl-label">Period</span>
       <div class="period">
         <select id="preset" aria-label="Period"></select>
@@ -57,6 +61,7 @@
   </section>
 
   <div class="note" id="note" hidden></div>
+  <p class="foot" id="hoursNote">Scored valid hours: 00, 06, 12 and 18 UTC in both basins from mid-October 2026; earlier days have only Atlantic 12 UTC and Pacific 00 UTC. "All" pools the hours that exist for each day.</p>
 
   <section class="card">
     <div class="card-head">
@@ -107,7 +112,7 @@
 <aside class="sheet" id="about" hidden aria-labelledby="aboutTitle">
   <div class="sheet-head"><h2 id="aboutTitle">How it's scored</h2><button type="button" class="btn btn-ghost" id="about-close">Close</button></div>
   <div class="sheet-body">
-    <p>Every day the forecasts that were valid two days earlier are rebuilt with the wind page's own code, from the same model runs on the AWS open-data mirrors, and compared with what was observed. North Atlantic: valid 12 UTC, from the 12 UTC runs. North Pacific: valid 00 UTC, from the 00 UTC runs. Sustained 10 m wind, open ice-free water in the OPC chart area. Scores go back to March 2025, when AWS starts holding all of the models.</p>
+    <p>Every day the forecasts that were valid two days earlier are rebuilt with the wind page's own code, from the same model runs on the AWS open-data mirrors, and compared with what was observed. Each valid hour (00, 06, 12, 18 UTC) is scored from the runs of the same hour 1 to 5 days earlier. North Pacific: valid 00 UTC, from the 00 UTC runs. Sustained 10 m wind, open ice-free water in the OPC chart area. Scores go back to March 2025, when AWS starts holding all of the models.</p>
     <h3>What is scored</h3>
     <ul>
       <li><b>Core Lifted</b>: the wind page's main wind, the blend + 5 kt where the core likelihood is 35% or more (storm cores kept).</li>
@@ -120,7 +125,7 @@
     <h3>Truth</h3>
     <ul>
       <li><b>Analysis</b>: the average of the GDAS and ECMWF analyses, every water cell. <b>GDAS</b> and <b>IFS</b> are each alone. Analyses smooth the strongest winds, so they see fewer storm-force cells than ASCAT.</li>
-      <li><b>ASCAT</b>: Metop-B and C within 90 minutes of the valid time, rain-flagged cells dropped, turned from equivalent-neutral into real 10 m wind with the analysed air-sea temperature difference. At 12 UTC the swaths miss most of the Pacific, which is one reason the Pacific is scored at 00 UTC.</li>
+      <li><b>ASCAT</b>: Metop-B and C within 90 minutes of the valid time, rain-flagged cells dropped, turned from equivalent-neutral into real 10 m wind with the analysed air-sea temperature difference. At 12 UTC the swaths miss most of the Pacific. Pacific cells a day: about 17,000 at 06 UTC, 9,000 at 18, 8,000 at 00 and under 1,000 at 12; Atlantic about 22,000 at 00 and 23,000 at 12.</li>
       <li><b>Buoys</b>: moored buoys raised to 10 m. <b>Ships + buoys</b> adds ships, scaled by 0.88 onto the buoy basis. Both come from the GDAS marine monitoring file (first guess + observed departure).</li>
     </ul>
     <h3>Scores</h3>

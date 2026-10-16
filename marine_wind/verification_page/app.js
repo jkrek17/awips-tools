@@ -29,6 +29,10 @@
   ];
   var MBY = {}; METHODS.forEach(function (m) { MBY[m.k] = m; });
   var LEADS = [24, 48, 72, 96, 120];
+  var HOURS = [0, 6, 12, 18];
+  var hh = function (h) { return (h < 10 ? "0" : "") + h; };
+  // Rows carry their valid hour ("hour" column); data written before it was added has none.
+  function hourOk(T, i) { return st.hour === "all" || !T.hour || T.hour[i] === +st.hour; }
 
   function ratio(a, b) { return function (s) { var d = b(s); return d > 0 ? a(s) / d : null; }; }
   function f(k) { return function (s) { return s[k] || 0; }; }
@@ -60,7 +64,7 @@
   METRICS.push({ k: "pk", group: "Storm peaks", label: "Peak off by", unit: "kt", long: "Strongest wind in the box, forecast minus seen (kt)", v: ratio(f("pk_sum"), f("pk_n")), better: "zero", fmt: kt, grid: 1 });
   var MET = {}; METRICS.forEach(function (m) { MET[m.k] = m; });
 
-  var st = { basin: "natl", ref: "analysis", lead: "all", from: null, to: null, preset: "last30", metric: "tc48", thr: 48,
+  var st = { basin: "natl", ref: "analysis", lead: "all", hour: "all", from: null, to: null, preset: "last30", metric: "tc48", thr: 48,
              on: { windcore: 1, blend: 1, nomem: 1, gfs: 1, ecmwf: 1, aifs: 1 } };
   var idx = null, cache = {};
 
@@ -76,7 +80,7 @@
     });
   }
   function writeHash() {
-    var h = ["basin", "ref", "lead", "preset", "metric", "thr"].map(function (k) { return k + "=" + encodeURIComponent(st[k]); });
+    var h = ["basin", "ref", "lead", "hour", "preset", "metric", "thr"].map(function (k) { return k + "=" + encodeURIComponent(st[k]); });
     if (st.preset === "custom") h.push("from=" + st.from, "to=" + st.to);
     h.push("on=" + Object.keys(st.on).join(","));
     history.replaceState(null, "", "#" + h.join("&"));
@@ -118,7 +122,7 @@
 
   function aggregate(D, keep, by) {
     // D: columnar file; keep(i) -> bool; by(i) -> group key. Returns {group: {method: sums + days}}
-    var out = {}, cols = D.cols.filter(function (c) { return c !== "valid" && c !== "lead" && c !== "method"; });
+    var out = {}, cols = D.cols.filter(function (c) { return c !== "valid" && c !== "lead" && c !== "method" && c !== "hour"; });
     var n = D.valid.length;
     for (var i = 0; i < n; i++) {
       if (!keep(i)) continue;
@@ -155,6 +159,9 @@
     });
     seg($("ref"), REFS.map(function (r) { return [r[0], r[1], "", b.referees.indexOf(r[0]) < 0]; }), st.ref, function (v) { st.ref = v; refresh(); });
     seg($("lead"), [["all", "All"]].concat(LEADS.map(function (l) { return [String(l), "+" + l + " h"]; })), st.lead, function (v) { st.lead = v; refresh(); });
+    var hrs = b.hours || (b.hour != null ? [b.hour] : HOURS);
+    if (st.hour !== "all" && hrs.indexOf(+st.hour) < 0) st.hour = "all";
+    seg($("hour"), [["all", "All"]].concat(HOURS.map(function (h) { return [String(h), hh(h), "UTC", hrs.indexOf(h) < 0]; })), st.hour, function (v) { st.hour = v; refresh(); });
     var ps = presets(), sel = $("preset");
     sel.innerHTML = ps.map(function (p) { return '<option value="' + p[0] + '">' + p[1] + "</option>"; }).join("");
     if (!ps.some(function (p) { return p[0] === st.preset; })) st.preset = "last30";
@@ -185,7 +192,7 @@
 
   // ------------------------------------------------------------------ table
   var D = null;
-  function inPeriod(i) { var v = D.valid[i]; return v >= st.from && v <= st.to; }
+  function inPeriod(i) { var v = D.valid[i]; return v >= st.from && v <= st.to && hourOk(D, i); }
   function inLead(i) { return st.lead === "all" || D.lead[i] === +st.lead; }
 
   function bestOf(m, vals) {
@@ -229,7 +236,7 @@
     }).join("");
     t.innerHTML = "<thead>" + h1 + h2 + "</thead><tbody>" + (body || '<tr><td class="na" colspan="20">No scores in this period.</td></tr>') + "</tbody>";
     var rname = REFS.filter(function (r) { return r[0] === st.ref; })[0][2];
-    $("tableSub").textContent = BASINS[st.basin] + ", valid " + (st.basin === "natl" ? "12" : "00") + " UTC, against " + rname + ", " +
+    $("tableSub").textContent = BASINS[st.basin] + ", valid " + (st.hour === "all" ? "all scored hours" : hh(+st.hour) + " UTC") + ", against " + rname + ", " +
       nice(st.from) + " to " + nice(st.to) + ", " + (st.lead === "all" ? "all leads +24 to +120 h" : "+" + st.lead + " h") + ".";
     var n = (agg.windcore || agg.blend || {}).n || 0;
     $("tableFoot").textContent = (n ? n.toLocaleString() + (GRID[st.ref] ? " cell" : " ob") + " comparisons per model. " : "") +
@@ -339,7 +346,7 @@
       var plot = $("chartRel").querySelector(".plot"), t = $("chanceTable");
       var ri = C ? C.referees.indexOf(st.ref) : -1;
       if (!C || ri < 0) { plot.innerHTML = ""; t.innerHTML = '<tbody><tr><td class="na">No chance scores yet.</td></tr></tbody>'; return; }
-      var keep = function (i) { return C.referee[i] === ri && C.thr[i] === st.thr && C.valid[i] >= st.from && C.valid[i] <= st.to; };
+      var keep = function (i) { return C.referee[i] === ri && C.thr[i] === st.thr && C.valid[i] >= st.from && C.valid[i] <= st.to && hourOk(C, i); };
       var bins = [], byLead = {};
       for (var b = 0; b < 10; b++) bins.push({ n: 0, e: 0, p: 0 });
       for (var i = 0; i < C.valid.length; i++) {
@@ -399,7 +406,7 @@
       if (!S) { $("hazTable").innerHTML = $("trackTable").innerHTML = ""; return; }
       var ri = S.referees.indexOf(ref);
       var P = function (name) { return S.products.indexOf(name); };
-      var keep = function (i) { return S.valid[i] >= st.from && S.valid[i] <= st.to; };
+      var keep = function (i) { return S.valid[i] >= st.from && S.valid[i] <= st.to && hourOk(S, i); };
       var hz = { gale: [0, 0, 0], storm: [0, 0, 0], hf: [0, 0, 0] }, tr = {};
       for (var i = 0; i < S.valid.length; i++) {
         if (!keep(i)) continue;
@@ -433,7 +440,7 @@
     if (st.basin === "natl" && st.from <= 20260331 && st.to >= 20251101)
       notes.push("This period overlaps winter 2025-26 (Nov to Mar), when the core likelihood was trained on Atlantic ASCAT and the blend was tuned. Core Lifted and blend scores there flatter them.");
     if (st.from < 20250815 && st.on.aifsens_mean) notes.push("The AIFS ensemble is on AWS only from August 2025, so the AIFS ENS mean has fewer days.");
-    if (st.basin === "npac" && st.ref === "ascat") notes.push("At 00 UTC ASCAT covers mostly the western and central Pacific; the eastern Pacific is seen around 05 and 17 UTC.");
+    if (st.basin === "npac" && st.ref === "ascat") notes.push("ASCAT sees different parts of the Pacific at the four hours (about 17,000 cells a day at 06 UTC, 9,000 at 18, 8,000 at 00 and under 1,000 at 12), so an hour with few cells counts for little.");
     $("note").hidden = !notes.length; $("note").innerHTML = notes.join("<br>");
   }
 
