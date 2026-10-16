@@ -1,8 +1,8 @@
 # Data for the marine wind page (marine_wind/pipeline/build.py): the whole globe
 # under latest/global/ (what the page shows), plus the two OPC boxes cut from it
 # in the older per-basin format, the North Atlantic under latest/ and the North
-# Pacific under latest/npac/, and a first-guess High Seas Forecast text drafted
-# from the Pacific box under latest/hsf/.
+# Pacific under latest/npac/, and first-guess High Seas Forecast texts drafted
+# from each box under latest/hsf/ (pac.*, atl.*).
 # Every model run (00, 06, 12 and 18 UTC): the job checks every hour at :30,
 # and once a cycle's ECMWF ensemble +120 h is on the AWS open-data mirror
 # (about 7-8 h after the cycle), the newest cycle with GFS, GEFS, ECMWF IFS,
@@ -156,10 +156,10 @@ jobs:
           compression-level: 0
           if-no-files-found: ignore
 
-      # First-guess High Seas Forecast text from the North Pacific box just built
+      # First-guess High Seas Forecast texts from the two boxes just built
       # (marine_wind/hsf/), plus GFS-Wave seas. Never holds up the wind page:
-      # a failure here leaves the draft out of this run and publishes the rest.
-      - name: High seas text draft
+      # a failure here leaves that draft out of this run and publishes the rest.
+      - name: High seas text draft (Pacific)
         if: steps.check.outputs.build == 'true'
         continue-on-error: true
         working-directory: marine_wind/hsf
@@ -167,6 +167,14 @@ jobs:
           OUT: ${{ steps.build.outputs.out }}
           MARINE_DOMAIN: npac
         run: python3 build_hsf.py --box "$OUT/npac" --basin pac --out "$OUT/hsf"
+      - name: High seas text draft (Atlantic)
+        if: steps.check.outputs.build == 'true'
+        continue-on-error: true
+        working-directory: marine_wind/hsf
+        env:
+          OUT: ${{ steps.build.outputs.out }}
+          MARINE_DOMAIN: natl
+        run: python3 build_hsf.py --box "$OUT" --basin atl --out "$OUT/hsf"
 
       - name: Publish to the marine-wind-live branch
         if: steps.check.outputs.build == 'true'

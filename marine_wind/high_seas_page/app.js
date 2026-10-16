@@ -4,8 +4,16 @@
   "use strict";
   var K, map, ov, doc = null, hour = 0;
   var $ = function (id) { return document.getElementById(id); };
-  var DATA = "../marine-wind/data/hsf/pac.json";
-  var BOX = "../marine-wind/data/npac/";   // the marine wind page's Pacific box (the draft's own wind)
+  // one draft per basin, each on the marine wind page's own box (the draft's own wind); ?basin=atl
+  var BASINS = {
+    pac: { name: "Pacific", box: "../marine-wind/data/npac/", start: [165, 45], mobile: [-160, 40] },
+    atl: { name: "Atlantic", box: "../marine-wind/data/", start: [-52, 48], mobile: [-50, 45] }
+  };
+  var basin = (new URLSearchParams(location.search).get("basin") || "pac").toLowerCase();
+  if (!BASINS[basin]) basin = "pac";
+  var B = BASINS[basin];
+  var DATA = "../marine-wind/data/hsf/" + basin + ".json";
+  var BOX = B.box;
   var man = null, windCache = {};
 
   // wind classes as the text uses them, faint so the drawn areas stay on top
@@ -54,8 +62,9 @@
   }
 
   function colour(top) { return top >= 64 ? "#a855f7" : top >= 48 ? "#ef4444" : top >= 34 ? "#f59e0b" : "#38bdf8"; }
-  // the Pacific box crosses the date line: keep longitudes continuous (west of 0 = negative)
-  function lon(x) { return x - 360; }
+  // keep longitudes continuous: the Pacific box crosses the date line (0-360 east, drawn as
+  // west of 0 = negative); the Atlantic already comes as -180..180
+  function lon(x) { return basin === "pac" ? x - 360 : x; }
 
   function features(h) {
     return {
@@ -122,6 +131,11 @@
 
   function start() {
     K = window.GlobeKit;
+    document.title = "High Seas Draft · " + B.name;
+    $("basinName").textContent = B.name;
+    $("plainLink").href = "../marine-wind/data/hsf/" + basin + ".txt";
+    $("geoLink").href = "../marine-wind/data/hsf/" + basin + ".geojson";
+    document.querySelectorAll("#basins a").forEach(function (a) { a.setAttribute("aria-current", String(a.dataset.basin === basin)); });
     $("copyBtn").addEventListener("click", function () {
       if (!doc) return;
       navigator.clipboard.writeText(doc.text).then(function () { $("copyBtn").textContent = "Copied"; setTimeout(function () { $("copyBtn").textContent = "Copy text"; }, 1500); },
@@ -135,14 +149,18 @@
       return v[0];
     });
     if (K.webgl()) {
-      map = K.createMap({ start: { center: K.isMobile() ? [-160, 40] : [165, 45], zoom: K.isMobile() ? 1.6 : 2.4 }, credits: "Draft: marine wind blend, GFS-Wave" });
+      map = K.createMap({ start: { center: K.isMobile() ? B.mobile : B.start, zoom: K.isMobile() ? 1.6 : 2.4 }, credits: "Draft: marine wind blend, GFS-Wave" });
       ov = K.overlay(map, $("overlay"));
       map.on("render", labels);
       map.on("load", function () {
-        map.addSource("wind", { type: "image", url: (function () { var c = document.createElement("canvas"); c.width = c.height = 1; return c.toDataURL(); })(), coordinates: [[-225, 67], [-115, 67], [-115, 18], [-225, 18]] });
+        map.addSource("wind", { type: "image", url: (function () { var c = document.createElement("canvas"); c.width = c.height = 1; return c.toDataURL(); })(), coordinates: [[-95, 67], [10, 67], [10, 18], [-95, 18]] });
         map.addLayer({ id: "wind", type: "raster", source: "wind", paint: { "raster-opacity": 0.9, "raster-fade-duration": 0, "raster-resampling": "nearest" } });
         map.addSource("boundary", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
         map.addLayer({ id: "boundary", type: "line", source: "boundary", paint: { "line-color": "#e7eef8", "line-width": 1.2, "line-dasharray": [3, 2], "line-opacity": 0.7 } });
+        // each warning low's track through the page steps (the lows the text names)
+        map.addSource("tracks", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+        map.addLayer({ id: "tracks", type: "line", source: "tracks", paint: { "line-color": "#f8fafc", "line-width": 1.6, "line-opacity": 0.85 } });
+        map.addLayer({ id: "track-pts", type: "circle", source: "tracks", filter: ["==", ["geometry-type"], "Point"], paint: { "circle-radius": 3, "circle-color": "#f8fafc", "circle-stroke-color": "#0a1120", "circle-stroke-width": 1 } });
         map.addSource("areas", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
         map.addLayer({ id: "area-fill", type: "fill", source: "areas", paint: { "fill-color": ["get", "colour"], "fill-opacity": 0.14 } });
         map.addLayer({ id: "area-line", type: "line", source: "areas", paint: { "line-color": ["get", "colour"], "line-width": 2 } });
@@ -151,6 +169,12 @@
             var b = doc.boundary.map(function (p) { return [lon(p[0]), p[1]]; });
             map.getSource("boundary").setData({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: b.concat([b[0]]) } });
           }
+          var tf = [];
+          (doc.tracks || []).forEach(function (t) {
+            tf.push({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: t.points.map(function (p) { return [lon(p.lon), p.lat]; }) } });
+            t.points.forEach(function (p) { tf.push({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [lon(p.lon), p.lat] } }); });
+          });
+          map.getSource("tracks").setData({ type: "FeatureCollection", features: tf });
           show(hour);
         });
       });
