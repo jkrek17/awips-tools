@@ -241,9 +241,8 @@ def step_values(ymd, hh, step):
     """The page's fields at one lead as float grids (vals), the run's stats, and extras the
     verification page scores but the page does not show: each ensemble's mean wind (the speed
     of the members' mean u and v, as AWIPS shows an ensemble mean)."""
-    lag12, lag24 = prior_speeds(ymd, hh, step, 12), prior_speeds(ymd, hh, step, 24)
-    prev = None if lag24 is None else lag24.mean(0)
     with ThreadPoolExecutor(12) as ex:
+        lag_f = [ex.submit(prior_speeds, ymd, hh, step, h) for h in (12, 24)]   # alongside this run's fetches
         track = step in TRACK_STEPS   # members' MSL only where the low track has a point
         det_f = [ex.submit(fetch.gfs, ymd, hh, step), ex.submit(fetch.ec_det, "ifs", ymd, hh, step),
                  ex.submit(fetch.ec_det, "aifs-single", ymd, hh, step)]
@@ -261,6 +260,8 @@ def step_values(ymd, hh, step):
         except Exception as e:  # optional: probabilities fall back to GEFS + ENS
             print("AIFS ensemble +%dh unavailable: %s" % (step, e), flush=True)
             aens = None
+        lag12, lag24 = [f.result() for f in lag_f]
+    prev = None if lag24 is None else lag24.mean(0)
     if any(d is None for d in dets):
         raise RuntimeError("missing deterministic model at +%dh" % step)
     gefs = [g for g in gefs if g is not None]
