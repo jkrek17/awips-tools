@@ -4,7 +4,8 @@ Files are WMO-headed GRIB2 snapshots of the whole sector, rewritten every 3 h wh
 not the desk has sent new grids: wmo/wspd/YYYY/MM/DD/<PRODUCT>_KWBN_YYYYMMDDHHMM.
 YCYZ98 = oceanic days 1-3 (one message per 3 h step, forecastTime 2, 5, ... h after the
 snapshot hour), YCYZ97 = days 4-7. Grid: Mercator 2517 x 1793, 10 km, m/s; land and
-water outside the desk's area are missing.
+water outside the desk's area are missing. Rows are stored boustrophedonic (every second
+row reversed), which eccodes does not undo; wind_on_grid flips them.
 
     keys = ndfd.snapshots(dt.date(2026, 10, 16))              # [(snapshot time, key), ...]
     key = ndfd.covering([t0, t48])                            # newest YCYZ98 holding both
@@ -82,6 +83,13 @@ def wind_on_grid(key, valid, lats, lons):
                 continue
             v = eccodes.codes_get_values(h)
             miss = eccodes.codes_get(h, "missingValue")
+            if eccodes.codes_get(h, "alternativeRowScanning"):
+                # rows alternate direction (boustrophedonic) and eccodes hands them back as
+                # stored: flip every second row so values line up with latitudes/longitudes
+                ni = eccodes.codes_get(h, "Ni")
+                v = v.reshape(-1, ni).copy()
+                v[1::2] = v[1::2, ::-1]
+                v = v.ravel()
             if cells is None:   # cell -> grid box mapping, once per file
                 la = eccodes.codes_get_array(h, "latitudes")
                 lo = eccodes.codes_get_array(h, "longitudes")
