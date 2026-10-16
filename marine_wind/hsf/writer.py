@@ -477,10 +477,23 @@ def time_text(sysd, hour, lead_word=None):
             head = head[:-1] + " " + low[3] + "."
     if sysd.get("note"):
         head += " " + sysd["note"]
+    # areas with the same wind range share one sentence: "FROM ... AND FROM ... WINDS 20 TO 30 KT."
+    groups = []
+    for t in sysd["tiers"]:
+        if groups and tuple(groups[-1][0].wind) == tuple(t.wind):
+            groups[-1].append(t)
+        else:
+            groups.append([t])
     parts = []
-    for i, t in enumerate(sysd["tiers"]):
-        pre = "" if i == 0 else ("ELSEWHERE " if t.level == sysd["tiers"][-1].level and i == len(sysd["tiers"]) - 1 else "ALSO ")
-        parts.append("%s%s %s%s" % (pre, t.phrase["text"], fmt_wind(t.wind), fmt_seas(t.seas)))
+    for i, g in enumerate(groups):
+        last = groups[-1][0]
+        pre = "" if i == 0 else ("ELSEWHERE " if g[0].level == last.level and i == len(groups) - 1 else "ALSO ")
+        seas = [t.seas for t in g if t.seas]
+        if seas:
+            seas = (None if any(x[0] is None for x in seas) else min(x[0] for x in seas), max(x[1] for x in seas))
+        else:
+            seas = None
+        parts.append("%s%s %s%s" % (pre, "...AND ".join(t.phrase["text"] for t in g), fmt_wind(g[0].wind), fmt_seas(seas)))
     return "." + " ".join(x for x in (head.strip(), " ".join(parts)) if x)
 
 
