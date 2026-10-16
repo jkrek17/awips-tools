@@ -70,11 +70,12 @@ def gfs_hours(ymd, hh, kind):
         pat = r"gfswave\.t%sz\.global\.0p25\.f(\d{3})\.grib2\.idx" % hh
     return sorted({int(h) for h in re.findall(pat, r.text)}) if r is not None else []
 
-def ec_steps(ymd, hh, stream):
+def ec_steps(ymd, hh, stream, model="ifs"):
+    """model "ifs" (ECMWF HRES) or "aifs-single" (AIFS)."""
     if SOURCE == "aws":
-        r = _s3_list(ECMWF_AWS, "%s/%sz/ifs/0p25/%s/" % (ymd, hh, stream))
+        r = _s3_list(ECMWF_AWS, "%s/%sz/%s/0p25/%s/" % (ymd, hh, model, stream))
     else:
-        r = _get("%s/%s/%sz/ifs/0p25/%s/" % (ECMWF, ymd, hh, stream))
+        r = _get("%s/%s/%sz/%s/0p25/%s/" % (ECMWF, ymd, hh, model, stream))
     pat = r"%s%s0000-(\d+)h-%s-fc\.index" % (ymd, hh, stream)
     return sorted({int(s) for s in re.findall(pat, r.text)}) if r is not None else []
 
@@ -150,10 +151,10 @@ def gfs_fields(ymd, hh, fhr, kind):
         return _get("%s/cgi-bin/%s" % (NOMADS, q)).content
     return _cached("gfs_%s_%s_%s_f%03d_%s" % (kind, ymd, hh, fhr, _box()), fetch)
 
-def ec_fields(ymd, hh, step, stream, params):
+def ec_fields(ymd, hh, step, stream, params, model="ifs"):
     def fetch():
         root = ECMWF_AWS if SOURCE == "aws" else ECMWF
-        base = "%s/%s/%sz/ifs/0p25/%s/%s%s0000-%dh-%s-fc" % (root, ymd, hh, stream, ymd, hh, step, stream)
+        base = "%s/%s/%sz/%s/0p25/%s/%s%s0000-%dh-%s-fc" % (root, ymd, hh, model, stream, ymd, hh, step, stream)
         idx = [json.loads(l) for l in _get(base + ".index").text.splitlines() if l.strip()]
         blob = b""
         for rec in idx:
@@ -161,7 +162,8 @@ def ec_fields(ymd, hh, step, stream, params):
                 a, n = rec["_offset"], rec["_length"]
                 blob += _get(base + ".grib2", headers={"Range": "bytes=%d-%d" % (a, a + n - 1)}).content
         return blob
-    return _cached("ec_%s_%s_%s_%03d_%s" % (stream, ymd, hh, step, _box()), fetch)
+    prefix = "ec" if model == "ifs" else model
+    return _cached("%s_%s_%s_%s_%03d_%s" % (prefix, stream, ymd, hh, step, _box()), fetch)
 
 
 def _box():

@@ -81,8 +81,32 @@ Two details of the open data the script handles: ECMWF's gust is `10fg`
 through 90 h and `10fg3` after it, and NOMADS answers 403, not 404, for a
 cycle that has not started posting.
 
+## Deterministic blend for Wind
+
+`test_blend.py` scenarios 10-13 cover it: the 9-run recipe at a point, AIFS
+missing (6 runs, AIFS named in the message), deterministic Wind with weighted
+gusts and pmsl (gusts raised to the new Wind), and no model at all (nothing
+written).
+
+```
+python3 run_real_data.py --source aws --deterministic --box 35,60,-60,-20 --hours 72
+```
+
+adds AIFS (`aifs-single` on `ecmwf-forecasts`) as `D2D_AIFS`, offers enough
+cycles to reach 24 h back, and checks Wind against the marine wind page's own
+code (`marine_wind/pipeline/build.py`) on the same grids. On 14 Oct 2026 at
+about 21Z it picked the 12Z runs of GFS, ECMWF and AIFS plus their 00Z 14 Oct
+and 12Z 13 Oct runs, wrote 100 grids, and matched the page recipe to 0.0000 kt
+at all 25 times. At +60 h it had 1044 cells at 34+ kt against 842 for the
+plain 3-model mean.
+
+`tests/check_model_sources/test_check.py` checks `Check_ModelSources` on a
+fake server.
+
 ## Not covered here
 
 These need a real GFE: the parm and level names your D2D databases use
 (listed at the top of the procedure, easy to change), and laying out new Fcst
-grids on an element's time constraints when the selection has none.
+grids on an element's time constraints when the selection has none. The AIFS
+database name in `model_aliases.py` is a guess; `Check_ModelSources` shows the
+real one, which can go in `model_aliases.overrides.json`.
