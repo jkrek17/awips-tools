@@ -50,6 +50,7 @@ on:
       - 'cyclone_phase_space/article/figures/**'
       - 'marine_wind/page/**'
       - 'marine_wind/verification_page/**'
+      - 'marine_wind/high_seas_page/**'
       - 'globe_kit/**'
       - '.github/workflows/site_publish.yml'
       - 'tools/build_site_index.py'
@@ -175,6 +176,10 @@ jobs:
           if [ -d "$RUNNER_TEMP/verif/data" ]; then
             cp -r "$RUNNER_TEMP/verif/data/." "$site/verification/data/"
           fi
+          # The high seas text draft page, at /high-seas/; its data is the
+          # marine wind page's data/hsf/ (published just above).
+          mkdir -p "$site/high-seas"
+          cp -r marine_wind/high_seas_page/. "$site/high-seas/"
           # Stamp the page's own script and style links with the commit so a
           # browser holding a cached index.html never pairs it with stale
           # files (Pages serves everything with a 10 minute max-age).
@@ -186,6 +191,7 @@ jobs:
           grep -c "?v=$v" "$site/cyclone/index.html"
           sed -i -E "s#(href|src)=\"(style\.css|app\.js|scorecard\.js|$kit)\"#\1=\"\2?v=$v\"#g" "$site/marine-wind/index.html"
           sed -i -E "s#(href|src)=\"(style\.css|app\.js)\"#\1=\"\2?v=$v\"#g" "$site/verification/index.html"
+          sed -i -E "s#(href|src)=\"(app\.js|$kit)\"#\1=\"\2?v=$v\"#g" "$site/high-seas/index.html"
           touch "$site/.nojekyll"
           du -sh "$site"
 
@@ -195,10 +201,10 @@ jobs:
           REPO: ${{ vars.PUBLIC_SITE_REPO }}
           TOKEN: ${{ secrets.WEB_TOKEN }}
           # Folders this workflow writes (cyclone, article, forecasters,
-          # marine-wind, verification, globe-kit),
+          # marine-wind, verification, high-seas, globe-kit),
           # plus data/, fonts/ and basemap/,
           # which the map used at the root before it moved to /cyclone/.
-          OWN_FOLDERS: cyclone article forecasters marine-wind verification globe-kit data fonts basemap
+          OWN_FOLDERS: cyclone article forecasters marine-wind verification high-seas globe-kit data fonts basemap
         run: |
           current="$RUNNER_TEMP/current"
           rm -rf "$current"
