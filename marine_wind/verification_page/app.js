@@ -16,7 +16,7 @@
   ];
   var GRID = { analysis: 1, gdas: 1, ifs: 1, ascat: 1 };
   var METHODS = [
-    { k: "windcore", name: "Page wind", sub: "blend + storm cores", c: "--m-windcore", ours: 1 },
+    { k: "windcore", name: "Core Lifted", sub: "blend + 5 kt in storm cores", c: "--m-windcore", ours: 1 },
     { k: "blend", name: "Blend, no core lift", c: "--m-blend", ours: 1 },
     { k: "nomem", name: "Deterministic blend", sub: "no members", c: "--m-nomem", ours: 1 },
     { k: "mean3", name: "3-model average", c: "--m-mean3" },
@@ -431,7 +431,7 @@
   function drawNote() {
     var notes = [];
     if (st.basin === "natl" && st.from <= 20260331 && st.to >= 20251101)
-      notes.push("This period overlaps winter 2025-26 (Nov to Mar), when the core likelihood was trained on Atlantic ASCAT and the blend was tuned. Page wind and blend scores there flatter them.");
+      notes.push("This period overlaps winter 2025-26 (Nov to Mar), when the core likelihood was trained on Atlantic ASCAT and the blend was tuned. Core Lifted and blend scores there flatter them.");
     if (st.from < 20250815 && st.on.aifsens_mean) notes.push("The AIFS ensemble is on AWS only from August 2025, so the AIFS ENS mean has fewer days.");
     if (st.basin === "npac" && st.ref === "ascat") notes.push("At 00 UTC ASCAT covers mostly the western and central Pacific; the eastern Pacific is seen around 05 and 17 UTC.");
     $("note").hidden = !notes.length; $("note").innerHTML = notes.join("<br>");

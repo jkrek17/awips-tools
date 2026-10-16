@@ -7,7 +7,7 @@ did against every truth source we use, one basin and one valid time per run.
 Forecasts come from the page job's forecast record (pipeline/record.py), else are rebuilt with the page's
 own pipeline (build.step_values), so the blends are exactly what the page showed (or would have shown):
 
-    windcore      page wind: the blend + 5 kt where the core likelihood is 35%+
+    windcore      Core Lifted (the page's main wind): the blend + 5 kt where the core likelihood is 35%+
     blend         the blend before the core lift: support-weighted 3 models + min(k x spread, 5 kt)
     nomem         deterministic blend (no members; the GFE candidate)
     mean3         plain average of GFS, ECMWF and AIFS

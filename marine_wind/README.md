@@ -197,7 +197,7 @@ python3 marine_wind/scorecard/scorecard.py --backfill 30 --scores marine_wind/pa
 ## Verification page (Oct 2026)
 
 A separate page, `/verification/`, shows forecasters how every model and blend
-on this page has verified: the page wind (blend + storm cores), the blend before
+on this page has verified: Core Lifted (the page's main wind: blend + storm cores), the blend before
 the core lift, the deterministic blend, the plain 3-model average, GFS, ECMWF,
 AIFS and the GEFS, ENS and AIFS ENS means. Truth: the GDAS + IFS analysis mean
 (or either alone), ASCAT, moored buoys, and ships + buoys. North Atlantic valid
