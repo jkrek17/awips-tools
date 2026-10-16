@@ -11,10 +11,13 @@
    GPU wraps them onto the globe. Lines (isobars, edges, lone outlines, graticule)
    are GeoJSON layers; text (H/L, isobar values, lone labels, graticule labels) and
    arrows go on a 2D overlay canvas, because the page loads no map fonts, and skip
-   anything on the far side of the globe. */
+   anything on the far side of the globe. The map, overlay canvas, graticule, land,
+   timeline rail, icons and formats come from the site's globe kit
+   (../globe-kit/globe-kit.js, window.GlobeKit). */
 (function () {
   "use strict";
 
+  var K = window.GlobeKit;
   var DATA = "data/global/";
   var $ = function (id) { return document.getElementById(id); };
 
@@ -116,11 +119,10 @@
   // ------------------------------------------------------------------- state
   var man = null, grid = null, fieldIx = {}, cache = {}, order = [], frame = null;
   var state = { layer: "wind", step: 0, lone: true, msl: true, arrows: false, edges: true, tested: true, view: "global", opacity: 0.85, hazard: true, track: true };
-  var map = null, overlay = $("overlay"), octx = overlay.getContext("2d");
-  var hover = null, playTimer = null, lines = null, areas = [], labels = [];
-  var MAXLAT = 85.0511, TILE = 256, paint = null, paintVersion = 0;
-
-  function wrapLon(lon) { return ((lon + 180) % 360 + 360) % 360 - 180; }
+  var map = null, ov = null, octx = null, overlay = $("overlay");
+  var hover = null, playTimer = null, lines = null, areas = [], labels = [], rail = null;
+  var MAXLAT = K.MAXLAT, TILE = 256, paint = null, paintVersion = 0;
+  var wrapLon = K.wrapLon, lonText = K.lonText, latText = K.latText, fmtTime = K.fmtTime, isMobile = K.isMobile;
 
   // grid index <-> lon/lat (the global grid runs 180W..179.75E, 90N..90S)
   function gLon(i) { return grid.west + i * grid.res; }
@@ -222,24 +224,12 @@
     el.hidden = !(note && !shown);
   }
 
-  // land, in Mercator world units (0..1), ring by ring with its bounding box, to cut
-  // out of each tile so the basemap's land shows through and the coast stays sharp
+  // land in Mercator world units, cut out of each tile so the basemap's land shows
+  // through and the coast stays sharp
   var landRings = null;
   function loadLand() {
-    return fetch("land.json").then(function (r) { return r.json(); }).then(function (g) {
-      landRings = [];
-      g.geometry.coordinates.forEach(function (poly) {
-        poly.forEach(function (ring) {
-          var xs = [], ys = [], x0 = 1, x1 = 0, y0 = 1, y1 = 0;
-          ring.forEach(function (c) {
-            var lat = Math.max(-MAXLAT, Math.min(MAXLAT, c[1]));
-            var x = (c[0] + 180) / 360, y = (1 - Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) / Math.PI) / 2;
-            xs.push(x); ys.push(y);
-            if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
-          });
-          landRings.push({ xs: xs, ys: ys, box: [x0, y0, x1, y1] });
-        });
-      });
+    return K.land().then(function (g) {
+      landRings = K.landRings(g);
       paintVersion++;
       var src = map && map.getSource("field");
       if (src) src.setTiles(["mwfield://{z}/{x}/{y}?v=" + paintVersion]);
@@ -494,12 +484,6 @@
   }
 
   // ------------------------------------------------------------- map setup
-  function graticule() {
-    var f = [];
-    for (var lon = -180; lon <= 180; lon += 10) { var c = []; for (var lat = -80; lat <= 80; lat += 2) c.push([lon, lat]); f.push(c); }
-    for (var la = -80; la <= 80; la += 10) { var d = []; for (var lo = -180; lo <= 180; lo += 2) d.push([lo, la]); f.push(d); }
-    return featureColl([multiLine(f)]);
-  }
   function testedArea() {
     return featureColl((grid.tested || []).map(function (b) {
       return multiLine([[[b.west, b.south], [b.east, b.south], [b.east, b.north], [b.west, b.north], [b.west, b.south]]], { name: b.name });
@@ -511,32 +495,16 @@
     });
   }
 
-  var ESRI_OCEAN = "https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}";
   function buildMap(start) {
-    var opts = {
-      container: "map",
-      style: {
-        version: 8,
-        projection: { type: "globe" },
-        // atmosphere glow round the globe, faded out before it hazes zoomed-in views (as on /ndfd/)
-        sky: { "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 0, 1, 2.5, 1, 4, 0] },
-        sources: { ocean: { type: "raster", tiles: [ESRI_OCEAN], tileSize: 256, maxzoom: 13, attribution: "Basemap &copy; Esri" } },
-        layers: [{ id: "ocean", type: "raster", source: "ocean", paint: { "raster-saturation": -0.15, "raster-brightness-max": 0.95 } }]
-      },
-      minZoom: 0, maxZoom: 9, attributionControl: false, keyboard: true, fadeDuration: 0
-    };
-    if (start.bounds) { opts.bounds = start.bounds; opts.fitBoundsOptions = { padding: viewPadding() }; }
-    else { opts.center = start.center; opts.zoom = start.zoom; }
-    map = new maplibregl.Map(opts);
+    if (start.bounds) start.padding = viewPadding();
+    map = K.createMap({ start: start, credits: "NOAA GFS, GEFS &middot; ECMWF open data &middot; Natural Earth" });
     window.MW_map = map;   // for console diagnostics
-    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
-    map.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: "NOAA GFS, GEFS &middot; ECMWF open data &middot; Natural Earth" }), "bottom-left");
-    map.addControl(new maplibregl.ScaleControl({ unit: "nautical" }), "bottom-left");
+    ov = K.overlay(map, overlay); octx = ov.ctx;
     map.on("load", function () {
       map.addSource("field", { type: "raster", tiles: ["mwfield://{z}/{x}/{y}?v=" + paintVersion], tileSize: TILE, maxzoom: 7 });
       map.addLayer({ id: "field", type: "raster", source: "field", paint: { "raster-resampling": "nearest", "raster-fade-duration": 0, "raster-opacity": state.opacity } });
-      map.addSource("graticule", { type: "geojson", data: graticule() });
-      map.addLayer({ id: "graticule", type: "line", source: "graticule", paint: { "line-color": "rgba(231,238,248,0.12)", "line-width": 0.8 } });
+      map.addSource("graticule", { type: "geojson", data: K.graticule() });
+      map.addLayer({ id: "graticule", type: "line", source: "graticule", paint: K.GRATICULE_PAINT });
       map.addSource("tested", { type: "geojson", data: testedArea() });
       map.addLayer({ id: "tested", type: "line", source: "tested", paint: { "line-color": TESTED_COLOR, "line-opacity": 0.85, "line-width": 1.4, "line-dasharray": [1, 2.5] } });
       ["cone", "isobars", "edges", "hazard", "lone", "track", "trackpts"].forEach(function (id) { map.addSource(id, { type: "geojson", data: featureColl([]), tolerance: 0.2 }); });
@@ -563,16 +531,12 @@
         "circle-color": ["case", ["has", "now"], "#38bdf8", ["==", ["get", "past"], 1], "#ffffff", "#0f1829"],
         "circle-stroke-color": "#ffffff", "circle-stroke-width": ["case", ["has", "now"], 2, 1.5] } });
       setTested();
-      // the data credits start folded to the (i) button, so they never cover the map
-      var at = document.querySelector(".maplibregl-ctrl-attrib");
-      if (at) at.classList.remove("maplibregl-compact-show");
       loadLand();
       ready();
     });
     map.on("render", drawOverlay);
     map.on("moveend", function () { placeLabels(); drawOverlay(); summary(); writeHash(); });
     map.on("movestart", function (e) { if (e.originalEvent) setView(null); });
-    map.on("resize", sizeOverlay);
     map.on("mousemove", function (e) { readout(e.point, e.lngLat); });
     map.on("click", function (e) { readout(e.point, e.lngLat); });
     map.on("error", function (e) {
@@ -581,7 +545,6 @@
       else if (e && e.error) console.error(e.error);
     });
     map.getCanvas().addEventListener("mouseleave", function () { $("readout").hidden = true; $("coords").textContent = ""; hover = null; drawOverlay(); });
-    sizeOverlay();
   }
   // room for the floating cards round the map when fitting a view
   function viewPadding() {
@@ -589,41 +552,12 @@
     var tl = document.querySelector(".timeline").getBoundingClientRect(), panelOpen = document.body.classList.contains("panel-open") && r.width > 760;
     return { top: tb.bottom + 8, bottom: r.height - tl.top + 8, left: panelOpen ? 312 + 24 : 16, right: r.width > 760 ? 56 : 12 };
   }
-  var noteTimer = null;
-  function note(t) {
-    var el = $("status"); el.textContent = t;
-    clearTimeout(noteTimer); noteTimer = setTimeout(function () { if (el.textContent === t) el.textContent = ""; }, 8000);
-  }
+  var note = K.note;
   function setTested() { if (map.getLayer("tested")) map.setLayoutProperty("tested", "visibility", state.tested ? "visible" : "none"); }
 
   // -------------------------------------------------------------- overlay
-  function sizeOverlay() {
-    var box = $("map"), dpr = window.devicePixelRatio || 1;
-    overlay.width = Math.round(box.clientWidth * dpr); overlay.height = Math.round(box.clientHeight * dpr);
-    overlay.style.width = box.clientWidth + "px"; overlay.style.height = box.clientHeight + "px";
-    octx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  }
   // screen position of a lon/lat, as a list: empty when it is off screen or on the far side of the globe
-  function hidden(lon, lat) { return map.transform.isLocationOccluded(new maplibregl.LngLat(lon, lat)); }
-  // zoomed out on the globe, text near the rim is foreshortened into a pile-up: leave it off
-  function nearRim(lon, lat) {
-    if (map.getZoom() >= 3) return false;
-    var c = map.getCenter(), r = Math.PI / 180;
-    return Math.sin(c.lat * r) * Math.sin(lat * r) + Math.cos(c.lat * r) * Math.cos(lat * r) * Math.cos((lon - c.lng) * r) < 0.42;
-  }
-  function proj(lon, lat) {
-    var w = overlay.clientWidth, h = overlay.clientHeight, c = map.getCenter().lng;
-    lon = c + wrapLon(lon - c);
-    if (hidden(lon, lat) || nearRim(lon, lat)) return [];
-    var p = map.project([lon, lat]);
-    return p.x > -60 && p.x < w + 60 && p.y > -30 && p.y < h + 30 ? [p] : [];
-  }
-  function lonText(lon, dp) {
-    var l = wrapLon(lon);
-    if (Math.abs(Math.abs(l) - 180) < 1e-6) return "180";
-    return Math.abs(l).toFixed(dp) + (l < 0 ? "W" : l > 0 ? "E" : "");
-  }
-  function latText(lat, dp) { return Math.abs(lat).toFixed(dp) + (lat > 0 ? "N" : lat < 0 ? "S" : ""); }
+  function proj(lon, lat) { return ov.proj(lon, lat); }
 
   function drawOverlay() {
     if (!map || !frame) return;
@@ -642,43 +576,9 @@
       });
     }
   }
-  // each graticule line labelled once, where it first shows from the left (parallels)
-  // or the bottom (meridians) of the view, so the labels work on the globe and zoomed in
   function drawGraticuleLabels(w, h, fam) {
-    var z = map.getZoom(), stp = z >= 4 ? 10 : z >= 2 ? 20 : 30, c = map.getCenter();
-    octx.font = "10px " + fam; octx.fillStyle = "rgba(231,238,248,0.6)";
-    octx.textAlign = "left"; octx.textBaseline = "alphabetic";
-    var top = document.querySelector(".topbar").getBoundingClientRect().bottom;
-    var bot = Math.min(h, document.querySelector(".timeline").getBoundingClientRect().top);
-    var ok = function (p) { return p.x >= 4 && p.x <= w - 40 && p.y >= top + 12 && p.y <= bot - 6; };
-    var span = z < 3 ? 180 : 90, d = z < 3 ? 2 : 0.5, cr = Math.PI / 180;
-    // zoomed out, keep labels off the crowded rim of the globe
-    var ok0 = ok;
-    ok = function (p, ln, lt) {
-      if (!ok0(p)) return false;
-      if (z >= 3) return true;
-      var cosd = Math.sin(c.lat * cr) * Math.sin(lt * cr) + Math.cos(c.lat * cr) * Math.cos(lt * cr) * Math.cos((ln - c.lng) * cr);
-      return cosd > 0.42;
-    };
-    for (var lat = -80; lat <= 80; lat += stp) {
-      var best = null;
-      for (var lo = -span; lo <= span; lo += d) {
-        var ln = c.lng + lo;
-        if (hidden(ln, lat)) continue;
-        var p = map.project([ln, lat]);
-        if (ok(p, ln, lat) && (!best || p.x < best.x)) best = p;
-      }
-      if (best) octx.fillText(latText(lat, 0), best.x + 3, best.y - 3);
-    }
-    for (var lon = Math.round((c.lng - span) / stp) * stp; lon <= c.lng + span; lon += stp) {
-      var b2 = null;
-      for (var la = -80; la <= 80; la += d) {
-        if (hidden(lon, la)) continue;
-        var q = map.project([lon, la]);
-        if (ok(q, lon, la) && (!b2 || q.y > b2.y)) b2 = q;
-      }
-      if (b2) octx.fillText(lonText(lon, 0), b2.x + 3, b2.y - 3);
-    }
+    K.graticuleLabels(map, ov, document.querySelector(".topbar").getBoundingClientRect().bottom,
+      document.querySelector(".timeline").getBoundingClientRect().top, fam);
   }
   function drawArrows(w, h) {
     var dir = frame.dir, sp = frame.wind, sc = man.fields[fieldIx.wind].scale, gap = 28;
@@ -931,32 +831,7 @@
   }
 
   // ---------------------------------------------------------------- controls
-  var DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], MONS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  function pad(n) { return ("0" + n).slice(-2); }
-  function fmtTime(iso, withDay) {
-    var d = new Date(iso);
-    return pad(d.getUTCHours()) + "Z " + (withDay ? DAYS[d.getUTCDay()] + " " : "") + d.getUTCDate() + " " + MONS[d.getUTCMonth()];
-  }
-  function fmtValid(iso) {
-    var d = new Date(iso);
-    return DAYS[d.getUTCDay()] + " " + pad(d.getUTCDate()) + " " + MONS[d.getUTCMonth()] + " · " + pad(d.getUTCHours()) + ":00 UTC";
-  }
-
-  // icons as on /ndfd/
-  var ICONS = {
-    layers: '<path d="M12 3 2 8l10 5 10-5-10-5Z"/><path d="m2 13 10 5 10-5"/><path d="m2 18 10 5 10-5" opacity=".5"/>',
-    help: '<circle cx="12" cy="12" r="9.5"/><path d="M9.5 9.2a2.6 2.6 0 0 1 5 1c0 1.8-2.5 2.2-2.5 3.8"/><circle cx="12" cy="17.3" r=".6" fill="currentColor"/>',
-    close: '<path d="M6 6l12 12M18 6 6 18"/>',
-    prev: '<path d="M15 6l-6 6 6 6"/>',
-    next: '<path d="M9 6l6 6-6 6"/>',
-    play: '<path d="M8 5.5v13l10.5-6.5L8 5.5Z" fill="currentColor"/>',
-    pause: '<path d="M8 5v14M16 5v14" stroke-width="3"/>'
-  };
-  function icon(name) {
-    return '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" ' +
-      'stroke-linecap="round" stroke-linejoin="round">' + ICONS[name] + "</svg>";
-  }
-  function isMobile() { return window.matchMedia("(max-width: 760px)").matches; }
+  var icon = K.icon;
 
   function show(b) {
     frame = b;
@@ -973,14 +848,13 @@
     state.step = Math.max(0, Math.min(man.steps.length - 1, i));
     $("lead").value = state.step;
     var st = man.steps[state.step];
-    $("validTime").textContent = fmtValid(st.valid);
+    $("validTime").textContent = K.fmtValid(st.valid);
     $("validRel").textContent = "+" + st.step + " h · " + fmtTime(man.cycle) + " run";
     $("tlHour").textContent = "+" + st.step + " h";
     $("tlCycle").textContent = fmtTime(st.valid, true);
     $("prev").disabled = state.step === 0;
     $("next").disabled = state.step === man.steps.length - 1;
-    var done = $("tlAvail").firstChild;
-    if (done) done.style.width = (man.steps.length > 1 ? state.step / (man.steps.length - 1) * 100 : 100) + "%";
+    if (rail) rail.done(state.step);
     busy(true);
     loadStep(state.step).then(function (b) {
       if (man.steps[state.step].step !== st.step) return;
@@ -988,26 +862,6 @@
       show(b); writeHash();
       if (state.step + 1 < man.steps.length) loadStep(state.step + 1).catch(function () {});
     }).catch(function (e) { busy(false); note("Could not load +" + st.step + " h (" + e.message + ")"); });
-  }
-  // the timeline: a tick per lead, days marked at 00 UTC, "now" where the clock is
-  function renderTimeline() {
-    var ticks = $("tlTicks"), n = man.steps.length - 1;
-    ticks.innerHTML = "";
-    $("tlAvail").innerHTML = '<div class="done"></div>';
-    man.steps.forEach(function (st, k) {
-      var d = new Date(st.valid), t = document.createElement("div");
-      t.className = "tick";
-      t.style.left = (n ? k / n * 100 : 0) + "%";
-      if (d.getUTCHours() === 0) { t.classList.add("tick-day"); t.innerHTML = "<span>" + DAYS[d.getUTCDay()] + "<em> " + pad(d.getUTCDate()) + "</em></span>"; }
-      else if (d.getUTCHours() === 12) { t.classList.add("tick-mid"); t.innerHTML = "<span>12Z</span>"; }
-      ticks.appendChild(t);
-    });
-    renderNow();
-  }
-  function renderNow() {
-    var a = new Date(man.steps[0].valid).getTime(), b = new Date(man.steps[man.steps.length - 1].valid).getTime(), now = Date.now(), el = $("tlNow");
-    el.hidden = !(now >= a && now <= b && b > a);
-    if (!el.hidden) el.style.left = ((now - a) / (b - a) * 100) + "%";
   }
   function setLayer(name) {
     state.layer = name;
@@ -1028,11 +882,7 @@
     else map.fitBounds(v.bounds, { padding: viewPadding(), bearing: 0, pitch: 0, duration: 900 });
     setView(key);
   }
-  // the whole disc of the globe, between the top bar and the timeline
-  function globalZoom() {
-    var h = window.innerHeight - (isMobile() ? 190 : 230), w = window.innerWidth - 24;
-    return Math.max(0, Math.log2(Math.min(h, w) * 0.95 / 163));
-  }
+  var globalZoom = K.globalZoom;
   // the scorecard follows the basin the map is centred on
   window.MW_scoreBasin = function () {
     if (!map) return "natl";
@@ -1061,11 +911,7 @@
     return start;
   }
 
-  function setPanelOpen(open) {
-    document.body.classList.toggle("panel-open", open);
-    $("btnLayers").setAttribute("aria-expanded", String(open));
-    $("scrim").hidden = !(open && isMobile());
-  }
+  var setPanelOpen = K.setPanelOpen;
   function togglePlay() {
     var btn = $("play");
     if (playTimer) { clearInterval(playTimer); playTimer = null; }
@@ -1162,8 +1008,7 @@
     $("about-btn").addEventListener("click", function () { $("about").hidden = false; this.setAttribute("aria-expanded", "true"); });
     $("about-close").addEventListener("click", closeAbout);
     $("about").addEventListener("click", function (e) { if (e.target === this) closeAbout(); });
-    renderTimeline();
-    setInterval(renderNow, 60000);
+    rail = K.timeline(man.steps.map(function (st) { return st.valid; }));
   }
   // builds run about 8.5 h after each cycle, so a run is up to ~21 h old in normal service;
   // past a day a build has been missed
@@ -1185,7 +1030,7 @@
   // ------------------------------------------------------------------- start
   function fatal(msg) { $("fatalMsg").textContent = msg; $("fatal").hidden = false; }
   setPanelOpen(!isMobile());
-  if (!window.maplibregl || !document.createElement("canvas").getContext("webgl2") && !document.createElement("canvas").getContext("webgl")) {
+  if (!K.webgl()) {
     fatal("This page needs a browser with WebGL enabled.");
     return;
   }
