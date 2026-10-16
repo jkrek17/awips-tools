@@ -110,7 +110,7 @@
     <p>Every day the forecasts that were valid two days earlier are rebuilt with the wind page's own code, from the same model runs on the AWS open-data mirrors, and compared with what was observed. North Atlantic: valid 12 UTC, from the 12 UTC runs. North Pacific: valid 00 UTC, from the 00 UTC runs. Sustained 10 m wind, open ice-free water in the OPC chart area. Scores go back to March 2025, when AWS starts holding all of the models.</p>
     <h3>What is scored</h3>
     <ul>
-      <li><b>Page wind</b>: the wind page's grid, the blend + 5 kt where the core likelihood is 35% or more (storm cores kept).</li>
+      <li><b>Core Lifted</b>: the wind page's main wind, the blend + 5 kt where the core likelihood is 35% or more (storm cores kept).</li>
       <li><b>Blend, no core lift</b>: GFS, ECMWF and AIFS weighted at each point by member support, + min(k × member spread, 5 kt).</li>
       <li><b>Deterministic blend</b>: the GFE candidate that needs no members (9 lagged runs). Scored only when all 9 runs are there.</li>
       <li><b>3-model average</b>: plain average of GFS, ECMWF and AIFS.</li>
@@ -134,7 +134,7 @@
     </ul>
     <h3>Read with care</h3>
     <ul>
-      <li>The core likelihood was trained on North Atlantic ASCAT from winter 2025-26 (Nov to Mar), and the blend was tuned on winter 2025-26 and fall 2026 cases. Scores for the page wind and blend in those periods flatter them.</li>
+      <li>The core likelihood was trained on North Atlantic ASCAT from winter 2025-26 (Nov to Mar), and the blend was tuned on winter 2025-26 and fall 2026 cases. Scores for Core Lifted and the blend in those periods flatter them.</li>
       <li>A few storm-force cases make a percentage. Check the counts in the column headings before reading much into storm and hurricane force.</li>
     </ul>
   </div>
