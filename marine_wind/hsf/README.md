@@ -12,7 +12,7 @@ came from, so the same code serves:
 | --- | --- |
 | `writer.py` | Areas, phrases, wind and seas ranges, lows, complex lows, paragraphs, warnings |
 | `areas.py` | Forecast area outlines, point-in-polygon, mask outlines for maps (numpy only) |
-| `build_hsf.py` | Reads the page's Pacific box (`manifest.json` + `fFFF.bin`), adds GFS-Wave seas, writes `pac.txt` and `pac.json` |
+| `build_hsf.py` | Reads one of the page's boxes (`manifest.json` + `fFFF.bin`), adds GFS-Wave seas, writes `pac.*` (HSFEP1) or `atl.*` (HSFAT1, north of 31N to 67N and west of 35W) |
 
 ## Rules (Jason, Oct 2026)
 - Describe an area as a lat/lon box first, then quadrants or semicircles round the low
@@ -34,6 +34,10 @@ The page holds leads every 12 h, so cycle C writes the draft whose synopsis is C
 `write_product` accepts 6 h steps unchanged if the page ever carries them.
 
 ## Try it
-    MARINE_DOMAIN=npac python3 build_hsf.py --box path/to/latest/npac --out /tmp/hsf
+    MARINE_DOMAIN=npac python3 build_hsf.py --box path/to/latest/npac --basin pac --out /tmp/hsf
+    MARINE_DOMAIN=natl python3 build_hsf.py --box path/to/latest --basin atl --out /tmp/hsf
+
+The Atlantic text follows the same rules: the archive (HSFAT1, winter 2025-26) uses the same
+area forms, ranges and step words as the Pacific.
 
 Research, archive scoring and plots: the project's `hsf/` folder (not in this repo).

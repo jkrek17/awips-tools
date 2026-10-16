@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>High Seas Draft · Pacific</title>
-<meta name="description" content="A first-guess OPC High Seas Forecast (Pacific) written automatically from the marine wind page's grids and GFS-Wave seas each model run, with its warning areas on a globe. For forecasters to edit, not an official product.">
+<title>High Seas Draft</title>
+<meta name="description" content="A first-guess OPC High Seas Forecast (Pacific and Atlantic) written automatically from the marine wind page's grids and GFS-Wave seas each model run, with its warning areas on a globe. For forecasters to edit, not an official product.">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0a1120">
 <meta name="color-scheme" content="dark">
@@ -24,6 +24,8 @@
   .hs-text mark { background: var(--accent-soft); color: var(--text); border-radius: 3px; }
   .hs-legend { display: flex; gap: 12px; padding: 0 16px 8px; font-size: 11.5px; color: var(--text-2); flex-wrap: wrap; }
   .hs-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  .hs-basins { display: flex; gap: 4px; }
+  .hs-basins a[aria-current="true"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
   @media (max-width: 760px) { .hs-card { top: auto; height: 48%; } .hs-text { font-size: 11px; } .brand p { display: none; } }
 </style>
 <script src="../globe-kit/lib/maplibre-gl.js" defer></script>
@@ -37,10 +39,11 @@
   <header class="topbar">
     <div class="brand">
       <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect x="5" y="5" width="22" height="22" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 12h12M10 17h12M10 22h7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-      <div class="brand-text"><h1>High Seas Draft</h1><p>Pacific · first guess from the marine wind grids</p></div>
+      <div class="brand-text"><h1>High Seas Draft</h1><p><span id="basinName">Pacific</span> · first guess from the marine wind grids</p></div>
     </div>
     <div class="valid" aria-live="polite"><span class="eyebrow">Map valid</span><span id="validTime" class="valid-time">&mdash;</span><span id="validRel" class="valid-rel"></span></div>
     <div class="topbar-actions">
+      <nav class="hs-basins" id="basins" aria-label="Basin"><a class="btn btn-ghost" data-basin="pac" href="?basin=pac">Pacific</a><a class="btn btn-ghost" data-basin="atl" href="?basin=atl">Atlantic</a></nav>
       <a class="btn btn-ghost" href="../marine-wind/">Marine wind</a>
       <a class="btn btn-ghost" href="../">All projects</a>
     </div>
@@ -49,10 +52,11 @@
     <div class="hs-head">
       <h2 id="runLine">Loading the draft&hellip;</h2>
       <button type="button" class="btn" id="copyBtn">Copy text</button>
-      <a class="btn btn-ghost" href="../marine-wind/data/hsf/pac.txt" target="_blank" rel="noopener">Plain text</a>
+      <a class="btn btn-ghost" id="plainLink" href="../marine-wind/data/hsf/pac.txt" target="_blank" rel="noopener">Plain text</a>
+      <a class="btn btn-ghost" id="geoLink" href="../marine-wind/data/hsf/pac.geojson" download>GeoJSON</a>
     </div>
     <div class="hs-steps" id="steps" role="group" aria-label="Time shown on the map"></div>
-    <div class="hs-legend"><span><i style="background:#a855f7"></i>64+ kt</span><span><i style="background:#ef4444"></i>48-63</span><span><i style="background:#f59e0b"></i>34-47</span><span><i style="background:#38bdf8"></i>25-33</span><span>Shading: Core Lifted wind · outlines: draft areas · L: lows in the text · dashed: forecast area</span></div>
+    <div class="hs-legend"><span><i style="background:#a855f7"></i>64+ kt</span><span><i style="background:#ef4444"></i>48-63</span><span><i style="background:#f59e0b"></i>34-47</span><span><i style="background:#38bdf8"></i>25-33</span><span>Shading: Core Lifted wind · outlines: draft areas · L: lows in the text · white line: warning low tracks (12 h dots) · dashed: forecast area</span></div>
     <p class="hs-note">Written automatically by rules from the wind page's Core Lifted wind (the most likely wind, storm cores kept) and GFS-Wave seas. A draft for the forecaster to edit, not the official forecast.</p>
     <pre class="hs-text" id="text"></pre>
   </section>

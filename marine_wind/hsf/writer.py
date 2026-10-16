@@ -481,7 +481,7 @@ def time_text(sysd, hour, lead_word=None):
     for i, t in enumerate(sysd["tiers"]):
         pre = "" if i == 0 else ("ELSEWHERE " if t.level == sysd["tiers"][-1].level and i == len(sysd["tiers"]) - 1 else "ALSO ")
         parts.append("%s%s %s%s" % (pre, t.phrase["text"], fmt_wind(t.wind), fmt_seas(t.seas)))
-    return "." + (head + " " if head else "") + " ".join(parts)
+    return "." + " ".join(x for x in (head.strip(), " ".join(parts)) if x)
 
 
 # ---------------------------------------------------------------- lows and tracks

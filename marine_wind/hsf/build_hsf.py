@@ -22,7 +22,7 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from areas import AREAS, inside, outline  # noqa: E402
+from areas import AREAS, inside, multipolygon, outline  # noqa: E402
 from writer import WARN, Grid, Rules, write_product  # noqa: E402
 
 SYN_LEAD = 12                 # page lead of the synopsis
@@ -66,10 +66,10 @@ def wave_heights(cycle, leads):
 
 def draft(fields, lats, lons, basin="pac", rules=None):
     """fields: {hour: dict(wind kt, msl hPa, hs m)} with hours from the synopsis. Returns
-    (warnings, synopsis_text, areas, lows): every described area with its outline, and the
-    low centers the text names."""
+    (warnings, synopsis_text, areas, lows, tracks): every described area with its outline, the
+    low centers the text names, and each warning low's track."""
     grid = Grid(lats, lons)
-    sea = inside(AREAS[basin], grid.LON, grid.LAT) & np.isfinite(fields[0]["hs"])
+    sea = inside(AREAS[basin], grid.LON % 360, grid.LAT) & np.isfinite(fields[0]["hs"])
     warn, syn, dbg = write_product(fields, grid, sea, rules or Rules())
     areas = []
     for p in dbg["pieces"]:
@@ -80,7 +80,18 @@ def draft(fields, lats, lons, basin="pac", rules=None):
     # the low centers the text names (one per paragraph and time)
     lows = sorted({(p["hour"], p["low"][0], p["low"][1], p["low"][2]) for p in dbg["pieces"] if p.get("low")})
     lows = [dict(hour=h, lat=la, lon=lo, mb=mb) for h, la, lo, mb in lows]
-    return warn, syn, areas, lows
+    # the track of each warning's low: its centre at every page step, not only the times the
+    # text shows (the text's own lows, so map and text agree)
+    tops = {p["key"]: p["top"] for p in dbg["pieces"]}
+    tracks = []
+    for key, ent in dbg["per"].items():
+        if tops.get(key, 0) < 34:
+            continue
+        pts = [dict(hour=h, lat=ent[h]["low"][0], lon=ent[h]["low"][1], mb=ent[h]["low"][2])
+               for h in sorted(ent) if ent[h].get("low")]
+        if len(pts) > 1:
+            tracks.append(dict(warning=WARN[tops[key]], points=pts))
+    return warn, syn, areas, lows, tracks
 
 
 def product(syn_time, warn, syn):
@@ -88,6 +99,32 @@ def product(syn_time, warn, syn):
     head = "\n".join("%s VALID %s." % (lab, (syn_time + dt.timedelta(hours=h)).strftime("%H00 UTC %b %d").upper())
                      for lab, h in (("SYNOPSIS", 0), ("24 HOUR FORECAST", 24), ("48 HOUR FORECAST", 48)))
     return "%s\n\n.WARNINGS.\n\n%s\n\n.SYNOPSIS AND FORECAST.\n\n%s\n" % (head, wrap(warn) or "NONE.", wrap(syn) or "NONE.")
+
+
+def geojson(doc, syn_time):
+    """The forecast area, every draft area, the lows and the warning lows' tracks as one GeoJSON FeatureCollection.
+    Longitudes run continuously west of 0 (the Pacific crosses the date line, so its
+    western part goes below -180, e.g. 160E = -200)."""
+    lon = (lambda x: x - 360 if x > 0 else x) if doc["basin"] == "pac" else (lambda x: x - 360 if x > 180 else x)
+    fix = lambda ring: [[round(lon(x), 3), y] for x, y in ring]
+    valid = lambda h: (syn_time + dt.timedelta(hours=h)).strftime("%Y-%m-%dT%H:00Z")
+    b = fix(AREAS[doc["basin"]])
+    feats = [dict(type="Feature", properties=dict(kind="forecast_area", basin=doc["basin"]),
+                  geometry=dict(type="Polygon", coordinates=[b + [b[0]]]))]
+    for ar in doc["areas"]:
+        feats.append(dict(type="Feature",
+                          properties=dict(kind="area", hour=ar["hour"], valid=valid(ar["hour"]), warning=ar["warning"],
+                                          id=ar["letter"], wind_kt=ar["wind"], seas_m=ar["seas"], text=ar["text"]),
+                          geometry=dict(type="MultiPolygon", coordinates=[[fix(r) for r in p] for p in multipolygon(ar["rings"])])))
+    for lo in doc["lows"]:
+        feats.append(dict(type="Feature", properties=dict(kind="low", hour=lo["hour"], valid=valid(lo["hour"]), mb=lo["mb"]),
+                          geometry=dict(type="Point", coordinates=[lon(lo["lon"]), lo["lat"]])))
+    for t in doc["tracks"]:
+        feats.append(dict(type="Feature", properties=dict(kind="track", warning=t["warning"], hours=[p["hour"] for p in t["points"]],
+                                                          mb=[p["mb"] for p in t["points"]]),
+                          geometry=dict(type="LineString", coordinates=[[lon(p["lon"]), p["lat"]] for p in t["points"]])))
+    return dict(type="FeatureCollection", properties=dict(basin=doc["basin"], cycle=doc["cycle"], synopsis=doc["synopsis"]),
+                features=feats)
 
 
 def main():
@@ -104,7 +141,7 @@ def main():
         raise SystemExit("page box lacks leads %s" % missing)
     hs = wave_heights(cycle, leads)
     fields = {h: dict(wind=box[SYN_LEAD + h]["windcore"], msl=box[SYN_LEAD + h]["msl"] + 900.0, hs=hs[SYN_LEAD + h]) for h in HOURS}
-    warn, syn, areas, lows = draft(fields, lats, lons, a.basin)
+    warn, syn, areas, lows, tracks = draft(fields, lats, lons, a.basin)
     syn_time = cycle + dt.timedelta(hours=SYN_LEAD)
     text = product(syn_time, warn, syn)
     os.makedirs(a.out, exist_ok=True)
@@ -113,10 +150,12 @@ def main():
     doc = dict(basin=a.basin, cycle=cycle.strftime("%Y-%m-%dT%H:00Z"), synopsis=syn_time.strftime("%Y-%m-%dT%H:00Z"),
                built=dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
                source="Marine wind page: Core Lifted wind (storm cores kept), 3-model mean pressure; GFS-Wave seas",
-               hours=list(HOURS), text=text, areas=areas, lows=lows,
-               boundary=[list(p) for p in AREAS[a.basin]], box_leads={h: SYN_LEAD + h for h in HOURS})
+               hours=list(HOURS), text=text, areas=areas, lows=lows, tracks=tracks,
+               boundary=[[x - 360 if a.basin == "atl" else x, y] for x, y in AREAS[a.basin]], box_leads={h: SYN_LEAD + h for h in HOURS})
     with open(os.path.join(a.out, "%s.json" % a.basin), "w") as f:
         json.dump(doc, f, separators=(",", ":"))
+    with open(os.path.join(a.out, "%s.geojson" % a.basin), "w") as f:
+        json.dump(geojson(doc, syn_time), f, separators=(",", ":"))
     print("HSF draft %s from %s: %d areas" % (a.basin, doc["cycle"], len(areas)))
 
 

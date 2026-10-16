@@ -8,8 +8,11 @@ import numpy as np
 AREAS = {
     # FZPN01 HSFEP1: 30N-67N, east of a line 30N160E-50N160E-65N170W-67N170W, to 110W
     "pac": [(160, 30), (160, 50), (190, 65), (190, 67), (250, 67), (250, 30)],
-    # FZNT01 HSFAT1: 31N-67N, 35W-80W
-    "atl": [(280, 31), (280, 67), (325, 67), (325, 31)],
+    # FZNT01 HSFAT1: "NORTH OF 31N TO 67N AND WEST OF 35W" to the coast. The west edge only
+    # keeps out inland water the wave grid carries (Great Lakes, Hudson Bay); the sea mask
+    # does the coast. 75W from 37N to 46N, then 71W north of 46N (Gulf of St Lawrence and
+    # Ungava Bay in, Hudson Bay and Lake Ontario out)
+    "atl": [(278, 31), (278, 37), (285, 37), (285, 46), (289, 46), (289, 67), (325, 67), (325, 31)],
 }
 
 
@@ -65,3 +68,21 @@ def outline(mask, lats, lons):
         pts.append(pts[0])
         rings.append([[round(float(lons[0] + (c - 0.5) * dx), 3), round(float(lats[0] + (r - 0.5) * dy), 3)] for r, c in pts])
     return rings
+
+
+def multipolygon(rings):
+    """GeoJSON MultiPolygon coordinates from outline() rings: each outer ring (anticlockwise)
+    with the holes (clockwise) that sit inside it."""
+    def area(r):
+        return sum(r[i][0] * r[i + 1][1] - r[i + 1][0] * r[i][1] for i in range(len(r) - 1)) / 2
+    outer = [r if area(r) > 0 else None for r in rings]
+    polys = [[r] for r in outer if r]
+    for r in rings:
+        if area(r) >= 0:
+            continue
+        x, y = r[0][0] + 1e-6, r[0][1] + 1e-6   # a point just off the hole's corner
+        for p in polys:
+            if inside(p[0], np.array([x]), np.array([y]))[0]:
+                p.append(r)
+                break
+    return polys
