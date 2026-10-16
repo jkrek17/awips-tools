@@ -2,7 +2,7 @@
 desk; the forecaster still edits and issues the product).
 
 Reads the per-basin box the page build already writes (manifest.json + fFFF.bin: the wind
-with storm cores kept and the 3-model mean pressure), adds GFS-Wave significant wave height
+Core Lifted wind, i.e. storm cores kept, and the 3-model mean pressure), adds GFS-Wave significant wave height
 from the same cycle, and writes the draft with the writer in writer.py.
 
 Valid times: the page holds leads every 12 h, so cycle C feeds the issuance whose synopsis is
@@ -108,7 +108,7 @@ def main():
         f.write(text)
     doc = dict(basin=a.basin, cycle=cycle.strftime("%Y-%m-%dT%H:00Z"), synopsis=syn_time.strftime("%Y-%m-%dT%H:00Z"),
                built=dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
-               source="Marine wind page: wind with storm cores kept, 3-model mean pressure; GFS-Wave seas",
+               source="Marine wind page: Core Lifted wind (storm cores kept), 3-model mean pressure; GFS-Wave seas",
                hours=list(HOURS), text=text, areas=areas)
     with open(os.path.join(a.out, "%s.json" % a.basin), "w") as f:
         json.dump(doc, f, separators=(",", ":"))
