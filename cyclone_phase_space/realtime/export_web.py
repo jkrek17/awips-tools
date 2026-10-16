@@ -15,7 +15,10 @@ load directly:
     DIR/legend.json               class palette, colormap stops, ranges
     DIR/history.json              the cycles exported to DIR
     DIR/frames/fHHH/lows.geojson  one polygon per closed low (HCPSclass blob) and its center
-    DIR/frames/fHHH/mslp.geojson  MSLP every 4 hPa
+    DIR/frames/fHHH/mslp.geojson  MSLP every 4 hPa, smoothed
+    DIR/frames/fHHH/z500.geojson  500 hPa height every 6 dam, smoothed
+    DIR/frames/fHHH/thick.geojson 1000-500 hPa thickness every 6 dam, smoothed
+    DIR/frames/fHHH/jet250.png    250 hPa wind 70+ kt in 20 kt bands, same geometry as the rasters
     DIR/frames/fHHH/{hb,hvtl,hvtu}.webp        Web Mercator rasters, lon -180..180, lat -85..85
     DIR/frames/fHHH/class.png     the class raster, same geometry
     DIR/frames/fHHH/mask.png      alpha weight of the fields: 1 near the closed lows, MASK_DIM far away
@@ -107,6 +110,17 @@ BLOB_TOL_DEG = 0.25  # blob polygon simplification
 MSLP_TOL_DEG = 0.15  # isobar simplification ...
 MSLP_MAX_BYTES = 400_000  # ... raised in 0.05 degree steps (up to 0.6) while mslp.geojson is larger
 MSLP_STEP_HPA = 4.0
+# Display smoothing of the contoured fields: a Gaussian of this many 0.25
+# degree cells (sigma), so isobars and heights read as smooth lines rather
+# than following every grid wiggle. The lows (centers, pressures, classes)
+# come from the raw field.
+MSLP_SMOOTH_CELLS = 2.0
+UPPER_SMOOTH_CELLS = 3.0
+UPPER_STEP_M = 60.0  # 500 hPa height and 1000-500 hPa thickness, every 6 dam
+UPPER_MAX_BYTES = 300_000
+JET_BANDS_KT = (70.0, 90.0, 110.0, 130.0)  # 250 hPa wind bands (kt); below the first is clear
+JET_COLORS = ["#b9f6ca", "#5fdc8a", "#1f9d55", "#f5d90a"]  # greens to yellow: clear of the blue/red contours
+MS_TO_KT = 1.943844
 TERRAIN_RING_DEG = 1.0  # closed isobars smaller than this over high terrain are dropped
 MIN_PART_DEG = 0.2  # a dateline piece narrower than this is the half-cell pad, not part of the blob
 NDIG = 2
@@ -462,43 +476,86 @@ def lows_features(f: dict, p: dict) -> list[dict]:
     return feats + points
 
 
-def mslp_features(f: dict, tol: float = MSLP_TOL_DEG) -> list[dict]:
-    """Isobars every MSLP_STEP_HPA hPa from contourpy on the global field.
-    The first column is repeated at lon 180 so lines reach the dateline,
-    where they end (and continue from -180). Small closed rings (under
-    TERRAIN_RING_DEG across) centered over terrain (tc.terrain: MSLP more
-    than 60 hPa above the surface pressure) are dropped: over high terrain MSLP is extrapolated and
-    breaks into many such rings, which are noise rather than lows."""
-    terr = tc.terrain(f)
-    lat, lon = f["lat"], f["lon"]
-    pm = f["pmsl"] / 100.0
-    ps = f["psfc"] / 100.0
+def smooth(a: np.ndarray, sigma: float) -> np.ndarray:
+    """Gaussian smoothing over grid cells: wrapped in longitude, edges clamped
+    in latitude (separable, kernel cut at 3 sigma)."""
+    if sigma <= 0:
+        return a
+    r = int(math.ceil(3 * sigma))
+    k = np.exp(-0.5 * (np.arange(-r, r + 1) / sigma) ** 2)
+    k /= k.sum()
+    pad = np.concatenate([a[:, -r:], a, a[:, :r]], axis=1)
+    out = sum(w * pad[:, i:i + a.shape[1]] for i, w in enumerate(k))
+    pad = np.pad(out, ((r, r), (0, 0)), mode="edge")
+    return sum(w * pad[i:i + a.shape[0]] for i, w in enumerate(k))
+
+
+def contour_features(z: np.ndarray, lat: np.ndarray, lon: np.ndarray, step: float, tol: float,
+                     scale: float = 1.0, drop=None) -> list[dict]:
+    """Lines every `step` of the global field z from contourpy, simplified by
+    tol degrees, with the level (divided by `scale`) in the properties. The
+    first column is repeated at lon 180 so lines reach the dateline, where
+    they end (and continue from -180). drop(line) -> True skips a line."""
     x = np.r_[lon, lon[0] + 360.0]
-    z = np.concatenate([pm, pm[:, :1]], axis=1)
-    gen = contourpy.contour_generator(x, lat, z, line_type=contourpy.LineType.Separate)
-    lo = math.ceil(np.nanmin(pm) / MSLP_STEP_HPA) * MSLP_STEP_HPA
-    dlat, dlon = lat[1] - lat[0], lon[1] - lon[0]
+    zz = np.concatenate([z, z[:, :1]], axis=1)
+    gen = contourpy.contour_generator(x, lat, zz, line_type=contourpy.LineType.Separate)
     feats = []
-    for level in np.arange(lo, np.nanmax(pm), MSLP_STEP_HPA):
+    for level in np.arange(math.ceil(np.nanmin(z) / step) * step, np.nanmax(z), step):
         for line in gen.lines(level):
-            if len(line) < 2:
+            if len(line) < 2 or (drop and drop(line)):
                 continue
-            if (line[0] == line[-1]).all() and np.ptp(line, axis=0).max() < TERRAIN_RING_DEG:
-                cx, cy = line.mean(axis=0)
-                i = int(np.clip(round((cy - lat[0]) / dlat), 0, lat.size - 1))
-                j = int(round((cx - lon[0]) / dlon)) % lon.size
-                if terr[i, j]:
-                    continue
             line = np.clip(line, [-180.0, -90.0], [180.0, 90.0])
             s = LineString(line).simplify(tol, preserve_topology=False)
             coords = rnd(list(s.coords)) if not s.is_empty else []
             coords = [c for k, c in enumerate(coords) if k == 0 or c != coords[k - 1]]  # repeats from rounding
             if len(coords) < 2:
                 continue
-            feats.append({"type": "Feature", "properties": {"level": int(level)},
+            feats.append({"type": "Feature", "properties": {"level": int(round(level / scale))},
                           "geometry": {"type": "LineString", "coordinates": coords}})
     return feats
 
+
+def mslp_features(f: dict, tol: float = MSLP_TOL_DEG) -> list[dict]:
+    """Isobars every MSLP_STEP_HPA hPa of the smoothed MSLP. Small closed
+    rings (under TERRAIN_RING_DEG across) centered over terrain (tc.terrain:
+    MSLP more than 60 hPa above the surface pressure) are dropped: over high
+    terrain MSLP is extrapolated and breaks into many such rings, which are
+    noise rather than lows."""
+    terr = tc.terrain(f)
+    lat, lon = f["lat"], f["lon"]
+    dlat, dlon = lat[1] - lat[0], lon[1] - lon[0]
+
+    def drop(line):
+        if not ((line[0] == line[-1]).all() and np.ptp(line, axis=0).max() < TERRAIN_RING_DEG):
+            return False
+        cx, cy = line.mean(axis=0)
+        i = int(np.clip(round((cy - lat[0]) / dlat), 0, lat.size - 1))
+        j = int(round((cx - lon[0]) / dlon)) % lon.size
+        return bool(terr[i, j])
+
+    pm = smooth(f["pmsl"] / 100.0, MSLP_SMOOTH_CELLS)
+    return contour_features(pm, lat, lon, MSLP_STEP_HPA, tol, drop=drop)
+
+
+def write_lines(path: Path, make, tol: float, max_bytes: int) -> tuple[int, float]:
+    """Write make(tol)'s features, raising tol in 0.05 degree steps (up to
+    0.6) while the file is larger than max_bytes. Returns (bytes, tol)."""
+    while True:
+        s = json.dumps({"type": "FeatureCollection", "features": make(tol)}, separators=(",", ":"))
+        if len(s) <= max_bytes or tol >= 0.6:
+            break
+        tol = round(tol + 0.05, 2)
+    path.write_text(s)
+    return len(s), tol
+
+
+def save_jet_png(f: dict, smp: "Sampler", path: Path) -> int:
+    """250 hPa wind speed in JET_BANDS_KT bands as an indexed PNG on the raster geometry."""
+    spd = smp(np.hypot(f["u250"], f["v250"]) * MS_TO_KT)
+    k = np.searchsorted(np.asarray(JET_BANDS_KT), np.nan_to_num(spd, nan=0.0), side="right") - 1
+    rgba = np.array([[*hex_rgb(c), 255] for c in JET_COLORS])
+    idx = np.where(k >= 0, k, len(JET_COLORS)).astype(np.uint8)
+    return save_palette_png(idx, rgba, path)
 
 
 # ------------------------------------------------------------------ frames
@@ -515,17 +572,17 @@ def export_frame(cycle: str, fhr: int, out: Path, cache: Path) -> dict:
     fdir.mkdir(parents=True, exist_ok=True)
     lows = lows_features(f, p)
     sizes = {"lows": write_json(fdir / "lows.geojson", {"type": "FeatureCollection", "features": lows})}
-    tol = MSLP_TOL_DEG
-    while True:
-        iso_ = mslp_features(f, tol)
-        s = json.dumps({"type": "FeatureCollection", "features": iso_}, separators=(",", ":"))
-        if len(s) <= MSLP_MAX_BYTES or tol >= 0.6:
-            break
-        tol = round(tol + 0.05, 2)
-    (fdir / "mslp.geojson").write_text(s)
-    sizes["mslp"] = len(s)
+    sizes["mslp"], tol = write_lines(fdir / "mslp.geojson", lambda t: mslp_features(f, t), MSLP_TOL_DEG, MSLP_MAX_BYTES)
+    lat, lon = f["lat"], f["lon"]
+    z500 = smooth(f["z500"], UPPER_SMOOTH_CELLS)
+    thick = smooth(f["z500"] - f["z1000"], UPPER_SMOOTH_CELLS)
+    sizes["z500"], _ = write_lines(fdir / "z500.geojson", lambda t: contour_features(
+        z500, lat, lon, UPPER_STEP_M, t, scale=10.0), MSLP_TOL_DEG, UPPER_MAX_BYTES)
+    sizes["thick"], _ = write_lines(fdir / "thick.geojson", lambda t: contour_features(
+        thick, lat, lon, UPPER_STEP_M, t, scale=10.0), MSLP_TOL_DEG, UPPER_MAX_BYTES)
     t3 = time.time()
     smp = Sampler(f["lat"], f["lon"])
+    sizes["jet250"] = save_jet_png(f, smp, fdir / "jet250.png")
     sizes.update(write_rasters(p, smp, palettes(), fdir, Sampler(f["lat"], f["lon"], MASK_WIDTH)))
     t4 = time.time()
     n = sum(1 for ft in lows if ft["properties"]["kind"] == "center")
@@ -739,7 +796,8 @@ def main(argv=None) -> int:
             log(f"  f{h:03d}: {time.time() - t0:5.0f} s  fetch+decode {r['t_fetch']:.1f} s, compute "
                 f"{r['t_compute']:.1f} s, geojson {r['t_vec']:.1f} s, png {r['t_png']:.1f} s; {r['lows']} lows; "
                 f"lows {sz['lows'] / 1e3:.0f} KB, mslp {sz['mslp'] / 1e3:.0f} KB (tol {r['mslp_tol']}), "
-                + ", ".join(f"{k} {sz[k] / 1e3:.0f} KB" for k in ("hb", "hvtl", "hvtu", "class", "mask")))
+                + ", ".join(f"{k} {sz[k] / 1e3:.0f} KB" for k in ("hb", "hvtl", "hvtu", "class", "mask",
+                                                                    "z500", "thick", "jet250")))
     if not done:
         log("no frame could be exported")
         return 1
@@ -755,7 +813,9 @@ def main(argv=None) -> int:
         "generated": generated,
         "hours": [r["fhr"] for r in done],
         "valid": [r["valid"] for r in done],
-        "layers": {"class": True, "mslp": True, "hb": True, "hvtl": True, "hvtu": True},
+        "layers": {"class": True, "mslp": True, "hb": True, "hvtl": True, "hvtu": True,
+                   "z500": True, "thick": True, "jet250": True},
+        "jet": {"bands_kt": list(JET_BANDS_KT), "colors": JET_COLORS},
         "raster": {"bounds": [[-LAT_MAX, -180], [LAT_MAX, 180]], "crs": "EPSG:3857", "width": WIDTH,
                    "height": done[0]["height"], "format": FIELD_FORMAT, "mask": "mask.png",
                    "mask_dim": MASK_DIM, "fade": RAMP_FADE},

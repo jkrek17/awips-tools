@@ -125,7 +125,13 @@ function renderLegend() {
   h += `<p class="legend-note">${esc(help)}${fade}</p>`;
   const keys = [];
   keys.push('<span><i class="k-dot"></i>Low center, by class</span>');
-  if (S.layers.contours) keys.push(`<span><i style="border-top:1px solid rgba(231,238,248,0.7)"></i>MSLP, ${WIDE_CINT} hPa, bold 16</span>`);
+  if (S.layers.contours) keys.push(`<span><i style="height:6px;vertical-align:1px;border:0;border-radius:2px;background:linear-gradient(#cfdbe8 2px,#0b1220 2px,#0b1220 4px,#cfdbe8 4px)"></i>MSLP, ${WIDE_CINT} hPa, bold 16</span>`);
+  if (S.layers.z500 && hasUpper('z500')) keys.push('<span><i style="border-top:2px solid #6b8cff"></i>500 mb height, 6 dam</span>');
+  if (S.layers.thick && hasUpper('thick')) keys.push(`<span><i style="border-top:2px dashed #ef4444"></i>Thickness, red above ${THICK_LINE}, blue below</span>`);
+  if (S.layers.jet && hasUpper('jet')) {
+    const j = S.index.jet || { bands_kt: [70, 90, 110, 130], colors: ['#b9f6ca', '#5fdc8a', '#1f9d55', '#f5d90a'] };
+    keys.push(`<span class="wide">250 mb jet, kt ${j.bands_kt.map((b, k) => `<i style="width:10px;height:8px;border:0;border-radius:2px;margin:0 3px 0 6px;vertical-align:-1px;background:${j.colors[k]}"></i>${b}${k === j.bands_kt.length - 1 ? '+' : ''}`).join('')}</span>`);
+  }
   if (S.layers.circles) keys.push('<span><i class="k-halo"></i>200 km circle</span>');
   if (S.layers.tracks) keys.push('<span><i style="border-top:2px solid #fad91a"></i>Selected track, by class</span>',
     '<span><i style="border-top:1px solid rgba(231,238,248,0.55)"></i>Last 24 h of motion</span>');

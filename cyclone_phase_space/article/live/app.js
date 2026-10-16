@@ -20,8 +20,9 @@ const FALLBACK_DATA = 'https://raw.githubusercontent.com/jkrek17/awips-tools/cps
 const LOCAL_DATA = 'data/latest/';  // beside the page when served from the web repository
 const ARTICLE_URL = 'https://jkrek17.github.io/web/article/';  // published with this page
 const GUIDE_URL = 'https://jkrek17.github.io/web/forecasters/';  // the plain-language explainer, published with this page
-const LABEL_ZOOM = 3;            // pressures at the lows, contour labels and every isobar from this zoom
+const LABEL_ZOOM = 3;            // pressures at the lows and every isobar from this zoom
 const WIDE_CINT = 8;             // below LABEL_ZOOM, isobars thinned to every 8 hPa
+const CLABEL_ZOOM = 2;           // labels on the bold isobars from this zoom
 const HALO_ZOOM = 1;             // 200 km circles from this zoom (below it they shrink under the dot)
 const SPEEDS = { slow: 1200, normal: 700, fast: 350 };  // ms per frame
 const MAX_RASTER_FRAMES = 12;    // decoded raster frames kept in memory
@@ -32,11 +33,14 @@ const TERRAIN_HPA = 850;         // surface pressure below this: a false low ove
 const STALE_H = 12;              // hours before the data is called stale
 const RASTERS = ['hb', 'hvtl', 'hvtu'];
 const FIELDS = ['class', ...RASTERS];
-const LAYER_KEYS = { contours: 'c', circles: 'h', footprint: 'p', tracks: 'k', terrain: 'g', fade: 'x' };
+const LAYER_KEYS = { contours: 'c', circles: 'h', footprint: 'p', tracks: 'k', terrain: 'g', fade: 'x', z500: 'z', thick: 'n', jet: 'j' };
 // Keys present in the link when the layer is off: the fade is on by default
 // and older links never carried it.
 const INVERTED_KEYS = new Set(['fade']);
-const HOTKEYS = { i: 'contours', k: 'tracks', o: 'circles', p: 'footprint', g: 'terrain', x: 'fade' };
+const HOTKEYS = { i: 'contours', k: 'tracks', o: 'circles', p: 'footprint', g: 'terrain', x: 'fade', z: 'z500', n: 'thick', j: 'jet' };
+// The upper-air overlays: layer -> the frame file and the index.json layers flag.
+const UPPER = { z500: 'z500', thick: 'thick', jet: 'jet250' };
+const THICK_LINE = 540;          // dam; the bold rain/snow guide line
 
 const CLASS_NAMES = [
   'Symmetric deep warm core', 'Symmetric shallow warm core',
@@ -95,8 +99,9 @@ const S = {
   i: 0, field: 'class', playing: false, timer: 0, token: 0,
   speed: 'normal', bust: '',
   opacity: { hb: 0.7, hvtl: 0.7, hvtu: 0.7 },  // the ramps are opaque from 10% of the half range
-  layers: { contours: true, circles: true, footprint: false, tracks: true, terrain: false, fade: true },
-  centers: [], lows: null, mslp: null, sel: null, follow: null, ready: false, sideOpen: true,
+  layers: { contours: true, circles: true, footprint: false, tracks: true, terrain: false, fade: true,
+    z500: false, thick: false, jet: false },
+  centers: [], lows: null, mslp: null, z500: null, thick: null, sel: null, follow: null, ready: false, sideOpen: true,
 };
 
 /* ---------- small utilities ---------- */
@@ -365,22 +370,35 @@ function buildMap(start) {
     map.addSource('field', { type: 'image', url: blankImage(), coordinates: [[w, n], [e, n], [e, s], [w, s]] });
     map.addLayer({ id: 'field', type: 'raster', source: 'field', layout: { visibility: 'none' },
       paint: { 'raster-opacity': 0.7, 'raster-fade-duration': 0, 'raster-resampling': 'linear' } });
+    map.addSource('jet', { type: 'image', url: blankImage(), coordinates: [[w, n], [e, n], [e, s], [w, s]] });
+    map.addLayer({ id: 'jet', type: 'raster', source: 'jet', layout: { visibility: 'none' },
+      paint: { 'raster-opacity': 0.5, 'raster-fade-duration': 0, 'raster-resampling': 'linear' } });
     map.addSource('coast', { type: 'geojson', data: EMPTY });
     map.addLayer({ id: 'coast', type: 'line', source: 'coast', paint: { 'line-color': 'rgba(231,238,248,0.35)', 'line-width': 0.6 } });
     K.land().then((g) => setData('coast', g)).catch(() => {});
     map.addSource('graticule', { type: 'geojson', data: K.graticule() });
     map.addLayer({ id: 'graticule', type: 'line', source: 'graticule', paint: K.GRATICULE_PAINT });
-    for (const id of ['contours', 'footprints', 'halos', 'tails', 'track', 'trackpts', 'lows', 'sel']) {
+    for (const id of ['thick', 'z500', 'contours', 'footprints', 'halos', 'tails', 'track', 'trackpts', 'lows', 'sel']) {
       map.addSource(id, { type: 'geojson', data: EMPTY, tolerance: 0.2 });
     }
+    // 1000-500 hPa thickness: dashed, red above THICK_LINE, blue at and below it, that line bold
+    map.addLayer({ id: 'thick', type: 'line', source: 'thick', layout: { 'line-join': 'round' }, paint: {
+      'line-color': ['case', ['>', ['get', 'level'], THICK_LINE], '#d42a20', '#2f7ff0'],
+      'line-width': ['case', ['==', ['get', 'level'], THICK_LINE], 2.2, 1.1],
+      'line-dasharray': [3, 2] } });
+    // 500 hPa height: solid blue
+    map.addLayer({ id: 'z500', type: 'line', source: 'z500', layout: { 'line-join': 'round' },
+      paint: { 'line-color': '#0f2d9c', 'line-width': 1.8, 'line-opacity': 0.9 } });
     // isobars: bold every 16 hPa; every 8 hPa zoomed out, all of them from LABEL_ZOOM
     const lev = ['get', 'level'];
-    const iso = (op, w) => ({ 'line-color': `rgba(231,238,248,${op})`, 'line-width': w });
+    // dark lines, as on a surface analysis, so they read on the pale ocean
+    // basemap and over the fields alike
+    const iso = (op, w) => ({ 'line-color': `rgba(8,14,28,${op})`, 'line-width': w });
     map.addLayer({ id: 'iso-minor8', type: 'line', source: 'contours',
-      filter: ['all', ['==', ['%', lev, WIDE_CINT], 0], ['!=', ['%', lev, 16], 0]], paint: iso(0.32, 0.8) });
+      filter: ['all', ['==', ['%', lev, WIDE_CINT], 0], ['!=', ['%', lev, 16], 0]], paint: iso(0.6, 1) });
     map.addLayer({ id: 'iso-minor', type: 'line', source: 'contours', minzoom: LABEL_ZOOM,
-      filter: ['!=', ['%', lev, WIDE_CINT], 0], paint: iso(0.32, 0.8) });
-    map.addLayer({ id: 'iso-major', type: 'line', source: 'contours', filter: ['==', ['%', lev, 16], 0], paint: iso(0.6, 1.2) });
+      filter: ['!=', ['%', lev, WIDE_CINT], 0], paint: iso(0.6, 1) });
+    map.addLayer({ id: 'iso-major', type: 'line', source: 'contours', filter: ['==', ['%', lev, 16], 0], paint: iso(0.85, 1.7) });
     map.addLayer({ id: 'footprints', type: 'line', source: 'footprints',
       paint: { 'line-color': ['get', 'hex'], 'line-width': 1, 'line-opacity': 0.9, 'line-dasharray': [2, 2] } });
     map.addLayer({ id: 'halos-fill', type: 'fill', source: 'halos', minzoom: HALO_ZOOM, paint: { 'fill-color': ['get', 'hex'], 'fill-opacity': 0.06 } });
@@ -472,21 +490,52 @@ function cstep(fc) {
 function drawContours() {
   setData('contours', S.layers.contours && S.mslp ? S.mslp : EMPTY);
   S.cstep = cstep(S.mslp);
+  setData('z500', S.layers.z500 && S.z500 ? S.z500 : EMPTY);
+  setData('thick', S.layers.thick && S.thick ? S.thick : EMPTY);
   placeContourLabels();
 }
 
-// One label per bold (16 hPa) line at its middle vertex, from LABEL_ZOOM,
+const hasUpper = (k) => !!S.index?.layers?.[UPPER[k]];
+
+// The 250 hPa jet image of hour h, or hidden.
+function drawJet(h) {
+  if (!map?.getLayer('jet')) return;
+  const on = S.layers.jet && hasUpper('jet');
+  if (on) map.getSource('jet').updateImage({ url: fileUrl(h, 'jet250.png') });
+  map.setLayoutProperty('jet', 'visibility', on ? 'visible' : 'none');
+}
+
+// The upper-air switches need an export that carries them.
+function syncUpperBoxes() {
+  for (const k of Object.keys(UPPER)) {
+    const box = document.querySelector(`[data-layer="${k}"]`);
+    if (!box) continue;
+    box.disabled = !hasUpper(k);
+    box.closest('.switch-row')?.classList.toggle('off', box.disabled);
+    box.closest('.switch-row').title = box.disabled ? 'This cycle was exported without this layer' : '';
+  }
+}
+
+// One label per labelled line at its middle vertex, from CLABEL_ZOOM: the
+// bold (16 hPa) isobars, every 500 hPa height and every other thickness line,
 // kept clear of the lows, the map edge and each other. Placed when the
 // map stops moving; drawn at their lon/lat while it moves.
 let clabels = [];
+function contourSets() {
+  const sets = [];
+  if (S.layers.contours && S.mslp) sets.push({ fc: S.mslp, keep: (lv) => lv % 16 === 0, ink: () => '#0b1220' });
+  if (S.layers.z500 && S.z500) sets.push({ fc: S.z500, keep: () => true, ink: () => '#0f2d9c' });
+  if (S.layers.thick && S.thick) sets.push({ fc: S.thick, keep: (lv) => (lv - THICK_LINE) % 12 === 0, ink: (lv) => (lv > THICK_LINE ? '#c0261d' : '#1f5fd0') });
+  return sets;
+}
 function placeContourLabels() {
   clabels = [];
-  if (!map || !S.mslp || !S.layers.contours || map.getZoom() < LABEL_ZOOM) return;
+  if (!map || map.getZoom() < CLABEL_ZOOM) return;
   const w = ov.w(), h = ov.h(), placed = [];
   const lows = S.centers.filter(shown);
-  for (const f of S.mslp.features) {
+  for (const set of contourSets()) for (const f of set.fc.features) {
     const lv = Math.round(f.properties?.level);
-    if (lv % 16 !== 0 || !f.geometry) continue;
+    if (!set.keep(lv) || !f.geometry) continue;
     const parts = f.geometry.type === 'MultiLineString' ? f.geometry.coordinates : [f.geometry.coordinates];
     for (const p of parts) {
       if (p.length < 8) continue;
@@ -496,8 +545,8 @@ function placeContourLabels() {
       if (!q || q.x < 30 || q.x > w - 30 || q.y < 12 || q.y > h - 12) continue;
       if (placed.some((o) => Math.abs(o.x - q.x) < 60 && Math.abs(o.y - q.y) < 24)) continue;
       placed.push(q);
-      clabels.push({ lon: m[0], lat: m[1], lv });
-      if (clabels.length >= 120) return;
+      clabels.push({ lon: m[0], lat: m[1], lv, ink: set.ink(lv) });
+      if (clabels.length >= 200) return;
     }
   }
 }
@@ -607,17 +656,17 @@ function drawOverlay() {
     $('timeline').getBoundingClientRect().top, FAM);
   const z = map.getZoom();
   // contour labels
-  if (S.layers.contours && z >= LABEL_ZOOM) {
-    ctx.font = `10px ${FAM}`;
+  if (clabels.length && z >= CLABEL_ZOOM) {
+    ctx.font = `600 10.5px ${FAM}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (const l of clabels) {
       for (const p of ov.proj(l.lon, l.lat)) {
         const t = String(l.lv);
         const w = ctx.measureText(t).width + 4;
-        ctx.fillStyle = 'rgba(10,17,32,0.82)';
-        ctx.fillRect(p.x - w / 2, p.y - 6, w, 12);
-        ctx.fillStyle = 'rgba(231,238,248,0.85)';
+        ctx.fillStyle = 'rgba(255,255,255,0.88)';
+        ctx.fillRect(p.x - w / 2, p.y - 6.5, w, 13);
+        ctx.fillStyle = l.ink;
         ctx.fillText(t, p.x, p.y);
       }
     }
@@ -636,14 +685,17 @@ async function show(i) {
   const tok = ++S.token;
   $('progress').classList.add('active');
   const raster = S.field === 'class' ? Promise.resolve(null) : fieldImg(h, S.field);
-  const [lows, mslp, img] = await Promise.allSettled(
-    [getJSON(lowsUrl(h)), getJSON(fileUrl(h, 'mslp.geojson')), raster]);
+  const upper = (k) => (S.layers[k] && hasUpper(k) ? getJSON(fileUrl(h, `${UPPER[k]}.geojson`)) : Promise.resolve(null));
+  const [lows, mslp, img, z500, thick] = await Promise.allSettled(
+    [getJSON(lowsUrl(h)), getJSON(fileUrl(h, 'mslp.geojson')), raster, upper('z500'), upper('thick')]);
   if (tok !== S.token) return true;  // a newer frame was asked for
   $('progress').classList.remove('active');
 
   const val = (r) => (r.status === 'fulfilled' ? r.value : null);
   S.lows = val(lows);
   S.mslp = val(mslp);
+  S.z500 = val(z500);
+  S.thick = val(thick);
   S.centers = centersOf(S.lows);
   S.ready = true;
   drawContours();
@@ -654,12 +706,13 @@ async function show(i) {
   refreshCard();
   drawSelection();
   swapRaster(val(img));
+  drawJet(h);
   drawOverlay();
   writeHash();
 
   prefetch(S.i + 1);
   prefetch(S.i + 2);
-  const failed = [lows, mslp, img].some((r) => r.status === 'rejected');
+  const failed = [lows, mslp, img, z500, thick].some((r) => r.status === 'rejected');
   if (failed) K.note(`Part of forecast hour ${h} could not be loaded; showing what arrived.`);
   return !failed;
 }
@@ -670,6 +723,8 @@ function prefetch(i) {
   const quiet = (p) => p.catch(() => {});
   quiet(getJSON(lowsUrl(h)));
   quiet(getJSON(fileUrl(h, 'mslp.geojson')));
+  for (const k of ['z500', 'thick']) if (S.layers[k] && hasUpper(k)) quiet(getJSON(fileUrl(h, `${UPPER[k]}.geojson`)));
+  if (S.layers.jet && hasUpper('jet')) new Image().src = fileUrl(h, 'jet250.png');
   if (S.field !== 'class') quiet(fieldImg(h, S.field));
 }
 
@@ -759,6 +814,12 @@ function setLayer(k, on) {
   if (k === 'footprint') drawFootprints();
   if (k === 'circles' || k === 'terrain') { drawLows(); renderDeepest(); }
   if (k === 'tracks') drawTracks();
+  if (k === 'jet') drawJet(S.index.hours[S.i]);
+  if (k === 'z500' || k === 'thick') {
+    if (on) { show(S.i); return; }  // fetches this hour's lines
+    S[k] = null;
+    drawContours();
+  }
   if (k === 'fade' && S.field !== 'class') show(S.i);
   drawOverlay();
   writeHash();
@@ -959,6 +1020,7 @@ function showRunMeta(ix) {
 let want = {};
 async function ready() {
   if (!S.mapReady || !S.index) return;
+  syncUpperBoxes();
   await show(S.i);
   document.body.classList.remove('loading');
   loadAllLows().then(() => { if (want.storm) follow(want.storm, { quiet: !!want.view }); });

@@ -80,6 +80,8 @@ WANTED = {f"z{p}": ("HGT", f"{p} mb") for p in HGT_LEVELS}
 WANTED.update({f"u{p}": ("UGRD", f"{p} mb") for p in WIND_LEVELS})
 WANTED.update({f"v{p}": ("VGRD", f"{p} mb") for p in WIND_LEVELS})
 WANTED.update(pmsl=("PRMSL", "mean sea level"), psfc=("PRES", "surface"), land=("LAND", "surface"))
+# Display only (the web map's 1000-500 hPa thickness and 250 hPa jet), not the products.
+WANTED.update(z1000=("HGT", "1000 mb"), u250=("UGRD", "250 mb"), v250=("VGRD", "250 mb"))
 PYGRIB_NAMES = {"HGT": "gh", "UGRD": "u", "VGRD": "v", "PRMSL": "prmsl", "PRES": "sp", "LAND": "lsm"}
 
 
