@@ -1,6 +1,6 @@
 /* Cyclone Phase Space, live: the selected low in Hart's 3-D phase space.
-   The third view of the selected low's entry in the storm panel (storms.js
-   switches between it and the two 2-D diagrams). The axes and cells are
+   The cube on the phase space card (card.js), loaded with the track of the
+   low clicked or followed on the map. The axes and cells are
    those of the article's 3-D figure (article/figures/phase_space_3d.py):
    x = -V_T^L, y = B, z = -V_T^U (vertical), box aspect 1 : 1 : 0.9, on the
    Figure 1 ranges of the 2-D diagrams (FIG1). The planes B = 10 m,
@@ -130,7 +130,8 @@ const Space3D = (() => {
     return w;
   }
 
-  const FONT = { sans: '"IBM Plex Sans", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif', mono: '"IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace' };
+  // the globe kit's type (--font, --mono)
+  const FONT = { sans: "system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif", mono: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' };
   const TITLE = {
     x: ['Lower thermal wind (', { v: 'L' }, ')'],
     y: ['Thermal asymmetry (B)'],
@@ -150,7 +151,7 @@ const Space3D = (() => {
       text: css.getPropertyValue('--text').trim() || '#e9e8e3',
       muted: css.getPropertyValue('--muted').trim() || '#a8a6a0',
       faint: css.getPropertyValue('--faint').trim() || '#94928c',
-      bg: css.getPropertyValue('--raise').trim() || '#222328',
+      bg: css.getPropertyValue('--s3d-bg').trim() || '#0f1829',  // a hex color: label halos and hollow dots
     };
     const wrap = document.createElement('div');
     wrap.className = 's3d';
@@ -159,7 +160,7 @@ const Space3D = (() => {
       <canvas class="s3d-canvas" tabindex="0" role="img"></canvas>
       <ul class="s3d-key"></ul>
       <p class="s3d-note" id="${hintId}">Cells cut by B = 10&nbsp;m, ${TERM.hvtl.sym} = 0 and ${TERM.hvtu.sym} = 0; class 6 spans both sides of B = 10&nbsp;m. Values in m.
-        Drag to rotate, double click to reset; once selected, the wheel zooms and the arrow keys rotate. Click a dot for its hour.</p>`;
+        Drag to rotate, double click to reset; once it has focus, the wheel zooms and the arrow keys rotate. Click a dot for its hour.</p>`;
     host.append(wrap);
     const canvas = wrap.querySelector('canvas');
     const read = wrap.querySelector('.s3d-read');

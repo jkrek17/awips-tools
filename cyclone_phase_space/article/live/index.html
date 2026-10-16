@@ -3,232 +3,210 @@
 <head>
 <meta charset="utf-8">
 <title>Cyclone Phase Space, live</title>
-<meta name="description" content="A live global map of the gridded cyclone phase space products: the Hart class of every closed low, MSLP, and the thermal asymmetry and lower and upper thermal wind fields, with every tracked low and its phase diagrams, animated over the latest model cycle.">
+<meta name="description" content="A live global map of the gridded cyclone phase space products: the Hart class of every closed low, MSLP, and the thermal asymmetry and lower and upper thermal wind fields, with every tracked low and its path through the 3-D phase space, animated over the latest model cycle.">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a1120">
 <meta name="color-scheme" content="dark">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Ccircle cx=%228%22 cy=%228%22 r=%226.5%22 fill=%22none%22 stroke=%22%23fad91a%22 stroke-width=%221.2%22/%3E%3Ccircle cx=%228%22 cy=%228%22 r=%223%22 fill=%22%23d92626%22/%3E%3C/svg%3E">
-<link rel="preload" href="fonts/IBMPlexSans-Regular-Latin1.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="fonts/IBMPlexMono-Regular-Latin1.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preconnect" href="https://server.arcgisonline.com">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" integrity="sha512-h9FcoyWjHcOcmEVkxOfTLnmZFWIH0iZhZT1H2TbOq55xssQGEJHEaIm+PgoUaZbRvQTNTluNOEfb1ZRy6D3BOw==" crossorigin="anonymous" referrerpolicy="no-referrer">
+<link rel="stylesheet" href="../globe-kit/lib/maplibre-gl.css">
+<link rel="stylesheet" href="../globe-kit/globe-kit.css">
 <link rel="stylesheet" href="style.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" integrity="sha512-puJW3E/qXDqYp9IfhAI54BJEaWIfloJ7JWs7OeD5i6ruC9JZL1gERT1wjtwXFlh7CjE7ZJ+/vcRZRkIYIb6p4g==" crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
-<script src="basemap.js" defer></script>
+<script src="../globe-kit/lib/maplibre-gl.js" defer></script>
+<script src="../globe-kit/globe-kit.js" defer></script>
 <script src="card.js" defer></script>
 <script src="storms.js" defer></script>
 <script src="space3d.js" defer></script>
 <script src="app.js" defer></script>
 </head>
 <body class="loading">
+<div id="app">
+  <div id="map" role="region" aria-label="Map of cyclone phase space products on a globe; drag to turn it, scroll or pinch to zoom, hover a low for its values, click it for its phase space"></div>
+  <canvas id="overlay" aria-hidden="true"></canvas>
+  <div class="progress" id="progress" aria-hidden="true"></div>
 
-<main id="map" aria-label="Map of cyclone phase space products"></main>
-
-<header class="panel topbar" id="topbar">
-  <div class="brand">
-    <h1>Cyclone Phase Space</h1>
-    <span class="live-tag">live</span>
-  </div>
-  <p class="run" id="run-meta">Loading the latest cycle</p>
-  <div class="top-actions">
-    <button type="button" class="btn" id="storms-btn" aria-controls="storms" aria-expanded="true">
-      Lows <span class="count" id="storms-count"></span>
-    </button>
-    <div class="pop-wrap">
-      <button type="button" class="btn" id="menu-btn" aria-controls="menu" aria-expanded="false">
-        View
-        <svg class="caret" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5l3 3 3-3"/></svg>
-      </button>
-      <div class="panel popover menu" id="menu" hidden>
-        <section>
-          <h2 class="pop-h">Region</h2>
-          <div class="seg" role="group" aria-label="Go to a region">
-            <button type="button" data-basin="global">Global</button>
-            <button type="button" data-basin="natl">N Atlantic</button>
-            <button type="button" data-basin="npac">N Pacific</button>
-            <button type="button" data-basin="south">Southern</button>
-          </div>
-        </section>
-        <section>
-          <h2 class="pop-h">Basemap</h2>
-          <div class="seg" role="group" aria-label="Basemap">
-            <button type="button" data-base="plain" aria-pressed="true">Plain</button>
-            <button type="button" data-base="dark" aria-pressed="false">Dark</button>
-            <button type="button" data-base="sat" aria-pressed="false">Satellite</button>
-            <button type="button" data-base="night" aria-pressed="false">Night</button>
-          </div>
-        </section>
-        <section>
-          <h2 class="pop-h">Method</h2>
-          <p class="methods">Hart (2003) parameters computed on the <span id="methods-model">GFS 0.25</span> degree grid with a 500&nbsp;km window; class at the MSLP minimum.</p>
-          <p class="links"><a href="https://jkrek17.github.io/web/article/" data-link="article">Article</a><a href="https://jkrek17.github.io/web/article/figures/phase_space_3d.html" data-link="space">3-D phase space</a><a href="https://jkrek17.github.io/web/forecasters/" data-link="guide">Forecaster guide</a></p>
-          <p class="cave">CAVE names: HCPSclass, HB (thermal asymmetry), HVTL and HVTU (lower and upper thermal wind).</p>
-        </section>
-        <section>
-          <h2 class="pop-h">Keyboard</h2>
-          <dl class="keys">
-            <dt><kbd>Space</kbd></dt><dd>play or pause</dd>
-            <dt><kbd>&larr;</kbd> <kbd>&rarr;</kbd></dt><dd>step one frame</dd>
-            <dt><kbd>1</kbd> to <kbd>4</kbd></dt><dd>Class, B, &minus;V<sub>T</sub><sup>L</sup>, &minus;V<sub>T</sub><sup>U</sup></dd>
-            <dt><kbd>F</kbd></dt><dd>follow or release a storm</dd>
-            <dt><kbd>Esc</kbd></dt><dd>close a menu, then the readout</dd>
-          </dl>
-        </section>
+  <header class="topbar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+        <circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" stroke-width="2"/>
+        <path d="M16 6a10 10 0 0 1 10 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".55"/>
+        <path d="M16 26A10 10 0 0 1 6 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".55"/>
+        <circle cx="16" cy="16" r="4.5" fill="currentColor"/>
+      </svg>
+      <div class="brand-text">
+        <h1>Cyclone Phase Space</h1>
+        <p id="brand-sub">Hart parameters at every closed low</p>
       </div>
     </div>
-    <button type="button" class="btn icon" id="share" aria-label="Copy a link to this view" title="Copy a link to this view">
-      <svg class="i-link" viewBox="0 0 20 20" aria-hidden="true"><path d="M8.5 11.5a3.5 3.5 0 0 0 5 0l2.5-2.5a3.5 3.5 0 0 0-5-5l-1 1M11.5 8.5a3.5 3.5 0 0 0-5 0L4 11a3.5 3.5 0 0 0 5 5l1-1"/></svg>
-      <svg class="i-done" viewBox="0 0 20 20" aria-hidden="true"><path d="M4.5 10.5l3.5 3.5 7.5-8"/></svg>
-    </button>
-  </div>
-</header>
 
-<div class="notes" id="notes">
-  <p class="panel note stale" id="stale" hidden></p>
-  <div class="panel note follow" id="follow" hidden>
-    <span>Following <b id="follow-name"></b></span>
-    <button type="button" class="x" id="unfollow" aria-label="Stop following">
-      <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6"/></svg>
-    </button>
+    <div class="valid" aria-live="polite">
+      <span class="eyebrow">Valid</span>
+      <span id="validTime" class="valid-time">&mdash;</span>
+      <span id="validRel" class="valid-rel"></span>
+    </div>
+
+    <div class="topbar-actions">
+      <div class="segmented views" role="radiogroup" aria-label="Map view">
+        <button type="button" role="radio" data-view="global" aria-checked="false">Global</button>
+        <button type="button" role="radio" data-view="natl" aria-checked="false">Atlantic</button>
+        <button type="button" role="radio" data-view="npac" aria-checked="false">Pacific</button>
+        <button type="button" role="radio" data-view="south" aria-checked="false">Southern</button>
+      </div>
+      <div class="chips" aria-live="polite">
+        <span class="chip" id="chipRun" data-state="loading" title="Age of the model run on this page"><i></i><span>Run</span></span>
+      </div>
+      <button type="button" class="btn btn-ghost" id="phase-btn" aria-controls="side" aria-expanded="true">Phase space</button>
+      <button type="button" class="btn btn-ghost" id="about-btn" aria-controls="about" aria-expanded="false">How to read it</button>
+      <a class="btn btn-ghost" id="homeLink" href="../">All projects</a>
+      <button type="button" class="icon-btn" id="share" aria-label="Copy a link to this view" title="Copy a link to this view"></button>
+      <button type="button" class="icon-btn" id="btnLayers" aria-label="Layers" aria-controls="panel" aria-expanded="true" title="Layers (L)"></button>
+      <button type="button" class="icon-btn" id="btnHelp" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)"></button>
+    </div>
+  </header>
+
+  <div class="scrim" id="scrim" hidden></div>
+
+  <aside class="panel" id="panel" aria-label="Layers">
+    <div class="panel-head">
+      <h2>Layers</h2>
+      <button type="button" class="icon-btn icon-btn-sm" id="btnPanelClose" aria-label="Close layers"></button>
+    </div>
+
+    <section class="panel-section">
+      <h3>Field <span class="hint" id="field-hint">at the low centers</span></h3>
+      <div class="product-list" id="fields" role="radiogroup" aria-label="Field"></div>
+      <label class="slider-row" id="opacity-row">
+        <span>Opacity</span>
+        <input type="range" id="opacity" min="0.3" max="1" step="0.05" value="0.7">
+        <output id="opacityOut">70%</output>
+      </label>
+    </section>
+
+    <section class="panel-section">
+      <h3>Overlays</h3>
+      <label class="switch-row"><span><i class="swatch swatch-isobars"></i>MSLP contours</span><input type="checkbox" class="switch" data-layer="contours" checked><kbd>I</kbd></label>
+      <label class="switch-row"><span><i class="swatch swatch-track"></i>Storm tracks and names</span><input type="checkbox" class="switch" data-layer="tracks" checked><kbd>K</kbd></label>
+      <label class="switch-row"><span><i class="swatch swatch-halo"></i>200 km circles at the lows</span><input type="checkbox" class="switch" data-layer="circles" checked><kbd>O</kbd></label>
+      <label class="switch-row"><span><i class="swatch swatch-foot"></i>Product footprint, as in CAVE</span><input type="checkbox" class="switch" data-layer="footprint"><kbd>P</kbd></label>
+      <label class="switch-row"><span><i class="swatch swatch-terrain"></i>Terrain minima</span><input type="checkbox" class="switch" data-layer="terrain"><kbd>G</kbd></label>
+      <label class="switch-row" id="fade-row"><span><i class="swatch swatch-fade"></i>Fade fields away from the lows</span><input type="checkbox" class="switch" data-layer="fade" checked><kbd>X</kbd></label>
+    </section>
+
+    <section class="panel-section">
+      <h3>Playback</h3>
+      <div class="segmented speed" role="radiogroup" aria-label="Playback speed">
+        <button type="button" role="radio" data-speed="slow" aria-checked="false">Slow</button>
+        <button type="button" role="radio" data-speed="normal" aria-checked="true">Normal</button>
+        <button type="button" role="radio" data-speed="fast" aria-checked="false">Fast</button>
+      </div>
+    </section>
+
+    <footer class="panel-foot">
+      Hover a low for its class and values; click it to load its track into the phase space.<br>
+      <span id="foot-model">GFS 0.25&deg;</span>, Hart (2003) with a 500&nbsp;km window &middot; Basemap: Esri
+    </footer>
+  </aside>
+
+  <div class="side" id="side">
+    <section class="phase" id="phase" aria-labelledby="phase-h">
+      <div class="phase-head">
+        <h2 id="phase-h">Phase space</h2>
+        <button type="button" class="icon-btn icon-btn-sm" id="phase-close" aria-label="Close the phase space"></button>
+      </div>
+      <div class="ph-find" role="search">
+        <span class="ph-find-i" id="ph-find-i" aria-hidden="true"></span>
+        <input type="search" id="ph-q" placeholder="Find a low by name, id or FSU number" aria-label="Find a low by name, id or FSU number" autocomplete="off" spellcheck="false" aria-controls="ph-hits">
+        <ul class="ph-hits" id="ph-hits" role="listbox" hidden></ul>
+      </div>
+      <div class="ph-body" id="ph-body"></div>
+      <details class="deep" id="deep" open>
+        <summary>Deepest lows at this hour</summary>
+        <ol class="deep-list" id="deep-list"></ol>
+      </details>
+    </section>
+    <div class="legend" id="legend" aria-live="polite"></div>
+  </div>
+
+  <div class="readout" id="readout" hidden></div>
+  <div class="notes">
+    <p class="note" id="status" role="status"></p>
+    <p class="note stale" id="stale" hidden></p>
+    <div class="note follow" id="follow" hidden>
+      <span>Following <b id="follow-name"></b></span>
+      <button type="button" class="icon-btn icon-btn-sm" id="unfollow" aria-label="Stop following"></button>
+    </div>
+  </div>
+
+  <footer class="timeline" id="timeline">
+    <div class="tl-buttons">
+      <button type="button" class="icon-btn" id="prev" aria-label="Earlier forecast hour" title="Previous (&larr;)"></button>
+      <button type="button" class="icon-btn icon-btn-primary" id="play" aria-label="Play" title="Play / pause (Space)"></button>
+      <button type="button" class="icon-btn" id="next" aria-label="Later forecast hour" title="Next (&rarr;)"></button>
+    </div>
+    <div class="tl-readout">
+      <span id="tlHour" class="tl-hour">+0 h</span>
+      <span id="tlCycle" class="tl-cycle"></span>
+    </div>
+    <div class="tl-track">
+      <div class="tl-rail">
+        <div class="tl-avail" id="tlAvail"></div>
+        <div class="tl-ticks" id="tlTicks"></div>
+        <div class="tl-now" id="tlNow" hidden><span>Now</span></div>
+      </div>
+      <input type="range" id="lead" min="0" max="0" step="1" value="0" aria-label="Forecast hour">
+    </div>
+    <div class="tl-key">
+      <span id="runInfo" class="tl-run"></span>
+      <span id="coords" class="coords"></span>
+    </div>
+  </footer>
+
+  <dialog id="helpDialog" class="dialog" aria-labelledby="helpTitle">
+    <div class="dialog-head">
+      <h2 id="helpTitle">Keyboard shortcuts</h2>
+      <button type="button" class="icon-btn icon-btn-sm" id="btnHelpClose" aria-label="Close"></button>
+    </div>
+    <dl class="shortcuts">
+      <dt><kbd>&larr;</kbd> <kbd>&rarr;</kbd></dt><dd>Earlier / later forecast hour</dd>
+      <dt><kbd>Space</kbd></dt><dd>Play / pause</dd>
+      <dt><kbd>Home</kbd> <kbd>End</kbd></dt><dd>First / last hour</dd>
+      <dt><kbd>1</kbd>&ndash;<kbd>4</kbd></dt><dd>Class, B, &minus;V<sub>T</sub><sup>L</sup>, &minus;V<sub>T</sub><sup>U</sup></dd>
+      <dt><kbd>F</kbd></dt><dd>Follow or release the selected low</dd>
+      <dt><kbd>I</kbd> <kbd>K</kbd> <kbd>O</kbd> <kbd>P</kbd> <kbd>G</kbd> <kbd>X</kbd></dt><dd>Contours, tracks, circles, footprint, terrain minima, fade</dd>
+      <dt><kbd>L</kbd></dt><dd>Show / hide layers panel</dd>
+      <dt><kbd>Esc</kbd></dt><dd>Close a sheet, then the phase space</dd>
+    </dl>
+    <p class="dialog-note">In the phase space, drag to rotate and double click to reset; once it has focus, the wheel zooms and the arrow keys rotate it. Click a dot on the track to go to that hour.</p>
+  </dialog>
+
+  <div class="fatal" id="fatal" hidden>
+    <h2 id="fatalTitle">Map could not start</h2>
+    <p id="fatalMsg">This page needs a browser with WebGL enabled.</p>
+    <p class="fatal-actions"><button type="button" class="btn" id="retry" hidden>Try again</button> <a href="https://jkrek17.github.io/web/article/" data-link="article">Read the article</a></p>
   </div>
 </div>
 
-
-
-<section class="panel bar" id="bar" aria-label="Time and field controls">
-  <div class="row time-row">
-    <button type="button" class="btn icon play" id="play" aria-label="Play" aria-pressed="false">
-      <svg class="i-play" viewBox="0 0 20 20" aria-hidden="true"><path d="M6.5 4.5v11l8.5-5.5z"/></svg>
-      <svg class="i-pause" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 4.5h2.6v11H6zM11.4 4.5H14v11h-2.6z"/></svg>
-    </button>
-    <div class="when" aria-live="off">
-      <span class="when-valid" id="when-valid">Loading</span>
-      <span class="when-fhr" id="when-fhr">&nbsp;</span>
-    </div>
-    <div class="scrub">
-      <input type="range" id="frame" min="0" max="0" value="0" step="1" aria-label="Forecast hour" aria-describedby="now-desc">
-      <div class="scrub-ticks" id="scrub-ticks" aria-hidden="true"></div>
-      <span class="now-mark" id="now-mark" hidden></span>
-      <span class="sr-only" id="now-desc"></span>
-    </div>
-  </div>
-  <div class="row ctl-row">
-    <fieldset class="seg fields">
-      <legend class="sr-only">Field</legend>
-      <label title="Hart class at the low center"><input type="radio" name="field" value="class" checked><span>Class</span></label>
-      <label title="Thermal asymmetry (B), 900 to 600 hPa"><input type="radio" name="field" value="hb" aria-label="Thermal asymmetry, B, 900 to 600 hPa"><span class="sym">B</span></label>
-      <label title="Lower thermal wind, 925 to 700 hPa"><input type="radio" name="field" value="hvtl" aria-label="Lower thermal wind, 925 to 700 hPa"><span class="sym">&minus;V<sub>T</sub><sup>L</sup></span></label>
-      <label title="Upper thermal wind, 500 to 300 hPa"><input type="radio" name="field" value="hvtu" aria-label="Upper thermal wind, 500 to 300 hPa"><span class="sym">&minus;V<sub>T</sub><sup>U</sup></span></label>
-    </fieldset>
-    <div class="pop-wrap legend-wrap">
-      <button type="button" class="legend-btn" id="legend-btn" aria-controls="key" aria-expanded="false" aria-label="Legend and reading notes">
-        <span class="legend-inline" id="legend-inline"></span>
-      </button>
-      <div class="panel popover key up" id="key" hidden>
-        <h2 class="pop-h" id="key-title">Class at the low center</h2>
-        <div id="key-scale"></div>
-        <p class="key-help" id="key-help"></p>
-        <p class="key-aid">The dots and 200&nbsp;km circles are a rendering aid. The product itself is the square footprint that CAVE draws (Layers, product footprint).</p>
-      </div>
-    </div>
-    <span class="cint" id="cint"><span id="cint-a">MSLP contours</span><span id="cint-b">&nbsp;</span></span>
-    <span class="grow"></span>
-    <div class="play-opts" id="play-opts">
-      <div class="seg speed" role="group" aria-label="Playback speed">
-        <button type="button" data-speed="slow" aria-pressed="false">Slow</button>
-        <button type="button" data-speed="normal" aria-pressed="true">Normal</button>
-        <button type="button" data-speed="fast" aria-pressed="false">Fast</button>
-      </div>
-      <label class="check"><input type="checkbox" id="loop" checked><span>Loop</span></label>
-    </div>
-    <div class="pop-wrap">
-      <button type="button" class="btn" id="layers-btn" aria-controls="layers" aria-expanded="false">
-        Layers
-        <svg class="caret" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 6.5l3-3 3 3"/></svg>
-      </button>
-      <div class="panel popover layers up right" id="layers" hidden>
-        <div class="layers-play" id="layers-play"></div>
-        <h2 class="pop-h">Layers</h2>
-        <label class="check"><input type="checkbox" data-layer="contours" checked><span>MSLP contours</span></label>
-        <label class="check"><input type="checkbox" data-layer="circles" checked><span>200 km circles at the lows</span></label>
-        <label class="check"><input type="checkbox" data-layer="footprint"><span>Product footprint (as in CAVE)</span></label>
-        <label class="check"><input type="checkbox" data-layer="tracks" checked><span>Storm tracks and names</span></label>
-        <label class="check"><input type="checkbox" data-layer="terrain"><span>Show terrain minima</span></label>
-        <div class="range" id="opacity-wrap">
-          <label class="check"><input type="checkbox" data-layer="fade" checked><span>Fade fields away from the lows</span></label>
-          <span class="range-row"><label for="opacity">Field opacity</label> <output id="opacity-out" for="opacity">0.70</output></span>
-          <input type="range" id="opacity" min="0.3" max="1" step="0.05" value="0.7">
-        </div>
-        <h2 class="pop-h marks-h">Marks on the map</h2>
-        <ul class="marks">
-          <li><i class="mk mk-dot" aria-hidden="true"></i>Low center by class, with its MSLP when zoomed in; larger below 980&nbsp;hPa</li>
-          <li><i class="mk mk-halo" aria-hidden="true"></i>200&nbsp;km radius around the center</li>
-          <li><i class="mk mk-tail" aria-hidden="true"></i>Motion over the last 24&nbsp;h</li>
-          <li><i class="mk mk-track" aria-hidden="true"></i>Whole track of a hovered, selected or followed low</li>
-          <li><i class="mk mk-sel" aria-hidden="true"></i>Selected low</li>
-          <li><i class="mk mk-terrain" aria-hidden="true"></i>Terrain minimum, a false low over high ground</li>
-        </ul>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section class="panel card" id="card" aria-label="Readout at the selected low" hidden></section>
-
-<aside class="panel storms" id="storms" aria-labelledby="storms-h">
-  <div class="panel-head">
-    <h2 id="storms-h">Tracked lows</h2>
-    <span class="sf-count" id="sf-count" aria-live="polite"></span>
-    <button type="button" class="x" id="storms-close" aria-label="Close the storm panel">
-      <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6"/></svg>
-    </button>
-  </div>
-  <div class="sf" role="search" aria-label="Filter the tracked lows">
-    <input type="search" id="sf-q" class="sf-q" placeholder="Filter by name, id or FSU number" aria-label="Filter by name, id or FSU number" autocomplete="off" spellcheck="false">
-    <div class="sf-row">
-      <div class="seg sf-depth" role="group" aria-label="Minimum depth">
-        <button type="button" data-sf-depth="all" aria-pressed="false" title="Every tracked low">All</button>
-        <button type="button" data-sf-depth="1000" aria-pressed="true" title="Deeper than 1000 hPa at some point">&lt;&thinsp;1000</button>
-        <button type="button" data-sf-depth="980" aria-pressed="false" title="Deeper than 980 hPa at some point">&lt;&thinsp;980</button>
-        <button type="button" data-sf-depth="fsu" aria-pressed="false" title="Only the storms on the FSU page">FSU</button>
-      </div>
-      <div class="seg sf-hemi" role="group" aria-label="Hemisphere">
-        <button type="button" data-sf-hemi="all" aria-pressed="true" title="Both hemispheres">All</button>
-        <button type="button" data-sf-hemi="N" aria-pressed="false" title="Northern Hemisphere">N</button>
-        <button type="button" data-sf-hemi="S" aria-pressed="false" title="Southern Hemisphere">S</button>
-      </div>
-    </div>
-  </div>
-  <div class="storms-body" id="storms-body">
-    <details class="deep" id="deep">
-      <summary>Deepest lows at this hour</summary>
-      <ol class="deep-list" id="deep-list"></ol>
-    </details>
-    <details class="axis-note">
-      <summary>Class every 6&nbsp;h against valid time (UTC)<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M8 7.25v4M8 4.75v.5"/></svg></summary>
-      <p id="axis-note">Lows at the hour on screen come first, each group deepest first. Diagrams in m on the article's Figure&nbsp;1 axes; the ring marks this hour, as does the line on the class strip.</p>
-    </details>
-    <div class="time-axis" id="time-axis" aria-hidden="true"></div>
-    <ol class="storm-list" id="storm-list">
-      <li class="storm skel"><span></span><span></span></li>
-      <li class="storm skel"><span></span><span></span></li>
-      <li class="storm skel"><span></span><span></span></li>
-    </ol>
-  </div>
-</aside>
-
-<div class="overlay hidden" id="nodata" role="alert">
-  <div class="panel nodata-card">
-    <h2 id="nodata-title">No live data yet</h2>
-    <p id="nodata-text">The daily run has not published a cycle yet, or it could not be reached.</p>
-    <p class="nodata-actions">
-      <button type="button" class="btn" id="retry">Try again</button>
-      <a href="https://jkrek17.github.io/web/article/" data-link="article">Read the article</a>
-    </p>
+<div class="sheet" id="about" hidden>
+  <div class="sheet-body">
+    <button type="button" class="icon-btn icon-btn-sm close" id="about-close" aria-label="Close"></button>
+    <h2>How to read the cyclone phase space</h2>
+    <p>Every closed low in the model run gets Hart's (2003) three numbers, computed on the <span id="about-model">GFS 0.25&deg;</span> grid within 500&nbsp;km of its center:</p>
+    <ul>
+      <li><b>Thermal asymmetry (B)</b>, 900 to 600&nbsp;hPa: how lopsided the warm and cold air is across the storm. Above 10&nbsp;m the low is frontal (asymmetric).</li>
+      <li><b>Lower thermal wind (&minus;V<sub>T</sub><sup>L</sup>)</b>, 925 to 700&nbsp;hPa: positive is a warm lower core, negative a cold one.</li>
+      <li><b>Upper thermal wind (&minus;V<sub>T</sub><sup>U</sup>)</b>, 500 to 300&nbsp;hPa: positive is a warm upper core, negative cold aloft.</li>
+    </ul>
+    <p>Together they place the low in one of seven classes, the colors of the dots. A tropical cyclone becoming extratropical usually runs red, yellow, green, then blue (classes 0, 2, 3, 4). Read the class at the center dot, never at the footprint edge.</p>
+    <h3>The phase space</h3>
+    <p>Click a low to load its whole track into the 3-D phase space on the right: lower thermal wind across, thermal asymmetry in depth and upper thermal wind up, cut into the seven class cells. The ring marks the hour on screen and moves with the timeline. Values beyond the box sit on its wall as hollow dots.</p>
+    <h3>On the map</h3>
+    <p>The fields show where in the run each value sits; they are faded away from the lows by default, since the numbers mean something only at a closed low. The 200&nbsp;km circles and the dots are a rendering aid: the product itself is the square footprint CAVE draws (Layers, product footprint). Terrain minima are false lows over high ground, hidden by default.</p>
+    <p>CAVE names: HCPSclass, HB (thermal asymmetry), HVTL and HVTU (lower and upper thermal wind).</p>
+    <p class="links"><a href="https://jkrek17.github.io/web/article/" data-link="article">Article</a> &middot; <a href="https://jkrek17.github.io/web/forecasters/" data-link="guide">Forecaster guide</a></p>
+    <p class="fine">Data: NOAA GFS, run four times a day; tracks from the run's own closed lows, with the daily collection's names and the FSU storms where they match. Map drawn with MapLibre GL JS; basemap from Esri; coastlines from Natural Earth.</p>
   </div>
 </div>
 
-<div class="toast" id="toast" role="status" aria-live="polite"></div>
-
-<noscript><p class="panel noscript">This map needs JavaScript. The <a href="https://jkrek17.github.io/web/article/">article</a> explains the products.</p></noscript>
+<noscript><p class="note noscript">This map needs JavaScript. The <a href="https://jkrek17.github.io/web/article/">article</a> explains the products.</p></noscript>
 </body>
 </html>

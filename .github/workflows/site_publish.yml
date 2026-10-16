@@ -10,7 +10,9 @@
 # with the latest/ tree of the marine-wind-live branch as its data/, plus the
 # model scorecard from the marine-wind-scorecard branch), the verification page
 # (marine_wind/verification_page/, served at /verification/ with the data/ tree
-# of the verification-data branch) and nothing else; it is pushed as the
+# of the verification-data branch), the globe kit the globe pages load
+# (globe_kit/, served at /globe-kit/: MapLibre, the shared look and script, the
+# land outline) and nothing else; it is pushed as the
 # single commit of the public repository's main branch with the token in the
 # secret WEB_TOKEN (a fine-grained personal access token scoped to the public
 # repository with Contents: read and write). The public repository serves it
@@ -48,6 +50,7 @@ on:
       - 'cyclone_phase_space/article/figures/**'
       - 'marine_wind/page/**'
       - 'marine_wind/verification_page/**'
+      - 'globe_kit/**'
       - '.github/workflows/site_publish.yml'
       - 'tools/build_site_index.py'
   workflow_dispatch:
@@ -117,6 +120,10 @@ jobs:
         run: |
           site="$RUNNER_TEMP/site"
           rm -rf "$site"
+          # The globe kit the globe pages share, at /globe-kit/ (they load it
+          # as ../globe-kit/).
+          mkdir -p "$site/globe-kit"
+          cp -r globe_kit/. "$site/globe-kit/"
           # The live map with its data beside it, served at /cyclone/; the
           # site root is the projects index (built after the kept folders).
           mkdir -p "$site/cyclone/data"
@@ -159,9 +166,12 @@ jobs:
           # browser holding a cached index.html never pairs it with stale
           # files (Pages serves everything with a 10 minute max-age).
           v="${GITHUB_SHA::8}"
-          sed -i -E "s/(href|src)=\"(style\.css|basemap\.js|card\.js|storms\.js|space3d\.js|app\.js)\"/\1=\"\2?v=$v\"/g" "$site/cyclone/index.html"
+          # The kit's files too (../globe-kit/...); the delimiter is # since
+          # the paths have slashes.
+          kit='\.\./globe-kit/(globe-kit\.js|globe-kit\.css|lib/maplibre-gl\.js|lib/maplibre-gl\.css)'
+          sed -i -E "s#(href|src)=\"(style\.css|card\.js|storms\.js|space3d\.js|app\.js|$kit)\"#\1=\"\2?v=$v\"#g" "$site/cyclone/index.html"
           grep -c "?v=$v" "$site/cyclone/index.html"
-          sed -i -E "s#(href|src)=\"(style\.css|app\.js|scorecard\.js|lib/maplibre-gl\.js|lib/maplibre-gl\.css)\"#\1=\"\2?v=$v\"#g" "$site/marine-wind/index.html"
+          sed -i -E "s#(href|src)=\"(style\.css|app\.js|scorecard\.js|$kit)\"#\1=\"\2?v=$v\"#g" "$site/marine-wind/index.html"
           sed -i -E "s#(href|src)=\"(style\.css|app\.js)\"#\1=\"\2?v=$v\"#g" "$site/verification/index.html"
           touch "$site/.nojekyll"
           du -sh "$site"
@@ -172,10 +182,10 @@ jobs:
           REPO: ${{ vars.PUBLIC_SITE_REPO }}
           TOKEN: ${{ secrets.WEB_TOKEN }}
           # Folders this workflow writes (cyclone, article, forecasters,
-          # marine-wind, verification),
+          # marine-wind, verification, globe-kit),
           # plus data/, fonts/ and basemap/,
           # which the map used at the root before it moved to /cyclone/.
-          OWN_FOLDERS: cyclone article forecasters marine-wind verification data fonts basemap
+          OWN_FOLDERS: cyclone article forecasters marine-wind verification globe-kit data fonts basemap
         run: |
           current="$RUNNER_TEMP/current"
           rm -rf "$current"
