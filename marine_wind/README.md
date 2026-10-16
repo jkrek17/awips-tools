@@ -149,31 +149,10 @@ untested. Tropical cyclones are outside what the recipe was tuned for.
 
 ## Daily verification
 
-`verify/verify.py` scores the blend every day for the North Atlantic and North
-Pacific boxes above, and for the tropics (18S–18N) and the Southern Ocean
-(30–67S), where the global page runs it untested. After the
-12 UTC analyses are on AWS, it rebuilds the +24 to +120 h forecasts valid at
-12 UTC from the AWS mirrors and scores them against:
-
-- the GFS + ECMWF analysis mean and the ECMWF analysis alone, on open, ice-free water
-- moored buoys, and ships plus buoys, from the GDAS marine monitoring file
-  (first guess plus O−B; buoys raised to 10 m, ships scaled onto the buoy basis;
-  stations with a persistent bias are listed in `verify/obs_blacklist.txt`)
-
-It scores the page's blend, the equal-weight blend, the plain 3-model mean and
-each model. The 34/48/64 kt chances get a Brier score.
-
-`.github/workflows/marine_wind_verify.yml` runs it at 22:15 UTC. It keeps
-`scores.csv` (one row per day, basin, lead, method and referee) and
-`summary.md` (last 7 days, last 30 days, all) as the single commit of the
-orphan branch `marine-wind-verify`. To backfill, run the workflow by hand with
-a start date.
-
-```
-pip install -r marine_wind/verify/requirements.txt
-python3 marine_wind/verify/verify.py --valid 20261012 --out day.csv
-python3 marine_wind/verify/verify.py --summary day.csv --md summary.md
-```
+Daily scores are on the verification page (below). The older "Marine wind
+verification" job (`verify/verify.py`, `marine_wind_verify.yml`) was retired in
+Oct 2026 because the page covers the same scores; its last results stay on the
+orphan branch `marine-wind-verify`.
 
 ## Model scorecard
 

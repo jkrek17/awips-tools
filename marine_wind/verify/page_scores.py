@@ -23,7 +23,7 @@ Truth sources (open, ice-free water in the OPC chart box):
                   equivalent-neutral wind turned into real 10 m wind with the analysed
                   air-minus-sea temperature, as in the storm study (storm_verify.py)
     buoys         moored buoys, ships+buoys: the GDAS marine monitoring file (first guess
-                  + O-B), buoys raised to 10 m, ships scaled 0.88, as in verify.py
+                  + O-B), buoys raised to 10 m (Charnock profile), ships scaled 0.88
 
 Three CSVs per run (DIR/scores_*.csv, DIR/chances_*.csv, DIR/storm_*.csv):
 
@@ -46,6 +46,7 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 PIPE = os.path.join(HERE, "..", "pipeline")
 KT = 1.943844
+
 STEPS = [24, 48, 72, 96, 120]
 HOUR = {"natl": 12, "npac": 0}
 METHODS = ["windcore", "blend", "nomem", "mean3", "gfs", "ecmwf", "aifs", "gefs_mean", "ens_mean", "aifsens_mean"]
@@ -58,6 +59,19 @@ SCORE_FIELDS = (["valid", "basin", "hour", "lead", "method", "referee", "n", "ae
                 + ["t%d%s" % (t, k) for t in (34, 48, 64) for k in "hmf"] + ["pk_n", "pk_sum", "pk_abs"])
 CHANCE_FIELDS = (["valid", "basin", "hour", "lead", "referee", "thr", "n", "events", "bs"]
                  + ["n%d" % i for i in range(10)] + ["e%d" % i for i in range(10)] + ["p%d" % i for i in range(10)])
+
+# WMO buoy blocks: a 5-digit station in one of these is a buoy, any other 5-digit one a ship or platform
+BUOY_BLOCKS = {"13", "15", "21", "22", "23", "31", "32", "41", "42", "44", "45", "46", "48", "51", "52", "61", "62", "63", "64"}
+
+
+def charnock(spd_ms, z_from, z_to=10.0, alpha=0.011, nu=1.5e-5, k=0.4, g=9.81):
+    """Factor taking a wind measured at z_from metres to z_to (log profile, Charnock roughness)."""
+    s = np.maximum(spd_ms, 0.5)
+    us = s * k / np.log(z_from / 1e-4)
+    for _ in range(20):
+        z0 = alpha * us ** 2 / g + 0.11 * nu / us
+        us = s * k / np.log(z_from / z0)
+    return np.log(z_to / z0) / np.log(z_from / z0)
 
 
 # ------------------------------------------------------------------ truth
@@ -115,7 +129,6 @@ def observations(valid, lats, lons, mask):
     """{'buoys': [n, 3], 'ships+buoys': [n, 3]} (lat, lon, kt) within 1 h of the valid time, or None."""
     import pandas as pd
     import fetch
-    import verify
     ymd, hh = valid.strftime("%Y%m%d"), valid.strftime("%H")
     r = fetch.get("%s/gdas.%s/%s/atmos/wdqms/gdas.t%sz.marine.csv" % (fetch.GFS, ymd, hh, hh))
     if r is None:
@@ -156,11 +169,11 @@ def observations(valid, lats, lons, mask):
     res = {"buoys": [], "ships+buoys": []}
     for st, jj in recs.items():
         moving = np.ptp(lat[jj]) > 0.05 or np.ptp(lon[jj]) > 0.05
-        buoy = st.isdigit() and (len(st) == 7 or st[:2] in verify.BUOY_BLOCKS)
+        buoy = st.isdigit() and (len(st) == 7 or st[:2] in BUOY_BLOCKS)
         if st.isdigit() and not buoy:
             continue
         sp = np.hypot(ou[jj].mean(), ov[jj].mean()) * (1.0 if buoy else 0.88)
-        rec = (lat[jj].mean(), lon[jj].mean(), sp * verify.charnock(sp, 4.0) * KT)
+        rec = (lat[jj].mean(), lon[jj].mean(), sp * charnock(sp, 4.0) * KT)
         res["ships+buoys"].append(rec)
         if buoy and not moving:
             res["buoys"].append(rec)
