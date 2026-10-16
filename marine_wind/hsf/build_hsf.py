@@ -32,7 +32,8 @@ LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 BASIN_DOMAIN = {"pac": "npac", "atl": "natl"}
 # wind grids a draft can be written from: key -> (box field, label)
 SOURCES = {"corelift": ("windcore", "Core Lifted wind (storm cores kept)"), "gfs": ("gfs", "GFS wind"),
-           "ecmwf": ("ecmwf", "ECMWF IFS wind"), "aifs": ("aifs", "ECMWF AIFS wind")}
+           "ecmwf": ("ecmwf", "ECMWF IFS wind"), "aifs": ("aifs", "ECMWF AIFS wind"),
+           "ndfd": (None, "NDFD wind (the desk's latest issued grids)")}
 
 
 def read_box(box):
@@ -65,6 +66,106 @@ def wave_heights(cycle, leads):
         hs = w["hs"].astype(np.float32)
         hs[(hs > 50) | (hs < 0)] = np.nan
         out[fh] = hs
+    return out
+
+
+def _rings(geom, nd=3):
+    """Shapely (multi)polygon -> list of closed [lon, lat] rings (exteriors and holes)."""
+    polys = getattr(geom, "geoms", [geom])
+    out = []
+    for g in polys:
+        if g.geom_type != "Polygon" or g.is_empty:
+            continue
+        for r in [g.exterior] + list(g.interiors):
+            out.append([[round(x, nd), round(y, nd)] for x, y in r.coords])
+    return out
+
+
+def compare_previous(prev, basin, lats, lons, sea, out):
+    """Score the previous run's drafts (their JSON in `prev`) against the forecast the desk
+    issued for the same synopsis (IEM archive) and write compare-<basin>.json. Without an
+    issued product yet, the last comparison is carried forward."""
+    import issued
+    import shapely
+    dest = os.path.join(out, "compare-%s.json" % basin)
+    docs = {}
+    for key in SOURCES:
+        f = os.path.join(prev, "%s.json" % (basin if key == "corelift" else "%s-%s" % (basin, key)))
+        if os.path.exists(f):
+            docs[key] = json.load(open(f))
+    got = None
+    if docs:
+        syn = dt.datetime.strptime(next(iter(docs.values()))["synopsis"], "%Y-%m-%dT%H:00Z")
+        got = issued.fetch(basin, syn)
+    if got is None:
+        old = os.path.join(prev, "compare-%s.json" % basin)
+        if os.path.exists(old):
+            os.makedirs(out, exist_ok=True)
+            with open(old) as f, open(dest, "w") as g:
+                g.write(f.read())
+        return None
+    text, p = got
+    if "SYNOPSIS VALID" in text:
+        text = text[text.find("SYNOPSIS VALID"):]
+    LON, LAT = np.meshgrid(lons, lats)
+    cell = 225.0 * np.cos(np.radians(LAT))   # nm2 of a 0.25 deg cell
+    blocks = [b for b in p["blocks"] if b["area"] is not None and b["wind"] and b["wind"][1]]
+    imask = [shapely.contains_xy(b["area"], LON, LAT) & sea for b in blocks]
+    stats = {}
+    for key, d in docs.items():
+        dmask = []
+        for a in d["areas"]:
+            m = np.zeros(sea.shape, bool)
+            for r in a["rings"]:
+                m ^= inside([tuple(q) for q in r], LON, LAT)
+            dmask.append(m & sea)
+        rows = []
+        for h in (0, 24, 48):
+            for lv in (34, 48, 64):
+                i = np.zeros(sea.shape, bool)
+                for b, m in zip(blocks, imask):
+                    if b["hour"] == h and b["wind"][1] >= lv:
+                        i |= m
+                k = np.zeros(sea.shape, bool)
+                for a, m in zip(d["areas"], dmask):
+                    if a["hour"] == h and a["wind"][1] >= lv:
+                        k |= m
+                rows.append(dict(hour=h, level=lv, issued=round(float(cell[i].sum())), draft=round(float(cell[k].sum())),
+                                 both=round(float(cell[i & k].sum()))))
+        stats[key] = rows
+    doc = dict(basin=basin, synopsis=p["synopsis_valid"].strftime("%Y-%m-%dT%H:00Z"),
+               issued=p["issued"].strftime("%Y-%m-%dT%H%MZ") if p["issued"] else None, issued_text=text,
+               issued_areas=[dict(hour=b["hour"], warning=b["warning"], tier=b["tier"], wind=list(b["wind"]),
+                                  rings=_rings(b["area"].simplify(0.05))) for b in blocks],
+               unread=sum(not b["parsed"] for b in p["blocks"]),
+               drafts={k: dict(cycle=d["cycle"], text=d["text"], areas=d["areas"], lows=d.get("lows", []),
+                               tracks=d.get("tracks", [])) for k, d in docs.items()},
+               stats=stats, boundary=next(iter(docs.values())).get("boundary"))
+    os.makedirs(out, exist_ok=True)
+    with open(dest, "w") as f:
+        json.dump(doc, f, separators=(",", ":"))
+    print("HSF %s: drafts from %s compared with the issued forecast" % (basin, doc["synopsis"]))
+    return doc
+
+
+def ndfd_wind(syn_time, hours, lats, lons):
+    """{hour: wind kt} from the newest NDFD oceanic snapshot covering every hour (0 where
+    NDFD has no data), plus "snapshot": its time; None when there is none."""
+    try:
+        sys.path.insert(0, os.path.join(HERE, "..", "..", "nwp"))
+        from nwp import ndfd
+        valid = [syn_time + dt.timedelta(hours=h) for h in hours]
+        key = ndfd.covering(valid)
+        if key is None:
+            return None
+        g = ndfd.wind_on_grid(key, valid, lats, lons)
+        if len(g) < len(valid):
+            return None
+    except Exception as e:   # NDFD is an extra; never stops the model drafts
+        print("NDFD draft skipped: %s" % e)
+        return None
+    out = {h: np.nan_to_num(g[v], nan=0.0) for h, v in zip(hours, valid)}
+    out["snapshot"] = dt.datetime.strptime(key[-12:], "%Y%m%d%H%M").strftime("%H%MZ %d %b").upper()
     return out
 
 
@@ -110,6 +211,7 @@ def main():
     ap.add_argument("--box", required=True, help="page box folder (manifest.json + fFFF.bin)")
     ap.add_argument("--basin", default="pac", choices=list(AREAS))
     ap.add_argument("--out", required=True)
+    ap.add_argument("--prev", help="the previous run's draft folder: compare those drafts with the issued forecast")
     a = ap.parse_args()
     os.environ.setdefault("MARINE_DOMAIN", BASIN_DOMAIN[a.basin])
     box, lats, lons, cycle = read_box(a.box)
@@ -122,12 +224,25 @@ def main():
     hs = wave_heights(cycle, leads)
     syn_time = cycle + dt.timedelta(hours=SYN_LEAD)
     os.makedirs(a.out, exist_ok=True)
+    if a.prev:
+        try:
+            sea = inside(AREAS[a.basin], Grid(lats, lons).LON % 360, Grid(lats, lons).LAT) & np.isfinite(hs[leads[0]])
+            compare_previous(a.prev, a.basin, lats, lons, sea, a.out)
+        except Exception as e:   # the comparison never stops the new drafts
+            print("comparison with the issued forecast skipped: %s" % e)
     # one draft per wind source, same seas and pressure, so the desk can see what each
     # model's wind would say; Core Lifted keeps the plain file names (pac.txt, pac.json)
     for key, (field, label) in SOURCES.items():
-        if field not in box[leads[0]]:
+        if key == "ndfd":
+            wind = ndfd_wind(syn_time, HOURS, lats, lons)
+            if wind is None:
+                continue
+            label += " from %s" % wind.pop("snapshot")
+        elif field in box[leads[0]]:
+            wind = {h: box[SYN_LEAD + h][field] for h in HOURS}
+        else:
             continue
-        fields = {h: dict(wind=box[SYN_LEAD + h][field], msl=box[SYN_LEAD + h]["msl"] + 900.0, hs=hs[SYN_LEAD + h]) for h in HOURS}
+        fields = {h: dict(wind=wind[h], msl=box[SYN_LEAD + h]["msl"] + 900.0, hs=hs[SYN_LEAD + h]) for h in HOURS}
         warn, syn, areas, lows, tracks = draft(fields, lats, lons, a.basin)
         text = product(syn_time, warn, syn)
         name = a.basin if key == "corelift" else "%s-%s" % (a.basin, key)

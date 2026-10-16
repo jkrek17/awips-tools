@@ -157,7 +157,9 @@ jobs:
           if-no-files-found: ignore
 
       # First-guess High Seas Forecast texts from the two boxes just built
-      # (marine_wind/hsf/), plus GFS-Wave seas. Never holds up the wind page:
+      # (marine_wind/hsf/), one per wind grid (Core Lifted, GFS, ECMWF, AIFS, NDFD),
+      # plus GFS-Wave seas; and the previous run's drafts scored against the forecast
+      # the desk issued for their synopsis (IEM archive). Never holds up the wind page:
       # a failure here leaves that draft out of this run and publishes the rest.
       - name: High seas text draft (Pacific)
         if: steps.check.outputs.build == 'true'
@@ -166,7 +168,14 @@ jobs:
         env:
           OUT: ${{ steps.build.outputs.out }}
           MARINE_DOMAIN: npac
-        run: python3 build_hsf.py --box "$OUT/npac" --basin pac --out "$OUT/hsf"
+        run: |
+          # the drafts now on the page, to compare with what the desk issued for their synopsis
+          prev="$RUNNER_TEMP/prev-hsf"
+          rm -rf "$prev" && mkdir -p "$prev"
+          if git fetch -q --depth 1 origin marine-wind-live 2>/dev/null; then
+            git archive FETCH_HEAD latest/hsf | tar -x -C "$prev" || true
+          fi
+          python3 build_hsf.py --box "$OUT/npac" --basin pac --out "$OUT/hsf" --prev "$prev/latest/hsf"
       - name: High seas text draft (Atlantic)
         if: steps.check.outputs.build == 'true'
         continue-on-error: true
@@ -174,7 +183,7 @@ jobs:
         env:
           OUT: ${{ steps.build.outputs.out }}
           MARINE_DOMAIN: natl
-        run: python3 build_hsf.py --box "$OUT" --basin atl --out "$OUT/hsf"
+        run: python3 build_hsf.py --box "$OUT" --basin atl --out "$OUT/hsf" --prev "$RUNNER_TEMP/prev-hsf/latest/hsf"
 
       - name: Publish to the marine-wind-live branch
         if: steps.check.outputs.build == 'true'

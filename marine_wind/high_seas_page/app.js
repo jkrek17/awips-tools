@@ -10,16 +10,42 @@
     atl: { name: "Atlantic", box: "../marine-wind/data/", start: [-52, 48], mobile: [-50, 45] }
   };
   // the wind grid each draft is written from (same pressure and seas): ?src=gfs
-  var SOURCES = { corelift: "Core Lifted", gfs: "GFS", ecmwf: "ECMWF", aifs: "AIFS" };
+  var SOURCES = { corelift: "Core Lifted", gfs: "GFS", ecmwf: "ECMWF", aifs: "AIFS", ndfd: "NDFD" };
   var q = new URLSearchParams(location.search);
   var basin = (q.get("basin") || "pac").toLowerCase();
   if (!BASINS[basin]) basin = "pac";
   var src = (q.get("src") || "corelift").toLowerCase();
   if (!SOURCES[src]) src = "corelift";
   var B = BASINS[basin];
+  // ?view=compare: the previous run's draft against the forecast the desk issued for it
+  var compare = q.get("view") === "compare";
   var FILE = src === "corelift" ? basin : basin + "-" + src;
-  var DATA = "../marine-wind/data/hsf/" + FILE + ".json";
-  function link(b, s) { return "?basin=" + b + (s === "corelift" ? "" : "&src=" + s); }
+  var DATA = "../marine-wind/data/hsf/" + (compare ? "compare-" + basin : FILE) + ".json";
+  function link(b, s, c) { return "?basin=" + b + (s === "corelift" ? "" : "&src=" + s) + (c ? "&view=compare" : ""); }
+  var cmp = null, textTab = "issued";
+  var LEVELS = { 34: "Gale", 48: "Storm", 64: "Hurricane force" };
+
+  // the comparison file -> the shape the page draws (the chosen grid's draft) plus the issued areas
+  function fromCompare(c) {
+    cmp = c;
+    var d = c.drafts[src] || c.drafts.corelift;
+    return { cycle: d.cycle, synopsis: c.synopsis, hours: [0, 24, 48], text: c.issued_text, areas: d.areas,
+             lows: d.lows, tracks: d.tracks, boundary: c.boundary, draft_text: d.text };
+  }
+  function k(n) { return Math.round(n / 1000) + "k"; }
+  function statsHTML() {
+    var rows = (cmp.stats[src] || []).filter(function (r) { return r.issued || r.draft; });
+    if (!rows.length) return "<p>Neither the issued forecast nor the draft has gale force or more.</p>";
+    return "<table><tr><th>Time</th><th>Level</th><th>Issued</th><th>Draft</th><th>Both</th></tr>" + rows.map(function (r) {
+      return "<tr><td>" + (r.hour ? r.hour + " h" : "Synopsis") + "</td><td>" + LEVELS[r.level] + "</td><td>" + k(r.issued) +
+        "</td><td>" + k(r.draft) + "</td><td>" + k(r.both) + "</td></tr>";
+    }).join("") + "</table><p>Warned area in nm\u00b2 over open water, by the highest wind each area names.</p>";
+  }
+  function issuedFeatures(h) {
+    return { type: "FeatureCollection", features: (cmp ? cmp.issued_areas : []).filter(function (a) { return a.hour === h; }).map(function (a) {
+      return { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: a.rings.map(function (r) { return r.map(function (p) { return [lon(p[0]), p[1]]; }); }) } };
+    }) };
+  }
   var BOX = B.box;
   var man = null, windCache = {};
 
@@ -38,7 +64,7 @@
       if (!r.ok) throw new Error(r.status);
       return r.arrayBuffer();
     }).then(function (buf) {
-      var field = (doc && doc.wind_field) || "windcore";
+      var field = doc.wind_field || "windcore";
       var g = man.grid, k = man.fields.findIndex(function (f) { return f.name === field; }), f = man.fields[k];
       var raw = new Uint8Array(buf, k * g.ny * g.nx, g.ny * g.nx);
       var H = g.ny * 2, c = document.createElement("canvas");
@@ -61,6 +87,7 @@
   }
   function showWind(h) {
     if (!map || !man || !doc || !map.getSource("wind")) return;
+    if (doc.wind_source && !doc.wind_field) return;   // NDFD: no shading (its grid is not in the box)
     var lead = doc.box_leads ? doc.box_leads[String(h)] : 6 + h;
     windImage(lead).then(function (url) {
       if (hour !== h) return;
@@ -119,6 +146,7 @@
     hour = h;
     document.querySelectorAll("#steps button").forEach(function (b) { b.setAttribute("aria-pressed", String(+b.dataset.h === h)); });
     if (map && map.getSource("areas")) map.getSource("areas").setData(features(h));
+    if (map && map.getSource("issued")) map.getSource("issued").setData(issuedFeatures(h));
     showWind(h);
     var t = new Date(new Date(doc.synopsis).getTime() + h * 3600e3).toISOString();
     $("validTime").textContent = K.fmtValid(t);
@@ -127,8 +155,16 @@
   }
 
   function render() {
-    $("runLine").textContent = "Draft from the " + K.fmtTime(doc.cycle) + " run";
-    $("text").textContent = doc.text;
+    $("runLine").textContent = compare ? "Issued vs draft from the " + K.fmtTime(doc.cycle) + " run"
+      : "Draft from the " + K.fmtTime(doc.cycle) + " run";
+    $("text").textContent = compare && textTab === "draft" ? doc.draft_text : doc.text;
+    if (compare) {
+      $("cmpStats").innerHTML = statsHTML();
+      $("textTabs").innerHTML = ["issued", "draft"].map(function (t) {
+        return '<button type="button" data-t="' + t + '" aria-pressed="' + (t === textTab) + '">' + (t === "issued" ? "Issued text" : "Draft text") + "</button>";
+      }).join("");
+      document.querySelectorAll("#textTabs button").forEach(function (b) { b.addEventListener("click", function () { textTab = b.dataset.t; render(); }); });
+    }
     var hours = doc.hours.filter(function (h) { return h === 0 || doc.areas.some(function (a) { return a.hour === h; }); });
     $("steps").innerHTML = hours.map(function (h) {
       return '<button type="button" data-h="' + h + '">' + (h ? h + " H" : "SYNOPSIS") + "</button>";
@@ -142,11 +178,15 @@
     document.title = "High Seas Draft · " + B.name;
     $("basinName").textContent = B.name;
     $("plainLink").href = "../marine-wind/data/hsf/" + FILE + ".txt";
-    document.querySelectorAll("#basins a").forEach(function (a) { a.href = link(a.dataset.basin, src); a.setAttribute("aria-current", String(a.dataset.basin === basin)); });
+    $("plainLink").hidden = compare;
+    $("cmpLink").href = link(basin, src, !compare);
+    $("cmpLink").textContent = compare ? "Back to the new draft" : "Compare with issued";
+    $("cmpBox").hidden = !compare;
+    document.querySelectorAll("#basins a").forEach(function (a) { a.href = link(a.dataset.basin, src, compare); a.setAttribute("aria-current", String(a.dataset.basin === basin)); });
     $("sources").innerHTML = Object.keys(SOURCES).map(function (s) {
-      return '<a href="' + link(basin, s) + '" aria-current="' + (s === src) + '">' + SOURCES[s] + "</a>";
+      return '<a href="' + link(basin, s, compare) + '" aria-current="' + (s === src) + '">' + SOURCES[s] + "</a>";
     }).join("");
-    $("shadeName").textContent = SOURCES[src] + " wind";
+    $("shadeName").textContent = src === "ndfd" ? "none for NDFD" : SOURCES[src] + " wind";
     $("copyBtn").addEventListener("click", function () {
       if (!doc) return;
       navigator.clipboard.writeText(doc.text).then(function () { $("copyBtn").textContent = "Copied"; setTimeout(function () { $("copyBtn").textContent = "Copy text"; }, 1500); },
@@ -156,8 +196,9 @@
     // the box manifest, for the wind underneath; the draft must come from the same run
     var box = fetch(BOX + "manifest.json?t=" + Date.now()).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
     data = Promise.all([data, box]).then(function (v) {
-      if (v[1] && v[1].cycle === v[0].cycle) man = v[1];
-      return v[0];
+      var d = compare ? fromCompare(v[0]) : v[0];
+      if (v[1] && v[1].cycle === d.cycle && !compare) man = v[1];
+      return d;
     });
     if (K.webgl()) {
       map = K.createMap({ start: { center: K.isMobile() ? B.mobile : B.start, zoom: K.isMobile() ? 1.6 : 2.4 }, credits: "Draft: marine wind blend, GFS-Wave" });
@@ -175,6 +216,9 @@
         map.addSource("areas", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
         map.addLayer({ id: "area-fill", type: "fill", source: "areas", paint: { "fill-color": ["get", "colour"], "fill-opacity": 0.14 } });
         map.addLayer({ id: "area-line", type: "line", source: "areas", paint: { "line-color": ["get", "colour"], "line-width": 2 } });
+        // the issued forecast's areas (compare view)
+        map.addSource("issued", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+        map.addLayer({ id: "issued-line", type: "line", source: "issued", paint: { "line-color": "#f8fafc", "line-width": 2, "line-dasharray": [1.5, 1.5] } });
         data.then(function () {
           if (doc.boundary) {
             var b = doc.boundary.map(function (p) { return [lon(p[0]), p[1]]; });
@@ -191,7 +235,7 @@
       });
     }
     data.then(function (d) { doc = d; render(); }, function () {
-      $("runLine").textContent = "No draft published yet";
+      $("runLine").textContent = compare ? "No comparison yet" : "No draft published yet";
       $("text").textContent = "The draft is written after each marine wind data build. None is available right now.";
     });
   }

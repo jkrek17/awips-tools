@@ -25,6 +25,12 @@
   .hs-legend { display: flex; gap: 12px; padding: 0 16px 8px; font-size: 11.5px; color: var(--text-2); flex-wrap: wrap; }
   .hs-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
   .hs-basins { display: flex; gap: 4px; }
+  .hs-cmp { padding: 0 16px 4px; font-size: 12px; color: var(--text-2); }
+  .hs-cmp table { border-collapse: collapse; width: 100%; font: 12px var(--mono); margin: 4px 0; }
+  .hs-cmp th, .hs-cmp td { text-align: right; padding: 2px 6px; border-bottom: 1px solid var(--border); }
+  .hs-cmp th:first-child, .hs-cmp td:first-child, .hs-cmp th:nth-child(2), .hs-cmp td:nth-child(2) { text-align: left; }
+  .hs-cmp p { margin: 4px 0; color: var(--text-3); font-size: 11.5px; }
+  .hs-cmp .hs-steps { padding: 4px 0; }
   .hs-src { display: flex; align-items: center; gap: 8px; padding: 0 16px 8px; font-size: 11.5px; color: var(--text-3); flex-wrap: wrap; }
   .hs-src nav { display: flex; gap: 4px; flex-wrap: wrap; }
   .hs-src a { font: 600 12px var(--font); padding: 4px 9px; border-radius: var(--radius-sm); border: 1px solid var(--border); color: var(--text-2); text-decoration: none; }
@@ -56,12 +62,18 @@
     <div class="hs-head">
       <h2 id="runLine">Loading the draft&hellip;</h2>
       <button type="button" class="btn" id="copyBtn">Copy text</button>
+      <a class="btn btn-ghost" id="cmpLink" href="?view=compare">Compare with issued</a>
       <a class="btn btn-ghost" id="plainLink" href="../marine-wind/data/hsf/pac.txt" target="_blank" rel="noopener">Plain text</a>
     </div>
     <div class="hs-src"><span>Wind grid</span><nav id="sources" aria-label="Wind grid the draft is written from"></nav></div>
     <div class="hs-steps" id="steps" role="group" aria-label="Time shown on the map"></div>
     <div class="hs-legend"><span><i style="background:#a855f7"></i>64+ kt</span><span><i style="background:#ef4444"></i>48-63</span><span><i style="background:#f59e0b"></i>34-47</span><span><i style="background:#38bdf8"></i>25-33</span><span>Shading: <span id="shadeName">Core Lifted wind</span> · outlines: draft areas · L: lows in the text · white line: warning low tracks · yellow dashed: High Seas forecast area</span></div>
     <p class="hs-note">Written automatically by rules from the chosen wind grid (Core Lifted: the most likely wind, storm cores kept), the 3-model mean pressure and GFS-Wave seas. A draft for the forecaster to edit, not the official forecast.</p>
+    <div id="cmpBox" class="hs-cmp" hidden>
+      <p class="hs-cmp-key">White dotted: the issued forecast's areas · colours: the draft's areas</p>
+      <div id="cmpStats"></div>
+      <div class="hs-steps" id="textTabs" role="group" aria-label="Text shown"></div>
+    </div>
     <pre class="hs-text" id="text"></pre>
   </section>
 </div>

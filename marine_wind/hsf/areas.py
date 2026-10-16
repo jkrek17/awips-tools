@@ -6,8 +6,9 @@ AREAS holds each forecast area's outline as (lon, lat) points, longitudes 0-360 
 import numpy as np
 
 AREAS = {
-    # FZPN01 HSFEP1: 30N-67N, east of a line 30N160E-50N160E-65N170W-67N170W, to 110W
-    "pac": [(160, 30), (160, 50), (190, 65), (190, 67), (250, 67), (250, 30)],
+    # FZPN01 HSFEP1: "PACIFIC S OF 67N AND N OF 30N E OF A LINE FROM THE BERING STRAIT TO
+    # 53N172E TO 50N180W TO 30N180W", to the coast (the sea mask does the coast)
+    "pac": [(180, 30), (180, 50), (172, 53), (191.2, 65.7), (191.2, 67), (250, 67), (250, 30)],
     # FZNT01 HSFAT1: "NORTH OF 31N TO 67N AND WEST OF 35W" to the coast. The west edge only
     # keeps out inland water the wave grid carries (Great Lakes, Hudson Bay); the sea mask
     # does the coast. 75W from 37N to 46N, then 71W north of 46N (Gulf of St Lawrence and
