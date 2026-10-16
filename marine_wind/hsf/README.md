@@ -11,8 +11,18 @@ came from, so the same code serves:
 | File | What it does |
 | --- | --- |
 | `writer.py` | Areas, phrases, wind and seas ranges, lows, complex lows, paragraphs, warnings |
+| `issued.py` | Fetches the issued product from the IEM text archive and turns its areas into shapes |
 | `areas.py` | Forecast area outlines, point-in-polygon, mask outlines for maps (numpy only) |
 | `build_hsf.py` | Reads one of the page's boxes (`manifest.json` + `fFFF.bin`), adds GFS-Wave seas, writes `pac.*` (HSFEP1) or `atl.*` (HSFAT1, north of 31N to 67N and west of 35W) |
+
+## Each run
+`build_hsf.py` writes one draft per wind grid: Core Lifted (`pac.*`, `atl.*`), GFS, ECMWF,
+AIFS (`pac-gfs.*` ...) from the box, and NDFD (`pac-ndfd.*`) from the newest NDFD oceanic
+snapshot covering the synopsis to 48 h (`nwp/nwp/ndfd.py`). All share the 3-model mean
+pressure and GFS-Wave seas. With `--prev` it also scores the previous run's drafts against
+the forecast the desk issued for their synopsis (`compare-pac.json`): warned area at gale,
+storm and hurricane force for each, issued, draft and both. The page shows it under
+"Compare with issued".
 
 ## Rules (Jason, Oct 2026)
 - Describe an area as a lat/lon box first, then quadrants or semicircles round the low
