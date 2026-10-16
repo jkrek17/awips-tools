@@ -32,3 +32,8 @@ tests/blend_wind_gust_wave_pmsl/out/
 # that folder into the public repository and a .gitignore there kept data/ from
 # ever being committed (the /marine-wind/ "manifest 404").
 marine_wind/page/data/
+
+# Verification page data written locally (marine_wind/verify/page_data.py --json
+# marine_wind/verification_page/data); the live data comes from the
+# verification-data branch.
+marine_wind/verification_page/data/

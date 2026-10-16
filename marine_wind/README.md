@@ -209,3 +209,41 @@ orphan branch `marine-wind-scorecard`. Publish public site copies it to
 pip install -r marine_wind/pipeline/requirements.txt
 python3 marine_wind/scorecard/scorecard.py --backfill 30 --scores marine_wind/page/data/scorecard.json
 ```
+
+## Verification page (Oct 2026)
+
+A separate page, `/verification/`, shows forecasters how every model and blend
+on this page has verified: the page wind (blend + storm cores), the blend before
+the core lift, the deterministic blend, the plain 3-model average, GFS, ECMWF,
+AIFS and the GEFS, ENS and AIFS ENS means. Truth: the GDAS + IFS analysis mean
+(or either alone), ASCAT, moored buoys, and ships + buoys. North Atlantic valid
+12 UTC from the 12 UTC runs; North Pacific valid 00 UTC from the 00 UTC runs
+(ASCAT sees ~18,000 Pacific cells at 00 UTC against a few hundred at 12 UTC).
+Scores: bias, average miss at 25+ kt, gale/storm/HF caught, false alarms and
+area, storm peaks in 5 x 5 degree boxes and the error of each box's strongest
+wind, the chances' reliability and Brier skill, and the storm layers' hazard
+lines and low track. Any period from March 2025 (all models on AWS) can be
+pooled, by lead, week by week or month by month.
+
+```
+marine_wind/
+  verify/page_scores.py     score one basin and valid day (forecasts rebuilt with build.step_values)
+  verify/page_data.py       merge day files into the tables; write the page's JSON
+  verification_page/        the static page (index.html, style.css, app.js)
+```
+
+`.github/workflows/verification_page.yml` ("Verification page data") runs at
+23:15 UTC and scores the day two days back (so the ASCAT day is complete) plus
+any missing day of the week before. Run it by hand with a start (and end) date
+to backfill: the days are split into chunks scored in parallel jobs. The tables
+(`tables/*.csv.gz`) and the page data (`data/*.json`) are the single commit of
+the orphan branch `verification-data`; Publish public site serves `data/` at
+`/verification/data/`.
+
+```
+pip install -r marine_wind/pipeline/requirements.txt pandas
+cd marine_wind/verify
+python3 page_scores.py --basin natl --valid 20261012 --out /tmp/day
+python3 page_data.py --tables /tmp/tables --add /tmp/day --json ../verification_page/data
+python3 -m http.server -d ../verification_page 8000
+```

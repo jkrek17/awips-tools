@@ -226,6 +226,16 @@ def nomem_blend(speeds, lagged):
 
 
 def step_fields(ymd, hh, step):
+    vals, stats, _ = step_values(ymd, hh, step)
+    packed = np.stack([np.clip(np.rint((vals[f[0]] + (f[4] if len(f) > 4 else 0)) * f[1]), 0, 255).astype(np.uint8)
+                       for f in FIELDS])
+    return packed, stats
+
+
+def step_values(ymd, hh, step):
+    """The page's fields at one lead as float grids (vals), the run's stats, and extras the
+    verification page scores but the page does not show: each ensemble's mean wind (the speed
+    of the members' mean u and v, as AWIPS shows an ensemble mean)."""
     lag12, lag24 = prior_speeds(ymd, hh, step, 12), prior_speeds(ymd, hh, step, 24)
     prev = None if lag24 is None else lag24.mean(0)
     with ThreadPoolExecutor(12) as ex:
@@ -281,8 +291,6 @@ def step_fields(ymd, hh, step):
         "focus": focus_grid(speeds), "lone": lone_flags(speeds), "msl": msl - 900.0,
         "core": 100 * core, "windcore": windcore, "hazard": hazard,
     }
-    packed = np.stack([np.clip(np.rint((vals[f[0]] + (f[4] if len(f) > 4 else 0)) * f[1]), 0, 255).astype(np.uint8)
-                       for f in FIELDS])
     stats = dict(step=step, members=len(mu), gefs=len(gefs), ens=0 if ens is None else len(ens["u"]),
                  aifs_ens=0 if aens is None else len(aens["u"]), prob_members=len(pmem), trend=prev is not None,
                  nomem_runs=3 * (1 + len(lagged)),
@@ -290,7 +298,10 @@ def step_fields(ymd, hh, step):
                  focus_cells=int((vals["focus"] >= 2).sum()), lone_cells=int((vals["lone"] > 0).sum()),
                  centres=centres(msl), core_model=all(x is not None for x in lowx), lows=lows,
                  storm_cells=int(((hazard & 2) > 0).sum()), hf_cells=int(((hazard & 4) > 0).sum()))
-    return packed, stats
+    extra = {"gefs_mean": np.hypot(np.mean([g["u"] for g in gefs], 0), np.mean([g["v"] for g in gefs], 0)) * KT,
+             "ens_mean": None if ens is None else np.hypot(ens["u"].mean(0), ens["v"].mean(0)) * KT,
+             "aifsens_mean": None if aens is None else np.hypot(aens["u"].mean(0), aens["v"].mean(0)) * KT}
+    return vals, stats, extra
 
 
 def core_layers(step, wind, boost, speeds, members, aens, lowx, dets, gefs, ens):

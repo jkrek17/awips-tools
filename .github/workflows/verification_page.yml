@@ -1,0 +1,173 @@
+# Scores for the verification page (/verification/): every model and blend on the
+# marine wind page against the GDAS and IFS analyses, ASCAT, buoys and ships
+# (marine_wind/verify/page_scores.py). North Atlantic valid 12 UTC, North
+# Pacific valid 00 UTC, +24 to +120 h.
+#
+# Daily, it scores the day two days back (so the RSS ASCAT day is complete)
+# plus any of the 7 days before it that are missing. By hand, give a start and
+# end date to backfill: the days are split into chunks scored in parallel
+# jobs (AWS holds every page model from March 2025; the AIFS ensemble from
+# August 2025).
+#
+# The merged tables (tables/*.csv.gz) and the page's data (data/*.json) are the
+# single commit of the orphan branch verification-data, force-pushed each run;
+# site_publish.yml serves data/ at /verification/data/.
+
+name: Verification page data
+
+on:
+  schedule:
+    - cron: '15 23 * * *'
+  workflow_dispatch:
+    inputs:
+      start:
+        description: 'Backfill from YYYYMMDD (blank: the daily run)'
+        required: false
+        default: ''
+      end:
+        description: 'Backfill through YYYYMMDD (blank: two days ago)'
+        required: false
+        default: ''
+      chunk:
+        description: 'Days per parallel job'
+        required: false
+        default: '20'
+
+permissions:
+  contents: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      any: ${{ steps.plan.outputs.any }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Days to score
+        id: plan
+        env:
+          START: ${{ github.event.inputs.start }}
+          END: ${{ github.event.inputs.end }}
+          CHUNK: ${{ github.event.inputs.chunk || '20' }}
+        run: |
+          if git fetch -q origin verification-data 2>/dev/null; then
+            git show FETCH_HEAD:tables/scores.csv.gz > /tmp/scores.csv.gz 2>/dev/null || true
+          fi
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import csv, datetime as dt, gzip, json, os
+          today = dt.datetime.now(dt.timezone.utc).date()
+          last = today - dt.timedelta(days=2)
+          end = dt.datetime.strptime(os.environ["END"], "%Y%m%d").date() if os.environ.get("END") else last
+          have = set()
+          if os.path.exists("/tmp/scores.csv.gz"):
+              with gzip.open("/tmp/scores.csv.gz", "rt") as f:
+                  have = {(r["valid"], r["basin"]) for r in csv.DictReader(f)}
+          if os.environ.get("START"):
+              d0 = dt.datetime.strptime(os.environ["START"], "%Y%m%d").date()
+              days = [d0 + dt.timedelta(days=i) for i in range((end - d0).days + 1)]
+              want = {b: days for b in ("natl", "npac")}
+          else:   # daily: two days back, and any missing day of the week before it
+              back = [last - dt.timedelta(days=k) for k in range(8)]
+              want = {b: [d for k, d in enumerate(back) if k == 0 or (d.strftime("%Y%m%d"), b) not in have]
+                      for b in ("natl", "npac")}
+          n = max(1, int(os.environ.get("CHUNK") or 20))
+          jobs = []
+          for b, days in want.items():
+              days = sorted(days)
+              for i in range(0, len(days), n):
+                  c = days[i:i + n]
+                  jobs.append({"basin": b, "start": c[0].strftime("%Y%m%d"), "end": c[-1].strftime("%Y%m%d")})
+          print("matrix=" + json.dumps({"include": jobs}))
+          print("any=" + ("true" if jobs else "false"))
+          PY
+          cat "$GITHUB_OUTPUT"
+
+  score:
+    needs: plan
+    if: needs.plan.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      max-parallel: 16
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: marine_wind/verify/requirements.txt
+      - name: Install dependencies
+        run: pip install -r marine_wind/verify/requirements.txt scipy
+      - name: Score ${{ matrix.basin }} ${{ matrix.start }} to ${{ matrix.end }}
+        working-directory: marine_wind/verify
+        env:
+          BASIN: ${{ matrix.basin }}
+          START: ${{ matrix.start }}
+          END: ${{ matrix.end }}
+        run: |
+          out="$RUNNER_TEMP/out"
+          mkdir -p "$out"
+          d=$START
+          while [ "$d" -le "$END" ]; do
+            python3 page_scores.py --basin "$BASIN" --valid "$d" --out "$out" || echo "::warning::no scores for $BASIN $d"
+            d=$(date -u -d "$d + 1 day" +%Y%m%d)
+          done
+          ls "$out" | wc -l
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scores-${{ matrix.basin }}-${{ matrix.start }}
+          path: ${{ runner.temp }}/out
+          if-no-files-found: ignore
+          retention-days: 3
+
+  publish:
+    needs: score
+    if: ${{ always() && needs.score.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: verification-data
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: scores-*
+          path: ${{ runner.temp }}/new
+      - name: Merge and build the page data
+        working-directory: marine_wind/verify
+        run: |
+          pip install -q numpy
+          t="$RUNNER_TEMP/branch"
+          mkdir -p "$t/tables"
+          if git fetch -q origin verification-data 2>/dev/null; then
+            for f in scores chances storm; do
+              git show "FETCH_HEAD:tables/$f.csv.gz" > "$t/tables/$f.csv.gz" 2>/dev/null || rm -f "$t/tables/$f.csv.gz"
+            done
+          fi
+          python3 page_data.py --tables "$t/tables" --add "$RUNNER_TEMP/new" --json "$t/data"
+      - name: Publish to the verification-data branch
+        env:
+          REMOTE: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
+        run: |
+          cd "$RUNNER_TEMP/branch"
+          test -f tables/scores.csv.gz || { echo "nothing to publish"; exit 0; }
+          git init -q
+          git checkout -q --orphan verification-data
+          git config user.name "verification-page"
+          git config user.email "verification-page@users.noreply.github.com"
+          git add tables data
+          git commit -q -m "Verification page data, $(python3 -c 'import json; d=json.load(open("data/index.json")); print(", ".join("%s %s-%s" % (b, v["first"], v["last"]) for b, v in d["basins"].items()))')"
+          git push -q -f "$REMOTE" verification-data
