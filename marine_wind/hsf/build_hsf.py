@@ -66,7 +66,8 @@ def wave_heights(cycle, leads):
 
 def draft(fields, lats, lons, basin="pac", rules=None):
     """fields: {hour: dict(wind kt, msl hPa, hs m)} with hours from the synopsis. Returns
-    (warnings, synopsis_text, areas) where areas lists every described area with its outline."""
+    (warnings, synopsis_text, areas, lows): every described area with its outline, and the
+    low centers the text names."""
     grid = Grid(lats, lons)
     sea = inside(AREAS[basin], grid.LON, grid.LAT) & np.isfinite(fields[0]["hs"])
     warn, syn, dbg = write_product(fields, grid, sea, rules or Rules())
@@ -76,7 +77,10 @@ def draft(fields, lats, lons, basin="pac", rules=None):
             areas.append(dict(hour=p["hour"], warning=WARN.get(p["top"], ""), letter=LETTERS[len(areas) % 26],
                               wind=list(t.wind), seas=list(t.seas) if t.seas else None, text=t.phrase["text"],
                               rings=outline(t.mask, lats, lons)))
-    return warn, syn, areas
+    # the low centers the text names (one per paragraph and time)
+    lows = sorted({(p["hour"], p["low"][0], p["low"][1], p["low"][2]) for p in dbg["pieces"] if p.get("low")})
+    lows = [dict(hour=h, lat=la, lon=lo, mb=mb) for h, la, lo, mb in lows]
+    return warn, syn, areas, lows
 
 
 def product(syn_time, warn, syn):
@@ -100,7 +104,7 @@ def main():
         raise SystemExit("page box lacks leads %s" % missing)
     hs = wave_heights(cycle, leads)
     fields = {h: dict(wind=box[SYN_LEAD + h]["windcore"], msl=box[SYN_LEAD + h]["msl"] + 900.0, hs=hs[SYN_LEAD + h]) for h in HOURS}
-    warn, syn, areas = draft(fields, lats, lons, a.basin)
+    warn, syn, areas, lows = draft(fields, lats, lons, a.basin)
     syn_time = cycle + dt.timedelta(hours=SYN_LEAD)
     text = product(syn_time, warn, syn)
     os.makedirs(a.out, exist_ok=True)
@@ -109,7 +113,8 @@ def main():
     doc = dict(basin=a.basin, cycle=cycle.strftime("%Y-%m-%dT%H:00Z"), synopsis=syn_time.strftime("%Y-%m-%dT%H:00Z"),
                built=dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
                source="Marine wind page: Core Lifted wind (storm cores kept), 3-model mean pressure; GFS-Wave seas",
-               hours=list(HOURS), text=text, areas=areas)
+               hours=list(HOURS), text=text, areas=areas, lows=lows,
+               boundary=[list(p) for p in AREAS[a.basin]], box_leads={h: SYN_LEAD + h for h in HOURS})
     with open(os.path.join(a.out, "%s.json" % a.basin), "w") as f:
         json.dump(doc, f, separators=(",", ":"))
     print("HSF draft %s from %s: %d areas" % (a.basin, doc["cycle"], len(areas)))
