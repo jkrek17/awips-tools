@@ -200,10 +200,12 @@ A separate page, `/verification/`, shows forecasters how every model and blend
 on this page has verified: Core Lifted (the page's main wind: blend + storm cores), the blend before
 the core lift, the deterministic blend, the plain 3-model average, GFS, ECMWF,
 AIFS and the GEFS, ENS and AIFS ENS means. Truth: the GDAS + IFS analysis mean
-(or either alone), ASCAT, moored buoys, and ships + buoys. North Atlantic valid
-12 UTC from the 12 UTC runs; North Pacific valid 00 UTC from the 00 UTC runs
-(ASCAT sees ~18,000 Pacific cells at 00 UTC against a few hundred at 12 UTC).
-Scores: bias, average miss at 25+ kt, gale/storm/HF caught, false alarms and
+(or either alone), ASCAT, moored buoys, and ships + buoys. Both basins valid
+at 00, 06, 12 and 18 UTC, each from the runs of the same hour 1 to 5 days earlier
+(before mid-October 2026 only Atlantic 12 UTC and Pacific 00 UTC were scored; the page's
+Valid hour selector defaults to All, which pools the hours that exist). ASCAT cells a day:
+Atlantic ~22,000 at 00 UTC, ~23,000 at 12; Pacific ~7,600 at 00, ~17,600 at 06, ~700 at 12,
+~9,100 at 18. Scores: bias, average miss at 25+ kt, gale/storm/HF caught, false alarms and
 area, storm peaks in 5 x 5 degree boxes and the error of each box's strongest
 wind, the chances' reliability and Brier skill, and the storm layers' hazard
 lines and low track. Any period from March 2025 (all models on AWS) can be
@@ -211,15 +213,15 @@ pooled, by lead, week by week or month by month.
 
 ```
 marine_wind/
-  verify/page_scores.py     score one basin and valid day (forecasts rebuilt with build.step_values)
+  verify/page_scores.py     score one basin, valid day and hour (--hour 00|06|12|18)
   verify/page_data.py       merge day files into the tables; write the page's JSON
   verification_page/        the static page (index.html, style.css, app.js)
 ```
 
 `.github/workflows/verification_page.yml` ("Verification page data") runs at
 23:15 UTC and scores the day two days back (so the ASCAT day is complete) plus
-any missing day of the week before. Run it by hand with a start (and end) date
-to backfill: the days are split into chunks scored in parallel jobs. The tables
+any missing (basin, hour, day) of the week before, all four hours of both basins. Run it by hand with a start (and end) date
+(and an optional hours list, default 00 06 12 18) to backfill: the days are split into chunks scored in parallel jobs. The tables
 (`tables/*.csv.gz`) and the page data (`data/*.json`) are the single commit of
 the orphan branch `verification-data`; Publish public site serves `data/` at
 `/verification/data/`.
@@ -229,14 +231,19 @@ The forecasts it scores are the page's own: every Marine wind data run keeps the
 58 MB per lead) as Actions artifacts `forecast-record-YYYYMMDDHH-fLLL` for 14
 days (`build.py --record`, `pipeline/record.py`). The scorers read those and
 rebuild a forecast from AWS only when there is no record (backfills, a failed
-upload). A record cut to a basin can differ slightly from a rebuild on the basin
+upload). The chance rows also carry the storm core likelihood (thr `core`, ASCAT only: ASCAT 48+ kt
+within ~50 km, the core model's training target) and the members' raw 48/64 kt shares
+(`48raw`, `64raw`); `lowbins_*.csv` / `lowbins.csv.gz` count the chances under 10% in finer
+bins (0-1, 1-2, 2-5, 5-10%). The page shows only the 34/48/64 rows.
+
+A record cut to a basin can differ slightly from a rebuild on the basin
 box in the core-lifted wind and storm layers near the box edge, because the page
 computes them on the whole globe; the record is what the page showed.
 
 ```
 pip install -r marine_wind/pipeline/requirements.txt pandas
 cd marine_wind/verify
-python3 page_scores.py --basin natl --valid 20261012 --out /tmp/day
+python3 page_scores.py --basin natl --valid 20261012 --hour 12 --out /tmp/day
 python3 page_data.py --tables /tmp/tables --add /tmp/day --json ../verification_page/data
 python3 -m http.server -d ../verification_page 8000
 ```

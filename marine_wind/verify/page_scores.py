@@ -1,8 +1,9 @@
 """Scores for the verification page (/verification/): how each model and each of our blends
 did against every truth source we use, one basin and one valid time per run.
 
-    North Atlantic  valid 12 UTC, forecasts from the 12 UTC runs 1 to 5 days earlier
-    North Pacific   valid 00 UTC, forecasts from the 00 UTC runs 1 to 5 days earlier
+    --hour 00, 06, 12 or 18 (default: HOUR[basin], North Atlantic 12 and North Pacific 00, which
+    were the only hours scored before mid-October 2026): valid at that UTC hour, forecasts from the
+    same-hour runs 1 to 5 days earlier. The page scores all four hours of both basins.
 
 Forecasts come from the page job's forecast record (pipeline/record.py), else are rebuilt with the page's
 own pipeline (build.step_values), so the blends are exactly what the page showed (or would have shown):
@@ -25,7 +26,7 @@ Truth sources (open, ice-free water in the OPC chart box):
     buoys         moored buoys, ships+buoys: the GDAS marine monitoring file (first guess
                   + O-B), buoys raised to 10 m (Charnock profile), ships scaled 0.88
 
-Three CSVs per run (DIR/scores_*.csv, DIR/chances_*.csv, DIR/storm_*.csv):
+Four CSVs per run (DIR/scores_*.csv, chances_*.csv, lowbins_*.csv, storm_*.csv; names end _BASIN_HH):
 
   scores   per (lead, method, referee): n, ae, bias, se over all points; n25, ae25, bias25
            where forecast or truth is 25+ kt; h/f/m34,48,64 hits, false alarms, misses by
@@ -34,10 +35,16 @@ Three CSVs per run (DIR/scores_*.csv, DIR/chances_*.csv, DIR/storm_*.csv):
            and pk_n, pk_sum, pk_abs: tile highest-wind error (forecast max - truth max) over
            tiles where either reaches 34 kt
   chances  per (lead, referee, threshold): the page's P34, P48, P64 (P48/P64 recalibrated):
-           n, events, Brier sum, and 10 reliability bins (count, events, sum of chances)
+           n, events, Brier sum, and 10 reliability bins (count, events, sum of chances).
+           Extra thr labels: "48raw", "64raw" (the members' own shares, before recalibration, same
+           events as 48 and 64) and "core" (the storm core likelihood, ASCAT only: event = ASCAT
+           48+ kt within about 50 km, the model's training target, see core_event; scored on the
+           model's candidate cells only: blend 28+ kt or a model 34+ kt)
+  lowbins  the same counts for the chances under 10% in finer bins [0,1), [1,2), [2,5), [5,10) %:
+           per (lead, referee, thr) n0-n3, e0-e3, p0-p3
   storm    the storm layers (hazard lines, peaks, low track), storm_verify.py's rows
 
-    python3 page_scores.py --basin natl --valid 20261012 --out DIR
+    python3 page_scores.py --basin natl --valid 20261012 [--hour 18] --out DIR
 """
 import argparse, collections, csv, datetime as dt, gzip, io, os, sys, time, urllib.error, urllib.request
 
@@ -48,7 +55,9 @@ PIPE = os.path.join(HERE, "..", "pipeline")
 KT = 1.943844
 
 STEPS = [24, 48, 72, 96, 120]
-HOUR = {"natl": 12, "npac": 0}
+HOUR = {"natl": 12, "npac": 0}      # the hours scored before mid-October 2026 (the default of --hour)
+HOURS = (0, 6, 12, 18)
+LOW_EDGES = (0.0, 1.0, 2.0, 5.0, 10.0)   # percent
 METHODS = ["windcore", "blend", "nomem", "mean3", "gfs", "ecmwf", "aifs", "gefs_mean", "ens_mean", "aifsens_mean"]
 GRID_REFS = ["analysis", "gdas", "ifs"]
 TILE_MIN = 150
@@ -59,6 +68,9 @@ SCORE_FIELDS = (["valid", "basin", "hour", "lead", "method", "referee", "n", "ae
                 + ["t%d%s" % (t, k) for t in (34, 48, 64) for k in "hmf"] + ["pk_n", "pk_sum", "pk_abs"])
 CHANCE_FIELDS = (["valid", "basin", "hour", "lead", "referee", "thr", "n", "events", "bs"]
                  + ["n%d" % i for i in range(10)] + ["e%d" % i for i in range(10)] + ["p%d" % i for i in range(10)])
+
+LOWBIN_FIELDS = (["valid", "basin", "hour", "lead", "referee", "thr"] + ["n%d" % i for i in range(4)]
+                 + ["e%d" % i for i in range(4)] + ["p%d" % i for i in range(4)])
 
 # WMO buoy blocks: a 5-digit station in one of these is a buoy, any other 5-digit one a ship or platform
 BUOY_BLOCKS = {"13", "15", "21", "22", "23", "31", "32", "41", "42", "44", "45", "46", "48", "51", "52", "61", "62", "63", "64"}
@@ -217,11 +229,21 @@ class Tiles:
         return r
 
 
-def chance_rows(base, p, ob):
-    """p: {thr: chance 0-1 at the scored points}; ob: truth kt."""
+def core_event(r, c, kt, shape):
+    """Where ASCAT sees 48+ kt within about 50 km of each scored ASCAT cell (r, c, real 10 m kt): the core
+    model's training target (research core/code/ascat_target.py: ASCAT on the grid, -1 where unseen, then
+    maximum_filter(size=(5, 7)) >= 48 at the cells ASCAT saw). Returns a bool per cell."""
+    from scipy import ndimage
+    A = np.full(shape, -1.0, np.float32)
+    A[r, c] = kt
+    return ndimage.maximum_filter(A, size=(5, 7))[r, c] >= 48
+
+
+def chance_rows(base, items):
+    """items: {thr label: (chance 0-1 at the scored points, event bool at those points)}."""
     out = []
-    for t, pp in p.items():
-        e = ob >= t
+    for t, (pp, e) in items.items():
+        pp, e = np.asarray(pp, float), np.asarray(e, bool)
         b = np.minimum((pp * 10).astype(int), 9)
         row = dict(base, thr=t, n=int(e.size), events=int(e.sum()), bs=round(float(((pp - e) ** 2).sum()), 3))
         for i in range(10):
@@ -231,14 +253,28 @@ def chance_rows(base, p, ob):
     return out
 
 
-def run(valid_ymd, basin):
+def lowbin_rows(base, items):
+    """The chances under 10% in bins [0,1), [1,2), [2,5), [5,10) percent: count, events, sum of chances (0-1)."""
+    out = []
+    for t, (pp, e) in items.items():
+        pc, e = np.asarray(pp, float) * 100.0, np.asarray(e, bool)
+        row = dict(base, thr=t)
+        for i in range(4):
+            s = (pc >= LOW_EDGES[i]) & (pc < LOW_EDGES[i + 1])
+            row["n%d" % i], row["e%d" % i], row["p%d" % i] = int(s.sum()), int(e[s].sum()), round(float(pc[s].sum() / 100.0), 4)
+        out.append(row)
+    return out
+
+
+def run(valid_ymd, basin, hour=None):
     os.environ["MARINE_DOMAIN"] = basin
     sys.path.insert(0, PIPE)
     sys.path.insert(0, HERE)
     import build, fetch, record, storm
     import storm_verify as sv
     from domain import LATS, LONS
-    hh = "%02d" % HOUR[basin]
+    hour = HOUR[basin] if hour is None else int(hour)
+    hh = "%02d" % hour
     valid = dt.datetime.strptime(valid_ymd + hh, "%Y%m%d%H")
     g = fetch._ncep(gdas_url(valid_ymd, hh, 0), dict(fetch.UVP, **{"LAND:surface": "land", "ICEC:surface": "ice",
                                                                  "TMP:2 m above ground": "t2", "TMP:surface": "skt"}))
@@ -262,7 +298,7 @@ def run(valid_ymd, basin):
         valid_ymd, hh, basin, 0 if asc is None else len(asc[0]), "-" if obs is None else len(obs["buoys"]),
         "-" if obs is None else len(obs["ships+buoys"]), len(anl_lows)), flush=True)
 
-    scores, chances, storms = [], [], []
+    scores, chances, lowbins, storms = [], [], [], []
     for lead in STEPS:
         cyc = valid - dt.timedelta(hours=lead)
         try:
@@ -276,8 +312,15 @@ def run(valid_ymd, basin):
         fc.update({k: v for k, v in extra.items() if v is not None})
         if stats.get("nomem_runs", 0) < 9:      # as on the page, but scored only with all 9 runs, as tested
             fc.pop("nomem")
-        P = {34: vals["p34"] / 100.0, 48: vals["p48"] / 100.0, 64: vals["p64"] / 100.0}
-        base = dict(valid=valid_ymd, basin=basin, hour=HOUR[basin], lead=lead)
+        # chance label -> (chance 0-1 grid, threshold kt of its event); "core" is handled apart (ASCAT only)
+        P = {34: (vals["p34"] / 100.0, 34), 48: (vals["p48"] / 100.0, 48), 64: (vals["p64"] / 100.0, 64)}
+        for t in (48, 64):
+            if vals.get("p%draw" % t) is not None:
+                P["%draw" % t] = (vals["p%draw" % t] / 100.0, t)
+        core = vals["core"] / 100.0 if stats.get("core_model") and vals.get("core") is not None else None
+        # as storm.core_grid: the model only runs where the blend is 28+ kt or a model 34+ kt (open water is already in the scored cells)
+        cand = (vals["wind"] >= 28) | (np.maximum(np.maximum(vals["gfs"], vals["ecmwf"]), vals["aifs"]) >= 34)
+        base = dict(valid=valid_ymd, basin=basin, hour=hour, lead=lead)
         refs = {k: (truth[k][ar, ac], ar, ac, tiles_grid) for k in GRID_REFS}
         if tiles_asc is not None:
             refs["ascat"] = (asc[2], asc[0], asc[1], tiles_asc)
@@ -286,7 +329,12 @@ def run(valid_ymd, basin):
                 if name in fc:
                     f = fc[name][r, c]
                     scores.append(dict(base, method=name, referee=ref, **point_scores(f, ob), **tl.scores(f, ob)))
-            chances += chance_rows(dict(base, referee=ref), {t: p[r, c] for t, p in P.items()}, ob)
+            items = {t: (p[r, c], ob >= thr) for t, (p, thr) in P.items()}
+            if ref == "ascat" and core is not None:     # defined against ASCAT only, on the model's candidate cells
+                k = cand[r, c]
+                items["core"] = (core[r, c][k], core_event(r, c, ob, core.shape)[k])
+            chances += chance_rows(dict(base, referee=ref), items)
+            lowbins += lowbin_rows(dict(base, referee=ref), items)
         for ref in ("buoys", "ships+buoys"):
             if obs is None or not len(obs[ref]):
                 continue
@@ -294,7 +342,9 @@ def run(valid_ymd, basin):
             for name in METHODS:
                 if name in fc:
                     scores.append(dict(base, method=name, referee=ref, **point_scores(sample(fc[name], LATS, LONS, o[:, 0], o[:, 1]), o[:, 2])))
-            chances += chance_rows(dict(base, referee=ref), {t: np.clip(sample(p, LATS, LONS, o[:, 0], o[:, 1]), 0, 1) for t, p in P.items()}, o[:, 2])
+            items = {t: (np.clip(sample(p, LATS, LONS, o[:, 0], o[:, 1]), 0, 1), o[:, 2] >= thr) for t, (p, thr) in P.items()}
+            chances += chance_rows(dict(base, referee=ref), items)
+            lowbins += lowbin_rows(dict(base, referee=ref), items)
         if stats.get("core_model"):
             f = {"wind": vals["wind"], "windcore": vals["windcore"], "hazard": vals["hazard"].astype(np.uint8)}
             if asc is not None:
@@ -303,8 +353,8 @@ def run(valid_ymd, basin):
             storms.append(sv.track_row(valid_ymd, basin, lead, stats.get("lows", []), anl_lows, LATS, LONS, storm))
         print("  +%dh ok (%s)" % (lead, ", ".join(k for k in METHODS if k in fc)), flush=True)
     for r in storms:
-        r["hour"] = HOUR[basin]
-    return scores, chances, storms
+        r["hour"] = hour
+    return scores, chances, lowbins, storms
 
 
 def write(path, fields, rows):
@@ -318,19 +368,22 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--valid", required=True, help="YYYYMMDD")
     ap.add_argument("--basin", required=True, choices=sorted(HOUR))
-    ap.add_argument("--out", required=True, help="directory for the three CSVs")
+    ap.add_argument("--hour", type=int, choices=HOURS, help="valid hour UTC (default: the basin's HOUR, natl 12, npac 0)")
+    ap.add_argument("--out", required=True, help="directory for the CSVs")
     a = ap.parse_args()
     t0 = time.time()
-    scores, chances, storms = run(a.valid, a.basin)
+    hour = HOUR[a.basin] if a.hour is None else a.hour
+    scores, chances, lowbins, storms = run(a.valid, a.basin, hour)
     if not scores:
-        sys.exit("no forecasts scored for %s %s" % (a.valid, a.basin))
+        sys.exit("no forecasts scored for %s %s %02dZ" % (a.valid, a.basin, hour))
     os.makedirs(a.out, exist_ok=True)
-    tag = "%s_%s" % (a.valid, a.basin)
+    tag = "%s_%s_%02d" % (a.valid, a.basin, hour)
     write(os.path.join(a.out, "scores_%s.csv" % tag), SCORE_FIELDS, scores)
     write(os.path.join(a.out, "chances_%s.csv" % tag), CHANCE_FIELDS, chances)
+    write(os.path.join(a.out, "lowbins_%s.csv" % tag), LOWBIN_FIELDS, lowbins)
     import storm_verify as sv
     write(os.path.join(a.out, "storm_%s.csv" % tag), sv.FIELDS[:3] + ["hour"] + sv.FIELDS[3:], storms)
-    print("%s: %d score rows, %d chance rows, %d storm rows in %.0f s" % (tag, len(scores), len(chances), len(storms), time.time() - t0))
+    print("%s: %d score rows, %d chance rows, %d low-bin rows, %d storm rows in %.0f s" % (tag, len(scores), len(chances), len(lowbins), len(storms), time.time() - t0))
 
 
 if __name__ == "__main__":
