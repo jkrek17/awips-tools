@@ -2,102 +2,43 @@
 
 Only the needed GRIB records are downloaded (from the .idx / .index files) and
 each is decoded straight to the page's domain, so a full run (3 models plus
-82 ensemble members at 10 lead times) streams about 1.5 GB and keeps a few MB.
+82 ensemble members at 10 lead times) streams about 2.5 GB and keeps a few MB.
 
 Sources (all public, no account):
     GFS        noaa-gfs-bdp-pds   gfs.YYYYMMDD/HH/atmos/gfs.tHHz.pgrb2.0p25.fFFF
     GEFS       noaa-gefs-pds      gefs.YYYYMMDD/HH/atmos/pgrb2sp25/geMMM.tHHz.pgrb2s.0p25.fFFF
     ECMWF IFS, AIFS and ENS       ecmwf-forecasts YYYYMMDD/HHz/{ifs,aifs-single}/0p25/{oper,enfo}/
+
+A thin shim over the shared nwp package (<repo>/nwp); the page's domain crop is applied here.
 """
 from __future__ import annotations
 
-import json
-import random
-import time
-from concurrent.futures import ThreadPoolExecutor
+import os
+import sys
 
-import eccodes
-import numpy as np
-import requests
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "nwp"))
+import nwp  # noqa: E402
+from nwp import sources  # noqa: E402
+from nwp import http as _http  # noqa: E402
 
-from domain import IX, IY
+from domain import IX, IY  # noqa: E402
 
-GFS = "https://noaa-gfs-bdp-pds.s3.amazonaws.com"
-GEFS = "https://noaa-gefs-pds.s3.amazonaws.com"
-EC = "https://ecmwf-forecasts.s3.eu-central-1.amazonaws.com"
-GEFS_MEMBERS = ["c00"] + ["p%02d" % i for i in range(1, 31)]
+GFS, GEFS, EC, GEFS_MEMBERS = sources.GFS, sources.GEFS, sources.EC, sources.GEFS_MEMBERS
+CROP = (IY, IX)
 
-_session = requests.Session()
-
-
-def get(url, rng=None, tries=8):
-    """GET (optionally a byte range); None on 403/404. S3 answers 503 SlowDown
-    when a freshly posted file gets many range requests at once (everyone is
-    pulling the new run), so 503 is retried quickly and often; anything else
-    backs off exponentially."""
-    headers = {"Range": "bytes=%d-%s" % (rng[0], "" if rng[1] is None else rng[1])} if rng else None
-    fails = slow = 0
-    while fails < tries and slow < 60:
-        try:
-            r = _session.get(url, headers=headers, timeout=180)
-            if r.status_code in (200, 206):
-                return r
-            if r.status_code in (403, 404):
-                return None
-            if r.status_code == 503:
-                slow += 1
-                time.sleep(0.5 + 1.5 * random.random())
-                continue
-        except requests.RequestException:
-            pass
-        fails += 1
-        time.sleep(min(2 ** fails, 60) * (0.5 + random.random()))
-    raise RuntimeError("failed: " + url)
-
-
-def exists(url):
-    try:
-        return _session.head(url, timeout=60).status_code == 200
-    except requests.RequestException:
-        return False
+_session = _http._session
+get = nwp.get
+exists = nwp.exists
 
 
 def decode(blob):
     """One GRIB2 message -> the domain crop, north-up, lon 0..360 order."""
-    h = eccodes.codes_new_from_message(blob)
-    try:
-        ni, nj = eccodes.codes_get(h, "Ni"), eccodes.codes_get(h, "Nj")
-        v = eccodes.codes_get_values(h).reshape(nj, ni).astype(np.float32)
-        lat0 = eccodes.codes_get(h, "latitudeOfFirstGridPointInDegrees")
-        lon0 = eccodes.codes_get(h, "longitudeOfFirstGridPointInDegrees")
-    finally:
-        eccodes.codes_release(h)
-    if lat0 < 0:
-        v = v[::-1]
-    if lon0 > 100:  # ECMWF open data starts at -180 (stored as 180)
-        v = np.roll(v, ni // 2, axis=1)
-    return v[IY, IX].copy()
+    return nwp.decode(blob, CROP)
 
 
 def _ncep(url, want):
     """want: {'UGRD:10 m above ground': 'u', ...} -> {'u': array, ...} or None."""
-    r = get(url + ".idx")
-    if r is None:
-        return None
-    lines = [l.split(":") for l in r.text.splitlines() if l.strip()]
-    idx = {}
-    for i, f in enumerate(lines):
-        end = int(lines[i + 1][1]) - 1 if i + 1 < len(lines) else None
-        idx.setdefault(f[3] + ":" + f[4], (int(f[1]), end))
-    out = {}
-    for key, name in want.items():
-        if key not in idx:
-            if name == "msl" and "MSLET:mean sea level" in idx:
-                key = "MSLET:mean sea level"
-            else:
-                return None
-        out[name] = decode(get(url, idx[key]).content)
-    return out
+    return nwp.ncep(url, want, CROP)
 
 
 UV = {"UGRD:10 m above ground": "u", "VGRD:10 m above ground": "v"}
@@ -105,7 +46,7 @@ UVP = dict(UV, **{"PRMSL:mean sea level": "msl"})
 
 
 def gfs_url(ymd, hh, fh):
-    return "%s/gfs.%s/%s/atmos/gfs.t%sz.pgrb2.0p25.f%03d" % (GFS, ymd, hh, hh, fh)
+    return sources.gfs(ymd, hh, fh)
 
 
 def gfs(ymd, hh, fh):
@@ -124,89 +65,48 @@ def gfs_low(ymd, hh, fh):
 
 
 def gefs(ymd, hh, fh, mem, msl=False):
-    url = "%s/gefs.%s/%s/atmos/pgrb2sp25/ge%s.t%sz.pgrb2s.0p25.f%03d" % (GEFS, ymd, hh, mem, hh, fh)
-    return _ncep(url, UVP if msl else UV)
+    return _ncep(sources.gefs(ymd, hh, fh, mem), UVP if msl else UV)
 
 
 EC_PARAMS = {"10u": "u", "10v": "v", "msl": "msl"}
 
 
 def _ec_base(model, stream, typ, ymd, hh, step):
-    return "%s/%s/%sz/%s/0p25/%s/%s%s0000-%dh-%s-%s" % (EC, ymd, hh, model, stream, ymd, hh, step, stream, typ)
+    return sources.ecmwf(model, stream, typ, ymd, hh, step)
 
 
 def _ec_records(base):
-    r = get(base + ".index")
-    if r is None:
-        return None
-    return [json.loads(l) for l in r.text.splitlines() if l.strip().startswith("{")]
+    return nwp.ec_records(base)
 
 
 def ec_url(model, ymd, hh, step, stream="oper", typ="fc"):
     return _ec_base(model, stream, typ, ymd, hh, step) + ".index"
 
 
+_EC_DET = {("sfc", p, None): n for p, n in EC_PARAMS.items()}
+
+
 def ec_det(model, ymd, hh, step):
     """model 'ifs' or 'aifs-single' -> {'u','v','msl'} or None."""
-    base = _ec_base(model, "oper", "fc", ymd, hh, step)
-    recs = _ec_records(base)
-    if recs is None:
-        return None
-    out = {}
-    for r in recs:
-        if r.get("levtype") == "sfc" and r["param"] in EC_PARAMS:
-            out[EC_PARAMS[r["param"]]] = decode(get(base + ".grib2", (r["_offset"], r["_offset"] + r["_length"] - 1)).content)
-    return out if len(out) == 3 else None
+    out = nwp.ec_fields(_ec_base(model, "oper", "fc", ymd, hh, step), _EC_DET, CROP)
+    return out if out is not None and len(out) == 3 else None
 
 
 EC_LOW_SFC = {"2t": "t2", "skt": "skt"}
 EC_LOW_PL = {(p, lev): p + lev for p in ("u", "v", "t") for lev in ("925", "850")}
+_EC_LOW = {("sfc", p, None): n for p, n in EC_LOW_SFC.items()}
+_EC_LOW.update({("pl", p, lev): n for (p, lev), n in EC_LOW_PL.items()})
 
 
 def ec_low(model, ymd, hh, step):
     """model 'ifs' or 'aifs-single' -> {'t2','skt','u925','v925','t925','u850','v850','t850'} or None."""
-    base = _ec_base(model, "oper", "fc", ymd, hh, step)
-    recs = _ec_records(base)
-    if recs is None:
-        return None
-    want = []
-    for r in recs:
-        if r.get("levtype") == "sfc" and r["param"] in EC_LOW_SFC:
-            want.append((EC_LOW_SFC[r["param"]], r))
-        elif r.get("levtype") == "pl" and (r["param"], str(r.get("levelist"))) in EC_LOW_PL:
-            want.append((EC_LOW_PL[(r["param"], str(r.get("levelist")))], r))
-    out = {n: decode(get(base + ".grib2", (r["_offset"], r["_offset"] + r["_length"] - 1)).content) for n, r in want}
-    return out if len(out) == 8 else None
+    out = nwp.ec_fields(_ec_base(model, "oper", "fc", ymd, hh, step), _EC_LOW, CROP)
+    return out if out is not None and len(out) == 8 else None
 
 
 def ec_ens(ymd, hh, step, model="ifs", msl=False):
     """All members' 10 m u and v (and msl if asked) -> {'u': [n,y,x], 'v': [n,y,x](, 'msl')} or None.
     model "ifs": ENS, 50 perturbed plus the control when posted, in one -ef file.
     model "aifs-ens": AIFS ensemble, the control (-cf) and 50 perturbed (-pf) files."""
-    typs = ("ef",) if model == "ifs" else ("cf", "pf")
-    jobs = []
-    for typ in typs:
-        base = _ec_base(model, "enfo", typ, ymd, hh, step)
-        recs = _ec_records(base)
-        if recs is None:
-            return None
-        want = ("10u", "10v", "msl") if msl else ("10u", "10v")
-        jobs += [(base, r) for r in recs if r.get("levtype") == "sfc" and r["param"] in want]
-
-    def one(job):
-        base, r = job
-        return int(r.get("number", 0)), EC_PARAMS[r["param"]], decode(
-            get(base + ".grib2", (r["_offset"], r["_offset"] + r["_length"] - 1)).content)
-
-    mem = {}
-    with ThreadPoolExecutor(6) as ex:
-        for m, name, v in ex.map(one, jobs):
-            mem.setdefault(m, {})[name] = v
-    need = 3 if msl else 2
-    keys = sorted(k for k, d in mem.items() if len(d) == need)
-    if not keys:
-        return None
-    out = {"u": np.array([mem[k]["u"] for k in keys]), "v": np.array([mem[k]["v"] for k in keys])}
-    if msl:
-        out["msl"] = np.array([mem[k]["msl"] for k in keys])
-    return out
+    select = {p: n for p, n in EC_PARAMS.items() if msl or p != "msl"}
+    return nwp.ec_ens(model, ymd, hh, step, select, CROP)

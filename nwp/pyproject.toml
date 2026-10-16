@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nwp"
+version = "0.1.0"
+description = "Byte-range fetch of NWP fields (GFS, GEFS, ECMWF IFS/AIFS/ENS) from the AWS open-data mirrors"
+requires-python = ">=3.9"
+dependencies = ["numpy", "requests", "eccodes"]
+
+[tool.setuptools]
+packages = ["nwp"]
