@@ -413,9 +413,10 @@ def areas_for_time(wind, hs, sea, grid, lows, rules=Rules()):
         rest = allw & (near_d > rules.attach_nm)
     else:
         rest = allw
-    lab, n = ndimage.label(rest, structure=np.ones((3, 3)))
+    # stand-alone areas within about a degree of each other form one paragraph
+    lab, n = ndimage.label(ndimage.binary_dilation(rest, iterations=4), structure=np.ones((3, 3)))
     for k in range(1, n + 1):
-        reg = lab == k
+        reg = rest & (lab == k)
         if reg.sum() >= rules.min_cells:
             owned[("free", k)] = [[], reg]
     systems = []
