@@ -50,10 +50,11 @@ marine_wind/
   page/lib/             MapLibre GL JS 5.24.0 (BSD-3-Clause, same build as /ndfd/), kept here so the page needs no CDN
 ```
 
-`.github/workflows/marine_wind.yml` runs `build.py --domain glob` at 02:30, 08:30,
-14:30 and 20:30 UTC for every 00, 06, 12 and 18 UTC cycle, once its models and the
-ECMWF ensemble reach +120 h on AWS (about 7-8 h after the cycle); a cycle already
-published is not rebuilt. One global build
+`.github/workflows/marine_wind.yml` checks every hour (at :30) and runs
+`build.py --domain glob` for every 00, 06, 12 and 18 UTC cycle once its models and
+the ECMWF ensemble reach +120 h on AWS (about 7-8 h after the cycle); a cycle
+already published is not rebuilt, and "Publish public site" skips the runs that
+published nothing. One global build
 replaces the two basin builds: the pipeline always downloaded each model's whole
 global GRIB record and cropped it, so the build time is set by the download and
 the globe costs about what one box did (about 2 minutes a lead, 2.6 GB of memory).

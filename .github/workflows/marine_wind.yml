@@ -2,14 +2,16 @@
 # under latest/global/ (what the page shows), plus the two OPC boxes cut from it
 # in the older per-basin format, the North Atlantic under latest/ and the North
 # Pacific under latest/npac/.
-# Every model run (00, 06, 12 and 18 UTC): at 02:30, 08:30, 14:30 and 20:30,
-# once the 18, 00, 06 and 12 UTC ECMWF ensemble's +120 h is on the AWS
-# open-data mirror (about 7-8 h after the cycle), the newest cycle with GFS,
-# GEFS, ECMWF IFS, AIFS and ENS all complete is built into a manifest and one
-# small binary per lead time, and published as the single commit of the orphan
-# branch marine-wind-live under latest/. If that cycle is already published
-# (data late), the run stops after the check. Publish public site copies it
-# to /marine-wind/data/.
+# Every model run (00, 06, 12 and 18 UTC): the job checks every hour at :30,
+# and once a cycle's ECMWF ensemble +120 h is on the AWS open-data mirror
+# (about 7-8 h after the cycle), the newest cycle with GFS, GEFS, ECMWF IFS,
+# AIFS and ENS all complete is built into a manifest and one small binary per
+# lead time, and published as the single commit of the orphan branch
+# marine-wind-live under latest/. If that cycle is already published, the run
+# stops after the check (under a minute). Checking hourly rather than at four
+# fixed times means a run GitHub's scheduler skips or starts late costs an
+# hour, not six. Publish public site copies it to /marine-wind/data/ (and
+# skips the runs that published nothing).
 #
 # The branch is rebuilt from nothing and force-pushed every run (about 50 MB),
 # so it never accumulates history, and main is never touched. Run it by hand
@@ -20,7 +22,7 @@ name: Marine wind data
 
 on:
   schedule:
-    - cron: '30 2,8,14,20 * * *'
+    - cron: '30 * * * *'
   workflow_dispatch:
     inputs:
       cycle:
