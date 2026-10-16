@@ -105,9 +105,8 @@
     return {
       type: "FeatureCollection",
       features: doc.areas.map(function (a, i) { return [a, i]; }).filter(function (x) { return x[0].hour === h; }).map(function (x) {
-        var a = x[0], r0 = a.rings[0] || [], xs = r0.map(function (p) { return p[0]; }), ys = r0.map(function (p) { return p[1]; });
-        var size = r0.length ? (Math.max.apply(null, xs) - Math.min.apply(null, xs)) * (Math.max.apply(null, ys) - Math.min.apply(null, ys)) : 0;
-        return { type: "Feature", properties: { colour: colour(a.wind[1]), letter: a.letter, i: x[1], size: size },
+        var a = x[0];
+        return { type: "Feature", properties: { colour: colour(a.wind[1]), letter: a.letter, i: x[1] },
                  geometry: { type: "Polygon", coordinates: a.rings.map(function (r) { return r.map(function (p) { return [lon(p[0]), p[1]]; }); }) } };
       })
     };
@@ -185,12 +184,11 @@
       el.addEventListener("click", function () { focusArea(+el.dataset.i, el, true); });
     });
   }
-  function focusArea(i, el, fly, fromMap) {
+  function focusArea(i, el, fly) {
     document.querySelectorAll("#text .hs-ar.on").forEach(function (x) { x.classList.remove("on"); });
     ["area-focus", "area-focus-fill"].forEach(function (id) { if (map && map.getLayer(id)) map.setFilter(id, ["==", ["get", "i"], i]); });
     if (i < 0) return;
-    el = el || document.querySelector('#text .hs-ar[data-i="' + i + '"]');
-    if (el) { el.classList.add("on"); if (fromMap) el.scrollIntoView({ block: "nearest" }); }
+    el.classList.add("on");
     var a = doc.areas[i];
     if (a.hour !== hour) show(a.hour);
     if (fly && map && a.rings.length) {
@@ -262,25 +260,13 @@
         map.addLayer({ id: "tracks", type: "line", source: "tracks", paint: { "line-color": "#f8fafc", "line-width": 1.6, "line-opacity": 0.85 } });
         map.addLayer({ id: "track-pts", type: "circle", source: "tracks", filter: ["==", ["geometry-type"], "Point"], paint: { "circle-radius": 3, "circle-color": "#f8fafc", "circle-stroke-color": "#0a1120", "circle-stroke-width": 1 } });
         map.addSource("areas", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
-        // outlines only (a dark casing keeps them clear over the shading); the near-clear
-        // fill is there so the pointer can find an area
-        map.addLayer({ id: "area-fill", type: "fill", source: "areas", paint: { "fill-color": "#000000", "fill-opacity": 0.01 } });
+        // outlines only (a dark casing keeps them clear over the shading)
         map.addLayer({ id: "area-casing", type: "line", source: "areas", paint: { "line-color": "#0a1120", "line-width": 4.5, "line-opacity": 0.8 } });
         map.addLayer({ id: "area-line", type: "line", source: "areas", paint: { "line-color": ["get", "colour"], "line-width": 2.2 } });
-        // the area under the pointer, on the map or in the text
+        // the area whose phrase is under the pointer in the text
         map.addLayer({ id: "area-focus-fill", type: "fill", source: "areas", filter: ["==", ["get", "i"], -1], paint: { "fill-color": ["get", "colour"], "fill-opacity": 0.12 } });
         map.addLayer({ id: "area-focus", type: "line", source: "areas", filter: ["==", ["get", "i"], -1], paint: { "line-color": "#ffffff", "line-width": 4 } });
         // the issued forecast's areas (compare view)
-        var hovered = -1;
-        map.on("mousemove", "area-fill", function (e) {
-          // the smallest area under the pointer (a storm area inside a gale area wins)
-          var f = e.features.slice().sort(function (x, y) { return x.properties.size - y.properties.size; })[0];
-          if (!f || f.properties.i === hovered) return;
-          hovered = f.properties.i;
-          map.getCanvas().style.cursor = "pointer";
-          focusArea(hovered, null, false, true);
-        });
-        map.on("mouseleave", "area-fill", function () { hovered = -1; map.getCanvas().style.cursor = ""; focusArea(-1); });
         map.addSource("issued", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
         map.addLayer({ id: "issued-line", type: "line", source: "issued", paint: { "line-color": "#f8fafc", "line-width": 2, "line-dasharray": [1.5, 1.5] } });
         data.then(function () {
