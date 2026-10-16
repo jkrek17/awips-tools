@@ -8,9 +8,11 @@
 # newest live data (the latest/ and storms/ trees of the cps-live branch), the
 # North Atlantic and North Pacific marine wind page (marine_wind/page/, served at /marine-wind/
 # with the latest/ tree of the marine-wind-live branch as its data/, plus the
-# model scorecard from the marine-wind-scorecard branch), the globe kit both
-# pages load (globe_kit/, served at /globe-kit/: MapLibre, the shared look and
-# script, the land outline) and nothing else; it is pushed as the
+# model scorecard from the marine-wind-scorecard branch), the verification page
+# (marine_wind/verification_page/, served at /verification/ with the data/ tree
+# of the verification-data branch), the globe kit the globe pages load
+# (globe_kit/, served at /globe-kit/: MapLibre, the shared look and script, the
+# land outline) and nothing else; it is pushed as the
 # single commit of the public repository's main branch with the token in the
 # secret WEB_TOKEN (a fine-grained personal access token scoped to the public
 # repository with Contents: read and write). The public repository serves it
@@ -36,7 +38,7 @@ name: Publish public site
 
 on:
   workflow_run:
-    workflows: ["CPS live map data", "CPS daily collection", "Marine wind data", "Marine wind scorecard"]
+    workflows: ["CPS live map data", "CPS daily collection", "Marine wind data", "Marine wind scorecard", "Verification page data"]
     types: [completed]
   push:
     branches: [main]
@@ -47,6 +49,7 @@ on:
       - 'cyclone_phase_space/article/style.css'
       - 'cyclone_phase_space/article/figures/**'
       - 'marine_wind/page/**'
+      - 'marine_wind/verification_page/**'
       - 'globe_kit/**'
       - '.github/workflows/site_publish.yml'
       - 'tools/build_site_index.py'
@@ -104,6 +107,13 @@ jobs:
           if git rev-parse --verify -q origin/marine-wind-scorecard >/dev/null; then
             git show origin/marine-wind-scorecard:scores.json > "$RUNNER_TEMP/scorecard.json" || rm -f "$RUNNER_TEMP/scorecard.json"
           fi
+          git fetch --depth 1 origin verification-data || echo "no verification-data branch yet"
+          rm -rf "$RUNNER_TEMP/verif"
+          mkdir -p "$RUNNER_TEMP/verif"
+          if git rev-parse --verify -q origin/verification-data >/dev/null; then
+            git --work-tree="$RUNNER_TEMP/verif" checkout origin/verification-data -- data 2>/dev/null || true
+            git reset -q
+          fi
 
       - name: Assemble the site
         if: steps.cfg.outputs.ready == 'true'
@@ -144,6 +154,14 @@ jobs:
           if [ -f "$RUNNER_TEMP/scorecard.json" ]; then
             cp "$RUNNER_TEMP/scorecard.json" "$site/marine-wind/data/scorecard.json"
           fi
+          # The verification page with its scores (verification-data branch), at /verification/.
+          mkdir -p "$site/verification"
+          cp -r marine_wind/verification_page/. "$site/verification/"
+          rm -rf "$site/verification/data"
+          mkdir -p "$site/verification/data"
+          if [ -d "$RUNNER_TEMP/verif/data" ]; then
+            cp -r "$RUNNER_TEMP/verif/data/." "$site/verification/data/"
+          fi
           # Stamp the page's own script and style links with the commit so a
           # browser holding a cached index.html never pairs it with stale
           # files (Pages serves everything with a 10 minute max-age).
@@ -154,6 +172,7 @@ jobs:
           sed -i -E "s#(href|src)=\"(style\.css|card\.js|storms\.js|space3d\.js|app\.js|$kit)\"#\1=\"\2?v=$v\"#g" "$site/cyclone/index.html"
           grep -c "?v=$v" "$site/cyclone/index.html"
           sed -i -E "s#(href|src)=\"(style\.css|app\.js|scorecard\.js|$kit)\"#\1=\"\2?v=$v\"#g" "$site/marine-wind/index.html"
+          sed -i -E "s#(href|src)=\"(style\.css|app\.js)\"#\1=\"\2?v=$v\"#g" "$site/verification/index.html"
           touch "$site/.nojekyll"
           du -sh "$site"
 
@@ -163,10 +182,10 @@ jobs:
           REPO: ${{ vars.PUBLIC_SITE_REPO }}
           TOKEN: ${{ secrets.WEB_TOKEN }}
           # Folders this workflow writes (cyclone, article, forecasters,
-          # marine-wind, globe-kit),
+          # marine-wind, verification, globe-kit),
           # plus data/, fonts/ and basemap/,
           # which the map used at the root before it moved to /cyclone/.
-          OWN_FOLDERS: cyclone article forecasters marine-wind globe-kit data fonts basemap
+          OWN_FOLDERS: cyclone article forecasters marine-wind verification globe-kit data fonts basemap
         run: |
           current="$RUNNER_TEMP/current"
           rm -rf "$current"

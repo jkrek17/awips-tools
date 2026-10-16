@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Marine Wind Verification</title>
+<meta name="description" content="How GFS, ECMWF, AIFS, their ensembles and the marine wind page's blends have verified against ASCAT, buoys, ships and the GDAS and ECMWF analyses, North Atlantic and North Pacific, +24 to +120 h.">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a1120">
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Cpath d=%22M2 13V8M6 13V4M10 13V6M14 13V2%22 fill=%22none%22 stroke=%22%2338bdf8%22 stroke-width=%221.6%22 stroke-linecap=%22round%22/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+      <circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" stroke-width="2"/>
+      <path d="M9 22v-5M14 22v-9M19 22v-7M24 22v-12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+    </svg>
+    <div class="brand-text">
+      <h1>Marine Wind Verification</h1>
+      <p>Models and blends against ASCAT, buoys, ships and analyses</p>
+    </div>
+  </div>
+  <div class="segmented" id="basin" role="radiogroup" aria-label="Basin">
+    <button type="button" role="radio" data-v="natl" aria-checked="true">Atlantic <small>12 UTC</small></button>
+    <button type="button" role="radio" data-v="npac" aria-checked="false">Pacific <small>00 UTC</small></button>
+  </div>
+  <div class="topbar-actions">
+    <span class="updated" id="updated"></span>
+    <button type="button" class="btn btn-ghost" id="about-btn" aria-controls="about" aria-expanded="false">How it's scored</button>
+    <a class="btn btn-ghost" href="../marine-wind/">Wind page</a>
+    <a class="btn btn-ghost" href="../">All projects</a>
+  </div>
+</header>
+
+<main>
+  <section class="card controls" aria-label="What to score">
+    <div class="ctl">
+      <span class="ctl-label">Truth</span>
+      <div class="segmented" id="ref" role="radiogroup" aria-label="Truth source"></div>
+    </div>
+    <div class="ctl">
+      <span class="ctl-label">Forecast lead</span>
+      <div class="segmented" id="lead" role="radiogroup" aria-label="Forecast lead"></div>
+    </div>
+    <div class="ctl">
+      <span class="ctl-label">Period</span>
+      <div class="period">
+        <select id="preset" aria-label="Period"></select>
+        <input type="date" id="from" aria-label="From">
+        <span class="muted">to</span>
+        <input type="date" id="to" aria-label="To">
+      </div>
+    </div>
+  </section>
+
+  <div class="note" id="note" hidden></div>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Scoreboard</h2>
+      <p class="sub" id="tableSub"></p>
+    </div>
+    <div class="table-wrap"><table class="score" id="table"></table></div>
+    <p class="foot" id="tableFoot"></p>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Compare</h2>
+      <label class="inline">Score <select id="metric"></select></label>
+    </div>
+    <div class="chips" id="chips" role="group" aria-label="Lines shown in the charts"></div>
+    <div class="charts">
+      <figure class="chart" id="chartLead"><figcaption>By forecast lead</figcaption><div class="plot"></div></figure>
+      <figure class="chart wide" id="chartTime"><figcaption id="timeCap">Week by week</figcaption><div class="plot"></div></figure>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Chances of gale, storm and hurricane force</h2>
+      <div class="segmented" id="thr" role="radiogroup" aria-label="Threshold"></div>
+    </div>
+    <p class="sub">The wind page's chances (GEFS + ENS + AIFS ENS members; 48 and 64 kt recalibrated). When the page says 40%, did it happen about 40% of the time?</p>
+    <div class="charts">
+      <figure class="chart" id="chartRel"><figcaption>Forecast chance vs how often it happened</figcaption><div class="plot"></div></figure>
+      <div class="table-wrap narrow"><table class="score" id="chanceTable"></table></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Storm layers</h2>
+      <p class="sub" id="stormSub"></p>
+    </div>
+    <div class="charts even">
+      <div class="table-wrap narrow"><table class="score" id="hazTable"></table></div>
+      <div class="table-wrap narrow"><table class="score" id="trackTable"></table></div>
+    </div>
+  </section>
+</main>
+
+<div class="scrim" id="scrim" hidden></div>
+<aside class="sheet" id="about" hidden aria-labelledby="aboutTitle">
+  <div class="sheet-head"><h2 id="aboutTitle">How it's scored</h2><button type="button" class="btn btn-ghost" id="about-close">Close</button></div>
+  <div class="sheet-body">
+    <p>Every day the forecasts that were valid two days earlier are rebuilt with the wind page's own code, from the same model runs on the AWS open-data mirrors, and compared with what was observed. North Atlantic: valid 12 UTC, from the 12 UTC runs. North Pacific: valid 00 UTC, from the 00 UTC runs. Sustained 10 m wind, open ice-free water in the OPC chart area. Scores go back to March 2025, when AWS starts holding all of the models.</p>
+    <h3>What is scored</h3>
+    <ul>
+      <li><b>Page wind</b>: the wind page's grid, the blend + 5 kt where the core likelihood is 35% or more (storm cores kept).</li>
+      <li><b>Blend, no core lift</b>: GFS, ECMWF and AIFS weighted at each point by member support, + min(k × member spread, 5 kt).</li>
+      <li><b>Deterministic blend</b>: the GFE candidate that needs no members (9 lagged runs). Scored only when all 9 runs are there.</li>
+      <li><b>3-model average</b>: plain average of GFS, ECMWF and AIFS.</li>
+      <li><b>GFS, ECMWF, AIFS</b>: each model's own wind.</li>
+      <li><b>GEFS, ENS and AIFS ENS means</b>: the speed of the members' average wind, as AWIPS shows an ensemble mean. Averaging smooths the peaks away, so these run low in storms. The AIFS ensemble is on AWS from August 2025.</li>
+    </ul>
+    <h3>Truth</h3>
+    <ul>
+      <li><b>Analysis</b>: the average of the GDAS and ECMWF analyses, every water cell. <b>GDAS</b> and <b>IFS</b> are each alone. Analyses smooth the strongest winds, so they see fewer storm-force cells than ASCAT.</li>
+      <li><b>ASCAT</b>: Metop-B and C within 90 minutes of the valid time, rain-flagged cells dropped, turned from equivalent-neutral into real 10 m wind with the analysed air-sea temperature difference. At 12 UTC the swaths miss most of the Pacific, which is one reason the Pacific is scored at 00 UTC.</li>
+      <li><b>Buoys</b>: moored buoys raised to 10 m. <b>Ships + buoys</b> adds ships, scaled by 0.88 onto the buoy basis. Both come from the GDAS marine monitoring file (first guess + observed departure).</li>
+    </ul>
+    <h3>Scores</h3>
+    <ul>
+      <li><b>Bias</b>: average forecast minus truth, all points (+ means too strong).</li>
+      <li><b>Miss at 25+ kt</b>: average size of the error where the forecast or the truth is 25 kt or more.</li>
+      <li><b>Caught</b>: of the cells or obs at gale (34), storm (48) or hurricane force (64), the share the forecast had at that force. <b>False alarms</b>: of the cells the forecast put at that force, the share that weren't. <b>Area</b>: forecast area ÷ observed area (1.0 = right size).</li>
+      <li><b>Storm peaks</b>: 5° × 5° boxes with 150+ scored cells. Caught = boxes where storm force was seen anywhere that also had it forecast anywhere. This is the "a few pixels of storm force means a storm warning" view, so it doesn't punish a core placed 50 km off. <b>Peak off by</b>: the box's strongest forecast wind minus its strongest observed wind, over boxes where either reaches gale.</li>
+      <li><b>Chances</b>: Brier skill against always forecasting how often it happened in the period (1 perfect, 0 no better). The chart groups the forecasts in 10% steps.</li>
+      <li><b>Storm layers</b>: hazard lines cell by cell (inside = share of obs at the force inside the line; verified = share of outlined cells at the force; area = outlined ÷ observed) and the ensemble low track against analysed lows.</li>
+    </ul>
+    <h3>Read with care</h3>
+    <ul>
+      <li>The core likelihood was trained on North Atlantic ASCAT from winter 2025-26 (Nov to Mar), and the blend was tuned on winter 2025-26 and fall 2026 cases. Scores for the page wind and blend in those periods flatter them.</li>
+      <li>A few storm-force cases make a percentage. Check the counts in the column headings before reading much into storm and hurricane force.</li>
+    </ul>
+  </div>
+</aside>
+</body>
+</html>

@@ -63,3 +63,7 @@
 .sc-tip { position: absolute; top: 24px; pointer-events: none; background: var(--surface-solid); border: 1px solid var(--rule-strong); border-radius: var(--r); padding: 6px 8px; font-size: 12px; line-height: 17px; min-width: 120px; }
 .sc-tip .h { color: var(--faint); font-family: var(--mono); }
 .sc-tip b { float: right; margin-left: 12px; font-weight: 400; font-family: var(--mono); }
+
+@media (max-width: 760px) {
+  #verifLink { display: none; }
+}
