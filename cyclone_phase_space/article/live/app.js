@@ -20,8 +20,9 @@ const FALLBACK_DATA = 'https://raw.githubusercontent.com/jkrek17/awips-tools/cps
 const LOCAL_DATA = 'data/latest/';  // beside the page when served from the web repository
 const ARTICLE_URL = 'https://jkrek17.github.io/web/article/';  // published with this page
 const GUIDE_URL = 'https://jkrek17.github.io/web/forecasters/';  // the plain-language explainer, published with this page
-const LABEL_ZOOM = 3;            // pressures at the lows, contour labels and every isobar from this zoom
+const LABEL_ZOOM = 3;            // pressures at the lows and every isobar from this zoom
 const WIDE_CINT = 8;             // below LABEL_ZOOM, isobars thinned to every 8 hPa
+const CLABEL_ZOOM = 2;           // labels on the bold isobars from this zoom
 const HALO_ZOOM = 1;             // 200 km circles from this zoom (below it they shrink under the dot)
 const SPEEDS = { slow: 1200, normal: 700, fast: 350 };  // ms per frame
 const MAX_RASTER_FRAMES = 12;    // decoded raster frames kept in memory
@@ -375,12 +376,14 @@ function buildMap(start) {
     }
     // isobars: bold every 16 hPa; every 8 hPa zoomed out, all of them from LABEL_ZOOM
     const lev = ['get', 'level'];
-    const iso = (op, w) => ({ 'line-color': `rgba(231,238,248,${op})`, 'line-width': w });
+    // dark lines, as on a surface analysis, so they read on the pale ocean
+    // basemap and over the fields alike
+    const iso = (op, w) => ({ 'line-color': `rgba(8,14,28,${op})`, 'line-width': w });
     map.addLayer({ id: 'iso-minor8', type: 'line', source: 'contours',
-      filter: ['all', ['==', ['%', lev, WIDE_CINT], 0], ['!=', ['%', lev, 16], 0]], paint: iso(0.32, 0.8) });
+      filter: ['all', ['==', ['%', lev, WIDE_CINT], 0], ['!=', ['%', lev, 16], 0]], paint: iso(0.6, 1) });
     map.addLayer({ id: 'iso-minor', type: 'line', source: 'contours', minzoom: LABEL_ZOOM,
-      filter: ['!=', ['%', lev, WIDE_CINT], 0], paint: iso(0.32, 0.8) });
-    map.addLayer({ id: 'iso-major', type: 'line', source: 'contours', filter: ['==', ['%', lev, 16], 0], paint: iso(0.6, 1.2) });
+      filter: ['!=', ['%', lev, WIDE_CINT], 0], paint: iso(0.6, 1) });
+    map.addLayer({ id: 'iso-major', type: 'line', source: 'contours', filter: ['==', ['%', lev, 16], 0], paint: iso(0.85, 1.7) });
     map.addLayer({ id: 'footprints', type: 'line', source: 'footprints',
       paint: { 'line-color': ['get', 'hex'], 'line-width': 1, 'line-opacity': 0.9, 'line-dasharray': [2, 2] } });
     map.addLayer({ id: 'halos-fill', type: 'fill', source: 'halos', minzoom: HALO_ZOOM, paint: { 'fill-color': ['get', 'hex'], 'fill-opacity': 0.06 } });
@@ -475,13 +478,13 @@ function drawContours() {
   placeContourLabels();
 }
 
-// One label per bold (16 hPa) line at its middle vertex, from LABEL_ZOOM,
+// One label per bold (16 hPa) line at its middle vertex, from CLABEL_ZOOM,
 // kept clear of the lows, the map edge and each other. Placed when the
 // map stops moving; drawn at their lon/lat while it moves.
 let clabels = [];
 function placeContourLabels() {
   clabels = [];
-  if (!map || !S.mslp || !S.layers.contours || map.getZoom() < LABEL_ZOOM) return;
+  if (!map || !S.mslp || !S.layers.contours || map.getZoom() < CLABEL_ZOOM) return;
   const w = ov.w(), h = ov.h(), placed = [];
   const lows = S.centers.filter(shown);
   for (const f of S.mslp.features) {
@@ -607,17 +610,17 @@ function drawOverlay() {
     $('timeline').getBoundingClientRect().top, FAM);
   const z = map.getZoom();
   // contour labels
-  if (S.layers.contours && z >= LABEL_ZOOM) {
-    ctx.font = `10px ${FAM}`;
+  if (S.layers.contours && z >= CLABEL_ZOOM) {
+    ctx.font = `600 10.5px ${FAM}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (const l of clabels) {
       for (const p of ov.proj(l.lon, l.lat)) {
         const t = String(l.lv);
         const w = ctx.measureText(t).width + 4;
-        ctx.fillStyle = 'rgba(10,17,32,0.82)';
-        ctx.fillRect(p.x - w / 2, p.y - 6, w, 12);
-        ctx.fillStyle = 'rgba(231,238,248,0.85)';
+        ctx.fillStyle = 'rgba(255,255,255,0.88)';
+        ctx.fillRect(p.x - w / 2, p.y - 6.5, w, 13);
+        ctx.fillStyle = '#0b1220';
         ctx.fillText(t, p.x, p.y);
       }
     }

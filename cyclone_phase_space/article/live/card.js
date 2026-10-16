@@ -125,7 +125,7 @@ function renderLegend() {
   h += `<p class="legend-note">${esc(help)}${fade}</p>`;
   const keys = [];
   keys.push('<span><i class="k-dot"></i>Low center, by class</span>');
-  if (S.layers.contours) keys.push(`<span><i style="border-top:1px solid rgba(231,238,248,0.7)"></i>MSLP, ${WIDE_CINT} hPa, bold 16</span>`);
+  if (S.layers.contours) keys.push(`<span><i style="height:6px;vertical-align:1px;border:0;border-radius:2px;background:linear-gradient(#cfdbe8 2px,#0b1220 2px,#0b1220 4px,#cfdbe8 4px)"></i>MSLP, ${WIDE_CINT} hPa, bold 16</span>`);
   if (S.layers.circles) keys.push('<span><i class="k-halo"></i>200 km circle</span>');
   if (S.layers.tracks) keys.push('<span><i style="border-top:2px solid #fad91a"></i>Selected track, by class</span>',
     '<span><i style="border-top:1px solid rgba(231,238,248,0.55)"></i>Last 24 h of motion</span>');
