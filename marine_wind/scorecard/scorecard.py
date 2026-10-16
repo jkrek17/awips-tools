@@ -32,13 +32,12 @@ import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
 
-import eccodes
 import numpy as np
 from scipy import ndimage
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, "..", "pipeline"))
-import fetch  # noqa: E402  (get, _ec_base, _ec_records, gfs_url)
+sys.path.insert(0, os.path.join(HERE, "..", "..", "nwp"))
+import nwp  # noqa: E402
 
 KT = 1.94384
 MODELS = ["GFS", "ECMWF", "AIFS"]
@@ -71,23 +70,6 @@ REFERENCE = {"natl": {"label": "Winter 2025-26 hindcast (151 runs)",
 
 
 # ------------------------------------------------------------------ fetching
-def decode(blob):
-    """GRIB2 message -> global 0.25 deg array, north first, lon 0..359.75."""
-    h = eccodes.codes_new_from_message(blob)
-    try:
-        ni, nj = eccodes.codes_get(h, "Ni"), eccodes.codes_get(h, "Nj")
-        v = eccodes.codes_get_values(h).reshape(nj, ni).astype(np.float32)
-        lat0 = eccodes.codes_get(h, "latitudeOfFirstGridPointInDegrees")
-        lon0 = eccodes.codes_get(h, "longitudeOfFirstGridPointInDegrees")
-    finally:
-        eccodes.codes_release(h)
-    if lat0 < 0:
-        v = v[::-1]
-    if lon0 > 100:   # ECMWF open data starts at -180
-        v = np.roll(v, ni // 2, axis=1)
-    return v
-
-
 def keep(name, g):
     """Trim a global field to what is scored."""
     if name == "z":
@@ -96,42 +78,27 @@ def keep(name, g):
 
 
 def gfs(ymd, fh, land=False):
-    url = fetch.gfs_url(ymd, "12", fh)
-    r = fetch.get(url + ".idx")
-    if r is None:
-        return None
-    lines = [l.split(":") for l in r.text.splitlines() if l.strip()]
-    idx = {}
-    for i, f in enumerate(lines):
-        end = int(lines[i + 1][1]) - 1 if i + 1 < len(lines) else None
-        idx.setdefault(f[3] + ":" + f[4], (int(f[1]), end))
     want = {"PRMSL:mean sea level": "msl", "HGT:500 mb": "z", "UGRD:10 m above ground": "u",
             "VGRD:10 m above ground": "v"}
     if land:
         want.update({"LAND:surface": "land", "ICEC:surface": "ice"})
-    out = {}
-    for key, name in want.items():
-        if key not in idx:
-            return None
-        out[name] = keep(name, decode(fetch.get(url, idx[key]).content))
-    return out
+    out = nwp.ncep(nwp.sources.gfs(ymd, "12", fh), want)
+    return None if out is None else {k: keep(k, v) for k, v in out.items()}
 
 
 def ec(model, ymd, step):
-    base = fetch._ec_base(model, "oper", "fc", ymd, "12", step)
-    recs = fetch._ec_records(base)
+    base = nwp.sources.ecmwf(model, "oper", "fc", ymd, "12", step)
+    recs = nwp.ec_records(base)
     if recs is None:
         return None
-    pick = {("sfc", "msl"): "msl", ("sfc", "10u"): "u", ("sfc", "10v"): "v", ("pl", "gh"): "z"}
+    sel = {("sfc", "msl", None): "msl", ("sfc", "10u", None): "u", ("sfc", "10v", None): "v",
+           ("pl", "gh", "500"): "z"}
     if not any(r["param"] == "gh" and r.get("levelist") == "500" for r in recs):
-        pick[("pl", "z")] = "z"          # older AIFS runs carry geopotential only
-    out = {}
-    for r in recs:
-        k = (r.get("levtype"), r["param"])
-        if k in pick and (k[0] == "sfc" or r.get("levelist") == "500"):
-            v = decode(fetch.get(base + ".grib2", (r["_offset"], r["_offset"] + r["_length"] - 1)).content)
-            out[pick[k]] = keep(pick[k], v / 9.80665 if r["param"] == "z" else v)
-    return out if len(out) == 4 else None
+        sel[("pl", "z", "500")] = "zgeop"     # older AIFS runs carry geopotential only
+    out = nwp.ec_fields(base, sel)
+    if "zgeop" in out:
+        out["z"] = out.pop("zgeop") / 9.80665
+    return {k: keep(k, v) for k, v in out.items()} if len(out) == 4 else None
 
 
 def model_run(model, ymd, step):

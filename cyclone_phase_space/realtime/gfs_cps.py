@@ -38,6 +38,9 @@ CPS_ROOT = HERE.parent
 sys.path.insert(0, str(CPS_ROOT / "D2D" / "derivedParameters" / "functions"))
 import cps_HartCPS as hc  # noqa: E402
 
+sys.path.insert(0, str(CPS_ROOT.parent / "nwp"))
+import nwp  # noqa: E402
+
 hc.ORIENTATION_MODE = 0  # rows increase northward after decode() reorders them
 
 import matplotlib  # noqa: E402
@@ -196,15 +199,17 @@ def fetch_aws(cycle: str, fhr: int, path: Path, wanted_map: dict = WANTED) -> No
     """Read the .idx sidecar and byte-range GET just the wanted messages of the global file."""
     d, f = gfs_name(cycle, fhr)
     url = f"{AWS}/{d}/{f}"
-    lines = http_get(url + ".idx").text.strip().splitlines()
-    offsets = [int(ln.split(":")[1]) for ln in lines]
-    wanted = set(wanted_map.values())
+    recs = nwp.ncep_records(url)
+    if recs is None:
+        raise RuntimeError(f"no AWS index for {f}")
+    wanted = {f"{v}:{lev}" for v, lev in wanted_map.values()}
     chunks = []
-    for i, ln in enumerate(lines):
-        parts = ln.split(":")
-        if (parts[3], parts[4]) in wanted:
-            end = f"{offsets[i + 1] - 1}" if i + 1 < len(lines) else ""
-            chunks.append(http_get(url, headers={"Range": f"bytes={offsets[i]}-{end}"}).content)
+    for key, start, end in recs:
+        if key in wanted:
+            r = nwp.get(url, (start, end))
+            if r is None:
+                raise RuntimeError(f"HTTP 403/404 for {url}")
+            chunks.append(r.content)
     if len(chunks) < len(wanted):
         raise RuntimeError(f"AWS index for {f} lists {len(chunks)} of {len(wanted)} messages")
     path.write_bytes(b"".join(chunks))

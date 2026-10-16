@@ -45,7 +45,6 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
-import json
 import sys
 import time
 from pathlib import Path
@@ -124,13 +123,10 @@ def fetch_ecmwf(cycle: str, fhr: int, path: Path) -> bool:
     with NOMADS; the region box is cut out after decoding, as with gfs_cps's
     AWS path). Returns whether 'sp' (surface pressure) was found; if not,
     every other wanted field must still be present or this raises."""
-    idx_text = gc.http_get(index_url(cycle, fhr)).text
-    by_key = {}
-    for line in idx_text.splitlines():
-        if not line.strip():
-            continue
-        rec = json.loads(line)
-        by_key[(rec["param"], rec.get("levelist"))] = rec
+    recs = gc.nwp.ec_records(f"{dir_url(cycle)}/{grib_stem(cycle, fhr)}")
+    if recs is None:
+        raise RuntimeError(f"no ECMWF index for {grib_stem(cycle, fhr)}")
+    by_key = {(rec["param"], rec.get("levelist")): rec for rec in recs}
 
     url = grib_url(cycle, fhr)
     chunks, missing, have_sp = [], [], False
@@ -143,8 +139,10 @@ def fetch_ecmwf(cycle: str, fhr: int, path: Path) -> bool:
             continue
         if key == "psfc":
             have_sp = True
-        start, end = rec["_offset"], rec["_offset"] + rec["_length"] - 1
-        chunks.append(gc.http_get(url, headers={"Range": f"bytes={start}-{end}"}).content)
+        r = gc.nwp.get(url, gc.nwp.span(rec))
+        if r is None:
+            raise RuntimeError(f"HTTP 403/404 for {url}")
+        chunks.append(r.content)
     if missing:
         raise RuntimeError(f"{grib_stem(cycle, fhr)}: missing {', '.join(missing)}")
     path.write_bytes(b"".join(chunks))
