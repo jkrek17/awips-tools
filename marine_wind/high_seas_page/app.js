@@ -104,8 +104,9 @@
   function features(h) {
     return {
       type: "FeatureCollection",
-      features: doc.areas.filter(function (a) { return a.hour === h; }).map(function (a) {
-        return { type: "Feature", properties: { colour: colour(a.wind[1]), letter: a.letter },
+      features: doc.areas.map(function (a, i) { return [a, i]; }).filter(function (x) { return x[0].hour === h; }).map(function (x) {
+        var a = x[0];
+        return { type: "Feature", properties: { colour: colour(a.wind[1]), letter: a.letter, i: x[1] },
                  geometry: { type: "Polygon", coordinates: a.rings.map(function (r) { return r.map(function (p) { return [lon(p[0]), p[1]]; }); }) } };
       })
     };
@@ -154,10 +155,53 @@
     labels();
   }
 
+  // each area's phrase in the text, linked to its polygon: "<phrase> WINDS a TO b KT", found
+  // in text order across line breaks; hovering it shows that time and lights the polygon
+  function esc(t) { return t.replace(/[&<>]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]; }); }
+  function linkText(text) {
+    var spans = [];
+    doc.areas.forEach(function (a, i) {
+      var words = (a.text + " WINDS " + a.wind[0] + " TO " + a.wind[1] + " KT").split(/\s+/)
+        .map(function (w) { return w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); });
+      var re = new RegExp(words.join("\\s+"), "g"), m;
+      while ((m = re.exec(text))) {
+        var s = m.index, e = s + m[0].length - (" WINDS " + a.wind[0] + " TO " + a.wind[1] + " KT").length;
+        if (!spans.some(function (x) { return s < x.e && x.s < e; })) { spans.push({ s: s, e: e, i: i }); break; }
+      }
+    });
+    spans.sort(function (x, y) { return x.s - y.s; });
+    var html = "", pos = 0;
+    spans.forEach(function (x) {
+      html += esc(text.slice(pos, x.s)) + '<span class="hs-ar" data-i="' + x.i + '">' + esc(text.slice(x.s, x.e)) + "</span>";
+      pos = x.e;
+    });
+    $("text").innerHTML = html + esc(text.slice(pos));
+    document.querySelectorAll("#text .hs-ar").forEach(function (el) {
+      el.addEventListener("mouseenter", function () { focusArea(+el.dataset.i, el); });
+      el.addEventListener("mouseleave", function () { focusArea(-1, el); });
+      el.addEventListener("click", function () { focusArea(+el.dataset.i, el, true); });
+    });
+  }
+  function focusArea(i, el, fly) {
+    document.querySelectorAll("#text .hs-ar.on").forEach(function (x) { x.classList.remove("on"); });
+    ["area-focus", "area-focus-fill"].forEach(function (id) { if (map && map.getLayer(id)) map.setFilter(id, ["==", ["get", "i"], i]); });
+    if (i < 0) return;
+    el.classList.add("on");
+    var a = doc.areas[i];
+    if (a.hour !== hour) show(a.hour);
+    if (fly && map && a.rings.length) {
+      var xs = [], ys = [];
+      a.rings[0].forEach(function (p) { xs.push(lon(p[0])); ys.push(p[1]); });
+      map.fitBounds([[Math.min.apply(null, xs), Math.min.apply(null, ys)], [Math.max.apply(null, xs), Math.max.apply(null, ys)]], { padding: 120, maxZoom: 5, duration: 600 });
+    }
+  }
+
   function render() {
     $("runLine").textContent = compare ? "Issued vs draft from the " + K.fmtTime(doc.cycle) + " run"
       : "Draft from the " + K.fmtTime(doc.cycle) + " run";
-    $("text").textContent = compare && textTab === "draft" ? doc.draft_text : doc.text;
+    var shown = compare && textTab === "draft" ? doc.draft_text : doc.text;
+    if (compare && textTab !== "draft") $("text").textContent = shown;
+    else linkText(shown);
     if (compare) {
       $("cmpStats").innerHTML = statsHTML();
       $("textTabs").innerHTML = ["issued", "draft"].map(function (t) {
@@ -216,6 +260,9 @@
         map.addSource("areas", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
         map.addLayer({ id: "area-fill", type: "fill", source: "areas", paint: { "fill-color": ["get", "colour"], "fill-opacity": 0.14 } });
         map.addLayer({ id: "area-line", type: "line", source: "areas", paint: { "line-color": ["get", "colour"], "line-width": 2 } });
+        // the area whose phrase is under the pointer in the text
+        map.addLayer({ id: "area-focus-fill", type: "fill", source: "areas", filter: ["==", ["get", "i"], -1], paint: { "fill-color": ["get", "colour"], "fill-opacity": 0.45 } });
+        map.addLayer({ id: "area-focus", type: "line", source: "areas", filter: ["==", ["get", "i"], -1], paint: { "line-color": "#ffffff", "line-width": 4 } });
         // the issued forecast's areas (compare view)
         map.addSource("issued", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
         map.addLayer({ id: "issued-line", type: "line", source: "issued", paint: { "line-color": "#f8fafc", "line-width": 2, "line-dasharray": [1.5, 1.5] } });
