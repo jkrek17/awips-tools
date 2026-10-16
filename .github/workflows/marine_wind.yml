@@ -2,12 +2,14 @@
 # under latest/global/ (what the page shows), plus the two OPC boxes cut from it
 # in the older per-basin format, the North Atlantic under latest/ and the North
 # Pacific under latest/npac/.
-# Twice a day, once the 00 and 12 UTC ECMWF ensemble's +120 h is on the AWS
-# open-data mirror (about 8 h after the cycle), the newest cycle with GFS,
+# Every model run (00, 06, 12 and 18 UTC): at 02:30, 08:30, 14:30 and 20:30,
+# once the 18, 00, 06 and 12 UTC ECMWF ensemble's +120 h is on the AWS
+# open-data mirror (about 7-8 h after the cycle), the newest cycle with GFS,
 # GEFS, ECMWF IFS, AIFS and ENS all complete is built into a manifest and one
 # small binary per lead time, and published as the single commit of the orphan
-# branch marine-wind-live under latest/. Publish public site copies it to
-# /marine-wind/data/.
+# branch marine-wind-live under latest/. If that cycle is already published
+# (data late), the run stops after the check. Publish public site copies it
+# to /marine-wind/data/.
 #
 # The branch is rebuilt from nothing and force-pushed every run (about 50 MB),
 # so it never accumulates history, and main is never touched. Run it by hand
@@ -18,11 +20,11 @@ name: Marine wind data
 
 on:
   schedule:
-    - cron: '30 8,20 * * *'
+    - cron: '30 2,8,14,20 * * *'
   workflow_dispatch:
     inputs:
       cycle:
-        description: 'Cycle YYYYMMDDHH, 00 or 12 (blank: the newest complete cycle)'
+        description: 'Cycle YYYYMMDDHH, 00, 06, 12 or 18 (blank: the newest complete cycle)'
         required: false
         default: ''
 
@@ -51,8 +53,24 @@ jobs:
       - name: Install dependencies
         run: pip install -r marine_wind/pipeline/requirements.txt
 
+      - name: Check for a new cycle
+        id: check
+        working-directory: marine_wind/pipeline
+        env:
+          CYCLE: ${{ github.event.inputs.cycle }}
+        run: |
+          if [ -n "$CYCLE" ]; then echo "build=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          newest=$(MARINE_DOMAIN=glob python3 -c 'import build; print(build.newest_cycle())' || true)
+          published=""
+          if git fetch -q --depth 1 origin marine-wind-live 2>/dev/null; then
+            published=$(git show FETCH_HEAD:latest/global/manifest.json | python3 -c 'import json,sys; c=json.load(sys.stdin)["cycle"]; print(c[0:4]+c[5:7]+c[8:10]+c[11:13])' || true)
+          fi
+          echo "newest complete $newest, published ${published:-none}"
+          if [ -z "$newest" ] || [ "$newest" = "$published" ]; then echo "build=false" >> "$GITHUB_OUTPUT"; else echo "build=true" >> "$GITHUB_OUTPUT"; fi
+
       - name: Build
         id: build
+        if: steps.check.outputs.build == 'true'
         working-directory: marine_wind/pipeline
         env:
           CYCLE: ${{ github.event.inputs.cycle }}
@@ -67,6 +85,7 @@ jobs:
           echo "cycle=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["cycle"])' "$out/manifest.json")" >> "$GITHUB_OUTPUT"
 
       - name: Publish to the marine-wind-live branch
+        if: steps.check.outputs.build == 'true'
         env:
           CYCLE: ${{ steps.build.outputs.cycle }}
           OUT: ${{ steps.build.outputs.out }}
