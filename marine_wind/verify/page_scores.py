@@ -15,6 +15,9 @@ own pipeline (build.step_values), so the blends are exactly what the page showed
     gfs, ecmwf, aifs
     gefs_mean, ens_mean, aifsens_mean   each ensemble's mean wind (speed of the members' mean
                   u and v, as AWIPS shows it); the AIFS ensemble is on AWS from Aug 2025
+    ndfd          the desk's issued grids (NDFD oceanic, the snapshot after the ~10Z / ~22Z full update that
+                  follows the 00Z / 12Z runs, so issued about 10 h after the run it is paired with); scored only
+                  where the desk grid has data, at 00 and 12 UTC, from the 12Z runs of 13 Jan 2026 (DESK_FROM)
 
 Truth sources (open, ice-free water in the OPC chart box):
 
@@ -28,7 +31,9 @@ Truth sources (open, ice-free water in the OPC chart box):
 
 Four CSVs per run (DIR/scores_*.csv, chances_*.csv, lowbins_*.csv, storm_*.csv; names end _BASIN_HH):
 
-  scores   per (lead, method, referee): n, ae, bias, se over all points; n25, ae25, bias25
+  scores   per (lead, method, referee, area): area "box" is every scored cell or ob; area "desk" only where the
+           desk grid has data (cells, or obs sampled where it is finite), for ndfd and every other method alike.
+           n, ae, bias, se over all points; n25, ae25, bias25
            where forecast or truth is 25+ kt; h/f/m34,48,64 hits, false alarms, misses by
            cell or ob; on the gridded truths also 5 x 5 degree tiles (150+ scored cells):
            t{34,48,64}{h,m,f} peak caught/missed/false by tile ("any cell at the threshold"),
@@ -58,12 +63,13 @@ STEPS = [24, 48, 72, 96, 120]
 HOUR = {"natl": 12, "npac": 0}      # the hours scored before mid-October 2026 (the default of --hour)
 HOURS = (0, 6, 12, 18)
 LOW_EDGES = (0.0, 1.0, 2.0, 5.0, 10.0)   # percent
-METHODS = ["windcore", "blend", "nomem", "mean3", "gfs", "ecmwf", "aifs", "gefs_mean", "ens_mean", "aifsens_mean"]
+METHODS = ["windcore", "blend", "nomem", "mean3", "gfs", "ecmwf", "aifs", "gefs_mean", "ens_mean", "aifsens_mean", "ndfd"]
 GRID_REFS = ["analysis", "gdas", "ifs"]
+DESK_FROM = dt.datetime(2026, 1, 13, 12)   # NDFD oceanic holds the OPC high-seas water from the 22Z issuance of 13 Jan 2026 (before: 14% of the Atlantic box, 25% of the Pacific)
 TILE_MIN = 150
 MAX_DT = 90
 ASCAT_URL = "https://data.remss.com/ascat/metop{s}/bmaps_v02.1/y{y}/m{m}/ascat{s}_{d}_v02.1.gz"
-SCORE_FIELDS = (["valid", "basin", "hour", "lead", "method", "referee", "n", "ae", "bias", "se", "n25", "ae25", "bias25"]
+SCORE_FIELDS = (["valid", "basin", "hour", "lead", "method", "referee", "area", "n", "ae", "bias", "se", "n25", "ae25", "bias25"]
                 + ["%s%d" % (k, t) for t in (34, 48, 64) for k in "hfm"]
                 + ["t%d%s" % (t, k) for t in (34, 48, 64) for k in "hmf"] + ["pk_n", "pk_sum", "pk_abs"])
 CHANCE_FIELDS = (["valid", "basin", "hour", "lead", "referee", "thr", "n", "events", "bs"]
@@ -266,6 +272,20 @@ def lowbin_rows(base, items):
     return out
 
 
+def desk_key(cyc, lead, issued_after=None):
+    """Key of the NDFD snapshot holding the desk's full update that follows the cycle (naive UTC, 00 or 12
+    only), or None. Leads 24-72: the YCYZ98 snapshot first posted from C+12h30m, if before C+15h30m;
+    leads 96, 120: the YCYZ97 one first posted from C+15h30m, within 3 h."""
+    if cyc.hour not in (0, 12) or cyc < DESK_FROM:
+        return None
+    if issued_after is None:
+        from nwp import ndfd
+        issued_after = ndfd.issued_after
+    if lead <= 72:
+        return issued_after(cyc + dt.timedelta(hours=12, minutes=30), "YCYZ98", 3)
+    return issued_after(cyc + dt.timedelta(hours=15, minutes=30), "YCYZ97", 3)
+
+
 def run(valid_ymd, basin, hour=None):
     os.environ["MARINE_DOMAIN"] = basin
     sys.path.insert(0, PIPE)
@@ -320,7 +340,19 @@ def run(valid_ymd, basin, hour=None):
         core = vals["core"] / 100.0 if stats.get("core_model") and vals.get("core") is not None else None
         # as storm.core_grid: the model only runs where the blend is 28+ kt or a model 34+ kt (open water is already in the scored cells)
         cand = (vals["wind"] >= 28) | (np.maximum(np.maximum(vals["gfs"], vals["ecmwf"]), vals["aifs"]) >= 34)
-        base = dict(valid=valid_ymd, basin=basin, hour=hour, lead=lead)
+        base = dict(valid=valid_ymd, basin=basin, hour=hour, lead=lead, area="box")
+        desk = None
+        try:
+            key = desk_key(cyc, lead)
+            if key:
+                from nwp import ndfd
+                desk = ndfd.wind_on_grid(key, [valid], LATS, LONS).get(valid)
+            if key is None and cyc.hour in (0, 12):
+                print("  +%dh: no ndfd snapshot" % lead, flush=True)
+        except Exception as ex:
+            print("  +%dh: ndfd unavailable (%s)" % (lead, ex), flush=True)
+        if desk is not None and not np.isfinite(desk).any():
+            desk = None
         refs = {k: (truth[k][ar, ac], ar, ac, tiles_grid) for k in GRID_REFS}
         if tiles_asc is not None:
             refs["ascat"] = (asc[2], asc[0], asc[1], tiles_asc)
@@ -335,6 +367,16 @@ def run(valid_ymd, basin, hour=None):
                 items["core"] = (core[r, c][k], core_event(r, c, ob, core.shape)[k])
             chances += chance_rows(dict(base, referee=ref), items)
             lowbins += lowbin_rows(dict(base, referee=ref), items)
+            if desk is not None:    # the same cells where the desk grid has data, every method and the desk alike
+                k = np.isfinite(desk[r, c])
+                if k.any():
+                    r2, c2, ob2 = r[k], c[k], ob[k]
+                    tl2 = Tiles(LATS, LONS, r2, c2)
+                    for name in METHODS:
+                        g2 = desk if name == "ndfd" else fc.get(name)
+                        if g2 is not None:
+                            f = g2[r2, c2]
+                            scores.append(dict(base, area="desk", method=name, referee=ref, **point_scores(f, ob2), **tl2.scores(f, ob2)))
         for ref in ("buoys", "ships+buoys"):
             if obs is None or not len(obs[ref]):
                 continue
@@ -345,13 +387,22 @@ def run(valid_ymd, basin, hour=None):
             items = {t: (np.clip(sample(p, LATS, LONS, o[:, 0], o[:, 1]), 0, 1), o[:, 2] >= thr) for t, (p, thr) in P.items()}
             chances += chance_rows(dict(base, referee=ref), items)
             lowbins += lowbin_rows(dict(base, referee=ref), items)
+            if desk is not None:    # obs where the sampled desk grid is finite
+                dv = sample(desk, LATS, LONS, o[:, 0], o[:, 1])
+                k = np.isfinite(dv)
+                if k.any():
+                    for name in METHODS:
+                        g2 = desk if name == "ndfd" else fc.get(name)
+                        if g2 is not None:
+                            scores.append(dict(base, area="desk", method=name, referee=ref,
+                                               **point_scores(sample(g2, LATS, LONS, o[k, 0], o[k, 1]), o[k, 2])))
         if stats.get("core_model"):
             f = {"wind": vals["wind"], "windcore": vals["windcore"], "hazard": vals["hazard"].astype(np.uint8)}
             if asc is not None:
                 storms += sv.rows_for(valid_ymd, basin, lead, "ascat", asc[2], asc[0], asc[1], f, LATS, LONS)
             storms += sv.rows_for(valid_ymd, basin, lead, "analysis", truth["analysis"][ar, ac], ar, ac, f, LATS, LONS)
             storms.append(sv.track_row(valid_ymd, basin, lead, stats.get("lows", []), anl_lows, LATS, LONS, storm))
-        print("  +%dh ok (%s)" % (lead, ", ".join(k for k in METHODS if k in fc)), flush=True)
+        print("  +%dh ok (%s%s)" % (lead, ", ".join(k for k in METHODS if k in fc), ", ndfd" if desk is not None else ""), flush=True)
     for r in storms:
         r["hour"] = hour
     return scores, chances, lowbins, storms

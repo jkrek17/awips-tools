@@ -1,6 +1,7 @@
 /* Marine Wind Verification page. Reads data/ (marine_wind/verify/page_data.py):
      index.json                 coverage and the method / truth lists
      BASIN_REF.json             one row per (valid day, lead, method): sums and 2x2 counts
+     BASIN_REF_desk.json        the same scored only where the desk's NDFD grid has data (Area: Desk grid area)
      BASIN_chances.json         reliability bins of the page's P34/P48/P64
      BASIN_storm.json           hazard lines, peaks and the low track (storm_verify.py rows)
    Every score is computed here from summed counts, so any period pools correctly.
@@ -25,7 +26,8 @@
     { k: "aifs", name: "AIFS", c: "--m-aifs" },
     { k: "gefs_mean", name: "GEFS mean", c: "--m-gfs", dash: 1 },
     { k: "ens_mean", name: "ENS mean", c: "--m-ecmwf", dash: 1 },
-    { k: "aifsens_mean", name: "AIFS ENS mean", c: "--m-aifs", dash: 1 }
+    { k: "aifsens_mean", name: "AIFS ENS mean", c: "--m-aifs", dash: 1 },
+    { k: "ndfd", name: "Desk grids", sub: "NDFD as issued", c: "--m-ndfd" }
   ];
   var MBY = {}; METHODS.forEach(function (m) { MBY[m.k] = m; });
   var LEADS = [24, 48, 72, 96, 120];
@@ -64,8 +66,8 @@
   METRICS.push({ k: "pk", group: "Storm peaks", label: "Peak off by", unit: "kt", long: "Strongest wind in the box, forecast minus seen (kt)", v: ratio(f("pk_sum"), f("pk_n")), better: "zero", fmt: kt, grid: 1 });
   var MET = {}; METRICS.forEach(function (m) { MET[m.k] = m; });
 
-  var st = { basin: "natl", ref: "analysis", lead: "all", hour: "all", from: null, to: null, preset: "last30", metric: "tc48", thr: 48,
-             on: { windcore: 1, blend: 1, nomem: 1, gfs: 1, ecmwf: 1, aifs: 1 } };
+  var st = { basin: "natl", ref: "analysis", lead: "all", hour: "all", area: "box", from: null, to: null, preset: "last30", metric: "tc48", thr: 48,
+             on: { windcore: 1, blend: 1, nomem: 1, gfs: 1, ecmwf: 1, aifs: 1, ndfd: 1 } };
   var idx = null, cache = {};
 
   // ------------------------------------------------------------------ state <-> URL
@@ -80,7 +82,7 @@
     });
   }
   function writeHash() {
-    var h = ["basin", "ref", "lead", "hour", "preset", "metric", "thr"].map(function (k) { return k + "=" + encodeURIComponent(st[k]); });
+    var h = ["basin", "ref", "lead", "hour", "area", "preset", "metric", "thr"].map(function (k) { return k + "=" + encodeURIComponent(st[k]); });
     if (st.preset === "custom") h.push("from=" + st.from, "to=" + st.to);
     h.push("on=" + Object.keys(st.on).join(","));
     history.replaceState(null, "", "#" + h.join("&"));
@@ -93,7 +95,7 @@
     }).catch(function () { return null; });
     return cache[name];
   }
-  var refFile = function (b, r) { return b + "_" + r.replace("+", "_"); };
+  var refFile = function (b, r, a) { return b + "_" + r.replace("+", "_") + (a === "desk" ? "_desk" : ""); };
 
   function ymd(d) { return d.getUTCFullYear() * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate(); }
   function toDate(n) { n = +n; return new Date(Date.UTC(Math.floor(n / 10000), Math.floor(n / 100) % 100 - 1, n % 100)); }
@@ -162,6 +164,9 @@
     var hrs = b.hours || (b.hour != null ? [b.hour] : HOURS);
     if (st.hour !== "all" && hrs.indexOf(+st.hour) < 0) st.hour = "all";
     seg($("hour"), [["all", "All"]].concat(HOURS.map(function (h) { return [String(h), hh(h), "UTC", hrs.indexOf(h) < 0]; })), st.hour, function (v) { st.hour = v; refresh(); });
+    var areas = b.areas || ["box"];
+    if (areas.indexOf(st.area) < 0) st.area = "box";
+    seg($("area"), [["box", "Whole chart box"], ["desk", "Desk grid area", "", areas.indexOf("desk") < 0]], st.area, function (v) { st.area = v; refresh(); });
     var ps = presets(), sel = $("preset");
     sel.innerHTML = ps.map(function (p) { return '<option value="' + p[0] + '">' + p[1] + "</option>"; }).join("");
     if (!ps.some(function (p) { return p[0] === st.preset; })) st.preset = "last30";
@@ -203,7 +208,7 @@
 
   function drawTable() {
     var t = $("table");
-    if (!D) { t.innerHTML = '<tbody><tr><td class="na">No scores for this truth source yet.</td></tr></tbody>'; $("tableSub").textContent = ""; return; }
+    if (!D) { t.innerHTML = '<tbody><tr><td class="na">No scores for this truth source and area yet.</td></tr></tbody>'; $("tableSub").textContent = ""; return; }
     var agg = aggregate(D, function (i) { return inPeriod(i) && inLead(i); }, function () { return "x"; }).x || {};
     var cols = METRICS.filter(function (m) { return !m.chartOnly && (!m.grid || GRID[st.ref]); });
     var ref = agg.windcore || agg.blend || {};
@@ -439,6 +444,10 @@
     var notes = [];
     if (st.basin === "natl" && st.from <= 20260331 && st.to >= 20251101)
       notes.push("This period overlaps winter 2025-26 (Nov to Mar), when the core likelihood was trained on Atlantic ASCAT and the blend was tuned. Core Lifted and blend scores there flatter them.");
+    var db = idx.basins[st.basin] || {};
+    if (st.area === "desk") notes.push("Desk grids are the NDFD oceanic grids as issued: the full update about 10 UTC after the 00 UTC runs and about 22 UTC after the 12 UTC runs, so the desk had about 10 hours more to work with than the model run each is paired with. Every method here is scored only where the desk grid has data, so they can be compared. Scored at 00 and 12 UTC valid only" +
+      (db.desk_first ? ", from " + nice(db.desk_first) : "") + ".");
+    else if (st.on.ndfd) notes.push("Desk grids are scored in the Desk grid area view.");
     if (st.from < 20250815 && st.on.aifsens_mean) notes.push("The AIFS ensemble is on AWS only from August 2025, so the AIFS ENS mean has fewer days.");
     if (st.basin === "npac" && st.ref === "ascat") notes.push("ASCAT sees different parts of the Pacific at the four hours (about 17,000 cells a day at 06 UTC, 9,000 at 18, 8,000 at 00 and under 1,000 at 12), so an hour with few cells counts for little.");
     $("note").hidden = !notes.length; $("note").innerHTML = notes.join("<br>");
@@ -446,7 +455,7 @@
 
   function refresh() {
     buildControls(); writeHash(); drawNote();
-    load(refFile(st.basin, st.ref)).then(function (d) {
+    load(refFile(st.basin, st.ref, st.area)).then(function (d) {
       D = d;
       drawTable(); drawCharts();
     });

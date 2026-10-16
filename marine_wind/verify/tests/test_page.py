@@ -1,6 +1,7 @@
 """Offline tests for page_scores.py's chance rows and page_data.py's merge with mixed hours
 (run: python3 -m pytest marine_wind/verify/tests)."""
 import csv
+import datetime as dt_
 import gzip
 import json
 import os
@@ -56,7 +57,7 @@ def write_day(d, name, fields, rows):
 
 def score_row(valid, basin, hour, ref="ascat", method="blend", lead=24):
     r = {k: 1 for k in ps.SCORE_FIELDS}
-    r.update(valid=valid, basin=basin, hour=hour, lead=lead, method=method, referee=ref)
+    r.update(valid=valid, basin=basin, hour=hour, lead=lead, method=method, referee=ref, area="box")
     return r
 
 
@@ -111,3 +112,62 @@ def test_page_json_has_hours_and_ignores_extra_labels(tmp_path):
     assert d["hour"] == [12, 18] and "hour" in d["cols"]
     c = json.load(open(out / "natl_chances.json"))
     assert sorted(set(c["thr"])) == [34, 48, 64] and c["hour"] == [12, 12, 12, 18, 18, 18]
+
+
+def test_desk_key_picks_snapshots_by_cycle_and_lead():
+    D = dt_.datetime
+    calls = []
+
+    def fake(t, product="YCYZ98", within_h=3):
+        calls.append((t, product, within_h))
+        return "%s@%s" % (product, t.strftime("%d%H%M"))
+
+    c0, c12 = D(2026, 10, 14, 0), D(2026, 10, 14, 12)
+    assert ps.desk_key(c0, 24, fake) == "YCYZ98@141230"       # ~13:08 posting follows 00Z
+    assert ps.desk_key(c12, 72, fake) == "YCYZ98@150030"      # ~01:06 next day follows 12Z
+    assert ps.desk_key(c0, 96, fake) == "YCYZ97@141530"
+    assert ps.desk_key(c12, 120, fake) == "YCYZ97@150330"
+    assert calls[0] == (D(2026, 10, 14, 12, 30), "YCYZ98", 3) and calls[2][1:] == ("YCYZ97", 3)
+    # 06Z and 18Z get none, and no snapshot means None
+    n = len(calls)
+    assert ps.desk_key(D(2026, 10, 14, 6), 24, fake) is None and ps.desk_key(D(2026, 10, 14, 18), 96, fake) is None
+    assert len(calls) == n
+    assert ps.desk_key(c0, 48, lambda *a: None) is None
+    # before the desk grid held the high-seas water (DESK_FROM): none
+    assert ps.desk_key(D(2026, 1, 13, 0), 24, fake) is None and ps.desk_key(D(2026, 1, 13, 12), 24, fake) == "YCYZ98@140030"
+
+
+def test_merge_and_json_with_desk_rows(tmp_path):
+    tables, new, out = tmp_path / "tables", tmp_path / "new", tmp_path / "data"
+    tables.mkdir()
+    new.mkdir()
+    old = {k: v for k, v in score_row("20261001", "natl", 12).items() if k != "area"}    # table from before the areas
+    with gzip.open(tables / "scores.csv.gz", "wt", newline="") as f:
+        w = csv.DictWriter(f, [k for k in ps.SCORE_FIELDS if k != "area"])
+        w.writeheader()
+        w.writerow(old)
+    box = [score_row("20261002", "natl", 12, method=m) for m in ("blend",)]
+    desk = [dict(score_row("20261002", "natl", 12, method=m), area="desk") for m in ("blend", "ndfd")]
+    write_day(str(new), "scores_20261002_natl_12.csv", ps.SCORE_FIELDS, box + desk)
+    pd_.merge(str(tables), [str(new)])
+    rows = pd_.read(str(tables / "scores.csv.gz"))
+    assert sorted((r["valid"], r["area"], r["method"]) for r in rows) == [
+        ("20261001", "box", "blend"), ("20261002", "box", "blend"), ("20261002", "desk", "blend"), ("20261002", "desk", "ndfd")]
+    pd_.write_json(str(tables), str(out))
+    idx = json.load(open(out / "index.json"))
+    b = idx["basins"]["natl"]
+    assert b["areas"] == ["box", "desk"] and b["desk_first"] == "20261002" and idx["methods"] == ps.METHODS
+    assert "area" not in json.load(open(out / "natl_ascat.json"))["cols"]
+    bx, dk = json.load(open(out / "natl_ascat.json")), json.load(open(out / "natl_ascat_desk.json"))
+    assert bx["valid"] == [20261001, 20261002] and dk["valid"] == [20261002, 20261002]
+    assert [dk["methods"][i] for i in dk["method"]] == ["blend", "ndfd"]
+    # tables with no desk rows: box only, no desk files
+    out2 = tmp_path / "data2"
+    box_only = [r for r in rows if r["area"] == "box"]
+    with gzip.open(tables / "scores.csv.gz", "wt", newline="") as f:
+        w = csv.DictWriter(f, ps.SCORE_FIELDS)
+        w.writeheader()
+        w.writerows(box_only)
+    pd_.write_json(str(tables), str(out2))
+    assert json.load(open(out2 / "index.json"))["basins"]["natl"]["areas"] == ["box"]
+    assert "desk_first" not in json.load(open(out2 / "index.json"))["basins"]["natl"] and not (out2 / "natl_ascat_desk.json").exists()

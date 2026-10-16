@@ -9,6 +9,7 @@ row reversed), which eccodes does not undo; wind_on_grid flips them.
 
     keys = ndfd.snapshots(dt.date(2026, 10, 16))              # [(snapshot time, key), ...]
     key = ndfd.covering([t0, t48])                            # newest YCYZ98 holding both
+    key = ndfd.issued_after(dt.datetime(2026, 10, 16, 12, 30))   # first snapshot posted from then, within 3 h
     grids = ndfd.wind_on_grid(key, [t0, t12], lats, lons)     # {valid: kt grid, NaN = no data}
 """
 from __future__ import annotations
@@ -48,6 +49,17 @@ def covering(valid, product="YCYZ98", first_step=2, last_step=71, now=None):
         for t, k in reversed(snapshots(d, product)):
             h = t.replace(minute=0)
             if h + dt.timedelta(hours=first_step) <= lo and hi <= h + dt.timedelta(hours=last_step):
+                return k
+    return None
+
+
+def issued_after(t, product="YCYZ98", within_h=3):
+    """Key of the first snapshot posted at or after t (naive UTC) and before t + within_h hours, or
+    None (looks at t's date and the next one)."""
+    end = t + dt.timedelta(hours=within_h)
+    for d in (t.date(), t.date() + dt.timedelta(days=1)):
+        for s, k in snapshots(d, product):
+            if t <= s < end:
                 return k
     return None
 
