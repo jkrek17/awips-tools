@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Research Scores</title>
+<meta name="description" content="Weekly scores of the marine forecast desk's research studies (day 5-7 pressure, warning forecast): the latest 4 weeks against each study's original interval, with a drift flag and a trend line for every score. North Atlantic and North Pacific.">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f4f7fb">
+<meta name="color-scheme" content="light">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Cpath d=%22M2 12l4-5 3 3 5-7%22 fill=%22none%22 stroke=%22%230b73b8%22 stroke-width=%221.6%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+      <circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" stroke-width="2"/>
+      <path d="M8 21l5-6 4 4 7-9" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div class="brand-text">
+      <h1>Research Scores</h1>
+      <p>Weekly re-scores of the desk's research studies</p>
+    </div>
+  </div>
+  <div class="segmented" id="basin" role="radiogroup" aria-label="Basin" hidden></div>
+  <div class="topbar-actions">
+    <span class="updated" id="updated"></span>
+    <a class="btn btn-ghost" href="../verification/">Verification</a>
+    <a class="btn btn-ghost" href="../marine-wind/">Wind page</a>
+    <a class="btn btn-ghost" href="../">All projects</a>
+  </div>
+</header>
+
+<main>
+  <div class="note" id="note" hidden></div>
+  <p class="intro" id="intro"></p>
+  <div id="studies"></div>
+  <section class="card" id="about">
+    <div class="card-head"><h2>Reading the tables</h2></div>
+    <ul class="plain">
+      <li><b>Latest 4 weeks</b>: the mean of the newest four ISO weeks of scores, each week weighted by its count n (cases, lows or events, as the score defines it). A basin choice above applies to the table and the trend lines.</li>
+      <li><b>Original interval</b>: the 95% range the study itself found for that score, from resampling whole weeks. It is for both basins pooled, whatever the basin choice.</li>
+      <li><b>Drift</b>: <i>ok</i> when the recent mean sits inside the original interval, <i>drift</i> when it falls outside, <i>not enough weeks</i> when too few weeks have been scored yet. Drift is a prompt to look, not a verdict.</li>
+      <li><b>Method names</b>: <i>IFS wind + N kt</i> warns where the IFS 10 m wind plus N kt reaches the level (gale 34 kt, storm 48 kt). <i>Ensemble share ≥ P%</i> warns where at least P% of the GEFS, ENS and AIFS ENS members reach it.</li>
+      <li>Weeks run Monday to Sunday and are named by the run (cycle) date. The independent sample is weeks, not single storms or cases.</li>
+    </ul>
+  </section>
+  <p class="foot" id="files"></p>
+</main>
+</body>
+</html>

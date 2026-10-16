@@ -10,7 +10,10 @@
 # with the latest/ tree of the marine-wind-live branch as its data/, plus the
 # model scorecard from the marine-wind-scorecard branch), the verification page
 # (marine_wind/verification_page/, served at /verification/ with the data/ tree
-# of the verification-data branch), the globe kit the globe pages load
+# of the verification-data branch), the research scores page
+# (marine_wind/scores_page/, served at /research-scores/ with the four files of the
+# `scores` release of jkrek17/marine-research-data fetched into its data/ at publish
+# time; the weekly job there writes them Mondays 06:00 UTC), the globe kit the globe pages load
 # (globe_kit/, served at /globe-kit/: MapLibre, the shared look and script, the
 # land outline) and nothing else; it is pushed as the
 # single commit of the public repository's main branch with the token in the
@@ -51,6 +54,7 @@ on:
       - 'marine_wind/page/**'
       - 'marine_wind/verification_page/**'
       - 'marine_wind/high_seas_page/**'
+      - 'marine_wind/scores_page/**'
       - 'globe_kit/**'
       - '.github/workflows/site_publish.yml'
       - 'tools/build_site_index.py'
@@ -180,6 +184,24 @@ jobs:
           # marine wind page's data/hsf/ (published just above).
           mkdir -p "$site/high-seas"
           cp -r marine_wind/high_seas_page/. "$site/high-seas/"
+          # The research scores page, at /research-scores/. Its data is the four files of the
+          # public `scores` release of jkrek17/marine-research-data (no token). The release
+          # sends no CORS headers, so the browser cannot fetch them: they are copied here.
+          # A failed download leaves the file out (the page says so) and does not stop the
+          # publish. About 30 kB in all.
+          mkdir -p "$site/research-scores/data"
+          cp -r marine_wind/scores_page/. "$site/research-scores/"
+          rm -rf "$site/research-scores/data"
+          mkdir -p "$site/research-scores/data"
+          for f in standing_scores.csv drift_flags.csv preset_status.csv scores_meta.json; do
+            if ! curl -fsSL --retry 4 --retry-all-errors --max-time 60 \
+                -o "$site/research-scores/data/$f" \
+                "https://github.com/jkrek17/marine-research-data/releases/download/scores/$f"; then
+              echo "::warning::could not fetch $f from the scores release"
+              rm -f "$site/research-scores/data/$f"
+            fi
+          done
+          ls -l "$site/research-scores/data"
           # Stamp the page's own script and style links with the commit so a
           # browser holding a cached index.html never pairs it with stale
           # files (Pages serves everything with a 10 minute max-age).
@@ -192,6 +214,7 @@ jobs:
           sed -i -E "s#(href|src)=\"(style\.css|app\.js|scorecard\.js|$kit)\"#\1=\"\2?v=$v\"#g" "$site/marine-wind/index.html"
           sed -i -E "s#(href|src)=\"(style\.css|app\.js)\"#\1=\"\2?v=$v\"#g" "$site/verification/index.html"
           sed -i -E "s#(href|src)=\"(app\.js|$kit)\"#\1=\"\2?v=$v\"#g" "$site/high-seas/index.html"
+          sed -i -E "s#(href|src)=\"(style\.css|app\.js)\"#\1=\"\2?v=$v\"#g" "$site/research-scores/index.html"
           touch "$site/.nojekyll"
           du -sh "$site"
 
@@ -201,10 +224,10 @@ jobs:
           REPO: ${{ vars.PUBLIC_SITE_REPO }}
           TOKEN: ${{ secrets.WEB_TOKEN }}
           # Folders this workflow writes (cyclone, article, forecasters,
-          # marine-wind, verification, high-seas, globe-kit),
+          # marine-wind, verification, high-seas, research-scores, globe-kit),
           # plus data/, fonts/ and basemap/,
           # which the map used at the root before it moved to /cyclone/.
-          OWN_FOLDERS: cyclone article forecasters marine-wind verification high-seas globe-kit data fonts basemap
+          OWN_FOLDERS: cyclone article forecasters marine-wind verification high-seas research-scores globe-kit data fonts basemap
         run: |
           current="$RUNNER_TEMP/current"
           rm -rf "$current"
