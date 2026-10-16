@@ -28,10 +28,12 @@ came from, so the same code serves:
 - Synopsis, 24 and 48 h, plus one in-between step when a low's warning level goes up.
   Complex lows: "COMPLEX LOW WITH MAIN CENTER ..." only.
 
-## Valid times on the page
-The page holds leads every 12 h, so cycle C writes the draft whose synopsis is C+12 h (the
-06Z run gives the 2230Z issuance's 18Z synopsis). In-between steps are 12 h apart.
-`write_product` accepts 6 h steps unchanged if the page ever carries them.
+## Valid times
+The desk issues every 6 h, the synopsis valid 4.5 h before it is due (00Z due 0430Z, 06Z due
+1030Z, 12Z due 1630Z, 18Z due 2230Z). The page build cuts the two boxes every 6 h to +60 h
+(`BOX_STEPS` in `pipeline/build.py`), so cycle C writes the draft whose synopsis is C+6 h:
+the 00Z run, on the page about 07-08Z, drafts the 06Z forecast due 1030Z. In-between steps
+are 6 h apart.
 
 ## Try it
     MARINE_DOMAIN=npac python3 build_hsf.py --box path/to/latest/npac --basin pac --out /tmp/hsf

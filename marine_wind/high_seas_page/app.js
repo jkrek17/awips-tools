@@ -9,10 +9,17 @@
     pac: { name: "Pacific", box: "../marine-wind/data/npac/", start: [165, 45], mobile: [-160, 40] },
     atl: { name: "Atlantic", box: "../marine-wind/data/", start: [-52, 48], mobile: [-50, 45] }
   };
-  var basin = (new URLSearchParams(location.search).get("basin") || "pac").toLowerCase();
+  // the wind grid each draft is written from (same pressure and seas): ?src=gfs
+  var SOURCES = { corelift: "Core Lifted", gfs: "GFS", ecmwf: "ECMWF", aifs: "AIFS" };
+  var q = new URLSearchParams(location.search);
+  var basin = (q.get("basin") || "pac").toLowerCase();
   if (!BASINS[basin]) basin = "pac";
+  var src = (q.get("src") || "corelift").toLowerCase();
+  if (!SOURCES[src]) src = "corelift";
   var B = BASINS[basin];
-  var DATA = "../marine-wind/data/hsf/" + basin + ".json";
+  var FILE = src === "corelift" ? basin : basin + "-" + src;
+  var DATA = "../marine-wind/data/hsf/" + FILE + ".json";
+  function link(b, s) { return "?basin=" + b + (s === "corelift" ? "" : "&src=" + s); }
   var BOX = B.box;
   var man = null, windCache = {};
 
@@ -31,7 +38,8 @@
       if (!r.ok) throw new Error(r.status);
       return r.arrayBuffer();
     }).then(function (buf) {
-      var g = man.grid, k = man.fields.findIndex(function (f) { return f.name === "windcore"; }), f = man.fields[k];
+      var field = (doc && doc.wind_field) || "windcore";
+      var g = man.grid, k = man.fields.findIndex(function (f) { return f.name === field; }), f = man.fields[k];
       var raw = new Uint8Array(buf, k * g.ny * g.nx, g.ny * g.nx);
       var H = g.ny * 2, c = document.createElement("canvas");
       c.width = g.nx; c.height = H;
@@ -53,7 +61,7 @@
   }
   function showWind(h) {
     if (!map || !man || !doc || !map.getSource("wind")) return;
-    var lead = doc.box_leads ? doc.box_leads[String(h)] : 12 + h;
+    var lead = doc.box_leads ? doc.box_leads[String(h)] : 6 + h;
     windImage(lead).then(function (url) {
       if (hour !== h) return;
       var g = man.grid;
@@ -133,9 +141,12 @@
     K = window.GlobeKit;
     document.title = "High Seas Draft · " + B.name;
     $("basinName").textContent = B.name;
-    $("plainLink").href = "../marine-wind/data/hsf/" + basin + ".txt";
-    $("geoLink").href = "../marine-wind/data/hsf/" + basin + ".geojson";
-    document.querySelectorAll("#basins a").forEach(function (a) { a.setAttribute("aria-current", String(a.dataset.basin === basin)); });
+    $("plainLink").href = "../marine-wind/data/hsf/" + FILE + ".txt";
+    document.querySelectorAll("#basins a").forEach(function (a) { a.href = link(a.dataset.basin, src); a.setAttribute("aria-current", String(a.dataset.basin === basin)); });
+    $("sources").innerHTML = Object.keys(SOURCES).map(function (s) {
+      return '<a href="' + link(basin, s) + '" aria-current="' + (s === src) + '">' + SOURCES[s] + "</a>";
+    }).join("");
+    $("shadeName").textContent = SOURCES[src] + " wind";
     $("copyBtn").addEventListener("click", function () {
       if (!doc) return;
       navigator.clipboard.writeText(doc.text).then(function () { $("copyBtn").textContent = "Copied"; setTimeout(function () { $("copyBtn").textContent = "Copy text"; }, 1500); },
@@ -156,7 +167,7 @@
         map.addSource("wind", { type: "image", url: (function () { var c = document.createElement("canvas"); c.width = c.height = 1; return c.toDataURL(); })(), coordinates: [[-95, 67], [10, 67], [10, 18], [-95, 18]] });
         map.addLayer({ id: "wind", type: "raster", source: "wind", paint: { "raster-opacity": 0.9, "raster-fade-duration": 0, "raster-resampling": "nearest" } });
         map.addSource("boundary", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
-        map.addLayer({ id: "boundary", type: "line", source: "boundary", paint: { "line-color": "#e7eef8", "line-width": 1.2, "line-dasharray": [3, 2], "line-opacity": 0.7 } });
+        map.addLayer({ id: "boundary", type: "line", source: "boundary", paint: { "line-color": "#facc15", "line-width": 2.2, "line-dasharray": [3, 2], "line-opacity": 0.95 } });
         // each warning low's track through the page steps (the lows the text names)
         map.addSource("tracks", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
         map.addLayer({ id: "tracks", type: "line", source: "tracks", paint: { "line-color": "#f8fafc", "line-width": 1.6, "line-opacity": 0.85 } });
