@@ -31,7 +31,7 @@ North Atlantic, npac for the North Pacific; see domain.py):
     dir       direction the wind blows from, from the 3-model mean wind vector
     msl       3-model mean sea-level pressure
     core      storm layers (storm.py): chance (%) that ASCAT sees 48+ kt within ~50 km
-    windcore  wind + 5 kt where core >= 35% (the "most likely" wind with storm cores kept)
+    windcore  Core Lifted: wind + 5 kt where core >= 35% (the most likely wind with storm cores kept)
     hazard    bit 1 gale possible, bit 2 storm possible, bit 4 hurricane force possible
               (plus tracks.json: the ensemble low tracks with central pressure and cone size)
 
@@ -103,7 +103,7 @@ FIELDS = [
     ("lone", 1, "", "Lone model: bits 0-1 at 48 kt, bits 2-3 at 64 kt (1 GFS, 2 ECMWF, 3 AIFS)"),
     ("msl", 1, "hPa-900", "3-model mean sea-level pressure minus 900 hPa"),
     ("core", 1, "%", "Core likelihood: chance of 48+ kt within about 50 km (ASCAT-trained)"),
-    ("windcore", 2, "kt", "Most likely wind with storm cores kept: wind + 5 kt where core likelihood >= 35%"),
+    ("windcore", 2, "kt", "Core Lifted (most likely wind, storm cores kept): wind + 5 kt where core likelihood >= 35%"),
     ("hazard", 1, "", "Possible: bit 1 gale (30%+ of members 34+), bit 2 storm (core 30%+), bit 4 hurricane force (core 90%+ and 30%+ of members 48+)"),
 ]
 TRACK_STEPS = (24, 48, 72, 96, 120)
@@ -286,7 +286,7 @@ def step_values(ymd, hh, step):
     trend = np.zeros_like(mean) if prev is None else speeds.mean(0) - prev
     lagged = [x for x in (lag12, lag24) if x is not None]
     nomem = nomem_blend(speeds, lagged)
-    # storm layers: core likelihood, core-lifted wind, possible areas, low positions for the track
+    # storm layers: core likelihood, Core Lifted wind, possible areas, low positions for the track
     core, windcore, hazard, lows = core_layers(step, mean + boost, boost, speeds, members, aens, lowx, dets, gefs, ens)
     vals = {
         "wind": mean + boost, "dir": wdir, "mean": mean, "boost": boost, "sigma": sigma,
@@ -311,7 +311,7 @@ def step_values(ymd, hh, step):
 
 
 def core_layers(step, wind, boost, speeds, members, aens, lowx, dets, gefs, ens):
-    """Core likelihood (0-1), core-lifted wind, hazard bits and (at track leads) low positions.
+    """Core likelihood (0-1), Core Lifted wind, hazard bits and (at track leads) low positions.
     Without the extra low-level fields the core is left at 0, so windcore = wind and only the
     gale line is drawn."""
     core = np.zeros(wind.shape, np.float32)

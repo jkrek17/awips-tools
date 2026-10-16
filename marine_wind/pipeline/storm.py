@@ -1,4 +1,4 @@
-"""Storm layers for the marine wind page: core likelihood, the core-lifted wind,
+"""Storm layers for the marine wind page: core likelihood, the Core Lifted wind,
 gale / storm / hurricane-force "possible" areas, and the ensemble low track.
 
 Design and scores (winter 2025-26, Atlantic ASCAT; Jason's choices of 15 Oct 2026):
@@ -7,7 +7,7 @@ Design and scores (winter 2025-26, Atlantic ASCAT; Jason's choices of 15 Oct 202
               gradient-boosted model (core_model.json) of the models' and members'
               winds, the AIFS ensemble, 925/850 mb wind and temperature and sea
               temperature; scored only on weeks it did not see (BSS 0.47).
-    windcore  blended wind + 5 kt where core >= 35%. Any-48-kt-pixel tiles vs ASCAT:
+    windcore  Core Lifted: blended wind + 5 kt where core >= 35%. Any-48-kt-pixel tiles vs ASCAT:
               caught 49% (live blend 15%), false alarms 15% (4%); gales unchanged.
     hazard    bit 1 gale possible (30%+ of GEFS+ENS members at 34+ kt), bit 2 storm
               possible (core >= 30%), bit 4 hurricane force possible (core >= 90% and

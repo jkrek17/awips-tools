@@ -90,7 +90,7 @@
     ["mean", "Model base (weighted average)", WIND],
     ["boost", "Added wind", BOOST],
     ["Storm layers (test)"],
-    ["windcore", "Most likely wind, cores kept", WIND],
+    ["windcore", "Core Lifted", WIND],
     ["core", "Storm core chance", CORE],
     ["Where to look"],
     ["focus", "Model agreement", FOCUS],
@@ -816,7 +816,7 @@
       "<tr><td>Raw members 48 / 64</td><td>" + fmt(V("p48raw")) + " / " + fmt(V("p64raw")) + "%</td></tr>" + tr +
       "<tr><td>Agreement</td><td>" + foc + "</td></tr>" +
       "<tr><td>Pressure</td><td>" + V("msl") + " hPa</td></tr>" +
-      (hasStorm() ? '<tr class="sep"><td>Most likely, cores kept</td><td>' + fmt(V("windcore")) + " kt</td></tr>" +
+      (hasStorm() ? '<tr class="sep"><td>Core Lifted</td><td>' + fmt(V("windcore")) + " kt</td></tr>" +
         "<tr><td>Storm core chance</td><td>" + (Math.abs(lat) < 25 ? "not made" : fmt(V("core")) + "%") + "</td></tr>" +
         (b.hazard[k] ? "<tr><td>Possible</td><td>" + HAZARD.filter(function (d) { return b.hazard[k] & d[0]; }).map(function (d) { return d[1].replace(" possible", ""); }).join(", ") + "</td></tr>" : "") : "") +
       "</table>" +
