@@ -40,8 +40,8 @@ storm and hurricane force for each, issued, draft and both. The page shows it un
 
 ## Valid times
 The desk issues every 6 h, the synopsis valid 4.5 h before it is due (00Z due 0430Z, 06Z due
-1030Z, 12Z due 1630Z, 18Z due 2230Z). The page build cuts the two boxes every 6 h to +60 h
-(`BOX_STEPS` in `pipeline/build.py`), so cycle C writes the draft whose synopsis is C+6 h:
+1030Z, 12Z due 1630Z, 18Z due 2230Z). The page build cuts the two boxes at every page lead, 6 h apart
+(`STEPS` in `pipeline/build.py`), so cycle C writes the draft whose synopsis is C+6 h:
 the 00Z run, on the page about 07-08Z, drafts the 06Z forecast due 1030Z. In-between steps
 are 6 h apart.
 

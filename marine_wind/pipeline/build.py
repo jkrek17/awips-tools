@@ -72,7 +72,7 @@ import storm  # noqa: E402
 from domain import BASIN, BASINS, EAST, GLOBAL, KEY, LATS, LONS, NORTH, NX, NY, SOUTH, TESTED, WEST  # noqa: E402
 
 KT = 1.943844
-STEPS = list(range(12, 121, 12))
+STEPS = list(range(6, 121, 6))   # every 6 h (Jason 2026-10-16; was 12 h)
 MODELS = ("GFS", "ECMWF", "AIFS")
 CAP_KT = 5.0
 RIDE_BELOW, SPREAD_KT, TOL_CELLS = 30.0, 10.0, 2
@@ -108,10 +108,10 @@ FIELDS = [
 ]
 TRACK_STEPS = (24, 48, 72, 96, 120)
 RECORD_STEPS = (24, 48, 72, 96, 120)   # leads kept for the verification (--record)
-# extra leads cut into the two OPC boxes only (--boxes), not the global page: with STEPS they
-# give 6-hourly grids to +60 h, so run C feeds the High Seas draft whose synopsis is C+6 h
-# (the 00Z run -> the 06Z synopsis forecast due 1030Z)
-BOX_STEPS = (6, 18, 30, 42, 54)
+# extra leads cut into the two OPC boxes only (--boxes), not the global page. Empty since STEPS went
+# 6-hourly: STEPS alone give the High Seas draft its C+6 h synopsis (the 00Z run -> the 06Z synopsis
+# forecast due 1030Z) and its 6 h steps
+BOX_STEPS = ()
 CORE_MODEL = storm.load_model()
 storm.WRAP = GLOBAL   # the global grid wraps round the date line
 
