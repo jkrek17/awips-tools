@@ -247,3 +247,14 @@ python3 page_scores.py --basin natl --valid 20261012 --hour 12 --out /tmp/day
 python3 page_data.py --tables /tmp/tables --add /tmp/day --json ../verification_page/data
 python3 -m http.server -d ../verification_page 8000
 ```
+
+## Hosting this page inside another page
+
+wxmap.pro's map (jkrek17/wxmap.pro `map/`) runs this page unchanged inside its own
+shell. The host copies this page's body in, sets
+`<meta name="marine-wind-base" content="../marine-wind/">` so `app.js` and
+`scorecard.js` find their data there (the default is beside the page), and listens for
+three events `app.js` dispatches on `document`: `mw:ready` `{map}` once the map has
+loaded, `mw:step` `{valid, step, cycle}` on every forecast hour shown, and
+`mw:overlay` `{ctx, proj, font, width, height}` each time the text overlay is drawn.
+Keep the element ids and these events stable, or change the host in the same breath.

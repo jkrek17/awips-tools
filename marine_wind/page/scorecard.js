@@ -40,7 +40,7 @@
 
   function load() {
     if (!loading) {
-      loading = fetch("data/scorecard.json", { cache: "no-cache" }).then(function (r) {
+      loading = fetch(((document.querySelector('meta[name="marine-wind-base"]') || {}).content || "") + "data/scorecard.json", { cache: "no-cache" }).then(function (r) {
         if (!r.ok) throw new Error(r.status);
         return r.json();
       }).then(function (d) {
