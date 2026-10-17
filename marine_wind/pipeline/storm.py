@@ -9,6 +9,13 @@ Design and scores (winter 2025-26, Atlantic ASCAT; Jason's choices of 15 Oct 202
               temperature; scored only on weeks it did not see (BSS 0.47).
     windcore  Core Lifted: blended wind + 5 kt where core >= 35%. Any-48-kt-pixel tiles vs ASCAT:
               caught 49% (live blend 15%), false alarms 15% (4%); gales unchanged.
+              In the Atlantic box also raised to at least 34 kt where the gale core is 60%+ (Jason
+              17 Oct 2026, held-out: ASCAT gale caught 63% -> 76%, gale area 0.84 -> 1.19x
+              ASCAT, gale-tile CSI .618 -> .659, false alarms .125 -> .179).
+    galecore  chance (%) that ASCAT sees 34+ kt within about 50 km (gale_core_model.json: the
+              core features plus basin_pac, candidate cells blend >= 24 kt or a model >= 30 kt).
+              The Pacific failed the preset area cap (1.34x ASCAT), so there it is only a
+              shadow (galelift, not drawn), kept in the forecast record and scored nightly.
     hazard    bit 1 gale possible (30%+ of GEFS+ENS members at 34+ kt), bit 2 storm
               possible (core >= 30%), bit 4 hurricane force possible (core >= 90% and
               30%+ of members at 48+ kt); drawn straight from the chances, no padding.
@@ -29,6 +36,7 @@ KT = 1.943844
 R_EARTH = 6371000.0
 HERE = os.path.dirname(os.path.abspath(__file__))
 LIFT_KT, LIFT_P = 5.0, 0.35
+GALE_LIFT_KT, GALE_LIFT_P = 34.0, 0.60
 GALE_P, STORM_P, HF_P, HF_M48 = 0.30, 0.30, 0.90, 0.30
 CONE_K = {24: 1.02, 48: 1.13, 72: 1.17, 96: 1.27, 120: 1.33}
 NB = (9, 13)          # ~100 km box on the 0.25 degree grid
@@ -96,9 +104,10 @@ def core_features(lats, wind, boost, speeds, members, aens, low):
     return c
 
 
-def core_grid(feats, ocean, model):
-    """Core likelihood (0-1) on candidate ocean cells (blend >= 28 kt or a model >= 34 kt), 0 elsewhere."""
-    cand = ocean & ((feats["r10"] >= 28) | (feats["mod_max"] >= 34))
+def core_grid(feats, ocean, model, r10_min=28, mod_min=34):
+    """Core likelihood (0-1) on candidate ocean cells (blend >= r10_min kt or a model >= mod_min kt),
+    0 elsewhere: 28/34 for the storm core, 24/30 for the gale core (whose feats carry basin_pac)."""
+    cand = ocean & ((feats["r10"] >= r10_min) | (feats["mod_max"] >= mod_min))
     P = np.zeros(feats["r10"].shape, np.float32)
     if cand.any():
         X = np.column_stack([np.asarray(feats[f], np.float64)[cand] for f in model["features"]])
@@ -115,6 +124,11 @@ def products(wind, P, members):
     hz = (p34 >= GALE_P).astype(np.uint8) | ((pc >= STORM_P).astype(np.uint8) << 1) | \
          (((pc >= HF_P) & (p48 >= HF_M48)).astype(np.uint8) << 2)
     return windcore, hz
+
+
+def gale_lift(windcore, Pg):
+    """Core Lifted raised to at least 34 kt where the gale core is 60%+."""
+    return np.where(Pg >= GALE_LIFT_P, np.maximum(windcore, GALE_LIFT_KT), windcore)
 
 
 # ---------------------------------------------------------------- ensemble low track

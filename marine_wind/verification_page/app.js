@@ -17,7 +17,7 @@
   ];
   var GRID = { analysis: 1, gdas: 1, ifs: 1, ascat: 1 };
   var METHODS = [
-    { k: "windcore", name: "Core Lifted", sub: "blend + 5 kt in storm cores", c: "--m-windcore", ours: 1 },
+    { k: "windcore", name: "Core Lifted", sub: "blend + 5 kt in storm cores; Atlantic gale cores to 34 kt", c: "--m-windcore", ours: 1 },
     { k: "blend", name: "Blend, no core lift", c: "--m-blend", ours: 1 },
     { k: "nomem", name: "Deterministic blend", sub: "no members", c: "--m-nomem", ours: 1 },
     { k: "mean3", name: "3-model average", c: "--m-mean3" },
@@ -27,7 +27,8 @@
     { k: "gefs_mean", name: "GEFS mean", c: "--m-gfs", dash: 1 },
     { k: "ens_mean", name: "ENS mean", c: "--m-ecmwf", dash: 1 },
     { k: "aifsens_mean", name: "AIFS ENS mean", c: "--m-aifs", dash: 1 },
-    { k: "ndfd", name: "Desk grids", sub: "NDFD as issued", c: "--m-ndfd" }
+    { k: "ndfd", name: "Desk grids", sub: "NDFD as issued", c: "--m-ndfd" },
+    { k: "galelift", name: "Gale-core lift", sub: "Pacific trial, not on the page", c: "--m-windcore", dash: 1, ours: 1 }
   ];
   var MBY = {}; METHODS.forEach(function (m) { MBY[m.k] = m; });
   var LEADS = [24, 48, 72, 96, 120];
@@ -67,7 +68,7 @@
   var MET = {}; METRICS.forEach(function (m) { MET[m.k] = m; });
 
   var st = { basin: "natl", ref: "analysis", lead: "all", hour: "all", area: "box", from: null, to: null, preset: "last30", metric: "tc48", thr: 48,
-             on: { windcore: 1, blend: 1, nomem: 1, gfs: 1, ecmwf: 1, aifs: 1, ndfd: 1 } };
+             on: { windcore: 1, blend: 1, nomem: 1, gfs: 1, ecmwf: 1, aifs: 1, ndfd: 1, galelift: 1 } };
   var idx = null, cache = {};
 
   // ------------------------------------------------------------------ state <-> URL
@@ -450,7 +451,7 @@
     else if (st.on.ndfd) notes.push("Desk grids are scored in the Desk grid area view.");
     // Days re-scored on or after 17 Oct 2026 are rebuilt with the page's current recipe; runs saved
     // live (forecast records, from mid-October 2026) are scored as they ran, so 16 Oct and before used the old one.
-    if (st.to >= 20261010 && st.from <= 20261016) notes.push("The page changed on 17 Oct 2026: gale and storm chances adjusted to ASCAT, and AIFS at half weight in the blend. Earlier days are scored as the page is now (rebuilt from the models), except runs saved live from mid-October to 16 Oct, which are scored as they ran with the old recipe.");
+    if (st.to >= 20261010 && st.from <= 20261016) notes.push("The page changed on 17 Oct 2026: gale and storm chances adjusted to ASCAT, AIFS at half weight in the blend, and Core Lifted raised to 34 kt in Atlantic gale cores. Earlier days are scored as the page is now (rebuilt from the models), except runs saved live from mid-October to 16 Oct, which are scored as they ran with the old recipe.");
     if (st.from < 20250815 && st.on.aifsens_mean) notes.push("The AIFS ensemble is on AWS only from August 2025, so the AIFS ENS mean has fewer days.");
     if (st.basin === "npac" && st.ref === "ascat") notes.push("ASCAT sees different parts of the Pacific at the four hours (about 17,000 cells a day at 06 UTC, 9,000 at 18, 8,000 at 00 and under 1,000 at 12), so an hour with few cells counts for little.");
     $("note").hidden = !notes.length; $("note").innerHTML = notes.join("<br>");

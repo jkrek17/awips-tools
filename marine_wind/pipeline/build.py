@@ -109,10 +109,12 @@ FIELDS = [
     ("lone", 1, "", "Lone model: bits 0-1 at 48 kt, bits 2-3 at 64 kt (1 GFS, 2 ECMWF, 3 AIFS)"),
     ("msl", 1, "hPa-900", "3-model mean sea-level pressure minus 900 hPa"),
     ("core", 1, "%", "Core likelihood: chance of 48+ kt within about 50 km (ASCAT-trained)"),
-    ("windcore", 2, "kt", "Core Lifted (most likely wind, storm cores kept): wind + 5 kt where core likelihood >= 35%"),
+    ("windcore", 2, "kt", "Core Lifted (most likely wind, storm cores kept): wind + 5 kt where core likelihood >= 35%; in the Atlantic box at least 34 kt where the gale core is 60%+"),
     ("hazard", 1, "", "Possible: bit 1 gale (30%+ of members 34+), bit 2 storm (core 30%+), bit 4 hurricane force (core 90%+ and 30%+ of members 48+)"),
     ("p34raw", 1, "%", "Members at 34 kt or more"),
 ]
+# kept in vals (and so in the forecast record) but not drawn: galecore (%) and galelift, Core Lifted
+# with the gale-core lift everywhere, the Pacific shadow that the verification scores
 TRACK_STEPS = (24, 48, 72, 96, 120)
 RECORD_STEPS = (24, 48, 72, 96, 120)   # leads kept for the verification (--record)
 # extra leads cut into the two OPC boxes only (--boxes), not the global page. Empty since STEPS went
@@ -120,6 +122,7 @@ RECORD_STEPS = (24, 48, 72, 96, 120)   # leads kept for the verification (--reco
 # forecast due 1030Z) and its 6 h steps
 BOX_STEPS = ()
 CORE_MODEL = storm.load_model()
+GALE_MODEL = storm.load_model(os.path.join(os.path.dirname(os.path.abspath(__file__)), "gale_core_model.json"))
 storm.WRAP = GLOBAL   # the global grid wraps round the date line
 
 
@@ -298,7 +301,7 @@ def step_values(ymd, hh, step):
     lagged = [x for x in (lag12, lag24) if x is not None]
     nomem = nomem_blend(speeds, lagged)
     # storm layers: core likelihood, Core Lifted wind, possible areas, low positions for the track
-    core, windcore, hazard, lows = core_layers(step, mean + boost, boost, speeds, members, aens, lowx, dets, gefs, ens)
+    core, galecore, windcore, galelift, hazard, lows = core_layers(step, mean + boost, boost, speeds, members, aens, lowx, dets, gefs, ens)
     vals = {
         "wind": mean + boost, "dir": wdir, "mean": mean, "boost": boost, "sigma": sigma,
         "gfs": speeds[0], "ecmwf": speeds[1], "aifs": speeds[2],
@@ -307,6 +310,7 @@ def step_values(ymd, hh, step):
         "nomem": nomem, "nomemdiff": nomem - (mean + boost),
         "focus": focus_grid(speeds), "lone": lone_flags(speeds), "msl": msl - 900.0,
         "core": 100 * core, "windcore": windcore, "hazard": hazard,
+        "galecore": 100 * galecore, "galelift": galelift,
     }
     stats = dict(step=step, members=len(mu), gefs=len(gefs), ens=0 if ens is None else len(ens["u"]),
                  aifs_ens=0 if aens is None else len(aens["u"]), prob_members=len(pmem), trend=prev is not None,
@@ -322,10 +326,12 @@ def step_values(ymd, hh, step):
 
 
 def core_layers(step, wind, boost, speeds, members, aens, lowx, dets, gefs, ens):
-    """Core likelihood (0-1), Core Lifted wind, hazard bits and (at track leads) low positions.
-    Without the extra low-level fields the core is left at 0, so windcore = wind and only the
-    gale line is drawn."""
+    """Storm and gale core likelihood (0-1), Core Lifted wind (gale-core lift in the Atlantic box
+    only), the same with the gale-core lift everywhere (the Pacific shadow), hazard bits and (at
+    track leads) low positions. Without the extra low-level fields both cores are left at 0, so
+    windcore = wind and only the gale line is drawn."""
     core = np.zeros(wind.shape, np.float32)
+    galecore = np.zeros(wind.shape, np.float32)
     ocean = np.ones(wind.shape, bool)
     if all(x is not None for x in lowx):
         low = {k: np.mean([x[k] for x in lowx], 0) for k in ("t2", "skt", "t925", "t850")}
@@ -339,16 +345,35 @@ def core_layers(step, wind, boost, speeds, members, aens, lowx, dets, gefs, ens)
         feats = storm.core_features(np.abs(LATS), wind, boost, speeds, members, asp, low)
         core = storm.core_grid(feats, ocean, CORE_MODEL)
         core[np.abs(LATS) < 25] = 0
+        feats["basin_pac"] = pac_mask(wind.shape).astype(np.float64)
+        galecore = storm.core_grid(feats, ocean, GALE_MODEL, r10_min=24, mod_min=30)
+        galecore[np.abs(LATS) < 25] = 0
     else:
         print("core +%dh: low-level fields missing" % step, flush=True)
-    windcore, hazard = storm.products(wind, core, members)
+    corelift, hazard = storm.products(wind, core, members)
+    galelift = storm.gale_lift(corelift, galecore)
+    windcore = np.where(atl_mask(wind.shape), galelift, corelift)
     hazard = np.where(ocean, hazard, 0).astype(np.uint8)
     lows = []
     if step in TRACK_STEPS:
         mem_msl = [g["msl"] / 100.0 for g in gefs if "msl" in g] + ([] if ens is None or "msl" not in ens else list(ens["msl"] / 100.0))
         if len(mem_msl) >= 20:
             lows = storm.step_lows(LATS, LONS, [d["msl"] / 100.0 for d in dets], speeds, mem_msl)
-    return core, windcore, hazard, lows
+    return core, galecore, windcore, galelift, hazard, lows
+
+
+def pac_mask(shape):
+    """basin_pac for the gale core: the Pacific box (or the whole npac grid), else 0."""
+    if GLOBAL:
+        return in_box(BASINS["npac"])
+    return np.full(shape, KEY == "npac")
+
+
+def atl_mask(shape):
+    """Where the gale-core lift is drawn: the Atlantic box only, where it passed its test."""
+    if GLOBAL:
+        return in_box(BASINS["natl"])
+    return np.full(shape, KEY == "natl")
 
 
 def newest_cycle(now=None):
