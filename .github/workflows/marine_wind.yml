@@ -173,7 +173,7 @@ jobs:
           prev="$RUNNER_TEMP/prev-hsf"
           rm -rf "$prev" && mkdir -p "$prev"
           if git fetch -q --depth 1 origin marine-wind-live 2>/dev/null; then
-            git archive FETCH_HEAD latest/hsf | tar -x -C "$prev" || true
+            git -C "$GITHUB_WORKSPACE" archive FETCH_HEAD latest/hsf | tar -x -C "$prev" || true   # path from the repo root, not this step's folder
           fi
           python3 build_hsf.py --box "$OUT/npac" --basin pac --out "$OUT/hsf" --prev "$prev/latest/hsf"
       - name: High seas text draft (Atlantic)
