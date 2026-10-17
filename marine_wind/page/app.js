@@ -697,6 +697,13 @@
   // ----------------------------------------------------------------- legend
   function layerDef(name) { for (var i = 0; i < LAYERS.length; i++) if (LAYERS[i][0] === name) return LAYERS[i]; return null; }
 
+  // what each chance layer's percentage counts (one line under its legend)
+  var LEGEND_NOTE = {
+    p34: "Share of members at 34 kt+, adjusted to how often ASCAT saw 34 kt+ in a box about 75 km across",
+    p48: "Share of members at 48 kt+, adjusted to how often ASCAT saw 48 kt+ in a box about 75 km across",
+    p64: "Share of members at 64 kt+, adjusted to how often model analyses had 64 kt+",
+    core: "Chance that ASCAT sees 48 kt+ within about 50 km"
+  };
   function legend() {
     var def = layerDef(state.layer), pal = def[2], el = $("legend"), h;
     if (pal.cats) {
@@ -713,12 +720,16 @@
           return k && t !== "" ? '<span style="left:' + (k / n * 100).toFixed(2) + '%">' + t + "</span>" : "";
         }).join("") + "</div>";
     }
+    if (LEGEND_NOTE[state.layer]) h += '<div class="legend-note">' + LEGEND_NOTE[state.layer] + "</div>";
     var keys = [];
     if (state.edges && state.layer !== "focus") keys.push('<span><i style="border-top:1px dashed #fff"></i>34 kt edge</span>',
       '<span><i style="border-top:2px solid #fff"></i>48 kt edge</span>');
     if (state.msl) keys.push('<span><i style="border-top:1px solid rgba(231,238,248,0.6)"></i>Isobars, 4 hPa</span>');
     if (state.tested) keys.push('<span><i style="border-top:2px dotted ' + TESTED_COLOR + '"></i>Tested area</span>');
-    if (state.hazard && hasStorm()) keys.push.apply(keys, HAZARD.map(function (d) { return '<span><i style="border-top:2px solid ' + d[2] + '"></i>' + d[1] + "</span>"; }));
+    if (state.hazard && hasStorm()) {
+      keys.push.apply(keys, HAZARD.map(function (d) { return '<span><i style="border-top:2px solid ' + d[2] + '"></i>' + d[1] + "</span>"; }));
+      keys.push('<span class="wide">Possible lines use the raw member shares (gale 30%+ at 34 kt) and the storm core chance</span>');
+    }
     if (state.track && tracks.length) keys.push('<span><i style="border-top:2px dashed #fff"></i>Low track, hPa</span>',
       '<span><i style="border:0;height:9px;vertical-align:-1px;background:rgba(231,238,248,0.3);box-shadow:0 0 0 1px rgba(255,255,255,0.8) inset"></i>Cone, 2 in 3</span>');
     if (state.lone) keys.push('<span><i style="border-top:2px dashed var(--text)"></i>Lone 48 kt</span>',

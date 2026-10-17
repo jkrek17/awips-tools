@@ -70,3 +70,6 @@
 
 /* the run chip also carries the next run's expected time */
 #chipRun { max-width: 260px; }
+
+/* one line saying what a chance layer's percentage counts */
+.legend-note { margin-top: 6px; font-size: 11px; line-height: 1.35; color: var(--text-2); }
