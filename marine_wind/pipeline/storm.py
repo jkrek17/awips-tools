@@ -21,10 +21,11 @@ Design and scores (winter 2025-26, Atlantic ASCAT; Jason's choices of 15 Oct 202
     warn      warning areas (Jason 17 Oct 2026, drawn beside the possible lines): bit 1 gale where
               the strongest of GFS/ECMWF/AIFS >= 30 kt, bit 2 storm where Core Lifted >= 39 kt, bit 4
               hurricane force where the strongest model >= 44 kt and 1%+ of all members (GEFS, ENS,
-              AIFS ENS) reach 64 kt within about a degree (off for now: WARN_HF_ON). Held-out winter vs ASCAT / the OPC HF-low
+              AIFS ENS) reach 64 kt within about a degree. Held-out winter vs ASCAT / the OPC HF-low
               archive (warning forecast study): gale covers 93-98% of the gale water, storm 93% of
               the Atlantic storm water at 2.1x its area (no line forecasts Pacific storm well), HF
-              81% of HF lows within 150 km, with about 4 in 5 HF areas having no HF low.
+              81% of HF lows within 150 km, with about 4 in 5 HF areas having no HF low (mostly storm
+              cores warned a category high, about 1 in 5 Cape Farewell tip jets).
     tracks    ensemble low track: each member's own low matched within 700 km of a
               3-model-mean low (< 1005 hPa, 40+ kt within 800 km), median position and
               central pressure; cone radius = K(lead) x median member distance from it,
@@ -44,7 +45,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 LIFT_KT, LIFT_P = 5.0, 0.35
 GALE_LIFT_KT, GALE_LIFT_P = 34.0, 0.60
 WARN_GALE_KT, WARN_STORM_KT, WARN_HF_KT, WARN_HF_M64, WARN_NB = 30.0, 39.0, 44.0, 0.01, 9   # 9 cells ~ +-1 degree
-WARN_HF_ON = False    # held until the check of the HF areas with no HF low (Cape Farewell tip jets?) is in
+WARN_HF_ON = True     # Jason 17 Oct 2026: keep the 1% gate, over-warning is favoured
 GALE_P, STORM_P, HF_P, HF_M48 = 0.30, 0.30, 0.90, 0.30
 CONE_K = {24: 1.02, 48: 1.13, 72: 1.17, 96: 1.27, 120: 1.33}
 NB = (9, 13)          # ~100 km box on the 0.25 degree grid
