@@ -623,14 +623,16 @@ def write_product(fields, grid, sea, rules=Rules(), hours=None):
     paras, pieces = {}, []
     for key, ent in per.items():
         # synopsis, 24 and 48 h; add an in-between step only where the warning category goes up
-        # (first step at the higher category, if it holds for the next step or peaks in between)
+        # (none to gale, gale to storm, storm to hurricane force; Jason 10-17): the first step at
+        # each higher category, if it holds for the next step or peaks in between
         cat = {h: (ent[h]["top"] if h in ent else 0) for h in hours}
         shown, out = [0, 24, 48], []
         for a_, b_ in ((0, 24), (24, 48)):
+            now = cat[a_]
             for h in [x for x in hours if a_ < x < b_]:
-                if cat[h] >= 34 and cat[h] > cat[a_] and (cat.get(nxt_h.get(h), 0) >= cat[h] or cat[h] > cat[b_]):
+                if cat[h] >= 34 and cat[h] > now and (cat.get(nxt_h.get(h), 0) >= cat[h] or cat[h] > cat[b_]):
                     shown.append(h)
-                    break
+                    now = cat[h]
         shown.sort()
         top = max(cat.get(h, 0) for h in shown)   # the heading follows the times the text shows
         first_seen = min(ent)
