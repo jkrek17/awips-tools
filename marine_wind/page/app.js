@@ -704,6 +704,8 @@
     p64: "Share of members at 64 kt+, adjusted to how often model analyses had 64 kt+",
     core: "Chance that ASCAT sees 48 kt+ within about 50 km"
   };
+  var CHANCE_FIT = "; fitted inside the tested area on November to March, untested elsewhere and in other months";
+  var CHANCE_MONTHS = [10, 11, 0, 1, 2];   // getUTCMonth of Nov-Mar
   function legend() {
     var def = layerDef(state.layer), pal = def[2], el = $("legend"), h;
     if (pal.cats) {
@@ -720,7 +722,7 @@
           return k && t !== "" ? '<span style="left:' + (k / n * 100).toFixed(2) + '%">' + t + "</span>" : "";
         }).join("") + "</div>";
     }
-    if (LEGEND_NOTE[state.layer]) h += '<div class="legend-note">' + LEGEND_NOTE[state.layer] + "</div>";
+    if (LEGEND_NOTE[state.layer]) h += '<div class="legend-note">' + LEGEND_NOTE[state.layer] + (state.layer === "core" ? "; trained inside the tested area on winter 2025-26" : CHANCE_FIT) + "</div>";
     var keys = [];
     if (state.edges && state.layer !== "focus") keys.push('<span><i style="border-top:1px dashed #fff"></i>34 kt edge</span>',
       '<span><i style="border-top:2px solid #fff"></i>48 kt edge</span>');
@@ -811,7 +813,8 @@
     var lone = b.lone[k], notes = [];
     if (lone & 3) notes.push(MODEL_NAME[lone & 3] + " alone at 48 kt");
     if ((lone >> 2) & 3) notes.push(MODEL_NAME[(lone >> 2) & 3] + " alone at 64 kt");
-    if (!inTested(lon, lat)) notes.push(Math.abs(lat) < 25 ? "Outside the tested area; tropical cyclones are beyond this blend" : "Outside the area the blend was tested on");
+    if (!inTested(lon, lat)) notes.push(Math.abs(lat) < 25 ? "Outside the tested area; tropical cyclones are beyond this blend" : "Outside the area the blend and chances were tested on");
+    else if (CHANCE_MONTHS.indexOf(new Date(man.steps[state.step].valid).getUTCMonth()) < 0) notes.push("Chances were fitted on November to March only");
     var foc = FOCUS.cats[b.focus[k]][0];
     var tr = man.steps[state.step].trend ? '<tr><td>Since run 24 h earlier</td><td>' + (V("trend") >= 0 ? "+" : "") + V("trend").toFixed(1) + " kt</td></tr>" : "";
     box.innerHTML = '<div class="h">' + latText(lat, 2) + " " + lonText(lon, 2) + "</div><table>" +
@@ -824,7 +827,8 @@
       "<tr><td>AIFS</td><td>" + fmt(V("aifs")) + " kt</td></tr>" +
       '<tr class="sep"><td>Member spread</td><td>' + V("sigma").toFixed(1) + " kt</td></tr>" +
       "<tr><td>Chance 34 / 48 / 64</td><td>" + fmt(V("p34")) + " / " + fmt(V("p48")) + " / " + fmt(V("p64")) + "%</td></tr>" +
-      "<tr><td>Raw members 48 / 64</td><td>" + fmt(V("p48raw")) + " / " + fmt(V("p64raw")) + "%</td></tr>" + tr +
+      (fieldIx.p34raw != null ? "<tr><td>Raw members 34 / 48 / 64</td><td>" + fmt(V("p34raw")) + " / " + fmt(V("p48raw")) + " / " + fmt(V("p64raw")) + "%</td></tr>"
+        : "<tr><td>Raw members 48 / 64</td><td>" + fmt(V("p48raw")) + " / " + fmt(V("p64raw")) + "%</td></tr>") + tr +
       "<tr><td>Agreement</td><td>" + foc + "</td></tr>" +
       "<tr><td>Pressure</td><td>" + V("msl") + " hPa</td></tr>" +
       (hasStorm() ? '<tr class="sep"><td>Core Lifted</td><td>' + fmt(V("windcore")) + " kt</td></tr>" +
