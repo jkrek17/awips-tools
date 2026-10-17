@@ -18,7 +18,10 @@
   "use strict";
 
   var K = window.GlobeKit;
-  var DATA = "data/global/";
+  // Another page can host this one by naming where its files are:
+  // <meta name="marine-wind-base" content="../marine-wind/"> (wxmap.pro's map does).
+  var BASE = (document.querySelector('meta[name="marine-wind-base"]') || {}).content || "";
+  var DATA = BASE + "data/global/";
   var $ = function (id) { return document.getElementById(id); };
 
   // ---------------------------------------------------------------- palettes
@@ -569,6 +572,7 @@
     if (state.msl) drawIsobarLabels(fam);
     if (state.lone) drawLoneLabels(fam);
     if (state.track) drawTrackLabels(fam);
+    emit("mw:overlay", { ctx: octx, proj: proj, font: fam, width: w, height: h });
     if (hover) {
       proj(hover.lon, hover.lat).forEach(function (p) {
         octx.strokeStyle = "#fff"; octx.lineWidth = 1.2;
@@ -858,6 +862,9 @@
     drawOverlay();
     summary();
   }
+  // Events for a page that hosts this one and adds its own layers:
+  // mw:ready {map}, mw:step {valid, step, cycle}, mw:overlay {ctx, proj, font, width, height}
+  function emit(name, detail) { document.dispatchEvent(new CustomEvent(name, { detail: detail })); }
   function busy(on) { $("progress").classList.toggle("active", on); }
   function setStep(i) {
     state.step = Math.max(0, Math.min(man.steps.length - 1, i));
@@ -870,6 +877,7 @@
     $("prev").disabled = state.step === 0;
     $("next").disabled = state.step === man.steps.length - 1;
     if (rail) rail.done(state.step);
+    emit("mw:step", { valid: st.valid, step: st.step, cycle: man.cycle });
     busy(true);
     loadStep(state.step).then(function (b) {
       if (man.steps[state.step].step !== st.step) return;
@@ -1050,6 +1058,7 @@
 
   function ready() {
     document.body.classList.remove("loading");
+    emit("mw:ready", { map: map });
     setLayer(state.layer);
     setStep(state.step);
   }
