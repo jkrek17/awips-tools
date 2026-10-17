@@ -39,10 +39,10 @@ Four CSVs per run (DIR/scores_*.csv, chances_*.csv, lowbins_*.csv, storm_*.csv; 
            t{34,48,64}{h,m,f} peak caught/missed/false by tile ("any cell at the threshold"),
            and pk_n, pk_sum, pk_abs: tile highest-wind error (forecast max - truth max) over
            tiles where either reaches 34 kt
-  chances  per (lead, referee, threshold): the page's P34, P48, P64 (P48/P64 recalibrated):
+  chances  per (lead, referee, threshold): the page's P34, P48, P64 (recalibrated; P34 only from 17 Oct 2026):
            n, events, Brier sum, and 10 reliability bins (count, events, sum of chances).
-           Extra thr labels: "48raw", "64raw" (the members' own shares, before recalibration, same
-           events as 48 and 64) and "core" (the storm core likelihood, ASCAT only: event = ASCAT
+           Extra thr labels: "34raw", "48raw", "64raw" (the members' own shares, before recalibration, same
+           events as 34, 48 and 64; 34raw from 17 Oct 2026) and "core" (the storm core likelihood, ASCAT only: event = ASCAT
            48+ kt within about 50 km, the model's training target, see core_event; scored on the
            model's candidate cells only: blend 28+ kt or a model 34+ kt)
   lowbins  the same counts for the chances under 10% in finer bins [0,1), [1,2), [2,5), [5,10) %:
@@ -334,7 +334,7 @@ def run(valid_ymd, basin, hour=None):
             fc.pop("nomem")
         # chance label -> (chance 0-1 grid, threshold kt of its event); "core" is handled apart (ASCAT only)
         P = {34: (vals["p34"] / 100.0, 34), 48: (vals["p48"] / 100.0, 48), 64: (vals["p64"] / 100.0, 64)}
-        for t in (48, 64):
+        for t in (34, 48, 64):
             if vals.get("p%draw" % t) is not None:
                 P["%draw" % t] = (vals["p%draw" % t] / 100.0, t)
         core = vals["core"] / 100.0 if stats.get("core_model") and vals.get("core") is not None else None

@@ -12,9 +12,10 @@ North Atlantic, npac for the North Pacific; see domain.py):
     sigma     standard deviation of the GEFS + ENS member speeds (about 80)
     gfs, ecmwf, aifs   each model's speed
     p34, p48, p64      chance of gale, storm, hurricane force from the GEFS + ENS members plus
-                       the AIFS ensemble (51) when it is posted. p34 is the share of members;
-                       p48 and p64 are that share recalibrated to how often it verified in the
-                       2025-26 hindcast (calibration.json; the raw shares stay in p48raw, p64raw)
+                       the AIFS ensemble (51) when it is posted: the share of members recalibrated
+                       to how often it verified in the 2025-26 hindcast (calibration.json: 34 and
+                       48 kt against ASCAT since 17 Oct 2026, 64 kt against analyses; the raw shares
+                       stay in p34raw, p48raw, p64raw, and the hazard lines use the raw shares)
     trend     change of the 3-model mean since the 12Z/00Z run 24 h earlier, valid at the
               same time (the truth fell back about a fifth of this change in the hindcast)
     nomem     the deterministic blend, a candidate for GFE where the ensemble members may not be
@@ -91,7 +92,7 @@ FIELDS = [
     ("gfs", 2, "kt", "GFS"),
     ("ecmwf", 2, "kt", "ECMWF"),
     ("aifs", 2, "kt", "AIFS"),
-    ("p34", 1, "%", "Members at 34 kt or more"),
+    ("p34", 1, "%", "Chance of 34 kt or more (member share, recalibrated)"),
     ("p48", 1, "%", "Chance of 48 kt or more (member share, recalibrated)"),
     ("p64", 1, "%", "Chance of 64 kt or more (member share, recalibrated)"),
     ("p48raw", 1, "%", "Members at 48 kt or more"),
@@ -105,6 +106,7 @@ FIELDS = [
     ("core", 1, "%", "Core likelihood: chance of 48+ kt within about 50 km (ASCAT-trained)"),
     ("windcore", 2, "kt", "Core Lifted (most likely wind, storm cores kept): wind + 5 kt where core likelihood >= 35%"),
     ("hazard", 1, "", "Possible: bit 1 gale (30%+ of members 34+), bit 2 storm (core 30%+), bit 4 hurricane force (core 90%+ and 30%+ of members 48+)"),
+    ("p34raw", 1, "%", "Members at 34 kt or more"),
 ]
 TRACK_STEPS = (24, 48, 72, 96, 120)
 RECORD_STEPS = (24, 48, 72, 96, 120)   # leads kept for the verification (--record)
@@ -286,7 +288,7 @@ def step_values(ymd, hh, step):
     v = np.mean([d["v"] for d in dets], 0)
     wdir = (np.degrees(np.arctan2(-u, -v)) + 360.0) % 360.0
     msl = np.mean([d["msl"] for d in dets], 0) / 100.0
-    p48raw, p64raw = 100 * (pmem >= 48).mean(0), 100 * (pmem >= 64).mean(0)
+    p34raw, p48raw, p64raw = (100 * (pmem >= t).mean(0) for t in (34, 48, 64))
     trend = np.zeros_like(mean) if prev is None else speeds.mean(0) - prev
     lagged = [x for x in (lag12, lag24) if x is not None]
     nomem = nomem_blend(speeds, lagged)
@@ -295,8 +297,8 @@ def step_values(ymd, hh, step):
     vals = {
         "wind": mean + boost, "dir": wdir, "mean": mean, "boost": boost, "sigma": sigma,
         "gfs": speeds[0], "ecmwf": speeds[1], "aifs": speeds[2],
-        "p34": 100 * (pmem >= 34).mean(0), "p48": calibrate(p48raw, 48, step), "p64": calibrate(p64raw, 64, step),
-        "p48raw": p48raw, "p64raw": p64raw, "trend": trend,
+        "p34": calibrate(p34raw, 34, step), "p48": calibrate(p48raw, 48, step), "p64": calibrate(p64raw, 64, step),
+        "p34raw": p34raw, "p48raw": p48raw, "p64raw": p64raw, "trend": trend,
         "nomem": nomem, "nomemdiff": nomem - (mean + boost),
         "focus": focus_grid(speeds), "lone": lone_flags(speeds), "msl": msl - 900.0,
         "core": 100 * core, "windcore": windcore, "hazard": hazard,
