@@ -399,6 +399,8 @@ def run(valid_ymd, basin, hour=None):
                                                **point_scores(sample(g2, LATS, LONS, o[k, 0], o[k, 1]), o[k, 2])))
         if stats.get("core_model"):
             f = {"wind": vals["wind"], "windcore": vals["windcore"], "hazard": vals["hazard"].astype(np.uint8)}
+            if vals.get("warn") is not None:
+                f["warn"] = vals["warn"].astype(np.uint8)
             if asc is not None:
                 storms += sv.rows_for(valid_ymd, basin, lead, "ascat", asc[2], asc[0], asc[1], f, LATS, LONS)
             storms += sv.rows_for(valid_ymd, basin, lead, "analysis", truth["analysis"][ar, ac], ar, ac, f, LATS, LONS)

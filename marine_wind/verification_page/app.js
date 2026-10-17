@@ -412,7 +412,7 @@
       var ri = S.referees.indexOf(ref);
       var P = function (name) { return S.products.indexOf(name); };
       var keep = function (i) { return S.valid[i] >= st.from && S.valid[i] <= st.to && hourOk(S, i); };
-      var hz = { gale: [0, 0, 0], storm: [0, 0, 0], hf: [0, 0, 0] }, tr = {};
+      var hz = { gale: [0, 0, 0], warn_gale: [0, 0, 0], storm: [0, 0, 0], warn_storm: [0, 0, 0], hf: [0, 0, 0], warn_hf: [0, 0, 0] }, tr = {};
       for (var i = 0; i < S.valid.length; i++) {
         if (!keep(i)) continue;
         var prod = S.products[S.product[i]];
@@ -423,9 +423,10 @@
           hz[prod][0] += S.hit[i]; hz[prod][1] += S.miss[i]; hz[prod][2] += S.fa[i];
         }
       }
-      var names = { gale: "Gale possible", storm: "Storm possible", hf: "Hurricane force possible" };
+      var names = { gale: "Gale possible", storm: "Storm possible", hf: "Hurricane force possible",
+                    warn_gale: "Gale warning area", warn_storm: "Storm warning area", warn_hf: "Hurricane force warning area" };
       $("hazTable").innerHTML = "<thead><tr><th>Line</th><th>Inside<small>of obs at the force</small></th><th>Verified<small>of outlined cells</small></th><th>Area<small>outlined ÷ observed</small></th><th>Seen<small>cells at the force</small></th></tr></thead><tbody>" +
-        Object.keys(hz).map(function (k) {
+        Object.keys(hz).filter(function (k) { return k.indexOf("warn_") || hz[k][0] + hz[k][1] + hz[k][2]; }).map(function (k) {
           var h = hz[k][0], m = hz[k][1], fa = hz[k][2];
           return "<tr><td>" + names[k] + "</td><td>" + (h + m ? pct(h / (h + m)) : "–") + "</td><td>" + (h + fa ? pct(h / (h + fa)) : "–") + "</td><td>" +
             (h + m ? x2((h + fa) / (h + m)) : "–") + "</td><td>" + (h + m).toLocaleString() + "</td></tr>";
