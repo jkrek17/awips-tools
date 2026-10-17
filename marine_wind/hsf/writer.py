@@ -36,11 +36,9 @@ class Rules:
     levels: tuple = (34, 48, 64)  # gale, storm, hurricane force
     seas_min: float = 4.0         # seas that make an area worth describing on their own
     min_cells: int = 20           # ignore specks smaller than this (0.25 deg cells)
-    # draw each warning area this many kt below its level. Winter 2025-26 Pacific vs ASCAT, 60 nm
-    # ring billed (hsf/stats/rescore_2026-10-17): gale at 30 kt covers 94% of ASCAT gale water at
-    # 43% of the desk's area. Storm at 39 kt on Core Lifted, held-out weeks: 66% of storm water
-    # (44 kt: 48%), matching the page's storm hazard line (Core Lifted >= 39, Jason 10-17)
-    draw_offset: dict = field(default_factory=lambda: {34: 4.0, 48: 9.0, 64: 4.0})
+    # draw each warning area this many kt below its level (winter 2025-26 test vs ASCAT: gale drawn
+    # at 30 kt caught 94% of ASCAT gales vs 76% at 34, with half the desk's area); see stats/compare
+    draw_offset: dict = field(default_factory=lambda: {34: 4.0, 48: 4.0, 64: 4.0})
     core_min_cells: int = 1       # a warning-level core is kept down to this size ("a few pixels of storm = storm warning")
     extra_weight: float = 0.6     # penalty per unit of empty sea added (as share of candidate)
     box_margin: float = 0.08      # a non-box form must beat the box by this much
