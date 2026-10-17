@@ -32,9 +32,10 @@ storm and hurricane force for each, issued, draft and both. The page shows it un
   ALSO / ELSEWHERE with a lower range. Each range tops out at its category (gale 45, storm
   60, under gale 30); the top is the grid peak rounded up to 5 kt. A few pixels of storm
   force are enough for a storm warning.
-- Warning areas are drawn 4 kt below their level (gale around 30 kt). Winter 2025-26 Pacific
-  test against ASCAT: drawn at 30 kt the draft caught 94% of real gale force with half the
-  desk's area; drawn at 34 kt, 76%.
+- Warning areas are drawn below their level: gale around 30 kt, storm around 39 kt (the page's
+  storm hazard line), hurricane force around 60 kt. Winter 2025-26 Pacific against ASCAT with the
+  60 nm ring billed: gale at 30 kt covers 94% of real gale water at 43% of the desk's area; storm
+  at 39 kt on Core Lifted (held-out weeks) covers 66% of storm water, at 44 kt 48%.
 - Synopsis, 24 and 48 h, plus an in-between step each time a low's warning category goes up
   (none to gale, gale to storm, storm to hurricane force).
   Complex lows: "COMPLEX LOW WITH MAIN CENTER ..." only.
