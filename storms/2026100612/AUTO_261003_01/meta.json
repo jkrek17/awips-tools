@@ -1,0 +1,40 @@
+{
+  "cycle": "2026100612",
+  "name": "AUTO_261003_01",
+  "status": "ok",
+  "seed": {
+    "lat": 59.17,
+    "lon": -148.08,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "track of 2026100512 at +24 h"
+  },
+  "start_fhr": 0,
+  "end_fhr": 60,
+  "fixes": 11,
+  "start": {
+    "lat": 58.82,
+    "lon": -149.58,
+    "mslp_hpa": 995.9
+  },
+  "end": {
+    "lat": 58.98,
+    "lon": -141.41,
+    "mslp_hpa": 1016.7
+  },
+  "min_mslp_hpa": 995.9,
+  "onset_standard_h": 6,
+  "completion_standard_h": 6,
+  "onset_hart_h": null,
+  "completion_hart_h": 0,
+  "class_sequence": "1 0, 3 6, - 12-60",
+  "fsu_number": 8,
+  "fsu": {
+    "number": 8,
+    "lat": 59.27,
+    "lon": -149.03,
+    "distance_km": 59,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100612/8.html"
+  },
+  "track_end": "no minimum within 600 km of 58.7,-140.9 at or below 1029 hPa and within 1080 km of the last fix at +72 h"
+}

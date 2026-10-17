@@ -1,0 +1,39 @@
+{
+  "cycle": "2026100412",
+  "name": "WPAC",
+  "status": "ok",
+  "seed": {
+    "lat": 23.25,
+    "lon": 147.1,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "track of 2026100312 at +24 h"
+  },
+  "start_fhr": 0,
+  "end_fhr": 198,
+  "fixes": 34,
+  "start": {
+    "lat": 23.47,
+    "lon": 147.17,
+    "mslp_hpa": 933.7
+  },
+  "end": {
+    "lat": 54.29,
+    "lon": -167.34,
+    "mslp_hpa": 986.8
+  },
+  "min_mslp_hpa": 933.5,
+  "onset_standard_h": 48,
+  "completion_standard_h": 78,
+  "onset_hart_h": 48,
+  "completion_hart_h": 72,
+  "class_sequence": "0 0-48, 2 54-66, 3 72, 4 78-90, 3 96, 1 102-108, - 114-120, 1 126-138, 5 144, 1 150, 5 156, 1 162-168, - 174-198",
+  "fsu_number": 3,
+  "fsu": {
+    "number": 3,
+    "lat": 23.84,
+    "lon": 147.1,
+    "distance_km": 42,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100412/3.html"
+  }
+}

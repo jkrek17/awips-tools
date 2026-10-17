@@ -1,0 +1,45 @@
+{
+  "cycle": "2026100112",
+  "name": "AUTO_261001_01",
+  "status": "ok",
+  "seed": {
+    "lat": 19.34,
+    "lon": -109.17,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "automatic discovery at 0 h of 2026100112"
+  },
+  "start_fhr": 0,
+  "end_fhr": 198,
+  "fixes": 34,
+  "start": {
+    "lat": 19.34,
+    "lon": -109.17,
+    "mslp_hpa": 966.3
+  },
+  "end": {
+    "lat": 24.62,
+    "lon": -129.74,
+    "mslp_hpa": 996.8
+  },
+  "min_mslp_hpa": 959.0,
+  "onset_standard_h": null,
+  "completion_standard_h": null,
+  "onset_hart_h": null,
+  "completion_hart_h": null,
+  "class_sequence": "- 0-60, 2 66, - 72, 0 78, - 84, 0 90-198",
+  "fsu_number": 5,
+  "fsu": {
+    "number": 5,
+    "lat": 19.87,
+    "lon": -108.77,
+    "distance_km": 72,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100112/5.html"
+  },
+  "discovered": {
+    "lat": 19.34,
+    "lon": -109.17,
+    "mslp_hpa": 966.34,
+    "basin": "TROP"
+  }
+}

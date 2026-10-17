@@ -1,0 +1,35 @@
+{
+  "cycle": "2026100812",
+  "name": "AUTO_261003_01",
+  "status": "ok",
+  "seed": {
+    "lat": 57.32,
+    "lon": -148.65,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "track of 2026100712 at +24 h"
+  },
+  "start_fhr": 0,
+  "end_fhr": 0,
+  "fixes": 1,
+  "start": {
+    "lat": 57.21,
+    "lon": -147.68,
+    "mslp_hpa": 1017.4
+  },
+  "end": {
+    "lat": 57.21,
+    "lon": -147.68,
+    "mslp_hpa": 1017.4
+  },
+  "min_mslp_hpa": 1017.4,
+  "onset_standard_h": null,
+  "completion_standard_h": null,
+  "onset_hart_h": null,
+  "completion_hart_h": 0,
+  "class_sequence": "- 0",
+  "fsu_number": null,
+  "fsu": null,
+  "track_end": "outside a closed low at +0, +12 h (1014 hPa at +12 h)",
+  "ended": "filled: 0 h MSLP above 1000 hPa in 2 consecutive cycles; marked inactive"
+}

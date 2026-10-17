@@ -1,0 +1,14 @@
+{
+  "cycle": "2026100812",
+  "name": "WPAC",
+  "status": "lost",
+  "reason": "No closed low within 400 km of the seed 46.2N 162.2E at +0 h of 2026100812 (stored seed of 2026100712; the track of 2026100712 has no fix at +24 h); marked inactive.",
+  "seed": {
+    "lat": 46.18,
+    "lon": 162.16,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "stored seed of 2026100712; the track of 2026100712 has no fix at +24 h"
+  },
+  "fsu_number": null
+}
