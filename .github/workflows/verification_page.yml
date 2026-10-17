@@ -33,6 +33,10 @@ on:
         description: 'Valid hours UTC to score, space separated'
         required: false
         default: '00 06 12 18'
+      basins:
+        description: 'Basins to score, space separated'
+        required: false
+        default: 'natl npac'
       chunk:
         description: 'Days per parallel job'
         required: false
@@ -59,6 +63,7 @@ jobs:
           END: ${{ github.event.inputs.end }}
           CHUNK: ${{ github.event.inputs.chunk || '20' }}
           HOURS: ${{ github.event.inputs.hours || '00 06 12 18' }}
+          BASINS: ${{ github.event.inputs.basins || 'natl npac' }}
         run: |
           if git fetch -q origin verification-data 2>/dev/null; then
             git show FETCH_HEAD:tables/scores.csv.gz > /tmp/scores.csv.gz 2>/dev/null || true
@@ -70,6 +75,7 @@ jobs:
           end = dt.datetime.strptime(os.environ["END"], "%Y%m%d").date() if os.environ.get("END") else last
           old = {"natl": 12, "npac": 0}   # the hour of rows written before the hour column existed
           hours = [int(h) for h in os.environ["HOURS"].split() if int(h) in (0, 6, 12, 18)]
+          basins = [b for b in os.environ.get("BASINS", "natl npac").split() if b in ("natl", "npac")]
           have = set()
           if os.path.exists("/tmp/scores.csv.gz"):
               with gzip.open("/tmp/scores.csv.gz", "rt") as f:
@@ -77,11 +83,11 @@ jobs:
           if os.environ.get("START"):
               d0 = dt.datetime.strptime(os.environ["START"], "%Y%m%d").date()
               days = [d0 + dt.timedelta(days=i) for i in range((end - d0).days + 1)]
-              want = {(b, h): days for b in ("natl", "npac") for h in hours}
+              want = {(b, h): days for b in basins for h in hours}
           else:   # daily: two days back, and any missing day of the week before it, per basin and hour
               back = [last - dt.timedelta(days=k) for k in range(8)]
               want = {(b, h): [d for k, d in enumerate(back) if k == 0 or (d.strftime("%Y%m%d"), b, h) not in have]
-                      for b in ("natl", "npac") for h in hours}
+                      for b in basins for h in hours}
           n = max(1, int(os.environ.get("CHUNK") or 20))
           jobs = []
           for (b, h), days in want.items():
