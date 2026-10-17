@@ -448,10 +448,9 @@
     if (st.area === "desk") notes.push("Desk grids are the NDFD oceanic grids as issued: the full update about 10 UTC after the 00 UTC runs and about 22 UTC after the 12 UTC runs, so the desk had about 10 hours more to work with than the model run each is paired with. Every method here is scored only where the desk grid has data, so they can be compared. Scored at 00 and 12 UTC valid only" +
       (db.desk_first ? ", from " + nice(db.desk_first) : "") + ".");
     else if (st.on.ndfd) notes.push("Desk grids are scored in the Desk grid area view.");
-    // chance rows: days scored or re-scored from 17 Oct 2026 (Mar-Oct 2025 and 17 Oct 2026 on) carry the ASCAT-fitted
-    // gale and storm chances; 1 Nov 2025 - 16 Oct 2026 the old ones (plain gale share, storm fitted to analyses)
-    var oldCh = st.from <= 20261016 && st.to >= 20251101, newCh = st.from <= 20251031 || st.to >= 20261017;
-    if (oldCh && newCh) notes.push("The page's gale and storm chances changed on 17 Oct 2026 to an adjustment fitted to ASCAT (before: the gale chance was the plain member share and the storm chance was fitted to analyses). Chance scores for Mar-Oct 2025 and from 17 Oct 2026 use the new one, Nov 2025 to 16 Oct 2026 the old one, so this period mixes the two.");
+    // Days re-scored on or after 17 Oct 2026 are rebuilt with the page's current recipe; runs saved
+    // live (forecast records, from mid-October 2026) are scored as they ran, so 16 Oct and before used the old one.
+    if (st.to >= 20261010 && st.from <= 20261016) notes.push("The page changed on 17 Oct 2026: gale and storm chances adjusted to ASCAT, and AIFS at half weight in the blend. Earlier days are scored as the page is now (rebuilt from the models), except runs saved live from mid-October to 16 Oct, which are scored as they ran with the old recipe.");
     if (st.from < 20250815 && st.on.aifsens_mean) notes.push("The AIFS ensemble is on AWS only from August 2025, so the AIFS ENS mean has fewer days.");
     if (st.basin === "npac" && st.ref === "ascat") notes.push("ASCAT sees different parts of the Pacific at the four hours (about 17,000 cells a day at 06 UTC, 9,000 at 18, 8,000 at 00 and under 1,000 at 12), so an hour with few cells counts for little.");
     $("note").hidden = !notes.length; $("note").innerHTML = notes.join("<br>");

@@ -7,7 +7,8 @@ North Atlantic, npac for the North Pacific; see domain.py):
     wind      base + min(k * sigma, 5 kt), the blend tested on 345 hindcast cases
               (k = 0.25; 0.15 at +24 h and earlier)
     mean      the base: GFS, ECMWF and AIFS speeds weighted at each point by member
-              support (the share of members within about 5 kt of each model)
+              support (the share of members within about 5 kt of each model), AIFS at half
+              weight since 17 Oct 2026
     boost     the added wind, min(k * sigma, 5 kt)
     sigma     standard deviation of the GEFS + ENS member speeds (about 80)
     gfs, ecmwf, aifs   each model's speed
@@ -19,7 +20,7 @@ North Atlantic, npac for the North Pacific; see domain.py):
     trend     change of the 3-model mean since the 12Z/00Z run 24 h earlier, valid at the
               same time (the truth fell back about a fifth of this change in the hindcast)
     nomem     the deterministic blend, a candidate for GFE where the ensemble members may not be
-              available: the 3 models weighted by support among 9 runs (these 3 and the same
+              available: the 3 models weighted by support among 9 runs (AIFS at half weight) (these 3 and the same
               models from the runs 12 h and 24 h earlier, valid at the same time) +
               min(0.3 x spread of the 9, 5 kt). On 265 hindcast cases it kept about 90% of
               the member blend's gain against the analyses but only about 40% of its gale
@@ -78,6 +79,10 @@ MODELS = ("GFS", "ECMWF", "AIFS")
 CAP_KT = 5.0
 RIDE_BELOW, SPREAD_KT, TOL_CELLS = 30.0, 10.0, 2
 SUPPORT_KT = 5.0
+# AIFS at half weight in the base (Jason 2026-10-17): on 5 held-out winter weeks per basin
+# Core Lifted gale CSI rose .618 -> .630 (Atlantic) and .602 -> .618 (Pacific), storm catch
+# 59 -> 62% and 42 -> 50%; dropping AIFS entirely raised Pacific gale false alarms .145 -> .239.
+MODEL_WEIGHT = np.array([1.0, 1.0, 0.5])[:, None, None]   # GFS, ECMWF, AIFS
 NOMEM_K = 0.3         # chosen leave-one-cycle-out for the 9-run spread; 0.3 in every fold
 
 TREND_OFFSET = 64.0   # trend is stored as (kt + 64) x 2, so -64..+63.5 kt
@@ -171,8 +176,8 @@ def support_base(speeds, members):
     """Weight each model at each point by the share of members near its speed
     (Gaussian kernel, SUPPORT_KT wide), so a run out on its own counts for less.
     On 200 out-of-sample cases this cut error at 25+ kt by about 0.1 kt against
-    the equal-weight mean and kept or added gale hits."""
-    w = np.array([np.exp(-0.5 * ((members - s[None]) / SUPPORT_KT) ** 2).mean(0) for s in speeds]) + 1e-6
+    the equal-weight mean and kept or added gale hits. AIFS then counts half (MODEL_WEIGHT)."""
+    w = np.array([np.exp(-0.5 * ((members - s[None]) / SUPPORT_KT) ** 2).mean(0) for s in speeds]) * MODEL_WEIGHT + 1e-6
     return (w * speeds).sum(0) / w.sum(0)
 
 
