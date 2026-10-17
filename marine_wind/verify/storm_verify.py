@@ -36,6 +36,7 @@ ASCAT_URL = "https://data.remss.com/ascat/metop{s}/bmaps_v02.1/y{y}/m{m}/ascat{s
 MAX_DT = 90          # minutes from 12 UTC
 TILE_MIN = 150       # scored cells for a tile to count
 HZ = {"gale": (1, 34), "storm": (2, 48), "hf": (4, 64)}
+WARN = {"warn_gale": (1, 34), "warn_storm": (2, 48), "warn_hf": (4, 64)}   # the warning areas (field warn), same bits
 
 
 # ------------------------------------------------------------------ ASCAT
@@ -151,6 +152,9 @@ def rows_for(valid, basin, lead, referee, obs, r, c, f, lats, lons):
         out.append(dict(product=prod, **dict(zip("hit miss fa cn".split(), tile_table(tl, obs, f[prod][r, c])))))
     for prod, (bit, thr) in HZ.items():
         out.append(dict(product=prod, **dict(zip("hit miss fa cn".split(), cell_table(obs, (f["hazard"][r, c] & bit) > 0, thr)))))
+    if f.get("warn") is not None:
+        for prod, (bit, thr) in WARN.items():
+            out.append(dict(product=prod, **dict(zip("hit miss fa cn".split(), cell_table(obs, (f["warn"][r, c] & bit) > 0, thr)))))
     return [dict(valid=valid, basin=basin, lead=lead, referee=referee, err_km="", dp_hpa="", **x) for x in out]
 
 
@@ -199,9 +203,11 @@ def run(valid, basin):
             continue
         f = {}
         for i, fd in enumerate(build.FIELDS):
-            if fd[0] in ("wind", "windcore", "hazard"):
+            if fd[0] in ("wind", "windcore", "hazard", "warn"):
                 f[fd[0]] = packed[i].astype(np.float32) / fd[1] - (fd[4] if len(fd) > 4 else 0)
         f["hazard"] = f["hazard"].astype(np.uint8)
+        if "warn" in f:
+            f["warn"] = f["warn"].astype(np.uint8)
         if not stats.get("core_model"):
             print("  +%dh: core model inputs missing, skipped" % lead, flush=True)
             continue

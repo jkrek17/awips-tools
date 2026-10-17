@@ -86,6 +86,8 @@
   };
   // the storm layers' "possible" lines (hazard bits 1, 2, 4)
   var HAZARD = [[1, "Gale possible", "#fbbf24"], [2, "Storm possible", "#f97316"], [4, "HF possible", "#e879f9"]];
+  // the warning areas, drawn dashed beside them (field warn, same bits and colours)
+  var WARN = [[1, "Gale warning area", "#fbbf24"], [2, "Storm warning area", "#f97316"]];   // HF (bit 4) to follow
 
   var LAYERS = [
     ["Forecast"],
@@ -121,7 +123,7 @@
 
   // ------------------------------------------------------------------- state
   var man = null, grid = null, fieldIx = {}, cache = {}, order = [], frame = null;
-  var state = { layer: "wind", step: 0, lone: true, msl: true, arrows: false, edges: true, tested: true, view: "global", opacity: 0.85, hazard: true, track: true };
+  var state = { layer: "wind", step: 0, lone: true, msl: true, arrows: false, edges: true, tested: true, view: "global", opacity: 0.85, hazard: true, warn: true, track: true };
   var map = null, ov = null, octx = null, overlay = $("overlay");
   var hover = null, playTimer = null, lines = null, areas = [], labels = [], rail = null;
   var MAXLAT = K.MAXLAT, TILE = 256, paint = null, paintVersion = 0;
@@ -368,7 +370,11 @@
     if (h) HAZARD.forEach(function (d) {
       hz[d[0]] = polylines(contour(function (i, j) { return h[j * nx + i] & d[0] ? 1 : 0; }, [0.5], 0, J0, nx, J1, true)[0.5]);
     });
-    return { iso: isoLines, e34: polylines(ed[34]), e48: polylines(ed[48]), hz: hz };
+    var wz = {}, wb = buf.warn;
+    if (wb) WARN.forEach(function (d) {
+      wz[d[0]] = polylines(contour(function (i, j) { return wb[j * nx + i] & d[0] ? 1 : 0; }, [0.5], 0, J0, nx, J1, true)[0.5]);
+    });
+    return { iso: isoLines, e34: polylines(ed[34]), e48: polylines(ed[48]), hz: hz, wz: wz };
   }
 
   // lone-model areas: connected components of each (model, threshold) mask
@@ -422,9 +428,11 @@
     setData("edges", featureColl(showEdges ? [multiLine(lines.e34, { lev: 34 }), multiLine(lines.e48, { lev: 48 })] : []));
     setData("lone", featureColl(state.lone ? areas.map(function (a) { return multiLine(a.lines, { thr: a.thr, color: MODEL_COLOR[a.model] }); }) : []));
     setData("hazard", featureColl(state.hazard && hasStorm() ? HAZARD.map(function (d) { return multiLine(lines.hz[d[0]] || [], { bit: d[0], color: d[2] }); }) : []));
+    setData("warn", featureColl(state.warn && hasWarn() ? WARN.map(function (d) { return multiLine(lines.wz[d[0]] || [], { bit: d[0], color: d[2] }); }) : []));
     updateTracks();
   }
   function hasStorm() { return fieldIx.hazard !== undefined; }
+  function hasWarn() { return fieldIx.warn !== undefined; }
 
   // ------------------------------------------------------- ensemble low tracks
   // tracks.json: each track a list of 24-hourly points {step, lat, lon, hpa, cone_km, ...}.
@@ -510,7 +518,7 @@
       map.addLayer({ id: "graticule", type: "line", source: "graticule", paint: K.GRATICULE_PAINT });
       map.addSource("tested", { type: "geojson", data: testedArea() });
       map.addLayer({ id: "tested", type: "line", source: "tested", paint: { "line-color": TESTED_COLOR, "line-opacity": 0.85, "line-width": 1.4, "line-dasharray": [1, 2.5] } });
-      ["cone", "isobars", "edges", "hazard", "lone", "track", "trackpts"].forEach(function (id) { map.addSource(id, { type: "geojson", data: featureColl([]), tolerance: 0.2 }); });
+      ["cone", "isobars", "edges", "hazard", "warn", "lone", "track", "trackpts"].forEach(function (id) { map.addSource(id, { type: "geojson", data: featureColl([]), tolerance: 0.2 }); });
       map.addLayer({ id: "cone", type: "fill", source: "cone", paint: { "fill-color": "#e7eef8", "fill-opacity": 0.2 } });
       map.addLayer({ id: "cone-edge", type: "line", source: "cone", paint: { "line-color": "rgba(255,255,255,0.8)", "line-width": 1.1 } });
       // every 8 hPa zoomed out, every 4 hPa once zoomed in
@@ -521,6 +529,8 @@
       map.addLayer({ id: "edge48", type: "line", source: "edges", filter: ["==", ["get", "lev"], 48], paint: { "line-color": "rgba(255,255,255,0.9)", "line-width": 1.6 } });
       map.addLayer({ id: "hazard-halo", type: "line", source: "hazard", paint: { "line-color": "rgba(5,10,20,0.7)", "line-width": 3.4 } });
       map.addLayer({ id: "hazard", type: "line", source: "hazard", paint: { "line-color": ["get", "color"], "line-width": 1.6 } });
+      map.addLayer({ id: "warn-halo", type: "line", source: "warn", paint: { "line-color": "rgba(5,10,20,0.7)", "line-width": 3.4 } });
+      map.addLayer({ id: "warn", type: "line", source: "warn", paint: { "line-color": ["get", "color"], "line-width": 1.8, "line-dasharray": [2.5, 1.5] } });
       // dark halo first so the outline reads on top of the warm wind colours
       map.addLayer({ id: "lone-halo", type: "line", source: "lone", paint: { "line-color": "rgba(5,10,20,0.85)", "line-width": ["case", ["==", ["get", "thr"], 64], 4.8, 4] } });
       map.addLayer({ id: "lone48", type: "line", source: "lone", filter: ["==", ["get", "thr"], 48], paint: { "line-color": ["get", "color"], "line-width": 1.6, "line-dasharray": [3, 2] } });
@@ -736,6 +746,10 @@
       keys.push.apply(keys, HAZARD.map(function (d) { return '<span><i style="border-top:2px solid ' + d[2] + '"></i>' + d[1] + "</span>"; }));
       keys.push('<span class="wide">Possible lines use the raw member shares (gale 30%+ at 34 kt) and the storm core chance</span>');
     }
+    if (state.warn && hasWarn()) {
+      keys.push.apply(keys, WARN.map(function (d) { return '<span><i style="border-top:2px dashed ' + d[2] + '"></i>' + d[1] + "</span>"; }));
+      keys.push('<span class="wide">Warning areas: gale where the strongest model has 30 kt, storm where Core Lifted has 39 kt; tested at 24-48 h in winter</span>');
+    }
     if (state.track && tracks.length) keys.push('<span><i style="border-top:2px dashed #fff"></i>Low track, hPa</span>',
       '<span><i style="border:0;height:9px;vertical-align:-1px;background:rgba(231,238,248,0.3);box-shadow:0 0 0 1px rgba(255,255,255,0.8) inset"></i>Cone, 2 in 3</span>');
     if (state.lone) keys.push('<span><i style="border-top:2px dashed var(--text)"></i>Lone 48 kt</span>',
@@ -837,7 +851,8 @@
       "<tr><td>Pressure</td><td>" + V("msl") + " hPa</td></tr>" +
       (hasStorm() ? '<tr class="sep"><td>Core Lifted</td><td>' + fmt(V("windcore")) + " kt</td></tr>" +
         "<tr><td>Storm core chance</td><td>" + (Math.abs(lat) < 25 ? "not made" : fmt(V("core")) + "%") + "</td></tr>" +
-        (b.hazard[k] ? "<tr><td>Possible</td><td>" + HAZARD.filter(function (d) { return b.hazard[k] & d[0]; }).map(function (d) { return d[1].replace(" possible", ""); }).join(", ") + "</td></tr>" : "") : "") +
+        (b.hazard[k] ? "<tr><td>Possible</td><td>" + HAZARD.filter(function (d) { return b.hazard[k] & d[0]; }).map(function (d) { return d[1].replace(" possible", ""); }).join(", ") + "</td></tr>" : "") +
+        (b.warn && b.warn[k] ? "<tr><td>Warning area</td><td>" + WARN.filter(function (d) { return b.warn[k] & d[0]; }).map(function (d) { return d[1].replace(" warning area", ""); }).join(", ") + "</td></tr>" : "") : "") +
       "</table>" +
       (notes.length ? '<div class="note-line">' + notes.join("; ") + "</div>" : "");
     box.hidden = false;
@@ -987,8 +1002,9 @@
     $("next").addEventListener("click", function () { setStep(state.step + 1); });
     $("play").addEventListener("click", togglePlay);
     var OV = [["ov-lone", "lone", "s"], ["ov-msl", "msl", "i"], ["ov-arrows", "arrows", "a"], ["ov-edges", "edges", "e"], ["ov-tested", "tested", "t"],
-              ["ov-hazard", "hazard", "h"], ["ov-track", "track", "c"]];
+              ["ov-hazard", "hazard", "h"], ["ov-warn", "warn", "w"], ["ov-track", "track", "c"]];
     if (!hasStorm()) { $("storm-sec").hidden = true; OV = OV.slice(0, 5); }
+    else if (!hasWarn()) { $("warn-row").hidden = true; OV = OV.filter(function (p) { return p[1] !== "warn"; }); }
     function overlayChanged() { legend(); setTested(); if (frame) { updateLines(); placeLabels(); drawOverlay(); } }
     OV.forEach(function (p) {
       $(p[0]).checked = state[p[1]];

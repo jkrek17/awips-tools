@@ -9,6 +9,7 @@
 .swatch-edges { height: 0; border-radius: 0; border-top: 2px solid #fff; box-shadow: 0 4px 0 -1px rgba(255, 255, 255, .6); }
 .swatch-lone { background: transparent; border: 2px dashed #f08a5d; }
 .swatch-hazard { background: transparent; border: 2px solid #f97316; box-shadow: 0 0 0 2px rgba(232, 121, 249, .5) inset; }
+.swatch-warn { background: transparent; border: 2px dashed #f97316; }
 .swatch-track { height: 0; border-radius: 0; border-top: 2px dashed #fff; }
 .swatch-tested { height: 0; border-radius: 0; border-top: 2px dotted var(--tested); }
 .swatch-arrows {
