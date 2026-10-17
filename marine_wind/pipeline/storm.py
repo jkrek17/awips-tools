@@ -9,13 +9,12 @@ Design and scores (winter 2025-26, Atlantic ASCAT; Jason's choices of 15 Oct 202
               temperature; scored only on weeks it did not see (BSS 0.47).
     windcore  Core Lifted: blended wind + 5 kt where core >= 35%. Any-48-kt-pixel tiles vs ASCAT:
               caught 49% (live blend 15%), false alarms 15% (4%); gales unchanged.
-              In the Atlantic box also raised to at least 34 kt where the gale core is 60%+ (Jason
-              17 Oct 2026, held-out: ASCAT gale caught 63% -> 76%, gale area 0.84 -> 1.19x
-              ASCAT, gale-tile CSI .618 -> .659, false alarms .125 -> .179).
+              In the two OPC boxes also raised to at least 34 kt where the gale core is 60%+
+              (Jason 17 Oct 2026, held-out vs ASCAT: Atlantic gale caught 63% -> 76%, area 0.84 ->
+              1.19x ASCAT, gale-tile CSI .618 -> .659, false alarms .125 -> .179; Pacific, all
+              ASCAT hours, 55% -> 67%, 0.85 -> 1.25x, .526 -> .562, .193 -> .233).
     galecore  chance (%) that ASCAT sees 34+ kt within about 50 km (gale_core_model.json: the
               core features plus basin_pac, candidate cells blend >= 24 kt or a model >= 30 kt).
-              The Pacific failed the preset area cap (1.34x ASCAT), so there it is only a
-              shadow (galelift, not drawn), kept in the forecast record and scored nightly.
     hazard    bit 1 gale possible (30%+ of GEFS+ENS members at 34+ kt), bit 2 storm
               possible (core >= 30%), bit 4 hurricane force possible (core >= 90% and
               30%+ of members at 48+ kt); drawn straight from the chances, no padding.
