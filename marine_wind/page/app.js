@@ -1012,12 +1012,24 @@
   }
   // builds run about 8.5 h after each cycle, so a run is up to ~21 h old in normal service;
   // past a day a build has been missed
+  // The next run (cycle + 6 h) is built once its ECMWF ensemble reaches +120 h on AWS, which posts
+  // about 7 h after 06Z/18Z and 7.7 h after 00Z/12Z; the job checks hourly at :30 and takes ~10 min.
+  var NEXT_LAG_MIN = { 0: 510, 6: 460, 12: 510, 18: 460 };
+  function nextRun(cycle) {
+    var c = new Date(cycle.getTime() + 6 * 3600000);
+    return { cycle: c, due: new Date(c.getTime() + NEXT_LAG_MIN[c.getUTCHours()] * 60000) };
+  }
   function runAge(cycle) {
     var h = Math.floor((Date.now() - cycle.getTime()) / 3600000), chip = $("chipRun");
     if (h < 0) return;
+    var nx = nextRun(cycle), late = Date.now() > nx.due.getTime() + 45 * 60000;
+    var hhmm = ("0" + nx.due.getUTCHours()).slice(-2) + ":" + ("0" + nx.due.getUTCMinutes()).slice(-2);
+    var nxt = ("0" + nx.cycle.getUTCHours()).slice(-2) + "Z";
     chip.dataset.state = h > 24 ? "warn" : "ok";
-    chip.title = h > 24 ? "A newer run is overdue" : "Age of the newest model run on this page";
-    chip.lastChild.textContent = fmtTime(cycle.toISOString()) + " run · " + h + " h old";
+    chip.title = "The newest run on this page is " + h + " h old" + (h > 24 ? " (a newer run is overdue)" : "") + ". " +
+      "The next one, " + nxt + ", is expected about " + hhmm + " UTC: it is built once the ECMWF ensemble reaches +120 h " +
+      "(about 7 h after 06/18Z, 8 h after 00/12Z), checked hourly at :30.";
+    chip.lastChild.textContent = fmtTime(cycle.toISOString()) + " run · next " + (late ? nxt + " late" : "~" + hhmm + "Z");
   }
   function closeAbout() { $("about").hidden = true; $("about-btn").setAttribute("aria-expanded", "false"); }
 

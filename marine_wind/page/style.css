@@ -67,3 +67,6 @@
 @media (max-width: 760px) {
   #verifLink { display: none; }
 }
+
+/* the run chip also carries the next run's expected time */
+#chipRun { max-width: 260px; }
