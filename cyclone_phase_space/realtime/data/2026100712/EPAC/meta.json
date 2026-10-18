@@ -26,9 +26,11 @@
   "min_mslp_hpa": 947.5,
   "onset_standard_h": 48,
   "completion_standard_h": null,
-  "onset_hart_h": 54,
+  "onset_hart_h": 60,
   "completion_hart_h": null,
-  "class_sequence": "0 0-36, 2 42-78, 3 84-138, 2 144-150, 3 156, 4 162, 3 168-174, - 180-186, 0 192-198",
+  "bands": "hart",
+  "class_sequence": "0 0-54, 2 60-78, 3 84-132, 2 138-144, 0 150, 4 156-168, 3 174, - 180-186, 0 192-198",
+  "class_sequence_standard": "0 0-36, 2 42-78, 3 84-138, 2 144-150, 3 156, 4 162, 3 168-174, - 180-186, 0 192-198",
   "fsu_number": 1,
   "fsu": {
     "number": 1,

@@ -26,9 +26,11 @@
   "min_mslp_hpa": 959.4,
   "onset_standard_h": 6,
   "completion_standard_h": 114,
-  "onset_hart_h": 18,
+  "onset_hart_h": 6,
   "completion_hart_h": 42,
-  "class_sequence": "3 6-12, 1 18-24, 6 30, 4 36, 1 42-90, - 96-126",
+  "bands": "hart",
+  "class_sequence": "1 6, 3 12-24, 4 30-36, 1 42-48, 5 54, 1 60-66, 5 72-84, 1 90, - 96-126",
+  "class_sequence_standard": "3 6-12, 1 18-24, 6 30, 4 36, 1 42-90, - 96-126",
   "fsu_number": null,
   "fsu": null,
   "track_end": "outside a closed low at +132, +138 h (1003 hPa at +138 h)"

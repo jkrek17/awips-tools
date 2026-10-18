@@ -26,9 +26,11 @@
   "min_mslp_hpa": 966.5,
   "onset_standard_h": 0,
   "completion_standard_h": null,
-  "onset_hart_h": 186,
+  "onset_hart_h": 198,
   "completion_hart_h": 198,
+  "bands": "hart",
   "class_sequence": "- 0-30, 0 36, - 42-48, 0 54-168, 1 174, 0 180-186, 4 192-198",
+  "class_sequence_standard": "- 0-30, 0 36, - 42-48, 0 54-168, 1 174, 0 180-186, 4 192-198",
   "fsu_number": 1,
   "fsu": {
     "number": 1,

@@ -13,8 +13,12 @@ by its MSLP minimum, the products are sampled at the center, and per
 low this writes out/<cycle>/track_<NAME>.csv and phase_<NAME>.png: the
 two Hart diagrams in the style of the Florida State University cyclone
 phase pages (24 h running mean, markers every 6 h colored by MSLP) and
-the time series of the three parameters with the class strip. See
-README.md, "Storm-following phase diagrams".
+the time series of the three parameters with the class strips. Hart's
+own definitions (hvtl_hart, hvtu_hart over 900-600 and 600-300 hPa,
+hb_hart from the 900-600 hPa thickness with the track motion, and
+class_hart from those three) are the primary trace; the standard set
+(hvtl, hvtu, hb, class: what AWIPS CAVE shows) is the dashed comparison.
+See README.md, "Storm-following phase diagrams".
 """
 from __future__ import annotations
 
@@ -88,7 +92,9 @@ CLASS_SHORT = ["sym deep warm", "sym shallow warm", "asym deep warm", "asym shal
 PURPLE, RED, BLUE = "#8e44ad", "#d62d2d", "#2a78d6"
 
 CSV_COLS = ["fhr", "valid", "lat", "lon", "mslp_hpa", "hvtl", "hvtu", "hb", "idx", "class", "hvtl_hart",
-            "hvtu_hart", "hb_track", "motion_kt", "heading_deg", "steering_heading_deg", "steering_kt", "hb_hart"]
+            "hvtu_hart", "hb_track", "motion_kt", "heading_deg", "steering_heading_deg", "steering_kt", "hb_hart",
+            "class_hart"]
+VALID_FMT = "%Y-%m-%dT%H:%MZ"
 
 
 # ------------------------------------------------------------------ geometry
@@ -506,14 +512,39 @@ def b_with_track_motion(fixes: list[dict]) -> None:
                 fx[key] = bilinear(b, sub["li"], sub["lj"])
 
 
+def class_hart_value(b, vtl, vtu, inside: bool = True) -> float:
+    """The joint class (0-6) of one fix from Hart's set, by the D2D table
+    (cps_HartCPS.hart_class: B > B_THR asymmetric, a thermal wind term warm
+    when >= 0, lower cold under upper warm 6 whatever B), as a float; NaN
+    when the fix is not inside a closed low (`inside` False) or any of the
+    three is NaN."""
+    code = hc.hart_class(np.array([b], dtype=float), np.array([vtl], dtype=float), np.array([vtu], dtype=float),
+                         np.array([bool(inside)]), B_THR)
+    return float(code[0])
+
+
+def add_class_hart(fixes: list[dict]) -> None:
+    """Sets class_hart on every fix: class_hart_value of (hb_hart, hvtl_hart,
+    hvtu_hart), inside a closed low where the gridded class is finite (the
+    same test the website applies to the archive: HCPSclass at the center
+    is NaN outside the product's closed-low mask), so the two class strips
+    blank over the same hours and differ only by the band set."""
+    for fx in fixes:
+        inside = np.isfinite(fx.get("class", float("nan")))
+        fx["class_hart"] = class_hart_value(fx.get("hb_hart", float("nan")), fx.get("hvtl_hart", float("nan")),
+                                            fx.get("hvtu_hart", float("nan")), bool(inside))
+
+
 def write_csv(path: Path, fixes: list[dict]) -> None:
-    """track_<NAME>.csv, one row per fix."""
+    """track_<NAME>.csv, one row per fix (a key a fix lacks is written blank)."""
     def fmt(k, v):
         if k == "valid":
-            return v.strftime("%Y-%m-%dT%H:%MZ")
+            return v.strftime(VALID_FMT)
         if k == "fhr":
             return str(v)
-        if k == "class":
+        if v is None:
+            return ""
+        if k in ("class", "class_hart"):
             return "" if not np.isfinite(v) else str(int(v))
         if not np.isfinite(v):
             return ""
@@ -523,7 +554,27 @@ def write_csv(path: Path, fixes: list[dict]) -> None:
         wr = csv.writer(fh)
         wr.writerow(CSV_COLS)
         for fx in fixes:
-            wr.writerow([fmt(k, fx[k]) for k in CSV_COLS])
+            wr.writerow([fmt(k, fx.get(k)) for k in CSV_COLS])
+
+
+def read_fixes(path: Path) -> list[dict]:
+    """The fixes of a track.csv back as write_csv had them: fhr int, valid
+    an aware UTC datetime, every other column a float (NaN where blank);
+    a column the file lacks (class_hart in files written before it was
+    added) is NaN, so plot_phase, add_class_hart and the collector's
+    class sequences work on an old file."""
+    out = []
+    with path.open(newline="") as fh:
+        for row in csv.DictReader(fh):
+            fx = {"fhr": int(row["fhr"]),
+                  "valid": dt.datetime.strptime(row["valid"], VALID_FMT).replace(tzinfo=dt.timezone.utc)}
+            for k in CSV_COLS:
+                if k in ("fhr", "valid"):
+                    continue
+                v = row.get(k)
+                fx[k] = float(v) if v not in (None, "") else float("nan")
+            out.append(fx)
+    return out
 
 
 # ------------------------------------------------------------------ analysis
@@ -581,7 +632,8 @@ def draw_trajectory(ax, hours, valid, x, y, xr, yr, mslp, xh=None, yh=None):
     """FSU-style trajectory on one diagram: raw series faint, 24 h mean as
     the main line with markers every 6 h colored by MSLP (analysis solid,
     forecast with an x), day of month at 00Z, A and Z at the ends; the
-    Hart-band trajectory (already smoothed) dashed with open diamonds."""
+    comparison trajectory (xh, yh; already smoothed) dashed with open
+    diamonds."""
     ax.plot(xr, yr, "-", color="0.45", lw=0.8, alpha=0.45, zorder=3)
     ax.scatter(xr, yr, s=6, color="0.45", alpha=0.45, zorder=3, linewidths=0)
     if xh is not None:
@@ -605,27 +657,58 @@ def draw_trajectory(ax, hours, valid, x, y, xr, yr, mslp, xh=None, yh=None):
                         va="center", fontsize=15, weight="bold", zorder=9, path_effects=halo)
 
 
+def class_strip(ax, hours, classes, rect, label, title=None):
+    """A class strip above ax: one 6 h block per fix, colored by class,
+    blank where the class is NaN."""
+    strip = ax.inset_axes(rect, sharex=ax)
+    for h, c in zip(hours, classes):
+        if np.isfinite(c):
+            strip.add_patch(Rectangle((h - 3.0, 0.0), 6.0, 1.0, facecolor=CLASS_PALETTE[int(c)], edgecolor="none"))
+    strip.set_ylim(0, 1)
+    strip.set_yticks([])
+    strip.tick_params(axis="x", labelbottom=False, bottom=False)
+    strip.set_ylabel(label, rotation=0, ha="right", va="center", fontsize=11)
+    if title:
+        strip.set_title(title, loc="left", fontsize=14)
+    return strip
+
+
 def plot_phase(path: Path, name: str, cycle: str, fixes: list[dict], hart: bool) -> dict:
     """phase_<NAME>.png: (a) B against -V_T^L, (b) -V_T^U against -V_T^L,
-    (c) the time series with the class strip. Returns onset/completion."""
+    (c) the time series with the class strips. Hart's set (hvtl_hart,
+    hb_hart, hvtu_hart, class_hart) is the primary trace and the standard
+    set (hvtl, hb, hvtu, class: CAVE's) the dashed comparison; without
+    Hart's levels (hart False, or none fetched) the standard set is the
+    primary trace with the track-motion B dotted, as before. Returns the
+    onset and completion hours per set: {"hart": (on, comp), "standard":
+    (on, comp)} (ev["hart"] from hb_hart and hvtl_hart)."""
     hours = np.array([fx["fhr"] for fx in fixes], dtype=float)
     valid = [fx["valid"] for fx in fixes]
-    col = {k: np.array([fx[k] for fx in fixes], dtype=float)
-           for k in ("hvtl", "hvtu", "hb", "hvtl_hart", "hvtu_hart", "hb_track", "hb_hart", "mslp_hpa", "class")}
+    col = {k: np.array([fx.get(k, float("nan")) for fx in fixes], dtype=float)
+           for k in ("hvtl", "hvtu", "hb", "hvtl_hart", "hvtu_hart", "hb_track", "hb_hart", "mslp_hpa", "class",
+                     "class_hart")}
     sm = {k: running_mean(hours, v) for k, v in col.items()}
     have_h = hart and np.isfinite(col["hvtl_hart"]).any()
-    ev = {"standard": onset_completion(hours, sm["hb"], sm["hvtl"])}
+    ev = {}
     if have_h:
-        ev["hart"] = onset_completion(hours, sm["hb_track"], sm["hvtl_hart"])
+        ev["hart"] = onset_completion(hours, sm["hb_hart"], sm["hvtl_hart"])
+    ev["standard"] = onset_completion(hours, sm["hb"], sm["hvtl"])
+    # primary (P) and comparison (C) sets
+    if have_h:
+        P = dict(vtl="hvtl_hart", vtu="hvtu_hart", b="hb_hart", cls="class_hart", key="hart")
+        C = dict(vtl="hvtl", vtu="hvtu", b="hb", cls="class", key="standard")
+    else:
+        P = dict(vtl="hvtl", vtu="hvtu", b="hb", cls="class", key="standard")
+        C = None
 
     fig = plt.figure(figsize=(24.0, 10.0), dpi=100)
     gs = fig.add_gridspec(1, 3, width_ratios=[1.0, 1.0, 1.25], left=0.045, right=0.985, top=0.80, bottom=0.25,
                           wspace=0.2)
     axa, axb, axc = (fig.add_subplot(gs[0, k]) for k in range(3))
-    xs = [col["hvtl"], sm["hvtl"]] + ([col["hvtl_hart"], sm["hvtl_hart"]] if have_h else [])
+    xs = [col[P["vtl"]], sm[P["vtl"]]] + ([sm[C["vtl"]]] if C else [])
     xlim = limits((-50.0, 250.0), *xs)
-    ylim_a = limits((-10.0, 30.0), col["hb"], sm["hb"], sm["hb_track"])
-    ylim_b = limits((-100.0, 100.0), col["hvtu"], sm["hvtu"], *([sm["hvtu_hart"]] if have_h else []))
+    ylim_a = limits((-10.0, 30.0), col[P["b"]], sm[P["b"]], *([sm[C["b"]]] if C else [sm["hb_track"]]))
+    ylim_b = limits((-100.0, 100.0), col[P["vtu"]], sm[P["vtu"]], *([sm[C["vtu"]]] if C else []))
 
     # (a) B against -V_T^L
     axa.set_xlim(*xlim)
@@ -634,13 +717,18 @@ def plot_phase(path: Path, name: str, cycle: str, fixes: list[dict], hart: bool)
     axa.axhline(B_THR, color="black", lw=1.0, zorder=2)
     axa.axhline(0.0, color="0.35", lw=0.7, ls=":", zorder=2)
     axa.axvline(0.0, color="black", lw=1.0, zorder=2)
-    draw_trajectory(axa, hours, valid, sm["hvtl"], sm["hb"], col["hvtl"], col["hb"], col["mslp_hpa"],
-                    sm["hvtl_hart"] if have_h else None, sm["hb_track"] if have_h else None)
+    draw_trajectory(axa, hours, valid, sm[P["vtl"]], sm[P["b"]], col[P["vtl"]], col[P["b"]], col["mslp_hpa"],
+                    sm[C["vtl"]] if C else None, sm[C["b"]] if C else None)
     if not have_h:  # track-motion B against the standard lower term
         axa.plot(sm["hvtl"], sm["hb_track"], ":", color="0.15", lw=1.4, zorder=4)
-    axa.set_xlabel(r"$-V_T^L$ (m)   925-700 hPa thermal wind" + (" (dashed: 900-600 hPa)" if have_h else ""),
-                   fontsize=12)
-    axa.set_ylabel("B (m)   storm-relative 925-700 hPa thickness asymmetry, scaled to 900-600", fontsize=12)
+    if have_h:
+        xlab = r"$-V_T^L$ (m)   900-600 hPa thermal wind (Hart; dashed: 925-700 hPa, CAVE)"
+        axa.set_ylabel("B (m)   900-600 hPa thickness asymmetry, track motion (Hart; dashed: CAVE's HB)",
+                       fontsize=12)
+    else:
+        xlab = r"$-V_T^L$ (m)   925-700 hPa thermal wind"
+        axa.set_ylabel("B (m)   storm-relative 925-700 hPa thickness asymmetry, scaled to 900-600", fontsize=12)
+    axa.set_xlabel(xlab, fontsize=12)
     axa.set_title("(a) B against $-V_T^L$", loc="left", fontsize=14)
 
     # (b) -V_T^U against -V_T^L
@@ -649,28 +737,33 @@ def plot_phase(path: Path, name: str, cycle: str, fixes: list[dict], hart: bool)
     ds.draw_vtu_vtl_quadrants(axb, xlim, ylim_b, fontsize=11)
     axb.axhline(0.0, color="black", lw=1.0, zorder=2)
     axb.axvline(0.0, color="black", lw=1.0, zorder=2)
-    draw_trajectory(axb, hours, valid, sm["hvtl"], sm["hvtu"], col["hvtl"], col["hvtu"], col["mslp_hpa"],
-                    sm["hvtl_hart"] if have_h else None, sm["hvtu_hart"] if have_h else None)
-    axb.set_xlabel(r"$-V_T^L$ (m)   925-700 hPa thermal wind" + (" (dashed: 900-600 hPa)" if have_h else ""),
-                   fontsize=12)
-    axb.set_ylabel(r"$-V_T^U$ (m)   500-300 hPa thermal wind" + (" (dashed: 600-300 hPa)" if have_h else ""),
-                   fontsize=12)
+    draw_trajectory(axb, hours, valid, sm[P["vtl"]], sm[P["vtu"]], col[P["vtl"]], col[P["vtu"]], col["mslp_hpa"],
+                    sm[C["vtl"]] if C else None, sm[C["vtu"]] if C else None)
+    axb.set_xlabel(xlab, fontsize=12)
+    axb.set_ylabel(r"$-V_T^U$ (m)   " + ("600-300 hPa thermal wind (Hart; dashed: 500-300 hPa, CAVE)" if have_h
+                                           else "500-300 hPa thermal wind"), fontsize=12)
     axb.set_title(r"(b) $-V_T^U$ against $-V_T^L$", loc="left", fontsize=14)
     for ax in (axa, axb):
         ax.grid(True, color=ds.GRID_COLOR, lw=0.5, zorder=0.2)
         ax.tick_params(labelsize=11)
 
-    # (c) time series, raw 6-hourly values, class strip on top
-    axc.plot(hours, col["hb"], "-", color=PURPLE, lw=1.8, label="B, steering-proxy motion")
-    axc.plot(hours, col["hb_track"], ":", color=PURPLE, lw=1.8, label="B, track motion")
-    axc.plot(hours, col["hvtl"], "-", color=RED, lw=1.8, label=r"$-V_T^L$ 925-700")
-    axc.plot(hours, col["hvtu"], "-", color=BLUE, lw=1.8, label=r"$-V_T^U$ 500-300")
+    # (c) time series, raw 6-hourly values, class strips on top
     if have_h:
-        axc.plot(hours, col["hvtl_hart"], "--", color=RED, lw=1.5, label=r"$-V_T^L$ 900-600 (Hart)")
-        axc.plot(hours, col["hvtu_hart"], "--", color=BLUE, lw=1.5, label=r"$-V_T^U$ 600-300 (Hart)")
+        axc.plot(hours, col["hb_hart"], "-", color=PURPLE, lw=1.8, label="B 900-600, track motion (Hart)")
+        axc.plot(hours, col["hvtl_hart"], "-", color=RED, lw=1.8, label=r"$-V_T^L$ 900-600 (Hart)")
+        axc.plot(hours, col["hvtu_hart"], "-", color=BLUE, lw=1.8, label=r"$-V_T^U$ 600-300 (Hart)")
+        axc.plot(hours, col["hb"], "--", color=PURPLE, lw=1.5, label="B 925-700 scaled, steering flow (CAVE)")
+        axc.plot(hours, col["hvtl"], "--", color=RED, lw=1.5, label=r"$-V_T^L$ 925-700 (CAVE)")
+        axc.plot(hours, col["hvtu"], "--", color=BLUE, lw=1.5, label=r"$-V_T^U$ 500-300 (CAVE)")
+        axc.plot(hours, col["hb_track"], ":", color=PURPLE, lw=1.1, label="B 925-700 scaled, track motion")
+    else:
+        axc.plot(hours, col["hb"], "-", color=PURPLE, lw=1.8, label="B, steering-proxy motion")
+        axc.plot(hours, col["hb_track"], ":", color=PURPLE, lw=1.8, label="B, track motion")
+        axc.plot(hours, col["hvtl"], "-", color=RED, lw=1.8, label=r"$-V_T^L$ 925-700")
+        axc.plot(hours, col["hvtu"], "-", color=BLUE, lw=1.8, label=r"$-V_T^U$ 500-300")
     axc.axhline(0.0, color="black", lw=0.7)
     axc.axhline(B_THR, color=PURPLE, lw=0.6, ls=(0, (2, 3)))
-    vals = np.concatenate([col[k] for k in ("hb", "hb_track", "hvtl", "hvtu", "hvtl_hart", "hvtu_hart")])
+    vals = np.concatenate([col[k] for k in ("hb", "hb_track", "hb_hart", "hvtl", "hvtu", "hvtl_hart", "hvtu_hart")])
     vals = vals[np.isfinite(vals)]
     lo, hi = min(vals.min(), -20.0), max(vals.max(), 40.0)
     axc.set_ylim(lo - 0.05 * (hi - lo), hi + 0.08 * (hi - lo))
@@ -683,7 +776,7 @@ def plot_phase(path: Path, name: str, cycle: str, fixes: list[dict], hart: bool)
     axc.set_xlabel("forecast hour, valid day/hour", fontsize=12)
     axc.set_ylabel("m", fontsize=12)
     axc.grid(True, color=ds.GRID_COLOR, lw=0.5)
-    for key, ls in (("standard", "-"), ("hart", "--")):
+    for key, ls in ((P["key"], "-"), (C["key"] if C else None, "--")):
         if key not in ev:
             continue
         on, comp = ev[key]
@@ -691,16 +784,13 @@ def plot_phase(path: Path, name: str, cycle: str, fixes: list[dict], hart: bool)
             if np.isfinite(h):
                 axc.axvline(h, color=c, ls=ls, lw=1.0, alpha=0.7)
     axc.legend(fontsize=10, loc="best", ncol=2, framealpha=0.9)
-    strip = axc.inset_axes([0.0, 1.01, 1.0, 0.055], sharex=axc)
-    for h, c in zip(hours, col["class"]):
-        if np.isfinite(c):
-            strip.add_patch(Rectangle((h - 3.0, 0.0), 6.0, 1.0, facecolor=CLASS_PALETTE[int(c)], edgecolor="none"))
-    strip.set_ylim(0, 1)
-    strip.set_yticks([])
-    strip.tick_params(axis="x", labelbottom=False, bottom=False)
-    strip.set_ylabel("class", rotation=0, ha="right", va="center", fontsize=11)
-    strip.set_title("(c) parameters at the center, 6-hourly (not smoothed); HCPSclass strip on top",
-                    loc="left", fontsize=14)
+    if have_h:
+        class_strip(axc, hours, col["class"], [0.0, 1.01, 1.0, 0.03], "CAVE")
+        class_strip(axc, hours, col["class_hart"], [0.0, 1.05, 1.0, 0.055], "Hart",
+                    "(c) parameters at the center, 6-hourly (not smoothed); class strips Hart / CAVE")
+    else:
+        class_strip(axc, hours, col["class"], [0.0, 1.01, 1.0, 0.055], "class",
+                    "(c) parameters at the center, 6-hourly (not smoothed); HCPSclass strip on top")
 
     # Title block, FSU style.
     c0 = g.cycle_time(cycle)
@@ -715,7 +805,8 @@ def plot_phase(path: Path, name: str, cycle: str, fixes: list[dict], hart: bool)
              f"{a['mslp_hpa']:.0f} hPa        End (Z): {fsu_time(z['valid'])} ({z['valid']:%a}) (+{z['fhr']}h)  "
              f"{pos(z)}  {z['mslp_hpa']:.0f} hPa", fontsize=14, color="#d23c3c", va="top")
     evs = ["After the 24 h mean:"]
-    for key, lab in (("standard", "standard bands, steering-proxy B"), ("hart", "Hart bands, track-motion B")):
+    for key, lab in (("hart", "Hart bands, track-motion B from the 900-600 hPa thickness"),
+                     ("standard", "standard bands, steering-flow B (CAVE)")):
         if key in ev:
             on, comp = ev[key]
             evs.append(f"{lab}: onset (B > 10) {'+%dh' % on if np.isfinite(on) else 'none'}, "
@@ -727,23 +818,27 @@ def plot_phase(path: Path, name: str, cycle: str, fixes: list[dict], hart: bool)
                     label=f"{s}") for s, c in INTENSITY[::-1]]
     fig.legend(handles=inten, loc="lower left", bbox_to_anchor=(0.045, 0.06), ncol=8, fontsize=11,
                title="MSLP (hPa)", title_fontsize=11, frameon=False, handletextpad=0.2, columnspacing=0.9)
+    if have_h:
+        main = "24 h mean, Hart's bands, track-motion B"
+        comp = Line2D([0], [0], color="0.15", ls="--", lw=1.4, marker="D", markersize=5, markerfacecolor="white",
+                      label="24 h mean, CAVE's bands, steering-flow B")
+    else:
+        main = "24 h mean, 925-700 / 500-300 hPa, steering-proxy B"
+        comp = Line2D([0], [0], color="0.15", ls=":", lw=1.4, label="24 h mean, track-motion B")
     style = [Line2D([0], [0], marker="o", ls="none", markersize=11, markerfacecolor="0.6", markeredgecolor="k",
                     label="analysis (+0h)"),
              Line2D([0], [0], marker="x", ls="none", markersize=9, color="k", markeredgewidth=1.4,
                     label="forecast"),
-             Line2D([0], [0], color="black", lw=2.0, label="24 h mean, 925-700 / 500-300 hPa, steering-proxy B"),
+             Line2D([0], [0], color="black", lw=2.0, label=main),
              Line2D([0], [0], color="0.45", lw=0.8, alpha=0.6, marker="o", markersize=3,
-                    label="raw 6-hourly (same terms)")]
-    if have_h:
-        style.append(Line2D([0], [0], color="0.15", ls="--", lw=1.4, marker="D", markersize=5,
-                            markerfacecolor="white", label="24 h mean, 900-600 / 600-300 hPa (Hart), track-motion B"))
-    else:
-        style.append(Line2D([0], [0], color="0.15", ls=":", lw=1.4, label="24 h mean, track-motion B"))
+                    label="raw 6-hourly (same terms)"), comp]
     fig.legend(handles=style, loc="lower left", bbox_to_anchor=(0.33, 0.05), ncol=2, fontsize=11, frameon=False)
     cls = [Rectangle((0, 0), 1, 1, facecolor=CLASS_PALETTE[k], label=f"{k} {CLASS_SHORT[k]}") for k in range(7)]
     cls.append(Rectangle((0, 0), 1, 1, facecolor="white", edgecolor="0.6", label="no closed low"))
     fig.legend(handles=cls, loc="lower left", bbox_to_anchor=(0.66, 0.03), ncol=4, fontsize=10.5,
-               title="HCPSclass at the center", title_fontsize=11, frameon=False)
+               title="class at the center" + (" (Hart strip: Hart's set; CAVE strip: HCPSclass)" if have_h
+                                              else " (HCPSclass)"),
+               title_fontsize=11, frameon=False)
     fig.text(0.045, 0.012, "NOTE: A 24hr running mean smoother is applied to the CPS trajectory in (a) and (b). "
              "Day of month at 00Z. Gridded products of cps_HartCPS.py on the GFS 0.25 degree grid, thermal "
              "wind over a 500 km circle, semicircle B, sampled bilinearly at the tracked MSLP minimum.",
@@ -801,6 +896,7 @@ def run(cycle: str, hours: list[int], region: str, outdir: Path, source: str, sp
             continue
         track_motion(tr.fixes)
         b_with_track_motion(tr.fixes)
+        add_class_hart(tr.fixes)
         chk = np.array([fx["hb"] - fx["hb_sub_check"] for fx in tr.fixes])
         write_csv(outdir / f"track_{tr.name}.csv", tr.fixes)
         ev = plot_phase(outdir / f"phase_{tr.name}.png", tr.name, cycle, tr.fixes, hart)

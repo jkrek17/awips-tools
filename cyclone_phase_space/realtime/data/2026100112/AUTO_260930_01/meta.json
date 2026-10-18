@@ -28,7 +28,9 @@
   "completion_standard_h": 12,
   "onset_hart_h": 48,
   "completion_hart_h": 48,
-  "class_sequence": "6 0-12, - 18-30, 6 36, - 42, 4 48-66, - 72",
+  "bands": "hart",
+  "class_sequence": "4 0, 5 6-12, - 18-30, 5 36, - 42, 4 48-66, - 72",
+  "class_sequence_standard": "6 0-12, - 18-30, 6 36, - 42, 4 48-66, - 72",
   "fsu_number": null,
   "fsu": null,
   "track_end": "outside a closed low at +78, +84 h (1010 hPa at +84 h)"

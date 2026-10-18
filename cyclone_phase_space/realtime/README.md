@@ -312,27 +312,40 @@ Outputs in `out/<cycle>/`:
 
 - `track_<NAME>.csv`: one row per fix, columns `fhr, valid, lat, lon,
   mslp_hpa, hvtl, hvtu, hb, idx, class, hvtl_hart, hvtu_hart, hb_track,
-  motion_kt, heading_deg, steering_heading_deg`, then `steering_kt` and
-  `hb_hart`; the Hart columns are blank without `--hart-bands`.
+  motion_kt, heading_deg, steering_heading_deg`, then `steering_kt`,
+  `hb_hart` and `class_hart`; the Hart columns are blank without
+  `--hart-bands`. `class_hart` is the joint class (0 to 6, the D2D
+  table's rule: B above 10 m asymmetric, a thermal wind term warm at or
+  above 0, lower cold under upper warm 6 whatever B) of `hb_hart`,
+  `hvtl_hart` and `hvtu_hart`, blank where the gridded `class` is blank
+  (the fix is not inside the product's closed-low mask) or any of the
+  three is blank; `class` is HCPSclass at the center, what CAVE shows.
+  `track_cps.read_fixes` reads a file back (a file written before
+  `class_hart` existed loads with that column blank).
 - `phase_<NAME>.png`, 2400 x 1000 px: (a) B against -V_T^L and (b)
   -V_T^U against -V_T^L on Hart's quadrants
   (`article/figures/diagram_style.py`) with the B = 10 m and zero
-  lines; the 24 h running mean (centered, 5 frames, fewer at the track
-  ends) of the standard terms as the main line with markers every 6 h
+  lines. Hart's set is the primary trace: the 24 h running mean
+  (centered, 5 frames, fewer at the track ends) of `hvtl_hart`,
+  `hb_hart` and `hvtu_hart` as the main line with markers every 6 h
   colored by MSLP in FSU's steps (1015 black, 1010 purple, 1000 blue,
   990 cyan, 980 green, 970 yellow, 960 orange, 950 magenta; a step
   covers the pressures above the next deeper step), the analysis solid
   and the forecasts with an x, day of month at 00Z, A and Z at the
-  ends; the raw 6-hourly series as a faint line; the 24 h mean of the
-  Hart-band terms (with the track-motion B on (a)) dashed with open
-  diamonds. Axes are at least -50 to 250 m by -10 to 30 m (FSU's zoom
-  window) on (a) and -50 to 250 by -100 to 100 m on (b), widened to fit
-  the data. (c) the raw time series of the three parameters (Hart
-  bands dashed, track-motion B dotted) with the class strip along the
-  top and the onset (B above 10 m, purple) and completion (-V_T^L
-  below 0 after onset, red) hours of the smoothed series marked
-  (solid: standard; dashed: Hart bands with track-motion B), which the
-  title block also lists.
+  ends; the raw 6-hourly series of the same terms as a faint line; the
+  24 h mean of the standard set (`hvtl`, `hb` with the steering-flow
+  motion, `hvtu`: CAVE's) dashed with open diamonds as the comparison.
+  Axes are at least -50 to 250 m by -10 to 30 m (FSU's zoom window) on
+  (a) and -50 to 250 by -100 to 100 m on (b), widened to fit the data.
+  (c) the raw time series of the three parameters (Hart's set solid,
+  the standard set dashed, `hb_track` as a thin dotted line) with two
+  class strips along the top, `class_hart` (labelled Hart) above the
+  thinner HCPSclass strip (labelled CAVE), and the onset (B above 10 m,
+  purple) and completion (-V_T^L below 0 after onset, red) hours of the
+  smoothed series marked (solid: Hart's set, from `hb_hart` and
+  `hvtl_hart`; dashed: standard), which the title block also lists,
+  Hart first. Without `--hart-bands` the standard set is the primary
+  trace, with the track-motion B dotted, and there is one class strip.
 
 ### Comparing with the FSU pages
 
@@ -353,10 +366,12 @@ differences:
   up only later in the forecast ("Future cyclone") starts at that hour.
 - FSU uses the 0.5 degree GFS; this uses 0.25 degree. Minima,
   and the terms near a compact warm core, differ somewhat.
-- FSU uses Hart's bands, 900-600 and 600-300 hPa every 50 hPa; the
-  standard trace here uses 925-850-700 and 500-400-300 hPa. The dashed
-  Hart-band trace is the one to compare. Where 900 hPa is below ground
-  (Greenland, Labrador, high terrain) the bands are masked differently.
+- FSU uses Hart's bands, 900-600 and 600-300 hPa every 50 hPa, and so
+  does the primary (solid) trace here since the comparison below showed
+  them to agree far better; the dashed comparison trace uses the
+  standard 925-850-700 and 500-400-300 hPa bands, what CAVE shows.
+  Where 900 hPa is below ground (Greenland, Labrador, high terrain) the
+  bands are masked differently.
 - FSU computes over a 500 km radius circle, and so does the module
   (`WINDOW_SHAPE = "circle"`), laid on the grid as whole cells. Cycles
   processed before 2026-09-27 used the module's former square 500 km
@@ -364,9 +379,14 @@ differences:
   about 50 m more negative than the circle does (30 to 80 m more
   negative than FSU); compare those cycles' cold-core terms with that
   in mind.
-- FSU's B takes the motion from its tracker; the standard B here uses
-  the module's steering proxy. `hb_track` (dotted, and on the dashed
-  trace of (a)) uses the track's own motion, which is closer to FSU.
+- FSU's B takes the motion from its tracker and the 900-600 hPa
+  thickness, and so does `hb_hart`, the B of the primary trace; the
+  standard B of the dashed trace uses the module's steering proxy and
+  the rescaled 925-700 hPa thickness. Over the archive (verified points
+  of `fsu_stats.md`) `hb_hart` is closest to FSU (bias +0.8 m, RMS
+  11.2 m), then `hb_track` (the rescaled thickness with the track
+  motion, +1.8 / 12.0 m, the thin dotted line of panel (c)), then the
+  standard `hb` (+7.7 / 16.0 m).
 - The 24 h running mean is applied to both, but FSU's includes the
   frames before the run, so its first day differs.
 - FSU's tracker needs MSLP under 1018 hPa and a 24 h lifetime; a weak or
@@ -398,11 +418,13 @@ left untimed rather than guessed, so a plot is usually "partial".
 the diagrams carry, pairs it with the digitized hours of the same run,
 and writes to `data/validation/`: `fsu_stats.md` and `fsu_stats.json`
 (bias, RMS and count of ours minus FSU for B, -V_T^L and -V_T^U, for
-the standard bands with the steering-flow B and for Hart's bands with
-the track-motion B, split by FSU's lower core and by our track speed;
-joint class agreement; onset and completion timing; and, from our
-tracks alone, the steering-flow B against the track-motion B by
-speed), `fsu_pairs.csv` (every pair), `fig_fsu_scatter.png` and
+Hart's set first, `hb_hart`, `hvtl_hart`, `hvtu_hart`, the website's
+primary set, and then the standard set, `hb`, `hvtl`, `hvtu`, CAVE's,
+split by FSU's lower core and by our track speed; joint class
+agreement; onset and completion timing; and, from our tracks alone,
+the three B against each other by speed: `hb_hart` minus `hb_track`
+and `hb` minus `hb_track`), `fsu_pairs.csv` (every pair, with
+`hb_track` and `hb_hart` both), `fig_fsu_scatter.png` and
 `fig_fsu_timing.png`. A storm-cycle counts as matched when both FSU
 plots are saved beside its track; `hand_digitized.csv` holds 48 points
 read by hand on five plots as the check on the digitizer (0.2 m in B,
@@ -534,11 +556,41 @@ with a 256-color palette to keep the repository small, about 0.8 MB
 per storm and day with FSU's images), `meta.json` and, for a storm
 matched to FSU, `fsu_phase1.png`, `fsu_phase2.png`, `fsu_track.png` and
 `compare.png`; `data/<cycle>/summary.md` tabulates the run (FSU number,
-start position and MSLP, class sequence, onset and completion by both
-band sets) and `data/log.csv` gets one row per cycle and storm
-(`cycle, storm, fsu_number, status`). `data/README.md` describes the
-layout. The full-size outputs and the GRIB cache stay in `out/`, which
-git ignores.
+start position and MSLP, the Hart and the standard class sequence,
+onset and completion by both band sets, Hart first) and `data/log.csv`
+gets one row per cycle and storm (`cycle, storm, fsu_number, status`).
+`data/README.md` describes the layout. The full-size outputs and the
+GRIB cache stay in `out/`, which git ignores.
+
+**Which set is primary.** Hart's own definitions are the collection's
+primary trace everywhere: `hvtl_hart` and `hvtu_hart` over 900-600 and
+600-300 hPa, B = `hb_hart` (the 900-600 hPa thickness with the track
+motion) and `class_hart` from those three. The standard set (`hvtl`,
+`hvtu` over 925-700 and 500-300 hPa, `hb` with the steering-flow
+motion, `class` = HCPSclass) is kept as the comparison trace, since it
+is what AWIPS CAVE shows. The choice follows the comparison with the
+FSU diagrams ("Comparing with the FSU pages"): Hart's bands agree far
+better, and `hb_hart` best of all. In `meta.json`, `"bands": "hart"`
+marks a file written under this rule; `class_sequence` is the Hart
+class sequence (`class_hart` runs over the track's hours),
+`class_sequence_standard` the HCPSclass one, and `onset_hart_h` and
+`completion_hart_h` are from the smoothed `hb_hart` and `hvtl_hart`
+(`onset_standard_h`, `completion_standard_h` from `hb` and `hvtl`, as
+before). The seeds, the tracker and the FSU matching do not depend on
+the choice.
+
+**Backfilling the Hart class.** `backfill_hart_class.py` brings an
+archive written before `class_hart` existed up to this rule, offline
+and without any GRIB download: it adds the `class_hart` column to every
+`track.csv` (from the `hb_hart`, `hvtl_hart`, `hvtu_hart` and `class`
+columns already there, every other column unchanged), rewrites each
+`meta.json`'s `class_sequence`, `class_sequence_standard`, `bands` and
+Hart onset and completion hours (keeping every other key, including
+`code_version`), draws `phase.png` again from the fixes read back from
+`track.csv`, rebuilds `compare.png` where the FSU diagrams were saved,
+and rewrites every cycle's `summary.md` and `data/log.csv`.
+`--cycle C [C ...]` limits it to some cycles and `--no-plots` skips the
+figures. It was run over the whole archive on 2026-10-18.
 
 **Seeds.** Each `watch.json` entry has `name`, a seed `lat`, `lon`
 (west negative), the `cycle` the seed is valid for, optional `fhr0`
