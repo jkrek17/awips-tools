@@ -211,9 +211,13 @@ Not a candidate:
   one 6 h step at the base rate, 1080 km after a coasted frame; no cap):
   with the guess extrapolated, a search radius alone would let each
   jump lengthen the next;
-- one more than 12 hPa above the previous fix (`MAX_RISE_HPA`): a
-  filling low does not rise 12 hPa in 6 h, a handover to a different,
-  weaker low does;
+- one more than the allowed rise above the previous fix
+  (`track_cps.max_rise`): 12 hPa per 6 h (`MAX_RISE_HPA`), plus a
+  quarter of the fix's depth below 980 hPa, scaled by the hours
+  bridged. A filling low does not rise 12 hPa in 6 h, a handover to a
+  different, weaker low does; a filling hurricane's eye can (GFS filled
+  the 24 Sep 2026 eastern Pacific eye by 14 to 15 hPa in 6 h), which is
+  what the depth allowance admits;
 - one poleward of 85 degrees (`POLE_LAT`): the pole row of the grid is
   one value repeated, so it passes the box test and a track that
   reaches it spins in longitude;
