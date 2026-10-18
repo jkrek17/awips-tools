@@ -61,6 +61,8 @@ const termHTML = (f) => `${TERM[f].name} (${TERM[f].sym})`;
 // The field list in the layers panel: [key, name, hotkey].
 const FIELD_LIST = [['class', 'Class at the low center', '1'], ['hb', `${termHTML('hb')}`, '2'],
   ['hvtl', `${termHTML('hvtl')}`, '3'], ['hvtu', `${termHTML('hvtu')}`, '4']];
+// The B field is the gridded product's, with the steering flow (storms.js, bOf).
+const B_FIELD_NOTE = 'Steering-flow B, as in CAVE';
 const TITLES = {
   class: 'Hart class at the low center',
   hb: `${termHTML('hb')}, ${TERM.hb.band}`,
@@ -412,6 +414,15 @@ function buildMap(start) {
       paint: { 'line-color': ['get', 'hex'], 'line-width': ['get', 'w'] } });
     map.addLayer({ id: 'trackpts', type: 'circle', source: 'trackpts',
       paint: { 'circle-radius': 2.4, 'circle-color': ['get', 'hex'], 'circle-stroke-color': '#0b1220', 'circle-stroke-width': 0.8 } });
+    // Where a tracked low's class from its own motion (the dot) differs from
+    // the CAVE field's steering-flow class: a thin ring in the field's color
+    // just outside the dot, a dark band between the two.
+    map.addLayer({ id: 'lows-alt', type: 'circle', source: 'lows', filter: ['has', 'alt'], paint: {
+      'circle-radius': ['interpolate', ['linear'], ['zoom'], 0, ['case', ['get', 'deep'], 6.8, 5.2], LABEL_ZOOM, ['case', ['get', 'deep'], 8.8, 7]],
+      'circle-color': 'rgba(11,18,32,0.85)',
+      'circle-stroke-color': ['get', 'alt'],
+      'circle-stroke-width': 1.4,
+    } });
     map.addLayer({ id: 'lows', type: 'circle', source: 'lows', paint: {
       'circle-radius': ['interpolate', ['linear'], ['zoom'], 0, ['case', ['get', 'deep'], 4.8, 3.2], LABEL_ZOOM, ['case', ['get', 'deep'], 6.5, 4.8]],
       'circle-color': ['case', ['get', 'terrain'], 'rgba(0,0,0,0)', ['get', 'hex']],
@@ -419,7 +430,7 @@ function buildMap(start) {
       'circle-stroke-width': ['case', ['get', 'terrain'], 1.2, 1],
     } });
     map.addLayer({ id: 'sel', type: 'circle', source: 'sel',
-      paint: { 'circle-radius': 11, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': '#e7eef8', 'circle-stroke-width': 1.6 } });
+      paint: { 'circle-radius': 12, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': '#e7eef8', 'circle-stroke-width': 1.6 } });
     S.mapReady = true;
     ready();
   });
@@ -587,9 +598,12 @@ function drawLows() {
   const halos = [];
   S.centers.forEach((c, k) => {
     if (!shown(c)) return;
-    const hex = cls(c.cls).hex;
+    // a tracked low by its class from its own motion, else the field's
+    const hex = cls(clsOf(c)).hex;
     const deep = isDeep(c);
-    lows.push({ type: 'Feature', properties: { k, hex, deep, terrain: c.terrain }, geometry: { type: 'Point', coordinates: [c.lon, c.lat] } });
+    const props = { k, hex, deep, terrain: c.terrain };
+    if (!c.terrain && classDiffers(c)) props.alt = cls(c.cls).hex;
+    lows.push({ type: 'Feature', properties: props, geometry: { type: 'Point', coordinates: [c.lon, c.lat] } });
     if (S.layers.circles && !c.terrain) {
       halos.push({ type: 'Feature', properties: { hex, deep }, geometry: { type: 'Polygon', coordinates: [circle(c.lat, c.lon, +c.radius_km || HALO_KM)] } });
     }
@@ -1066,6 +1080,8 @@ async function boot() {
   setField(want.field || S.field, false);
   paintRamps();
   initStorms();
+  $('foot-b').hidden = !ST.trackB;
+  renderLegend();  // its keys depend on the tracks' B
   syncTime();
   const start = want.view ? { center: [want.view[1], want.view[0]], zoom: want.view[2] } : { center: VIEWS.global.center, zoom: K.globalZoom() };
   setView(want.view ? null : 'global');

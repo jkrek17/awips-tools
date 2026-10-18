@@ -17,7 +17,8 @@
    every 6 h, the start and end marked, a label every 24 h and a ring at
    the hour on screen (S.i). Points with a missing value are skipped, and
    values beyond the box are drawn on its wall as hollow dots, as the 2-D
-   diagrams do.
+   diagrams do. B and the class are Hart's, from the storm's own motion,
+   where the track has them (storms.js, bOf and clsOf), else the field's.
 
    Drag rotates, a pinch zooms, a double click or double tap resets; once
    the view has focus the wheel zooms and the arrow keys rotate (app.js
@@ -160,6 +161,7 @@ const Space3D = (() => {
       <canvas class="s3d-canvas" tabindex="0" role="img"></canvas>
       <ul class="s3d-key"></ul>
       <p class="s3d-note" id="${hintId}">Cells cut by B = 10&nbsp;m, ${TERM.hvtl.sym} = 0 and ${TERM.hvtu.sym} = 0; class 6 spans both sides of B = 10&nbsp;m. Values in m.
+        ${s.at.some(trackB) ? 'B from the storm\'s own motion; the CAVE field\'s B uses the steering flow.' : ''}
         Drag to rotate, double click to reset; once it has focus, the wheel zooms and the arrow keys rotate. Click a dot for its hour.</p>`;
     host.append(wrap);
     const canvas = wrap.querySelector('canvas');
@@ -421,10 +423,11 @@ const Space3D = (() => {
     function trackPoints(N) {
       const L = lim();
       return s.at.map((e, k) => {
-        if (!e || blank(e.hvtl) || blank(e.hvtu) || blank(e.hb)) return null;
-        const x = clampv(+e.hvtl, ...L.x), y = clampv(+e.hb, ...L.y), z = clampv(+e.hvtu, ...L.z);
+        const b = e ? bOf(e) : null;
+        if (!e || blank(e.hvtl) || blank(e.hvtu) || blank(b)) return null;
+        const x = clampv(+e.hvtl, ...L.x), y = clampv(+b, ...L.y), z = clampv(+e.hvtu, ...L.z);
         const p = N(x, y, z);
-        return { k, ...p, hex: cls(e.cls).hex, clipped: x !== +e.hvtl || y !== +e.hb || z !== +e.hvtu };
+        return { k, ...p, hex: cls(clsOf(e)).hex, clipped: x !== +e.hvtl || y !== +b || z !== +e.hvtu };
       });
     }
 
@@ -553,11 +556,12 @@ const Space3D = (() => {
       const k = hover >= 0 ? hover : S.i;
       const e = s.at[k];
       const h = `F${pad(S.index.hours[k], 3)}`;
-      const term = (f, d) => `<span class="s3d-t">${TERM[f].sym} <b>${fmt(e[f], d, '', true)}</b></span>`;
+      const term = (f, d, v = e[f]) => `<span class="s3d-t">${TERM[f].sym} <b>${fmt(v, d, '', true)}</b></span>`;
+      const c = e ? clsOf(e) : null;
       const html = e
         ? `<span class="s3d-h">${h}${hover >= 0 && hover !== S.i ? ' <span class="s3d-at">under the pointer</span>' : ''}</span>` +
-          `<span class="s3d-c"><i style="--c:${cls(e.cls).hex}"></i>${esc(e.cls == null ? 'no class' : SHORT[e.cls] ?? cls(e.cls).name)}</span>` +
-          `<span class="s3d-v">${term('hvtl', 0)}${term('hvtu', 0)}${term('hb', 1)}<span class="s3d-u">m</span></span>`
+          `<span class="s3d-c">${clsDot(e)}${esc(c == null ? 'no class' : SHORT[c] ?? cls(c).name)}</span>` +
+          `<span class="s3d-v">${term('hvtl', 0)}${term('hvtu', 0)}${term('hb', 1, bOf(e))}<span class="s3d-u">m${trackB(e) ? ', B from the motion' : ''}</span></span>`
         : `<span class="s3d-h">${h}</span><span class="s3d-c muted">not tracked at this hour</span>`;
       if (read.innerHTML !== html) read.innerHTML = html;
     }

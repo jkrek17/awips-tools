@@ -115,6 +115,7 @@ function renderLegend() {
     const pct = (v) => (((v - lo) / (hi - lo)) * 100).toFixed(2);
     const onset = f === 'hb' ? `<b class="onset" style="left:${pct(FIG1.onset)}%" title="Hart's onset, 10 m"></b>` : '';
     h = `<div class="legend-head"><span>${TITLES[f]}</span><span class="unit">${esc(units)}</span></div>` +
+      (f === 'hb' ? `<p class="legend-sub">${B_FIELD_NOTE}</p>` : '') +
       `<div class="legend-bar ramp"><span style="background:${gradient(f)}"></span>${onset}</div>` +
       `<div class="legend-labels">${RAMP_LABELS[f].map((v) => `<span style="left:${pct(v)}%">${fmt(v)}</span>`).join('')}</div>` +
       `<p class="legend-ends"><span>${MINUS} ${ENDS[f][0]}</span><span>${ENDS[f][1]} +</span></p>`;
@@ -124,7 +125,12 @@ function renderLegend() {
   const fade = f !== 'class' && fadeOn() ? ` Faded to ${Math.round((dim > 0 ? dim : 0.35) * 100)}% beyond about 300 km from the lows.` : '';
   h += `<p class="legend-note">${esc(help)}${fade}</p>`;
   const keys = [];
-  keys.push('<span><i class="k-dot"></i>Low center, by class</span>');
+  if (ST.trackB) {
+    keys.push('<span class="full"><i class="k-dot"></i>Low center, by class; a tracked low\'s B is from its own motion, the field\'s from the steering flow</span>',
+      '<span class="full"><i class="k-ring"></i>The field\'s class where it differs, so a dot may not match the field under it</span>');
+  } else {
+    keys.push('<span><i class="k-dot"></i>Low center, by class</span>');
+  }
   if (S.layers.contours) keys.push(`<span><i style="height:6px;vertical-align:1px;border:0;border-radius:2px;background:linear-gradient(#cfdbe8 2px,#0b1220 2px,#0b1220 4px,#cfdbe8 4px)"></i>MSLP, ${WIDE_CINT} hPa, bold 16</span>`);
   if (S.layers.z500 && hasUpper('z500')) keys.push('<span><i style="border-top:2px solid #6b8cff"></i>500 mb height, 6 dam</span>');
   if (S.layers.thick && hasUpper('thick')) keys.push(`<span><i style="border-top:2px dashed #ef4444"></i>Thickness, red above ${THICK_LINE}, blue below</span>`);
@@ -143,15 +149,44 @@ function renderLegend() {
 
 /* ---------- tooltip ---------- */
 
+// The class dot, with the differing-class ring and its title where the
+// class from the storm's motion and the CAVE field's class disagree.
+function clsDot(e) {
+  const hex = cls(clsOf(e)).hex;
+  return classDiffers(e)
+    ? `<i class="alt" style="--c:${hex};--c2:${cls(e.cls).hex}" title="${esc(diffTitle(e))}"></i>`
+    : `<i style="--c:${hex}"></i>`;
+}
+
+// Motion as "14 kt toward NE (045°)", from spd and hdg.
+function motionText(e) {
+  if (blank(e?.spd)) return '';
+  const v = +e.spd;
+  if (v < 1) return 'nearly stationary';
+  return `${fmt(v, 0, 'kt')}${blank(e.hdg) ? '' : ` toward ${compass(e.hdg)} (${pad(Math.round(+e.hdg) % 360, 3)}°)`}`;
+}
+
 function lowTip(c) {
-  const k = cls(c.cls);
+  const k = cls(clsOf(c));
   const s = stormOf(c, S.i);
   const row = (f, d, sep = '') => `<tr${sep}><td>${TERM[f].name} (${TERM[f].sym})</td><td>${fmt(c[f], d, 'm', true)}</td></tr>`;
+  const tb = trackB(c);
+  // B: from the storm's motion where there is one, the field's beside it
+  let b = row('hb', 1);
+  if (tb) {
+    b = `<tr><td>B, storm motion</td><td>${fmt(c.hbt, 1, 'm', true)}</td></tr>` +
+      `<tr class="dim"><td>B, steering flow (CAVE field)</td><td>${fmt(c.hb, 1, 'm', true)}</td></tr>`;
+  } else if (ST.trackB) {
+    b = `<tr><td>B, steering flow (CAVE field)</td><td>${fmt(c.hb, 1, 'm', true)}</td></tr>`;
+  }
+  const alt = classDiffers(c)
+    ? `<p class="tip-alt">CAVE field: ${esc(SHORT[c.cls] ?? cls(c.cls).name)} (${c.cls})</p>` : '';
+  const move = blank(c.spd) ? '' : `<tr><td>Motion</td><td>${esc(motionText(c))}</td></tr>`;
   return `<div class="h">${s ? esc(s.label) : 'Untracked low'}${s?.fsu != null ? `, FSU ${esc(s.fsu)}` : ''}</div>
-    <p class="tip-cls"><i style="--c:${k.hex}"></i>${esc(k.name)}</p>
+    <p class="tip-cls">${clsDot(c)}${esc(k.name)}</p>${alt}
     <table><tr><td>Central pressure</td><td>${hpa(c.mslp)}</td></tr>
-    <tr><td>Center</td><td>${pos(c.lat, c.lon)}</td></tr>
-    ${row('hvtl', 0, ' class="sep"')}${row('hvtu', 0)}${row('hb', 1)}</table>` +
+    <tr><td>Center</td><td>${pos(c.lat, c.lon)}</td></tr>${move}
+    ${row('hvtl', 0, ' class="sep"')}${row('hvtu', 0)}${b}</table>` +
     (c.terrain ? `<div class="note-line">Terrain minimum${blank(c.psfc) ? '' : `, surface ${fmt(c.psfc, 0, 'hPa')}`}: a false low over high ground</div>` : '') +
     (s ? '<div class="tip-hint">Click for its track in the phase space</div>' : '');
 }
@@ -210,6 +245,39 @@ function phaseFrame() {
   PH.view?.frame();
 }
 
+// The low's values at this hour for the card: the map center's, with the
+// track point's motion where it is the same low (the centers carry no
+// heading).
+function cardVals(c, s) {
+  const e = s?.track ? s.at[S.i] : null;
+  if (!e || (e.id != null && c.id != null && e.id !== c.id)) return c;
+  return { ...c, hbt: c.hbt ?? e.hbt, clst: c.clst ?? e.clst, spd: c.spd ?? e.spd, hdg: c.hdg ?? e.hdg };
+}
+
+// B on the card: Hart's, from the storm's own motion, as the main line, and
+// the CAVE field's steering-flow B under it, smaller, with its class where
+// that differs; then the motion. Older exports carry only the field's B,
+// which the 3-D readout shows, so they get no lines here.
+function bLines(v, s) {
+  if (!ST.trackB) return '';
+  const short = (k) => `${esc(SHORT[k] ?? cls(k).name)} (${k})`;
+  const rows = [];
+  if (trackB(v)) {
+    rows.push(`<dt>B, storm motion</dt><dd><b>${fmt(v.hbt, 1, 'm', true)}</b>${clsOf(v) == null ? '' : `, ${short(clsOf(v))}`}</dd>`);
+    const diff = classDiffers(v);
+    if (diff || fmt(v.hb, 1) !== fmt(v.hbt, 1)) {
+      rows.push(`<dt class="alt">B, steering flow (CAVE field)</dt><dd class="alt"><b>${fmt(v.hb, 1, 'm', true)}</b>` +
+        (diff ? `, <span class="alt-cls" title="${esc(diffTitle(v))}"><i style="--c2:${cls(v.cls).hex}"></i>${short(v.cls)}</span>` : ', same class') + '</dd>');
+    }
+  } else {
+    rows.push(`<dt>B, steering flow (CAVE field)</dt><dd><b>${fmt(v.hb, 1, 'm', true)}</b>` +
+      `${v.cls == null ? '' : `, ${short(v.cls)}`}${s?.track ? '<span class="ph-b-note">no B from the motion at this hour</span>' : ''}</dd>`);
+  }
+  const m = motionText(v);
+  if (m) rows.push(`<dt>Motion</dt><dd>${esc(m)}</dd>`);
+  return `<dl class="ph-b">${rows.join('')}</dl>`;
+}
+
 function renderCard(c, s, absent = false) {
   const body = $('ph-body');
   document.body.classList.toggle('has-sel', !!(c || s));
@@ -233,7 +301,8 @@ function renderCard(c, s, absent = false) {
   }
   const v = validAt(S.i);
   const when = `F${pad(S.index.hours[S.i], 3)}${v ? `, ${fmtDay(v)} ${pad(v.getUTCHours())} UTC` : ''}`;
-  const k = c ? cls(c.cls) : null;
+  const cv = c ? cardVals(c, s) : null;
+  const k = cv ? cls(clsOf(cv)) : null;
   const on = s && S.follow === s.key;
   const title = s
     ? `<div class="ph-title"><b></b>${s.fsu != null ? `<span class="tag">FSU ${esc(s.fsu)}</span>` : ''}
@@ -241,13 +310,14 @@ function renderCard(c, s, absent = false) {
        <p class="ph-sub">${esc(s.sub)}${s.generic || s.fsu != null ? '' : ', not on the FSU page'}</p>`
     : '<div class="ph-title"><b>Untracked low</b></div>';
   const now = c
-    ? `<p class="ph-now"><span class="cls-chip"><i style="--c:${k.hex}"></i>${esc(k.name)}</span>
+    ? `<p class="ph-now"><span class="cls-chip">${clsDot(cv)}${esc(k.name)}</span>
         <span class="ph-mslp">${fmt(c.mslp, 1)}<small> hPa</small></span><span class="ph-where">${pos(c.lat, c.lon)} · ${when}</span></p>` +
+      (s ? bLines(cv, s) : '') +
       (c.terrain ? `<p class="ph-warn">Terrain minimum: surface pressure ${blank(c.psfc) ? 'under 850 hPa' : fmt(c.psfc, 0, 'hPa')}; a false low over high ground.</p>` : '')
     : `<p class="ph-now muted">${absent ? `Not tracked at ${when}.` : `No closed low near the last position at ${when}.`}</p>`;
   const lone = !s && c
     ? `<p class="ph-vals">${TERM.hvtl.sym} <b>${fmt(c.hvtl, 0, '', true)}</b> ${TERM.hvtu.sym} <b>${fmt(c.hvtu, 0, '', true)}</b> B <b>${fmt(c.hb, 1, '', true)}</b> m</p>
-       <p class="ph-hint">This low is not on a track in this run, so it has no path through the phase space.</p>`
+       <p class="ph-hint">This low is not on a track in this run, so it has no path through the phase space${ST.trackB ? ', and its B is the field\'s, with the steering flow, as in CAVE' : ''}.</p>`
     : '';
   head.innerHTML = title + now + lone;
   if (s) head.querySelector('.ph-title b').textContent = s.label;

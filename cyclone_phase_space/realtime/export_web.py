@@ -50,6 +50,8 @@ sys.path.insert(0, str(HERE))
 import gfs_cps as g  # noqa: E402
 import track_cps as tc  # noqa: E402
 
+hc = g.hc  # the operational module, through gfs_cps's import
+
 import contourpy  # noqa: E402  (comes with matplotlib)
 from PIL import Image  # noqa: E402
 from shapely.geometry import LineString, MultiPolygon, Polygon, box, mapping  # noqa: E402
@@ -67,6 +69,17 @@ TRACK_REACH_KM = 600.0  # a center may move this far between 6 h frames (track_c
 TRACK_GAP_FRAMES = 1  # one missing frame is bridged, with the reach scaled by the elapsed time
 TRACK_MIN_FRAMES = 5  # a track is kept when the low stays closed for 24 h (five 6 h frames)
 TRACK_MATCH_KM = 300.0  # a collected storm and a track are the same low when their same-hour centers are this close
+# Hart's B with the storm's own motion. Each frame stores, at every center,
+# the four half-disk means of the 925-700 hPa thickness (scaled to 900-600
+# hPa as the D2D field is) over the 500 km circle; once the frames are
+# linked into tracks the motion between fixes gives the right-minus-left
+# difference as the wavenumber-one interpolation the module uses,
+#   ZR - ZL = mx (S - N) + my (E - W),
+# so the map's tracked lows carry Hart's B as defined (track motion), beside
+# the steering-flow B the gridded CAVE field has to use.
+LAYER_SCALE = 1.4548  # 925-700 hPa thickness rescaled to 900-600 hPa, as in the D2D XML and track_cps
+B_RADIUS_KM = 500.0
+B_THRESHOLD_M = 10.0
 
 # Rasters: Web Mercator (EPSG:3857) image covering lon -180..180, lat -85..85.
 LAT_MAX = 85.0
@@ -433,10 +446,24 @@ def blob_geometry(members: np.ndarray, lat: np.ndarray, lon: np.ndarray):
     return unary_union(polys) if polys else None
 
 
-def lows_features(f: dict, p: dict) -> list[dict]:
+def thickness_quadrants(f: dict):
+    """(north, south, east, west) half-disk means over B_RADIUS_KM of the
+    925-700 hPa thickness scaled by LAYER_SCALE, each level masked below
+    ground as the module does for HB, on the whole grid."""
+    dx, dy, _ = g.grid_metrics(f["lat"], f["lon"].size)
+    ps = hc.surface_pressure_hpa(f["psfc"])
+    thk = (hc.mask_below_ground(f["z700"], ps, 700.0, hc.BELOW_GROUND_CAP_HPA)
+           - hc.mask_below_ground(f["z925"], ps, 925.0, hc.BELOW_GROUND_CAP_HPA)) * LAYER_SCALE
+    return hc.half_disk_means(np.where(np.isfinite(thk), thk, np.nan), dx, dy, B_RADIUS_KM)
+
+
+def lows_features(f: dict, p: dict, bq=None) -> list[dict]:
     """One center Point per connected blob of HCPSclass (the MSLP minimum
     inside it and every product there) and the blob's outline as Polygon or
-    MultiPolygon features (two, same id, for a blob across the dateline)."""
+    MultiPolygon features (two, same id, for a blob across the dateline).
+    `bq`, when given, is the (north, south, east, west) half-disk means of
+    the scaled thickness (`thickness_quadrants`); each center then carries
+    them as "bq", for the track-motion B of build_storms."""
     lat, lon = f["lat"], f["lon"]
     pm = f["pmsl"] / 100.0
     ps = f["psfc"] / 100.0
@@ -471,7 +498,8 @@ def lows_features(f: dict, p: dict) -> list[dict]:
                                       "hb": r1(p["hb"][i, j]), "idx": r1(p["idx"][i, j]), "cls": c,
                                       "psfc": psfc, "terrain": psfc is not None and mslp - psfc > TERRAIN_DEFICIT_HPA,
                                       "radius_km": BLOB_RADIUS_KM,
-                                      "name": tc.CLASS_SHORT[c] if 0 <= c < len(tc.CLASS_SHORT) else str(c)},
+                                      "name": tc.CLASS_SHORT[c] if 0 <= c < len(tc.CLASS_SHORT) else str(c),
+                                      **({"bq": [r1(q[i, j]) for q in bq]} if bq is not None else {})},
                        "geometry": {"type": "Point", "coordinates": [lo, la]}})
     return feats + points
 
@@ -567,10 +595,11 @@ def export_frame(cycle: str, fhr: int, out: Path, cache: Path) -> dict:
     f = g.decode(grib, REGION, False)
     t1 = time.time()
     p = g.compute_products(f)
+    bq = thickness_quadrants(f)
     t2 = time.time()
     fdir = out / "frames" / f"f{fhr:03d}"
     fdir.mkdir(parents=True, exist_ok=True)
-    lows = lows_features(f, p)
+    lows = lows_features(f, p, bq)
     sizes = {"lows": write_json(fdir / "lows.geojson", {"type": "FeatureCollection", "features": lows})}
     sizes["mslp"], tol = write_lines(fdir / "mslp.geojson", lambda t: mslp_features(f, t), MSLP_TOL_DEG, MSLP_MAX_BYTES)
     lat, lon = f["lat"], f["lon"]
@@ -680,7 +709,59 @@ def link_tracks(frames: list[dict], reach_km: float = TRACK_REACH_KM, gap: int =
 
 def _track_point(fhr: int, valid: str, c: dict) -> dict:
     return {"fhr": fhr, "valid": valid, "id": c["id"], "lat": c["lat"], "lon": c["lon"], "mslp": c["mslp"],
-            "cls": c["cls"], "hvtl": c["hvtl"], "hvtu": c["hvtu"], "hb": c["hb"], "idx": c.get("idx")}
+            "cls": c["cls"], "hvtl": c["hvtl"], "hvtu": c["hvtu"], "hb": c["hb"], "idx": c.get("idx"),
+            **({"bq": c["bq"]} if c.get("bq") is not None else {})}
+
+
+def hart_class_point(b, vtl, vtu, threshold: float = B_THRESHOLD_M):
+    """The D2D class of one (B, -VTL, -VTU) triple: B over the threshold is
+    asymmetric; a term at or above zero is warm; a cold lower layer under a
+    warm upper one is class 6 whatever B. None when any term is missing."""
+    if b is None or vtl is None or vtu is None:
+        return None
+    if not all(math.isfinite(float(v)) for v in (b, vtl, vtu)):
+        return None
+    asym = float(b) > threshold
+    lw, uw = float(vtl) >= 0.0, float(vtu) >= 0.0
+    if lw and uw:
+        return 2 if asym else 0
+    if lw:
+        return 3 if asym else 1
+    if uw:
+        return 6
+    return 4 if asym else 5
+
+
+def track_motion_b(pts: list[dict]) -> None:
+    """Hart's B from the track's own motion, in place: for every point the
+    motion by centered differences over the neighbouring fixes (one-sided at
+    the ends), as track_cps.track_motion, and from the stored half-disk
+    means B = h [mx (S - N) + my (E - W)] with h the hemisphere sign, as
+    parameter_b_grid with a uniform motion field; the class from that B
+    with the point's own thermal winds. Sets spd (kt), hdg (deg, toward),
+    hbt (m) and clst; a point without stored means, or a track of one
+    point, gets None."""
+    n = len(pts)
+    for k, p in enumerate(pts):
+        a, b = pts[max(k - 1, 0)], pts[min(k + 1, n - 1)]
+        hours = b["fhr"] - a["fhr"]
+        p["spd"] = p["hdg"] = p["hbt"] = p["clst"] = None
+        if n < 2 or hours <= 0:
+            continue
+        mlat = math.radians(0.5 * (a["lat"] + b["lat"]))
+        east = float(tc.wrap180(b["lon"] - a["lon"])) * g.KM_PER_DEG * math.cos(mlat)
+        north = (b["lat"] - a["lat"]) * g.KM_PER_DEG
+        dist = math.hypot(east, north)
+        p["spd"] = round(dist / hours / 1.852, 1)
+        p["hdg"] = round(math.degrees(math.atan2(east, north)) % 360.0, 0)
+        bq = p.get("bq")
+        if dist <= 0.0 or not bq or any(v is None for v in bq):
+            continue
+        mx, my = east / dist, north / dist
+        qn, qs, qe, qw = (float(v) for v in bq)
+        h = -1.0 if p["lat"] < 0 else 1.0
+        p["hbt"] = round(h * (mx * (qs - qn) + my * (qe - qw)), 1)
+        p["clst"] = hart_class_point(p["hbt"], p["hvtl"], p["hvtu"])
 
 
 def match_collection(points: list[dict], storms: list[dict], km: float = TRACK_MATCH_KM) -> dict | None:
@@ -727,17 +808,25 @@ def build_storms(out: Path, hours: list[int], valids: list[str], collection: lis
         else:
             n_unnamed += 1
             name, fsu, phase, comp = f"L{n_unnamed:02d}", None, None, None
+        track_motion_b(pts)
         storms.append({"id": tid, "name": name, "source": "track", "fsu": fsu,
                        "min_mslp": min(p["mslp"] for p in pts), "points": pts,
-                       "cls_seq": [p["cls"] for p in pts], "phase_png": phase, "compare_png": comp})
+                       "cls_seq": [p["cls"] for p in pts], "clst_seq": [p["clst"] for p in pts],
+                       "phase_png": phase, "compare_png": comp})
         for p in pts:
+            p.pop("bq", None)
             for ft in feats[p["fhr"]][1]["features"]:
                 if ft["properties"]["kind"] == "center" and ft["properties"]["id"] == p["id"]:
                     ft["properties"]["track"] = tid
+                    ft["properties"]["hbt"] = p["hbt"]
+                    ft["properties"]["clst"] = p["clst"]
+                    ft["properties"]["spd"] = p["spd"]
     for k, s in enumerate((s for s in collection if s["name"] not in taken), start=1):
         storms.append({"id": f"C{k:02d}", "source": "collection", "min_mslp": min(p["mslp"] for p in s["points"]),
                        **s})
     for path, fc in feats.values():
+        for ft in fc["features"]:
+            ft["properties"].pop("bq", None)  # the means served their purpose
         write_json(path, fc)
     return storms
 
@@ -825,6 +914,7 @@ def main(argv=None) -> int:
         "storms": storms,
     }
     index["tracks"] = sum(1 for s_ in storms if s_["source"] == "track")
+    index["track_b"] = "track motion (hbt, clst); hb and cls are the gridded field's steering-flow values"
     write_json(out / "index.json", index)
     update_history(out / "history.json", cycle, generated, "index.json")
     if a.out is None:
