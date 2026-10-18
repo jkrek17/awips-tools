@@ -161,7 +161,7 @@ const Space3D = (() => {
       <canvas class="s3d-canvas" tabindex="0" role="img"></canvas>
       <ul class="s3d-key"></ul>
       <p class="s3d-note" id="${hintId}">Cells cut by B = 10&nbsp;m, ${TERM.hvtl.sym} = 0 and ${TERM.hvtu.sym} = 0; class 6 spans both sides of B = 10&nbsp;m. Values in m.
-        ${s.at.some(trackB) ? 'B from the storm\'s own motion; the CAVE field\'s B uses the steering flow.' : ''}
+        ${s.at.some(trackB) ? 'B from the storm\'s own motion; the field\'s B uses the steering flow.' : ''}
         Drag to rotate, double click to reset; once it has focus, the wheel zooms and the arrow keys rotate. Click a dot for its hour.</p>`;
     host.append(wrap);
     const canvas = wrap.querySelector('canvas');

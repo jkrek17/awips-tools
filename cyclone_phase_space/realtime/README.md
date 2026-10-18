@@ -677,6 +677,23 @@ cached under `out/cache/<cycle>/fsu/`). Limits:
 load directly: the live global map in `cyclone_phase_space/article/live/`
 reads them from the `cps-live` branch.
 
+**Hart's layers.** The web's products use Hart's own definitions
+(`hart_products`): the thermal wind over 900-600 and 600-300 hPa at
+50 hPa spacing (`executeBand7` on the GFS's extra levels, fetched with
+`hart=True`), B from the 900-600 hPa thickness across the steering flow
+with no layer rescaling (`B_LAYER`), the closed-low mask of
+`executeHartClass`, the class from the three (`hart_class`) and the
+index on the Hart terms. This is not what the D2D fields in CAVE show,
+which use the standard levels 925-700 and 500-300 hPa every model
+carries (`gfs_cps.compute_products`); `index.json` records the layers
+under `bands`. The switch followed the FSU comparison (`fsu_stats.py`):
+Hart's layers agree with the diagrams in class 70% of the time against
+55% for the standard ones, and the 900-600 hPa B with the track motion
+has the smallest bias of the three B choices (+0.8 m). On the same
+frame the 900-600 hPa lower term reads about 35 m lower than the
+925-700 hPa one at the lows, and the class differs at about a quarter
+of them. Compute is about 6 s per frame against 2.5 s before.
+
     python3 export_web.py [--cycle YYYYMMDDHH] [--hours H [H ...]] [--out DIR] [--cache DIR] [--workers N]
 
 | Option | Default | Meaning |
@@ -732,7 +749,7 @@ storm's motion from the model's steering flow, because a derived
 parameter in CAVE sees one frame and has no track. A tracked low has a
 motion, so its points also carry Hart's B as defined. Each frame stores
 at every center the four half-disk means (north, south, east, west) of
-the 925-700 hPa thickness scaled to 900-600 hPa over the 500 km circle
+the 900-600 hPa thickness over the 500 km circle
 (`thickness_quadrants`, each level masked below ground as HB is); once
 the frames are linked, the motion between fixes (centered differences,
 one-sided at the ends, as `track_cps.track_motion`) gives
@@ -746,7 +763,11 @@ stay the field's steering-flow values. A point without motion (a track
 of one point) has `hbt` and `clst` null. The centers of `lows.geojson`
 on a track carry `hbt`, `clst` and `spd` too, and `index.json` says so
 under `track_b`. The live map shows the tracked lows with `hbt` and
-`clst` and keeps the steering values as the CAVE field's.
+`clst` and keeps the steering values as the field's. The collection's
+storms on the map (`storms_for`, `collection_point`) take their values
+from the collector's Hart columns (`hvtl_hart`, `hvtu_hart`, `hb_hart`)
+with the class recomputed from those three inside a closed low, and
+fall back to the standard columns for an older archive.
 
 **Files.** In the output directory:
 

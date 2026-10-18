@@ -150,7 +150,7 @@ function renderLegend() {
 /* ---------- tooltip ---------- */
 
 // The class dot, with the differing-class ring and its title where the
-// class from the storm's motion and the CAVE field's class disagree.
+// class from the storm's motion and the field's steering-flow class disagree.
 function clsDot(e) {
   const hex = cls(clsOf(e)).hex;
   return classDiffers(e)
@@ -175,12 +175,12 @@ function lowTip(c) {
   let b = row('hb', 1);
   if (tb) {
     b = `<tr><td>B, storm motion</td><td>${fmt(c.hbt, 1, 'm', true)}</td></tr>` +
-      `<tr class="dim"><td>B, steering flow (CAVE field)</td><td>${fmt(c.hb, 1, 'm', true)}</td></tr>`;
+      `<tr class="dim"><td>B, steering flow (field)</td><td>${fmt(c.hb, 1, 'm', true)}</td></tr>`;
   } else if (ST.trackB) {
-    b = `<tr><td>B, steering flow (CAVE field)</td><td>${fmt(c.hb, 1, 'm', true)}</td></tr>`;
+    b = `<tr><td>B, steering flow (field)</td><td>${fmt(c.hb, 1, 'm', true)}</td></tr>`;
   }
   const alt = classDiffers(c)
-    ? `<p class="tip-alt">CAVE field: ${esc(SHORT[c.cls] ?? cls(c.cls).name)} (${c.cls})</p>` : '';
+    ? `<p class="tip-alt">Field, steering flow: ${esc(SHORT[c.cls] ?? cls(c.cls).name)} (${c.cls})</p>` : '';
   const move = blank(c.spd) ? '' : `<tr><td>Motion</td><td>${esc(motionText(c))}</td></tr>`;
   return `<div class="h">${s ? esc(s.label) : 'Untracked low'}${s?.fsu != null ? `, FSU ${esc(s.fsu)}` : ''}</div>
     <p class="tip-cls">${clsDot(c)}${esc(k.name)}</p>${alt}
@@ -255,7 +255,7 @@ function cardVals(c, s) {
 }
 
 // B on the card: Hart's, from the storm's own motion, as the main line, and
-// the CAVE field's steering-flow B under it, smaller, with its class where
+// the field's steering-flow B under it, smaller, with its class where
 // that differs; then the motion. Older exports carry only the field's B,
 // which the 3-D readout shows, so they get no lines here.
 function bLines(v, s) {
@@ -266,11 +266,11 @@ function bLines(v, s) {
     rows.push(`<dt>B, storm motion</dt><dd><b>${fmt(v.hbt, 1, 'm', true)}</b>${clsOf(v) == null ? '' : `, ${short(clsOf(v))}`}</dd>`);
     const diff = classDiffers(v);
     if (diff || fmt(v.hb, 1) !== fmt(v.hbt, 1)) {
-      rows.push(`<dt class="alt">B, steering flow (CAVE field)</dt><dd class="alt"><b>${fmt(v.hb, 1, 'm', true)}</b>` +
+      rows.push(`<dt class="alt">B, steering flow (field)</dt><dd class="alt"><b>${fmt(v.hb, 1, 'm', true)}</b>` +
         (diff ? `, <span class="alt-cls" title="${esc(diffTitle(v))}"><i style="--c2:${cls(v.cls).hex}"></i>${short(v.cls)}</span>` : ', same class') + '</dd>');
     }
   } else {
-    rows.push(`<dt>B, steering flow (CAVE field)</dt><dd><b>${fmt(v.hb, 1, 'm', true)}</b>` +
+    rows.push(`<dt>B, steering flow (field)</dt><dd><b>${fmt(v.hb, 1, 'm', true)}</b>` +
       `${v.cls == null ? '' : `, ${short(v.cls)}`}${s?.track ? '<span class="ph-b-note">no B from the motion at this hour</span>' : ''}</dd>`);
   }
   const m = motionText(v);
@@ -317,7 +317,7 @@ function renderCard(c, s, absent = false) {
     : `<p class="ph-now muted">${absent ? `Not tracked at ${when}.` : `No closed low near the last position at ${when}.`}</p>`;
   const lone = !s && c
     ? `<p class="ph-vals">${TERM.hvtl.sym} <b>${fmt(c.hvtl, 0, '', true)}</b> ${TERM.hvtu.sym} <b>${fmt(c.hvtu, 0, '', true)}</b> B <b>${fmt(c.hb, 1, '', true)}</b> m</p>
-       <p class="ph-hint">This low is not on a track in this run, so it has no path through the phase space${ST.trackB ? ', and its B is the field\'s, with the steering flow, as in CAVE' : ''}.</p>`
+       <p class="ph-hint">This low is not on a track in this run, so it has no path through the phase space${ST.trackB ? ', and its B is the field\'s, across the steering flow' : ''}.</p>`
     : '';
   head.innerHTML = title + now + lone;
   if (s) head.querySelector('.ph-title b').textContent = s.label;
