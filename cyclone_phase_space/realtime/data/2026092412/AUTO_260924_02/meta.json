@@ -28,7 +28,9 @@
   "completion_standard_h": null,
   "onset_hart_h": null,
   "completion_hart_h": null,
+  "bands": "hart",
   "class_sequence": "1 6, 5 12, - 18",
+  "class_sequence_standard": "1 6, 5 12, - 18",
   "fsu_number": 8,
   "fsu": {
     "number": 8,

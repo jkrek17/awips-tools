@@ -33,7 +33,7 @@ def test_onset_completion_matches_the_collector():
 def make_track(hours, **cols):
     n = len(hours)
     t = {"fhr": np.array(hours, float), "valid": [f"v{h}" for h in hours]}
-    for c in ("hvtl", "hvtu", "hb", "hvtl_hart", "hvtu_hart", "hb_track", "motion_kt", "mslp_hpa"):
+    for c in (*fs.TRACK_COLS, "motion_kt", "mslp_hpa"):
         t[c] = np.array(cols.get(c, [np.nan] * n), float)
     return t
 
@@ -46,7 +46,7 @@ def fsu_row(h, b, vtl, vtu, flag="verified/ok"):
 def test_pair_rows_smooth_ours_and_pair_at_shared_hours():
     hours = [0, 6, 12, 18, 24]
     tr = make_track(hours, hb=[0, 10, 20, 30, 40], hvtl=[100, 100, 100, 100, 100], hvtu=[50, 50, 50, 50, 50],
-                    hb_track=[5, 5, 5, 5, 5], hvtl_hart=[90] * 5, hvtu_hart=[40] * 5,
+                    hb_track=[5, 5, 5, 5, 5], hb_hart=[12, 12, 12, 12, 12], hvtl_hart=[90] * 5, hvtu_hart=[40] * 5,
                     motion_kt=[10, 10, 25, 25, 25], mslp_hpa=[990] * 5)
     dig = {"cycle": "2026100112", "storm": "X",
            "rows": [fsu_row(0, 8.0, 95.0, 45.0), fsu_row(12, 18.0, 110.0, -5.0), fsu_row(30, 1.0, 1.0, 1.0),
@@ -59,14 +59,17 @@ def test_pair_rows_smooth_ours_and_pair_at_shared_hours():
     assert r0["verified"] and r12["verified"] and not r18["verified"]
     assert r0["class_fsu"] == 0 and r12["class_fsu"] == 3 and r18["class_fsu"] == 6
     assert r12["class_standard"] == 2  # B 20 > 10, both terms warm
+    assert r12["class_hart"] == 2 and r12["hb_hart"] == pytest.approx(12.0)  # Hart's class uses hb_hart, not hb_track
     assert r0["motion_kt"] == 10 and r12["motion_kt"] == 25
+    assert list(fs.BANDS) == ["hart", "standard"] and fs.BANDS["hart"]["b"] == "hb_hart"
+    assert fs.PAIR_COLS.index("hb_hart") > fs.PAIR_COLS.index("hb_track")
 
 
 def test_term_class_and_timing_statistics():
     hours = [0, 6, 12, 18, 24, 30]
     tr = make_track(hours, hb=[0, 0, 20, 20, 20, 20], hvtl=[50, 50, 50, -50, -50, -50], hvtu=[10] * 6,
-                    hb_track=[0] * 6, hvtl_hart=[50] * 6, hvtu_hart=[10] * 6, motion_kt=[5, 5, 5, 30, 30, 30],
-                    mslp_hpa=[990] * 6)
+                    hb_track=[0] * 6, hb_hart=[0] * 6, hvtl_hart=[50] * 6, hvtu_hart=[10] * 6,
+                    motion_kt=[5, 5, 5, 30, 30, 30], mslp_hpa=[990] * 6)
     # running_mean would blur the step; use a 0 h window so the hand numbers stay simple
     orig = fs.running_mean
     fs.running_mean = lambda h, v, width_h=0.0: orig(h, v, 0.0)
@@ -102,10 +105,15 @@ def test_term_class_and_timing_statistics():
 
 
 def test_own_track_statistics_by_speed():
-    t = make_track([0, 6, 12, 18], hb=[20, 0, 5, np.nan], hb_track=[5, 0, 5, 3], hvtl=[10, 10, 10, 10],
-                   hvtu=[10, 10, 10, 10], hvtl_hart=[0, 0, 0, 0], hvtu_hart=[20, 20, 20, 20],
+    t = make_track([0, 6, 12, 18], hb=[20, 0, 5, np.nan], hb_track=[5, 0, 5, 3], hb_hart=[15, 1, np.nan, 4],
+                   hvtl=[10, 10, 10, 10], hvtu=[10, 10, 10, 10], hvtl_hart=[0, 0, 0, 0], hvtu_hart=[20, 20, 20, 20],
                    motion_kt=[5, 5, 35, 35])
     O = fs.own_stats([t])
+    # hb_hart - hb_track: 10, 1, (blank), 1 -> mean 4, n 3; 15 against 5 is the one B-side disagreement
+    assert O["hb_hart_minus_hb_track"]["n"] == 3 and O["hb_hart_minus_hb_track"]["mean"] == pytest.approx(4.0)
+    assert O["hb_hart_vs_hb_track_b_side_differs"] == {"n": 3, "differ": 1, "rate": pytest.approx(1 / 3, abs=0.001)}
+    assert O["by_motion_kt"][0]["hb_hart_minus_hb_track"]["n"] == 2
+    assert O["by_motion_kt"][3]["hb_hart_minus_hb_track"]["n"] == 1
     slow = O["by_motion_kt"][0]
     assert slow["hb_minus_hb_track"]["n"] == 2 and slow["hb_minus_hb_track"]["mean"] == pytest.approx(7.5)
     assert slow["class_differs"]["differ"] == 1  # 20 vs 5 crosses 10 m

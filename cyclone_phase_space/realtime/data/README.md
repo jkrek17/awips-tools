@@ -13,9 +13,12 @@ storm. Experimental; not operationally vetted.
         discovery.json        deep lows found at 0 h and what became of each (added, known, cap)
         <NAME>/               one storm of watch.json
           meta.json           seed used, start and end hours and positions, onset and
-                              completion hours (standard and Hart bands), class
-                              sequence, FSU cyclone number and position (or null)
+                              completion hours (Hart and standard bands), class sequences
+                              (class_sequence: Hart's set, class_sequence_standard:
+                              HCPSclass), "bands": "hart", FSU cyclone number and
+                              position (or null)
           track.csv           track table, as track_<NAME>.csv of gfs_cps.py --track
+                              (with class_hart, the class of Hart's set, last)
           phase.png           phase diagrams, as phase_<NAME>.png, downscaled to 1600 px
           fsu_phase1.png      FSU N.phase1.zoom.png (B against -V_T^L), when matched
           fsu_phase2.png      FSU N.phase2.zoom.png (-V_T^U against -V_T^L), when matched
@@ -39,6 +42,8 @@ storm's first fix or the FSU page could not be read.
 
 Track columns, the diagram layout and the onset and completion
 definitions are described in `../README.md`, "Storm-following phase
-diagrams". FSU's diagrams are from
-http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/ and remain theirs;
-they are kept here only for side-by-side comparison.
+diagrams"; Hart's set (900-600 and 600-300 hPa, B from the 900-600 hPa
+thickness with the track motion) is the primary trace and the standard
+set (CAVE's) the dashed comparison, see "Daily collection" there. FSU's
+diagrams are from http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/
+and remain theirs; they are kept here only for side-by-side comparison.

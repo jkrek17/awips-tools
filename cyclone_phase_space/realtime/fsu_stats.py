@@ -11,7 +11,8 @@ track.csv gets the same 24 h centered running mean the diagrams use
 (track_cps.running_mean; FSU's trajectory already is a 24 h mean), and
 the two are paired at the valid hours both have. Over the archive this
 computes, for B, -V_T^L and -V_T^U and for both of our band choices
-(standard: hb, hvtl, hvtu; Hart's: hb_track, hvtl_hart, hvtu_hart):
+(Hart's, the website's primary set: hb_hart, hvtl_hart, hvtu_hart;
+standard, what AWIPS CAVE shows: hb, hvtl, hvtu):
 the mean difference (ours minus FSU), the RMS difference and the count,
 overall and split by FSU's lower thermal regime (warm: FSU -V_T^L >= 0,
 cold: < 0) and by our track speed (motion_kt above 20 kt or not); the
@@ -20,7 +21,9 @@ thermal wind term warm if >= 0); and the difference of the onset and
 completion hours (track_cps.onset_completion) where both sides cross.
 From our own tracks alone (all storm-cycles, raw 6-hourly values) it
 also gives hb - hb_track and the class disagreement between the two B
-choices against motion_kt, and hvtl - hvtl_hart, hvtu - hvtu_hart.
+choices against motion_kt, hb_hart - hb_track (Hart's 900-600 hPa
+thickness against the rescaled 925-700 hPa one, both with the track
+motion), and hvtl - hvtl_hart, hvtu - hvtu_hart.
 
 Points enter the FSU statistics in two sets: 'verified' (the hour was
 timed independently on both FSU plots and their -V_T^L agree; the
@@ -55,8 +58,9 @@ FAST_KT = 20.0
 SMOOTH_H = 24.0
 MOTION_BINS = [0, 10, 20, 30, 40, 1e9]
 TERMS = ("b", "vtl", "vtu")
-BANDS = {"standard": {"b": "hb", "vtl": "hvtl", "vtu": "hvtu"},
-         "hart": {"b": "hb_track", "vtl": "hvtl_hart", "vtu": "hvtu_hart"}}
+BANDS = {"hart": {"b": "hb_hart", "vtl": "hvtl_hart", "vtu": "hvtu_hart"},
+         "standard": {"b": "hb", "vtl": "hvtl", "vtu": "hvtu"}}
+TRACK_COLS = ("hvtl", "hvtu", "hb", "hvtl_hart", "hvtu_hart", "hb_track", "hb_hart")
 TERM_LABEL = {"b": "B", "vtl": "-V_T^L", "vtu": "-V_T^U"}
 
 
@@ -113,7 +117,7 @@ def fnum(s) -> float:
 def read_track(path: Path) -> dict[str, np.ndarray]:
     with open(path, newline="") as f:
         rows = list(csv.DictReader(f))
-    cols = ["fhr", "hvtl", "hvtu", "hb", "hvtl_hart", "hvtu_hart", "hb_track", "motion_kt", "mslp_hpa"]
+    cols = ["fhr", *TRACK_COLS, "motion_kt", "mslp_hpa"]
     out = {c: np.array([fnum(r.get(c)) for r in rows]) for c in cols}
     out["valid"] = [r.get("valid", "") for r in rows]
     return out
@@ -171,7 +175,7 @@ def digitize_one(args) -> dict:
 def pair_rows(dig: dict, track: dict, fsu_number) -> list[dict]:
     """Our smoothed values at each FSU hour that our track also has."""
     hours = track["fhr"]
-    sm = {c: running_mean(hours, track[c]) for c in ("hvtl", "hvtu", "hb", "hvtl_hart", "hvtu_hart", "hb_track")}
+    sm = {c: running_mean(hours, track[c]) for c in TRACK_COLS}
     idx = {int(h): k for k, h in enumerate(hours) if np.isfinite(h)}
     out = []
     for r in dig["rows"]:
@@ -191,8 +195,8 @@ def pair_rows(dig: dict, track: dict, fsu_number) -> list[dict]:
         for c in sm:
             row[c] = float(sm[c][k]) if np.isfinite(sm[c][k]) else None
         row["class_fsu"] = hart_class(row["fsu_b"], row["fsu_vtl"], row["fsu_vtu"])
-        row["class_standard"] = hart_class(row["hb"], row["hvtl"], row["hvtu"])
-        row["class_hart"] = hart_class(row["hb_track"], row["hvtl_hart"], row["hvtu_hart"])
+        for band, cols in BANDS.items():
+            row["class_" + band] = hart_class(row[cols["b"]], row[cols["vtl"]], row[cols["vtu"]])
         out.append(row)
     return out
 
@@ -298,21 +302,26 @@ def timing_stats(rows: list[dict]) -> dict:
 def own_stats(tracks: list[dict]) -> dict:
     """From our tracks alone (raw 6-hourly values): hb - hb_track and the
     class disagreement between the two B choices against motion_kt;
-    hvtl - hvtl_hart and hvtu - hvtu_hart."""
-    hb, hbt, mot, vl, vlh, vu, vuh = [], [], [], [], [], [], []
+    hb_hart - hb_track (the two track-motion B, Hart's 900-600 hPa
+    thickness against the rescaled 925-700 hPa one), overall and by
+    motion_kt; hvtl - hvtl_hart and hvtu - hvtu_hart."""
+    hb, hbt, hbh, mot, vl, vlh, vu, vuh = [], [], [], [], [], [], [], []
     for t in tracks:
         hb += list(t["hb"])
         hbt += list(t["hb_track"])
+        hbh += list(t.get("hb_hart", [np.nan] * len(t["hb"])))
         mot += list(t["motion_kt"])
         vl += list(t["hvtl"])
         vlh += list(t["hvtl_hart"])
         vu += list(t["hvtu"])
         vuh += list(t["hvtu_hart"])
-    hb, hbt, mot = np.array(hb), np.array(hbt), np.array(mot)
+    hb, hbt, hbh, mot = np.array(hb), np.array(hbt), np.array(hbh, float), np.array(mot)
     vl, vlh, vu, vuh = np.array(vl), np.array(vlh), np.array(vu), np.array(vuh)
     out = {"by_motion_kt": []}
     for lo, hi in zip(MOTION_BINS[:-1], MOTION_BINS[1:]):
-        m = (mot >= lo) & (mot < hi) & np.isfinite(hb) & np.isfinite(hbt)
+        inbin = (mot >= lo) & (mot < hi)
+        mh = inbin & np.isfinite(hbh) & np.isfinite(hbt)
+        m = inbin & np.isfinite(hb) & np.isfinite(hbt)
         d = hb[m] - hbt[m]
         cls_a = [hart_class(a, b, c) for a, b, c in zip(hb[m], vl[m], vu[m])]
         cls_b = [hart_class(a, b, c) for a, b, c in zip(hbt[m], vl[m], vu[m])]
@@ -322,11 +331,19 @@ def own_stats(tracks: list[dict]) -> dict:
                "abs_p90": round(float(np.percentile(np.abs(d), 90)), 2) if d.size else None,
                "class_differs": {"n": len(pr), "differ": sum(a != b for a, b in pr),
                                  "rate": round(sum(a != b for a, b in pr) / len(pr), 3) if pr else None},
-               "b_side_differs_rate": round(float(np.mean(side)), 3) if side else None}
+               "b_side_differs_rate": round(float(np.mean(side)), 3) if side else None,
+               "hb_hart_minus_hb_track": stats(hbh[mh] - hbt[mh])}
         out["by_motion_kt"].append(rec)
     m = np.isfinite(hb) & np.isfinite(hbt)
     out["hb_minus_hb_track_all"] = stats(hb[m] - hbt[m])
     out["n_steering_blank"] = int(np.sum(~np.isfinite(hb) & np.isfinite(hbt)))
+    m = np.isfinite(hbh) & np.isfinite(hbt)
+    out["hb_hart_minus_hb_track"] = stats(hbh[m] - hbt[m])
+    out["hb_hart_minus_hb_track_pct"] = ([round(float(v), 1) for v in np.percentile(hbh[m] - hbt[m], [5, 25, 50, 75, 95])]
+                                        if m.any() else None)
+    side = (hbh[m] > B_THR) != (hbt[m] > B_THR)
+    out["hb_hart_vs_hb_track_b_side_differs"] = {"n": int(m.sum()), "differ": int(side.sum()),
+                                                 "rate": round(float(side.mean()), 3) if m.any() else None}
     m = np.isfinite(vl) & np.isfinite(vlh)
     out["hvtl_minus_hvtl_hart"] = stats(vl[m] - vlh[m])
     out["hvtl_minus_hvtl_hart_pct"] = [round(float(v), 1) for v in np.percentile(vl[m] - vlh[m], [5, 25, 50, 75, 95])]
@@ -417,7 +434,7 @@ def hand_check(digs_by_key: dict, hand_csv: Path) -> dict | None:
 # ------------------------------------------------------------------ outputs
 PAIR_COLS = ["cycle", "storm", "fsu_number", "valid", "fhr", "verified", "flag_phase1", "flag_phase2",
              "fsu_b", "fsu_vtl", "fsu_vtu", "fsu_vtl_phase1", "fsu_vtl_phase2", "err_b", "err_vtl", "err_vtu",
-             "hb", "hvtl", "hvtu", "hb_track", "hvtl_hart", "hvtu_hart", "motion_kt", "mslp_hpa",
+             "hb", "hvtl", "hvtu", "hb_track", "hb_hart", "hvtl_hart", "hvtu_hart", "motion_kt", "mslp_hpa",
              "class_fsu", "class_standard", "class_hart"]
 
 
@@ -517,7 +534,11 @@ def write_md(path: Path, S: dict) -> None:
              "FSU publishes only images; their values here are read off the plots by "
              "`realtime/fsu_digitize.py`. Ours: GFS 0.25 degree, 24 h centered running mean, "
              "paired with FSU (GFS 0.5 degree, its own 24 h mean) at shared valid hours of the same run. "
-             "Differences are ours minus FSU, in m.")
+             "Differences are ours minus FSU, in m. Two band sets: Hart's (hb_hart from the 900-600 hPa "
+             "thickness with the track motion, hvtl_hart over 900-600 hPa, hvtu_hart over 600-300 hPa) is the "
+             "website's primary set and leads every table; the standard set (hb with the steering-flow motion "
+             "from the 925-700 hPa thickness rescaled, hvtl over 925-700 hPa, hvtu over 500-300 hPa) is what "
+             "AWIPS CAVE shows.")
     L.append("")
     L.append("## Digitizing")
     L.append("")
@@ -590,13 +611,16 @@ def write_md(path: Path, S: dict) -> None:
         L.append(f"| {band} | {o['median']} / {o['mean']} ({o['n']}), {t['onset_within_6h']} | "
                  f"{c['median']} / {c['mean']} ({c['n']}), {t['completion_within_6h']} |")
     L.append("")
-    L.append("## Our tracks alone: B with the steering proxy against B with the track motion")
+    L.append("## Our tracks alone: the three B")
     L.append("")
     O = S["own"]
-    L.append(f"All {O['n_storm_cycles']} storm-cycles, raw 6-hourly values.")
+    L.append(f"All {O['n_storm_cycles']} storm-cycles, raw 6-hourly values. hb_hart is Hart's B (900-600 hPa "
+             "thickness, track motion), hb_track the rescaled 925-700 hPa thickness with the same track motion, "
+             "hb the standard (CAVE) B with the steering-flow motion.")
     L.append("")
-    L.append("| motion_kt | hb - hb_track mean / RMS (n) | 90th pct of abs | class differs | B side differs |")
-    L.append("|---|---|---|---|---|")
+    L.append("| motion_kt | hb_hart - hb_track mean / RMS (n) | hb - hb_track mean / RMS (n) | 90th pct of abs | "
+             "class differs | B side differs |")
+    L.append("|---|---|---|---|---|---|")
     for rec in O["by_motion_kt"]:
         lo, hi = rec["motion_kt"]
         s = rec["hb_minus_hb_track"]
@@ -604,7 +628,17 @@ def write_md(path: Path, S: dict) -> None:
         rng = f"{lo} to {hi}" if hi is not None else f"{lo} and up"
         cdr = "n/a" if cd["rate"] is None else f"{100 * cd['rate']:.0f}%"
         bsr = "n/a" if rec["b_side_differs_rate"] is None else f"{100 * rec['b_side_differs_rate']:.0f}%"
-        L.append(f"| {rng} | {cell(s)} | {rec['abs_p90']} | {cdr} ({cd['differ']}/{cd['n']}) | {bsr} |")
+        L.append(f"| {rng} | {cell(rec['hb_hart_minus_hb_track'])} | {cell(s)} | {rec['abs_p90']} | "
+                 f"{cdr} ({cd['differ']}/{cd['n']}) | {bsr} |")
+    L.append("")
+    L.append("The last three columns compare hb with hb_track (the steering-flow motion against the track "
+             "motion, same thickness).")
+    L.append("")
+    sh, bs = O["hb_hart_minus_hb_track"], O["hb_hart_vs_hb_track_b_side_differs"]
+    bsr = "n/a" if bs["rate"] is None else f"{100 * bs['rate']:.0f}%"
+    L.append(f"hb_hart - hb_track (same motion, Hart's thickness against the rescaled one): mean {sh['mean']} m, "
+             f"RMS {sh['rms']} m (n {sh['n']}), 5/25/50/75/95th percentiles {O['hb_hart_minus_hb_track_pct']}; "
+             f"the two fall on different sides of B = 10 m at {bsr} ({bs['differ']}/{bs['n']}) of the fixes.")
     L.append("")
     s1, s2 = O["hvtl_minus_hvtl_hart"], O["hvtu_minus_hvtu_hart"]
     L.append(f"hvtl - hvtl_hart: mean {s1['mean']} m, RMS {s1['rms']} m (n {s1['n']}), 5/25/50/75/95th percentiles "
@@ -625,8 +659,9 @@ CAVEATS = [
     "inset map or along tangled tracks are left untimed rather than guessed.",
     "FSU uses the 0.5 degree GFS and its own tracker; its 24 h running mean includes the days before the run, "
     "ours only the frames of the run, so the first 12 h of a run are smoothed differently.",
-    "FSU's B uses its tracker's motion; our standard B uses the steering-flow proxy and hb_track the track motion; "
-    "our hb is blank where the steering flow is under 2 m/s.",
+    "FSU's B uses its tracker's motion; our Hart set's B (hb_hart) uses the track motion and the 900-600 hPa "
+    "thickness, hb_track the track motion with the rescaled 925-700 hPa thickness, and the standard (CAVE) B the "
+    "steering-flow proxy; hb is blank where the steering flow is under 2 m/s.",
     "The pairs are not independent: consecutive 6-hourly points of one storm-cycle, and the same storm on "
     "consecutive days, are strongly correlated, so the counts overstate the effective sample size.",
     "Cycles collected before 2026-09-27 used the module's former square 500 km window for the thermal wind "
