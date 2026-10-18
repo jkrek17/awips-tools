@@ -11,7 +11,21 @@
    cycle's collection storms, or an index.json from before the tracks)
    are matched to the nearest center within MATCH_KM, and their phase
    space values are read from every frame's lows.geojson when the points
-   lack them. Uses the globals from app.js. */
+   lack them.
+
+   B, two ways. The gridded field's B (hb, and the class cls from it) has
+   to take the storm's motion from the model's steering flow, since a
+   derived parameter in CAVE sees one frame and has no track. Hart's
+   (2003) B uses the storm's own motion; the exporter computes it for every
+   tracked low from the motion between fixes (hbt, the class clst, the
+   motion spd in kt and hdg in degrees toward, on the track points; hbt,
+   clst and spd on the map centers). Wherever the page shows a tracked
+   low's B or class it uses hbt and clst (bOf, clsOf), and falls back to
+   hb and cls where they are missing: untracked lows, points without
+   motion, the collection's storms and older exports. Where the two
+   classes differ the page marks it quietly (classDiffers): a thin ring in
+   the field's class color round the map dot and the list dot, a line on
+   the card. Uses the globals from app.js. */
 'use strict';
 
 // Figure 1's axis limits (article/figures/diagram_style.py), in m.
@@ -19,7 +33,7 @@ const FIG1 = { vtl: [-300, 300], vtu: [-300, 300], b: [-20, 80], onset: 10 };
 const SHORT = ['sym deep warm', 'sym shallow warm', 'asym deep warm', 'asym shallow warm', 'asym cold', 'sym cold', 'shallow cold'];
 const TAIL_STEPS = 4;            // map tail: the last 24 h, at 6 h steps
 
-const ST = { list: [], byKey: new Map(), built: false, hover: null, selected: null };
+const ST = { list: [], byKey: new Map(), built: false, hover: null, selected: null, trackB: false };
 
 function stormLabel(name) {
   const m = /^AUTO_\d{6}_(\d+)$/.exec(name);
@@ -55,6 +69,22 @@ function nearest(centers, lat, lon, maxKm) {
 
 const hasTerms = (e) => !blank(e.hvtl) && !blank(e.hvtu) && !blank(e.hb);
 
+// B and class of a low or a track point: Hart's, from the storm's own
+// motion, where the export has it; else the field's steering-flow values.
+const trackB = (e) => !!e && !blank(e.hbt);
+const bOf = (e) => (trackB(e) ? e.hbt : e?.hb);
+const clsOf = (e) => (e && e.clst != null && !blank(e.clst) ? +e.clst : e?.cls);
+// The two classes disagree at this point (both known).
+const classDiffers = (e) => trackB(e) && e.clst != null && e.cls != null && !blank(e.clst) && !blank(e.cls) && +e.clst !== +e.cls;
+
+// The title of the differing-class mark.
+const diffTitle = (e) => `Classes differ: ${SHORT[clsOf(e)] ?? cls(clsOf(e)).name} (${clsOf(e)}) with B from the storm's motion; ` +
+  `${SHORT[e.cls] ?? cls(e.cls).name} (${e.cls}) in the CAVE field, with B from the steering flow`;
+
+// 16 compass points, for a heading in degrees toward.
+const COMPASS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+const compass = (d) => COMPASS[Math.round((((+d % 360) + 360) % 360) / 22.5) % 16];
+
 /* ---------- the storms from index.json ---------- */
 
 function initStorms() {
@@ -68,12 +98,14 @@ function initStorms() {
     const pts = s.points || [];
     const at = new Array(n).fill(null);
     const seq = Array.isArray(s.cls_seq) && s.cls_seq.length === pts.length ? s.cls_seq : null;
+    const seqt = Array.isArray(s.clst_seq) && s.clst_seq.length === pts.length ? s.clst_seq : null;
     pts.forEach((pt, j) => {
       const k = frameIndex(pt);
       if (k < 0) return;
       at[k] = {
         lat: +pt.lat, lon: +pt.lon, mslp: pt.mslp, cls: seq ? seq[j] : pt.cls, id: pt.id,
         hvtl: pt.hvtl, hvtu: pt.hvtu, hb: pt.hb, idx: pt.idx, c: null,
+        hbt: pt.hbt ?? null, clst: seqt ? seqt[j] : pt.clst ?? null, spd: pt.spd ?? null, hdg: pt.hdg ?? null,
       };
     });
     const live = [];
@@ -102,6 +134,8 @@ function initStorms() {
   });
   ST.list.sort((a, b) => a.min - b.min || a.order - b.order);
   ST.built = !ST.list.some((s) => s.at.some((e) => e && !hasTerms(e)));
+  // Does this export carry Hart's B from the track motion at all?
+  ST.trackB = !!S.index.track_b || ST.list.some((s) => s.at.some(trackB));
   $('runInfo').textContent = `${S.index.model || 'GFS'} · ${ST.list.length} tracked low${ST.list.length === 1 ? '' : 's'}`;
 }
 
@@ -157,6 +191,10 @@ async function loadAllLows() {
         if (!e || hasTerms(e)) return;
         e.c = s.track && e.id != null ? centers[k].find((c) => c.id === e.id) : nearest(centers[k], e.lat, e.lon, MATCH_KM);
         for (const f of ['hvtl', 'hvtu', 'hb', 'idx']) if (blank(e[f]) && e.c) e[f] = e.c[f];
+        // the track's own B, only from a center of this same track
+        if (s.track && e.c && e.c.track != null && String(e.c.track) === s.id) {
+          for (const f of ['hbt', 'clst', 'spd']) if (e[f] == null && e.c[f] != null) e[f] = e.c[f];
+        }
       });
     }
     ST.built = true;
@@ -184,9 +222,10 @@ function renderDeepest() {
     const s = stormOf(c, S.i);
     const li = document.createElement('li');
     const on = S.sel?.c === c;
-    li.innerHTML = `<button type="button" class="deep-row"${on ? ' aria-current="true"' : ''}><i style="--c:${cls(c.cls).hex}"></i>
+    const alt = classDiffers(c);
+    li.innerHTML = `<button type="button" class="deep-row"${on ? ' aria-current="true"' : ''}><i${alt ? ` class="alt" style="--c:${cls(clsOf(c)).hex};--c2:${cls(c.cls).hex}" title="${esc(diffTitle(c))}"` : ` style="--c:${cls(clsOf(c)).hex}"`}></i>
       <span class="d-mslp">${hpa(c.mslp)}</span><span class="d-name"></span><span class="d-where">${pos(c.lat, c.lon)}</span></button>`;
-    li.querySelector('.d-name').textContent = s ? s.label : SHORT[c.cls] ?? 'untracked';
+    li.querySelector('.d-name').textContent = s ? s.label : SHORT[clsOf(c)] ?? 'untracked';
     li.querySelector('button').addEventListener('click', () => {
       if (S.follow) unfollow();
       selectLow(c, { center: true, zoom: Math.max(map.getZoom(), 3) });
@@ -224,8 +263,8 @@ function drawTracks() {
       if (!s) continue;
       const pts = unwrap(s.at.filter(Boolean).map((e) => ({ ...e })));
       const w = S.follow === key || ST.selected === key ? 2.2 : 1.8;
-      for (let k = 0; k + 1 < pts.length; k++) lines.push(seg(pts[k], pts[k + 1], { hex: cls(pts[k].cls).hex, w }));
-      for (const a of pts) dots.push({ type: 'Feature', properties: { hex: cls(a.cls).hex }, geometry: { type: 'Point', coordinates: [a.lon, a.lat] } });
+      for (let k = 0; k + 1 < pts.length; k++) lines.push(seg(pts[k], pts[k + 1], { hex: cls(clsOf(pts[k])).hex, w }));
+      for (const a of pts) dots.push({ type: 'Feature', properties: { hex: cls(clsOf(a)).hex }, geometry: { type: 'Point', coordinates: [a.lon, a.lat] } });
     }
   }
   setData('track', { type: 'FeatureCollection', features: lines });
@@ -245,7 +284,7 @@ function drawTails() {
       for (let k = i; k >= 0 && k >= i - TAIL_STEPS && s.at[k]; k--) pts.unshift({ ...s.at[k] });
       if (pts.length < 2) continue;
       unwrap(pts);
-      for (let k = 0; k + 1 < pts.length; k++) segs.push(seg(pts[k], pts[k + 1], { hex: cls(pts[k].cls).hex }));
+      for (let k = 0; k + 1 < pts.length; k++) segs.push(seg(pts[k], pts[k + 1], { hex: cls(clsOf(pts[k])).hex }));
     }
   }
   setData('tails', { type: 'FeatureCollection', features: segs });
@@ -270,12 +309,14 @@ function drawNames(ctx, z) {
     const p = ov.proj(c.lon, c.lat)[0];
     if (!p) continue;
     at.set(c, p);
-    taken.push([p.x - 6, p.y - 6, p.x + 6, p.y + 6]);
+    // a dot with the differing-class ring (app.js, lows-alt) is wider
+    const ring = !c.terrain && classDiffers(c) ? 3 : 0;
+    taken.push([p.x - 6 - ring, p.y - 6 - ring, p.x + 6 + ring, p.y + 6 + ring]);
     if (!wide && !blank(c.mslp)) {
       const t = String(Math.round(+c.mslp));
       ctx.font = `600 10.5px ${FAM}`;
       const w = ctx.measureText(t).width;
-      const x = p.x + (isDeep(c) ? 10 : 8);
+      const x = p.x + (isDeep(c) ? 10 : 8) + ring;
       taken.push([x - 2, p.y - 7, x + w + 2, p.y + 7]);
       ctx.lineWidth = 3;
       ctx.strokeStyle = 'rgba(7,13,25,0.85)';
@@ -303,7 +344,8 @@ function drawNames(ctx, z) {
     const generic = s.generic && !on;
     ctx.font = generic ? `500 10.5px ${FAM}` : `700 11.5px ${FAM}`;
     const w = ctx.measureText(s.label).width + 8;
-    const spots = [[p.x + 6, p.y - 22], [p.x - 6 - w, p.y - 22], [p.x + 6, p.y + 8]].map(([x, y]) => [x, y, x + w, y + 15]);
+    const rg = classDiffers(e) ? 3 : 0;  // clear of the differing-class ring
+    const spots = [[p.x + 6, p.y - 22 - rg], [p.x - 6 - w, p.y - 22 - rg], [p.x + 6, p.y + 8 + rg]].map(([x, y]) => [x, y, x + w, y + 15]);
     const r = spots.find(free) || (on ? spots[0] : null);
     if (!r) continue;
     taken.push(r);
