@@ -37,6 +37,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -97,6 +98,24 @@ PX_PER_DEG_LAT = 3.02
 
 def log(msg: str) -> None:
     print(msg, flush=True)
+
+
+def code_version(repo: Path = HERE) -> str:
+    """The code version for meta.json: `git rev-parse --short HEAD` of the
+    checkout this script runs from, plus "-dirty" when tracked files have
+    uncommitted changes (the collection's own outputs, data/ and
+    watch.json, do not count), or "unknown" when git or the repository is
+    not available."""
+    def git(*args: str) -> str:
+        return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, check=True,
+                              timeout=60).stdout.strip()
+    try:
+        head = git("rev-parse", "--short", "HEAD")
+        dirty = git("status", "--porcelain", "--untracked-files=no", "--", ":/", ":(exclude)data",
+                    ":(exclude)watch.json")
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+    return head + ("-dirty" if dirty else "") if head else "unknown"
 
 
 def ymd_h(cycle: str) -> str:
@@ -356,7 +375,7 @@ def class_runs(fixes: list[dict]) -> list[list]:
     return runs
 
 
-def build_meta(cycle: str, job: dict) -> dict:
+def build_meta(cycle: str, job: dict, version: str = "unknown") -> dict:
     fx = job["track"].fixes
     a, z = fx[0], fx[-1]
     ev = job["events"]
@@ -367,6 +386,7 @@ def build_meta(cycle: str, job: dict) -> dict:
         "cycle": cycle,
         "name": job["name"],
         "status": "ok",
+        "code_version": version,
         "seed": {"lat": s["lat"], "lon": s["lon"], "fhr0": s["fhr0"], "fhr1": s["fhr1"], "source": s["source"]},
         "start_fhr": a["fhr"],
         "end_fhr": z["fhr"],
@@ -684,7 +704,8 @@ def main(argv=None) -> int:
     workdir = OUT / cycle
     watch = json.loads(a.watch.read_text())
     storms = watch["storms"]
-    log(f"cycle {cycle}, {len(hours)} hours, data in {data_dir}")
+    version = code_version()
+    log(f"cycle {cycle}, {len(hours)} hours, data in {data_dir}, code {version}")
 
     jobs, done = [], []
     for st in storms:
@@ -825,6 +846,7 @@ def main(argv=None) -> int:
             reason = f"At {at} of {cycle} within {d:.0f} km of {older}; merged into {older}, marked inactive."
             sdir.mkdir(parents=True, exist_ok=True)
             write_json(sdir / "meta.json", {"cycle": cycle, "name": name, "status": "merged", "reason": reason,
+                                            "code_version": version,
                                             "seed": {k: s[k] for k in ("lat", "lon", "fhr0", "fhr1", "source")},
                                             "fsu_number": None})
             if current:
@@ -841,6 +863,7 @@ def main(argv=None) -> int:
             log(f"{name}: {reason}")
             sdir.mkdir(parents=True, exist_ok=True)
             write_json(sdir / "meta.json", {"cycle": cycle, "name": name, "status": "lost", "reason": reason,
+                                            "code_version": version,
                                             "seed": {k: s[k] for k in ("lat", "lon", "fhr0", "fhr1", "source")},
                                             "fsu_number": None})
             if current:
@@ -850,7 +873,7 @@ def main(argv=None) -> int:
         sdir.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(workdir / f"track_{name}.csv", sdir / "track.csv")
         save_phase(workdir / f"phase_{name}.png", sdir / "phase.png")
-        meta = build_meta(cycle, j)
+        meta = build_meta(cycle, j, version)
         if j["track"].end_reason:
             meta["track_end"] = j["track"].end_reason
         if tm:
