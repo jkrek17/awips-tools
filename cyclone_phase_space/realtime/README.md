@@ -685,6 +685,27 @@ that ends up on a track carries a `"track"` property naming it, so the
 page can join a map mark to the matching `storms[].points` entry
 without guessing.
 
+**Hart's B from the track.** The gridded field's HB has to take the
+storm's motion from the model's steering flow, because a derived
+parameter in CAVE sees one frame and has no track. A tracked low has a
+motion, so its points also carry Hart's B as defined. Each frame stores
+at every center the four half-disk means (north, south, east, west) of
+the 925-700 hPa thickness scaled to 900-600 hPa over the 500 km circle
+(`thickness_quadrants`, each level masked below ground as HB is); once
+the frames are linked, the motion between fixes (centered differences,
+one-sided at the ends, as `track_cps.track_motion`) gives
+B = h [mx (S - N) + my (E - W)] with h the hemisphere sign, the same
+wavenumber-one interpolation `parameter_b_grid` uses with a uniform
+motion field (`track_motion_b`). Each track point gets `hbt` (that B,
+m), `clst` (the class from it with the point's own thermal winds, by
+the D2D table: `hart_class_point`), `spd` (kt) and `hdg` (degrees,
+toward); the entry gets `clst_seq` beside `cls_seq`; `hb` and `cls`
+stay the field's steering-flow values. A point without motion (a track
+of one point) has `hbt` and `clst` null. The centers of `lows.geojson`
+on a track carry `hbt`, `clst` and `spd` too, and `index.json` says so
+under `track_b`. The live map shows the tracked lows with `hbt` and
+`clst` and keeps the steering values as the CAVE field's.
+
 **Files.** In the output directory:
 
 - `index.json`:
@@ -758,8 +779,9 @@ without guessing.
   is cut at 180 into two features with the same `id`. Rings follow
   RFC 7946 (exterior counterclockwise). Once tracks are linked, a
   center that ends up on one also gets `"track"`, that track's `id`
-  in `storms` (see **Tracks** above); a center whose low was dropped
-  (too short-lived, or over terrain) has no `"track"` property.
+  in `storms` (see **Tracks** above), with `"hbt"`, `"clst"` and
+  `"spd"` (see **Hart's B from the track**); a center whose low was
+  dropped (too short-lived, or over terrain) has none of these.
 - `frames/fHHH/mslp.geojson`: isobars every 4 hPa as LineString
   features with `{"level": hPa}`, from contourpy on the global field
   smoothed for display by a Gaussian of 2 grid cells (sigma, about
