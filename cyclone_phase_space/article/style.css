@@ -286,3 +286,5 @@ figure.half img { max-width: 60%; margin: 0 auto; display: block; }
 }
 
 .refs li { overflow-wrap: anywhere; }
+
+code { overflow-wrap: anywhere; }
