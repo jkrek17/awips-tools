@@ -4,13 +4,13 @@ Storm-following phase diagrams from the 12 UTC 2026-09-26 GFS 0.25 degree run, f
 
 | Storm | FSU | Start position | MSLP (hPa) | Track (h) | Class sequence (h) | Onset std | Completion std | Onset Hart | Completion Hart |
 |---|---|---|---|---|---|---|---|---|---|
-| [AUTO_260924_01](AUTO_260924_01/) | [4](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092612/4.html) | 17.8N 111.4W | 953 | 0-84 | 0 0-36, 2 42, 0 48-60, 1 66-72, 3 78, - 84 | none | none | none | none |
+| [AUTO_260924_01](AUTO_260924_01/) | [4](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092612/4.html) | 17.8N 111.5W | 939 | 0-84 | 0 0-36, 2 42, 0 48-60, 1 66-72, 3 78, - 84 | none | none | none | none |
 | [AUTO_260924_02](AUTO_260924_02/) | [6](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092612/6.html) | 56.7N 168.8W | 974 | 0-132 | 1 0-42, 5 48-54, 1 60, 5 66, 1 72-102, - 108-132 | 102 | 114 | none | 0 |
 | [AUTO_260924_04](AUTO_260924_04/) | none | 84.5N 123.1W | 992 | 0-0 | 6 0 | none | 0 | none | 0 |
 | [AUTO_260924_05](AUTO_260924_05/) | [3](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092612/3.html) | 19.4N 123.9W | 970 | 0-198 | 0 0, 2 6-12, 3 18-36, 1 42-66, - 72-102, 0 108-126, - 132-198 | 0 | none | 0 | none |
 | [AUTO_260926_01](AUTO_260926_01/) | [7](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092612/7.html) | 23.1N 126.9E | 973 | 0-198 | 0 0-54, - 60, 0 66, - 72-102, 0 108, - 114, 0 120-198 | none | none | none | none |
 | [EPAC](EPAC/) | [1](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092612/1.html) | 16.9N 155.4W | 983 | 0-198 | - 0-12, 0 18-126, - 132, 0 138-198 | none | none | none | none |
-| [GREENLAND](GREENLAND/) | [9](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092612/9.html) | 66.8N 16.6W | 985 | 0-48 | - 0-6, 1 12, - 18-48 | none | none | none | none |
+| [GREENLAND](GREENLAND/) | [9](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092612/9.html) | 66.8N 16.6W | 985 | 0-72 | - 0-6, 1 12, - 18-24, 3 30, 4 36-42, 3 48-66, - 72 | 24 | none | 18 | 36 |
 | [LABRADOR](LABRADOR/) | [17](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092612/17.html) | 56.5N 26.0W | 987 | 0-48 | 4 0, - 12-18, 3 24, - 30-36, 4 42, 3 48 | 30 | 36 | 0 | 36 |
 
 Class codes (HCPSclass at the center): 0 sym deep warm, 1 sym shallow warm, 2 asym deep warm, 3 asym shallow warm, 4 asym cold, 5 sym cold, 6 shallow cold; - no closed low.
@@ -21,7 +21,7 @@ Closed lows at 0 h below 980 hPa north of 0N, one per system (minima within 500 
 
 | Position | MSLP (hPa) | Basin | Result |
 |---|---|---|---|
-| 17.8N 111.4W | 953.05 | TROP | skipped, 1 km from AUTO_260924_01 |
+| 17.8N 111.5W | 938.83 | TROP | skipped, 0 km from AUTO_260924_01 |
 | 19.4N 123.9W | 970.14 | TROP | skipped, 0 km from AUTO_260924_05 |
 | 23.1N 126.9E | 972.74 | NPAC | added as AUTO_260926_01 |
 | 56.7N 168.8W | 973.74 | NPAC | skipped, 0 km from AUTO_260924_02 |

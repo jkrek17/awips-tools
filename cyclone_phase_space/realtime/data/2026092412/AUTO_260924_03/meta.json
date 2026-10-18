@@ -2,9 +2,10 @@
   "cycle": "2026092412",
   "name": "AUTO_260924_03",
   "status": "ok",
+  "code_version": "047e914",
   "seed": {
-    "lat": 57.26,
-    "lon": -170.99,
+    "lat": 57.24,
+    "lon": -170.91,
     "fhr0": 6,
     "fhr1": null,
     "source": "stored seed"

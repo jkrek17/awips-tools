@@ -1,0 +1,2549 @@
+{
+ "about": "FSU matches of the daily archive as committed before the 2026-10-18 recompute (a62c9ac), one per storm-cycle that had one: the input of restore_fsu_matches.py.",
+ "matches": {
+  "2026092412/AUTO_260924_02": {
+   "fsu_number": 8,
+   "fsu": {
+    "number": 8,
+    "lat": 56.62,
+    "lon": 174.19,
+    "distance_km": 173,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/8.html"
+   },
+   "start": {
+    "lat": 55.12,
+    "lon": 174.95,
+    "mslp_hpa": 964.5
+   },
+   "start_fhr": 6
+  },
+  "2026092412/AUTO_260924_05": {
+   "fsu_number": 4,
+   "fsu": {
+    "number": 4,
+    "lat": 16.23,
+    "lon": -125.81,
+    "distance_km": 67,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/4.html"
+   },
+   "start": {
+    "lat": 16.42,
+    "lon": -125.21,
+    "mslp_hpa": 979.1
+   },
+   "start_fhr": 6
+  },
+  "2026092412/AUTO_260924_06": {
+   "fsu_number": 5,
+   "fsu": {
+    "number": 5,
+    "lat": 16.89,
+    "lon": -104.13,
+    "distance_km": 30,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/5.html"
+   },
+   "start": {
+    "lat": 16.62,
+    "lon": -104.12,
+    "mslp_hpa": 952.6
+   },
+   "start_fhr": 0
+  },
+  "2026092412/EPAC": {
+   "fsu_number": 1,
+   "fsu": {
+    "number": 1,
+    "lat": 15.23,
+    "lon": -156.39,
+    "distance_km": 34,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/1.html"
+   },
+   "start": {
+    "lat": 15.0,
+    "lon": -156.18,
+    "mslp_hpa": 995.4
+   },
+   "start_fhr": 6
+  },
+  "2026092412/GREENLAND": {
+   "fsu_number": 19,
+   "fsu": {
+    "number": 19,
+    "lat": 61.26,
+    "lon": -22.84,
+    "distance_km": 153,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/19.html"
+   },
+   "start": {
+    "lat": 62.47,
+    "lon": -21.44,
+    "mslp_hpa": 959.1
+   },
+   "start_fhr": 6
+  },
+  "2026092412/LABRADOR": {
+   "fsu_number": 48,
+   "fsu": {
+    "number": 48,
+    "lat": 60.6,
+    "lon": -60.0,
+    "distance_km": 80,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/48.html"
+   },
+   "start": {
+    "lat": 60.73,
+    "lon": -58.55,
+    "mslp_hpa": 999.8
+   },
+   "start_fhr": 6
+  },
+  "2026092418/AUTO_260924_01": {
+   "fsu_number": 5,
+   "fsu": {
+    "number": 5,
+    "lat": 17.22,
+    "lon": -104.9,
+    "distance_km": 17,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092418/5.html"
+   },
+   "start": {
+    "lat": 17.12,
+    "lon": -105.02,
+    "mslp_hpa": 953.4
+   },
+   "start_fhr": 0
+  },
+  "2026092418/AUTO_260924_02": {
+   "fsu_number": 8,
+   "fsu": {
+    "number": 8,
+    "lat": 55.3,
+    "lon": 174.97,
+    "distance_km": 9,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092418/8.html"
+   },
+   "start": {
+    "lat": 55.23,
+    "lon": 175.04,
+    "mslp_hpa": 964.3
+   },
+   "start_fhr": 0
+  },
+  "2026092418/AUTO_260924_05": {
+   "fsu_number": 4,
+   "fsu": {
+    "number": 4,
+    "lat": 16.89,
+    "lon": -125.03,
+    "distance_km": 53,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092418/4.html"
+   },
+   "start": {
+    "lat": 16.44,
+    "lon": -125.18,
+    "mslp_hpa": 980.0
+   },
+   "start_fhr": 0
+  },
+  "2026092418/EPAC": {
+   "fsu_number": 1,
+   "fsu": {
+    "number": 1,
+    "lat": 15.23,
+    "lon": -156.0,
+    "distance_km": 47,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092418/1.html"
+   },
+   "start": {
+    "lat": 14.83,
+    "lon": -156.15,
+    "mslp_hpa": 994.6
+   },
+   "start_fhr": 0
+  },
+  "2026092418/GREENLAND": {
+   "fsu_number": 17,
+   "fsu": {
+    "number": 17,
+    "lat": 62.58,
+    "lon": -21.29,
+    "distance_km": 14,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092418/17.html"
+   },
+   "start": {
+    "lat": 62.47,
+    "lon": -21.41,
+    "mslp_hpa": 959.6
+   },
+   "start_fhr": 0
+  },
+  "2026092418/LABRADOR": {
+   "fsu_number": 40,
+   "fsu": {
+    "number": 40,
+    "lat": 61.26,
+    "lon": -55.35,
+    "distance_km": 36,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092418/40.html"
+   },
+   "start": {
+    "lat": 60.94,
+    "lon": -55.35,
+    "mslp_hpa": 1000.9
+   },
+   "start_fhr": 0
+  },
+  "2026092512/AUTO_260924_01": {
+   "fsu_number": 5,
+   "fsu": {
+    "number": 5,
+    "lat": 17.22,
+    "lon": -108.0,
+    "distance_km": 12,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092512/5.html"
+   },
+   "start": {
+    "lat": 17.12,
+    "lon": -107.97,
+    "mslp_hpa": 950.6
+   },
+   "start_fhr": 0
+  },
+  "2026092512/AUTO_260924_02": {
+   "fsu_number": 8,
+   "fsu": {
+    "number": 8,
+    "lat": 58.61,
+    "lon": -176.13,
+    "distance_km": 24,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092512/8.html"
+   },
+   "start": {
+    "lat": 58.4,
+    "lon": -176.01,
+    "mslp_hpa": 967.2
+   },
+   "start_fhr": 0
+  },
+  "2026092512/AUTO_260924_05": {
+   "fsu_number": 4,
+   "fsu": {
+    "number": 4,
+    "lat": 17.88,
+    "lon": -123.87,
+    "distance_km": 28,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092512/4.html"
+   },
+   "start": {
+    "lat": 17.64,
+    "lon": -123.95,
+    "mslp_hpa": 969.4
+   },
+   "start_fhr": 0
+  },
+  "2026092512/EPAC": {
+   "fsu_number": 1,
+   "fsu": {
+    "number": 1,
+    "lat": 15.89,
+    "lon": -155.61,
+    "distance_km": 16,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092512/1.html"
+   },
+   "start": {
+    "lat": 15.75,
+    "lon": -155.65,
+    "mslp_hpa": 984.7
+   },
+   "start_fhr": 0
+  },
+  "2026092512/GREENLAND": {
+   "fsu_number": 13,
+   "fsu": {
+    "number": 13,
+    "lat": 67.22,
+    "lon": -15.48,
+    "distance_km": 31,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092512/13.html"
+   },
+   "start": {
+    "lat": 66.95,
+    "lon": -15.61,
+    "mslp_hpa": 972.0
+   },
+   "start_fhr": 0
+  },
+  "2026092512/LABRADOR": {
+   "fsu_number": 29,
+   "fsu": {
+    "number": 29,
+    "lat": 57.28,
+    "lon": -41.42,
+    "distance_km": 59,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092512/29.html"
+   },
+   "start": {
+    "lat": 56.76,
+    "lon": -41.62,
+    "mslp_hpa": 991.8
+   },
+   "start_fhr": 0
+  },
+  "2026092612/AUTO_260924_01": {
+   "fsu_number": 4,
+   "fsu": {
+    "number": 4,
+    "lat": 18.21,
+    "lon": -111.48,
+    "distance_km": 50,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092612/4.html"
+   },
+   "start": {
+    "lat": 17.77,
+    "lon": -111.38,
+    "mslp_hpa": 953.0
+   },
+   "start_fhr": 0
+  },
+  "2026092612/AUTO_260924_02": {
+   "fsu_number": 6,
+   "fsu": {
+    "number": 6,
+    "lat": 56.62,
+    "lon": -169.16,
+    "distance_km": 23,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092612/6.html"
+   },
+   "start": {
+    "lat": 56.68,
+    "lon": -168.8,
+    "mslp_hpa": 973.7
+   },
+   "start_fhr": 0
+  },
+  "2026092612/AUTO_260924_05": {
+   "fsu_number": 3,
+   "fsu": {
+    "number": 3,
+    "lat": 19.87,
+    "lon": -123.87,
+    "distance_km": 58,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092612/3.html"
+   },
+   "start": {
+    "lat": 19.35,
+    "lon": -123.86,
+    "mslp_hpa": 970.1
+   },
+   "start_fhr": 0
+  },
+  "2026092612/AUTO_260926_01": {
+   "fsu_number": 7,
+   "fsu": {
+    "number": 7,
+    "lat": 23.18,
+    "lon": 126.97,
+    "distance_km": 14,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092612/7.html"
+   },
+   "start": {
+    "lat": 23.09,
+    "lon": 126.87,
+    "mslp_hpa": 972.7
+   },
+   "start_fhr": 0
+  },
+  "2026092612/EPAC": {
+   "fsu_number": 1,
+   "fsu": {
+    "number": 1,
+    "lat": 17.22,
+    "lon": -155.61,
+    "distance_km": 45,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092612/1.html"
+   },
+   "start": {
+    "lat": 16.89,
+    "lon": -155.37,
+    "mslp_hpa": 983.1
+   },
+   "start_fhr": 0
+  },
+  "2026092612/GREENLAND": {
+   "fsu_number": 9,
+   "fsu": {
+    "number": 9,
+    "lat": 67.22,
+    "lon": -16.26,
+    "distance_km": 51,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092612/9.html"
+   },
+   "start": {
+    "lat": 66.78,
+    "lon": -16.6,
+    "mslp_hpa": 984.6
+   },
+   "start_fhr": 0
+  },
+  "2026092612/LABRADOR": {
+   "fsu_number": 17,
+   "fsu": {
+    "number": 17,
+    "lat": 56.62,
+    "lon": -25.94,
+    "distance_km": 12,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092612/17.html"
+   },
+   "start": {
+    "lat": 56.51,
+    "lon": -25.98,
+    "mslp_hpa": 986.7
+   },
+   "start_fhr": 0
+  },
+  "2026092712/AUTO_260924_01": {
+   "fsu_number": 4,
+   "fsu": {
+    "number": 4,
+    "lat": 21.19,
+    "lon": -113.42,
+    "distance_km": 54,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092712/4.html"
+   },
+   "start": {
+    "lat": 20.75,
+    "lon": -113.64,
+    "mslp_hpa": 961.2
+   },
+   "start_fhr": 0
+  },
+  "2026092712/AUTO_260924_02": {
+   "fsu_number": 5,
+   "fsu": {
+    "number": 5,
+    "lat": 58.61,
+    "lon": -159.1,
+    "distance_km": 42,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092712/5.html"
+   },
+   "start": {
+    "lat": 58.73,
+    "lon": -159.78,
+    "mslp_hpa": 984.2
+   },
+   "start_fhr": 0
+  },
+  "2026092712/AUTO_260924_05": {
+   "fsu_number": 3,
+   "fsu": {
+    "number": 3,
+    "lat": 22.85,
+    "lon": -123.48,
+    "distance_km": 47,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092712/3.html"
+   },
+   "start": {
+    "lat": 22.45,
+    "lon": -123.33,
+    "mslp_hpa": 990.3
+   },
+   "start_fhr": 0
+  },
+  "2026092712/AUTO_260926_01": {
+   "fsu_number": 6,
+   "fsu": {
+    "number": 6,
+    "lat": 26.49,
+    "lon": 128.9,
+    "distance_km": 64,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092712/6.html"
+   },
+   "start": {
+    "lat": 25.92,
+    "lon": 128.96,
+    "mslp_hpa": 956.7
+   },
+   "start_fhr": 0
+  },
+  "2026092712/EPAC": {
+   "fsu_number": 1,
+   "fsu": {
+    "number": 1,
+    "lat": 16.89,
+    "lon": -157.94,
+    "distance_km": 62,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092712/1.html"
+   },
+   "start": {
+    "lat": 16.35,
+    "lon": -157.81,
+    "mslp_hpa": 979.7
+   },
+   "start_fhr": 0
+  },
+  "2026092712/GREENLAND": {
+   "fsu_number": 13,
+   "fsu": {
+    "number": 13,
+    "lat": 63.25,
+    "lon": -18.19,
+    "distance_km": 321,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092712/13.html"
+   },
+   "start": {
+    "lat": 66.13,
+    "lon": -18.77,
+    "mslp_hpa": 989.6
+   },
+   "start_fhr": 0
+  },
+  "2026092712/LABRADOR": {
+   "fsu_number": 13,
+   "fsu": {
+    "number": 13,
+    "lat": 63.25,
+    "lon": -18.19,
+    "distance_km": 35,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092712/13.html"
+   },
+   "start": {
+    "lat": 62.96,
+    "lon": -18.44,
+    "mslp_hpa": 986.5
+   },
+   "start_fhr": 0
+  },
+  "2026092812/AUTO_260924_01": {
+   "fsu_number": 4,
+   "fsu": {
+    "number": 4,
+    "lat": 24.17,
+    "lon": -113.81,
+    "distance_km": 31,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092812/4.html"
+   },
+   "start": {
+    "lat": 23.91,
+    "lon": -113.92,
+    "mslp_hpa": 963.3
+   },
+   "start_fhr": 0
+  },
+  "2026092812/AUTO_260924_02": {
+   "fsu_number": 5,
+   "fsu": {
+    "number": 5,
+    "lat": 58.61,
+    "lon": -147.48,
+    "distance_km": 10,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092812/5.html"
+   },
+   "start": {
+    "lat": 58.57,
+    "lon": -147.33,
+    "mslp_hpa": 989.3
+   },
+   "start_fhr": 0
+  },
+  "2026092812/AUTO_260924_05": {
+   "fsu_number": 3,
+   "fsu": {
+    "number": 3,
+    "lat": 23.18,
+    "lon": -123.48,
+    "distance_km": 12,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092812/3.html"
+   },
+   "start": {
+    "lat": 23.22,
+    "lon": -123.37,
+    "mslp_hpa": 1000.6
+   },
+   "start_fhr": 0
+  },
+  "2026092812/EPAC": {
+   "fsu_number": 1,
+   "fsu": {
+    "number": 1,
+    "lat": 16.89,
+    "lon": -162.19,
+    "distance_km": 36,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092812/1.html"
+   },
+   "start": {
+    "lat": 16.75,
+    "lon": -161.89,
+    "mslp_hpa": 964.5
+   },
+   "start_fhr": 0
+  },
+  "2026092912/AUTO_260924_01": {
+   "fsu_number": 4,
+   "fsu": {
+    "number": 4,
+    "lat": 27.48,
+    "lon": -111.48,
+    "distance_km": 76,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092912/4.html"
+   },
+   "start": {
+    "lat": 26.81,
+    "lon": -111.64,
+    "mslp_hpa": 990.3
+   },
+   "start_fhr": 0
+  },
+  "2026092912/AUTO_260924_02": {
+   "fsu_number": 5,
+   "fsu": {
+    "number": 5,
+    "lat": 58.28,
+    "lon": -140.52,
+    "distance_km": 50,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092912/5.html"
+   },
+   "start": {
+    "lat": 57.83,
+    "lon": -140.58,
+    "mslp_hpa": 996.2
+   },
+   "start_fhr": 0
+  },
+  "2026092912/AUTO_260924_05": {
+   "fsu_number": 3,
+   "fsu": {
+    "number": 3,
+    "lat": 21.19,
+    "lon": -123.48,
+    "distance_km": 37,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092912/3.html"
+   },
+   "start": {
+    "lat": 20.9,
+    "lon": -123.3,
+    "mslp_hpa": 1003.8
+   },
+   "start_fhr": 0
+  },
+  "2026092912/EPAC": {
+   "fsu_number": 1,
+   "fsu": {
+    "number": 1,
+    "lat": 20.2,
+    "lon": -164.52,
+    "distance_km": 12,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092912/1.html"
+   },
+   "start": {
+    "lat": 20.19,
+    "lon": -164.41,
+    "mslp_hpa": 961.1
+   },
+   "start_fhr": 0
+  },
+  "2026093012/AUTO_260924_02": {
+   "fsu_number": 60,
+   "fsu": {
+    "number": 60,
+    "lat": 62.25,
+    "lon": -140.52,
+    "distance_km": 367,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26093012/60.html"
+   },
+   "start": {
+    "lat": 58.98,
+    "lon": -139.66,
+    "mslp_hpa": 1008.5
+   },
+   "start_fhr": 0
+  },
+  "2026093012/AUTO_260929_01": {
+   "fsu_number": 12,
+   "fsu": {
+    "number": 12,
+    "lat": 57.28,
+    "lon": -18.97,
+    "distance_km": 51,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26093012/12.html"
+   },
+   "start": {
+    "lat": 56.82,
+    "lon": -18.99,
+    "mslp_hpa": 951.7
+   },
+   "start_fhr": 0
+  },
+  "2026093012/EPAC": {
+   "fsu_number": 1,
+   "fsu": {
+    "number": 1,
+    "lat": 22.85,
+    "lon": -164.52,
+    "distance_km": 43,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26093012/1.html"
+   },
+   "start": {
+    "lat": 22.5,
+    "lon": -164.7,
+    "mslp_hpa": 984.0
+   },
+   "start_fhr": 0
+  },
+  "2026100112/AUTO_260924_02": {
+   "fsu_number": 24,
+   "fsu": {
+    "number": 24,
+    "lat": 62.25,
+    "lon": -145.55,
+    "distance_km": 241,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100112/24.html"
+   },
+   "start": {
+    "lat": 62.03,
+    "lon": -150.16,
+    "mslp_hpa": 1007.0
+   },
+   "start_fhr": 0
+  },
+  "2026100112/AUTO_260929_01": {
+   "fsu_number": 6,
+   "fsu": {
+    "number": 6,
+    "lat": 65.56,
+    "lon": -24.77,
+    "distance_km": 13,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100112/6.html"
+   },
+   "start": {
+    "lat": 65.51,
+    "lon": -25.02,
+    "mslp_hpa": 970.7
+   },
+   "start_fhr": 0
+  },
+  "2026100112/AUTO_261001_01": {
+   "fsu_number": 5,
+   "fsu": {
+    "number": 5,
+    "lat": 19.87,
+    "lon": -108.77,
+    "distance_km": 72,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100112/5.html"
+   },
+   "start": {
+    "lat": 19.34,
+    "lon": -109.17,
+    "mslp_hpa": 966.3
+   },
+   "start_fhr": 0
+  },
+  "2026100112/AUTO_261001_02": {
+   "fsu_number": 41,
+   "fsu": {
+    "number": 41,
+    "lat": 62.58,
+    "lon": -77.42,
+    "distance_km": 14,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100112/41.html"
+   },
+   "start": {
+    "lat": 62.49,
+    "lon": -77.62,
+    "mslp_hpa": 975.0
+   },
+   "start_fhr": 0
+  },
+  "2026100112/EPAC": {
+   "fsu_number": 1,
+   "fsu": {
+    "number": 1,
+    "lat": 22.19,
+    "lon": -165.68,
+    "distance_km": 59,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100112/1.html"
+   },
+   "start": {
+    "lat": 21.77,
+    "lon": -165.33,
+    "mslp_hpa": 993.6
+   },
+   "start_fhr": 0
+  },
+  "2026100200/AUTO_260929_01": {
+   "fsu_number": 5,
+   "fsu": {
+    "number": 5,
+    "lat": 65.56,
+    "lon": -29.03,
+    "distance_km": 19,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100200/5.html"
+   },
+   "start": {
+    "lat": 65.71,
+    "lon": -29.21,
+    "mslp_hpa": 978.4
+   },
+   "start_fhr": 0
+  },
+  "2026100200/AUTO_260930_01": {
+   "fsu_number": 39,
+   "fsu": {
+    "number": 39,
+    "lat": 79.14,
+    "lon": 106.45,
+    "distance_km": 123,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100200/39.html"
+   },
+   "start": {
+    "lat": 79.29,
+    "lon": 112.29,
+    "mslp_hpa": 980.7
+   },
+   "start_fhr": 0
+  },
+  "2026100200/AUTO_261001_01": {
+   "fsu_number": 4,
+   "fsu": {
+    "number": 4,
+    "lat": 19.87,
+    "lon": -109.55,
+    "distance_km": 37,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100200/4.html"
+   },
+   "start": {
+    "lat": 19.54,
+    "lon": -109.56,
+    "mslp_hpa": 951.0
+   },
+   "start_fhr": 0
+  },
+  "2026100200/AUTO_261001_02": {
+   "fsu_number": 32,
+   "fsu": {
+    "number": 32,
+    "lat": 62.25,
+    "lon": -72.0,
+    "distance_km": 222,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100200/32.html"
+   },
+   "start": {
+    "lat": 63.04,
+    "lon": -76.0,
+    "mslp_hpa": 977.0
+   },
+   "start_fhr": 0
+  },
+  "2026100200/EPAC": {
+   "fsu_number": 1,
+   "fsu": {
+    "number": 1,
+    "lat": 23.18,
+    "lon": -166.06,
+    "distance_km": 53,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100200/1.html"
+   },
+   "start": {
+    "lat": 22.75,
+    "lon": -165.84,
+    "mslp_hpa": 989.4
+   },
+   "start_fhr": 0
+  },
+  "2026100200/WPAC": {
+   "fsu_number": 7,
+   "fsu": {
+    "number": 7,
+    "lat": 17.22,
+    "lon": 144.77,
+    "distance_km": 75,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100200/7.html"
+   },
+   "start": {
+    "lat": 16.68,
+    "lon": 145.19,
+    "mslp_hpa": 985.8
+   },
+   "start_fhr": 0
+  },
+  "2026100212/AUTO_260929_01": {
+   "fsu_number": 3,
+   "fsu": {
+    "number": 3,
+    "lat": 65.56,
+    "lon": -29.81,
+    "distance_km": 8,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100212/3.html"
+   },
+   "start": {
+    "lat": 65.63,
+    "lon": -29.83,
+    "mslp_hpa": 986.9
+   },
+   "start_fhr": 0
+  },
+  "2026100212/AUTO_260930_01": {
+   "fsu_number": 34,
+   "fsu": {
+    "number": 34,
+    "lat": 75.83,
+    "lon": 112.26,
+    "distance_km": 302,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100212/34.html"
+   },
+   "start": {
+    "lat": 77.27,
+    "lon": 122.17,
+    "mslp_hpa": 984.3
+   },
+   "start_fhr": 0
+  },
+  "2026100212/AUTO_261001_01": {
+   "fsu_number": 2,
+   "fsu": {
+    "number": 2,
+    "lat": 19.21,
+    "lon": -110.32,
+    "distance_km": 41,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100212/2.html"
+   },
+   "start": {
+    "lat": 19.19,
+    "lon": -110.71,
+    "mslp_hpa": 952.5
+   },
+   "start_fhr": 0
+  },
+  "2026100212/AUTO_261001_02": {
+   "fsu_number": 52,
+   "fsu": {
+    "number": 52,
+    "lat": 63.25,
+    "lon": -77.03,
+    "distance_km": 69,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100212/52.html"
+   },
+   "start": {
+    "lat": 63.57,
+    "lon": -75.84,
+    "mslp_hpa": 980.6
+   },
+   "start_fhr": 0
+  },
+  "2026100212/EPAC": {
+   "fsu_number": 1,
+   "fsu": {
+    "number": 1,
+    "lat": 23.18,
+    "lon": -166.84,
+    "distance_km": 37,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100212/1.html"
+   },
+   "start": {
+    "lat": 23.11,
+    "lon": -167.19,
+    "mslp_hpa": 986.9
+   },
+   "start_fhr": 0
+  },
+  "2026100212/WPAC": {
+   "fsu_number": 5,
+   "fsu": {
+    "number": 5,
+    "lat": 17.22,
+    "lon": 144.39,
+    "distance_km": 39,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100212/5.html"
+   },
+   "start": {
+    "lat": 17.1,
+    "lon": 144.73,
+    "mslp_hpa": 981.6
+   },
+   "start_fhr": 0
+  },
+  "2026100312/AUTO_260929_01": {
+   "fsu_number": 33,
+   "fsu": {
+    "number": 33,
+    "lat": 62.58,
+    "lon": -31.35,
+    "distance_km": 28,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100312/33.html"
+   },
+   "start": {
+    "lat": 62.77,
+    "lon": -30.98,
+    "mslp_hpa": 980.0
+   },
+   "start_fhr": 0
+  },
+  "2026100312/AUTO_260930_01": {
+   "fsu_number": 99,
+   "fsu": {
+    "number": 99,
+    "lat": 78.81,
+    "lon": 115.74,
+    "distance_km": 372,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100312/99.html"
+   },
+   "start": {
+    "lat": 78.72,
+    "lon": 132.98,
+    "mslp_hpa": 995.3
+   },
+   "start_fhr": 0
+  },
+  "2026100312/AUTO_261001_01": {
+   "fsu_number": 2,
+   "fsu": {
+    "number": 2,
+    "lat": 19.87,
+    "lon": -111.87,
+    "distance_km": 54,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100312/2.html"
+   },
+   "start": {
+    "lat": 19.39,
+    "lon": -111.81,
+    "mslp_hpa": 967.1
+   },
+   "start_fhr": 0
+  },
+  "2026100312/AUTO_261001_02": {
+   "fsu_number": 26,
+   "fsu": {
+    "number": 26,
+    "lat": 64.9,
+    "lon": -69.29,
+    "distance_km": 29,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100312/26.html"
+   },
+   "start": {
+    "lat": 64.64,
+    "lon": -69.34,
+    "mslp_hpa": 988.8
+   },
+   "start_fhr": 0
+  },
+  "2026100312/AUTO_261003_01": {
+   "fsu_number": 32,
+   "fsu": {
+    "number": 32,
+    "lat": 52.32,
+    "lon": 169.55,
+    "distance_km": 34,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100312/32.html"
+   },
+   "start": {
+    "lat": 52.01,
+    "lon": 169.54,
+    "mslp_hpa": 966.2
+   },
+   "start_fhr": 0
+  },
+  "2026100312/AUTO_261003_02": {
+   "fsu_number": 162,
+   "fsu": {
+    "number": 162,
+    "lat": 57.62,
+    "lon": 175.35,
+    "distance_km": 183,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100312/162.html"
+   },
+   "start": {
+    "lat": 56.19,
+    "lon": 173.86,
+    "mslp_hpa": 978.1
+   },
+   "start_fhr": 0
+  },
+  "2026100312/EPAC": {
+   "fsu_number": 1,
+   "fsu": {
+    "number": 1,
+    "lat": 23.18,
+    "lon": -170.71,
+    "distance_km": 35,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100312/1.html"
+   },
+   "start": {
+    "lat": 23.11,
+    "lon": -170.38,
+    "mslp_hpa": 979.3
+   },
+   "start_fhr": 0
+  },
+  "2026100312/WPAC": {
+   "fsu_number": 4,
+   "fsu": {
+    "number": 4,
+    "lat": 20.86,
+    "lon": 145.94,
+    "distance_km": 67,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100312/4.html"
+   },
+   "start": {
+    "lat": 20.31,
+    "lon": 146.21,
+    "mslp_hpa": 964.5
+   },
+   "start_fhr": 0
+  },
+  "2026100412/AUTO_260929_01": {
+   "fsu_number": 19,
+   "fsu": {
+    "number": 19,
+    "lat": 69.21,
+    "lon": -7.74,
+    "distance_km": 30,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100412/19.html"
+   },
+   "start": {
+    "lat": 68.95,
+    "lon": -7.95,
+    "mslp_hpa": 978.3
+   },
+   "start_fhr": 0
+  },
+  "2026100412/AUTO_260930_01": {
+   "fsu_number": 28,
+   "fsu": {
+    "number": 28,
+    "lat": 72.85,
+    "lon": 150.58,
+    "distance_km": 327,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100412/28.html"
+   },
+   "start": {
+    "lat": 74.69,
+    "lon": 142.34,
+    "mslp_hpa": 996.7
+   },
+   "start_fhr": 0
+  },
+  "2026100412/AUTO_261001_01": {
+   "fsu_number": 2,
+   "fsu": {
+    "number": 2,
+    "lat": 20.86,
+    "lon": -113.42,
+    "distance_km": 65,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100412/2.html"
+   },
+   "start": {
+    "lat": 20.29,
+    "lon": -113.54,
+    "mslp_hpa": 979.2
+   },
+   "start_fhr": 0
+  },
+  "2026100412/AUTO_261001_02": {
+   "fsu_number": 13,
+   "fsu": {
+    "number": 13,
+    "lat": 62.58,
+    "lon": -55.74,
+    "distance_km": 13,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100412/13.html"
+   },
+   "start": {
+    "lat": 62.57,
+    "lon": -55.99,
+    "mslp_hpa": 996.7
+   },
+   "start_fhr": 0
+  },
+  "2026100412/AUTO_261003_01": {
+   "fsu_number": 18,
+   "fsu": {
+    "number": 18,
+    "lat": 55.3,
+    "lon": -171.48,
+    "distance_km": 61,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100412/18.html"
+   },
+   "start": {
+    "lat": 54.76,
+    "lon": -171.64,
+    "mslp_hpa": 973.2
+   },
+   "start_fhr": 0
+  },
+  "2026100412/EPAC": {
+   "fsu_number": 1,
+   "fsu": {
+    "number": 1,
+    "lat": 23.84,
+    "lon": -177.68,
+    "distance_km": 28,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100412/1.html"
+   },
+   "start": {
+    "lat": 23.59,
+    "lon": -177.67,
+    "mslp_hpa": 967.8
+   },
+   "start_fhr": 0
+  },
+  "2026100412/WPAC": {
+   "fsu_number": 3,
+   "fsu": {
+    "number": 3,
+    "lat": 23.84,
+    "lon": 147.1,
+    "distance_km": 42,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100412/3.html"
+   },
+   "start": {
+    "lat": 23.47,
+    "lon": 147.17,
+    "mslp_hpa": 933.7
+   },
+   "start_fhr": 0
+  },
+  "2026100512/AUTO_260929_01": {
+   "fsu_number": 12,
+   "fsu": {
+    "number": 12,
+    "lat": 70.86,
+    "lon": 6.58,
+    "distance_km": 73,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100512/12.html"
+   },
+   "start": {
+    "lat": 70.27,
+    "lon": 5.69,
+    "mslp_hpa": 973.6
+   },
+   "start_fhr": 0
+  },
+  "2026100512/AUTO_260930_01": {
+   "fsu_number": 17,
+   "fsu": {
+    "number": 17,
+    "lat": 73.84,
+    "lon": 150.58,
+    "distance_km": 45,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100512/17.html"
+   },
+   "start": {
+    "lat": 73.44,
+    "lon": 150.65,
+    "mslp_hpa": 999.3
+   },
+   "start_fhr": 0
+  },
+  "2026100512/AUTO_261001_01": {
+   "fsu_number": 2,
+   "fsu": {
+    "number": 2,
+    "lat": 20.86,
+    "lon": -116.13,
+    "distance_km": 55,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100512/2.html"
+   },
+   "start": {
+    "lat": 20.43,
+    "lon": -115.87,
+    "mslp_hpa": 974.7
+   },
+   "start_fhr": 0
+  },
+  "2026100512/AUTO_261001_02": {
+   "fsu_number": 7,
+   "fsu": {
+    "number": 7,
+    "lat": 64.24,
+    "lon": -56.9,
+    "distance_km": 51,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100512/7.html"
+   },
+   "start": {
+    "lat": 63.78,
+    "lon": -56.97,
+    "mslp_hpa": 1009.1
+   },
+   "start_fhr": 0
+  },
+  "2026100512/AUTO_261003_01": {
+   "fsu_number": 11,
+   "fsu": {
+    "number": 11,
+    "lat": 57.28,
+    "lon": -154.84,
+    "distance_km": 193,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100512/11.html"
+   },
+   "start": {
+    "lat": 57.26,
+    "lon": -158.05,
+    "mslp_hpa": 986.4
+   },
+   "start_fhr": 0
+  },
+  "2026100512/EPAC": {
+   "fsu_number": 1,
+   "fsu": {
+    "number": 1,
+    "lat": 25.83,
+    "lon": 176.13,
+    "distance_km": 23,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100512/1.html"
+   },
+   "start": {
+    "lat": 25.62,
+    "lon": 176.11,
+    "mslp_hpa": 967.4
+   },
+   "start_fhr": 0
+  },
+  "2026100512/WPAC": {
+   "fsu_number": 3,
+   "fsu": {
+    "number": 3,
+    "lat": 27.48,
+    "lon": 145.94,
+    "distance_km": 37,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100512/3.html"
+   },
+   "start": {
+    "lat": 27.19,
+    "lon": 145.76,
+    "mslp_hpa": 949.4
+   },
+   "start_fhr": 0
+  },
+  "2026100612/AUTO_260929_01": {
+   "fsu_number": 40,
+   "fsu": {
+    "number": 40,
+    "lat": 69.21,
+    "lon": 35.61,
+    "distance_km": 42,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100612/40.html"
+   },
+   "start": {
+    "lat": 68.84,
+    "lon": 35.75,
+    "mslp_hpa": 965.9
+   },
+   "start_fhr": 0
+  },
+  "2026100612/AUTO_260930_01": {
+   "fsu_number": 9,
+   "fsu": {
+    "number": 9,
+    "lat": 75.83,
+    "lon": 153.29,
+    "distance_km": 11,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100612/9.html"
+   },
+   "start": {
+    "lat": 75.73,
+    "lon": 153.3,
+    "mslp_hpa": 1004.4
+   },
+   "start_fhr": 0
+  },
+  "2026100612/AUTO_261001_01": {
+   "fsu_number": 2,
+   "fsu": {
+    "number": 2,
+    "lat": 20.86,
+    "lon": -118.84,
+    "distance_km": 36,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100612/2.html"
+   },
+   "start": {
+    "lat": 20.54,
+    "lon": -118.9,
+    "mslp_hpa": 976.9
+   },
+   "start_fhr": 0
+  },
+  "2026100612/AUTO_261003_01": {
+   "fsu_number": 8,
+   "fsu": {
+    "number": 8,
+    "lat": 59.27,
+    "lon": -149.03,
+    "distance_km": 59,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100612/8.html"
+   },
+   "start": {
+    "lat": 58.82,
+    "lon": -149.58,
+    "mslp_hpa": 995.9
+   },
+   "start_fhr": 0
+  },
+  "2026100612/AUTO_261006_01": {
+   "fsu_number": 33,
+   "fsu": {
+    "number": 33,
+    "lat": 52.32,
+    "lon": -62.32,
+    "distance_km": 29,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100612/33.html"
+   },
+   "start": {
+    "lat": 52.06,
+    "lon": -62.28,
+    "mslp_hpa": 979.1
+   },
+   "start_fhr": 0
+  },
+  "2026100612/EPAC": {
+   "fsu_number": 1,
+   "fsu": {
+    "number": 1,
+    "lat": 25.83,
+    "lon": 168.77,
+    "distance_km": 46,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100612/1.html"
+   },
+   "start": {
+    "lat": 25.46,
+    "lon": 168.97,
+    "mslp_hpa": 976.5
+   },
+   "start_fhr": 0
+  },
+  "2026100612/WPAC": {
+   "fsu_number": 3,
+   "fsu": {
+    "number": 3,
+    "lat": 33.77,
+    "lon": 147.1,
+    "distance_km": 42,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100612/3.html"
+   },
+   "start": {
+    "lat": 33.41,
+    "lon": 147.22,
+    "mslp_hpa": 964.0
+   },
+   "start_fhr": 0
+  },
+  "2026100712/AUTO_260929_01": {
+   "fsu_number": 23,
+   "fsu": {
+    "number": 23,
+    "lat": 71.19,
+    "lon": 39.48,
+    "distance_km": 11,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100712/23.html"
+   },
+   "start": {
+    "lat": 71.21,
+    "lon": 39.18,
+    "mslp_hpa": 966.8
+   },
+   "start_fhr": 0
+  },
+  "2026100712/AUTO_260930_01": {
+   "fsu_number": 47,
+   "fsu": {
+    "number": 47,
+    "lat": 75.17,
+    "lon": 172.65,
+    "distance_km": 345,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100712/47.html"
+   },
+   "start": {
+    "lat": 73.57,
+    "lon": 162.77,
+    "mslp_hpa": 1008.0
+   },
+   "start_fhr": 0
+  },
+  "2026100712/AUTO_261001_01": {
+   "fsu_number": 2,
+   "fsu": {
+    "number": 2,
+    "lat": 21.19,
+    "lon": -121.55,
+    "distance_km": 48,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100712/2.html"
+   },
+   "start": {
+    "lat": 20.84,
+    "lon": -121.28,
+    "mslp_hpa": 980.5
+   },
+   "start_fhr": 0
+  },
+  "2026100712/AUTO_261006_01": {
+   "fsu_number": 18,
+   "fsu": {
+    "number": 18,
+    "lat": 58.28,
+    "lon": -55.35,
+    "distance_km": 23,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100712/18.html"
+   },
+   "start": {
+    "lat": 58.23,
+    "lon": -55.73,
+    "mslp_hpa": 978.1
+   },
+   "start_fhr": 0
+  },
+  "2026100712/AUTO_261007_01": {
+   "fsu_number": 40,
+   "fsu": {
+    "number": 40,
+    "lat": 56.62,
+    "lon": 144.0,
+    "distance_km": 36,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100712/40.html"
+   },
+   "start": {
+    "lat": 56.33,
+    "lon": 144.27,
+    "mslp_hpa": 969.6
+   },
+   "start_fhr": 0
+  },
+  "2026100712/EPAC": {
+   "fsu_number": 1,
+   "fsu": {
+    "number": 1,
+    "lat": 26.49,
+    "lon": 159.48,
+    "distance_km": 60,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100712/1.html"
+   },
+   "start": {
+    "lat": 25.98,
+    "lon": 159.68,
+    "mslp_hpa": 986.6
+   },
+   "start_fhr": 0
+  },
+  "2026100712/WPAC": {
+   "fsu_number": 3,
+   "fsu": {
+    "number": 3,
+    "lat": 46.69,
+    "lon": 161.81,
+    "distance_km": 63,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100712/3.html"
+   },
+   "start": {
+    "lat": 46.18,
+    "lon": 162.16,
+    "mslp_hpa": 970.7
+   },
+   "start_fhr": 0
+  },
+  "2026100812/AUTO_260929_01": {
+   "fsu_number": 12,
+   "fsu": {
+    "number": 12,
+    "lat": 72.19,
+    "lon": 43.35,
+    "distance_km": 41,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100812/12.html"
+   },
+   "start": {
+    "lat": 71.82,
+    "lon": 43.39,
+    "mslp_hpa": 979.8
+   },
+   "start_fhr": 0
+  },
+  "2026100812/AUTO_261001_01": {
+   "fsu_number": 2,
+   "fsu": {
+    "number": 2,
+    "lat": 22.19,
+    "lon": -123.87,
+    "distance_km": 8,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100812/2.html"
+   },
+   "start": {
+    "lat": 22.14,
+    "lon": -123.82,
+    "mslp_hpa": 986.2
+   },
+   "start_fhr": 0
+  },
+  "2026100812/AUTO_261008_01": {
+   "fsu_number": 3,
+   "fsu": {
+    "number": 3,
+    "lat": 60.6,
+    "lon": 176.9,
+    "distance_km": 26,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100812/3.html"
+   },
+   "start": {
+    "lat": 60.68,
+    "lon": 177.34,
+    "mslp_hpa": 946.9
+   },
+   "start_fhr": 0
+  },
+  "2026100812/AUTO_261008_03": {
+   "fsu_number": 21,
+   "fsu": {
+    "number": 21,
+    "lat": 23.84,
+    "lon": -90.58,
+    "distance_km": 46,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100812/21.html"
+   },
+   "start": {
+    "lat": 23.45,
+    "lon": -90.73,
+    "mslp_hpa": 979.4
+   },
+   "start_fhr": 0
+  },
+  "2026100812/EPAC": {
+   "fsu_number": 1,
+   "fsu": {
+    "number": 1,
+    "lat": 27.81,
+    "lon": 152.13,
+    "distance_km": 44,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100812/1.html"
+   },
+   "start": {
+    "lat": 27.42,
+    "lon": 152.18,
+    "mslp_hpa": 988.2
+   },
+   "start_fhr": 0
+  },
+  "2026100912/AUTO_260929_01": {
+   "fsu_number": 6,
+   "fsu": {
+    "number": 6,
+    "lat": 73.18,
+    "lon": 49.94,
+    "distance_km": 10,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100912/6.html"
+   },
+   "start": {
+    "lat": 73.09,
+    "lon": 49.99,
+    "mslp_hpa": 986.8
+   },
+   "start_fhr": 0
+  },
+  "2026100912/AUTO_261001_01": {
+   "fsu_number": 2,
+   "fsu": {
+    "number": 2,
+    "lat": 22.85,
+    "lon": -125.03,
+    "distance_km": 40,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100912/2.html"
+   },
+   "start": {
+    "lat": 22.55,
+    "lon": -125.24,
+    "mslp_hpa": 991.2
+   },
+   "start_fhr": 0
+  },
+  "2026100912/AUTO_261008_01": {
+   "fsu_number": 41,
+   "fsu": {
+    "number": 41,
+    "lat": 59.27,
+    "lon": 169.94,
+    "distance_km": 49,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100912/41.html"
+   },
+   "start": {
+    "lat": 58.86,
+    "lon": 170.26,
+    "mslp_hpa": 963.6
+   },
+   "start_fhr": 0
+  },
+  "2026100912/AUTO_261008_03": {
+   "fsu_number": 14,
+   "fsu": {
+    "number": 14,
+    "lat": 27.48,
+    "lon": -87.48,
+    "distance_km": 57,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100912/14.html"
+   },
+   "start": {
+    "lat": 26.99,
+    "lon": -87.66,
+    "mslp_hpa": 967.9
+   },
+   "start_fhr": 0
+  },
+  "2026100912/AUTO_261009_01": {
+   "fsu_number": 3,
+   "fsu": {
+    "number": 3,
+    "lat": 20.2,
+    "lon": 154.06,
+    "distance_km": 38,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100912/3.html"
+   },
+   "start": {
+    "lat": 19.89,
+    "lon": 154.22,
+    "mslp_hpa": 963.5
+   },
+   "start_fhr": 0
+  },
+  "2026100912/AUTO_261009_02": {
+   "fsu_number": 5,
+   "fsu": {
+    "number": 5,
+    "lat": 16.23,
+    "lon": -104.52,
+    "distance_km": 22,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100912/5.html"
+   },
+   "start": {
+    "lat": 16.04,
+    "lon": -104.59,
+    "mslp_hpa": 974.1
+   },
+   "start_fhr": 0
+  },
+  "2026100912/EPAC": {
+   "fsu_number": 1,
+   "fsu": {
+    "number": 1,
+    "lat": 29.47,
+    "lon": 147.87,
+    "distance_km": 38,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100912/1.html"
+   },
+   "start": {
+    "lat": 29.14,
+    "lon": 147.76,
+    "mslp_hpa": 989.5
+   },
+   "start_fhr": 0
+  },
+  "2026101012/AUTO_260929_01": {
+   "fsu_number": 5,
+   "fsu": {
+    "number": 5,
+    "lat": 77.15,
+    "lon": 56.52,
+    "distance_km": 13,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101012/5.html"
+   },
+   "start": {
+    "lat": 77.23,
+    "lon": 56.88,
+    "mslp_hpa": 990.9
+   },
+   "start_fhr": 0
+  },
+  "2026101012/AUTO_261001_01": {
+   "fsu_number": 2,
+   "fsu": {
+    "number": 2,
+    "lat": 25.17,
+    "lon": -120.39,
+    "distance_km": 44,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101012/2.html"
+   },
+   "start": {
+    "lat": 24.85,
+    "lon": -120.64,
+    "mslp_hpa": 990.7
+   },
+   "start_fhr": 0
+  },
+  "2026101012/AUTO_261008_01": {
+   "fsu_number": 21,
+   "fsu": {
+    "number": 21,
+    "lat": 59.6,
+    "lon": -178.84,
+    "distance_km": 14,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101012/21.html"
+   },
+   "start": {
+    "lat": 59.71,
+    "lon": -178.96,
+    "mslp_hpa": 975.6
+   },
+   "start_fhr": 0
+  },
+  "2026101012/AUTO_261009_01": {
+   "fsu_number": 3,
+   "fsu": {
+    "number": 3,
+    "lat": 23.18,
+    "lon": 149.42,
+    "distance_km": 37,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101012/3.html"
+   },
+   "start": {
+    "lat": 22.95,
+    "lon": 149.68,
+    "mslp_hpa": 947.3
+   },
+   "start_fhr": 0
+  },
+  "2026101012/AUTO_261009_02": {
+   "fsu_number": 4,
+   "fsu": {
+    "number": 4,
+    "lat": 17.88,
+    "lon": -104.9,
+    "distance_km": 53,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101012/4.html"
+   },
+   "start": {
+    "lat": 17.4,
+    "lon": -104.93,
+    "mslp_hpa": 950.1
+   },
+   "start_fhr": 0
+  },
+  "2026101012/EPAC": {
+   "fsu_number": 1,
+   "fsu": {
+    "number": 1,
+    "lat": 31.79,
+    "lon": 145.55,
+    "distance_km": 51,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101012/1.html"
+   },
+   "start": {
+    "lat": 31.33,
+    "lon": 145.6,
+    "mslp_hpa": 998.7
+   },
+   "start_fhr": 0
+  },
+  "2026101112/AUTO_261001_01": {
+   "fsu_number": 1,
+   "fsu": {
+    "number": 1,
+    "lat": 35.43,
+    "lon": -116.13,
+    "distance_km": 255,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101112/1.html"
+   },
+   "start": {
+    "lat": 34.11,
+    "lon": -118.41,
+    "mslp_hpa": 996.7
+   },
+   "start_fhr": 0
+  },
+  "2026101112/AUTO_261008_01": {
+   "fsu_number": 10,
+   "fsu": {
+    "number": 10,
+    "lat": 61.26,
+    "lon": -173.03,
+    "distance_km": 29,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101112/10.html"
+   },
+   "start": {
+    "lat": 61.01,
+    "lon": -172.88,
+    "mslp_hpa": 982.6
+   },
+   "start_fhr": 0
+  },
+  "2026101112/AUTO_261009_01": {
+   "fsu_number": 2,
+   "fsu": {
+    "number": 2,
+    "lat": 26.49,
+    "lon": 147.48,
+    "distance_km": 47,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101112/2.html"
+   },
+   "start": {
+    "lat": 26.07,
+    "lon": 147.44,
+    "mslp_hpa": 966.7
+   },
+   "start_fhr": 0
+  },
+  "2026101112/AUTO_261009_02": {
+   "fsu_number": 3,
+   "fsu": {
+    "number": 3,
+    "lat": 19.21,
+    "lon": -105.29,
+    "distance_km": 30,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101112/3.html"
+   },
+   "start": {
+    "lat": 18.99,
+    "lon": -105.46,
+    "mslp_hpa": 972.1
+   },
+   "start_fhr": 0
+  },
+  "2026101112/AUTO_261011_01": {
+   "fsu_number": 28,
+   "fsu": {
+    "number": 28,
+    "lat": 58.61,
+    "lon": -38.32,
+    "distance_km": 9,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101112/28.html"
+   },
+   "start": {
+    "lat": 58.69,
+    "lon": -38.33,
+    "mslp_hpa": 964.5
+   },
+   "start_fhr": 0
+  },
+  "2026101212/AUTO_261008_01": {
+   "fsu_number": 7,
+   "fsu": {
+    "number": 7,
+    "lat": 63.58,
+    "lon": -168.39,
+    "distance_km": 39,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101212/7.html"
+   },
+   "start": {
+    "lat": 63.25,
+    "lon": -168.14,
+    "mslp_hpa": 990.9
+   },
+   "start_fhr": 0
+  },
+  "2026101212/AUTO_261009_02": {
+   "fsu_number": 3,
+   "fsu": {
+    "number": 3,
+    "lat": 20.86,
+    "lon": -106.06,
+    "distance_km": 46,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101212/3.html"
+   },
+   "start": {
+    "lat": 20.46,
+    "lon": -106.19,
+    "mslp_hpa": 982.4
+   },
+   "start_fhr": 0
+  },
+  "2026101212/EPAC": {
+   "fsu_number": 2,
+   "fsu": {
+    "number": 2,
+    "lat": 31.79,
+    "lon": 148.26,
+    "distance_km": 48,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101212/2.html"
+   },
+   "start": {
+    "lat": 31.38,
+    "lon": 148.43,
+    "mslp_hpa": 971.0
+   },
+   "start_fhr": 0
+  },
+  "2026101312/AUTO_261008_01": {
+   "fsu_number": 3,
+   "fsu": {
+    "number": 3,
+    "lat": 62.25,
+    "lon": -168.0,
+    "distance_km": 31,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101312/3.html"
+   },
+   "start": {
+    "lat": 61.98,
+    "lon": -168.11,
+    "mslp_hpa": 998.2
+   },
+   "start_fhr": 0
+  },
+  "2026101312/AUTO_261009_02": {
+   "fsu_number": 2,
+   "fsu": {
+    "number": 2,
+    "lat": 20.86,
+    "lon": -106.84,
+    "distance_km": 48,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101312/2.html"
+   },
+   "start": {
+    "lat": 20.5,
+    "lon": -107.1,
+    "mslp_hpa": 979.8
+   },
+   "start_fhr": 0
+  },
+  "2026101312/AUTO_261011_01": {
+   "fsu_number": 19,
+   "fsu": {
+    "number": 19,
+    "lat": 61.59,
+    "lon": -38.32,
+    "distance_km": 14,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101312/19.html"
+   },
+   "start": {
+    "lat": 61.57,
+    "lon": -38.59,
+    "mslp_hpa": 972.1
+   },
+   "start_fhr": 0
+  },
+  "2026101312/AUTO_261012_01": {
+   "fsu_number": 116,
+   "fsu": {
+    "number": 116,
+    "lat": 65.23,
+    "lon": -49.55,
+    "distance_km": 101,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101312/116.html"
+   },
+   "start": {
+    "lat": 64.5,
+    "lon": -50.82,
+    "mslp_hpa": 981.6
+   },
+   "start_fhr": 0
+  },
+  "2026101312/AUTO_261013_01": {
+   "fsu_number": 37,
+   "fsu": {
+    "number": 37,
+    "lat": 65.23,
+    "lon": -5.42,
+    "distance_km": 106,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101312/37.html"
+   },
+   "start": {
+    "lat": 64.29,
+    "lon": -5.76,
+    "mslp_hpa": 974.5
+   },
+   "start_fhr": 0
+  },
+  "2026101312/AUTO_261013_02": {
+   "fsu_number": 21,
+   "fsu": {
+    "number": 21,
+    "lat": 47.68,
+    "lon": -40.26,
+    "distance_km": 28,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101312/21.html"
+   },
+   "start": {
+    "lat": 47.44,
+    "lon": -40.39,
+    "mslp_hpa": 978.3
+   },
+   "start_fhr": 0
+  },
+  "2026101312/EPAC": {
+   "fsu_number": 1,
+   "fsu": {
+    "number": 1,
+    "lat": 37.42,
+    "lon": 155.61,
+    "distance_km": 66,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101312/1.html"
+   },
+   "start": {
+    "lat": 36.88,
+    "lon": 155.3,
+    "mslp_hpa": 983.9
+   },
+   "start_fhr": 0
+  },
+  "2026101412/AUTO_261009_02": {
+   "fsu_number": 2,
+   "fsu": {
+    "number": 2,
+    "lat": 19.87,
+    "lon": -107.61,
+    "distance_km": 14,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101412/2.html"
+   },
+   "start": {
+    "lat": 19.74,
+    "lon": -107.62,
+    "mslp_hpa": 973.8
+   },
+   "start_fhr": 0
+  },
+  "2026101412/AUTO_261013_01": {
+   "fsu_number": 21,
+   "fsu": {
+    "number": 21,
+    "lat": 74.17,
+    "lon": 2.32,
+    "distance_km": 14,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101412/21.html"
+   },
+   "start": {
+    "lat": 74.07,
+    "lon": 2.03,
+    "mslp_hpa": 969.9
+   },
+   "start_fhr": 0
+  },
+  "2026101412/AUTO_261014_01": {
+   "fsu_number": 36,
+   "fsu": {
+    "number": 36,
+    "lat": 62.25,
+    "lon": -19.74,
+    "distance_km": 53,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101412/36.html"
+   },
+   "start": {
+    "lat": 61.8,
+    "lon": -20.06,
+    "mslp_hpa": 927.8
+   },
+   "start_fhr": 0
+  },
+  "2026101412/AUTO_261014_02": {
+   "fsu_number": 14,
+   "fsu": {
+    "number": 14,
+    "lat": 52.65,
+    "lon": -156.39,
+    "distance_km": 44,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101412/14.html"
+   },
+   "start": {
+    "lat": 52.26,
+    "lon": -156.51,
+    "mslp_hpa": 972.8
+   },
+   "start_fhr": 0
+  },
+  "2026101412/AUTO_261014_03": {
+   "fsu_number": 124,
+   "fsu": {
+    "number": 124,
+    "lat": 79.8,
+    "lon": 100.26,
+    "distance_km": 389,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101412/124.html"
+   },
+   "start": {
+    "lat": 82.19,
+    "lon": 116.79,
+    "mslp_hpa": 978.9
+   },
+   "start_fhr": 0
+  },
+  "2026101412/EPAC": {
+   "fsu_number": 1,
+   "fsu": {
+    "number": 1,
+    "lat": 41.39,
+    "lon": 162.97,
+    "distance_km": 59,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101412/1.html"
+   },
+   "start": {
+    "lat": 40.88,
+    "lon": 163.17,
+    "mslp_hpa": 988.1
+   },
+   "start_fhr": 0
+  },
+  "2026101512/AUTO_261009_02": {
+   "fsu_number": 2,
+   "fsu": {
+    "number": 2,
+    "lat": 19.87,
+    "lon": -108.0,
+    "distance_km": 64,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101512/2.html"
+   },
+   "start": {
+    "lat": 19.31,
+    "lon": -107.88,
+    "mslp_hpa": 993.4
+   },
+   "start_fhr": 0
+  },
+  "2026101512/AUTO_261014_01": {
+   "fsu_number": 21,
+   "fsu": {
+    "number": 21,
+    "lat": 69.21,
+    "lon": -5.42,
+    "distance_km": 21,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101512/21.html"
+   },
+   "start": {
+    "lat": 69.02,
+    "lon": -5.46,
+    "mslp_hpa": 955.3
+   },
+   "start_fhr": 0
+  },
+  "2026101512/AUTO_261014_02": {
+   "fsu_number": 9,
+   "fsu": {
+    "number": 9,
+    "lat": 55.63,
+    "lon": -157.55,
+    "distance_km": 40,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101512/9.html"
+   },
+   "start": {
+    "lat": 55.28,
+    "lon": -157.66,
+    "mslp_hpa": 974.7
+   },
+   "start_fhr": 0
+  },
+  "2026101512/AUTO_261014_03": {
+   "fsu_number": 46,
+   "fsu": {
+    "number": 46,
+    "lat": 79.8,
+    "lon": 154.06,
+    "distance_km": 212,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101512/46.html"
+   },
+   "start": {
+    "lat": 78.03,
+    "lon": 150.35,
+    "mslp_hpa": 994.2
+   },
+   "start_fhr": 0
+  },
+  "2026101512/AUTO_261015_01": {
+   "fsu_number": 13,
+   "fsu": {
+    "number": 13,
+    "lat": 53.64,
+    "lon": 147.1,
+    "distance_km": 28,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101512/13.html"
+   },
+   "start": {
+    "lat": 53.39,
+    "lon": 147.08,
+    "mslp_hpa": 971.0
+   },
+   "start_fhr": 0
+  },
+  "2026101512/AUTO_261015_02": {
+   "fsu_number": 113,
+   "fsu": {
+    "number": 113,
+    "lat": 79.8,
+    "lon": 32.9,
+    "distance_km": 304,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101512/113.html"
+   },
+   "start": {
+    "lat": 81.93,
+    "lon": 22.04,
+    "mslp_hpa": 976.4
+   },
+   "start_fhr": 0
+  },
+  "2026101512/EPAC": {
+   "fsu_number": 1,
+   "fsu": {
+    "number": 1,
+    "lat": 42.38,
+    "lon": 173.42,
+    "distance_km": 41,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101512/1.html"
+   },
+   "start": {
+    "lat": 42.03,
+    "lon": 173.58,
+    "mslp_hpa": 999.5
+   },
+   "start_fhr": 0
+  },
+  "2026101612/AUTO_261009_02": {
+   "fsu_number": 2,
+   "fsu": {
+    "number": 2,
+    "lat": 20.86,
+    "lon": -108.39,
+    "distance_km": 30,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101612/2.html"
+   },
+   "start": {
+    "lat": 20.69,
+    "lon": -108.61,
+    "mslp_hpa": 999.9
+   },
+   "start_fhr": 0
+  },
+  "2026101612/AUTO_261014_01": {
+   "fsu_number": 12,
+   "fsu": {
+    "number": 12,
+    "lat": 75.83,
+    "lon": 17.81,
+    "distance_km": 62,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101612/12.html"
+   },
+   "start": {
+    "lat": 75.28,
+    "lon": 17.42,
+    "mslp_hpa": 967.6
+   },
+   "start_fhr": 0
+  },
+  "2026101612/AUTO_261014_02": {
+   "fsu_number": 6,
+   "fsu": {
+    "number": 6,
+    "lat": 56.62,
+    "lon": -150.97,
+    "distance_km": 17,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101612/6.html"
+   },
+   "start": {
+    "lat": 56.48,
+    "lon": -151.08,
+    "mslp_hpa": 979.6
+   },
+   "start_fhr": 0
+  },
+  "2026101612/AUTO_261014_03": {
+   "fsu_number": 38,
+   "fsu": {
+    "number": 38,
+    "lat": 75.83,
+    "lon": 162.97,
+    "distance_km": 45,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101612/38.html"
+   },
+   "start": {
+    "lat": 75.43,
+    "lon": 163.1,
+    "mslp_hpa": 996.6
+   },
+   "start_fhr": 0
+  },
+  "2026101612/AUTO_261015_01": {
+   "fsu_number": 8,
+   "fsu": {
+    "number": 8,
+    "lat": 54.3,
+    "lon": 150.97,
+    "distance_km": 14,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101612/8.html"
+   },
+   "start": {
+    "lat": 54.18,
+    "lon": 151.02,
+    "mslp_hpa": 981.5
+   },
+   "start_fhr": 0
+  },
+  "2026101612/AUTO_261016_01": {
+   "fsu_number": 7,
+   "fsu": {
+    "number": 7,
+    "lat": 14.24,
+    "lon": -102.58,
+    "distance_km": 17,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101612/7.html"
+   },
+   "start": {
+    "lat": 14.23,
+    "lon": -102.42,
+    "mslp_hpa": 958.6
+   },
+   "start_fhr": 0
+  },
+  "2026101612/EPAC": {
+   "fsu_number": 1,
+   "fsu": {
+    "number": 1,
+    "lat": 43.71,
+    "lon": -174.58,
+    "distance_km": 11,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101612/1.html"
+   },
+   "start": {
+    "lat": 43.63,
+    "lon": -174.67,
+    "mslp_hpa": 1002.0
+   },
+   "start_fhr": 0
+  },
+  "2026101712/AUTO_261009_02": {
+   "fsu_number": 2,
+   "fsu": {
+    "number": 2,
+    "lat": 23.18,
+    "lon": -113.03,
+    "distance_km": 35,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101712/2.html"
+   },
+   "start": {
+    "lat": 22.93,
+    "lon": -112.83,
+    "mslp_hpa": 1007.8
+   },
+   "start_fhr": 0
+  },
+  "2026101712/AUTO_261014_01": {
+   "fsu_number": 38,
+   "fsu": {
+    "number": 38,
+    "lat": 77.81,
+    "lon": 42.97,
+    "distance_km": 59,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101712/38.html"
+   },
+   "start": {
+    "lat": 77.28,
+    "lon": 43.24,
+    "mslp_hpa": 977.1
+   },
+   "start_fhr": 0
+  },
+  "2026101712/AUTO_261014_02": {
+   "fsu_number": 5,
+   "fsu": {
+    "number": 5,
+    "lat": 58.28,
+    "lon": -142.84,
+    "distance_km": 42,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101712/5.html"
+   },
+   "start": {
+    "lat": 57.9,
+    "lon": -142.87,
+    "mslp_hpa": 991.0
+   },
+   "start_fhr": 0
+  },
+  "2026101712/AUTO_261014_03": {
+   "fsu_number": 21,
+   "fsu": {
+    "number": 21,
+    "lat": 74.83,
+    "lon": 170.32,
+    "distance_km": 40,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101712/21.html"
+   },
+   "start": {
+    "lat": 74.47,
+    "lon": 170.34,
+    "mslp_hpa": 991.4
+   },
+   "start_fhr": 0
+  },
+  "2026101712/AUTO_261015_01": {
+   "fsu_number": 7,
+   "fsu": {
+    "number": 7,
+    "lat": 51.99,
+    "lon": 159.87,
+    "distance_km": 27,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101712/7.html"
+   },
+   "start": {
+    "lat": 51.75,
+    "lon": 159.93,
+    "mslp_hpa": 992.3
+   },
+   "start_fhr": 0
+  },
+  "2026101712/AUTO_261016_01": {
+   "fsu_number": 6,
+   "fsu": {
+    "number": 6,
+    "lat": 16.89,
+    "lon": -104.13,
+    "distance_km": 72,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101712/6.html"
+   },
+   "start": {
+    "lat": 16.27,
+    "lon": -103.95,
+    "mslp_hpa": 970.7
+   },
+   "start_fhr": 0
+  },
+  "2026101712/AUTO_261016_02": {
+   "fsu_number": 33,
+   "fsu": {
+    "number": 33,
+    "lat": 62.25,
+    "lon": -41.42,
+    "distance_km": 21,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101712/33.html"
+   },
+   "start": {
+    "lat": 62.07,
+    "lon": -41.27,
+    "mslp_hpa": 969.7
+   },
+   "start_fhr": 0
+  },
+  "2026101712/AUTO_261017_01": {
+   "fsu_number": 3,
+   "fsu": {
+    "number": 3,
+    "lat": 12.91,
+    "lon": 145.94,
+    "distance_km": 36,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101712/3.html"
+   },
+   "start": {
+    "lat": 12.73,
+    "lon": 146.22,
+    "mslp_hpa": 971.0
+   },
+   "start_fhr": 0
+  },
+  "2026101712/AUTO_261017_03": {
+   "fsu_number": 146,
+   "fsu": {
+    "number": 146,
+    "lat": 71.85,
+    "lon": -55.35,
+    "distance_km": 393,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101712/146.html"
+   },
+   "start": {
+    "lat": 68.88,
+    "lon": -49.62,
+    "mslp_hpa": 978.0
+   },
+   "start_fhr": 0
+  },
+  "2026101712/EPAC": {
+   "fsu_number": 1,
+   "fsu": {
+    "number": 1,
+    "lat": 45.36,
+    "lon": -159.87,
+    "distance_km": 51,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101712/1.html"
+   },
+   "start": {
+    "lat": 44.92,
+    "lon": -160.06,
+    "mslp_hpa": 1007.5
+   },
+   "start_fhr": 0
+  }
+ }
+}

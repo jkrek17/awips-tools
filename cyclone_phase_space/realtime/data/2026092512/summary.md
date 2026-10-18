@@ -4,7 +4,7 @@ Storm-following phase diagrams from the 12 UTC 2026-09-25 GFS 0.25 degree run, f
 
 | Storm | FSU | Start position | MSLP (hPa) | Track (h) | Class sequence (h) | Onset std | Completion std | Onset Hart | Completion Hart |
 |---|---|---|---|---|---|---|---|---|---|
-| [AUTO_260924_01](AUTO_260924_01/) | [5](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092512/5.html) | 17.1N 108.0W | 951 | 0-96 | 0 0-54, 2 60, 0 66-96 | none | none | none | none |
+| [AUTO_260924_01](AUTO_260924_01/) | [5](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092512/5.html) | 17.2N 108.0W | 936 | 0-96 | 0 0-54, 2 60, 0 66-96 | none | none | none | none |
 | [AUTO_260924_02](AUTO_260924_02/) | [8](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092512/8.html) | 58.4N 176.0W | 967 | 0-114 | 1 0, 4 6, 6 12, 1 18-24, 5 30, 1 36-78, - 84-114 | none | 0 | 0 | 0 |
 | [AUTO_260924_04](AUTO_260924_04/) | none | 82.2N 137.2W | 982 | 0-30 | 6 0-30 | none | 0 | none | 0 |
 | [AUTO_260924_05](AUTO_260924_05/) | [4](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092512/4.html) | 17.6N 124.0W | 969 | 0-132 | 2 0-6, 0 12-18, 2 24-36, 3 42-54, 1 60-84, - 90-132 | 0 | none | 30 | none |
@@ -24,7 +24,7 @@ Closed lows at 0 h below 980 hPa north of 0N, one per system (minima within 500 
 
 | Position | MSLP (hPa) | Basin | Result |
 |---|---|---|---|
-| 17.1N 108.0W | 950.64 | TROP | skipped, 1 km from AUTO_260924_01 |
+| 17.2N 108.0W | 936.17 | TROP | skipped, 0 km from AUTO_260924_01 |
 | 58.4N 176.0W | 967.17 | NPAC | skipped, 0 km from AUTO_260924_02 |
 | 17.6N 124.0W | 969.41 | TROP | skipped, 1 km from AUTO_260924_05 |
 | 67.0N 15.6W | 972.02 | NATL | skipped, 0 km from GREENLAND |

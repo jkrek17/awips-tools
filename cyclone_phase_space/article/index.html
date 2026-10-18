@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Gridded Cyclone Phase Space in AWIPS</title>
-<meta name="description" content="A short academic article on computing Hart's cyclone phase space as a gridded AWIPS II D2D derived parameter, with reproducible synthetic-field figures.">
+<title>A Gridded Cyclone Phase Space</title>
+<meta name="description" content="An article on computing Hart's cyclone phase space at every grid point, with no tracker, and delivering it as a live global map of tracked storms and as AWIPS II derived parameters, with reproducible synthetic-field figures and a comparison against the Florida State diagrams.">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="preconnect" href="https://cdn.jsdelivr.net">
 <link rel="stylesheet" href="style.css">
@@ -11,10 +11,11 @@
 <body>
 <div class="page">
 
-  <h1>Gridded Cyclone Phase Space as an AWIPS Derived Parameter for
-  Diagnosing Tropical Cyclone Structure and Extratropical Transition</h1>
+  <h1>A Gridded Cyclone Phase Space: Hart's Parameters at Every Grid
+  Point, as a Live Global Map of Tracked Storms and as AWIPS Derived
+  Parameters</h1>
 
-  <p class="byline">Jason Krekeler, NOAA/NWS Ocean Prediction Center &middot; 2026-09-18</p>
+  <p class="byline">Jason Krekeler, NOAA/NWS Ocean Prediction Center &middot; 2026-10-18 (first version 2026-09-18)</p>
   <p class="meta">Code:
     <a href="https://github.com/jkrek17/awips-tools/tree/main/cyclone_phase_space">github.com/jkrek17/awips-tools</a>
     (directory <code>cyclone_phase_space/</code>).
@@ -31,30 +32,45 @@
       parameters, derived from the vertical change of the geopotential
       height perturbation within 500&nbsp;km of the center, and a low-level
       thermal asymmetry, from which Evans and Hart (2003) defined objective
-      onset and completion times for extratropical transition. This work
-      reformulates the parameters as gridded AWIPS II derived parameters
-      computed on demand from geopotential height on standard isobaric
-      levels, mean sea level pressure, surface pressure and the
-      deep-layer wind. At each grid point the height perturbation is
+      onset and completion times for extratropical transition. Every
+      published evaluation of the parameters is made at a tracked storm
+      center. This work evaluates them at every grid point instead,
+      from geopotential height on standard isobaric levels, mean sea
+      level pressure, surface pressure and the deep-layer wind, so that
+      every closed low on every forecast frame is classified with no
+      tracker. At each grid point the height perturbation is
       evaluated over a 500&nbsp;km circle, Hart's window, by sliding
       extrema along the chords of the disk, the thermal wind is its regression slope against log
       pressure over 925 to 700&nbsp;hPa and 500 to 300&nbsp;hPa, the
       asymmetry is the difference of true semicircle means across the
-      window-mean deep-layer wind, and a 5&nbsp;hPa ring test on mean sea
-      level pressure restricts classification to closed lows. One
-      categorical field assigns each detected low to one of
-      seven classes formed from the quadrants of Hart's two diagrams. A
-      global 0.25&deg; grid takes about 2.4&nbsp;s per forecast hour. On
-      GFS forecasts the class followed Typhoon Dujuan through its full
-      transition on the path the Florida State University phase diagrams
-      traced for the same run. On a synthetic life cycle evaluated with
-      both methods, the class sequence is the same, the asymmetry
-      parameter matches Hart's to 1%, and onset and completion fall at
-      the same hours. For a profile not linear in log
-      pressure the 925 to 700&nbsp;hPa band reads a deep warm core about
-      12% high and the upper band about 9% low, and the lower band a warm
-      seclusion two to three times higher than Hart's layer; the window
-      itself is Hart's circle.
+      window-mean deep-layer wind, a steering-flow stand-in for the
+      storm motion that a single frame cannot supply, and a 5&nbsp;hPa
+      ring test on mean sea level pressure restricts classification to
+      closed lows. One categorical field assigns each detected low to
+      one of seven classes formed from the quadrants of Hart's two
+      diagrams. A global 0.25&deg; grid takes about 2.4&nbsp;s per
+      forecast hour. The engine is delivered two ways: as a live global
+      map of the current GFS run, on which every closed low is
+      classified on every frame and each low that persists across
+      frames is linked into a track that carries its path through the
+      three-dimensional phase space and Hart's own motion-relative
+      asymmetry from that track; and as AWIPS II derived parameters
+      computed on demand in the CAVE display. Over 26 GFS cycles the
+      tracked lows were compared with the Florida State University
+      phase diagrams of the same runs, digitized from the published
+      images, at 517 hours timed on both diagrams. With Hart's bands and
+      the track motion the asymmetry agrees with the diagrams to a bias
+      of +1.8&nbsp;m and 12&nbsp;m root mean square, the thermal wind
+      terms to 51 and 39&nbsp;m, the joint class 70% of the time and
+      completion within 6&nbsp;h in 11 of 11 storms. The standard-level
+      bands of the AWIPS fields read the lower term about 17&nbsp;m
+      higher than Hart's bands on the same tracks and agree with the
+      diagrams in class 55% of the time, and the steering-flow
+      asymmetry of the gridded field carries a +5&nbsp;m bias against
+      the track-motion value, largest for slow storms. On a synthetic
+      life cycle evaluated with both methods, the class sequence is the
+      same, the asymmetry parameter matches Hart's to 1%, and onset and
+      completion fall at the same hours.
     </p>
   </div>
 
@@ -78,7 +94,8 @@
     (Jones et al. 2003; Evans and Hart 2003), and a storm that instead
     completes ET into a warm-seclusion cyclone, the frontal-fracture
     structure described by Shapiro and Keyser (1990), can re-intensify to
-    hurricane-force winds far outside the tropics (Hart et al. 2006).
+    hurricane-force winds far outside the tropics (Hart 2003, Section
+    4c; Hart et al. 2006).
     Evans and Hart (2003) defined objective ET onset as the hour <em>B</em>
     exceeds 10&nbsp;m and completion as the hour &minus;V<sub>T</sub><sup>L</sup>
     turns negative. Kofron et al. (2010) and Studholme et al. (2015)
@@ -90,13 +107,58 @@
     turning negative, commonly precedes completion (Evans and Hart 2003;
     Hart et al. 2006). Jones et al. (2003) catalogued the forecast
     challenges ET poses more broadly.
+  </p>
+  <p>
+    The parameters have been computed from gridded model and reanalysis
+    fields many times, in every case along a track: on Hart's own
+    real-time page; in ET climatologies from JRA-25 (Kitabatake 2011),
+    ECMWF analyses (Studholme et al. 2015), JRA-55 and ERA-Interim
+    (Bieli et al. 2019a,b), a global climate model (Bieli et al. 2020)
+    and high-resolution simulations (Zarzycki et al. 2017; Michaelis and
+    Lackmann 2019); and in the verification of operational structure
+    forecasts (Evans et al. 2006; Veren et al. 2009). The nearest
+    large-scale relative of the present work is ExTraTrack (Zarzycki et
+    al. 2017; Ullrich et al. 2021), which evaluates Hart's quantities
+    within 500&nbsp;km of each point of a TempestExtremes track, with
+    <i>B</i> split across the bearing between consecutive track
+    positions and a 24&nbsp;h running mean on the result. The lower
+    layer varies between these implementations: Hart's 900 to
+    600&nbsp;hPa, 925 to 600&nbsp;hPa in Kitabatake (2011), 925 to
+    700&nbsp;hPa in Studholme et al. (2015), and a two-level 850 to
+    500&nbsp;hPa difference in Bieli et al. (2020). Hart (2003) noted
+    that all three diagnostics follow from the three-dimensional height
+    field, with MSLP needed only to track the cyclone. To our knowledge
+    no published method has removed the tracker: evaluated the three
+    parameters at every grid point and let a closed-low test, rather
+    than a track, decide where they are read. That is the step taken
+    here. It carries one cost the tracked methods do not pay: a single
+    frame has no track from which to take the storm motion that
+    <i>B</i> is defined across, so the gridded <i>B</i> takes its
+    direction from the steering flow instead (Section 2), a substitution
+    with no precedent we could find, and tested in Section 6 against
+    Hart's <i>B</i> on the tracks the live export builds. Where a track
+    exists, Hart's <i>B</i> is recovered from it. The seven classes used
+    here are the cells cut by Hart's thresholds (Section 2); they are
+    not the seven data-derived clusters of Arnott et al. (2004) and
+    Studholme et al. (2015), which share the number by coincidence.
+  </p>
+  <p>
     Operational access to these parameters has been through the
     storm-centered diagrams of the Florida State University cyclone phase
     page (Hart, cited 2026), produced for the cyclones that page's tracker
-    identifies in a fixed set of models. Those diagrams are not available
-    inside the forecast workstation, they do not cover every model in a
-    local inventory, and they cannot be called up for a low the forecaster
-    picks out on the map.
+    identifies in a fixed set of models, which National Hurricane Center
+    forecasters cite in their discussions as supporting evidence rather
+    than as a rule (for example Tropical Storm Cristobal in 2008 and
+    Post-Tropical Cyclone Franklin in 2023; Hart 2021), and the
+    International Workshop on Tropical Cyclones has called for further
+    development of diagnostics built on the phase space (WMO 2025).
+    Those diagrams show one storm at a time, for the storms a tracker
+    found, in the models the page runs; they do not show the whole
+    basin at a glance, they are not on the forecaster's own workstation,
+    and they cannot be called up for a low the forecaster picks out on
+    the map. The product described here is the same phase space turned
+    around: the map first, every closed low classified on every frame,
+    and the storm's path through the space one click away.
   </p>
   <figure id="fig1">
     <img src="figures/fig10_two_diagrams.png"
@@ -125,7 +187,7 @@
       symmetric warm core quadrant, where Hart places the re-formed
       low-level warm core of a warm seclusion, the frontal-fracture
       structure of Shapiro and Keyser (1990) introduced in Section 1 (Hart
-      et al. 2006). (<a href="#src-fig1">Appendix A</a>)</figcaption>
+      2003, Section 4c; Hart et al. 2006). (<a href="#src-fig1">Appendix A</a>)</figcaption>
   </figure>
   <figure id="fig2">
     <img src="figures/fig8_thermal_wind_concept.png"
@@ -470,6 +532,26 @@
     motion vector, and <i>B</i> is set to missing at such points rather
     than estimated.
   </p>
+  <p>
+    The steering flow stands in for the storm motion because a derived
+    parameter sees one frame and has no track. Hart (2003), Kitabatake
+    (2011), Studholme et al. (2015) and ExTraTrack (Zarzycki et al. 2017)
+    all take the motion from consecutive track positions, and we found
+    no earlier test of a steering-flow substitute. The two agree
+    wherever the storm moves with its deep-layer steering and differ
+    where it does not: a storm slowed by a block, a low that is
+    deepening in place, a system whose motion is set by a shallower or
+    deeper layer than the 850 to 300&nbsp;hPa mean. The gridded <i>B</i>
+    is therefore best described as the thickness asymmetry across the
+    steering flow, which equals Hart's across-track asymmetry when the
+    track follows the steering, and the field is labeled that way on
+    the live map. Where the export links a low across frames (Section
+    5), Hart's <i>B</i> is also computed from the track's own motion by
+    the same half-disk means, with the heading from centered differences
+    of the fixes, and the class of a tracked low is read from that
+    value; Section 6 compares the two on the tracked storms of the
+    archive.
+  </p>
   <h3>Joint classification</h3>
   <p>
     Hart's two diagrams above are two projections of one
@@ -618,8 +700,13 @@
       seven times, alternating between classes 1 and 3 (the first
       crossing, at 6&nbsp;h, is marked as onset).
       Hart's method passes through the same classes in the same order in
-      every panel, within two frames. All six panels share one viewing
-      angle and one set of axis ranges. The class of a storm is the box its point sits in; dropping the &minus;V<sub>T</sub><sup>U</sup>
+      every panel, within two frames. The panels illustrate the geometry
+      of the space and the paths named in the text; because the
+      archetypes are built from the same prescribed ingredients both
+      methods evaluate, their agreement checks the gridded evaluation
+      against Hart's on known fields and is not a validation against
+      real storms, which Section 6 takes up. All six panels share one
+      viewing angle and one set of axis ranges. The class of a storm is the box its point sits in; dropping the &minus;V<sub>T</sub><sup>U</sup>
       axis gives the diagram of Figure 1a and dropping <i>B</i> gives
       Figure 1b. (<a href="#src-fig7">Appendix A</a>)</figcaption>
   </figure>
@@ -662,7 +749,11 @@
       point, combined as the wavenumber-one interpolation to the heading
       of a motion proxy, the window-mean deep-layer wind, scaled from the
       925 to 700&nbsp;hPa layer, and missing for a stationary or
-      steering-opposed storm.</li>
+      steering-opposed storm. On the live map and in the daily
+      collection, where the export links lows across frames, Hart's
+      <i>B</i> is also computed from each track's own motion, and the
+      class shown for a tracked low is read from it (Sections 5 and
+      6).</li>
     <li>Hart's diagrams are drawn for the cyclones a tracker identifies;
       this package classifies any closed low in MSLP that passes the
       detector of Section 2 on any model in the local inventory, with no
@@ -702,7 +793,15 @@
     magnitude. The synthetic material, the schematic
     trajectory of Figure 1 and the idealized fields behind Figures 2 to 9
     and 13 to 19, is defined in the figure scripts and summarized figure
-    by figure in Appendix A.
+    by figure in Appendix A. The archive behind the comparison in
+    Section 6 is the daily collection of Section 5: 26 GFS 0.25&deg;
+    cycles, the 12&nbsp;UTC run of every day from 24 September to 17
+    October 2026 with the 18&nbsp;UTC run of 24 September and the
+    00&nbsp;UTC run of 2 October, each storm followed to 198&nbsp;h,
+    187 storm-cycles in all, of which 159 have the Florida State
+    diagrams of the same storm and run saved beside them. Those diagrams
+    are published only as images, so their values were digitized
+    (Appendix A).
   </p>
 
   <h2 id="thermal-wind-from-height">4. Properties of the gridded thermal
@@ -843,6 +942,36 @@
       the per-frame budget of an interactive load; at 0.5&deg; it is
       0.31&nbsp;s and at 1&deg; 0.06&nbsp;s. (<a href="#src-fig9">Appendix A</a>)</figcaption>
   </figure>
+  <h3 id="delivery">The live map and the tracked storms</h3>
+  <p>
+    The same functions run outside AWIPS in the <code>realtime</code>
+    package on public GFS output, and that is the form in which the
+    product is meant to be used first. Every six hours an export
+    evaluates the four fields on every frame of the latest 0.25&deg;
+    run, out to 198&nbsp;h, finds every closed low, and links the lows
+    from frame to frame into tracks: a low is continued to the nearest
+    closed low within 600&nbsp;km of the position its recent motion
+    projects, one missing frame is bridged, and a track is kept once
+    the low has stayed closed for 24&nbsp;h, five frames.
+    Minima that sit on high terrain, where the surface pressure is far
+    below the reduced MSLP, are flagged and left off the tracks. The
+    <a href="https://jkrek17.github.io/web/cyclone/">live map</a> draws
+    the class at every low, the three fields faded away from the lows,
+    the tracks, and for any low the forecaster clicks, the whole track
+    through the three-dimensional phase space of Figure 7, with the
+    current hour marked and the timeline driving both. For a tracked
+    low the map shows Hart's <i>B</i> from the track's own motion
+    (Section 2) as the primary value and the class read from it, with
+    the steering-flow <i>B</i> of the gridded field beside it; where the
+    two classes differ the low's marker says so. The same export runs
+    daily as a collection that follows every Northern Hemisphere low
+    below a pressure threshold through its life in the run and pairs it
+    with the Florida State diagram of the same storm and run where that
+    page has one; the archive it builds is the basis of the comparison
+    in Section 6. The derived parameters in CAVE are the same engine
+    on a single frame, for the forecaster who wants the fields over the
+    model of their choice inside the workstation.
+  </p>
 
   <h2 id="results">6. Results</h2>
   <p>
@@ -1143,6 +1272,124 @@
   </figure>
 
 
+  <h3 id="fsu-comparison">Against the Florida State diagrams over 26 cycles</h3>
+  <p>
+    The cases above were read by eye. The archive of Section 3 allows
+    the comparison to be made in numbers, on every storm the collection
+    followed that the Florida State page also drew, 159 storm-cycles
+    with 318 diagrams. Each diagram was digitized: the axes
+    calibrated from the tick marks, every marker found and fitted, and
+    the markers timed by walking the trajectory from its labeled ends.
+    An hour counts as verified when it was timed independently on both
+    diagrams of a storm and the two readings of
+    &minus;V<sub>T</sub><sup>L</sup>, which the diagrams share, agree;
+    517 hours are verified and 1110 usable, the rest lost to overlapping
+    markers, the inset map and tangled tracks. Against 48 points read by
+    hand on five diagrams the digitizer agrees to 0.2&nbsp;m in <i>B</i>
+    and 0.07&nbsp;m in the thermal wind, and the two diagrams' readings
+    of &minus;V<sub>T</sub><sup>L</sup> agree to 0.13&nbsp;m on the
+    verified hours, so the digitizing error is negligible beside the
+    differences below. Our tracks were smoothed with the same 24&nbsp;h
+    centered running mean the diagrams carry and paired with them at
+    the shared valid hours of the same run. Our side is evaluated two
+    ways on every track: with the standard-level bands and the
+    steering-flow <i>B</i> of the gridded fields, and with Hart's 900 to
+    600 and 600 to 300&nbsp;hPa bands at 50&nbsp;hPa spacing and the
+    track-motion <i>B</i>.
+  </p>
+  <table>
+    <caption>Ours minus the Florida State diagrams at the 517 verified hours: mean difference and root mean square difference in m, with the count, for the standard-level bands with the steering-flow <i>B</i> (the gridded fields) and for Hart's bands with the track-motion <i>B</i>. Warm and cold are the diagram's own lower core; fast is a track speed above 20&nbsp;kt.</caption>
+    <thead><tr><th scope="col">Term</th><th scope="col">Bands</th><th scope="col">All</th><th scope="col">Warm lower core</th><th scope="col">Cold lower core</th><th scope="col">Faster than 20&nbsp;kt</th><th scope="col">20&nbsp;kt or slower</th></tr></thead>
+    <tbody>
+      <tr><td><i>B</i></td><td>standard, steering-flow <i>B</i></td><td>+7.7 / 16.0 (505)</td><td>+6.0 / 12.5 (321)</td><td>+10.7 / 20.8 (184)</td><td>+6.8 / 14.3 (82)</td><td>+7.8 / 16.3 (421)</td></tr>
+      <tr><td><i>B</i></td><td>Hart's, track-motion <i>B</i></td><td>+1.8 / 12.0 (515)</td><td>+1.0 / 9.8 (333)</td><td>+3.3 / 15.3 (182)</td><td>+5.3 / 13.8 (82)</td><td>+1.1 / 11.6 (433)</td></tr>
+      <tr><td>&minus;V<sub>T</sub><sup>L</sup></td><td>standard, steering-flow <i>B</i></td><td>+11.9 / 56.0 (517)</td><td>+7.3 / 48.2 (333)</td><td>+20.3 / 67.9 (184)</td><td>+2.9 / 83.4 (82)</td><td>+13.1 / 48.5 (433)</td></tr>
+      <tr><td>&minus;V<sub>T</sub><sup>L</sup></td><td>Hart's, track-motion <i>B</i></td><td>&minus;14.2 / 50.7 (517)</td><td>&minus;10.4 / 43.6 (333)</td><td>&minus;21.0 / 61.4 (184)</td><td>&minus;30.2 / 83.0 (82)</td><td>&minus;11.2 / 42.0 (433)</td></tr>
+      <tr><td>&minus;V<sub>T</sub><sup>U</sup></td><td>standard, steering-flow <i>B</i></td><td>&minus;2.3 / 52.4 (517)</td><td>&minus;10.1 / 46.2 (333)</td><td>+11.8 / 62.1 (184)</td><td>&minus;9.2 / 67.1 (82)</td><td>&minus;0.9 / 49.3 (433)</td></tr>
+      <tr><td>&minus;V<sub>T</sub><sup>U</sup></td><td>Hart's, track-motion <i>B</i></td><td>&minus;6.6 / 39.4 (517)</td><td>&minus;4.1 / 37.0 (333)</td><td>&minus;11.2 / 43.3 (184)</td><td>&minus;16.5 / 54.9 (82)</td><td>&minus;4.5 / 35.6 (433)</td></tr>
+    </tbody>
+  </table>
+  <p>
+    Three things follow. First, the band difference of Section 7 is
+    measured: on the same tracks the standard-level lower band reads
+    17&nbsp;m above Hart's band on average over the archive, 26&nbsp;m on the verified hours, and against the
+    diagrams the two sit on opposite sides, the standard band
+    12&nbsp;m high and Hart's 14&nbsp;m low,
+    with the cold cores the worse of the two regimes under both. The
+    upper term, whose bands are closer, is &minus;2 and
+    &minus;7&nbsp;m. What remains with Hart's own bands, a
+    low bias of some 10 to 20&nbsp;m and a scatter of 40 to 50&nbsp;m,
+    belongs to the rest of the comparison: 0.25&deg; against
+    0.5&deg;, a running mean that on the page reaches back before the
+    run, two trackers placing the center, and the diagrams' own
+    rounding; it is largest for fast storms, where a center displaced by
+    one frame's motion changes the window's contents most. Second, the
+    steering-flow substitution for the track motion is measured: the
+    gridded <i>B</i> runs +7.7&nbsp;m above the diagrams where
+    the track-motion <i>B</i> runs +1.8&nbsp;m above, with
+    12&nbsp;m scatter against 16, and on our own tracks,
+    without the diagrams, the two differ by +5.8&nbsp;m for
+    storms under 10&nbsp;kt and +1.2&nbsp;m above 40&nbsp;kt,
+    with the class differing between them at 17% of the
+    slow hours and 4% of the fast. The steering flow is a
+    good stand-in for a storm that moves with it and a poor one for a
+    storm that does not, which is why the live map reads a tracked
+    low's class from the track-motion value and keeps the steering-flow
+    field for the untracked lows and for CAVE. Third, the class and the
+    timing: the joint class agrees with the diagram's at 70% of the
+    verified hours with Hart's bands and the track motion, and at
+    55% with the gridded fields' choices, with the symmetric
+    against asymmetric side alone at 78 and 68%; among the
+    storms that both sides start on the near side of a threshold and
+    both carry across it, completion falls within 6&nbsp;h of the
+    diagram's in 11 of 11 with Hart's bands and
+    7 of 10 with the standard bands, median
+    differences 0 and +6&nbsp;h, and onset, which
+    depends on <i>B</i> alone, in 4 of 9 and 2
+    of 6, with the standard choices early by 9&nbsp;h
+    at the median. The timing counts are small because few storms in
+    four weeks cross a threshold inside a run on both sides.
+    Figure 20 shows the pairs and Figure 21 the timing.
+  </p>
+  <p>
+    The comparison has limits of its own. The pairs are not
+    independent: consecutive hours of one storm and the same storm on
+    consecutive days are strongly correlated, so the counts overstate
+    the effective sample. Both sides are evaluations of the GFS, so
+    nothing here measures either method against an observed structure
+    (Section 7). The detector and the tracker chose the storms, every
+    closed low below 980&nbsp;hPa at the analysis and the lows seeded by
+    hand, which leans the sample toward deep extratropical lows and
+    away from weak tropical systems; Section 7 gives the counts.
+    Within those limits the result is that the gridded engine with
+    Hart's bands and a track reproduces the diagrams to within the
+    differences one expects of two model resolutions and two trackers,
+    and that the two substitutions the gridded fields make, the
+    standard-level bands and the steering flow, are each worth a
+    measured and now stated bias.
+  </p>
+  <figure id="fig20">
+    <img src="figures/figK_fsu_scatter.png"
+         alt="Six scatter plots of our values against the Florida State diagrams' digitized values, our value on the vertical axis, each with a one-to-one line. Top row, the standard bands: B with bias about 8 meters, the lower thermal wind with bias about 12 meters and the upper with bias near minus 3 meters. Bottom row, Hart's bands and the track-motion B: B with bias about 2 meters, the lower thermal wind about 14 meters low and the upper about 7 meters low, all three tighter to the line. Points are red for a warm lower core and blue for a cold one, filled where verified on both diagrams and hollow where read from one.">
+    <figcaption><strong>Figure 20.</strong> Ours against the Florida
+      State diagrams at the paired hours of the archive, both as 24&nbsp;h
+      running means. Top row: the gridded fields' choices, standard-level
+      bands and the steering-flow <i>B</i>. Bottom row: Hart's bands and
+      the track-motion <i>B</i>. Red, a warm lower core on the diagram;
+      blue, cold; filled, verified on both diagrams; hollow, timed on one.
+      The titles carry the bias, root mean square and count of the
+      verified set. (<a href="#src-fig20">Appendix A</a>)</figcaption>
+  </figure>
+  <figure id="fig21" class="half">
+    <img src="figures/figL_fsu_timing.png"
+         alt="Two histograms of ours minus the Florida State diagram's hour, in hours, for onset on the left and completion on the right, each with a blue outline for the standard bands and an orange outline for Hart's bands. Completion with Hart's bands piles up in the bin at zero; the standard bands spread from minus 27 to plus 21 hours. Onset counts are small for both.">
+    <figcaption><strong>Figure 21.</strong> Onset (left) and completion
+      (right) hour, ours minus the diagram's, for the storms both sides
+      carry across the threshold inside the run, with the standard bands
+      and the steering-flow <i>B</i> (blue) and Hart's bands and the
+      track-motion <i>B</i> (orange). (<a href="#src-fig21">Appendix A</a>)</figcaption>
+  </figure>
+
   <h3 id="feature-recognition">Feature recognition on synthetic cases</h3>
   <p>
     The life cycle above exercises one storm. A product that classifies
@@ -1293,9 +1540,13 @@
       the resolution and dataset they are computed from (Manning and Hart
       2007; Zarzycki et al. 2017), so the thresholds carry that
       dependence from model to model. The sensitivity to window size has
-      not been mapped for this package; Hart (2003) noted that radii up
-      to about 10&deg; made no major difference in his tests. No
-      projected grid has been tested.</li>
+      not been mapped for this package; Hart (2003) found that within
+      250 to 1000&nbsp;km the radius changes the magnitude of <i>B</i>
+      slightly and its sign not at all for conventional tropical and
+      extratropical cyclones, while it can change either during a
+      transition or for a small tropical cyclone, and he called for a
+      storm-size-dependent radius, which Section 8 tests. No projected
+      grid has been tested.</li>
     <li>Parameter B. The former first-order form, the window-mean
       thickness gradient across the motion proxy, under-read an asymmetry
       confined to the storm scale: with the square window mean it was used
@@ -1312,11 +1563,16 @@
       steering-opposed system; and, away from a low center, a field that
       is the environment's thickness contrast across the flow rather
       than a storm property. HCPSclass inherits these limits for its
-      asymmetric/symmetric split. Neither HB nor the asymmetric half of
-      HCPSclass has been validated on a real case; a comparison against
-      <i>B</i> computed along a model track with finite-differenced
-      centers, and of the proxy heading against the track heading, is
-      the intended test.</li>
+      asymmetric/symmetric split. The steering-flow substitution is
+      measured in Section 6: on our own tracks the gridded <i>B</i>
+      runs +5.4&nbsp;m above the track-motion <i>B</i>, most for
+      slow storms, and the class read from the two differs at
+      17% of the hours under 10&nbsp;kt; against the Florida
+      State diagrams the bias is +7.7&nbsp;m with the steering
+      flow and +1.8&nbsp;m with the track. A tracked low on the
+      live map is therefore read from the track-motion value, and the
+      steering-flow field is what remains for an untracked low and for
+      CAVE.</li>
     <li>The closed-low detector runs on MSLP and measures relief
       between a center and the 300 to 500&nbsp;km ring, so its floor
       rises with the breadth of the low: on synthetic Gaussian lows in
@@ -1350,8 +1606,33 @@
       criterion is examined by Kofron et al. (2010). The
       Florida State page's 24&nbsp;h running mean is the reason its
       diagrams are smoother; D2D evaluates one frame at a time, so no
-      temporal filter is applied in the product. A one-frame hysteresis
+      temporal filter is applied in the product, and the live map
+      shows the instantaneous values on the track. Bieli et al. (2020)
+      met the same noise at 50&nbsp;km grid scale, where a local height
+      maximum inside the circle gives a false cold-core signal through
+      the max-minus-min estimator, and replaced the maximum by the 95th
+      percentile of height within the circle as well as smoothing in
+      time; neither remedy is applied here. A one-frame hysteresis
       on the class is a possible revision.</li>
+    <li>Every comparison in this article is between two evaluations of
+      model fields. The parameters are diagnostics of the model's
+      height field and are only as good as the analysis or forecast
+      behind it (Hart 2003), and the comparison with the Florida State
+      page sets this package's reading of the 0.25&deg; GFS against that
+      page's reading of the 0.5&deg; GFS with a 24&nbsp;h running mean,
+      so part of every difference is resolution and smoothing rather
+      than method, and none of it is a comparison against observed
+      structure.</li>
+    <li>A positive lower term is not specific to a warm seclusion.
+      Besson et al. (2026) find a lower-tropospheric warm core, by
+      Hart's &minus;V<sub>T</sub><sup>L</sup>, in most midlatitude
+      cyclones near maximum intensity in ERA5, occluded as well as
+      secluded, and show that the 500&nbsp;km height maximum then sits
+      equatorward of the center in the warm sector rather than marking
+      a core temperature, which is the same mechanism the background
+      plane of Section 8 isolates. Classes 1 and 3 are therefore read
+      as a seclusion only with <i>B</i>, the pressure trend and the
+      surface analysis beside them.</li>
     <li>The below-ground rule treats a level as valid wherever the
       surface pressure is at or above the smaller of that level and
       900&nbsp;hPa, so an extrapolated height can enter the window. The
@@ -1361,20 +1642,67 @@
     <li>The continuous index's weighting (twice the lower term) is a
       display heuristic with no physical derivation; the classification
       is the product to reason from.</li>
-    <li>Validation is the six real cases from five GFS cycles listed in
-      the table at the start of Section 6. Values were sampled along one
-      storm, Typhoon Dujuan, and the comparison with the Florida State
-      diagrams covers that storm alone; the North Atlantic cases were
-      read by class only. Every case in the log was sampled with the
-      former first-order <i>B</i>, the closed-low detector on
-      1000&nbsp;hPa height and the former square window, so its values
-      and detections predate the semicircle means, the MSLP detector and
-      the circular window and are to be re-sampled.
-      The acceptance criteria for removing the
-      experimental label are set out in the package README.</li>
+    <li>The comparison with the Florida State diagrams (Section 6)
+      rests on 517 verified hours from 159 storm-cycles in four
+      weeks of one autumn, correlated along each storm and across
+      consecutive runs of it, with timing counts of about ten storms;
+      the digitizing recovers 43% of the hours the diagrams show,
+      and the hours it drops, in crowded parts of a trajectory, are not
+      a random sample of the rest. The six CAVE cases of the table at
+      the start of Section 6 were read by eye, with the former
+      first-order <i>B</i>, the detector on 1000&nbsp;hPa height and the
+      square window, and stand as illustrations rather than evidence.
+      The acceptance criteria for removing the experimental label are
+      set out in the package README.</li>
+    <li>The class is sensitive to where the center is read and to
+      how close the storm sits to a threshold, and both were measured
+      on the archive. Over its 2205 classed fixes the nearest
+      class-changing boundary is within 5&nbsp;m for 28% and within
+      10&nbsp;m for 52%, with a median margin of 9.5&nbsp;m, almost
+      always the <i>B</i> line: half the fixes are within 10&nbsp;m of
+      <i>B</i> = 10&nbsp;m, where only 5% are within 10&nbsp;m of
+      &minus;V<sub>T</sub><sup>L</sup> = 0 and 3% of
+      &minus;V<sub>T</sub><sup>U</sup> = 0. The symmetric cold core
+      (median margin 2.5&nbsp;m) and the asymmetric deep warm core
+      (4.2&nbsp;m) are the most fragile classes, the asymmetric cold
+      core (23&nbsp;m) and the shallow cold core (45&nbsp;m) the most
+      robust. Of 1904 six-hour steps with a class at both ends the class
+      changes at 21%, and 3.8% of all steps are a change that reverses
+      within 12&nbsp;h, the flicker of the previous item. Displacing
+      the center of each of 183 classed minima on three frames of one
+      run by one grid cell changes the class at some displaced point
+      for 21% of them (39% counting a blank), by 50&nbsp;km for 31%
+      (53%) and by 100&nbsp;km for 44% (73%); the median change of
+      <i>B</i>, the lower and the upper term is 1.0, 5.7 and 3.6&nbsp;m
+      for one cell and 4.0, 22 and 12.6&nbsp;m for 100&nbsp;km. A
+      tracker that places the center a cell or two from the diagram's
+      therefore accounts for part of the scatter in Section 6, and the
+      class at a low should be read with its <i>B</i> margin in
+      view.</li>
+    <li>The detector and the tracker choose the sample. On the same
+      three frames, of 2508 MSLP minima that pass the tracker's first
+      screen, 27% are closed by the tracker's 2&nbsp;hPa ring, 9% by
+      the product's 5&nbsp;hPa ring and 7% receive a class. The share
+      rises with depth and latitude: 44% of minima below 980&nbsp;hPa
+      receive a class, 26% between 980 and 1000&nbsp;hPa and 3% above
+      1000&nbsp;hPa; 16% of minima between 25&deg; and 60&deg; and
+      poleward of 60&deg;, and 1% within 25&deg; of the equator, where
+      the minima are shallow troughs and easterly waves. The classified
+      population is therefore the deep and the midlatitude lows, and
+      the comparison of Section 6, which follows every low below
+      980&nbsp;hPa at the analysis and the storms seeded by hand, leans
+      the same way; weak tropical systems, which the 5&nbsp;hPa ring
+      excludes until they deepen, are under-represented in every
+      statistic here. The recomputed archive is reproducible: rerunning
+      all 26 cycles with the current code from the stored seeds gave
+      identical tracks for the 128 storm-cycles written after the
+      tracker's terrain and reach rules were last changed, and changed
+      16 of the 59 written before, the eastern Pacific hurricane and the
+      lows near Greenland among them.</li>
     <li>The hemisphere factor <i>h</i> is implemented and tested on
       synthetic Southern Hemisphere fields, but nothing has been run on a
-      real Southern Hemisphere storm.</li>
+      real Southern Hemisphere storm, although the live map now shows
+      them on every frame.</li>
   </ul>
 
   <figure id="fig17">
@@ -1491,13 +1819,19 @@
   <h2 id="summary">9. Summary of findings</h2>
   <ol>
     <li>Hart's three phase-space parameters can be computed at every grid
-      point from standard-level height fields inside AWIPS, with no
-      tracker, in about 2.4&nbsp;s per forecast hour on a global
-      0.25&deg; grid.</li>
-    <li>On real GFS forecasts the gridded class followed Typhoon Dujuan through
-      the full transition, deep warm core to cold core to warm seclusion,
-      and the loss of the deep warm core came at the hour the Florida
-      State phase diagrams showed for the same run.</li>
+      point from standard-level height fields, with no tracker, in about
+      2.4&nbsp;s per forecast hour on a global 0.25&deg; grid, and
+      delivered as a live map on which every closed low of the run is
+      classified on every frame, with the tracked lows' paths through
+      the three-dimensional space and Hart's own <i>B</i> from each
+      track, and as the same fields in AWIPS.</li>
+    <li>Over 26 GFS cycles and 517 verified hours, the tracked lows
+      evaluated with Hart's bands and the track motion agree with the
+      Florida State diagrams of the same runs, digitized from the
+      images, to +1.8&nbsp;m bias and 12&nbsp;m root mean
+      square in <i>B</i>, 51 and 39&nbsp;m in the
+      thermal wind terms, 70% in the joint class and within
+      6&nbsp;h of completion in 11 of 11 storms.</li>
     <li>On a synthetic life cycle evaluated both ways, Hart's method and
       the gridded method assign the same sequence of classes; the gridded
       <i>B</i> matches Hart's to 1%, and onset and completion fall at the
@@ -1510,21 +1844,23 @@
       flow, so a full-basin
       display shows the polar front, the jet, cold domes and the
       trade-wind belt as well as the storms.</li>
-    <li>The thermal wind terms agree with Hart's in sign and timing but
-      not in magnitude. For a profile not linear in ln&nbsp;<i>p</i> the
-      925 to 700&nbsp;hPa band reads a deep warm core about 12% high and
-      the upper band about 9% low, and the lower band reads a warm
-      seclusion two to three times higher than Hart's 900 to
-      600&nbsp;hPa band. The window is Hart's 500&nbsp;km circle; the
-      square used before read cold cores about 50&nbsp;m more negative on
-      a GFS forecast.</li>
-    <li>Parameter <i>B</i>, now computed from true semicircle means,
-      matches Hart's to 1% on the synthetic life cycle and to 0.1% on a
-      storm-scale dipole at every scale tested; the former first-order
-      form, with the square window mean it was used with, read a
-      storm-scale asymmetry at about 60% of Hart's value and delayed onset
-      by two frames. The remaining known biases of <i>B</i>
-      are the layer rescaling and the odd harmonics <i>k</i> &ge; 3.</li>
+    <li>The standard-level bands of the AWIPS fields read the lower
+      term 17&nbsp;m above Hart's bands on the same tracks,
+      12&nbsp;m above the diagrams where Hart's bands read
+      14&nbsp;m below, and agree with the diagrams in class
+      55% of the time against 70%; on synthetic profiles the
+      same band reads a deep warm core about 12% high and a shallow warm
+      seclusion two to three times Hart's value. The window is Hart's
+      500&nbsp;km circle; the square used before read cold cores about
+      50&nbsp;m more negative on a GFS forecast, and the archive was
+      recomputed with the circle.</li>
+    <li>Parameter <i>B</i> from true semicircle means matches Hart's to
+      1% on the synthetic life cycle and to 0.1% on a storm-scale dipole
+      at every scale tested. The steering flow in place of the track
+      motion, the one substitution a single frame forces, is worth
+      +5.4&nbsp;m on average against the track-motion value and
+      a class change at 17% of the hours of slow storms; on
+      the live map a tracked low is read from its own motion.</li>
     <li>The environment's height gradient lowers both thermal wind terms
       as a storm enters a baroclinic zone. That is the transition signal
       by design, and it is shared with Hart's method.</li>
@@ -1539,20 +1875,23 @@
   <p>
     The whole project lives at <code>cyclone_phase_space/</code> in the
     repository linked at the top of this page. Under it:
-    <code>D2D/</code> is the AWIPS install tree (derived-parameter Python
-    and XML under <code>D2D/derivedParameters/</code>, colormaps under
-    <code>D2D/colormaps/Grid/</code>); <code>cps/hart.py</code> is the
-    storm-centered reference implementation; <code>docs/</code> holds the
-    technical, user, and installation guides
+    <code>realtime/</code> is the engine as delivered: the six-hourly
+    export that feeds the
+    <a href="https://jkrek17.github.io/web/cyclone/">live global map</a>
+    of the products, the tracker that links lows across frames and
+    computes Hart's <i>B</i> on each track, and the daily collection
+    that follows every Northern Hemisphere low under 980&nbsp;hPa and
+    pairs it with the Florida State diagrams, whose archive and the
+    scripts that digitize and compare it are under
+    <code>realtime/data/</code>; <code>article/live/</code> is the map
+    page. <code>D2D/</code> is the AWIPS install tree (derived-parameter
+    Python and XML under <code>D2D/derivedParameters/</code>, colormaps
+    under <code>D2D/colormaps/Grid/</code>); <code>cps/hart.py</code> is
+    the storm-centered reference implementation; <code>docs/</code>
+    holds the technical, user, and installation guides
     (<code>cyclone_phase_space/docs/</code> and
     <code>cyclone_phase_space/README.md</code>); and <code>article/</code>
-    is the source for this page, staged to <code>docs/cps/</code> and
-    published by GitHub Pages. <code>realtime/</code> computes the same
-    products from public GFS and ECMWF output outside AWIPS: a daily
-    collection follows every Northern Hemisphere low under 980 hPa and
-    pairs it with the Florida State diagrams, and a six-hourly export
-    feeds the <a href="https://jkrek17.github.io/web/cyclone/">live global map</a> of the
-    products. The test suite
+    is the source for this page. The test suite
     (<code>cyclone_phase_space/tests/cps</code>,
     <code>cyclone_phase_space/tests/d2d_cps</code> and
     <code>cyclone_phase_space/tests/realtime</code>, run with
@@ -1877,6 +2216,48 @@
       heading for Hart's, for <i>L</i> of 200, 300, 400, 500, 600, 800,
       1000, 1250 and 1500&nbsp;km. The warm-core-top test is printed as a
       table and not plotted.</dd>
+    <dt id="src-fig20">Figure 20</dt>
+    <dd><code>realtime/fsu_stats.py</code>
+      (<code>fig_fsu_scatter.png</code>, copied to
+      <code>figK_fsu_scatter.png</code>), run over the whole daily
+      collection under <code>realtime/data/</code>. Each storm-cycle's
+      two Florida State diagrams, saved by the collector as
+      <code>fsu_phase1.png</code> and <code>fsu_phase2.png</code>, are
+      digitized by <code>realtime/fsu_digitize.py</code>: the plot frame
+      and tick marks are located to a fraction of a pixel, the tick
+      labels read against digit templates cut from archive plots and
+      embedded in the module, a robust line fit maps pixels to data
+      (every plot calibrated with a residual under 0.3&nbsp;px), the
+      header's start, current and end hours are read with the same
+      method, the markers are separated from the shading and the ink
+      and fitted as circles, and the markers are timed by walking the
+      trajectory one marker at a time from the end, analysis and start
+      glyphs, a step taken only where exactly one neighbor passes the
+      checks on the drawn line, the drawing order, the forecast cross
+      and the marker's size and color. An hour timed on both diagrams
+      with the same &minus;V<sub>T</sub><sup>L</sup> is verified; a
+      disagreement drops that walk. Our track
+      (<code>track.csv</code>) is smoothed with
+      <code>track_cps.running_mean</code>, the 24&nbsp;h centered mean,
+      and paired at the shared valid hours. The standard-band values
+      are <code>hvtl</code>, <code>hvtu</code>, <code>hb</code>; Hart's
+      are <code>hvtl_hart</code>, <code>hvtu_hart</code> and the
+      track-motion <code>hb_track</code>, all from
+      <code>track_cps.py</code>. The statistics, the pairs and this
+      figure are written to <code>realtime/data/validation/</code>, with
+      48 hand-read points on five diagrams
+      (<code>hand_digitized.csv</code>) as the check on the
+      digitizer.</dd>
+    <dt id="src-fig21">Figure 21</dt>
+    <dd><code>realtime/fsu_stats.py</code>
+      (<code>fig_fsu_timing.png</code>, copied to
+      <code>figL_fsu_timing.png</code>). Onset and completion are
+      <code>track_cps.onset_completion</code> applied to the smoothed
+      series of both sides: the first hour <i>B</i> exceeds 10&nbsp;m,
+      and the first hour at or after it that
+      &minus;V<sub>T</sub><sup>L</sup> falls below zero; a storm-cycle
+      enters a histogram only when both sides start on the near side of
+      the threshold and both cross it inside the run.</dd>
   </dl>
 
   <h2 id="references">References</h2>
@@ -1895,28 +2276,58 @@
       storms. Part I: Diagnostic criteria and composite analysis.
       <em>Mon. Wea. Rev.</em>, <strong>137</strong>, 2065&ndash;2080,
       https://doi.org/10.1175/2009MWR2468.1.</li>
+    <li>Arnott, J. M., J. L. Evans, and F. Chiaromonte, 2004:
+      Characterization of extratropical transition using cluster
+      analysis. <em>Mon. Wea. Rev.</em>, <strong>132</strong>,
+      2916&ndash;2937, https://doi.org/10.1175/MWR2836.1.</li>
+    <li>Besson, M., G. Rivi&egrave;re, and S. Fromang, 2026: A cyclone
+      phase space dedicated to extratropical cyclones. <em>Weather Clim.
+      Dyn.</em>, <strong>7</strong>, 805&ndash;823,
+      https://doi.org/10.5194/wcd-7-805-2026.</li>
+    <li>Bieli, M., A. H. Sobel, S. J. Camargo, H. Murakami, and G. A.
+      Vecchi, 2020: Application of the cyclone phase space to
+      extratropical transition in a global climate model. <em>J. Adv.
+      Model. Earth Syst.</em>, <strong>12</strong>, e2019MS001878,
+      https://doi.org/10.1029/2019MS001878.</li>
+    <li>Evans, J. L., J. M. Arnott, and F. Chiaromonte, 2006: Evaluation
+      of operational model cyclone structure forecasts during
+      extratropical transition. <em>Mon. Wea. Rev.</em>,
+      <strong>134</strong>, 3054&ndash;3072,
+      https://doi.org/10.1175/MWR3236.1.</li>
     <li>Evans, J. L., and R. E. Hart, 2003: Objective indicators of the
       life cycle evolution of extratropical transition for Atlantic
       tropical cyclones. <em>Mon. Wea. Rev.</em>, <strong>131</strong>,
-      909&ndash;925.</li>
+      909&ndash;925,
+      https://doi.org/10.1175/1520-0493(2003)131&lt;0909:OIOTLC&gt;2.0.CO;2.</li>
     <li>Guishard, M. P., J. L. Evans, and R. E. Hart, 2009: Atlantic
       subtropical storms. Part II: Climatology. <em>J. Climate</em>,
       <strong>22</strong>, 3574&ndash;3594,
       https://doi.org/10.1175/2009JCLI2949.1.</li>
     <li>Hart, R. E., 2003: A cyclone phase space derived from thermal wind
       and thermal asymmetry. <em>Mon. Wea. Rev.</em>, <strong>131</strong>,
-      585&ndash;616.</li>
+      585&ndash;616,
+      https://doi.org/10.1175/1520-0493(2003)131&lt;0585:ACPSDF&gt;2.0.CO;2.</li>
+    <li>Hart, R. E., 2021: A cyclone phase space. WMO RA IV Workshop on
+      Hurricane Forecasting and Warning, 26 April 2021,
+      https://severeweather.wmo.int/TCFW/RAIV_Workshop2021/03_CyclonePhaseSpace_BobHart.pdf.</li>
     <li>Hart, R. E., cited 2026: Cyclone phase evolution: Analyses and
       forecasts. Florida State University, accessed 17 September 2026,
       http://moe.met.fsu.edu/cyclonephase/.</li>
     <li>Hart, R. E., J. L. Evans, and C. Evans, 2006: Synoptic composites
       of the extratropical transition life cycle of North Atlantic
       tropical cyclones: Factors determining posttransition evolution.
-      <em>Mon. Wea. Rev.</em>, <strong>134</strong>, 553&ndash;578.</li>
+      <em>Mon. Wea. Rev.</em>, <strong>134</strong>, 553&ndash;578,
+      https://doi.org/10.1175/MWR3082.1.</li>
     <li>Jones, S. C., and Coauthors, 2003: The extratropical transition of
       tropical cyclones: Forecast challenges, current understanding, and
       future directions. <em>Wea. Forecasting</em>, <strong>18</strong>,
-      1052&ndash;1092.</li>
+      1052&ndash;1092,
+      https://doi.org/10.1175/1520-0434(2003)018&lt;1052:TETOTC&gt;2.0.CO;2.</li>
+    <li>Kitabatake, N., 2011: Climatology of extratropical transition of
+      tropical cyclones in the western North Pacific defined by using
+      cyclone phase space. <em>J. Meteor. Soc. Japan</em>,
+      <strong>89</strong>, 309&ndash;325,
+      https://doi.org/10.2151/jmsj.2011-402.</li>
     <li>Kofron, D. E., E. A. Ritchie, and J. S. Tyo, 2010: Determination
       of a consistent time for the extratropical transition of tropical
       cyclones. Part I: Examination of existing methods for finding "ET
@@ -1926,6 +2337,17 @@
       ERA-40 tropical cyclone representation. <em>Geophys. Res.
       Lett.</em>, <strong>34</strong>, L05705,
       https://doi.org/10.1029/2006GL028266.</li>
+    <li>Michaelis, A. C., and G. M. Lackmann, 2019: Climatological
+      changes in the extratropical transition of tropical cyclones in
+      high-resolution global simulations. <em>J. Climate</em>,
+      <strong>32</strong>, 8733&ndash;8753,
+      https://doi.org/10.1175/JCLI-D-19-0259.1.</li>
+    <li>National Hurricane Center, 2008: Tropical Storm Cristobal
+      discussions 12 and 18, 21 and 23 July 2008,
+      https://www.nhc.noaa.gov/archive/2008/al03/al032008.discus.012.shtml
+      and al032008.discus.018.shtml; 2023: Post-Tropical Cyclone
+      Franklin discussion 49, 1 September 2023,
+      https://www.nhc.noaa.gov/archive/2023/al08/al082023.discus.049.shtml.</li>
     <li>Shapiro, M. A., and D. Keyser, 1990: Fronts, jet streams and the
       tropopause. <em>Extratropical Cyclones: The Erik Palm&eacute;n
       Memorial Volume</em>, C. W. Newton and E. O. Holopainen, Eds., Amer.
@@ -1934,6 +2356,19 @@
       determination of the extratropical transition of tropical cyclones
       in the Northern Hemisphere. <em>Tellus A</em>, <strong>67</strong>,
       24474, https://doi.org/10.3402/tellusa.v67.24474.</li>
+    <li>Ullrich, P. A., C. M. Zarzycki, E. E. McClenny, M. C. Pinheiro,
+      A. M. Stansfield, and K. A. Reed, 2021: TempestExtremes v2.1: A
+      community framework for feature detection, tracking, and analysis
+      in large datasets. <em>Geosci. Model Dev.</em>, <strong>14</strong>,
+      5023&ndash;5048, https://doi.org/10.5194/gmd-14-5023-2021.</li>
+    <li>Veren, D., J. L. Evans, S. C. Jones, and F. Chiaromonte, 2009:
+      Novel metrics for evaluation of ensemble forecasts of tropical
+      cyclone structure. <em>Mon. Wea. Rev.</em>, <strong>137</strong>,
+      2830&ndash;2850, https://doi.org/10.1175/2009MWR2655.1.</li>
+    <li>WMO, 2025: Workshop on cyclone types and phase transitions, World
+      Meteorological Organization Working Group on Tropical Meteorology
+      Research, 11 to 13 November 2025,
+      https://community.wmo.int/node/35797.</li>
     <li>Zarzycki, C. M., D. R. Thatcher, and C. Jablonowski, 2017:
       Objective tropical cyclone extratropical transition detection in
       high-resolution reanalysis and climate model data. <em>J. Adv.

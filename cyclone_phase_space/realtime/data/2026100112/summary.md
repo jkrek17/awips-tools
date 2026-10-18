@@ -8,14 +8,14 @@ Storm-following phase diagrams from the 12 UTC 2026-10-01 GFS 0.25 degree run, f
 | [AUTO_260929_01](AUTO_260929_01/) | [6](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100112/6.html) | 65.5N 25.0W | 971 | 0-198 | 3 0-6, - 12-18, 1 24-36, - 42, 4 48, 5 54, 4 60, 3 66-72, 5 78-84, 4 90-96, 3 102-108, - 114-150, 1 156, 4 162, 3 168-180, 4 186, - 192-198 | 0 | 48 | 66 | 66 |
 | [AUTO_260930_01](AUTO_260930_01/) | none | 81.0N 94.1E | 979 | 0-72 | 6 0-12, - 18-30, 6 36, - 42, 4 48-66, - 72 | 12 | 12 | 48 | 48 |
 | [AUTO_261001_01](AUTO_261001_01/) | [5](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100112/5.html) | 19.3N 109.2W | 966 | 0-198 | - 0-60, 2 66, - 72, 0 78, - 84, 0 90-198 | none | none | none | none |
-| [AUTO_261001_02](AUTO_261001_02/) | [41](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100112/41.html) | 62.5N 77.6W | 975 | 0-132 | 3 0, - 6-18, 1 24-36, 5 42, - 48-120, 6 126, 4 132 | 0 | 48 | 0 | 42 |
+| [AUTO_261001_02](AUTO_261001_02/) | [41](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100112/41.html) | 62.5N 77.6W | 975 | 0-66 | 3 0, - 6-18, 1 24-36, 5 42, - 48-66 | 0 | 48 | 0 | 42 |
 | [EPAC](EPAC/) | [1](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100112/1.html) | 21.8N 165.3W | 994 | 0-198 | 1 0-6, 0 12, - 18-24, 0 30-144, 2 150-156, 0 162-168, 2 174-186, 3 192-198 | 168 | none | 168 | none |
 
 Class codes (HCPSclass at the center): 0 sym deep warm, 1 sym shallow warm, 2 asym deep warm, 3 asym shallow warm, 4 asym cold, 5 sym cold, 6 shallow cold; - no closed low.
 
 AUTO_260924_02: filled: 0 h MSLP above 1000 hPa in 2 consecutive cycles; marked inactive.
 
-AUTO_260924_01: lost. No closed low within 400 km of the seed 26.6N 110.0W at +0 h of 2026100112 (stored seed of 2026093012; the track of 2026093012 has no fix at +24 h); marked inactive.
+AUTO_260924_01: lost. No closed low within 400 km of the seed 26.6N 110.0W at +0 h of 2026100112 (stored seed); marked inactive.
 
 ## Automatic discovery
 
@@ -25,5 +25,5 @@ Closed lows at 0 h below 980 hPa north of 0N, one per system (minima within 500 
 |---|---|---|---|
 | 19.3N 109.2W | 966.34 | TROP | added as AUTO_261001_01 |
 | 65.5N 25.0W | 970.67 | NATL | skipped, 0 km from AUTO_260929_01 |
-| 62.5N 77.6W | 975.00 | NATL | added as AUTO_261001_02 |
+| 62.5N 77.6W | 974.98 | NATL | added as AUTO_261001_02 |
 | 80.8N 99.4E | 978.50 | 80.8N 99.4E | skipped, 95 km from AUTO_260930_01 |

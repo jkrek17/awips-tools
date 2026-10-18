@@ -275,3 +275,16 @@ figure.half img { max-width: 60%; margin: 0 auto; display: block; }
 
 /* Embedded interactive figure */
 .interactive { width: 100%; height: 34em; border: 1px solid var(--rule); border-radius: 4px; background: var(--fig-bg); }
+
+/* Wide tables scroll inside the page on narrow screens instead of widening it. */
+@media (max-width: 720px) {
+  table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+}
+
+.refs li { overflow-wrap: anywhere; }
+
+code { overflow-wrap: anywhere; }

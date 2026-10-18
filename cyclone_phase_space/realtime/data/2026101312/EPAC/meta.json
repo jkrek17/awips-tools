@@ -2,12 +2,13 @@
   "cycle": "2026101312",
   "name": "EPAC",
   "status": "ok",
+  "code_version": "a85cc99",
   "seed": {
     "lat": 36.86,
     "lon": 154.94,
     "fhr0": 0,
     "fhr1": null,
-    "source": "track of 2026101212 at +24 h"
+    "source": "stored seed"
   },
   "start_fhr": 0,
   "end_fhr": 198,
@@ -35,5 +36,6 @@
     "lon": 155.61,
     "distance_km": 66,
     "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101312/1.html"
-  }
+  },
+  "fsu_source": "carried over offline from the match of the original collection (FSU's page for older cycles is no longer online); compare.png rebuilt with the recomputed phase.png"
 }

@@ -2,12 +2,13 @@
   "cycle": "2026100912",
   "name": "AUTO_261009_01",
   "status": "ok",
+  "code_version": "a85cc99",
   "seed": {
     "lat": 19.89,
     "lon": 154.22,
     "fhr0": 0,
     "fhr1": null,
-    "source": "automatic discovery at 0 h of 2026100912"
+    "source": "stored seed"
   },
   "start_fhr": 0,
   "end_fhr": 66,
@@ -48,5 +49,6 @@
     "lon": 154.22,
     "mslp_hpa": 963.5,
     "basin": "TROP"
-  }
+  },
+  "fsu_source": "carried over offline from the match of the original collection (FSU's page for older cycles is no longer online); compare.png rebuilt with the recomputed phase.png"
 }

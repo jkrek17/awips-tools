@@ -2,6 +2,7 @@
   "cycle": "2026092612",
   "name": "AUTO_260924_05",
   "status": "ok",
+  "code_version": "cf3f24f-dirty",
   "seed": {
     "lat": 19.09,
     "lon": -123.59,
@@ -35,5 +36,6 @@
     "lon": -123.87,
     "distance_km": 58,
     "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092612/3.html"
-  }
+  },
+  "fsu_source": "carried over offline from the match of the original collection (FSU's page for older cycles is no longer online); compare.png rebuilt with the recomputed phase.png"
 }

@@ -2,6 +2,7 @@
   "cycle": "2026092612",
   "name": "AUTO_260926_01",
   "status": "ok",
+  "code_version": "cf3f24f-dirty",
   "seed": {
     "lat": 23.09,
     "lon": 126.87,
@@ -41,5 +42,6 @@
     "lon": 126.87,
     "mslp_hpa": 972.74,
     "basin": "NPAC"
-  }
+  },
+  "fsu_source": "carried over offline from the match of the original collection (FSU's page for older cycles is no longer online); compare.png rebuilt with the recomputed phase.png"
 }

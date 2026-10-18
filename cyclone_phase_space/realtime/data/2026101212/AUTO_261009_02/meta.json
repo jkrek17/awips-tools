@@ -2,12 +2,13 @@
   "cycle": "2026101212",
   "name": "AUTO_261009_02",
   "status": "ok",
+  "code_version": "a85cc99",
   "seed": {
     "lat": 19.91,
     "lon": -106.51,
     "fhr0": 0,
     "fhr1": null,
-    "source": "track of 2026101112 at +24 h"
+    "source": "stored seed"
   },
   "start_fhr": 0,
   "end_fhr": 192,
@@ -35,5 +36,6 @@
     "lon": -106.06,
     "distance_km": 46,
     "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101212/3.html"
-  }
+  },
+  "fsu_source": "carried over offline from the match of the original collection (FSU's page for older cycles is no longer online); compare.png rebuilt with the recomputed phase.png"
 }

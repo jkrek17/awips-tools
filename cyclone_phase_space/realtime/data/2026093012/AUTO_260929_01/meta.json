@@ -2,32 +2,33 @@
   "cycle": "2026093012",
   "name": "AUTO_260929_01",
   "status": "ok",
+  "code_version": "4d645b0-dirty",
   "seed": {
     "lat": 56.88,
     "lon": -18.13,
     "fhr0": 0,
     "fhr1": null,
-    "source": "track of 2026092912 at +24 h"
+    "source": "stored seed"
   },
   "start_fhr": 0,
-  "end_fhr": 72,
-  "fixes": 13,
+  "end_fhr": 198,
+  "fixes": 31,
   "start": {
     "lat": 56.82,
     "lon": -18.99,
     "mslp_hpa": 951.7
   },
   "end": {
-    "lat": 72.38,
-    "lon": -24.74,
-    "mslp_hpa": 997.5
+    "lat": 70.24,
+    "lon": 63.34,
+    "mslp_hpa": 989.4
   },
   "min_mslp_hpa": 951.7,
-  "onset_standard_h": 66,
-  "completion_standard_h": null,
-  "onset_hart_h": null,
-  "completion_hart_h": 72,
-  "class_sequence": "0 0-6, 1 12-18, 3 24-30, - 36-42, 1 48-54, 3 60, - 66, 3 72",
+  "onset_standard_h": 60,
+  "completion_standard_h": 72,
+  "onset_hart_h": 78,
+  "completion_hart_h": 78,
+  "class_sequence": "0 0-6, 1 12-18, 3 24-30, - 36-42, 1 48-54, 3 60, 4 72-78, - 84, 4 90-102, - 114-120, 4 126, - 132-168, 0 180-186, 1 192-198",
   "fsu_number": 12,
   "fsu": {
     "number": 12,
@@ -36,5 +37,5 @@
     "distance_km": 51,
     "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26093012/12.html"
   },
-  "track_end": "outside a closed low at +78, +84 h (1003 hPa at +84 h)"
+  "fsu_source": "carried over offline from the match of the original collection (FSU's page for older cycles is no longer online); compare.png rebuilt with the recomputed phase.png"
 }

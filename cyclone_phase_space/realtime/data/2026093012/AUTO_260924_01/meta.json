@@ -2,12 +2,13 @@
   "cycle": "2026093012",
   "name": "AUTO_260924_01",
   "status": "ok",
+  "code_version": "4d645b0-dirty",
   "seed": {
     "lat": 26.9,
     "lon": -110.05,
     "fhr0": 0,
     "fhr1": null,
-    "source": "track of 2026092912 at +24 h"
+    "source": "stored seed"
   },
   "start_fhr": 0,
   "end_fhr": 18,

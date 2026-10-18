@@ -2,12 +2,13 @@
   "cycle": "2026100712",
   "name": "AUTO_260930_01",
   "status": "ok",
+  "code_version": "a85cc99",
   "seed": {
     "lat": 75.73,
     "lon": 153.3,
     "fhr0": 0,
     "fhr1": null,
-    "source": "stored seed of 2026100612; the track of 2026100612 has no fix at +24 h"
+    "source": "stored seed"
   },
   "start_fhr": 0,
   "end_fhr": 6,
@@ -37,5 +38,6 @@
     "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100712/47.html"
   },
   "track_end": "outside a closed low at +12, +18 h (1007 hPa at +18 h)",
-  "ended": "filled: 0 h MSLP above 1000 hPa in 2 consecutive cycles; marked inactive"
+  "ended": "filled: 0 h MSLP above 1000 hPa in 2 consecutive cycles; marked inactive",
+  "fsu_source": "carried over offline from the match of the original collection (FSU's page for older cycles is no longer online); compare.png rebuilt with the recomputed phase.png"
 }

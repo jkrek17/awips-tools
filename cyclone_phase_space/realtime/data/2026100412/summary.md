@@ -14,7 +14,7 @@ Storm-following phase diagrams from the 12 UTC 2026-10-04 GFS 0.25 degree run, f
 
 Class codes (HCPSclass at the center): 0 sym deep warm, 1 sym shallow warm, 2 asym deep warm, 3 asym shallow warm, 4 asym cold, 5 sym cold, 6 shallow cold; - no closed low.
 
-AUTO_261003_02: lost. No closed low within 400 km of the seed 56.9N 179.6E at +0 h of 2026100412 (track of 2026100312 at +24 h); marked inactive.
+AUTO_261003_02: lost. No closed low within 400 km of the seed 56.9N 179.6E at +0 h of 2026100412 (stored seed); marked inactive.
 
 ## Automatic discovery
 

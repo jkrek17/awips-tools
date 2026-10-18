@@ -2,6 +2,7 @@
   "cycle": "2026100200",
   "name": "AUTO_261001_02",
   "status": "ok",
+  "code_version": "4d645b0-dirty",
   "seed": {
     "lat": 63.04,
     "lon": -76.0,
@@ -36,5 +37,6 @@
     "distance_km": 222,
     "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100200/32.html"
   },
-  "track_end": "outside a closed low at +96, +102 h (1015 hPa at +102 h)"
+  "track_end": "outside a closed low at +96, +102 h (1015 hPa at +102 h)",
+  "fsu_source": "carried over offline from the match of the original collection (FSU's page for older cycles is no longer online); compare.png rebuilt with the recomputed phase.png"
 }

@@ -16,9 +16,9 @@ Class codes (HCPSclass at the center): 0 sym deep warm, 1 sym shallow warm, 2 as
 
 AUTO_261009_01: merged into EPAC at +72 h; its track stops at +66 h.
 
-AUTO_261006_01: lost. No closed low within 400 km of the seed 59.7N 53.4W at +0 h of 2026100912 (stored seed of 2026100812; the track of 2026100812 has no fix at +24 h); marked inactive.
+AUTO_261006_01: lost. No closed low within 400 km of the seed 59.7N 53.4W at +0 h of 2026100912 (stored seed); marked inactive.
 
-AUTO_261007_01: lost. No closed low within 400 km of the seed 55.6N 156.0E at +0 h of 2026100912 (stored seed of 2026100812; the track of 2026100812 has no fix at +24 h); marked inactive.
+AUTO_261007_01: lost. No closed low within 400 km of the seed 55.6N 156.0E at +0 h of 2026100912 (stored seed); marked inactive.
 
 AUTO_261008_02: merged. At 0 h of 2026100912 within 0 km of AUTO_261008_01; merged into AUTO_261008_01, marked inactive.
 

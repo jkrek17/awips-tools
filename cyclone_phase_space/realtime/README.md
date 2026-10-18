@@ -211,9 +211,13 @@ Not a candidate:
   one 6 h step at the base rate, 1080 km after a coasted frame; no cap):
   with the guess extrapolated, a search radius alone would let each
   jump lengthen the next;
-- one more than 12 hPa above the previous fix (`MAX_RISE_HPA`): a
-  filling low does not rise 12 hPa in 6 h, a handover to a different,
-  weaker low does;
+- one more than the allowed rise above the previous fix
+  (`track_cps.max_rise`): 12 hPa per 6 h (`MAX_RISE_HPA`), plus a
+  quarter of the fix's depth below 980 hPa, scaled by the hours
+  bridged. A filling low does not rise 12 hPa in 6 h, a handover to a
+  different, weaker low does; a filling hurricane's eye can (GFS filled
+  the 24 Sep 2026 eastern Pacific eye by 14 to 15 hPa in 6 h), which is
+  what the depth allowance admits;
 - one poleward of 85 degrees (`POLE_LAT`): the pole row of the grid is
   one value repeated, so it passes the box test and a track that
   reaches it spins in longitude;
@@ -367,6 +371,44 @@ differences:
   frames before the run, so its first day differs.
 - FSU's tracker needs MSLP under 1018 hPa and a 24 h lifetime; a weak or
   short-lived low may not be on its list.
+
+### Digitizing the FSU diagrams and comparing the whole archive
+
+FSU publishes the diagrams only as images, so `fsu_digitize.py` reads
+the values back off them and `fsu_stats.py` compares every storm-cycle
+of the daily collection with its FSU match in numbers:
+
+    python3 fsu_stats.py                     # whole archive, 4 workers, ~3 min
+    python3 fsu_digitize.py data/2026100212/AUTO_260930_01/fsu_phase1.png --cycle 2026100212 --debug /tmp/discs.png
+
+The digitizer calibrates the axes from the tick marks and digit
+templates (embedded in the module; `--build-templates` rebuilds them
+from archive plots), reads the header's start, current and end hours,
+separates the markers from the shading and the ink, fits each as a
+circle, and times the markers by walking the trajectory from the end
+(Z), analysis (C) and start (A) glyphs one marker at a time, stepping
+only where exactly one neighbor passes the checks on the drawn line,
+the drawing order, the forecast cross and the marker's size and color.
+The two plots of a storm share -V_T^L, so an hour timed on both with
+the same value is "verified"; a disagreement drops that walk. Markers
+under the inset map, in overlapping clusters or on tangled tracks are
+left untimed rather than guessed, so a plot is usually "partial".
+
+`fsu_stats.py` smooths our `track.csv` with the same 24 h centered mean
+the diagrams carry, pairs it with the digitized hours of the same run,
+and writes to `data/validation/`: `fsu_stats.md` and `fsu_stats.json`
+(bias, RMS and count of ours minus FSU for B, -V_T^L and -V_T^U, for
+the standard bands with the steering-flow B and for Hart's bands with
+the track-motion B, split by FSU's lower core and by our track speed;
+joint class agreement; onset and completion timing; and, from our
+tracks alone, the steering-flow B against the track-motion B by
+speed), `fsu_pairs.csv` (every pair), `fig_fsu_scatter.png` and
+`fig_fsu_timing.png`. A storm-cycle counts as matched when both FSU
+plots are saved beside its track; `hand_digitized.csv` holds 48 points
+read by hand on five plots as the check on the digitizer (0.2 m in B,
+0.07 m in the thermal wind). The verified set is the headline; points
+timed on one plot only carry an estimated 12% timing error. The
+article's Figures 20 and 21 are these two figures.
 
 ### Example: 2026092412
 
@@ -541,9 +583,9 @@ the deep lows of its analysis on its own (constants at the top of
 - *Rule.* On the 0 h frame (global grid, fields computed once for all
   storms), every point the tracker would accept as a center
   (`track_cps.all_centers`, the rule of `find_center`: the lowest point
-  of its +/- 1 degree box after terrain with surface pressure below
-  950 hPa is masked, MSLP under 1018 hPa, within 85 degrees of the
-  equator) with MSLP below
+  of its +/- 1 degree box after terrain is masked, where MSLP exceeds
+  the surface pressure by more than 60 hPa, MSLP under 1018 hPa, within
+  85 degrees of the equator) with MSLP below
   `AUTO_MSLP_HPA` (980 hPa) and latitude north of `AUTO_LAT_MIN` (0,
   so the northern hemisphere only) is a candidate. Deepest first, a
   candidate within 500 km of a deeper one kept is dropped (one per

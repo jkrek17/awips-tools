@@ -2,12 +2,13 @@
   "cycle": "2026101612",
   "name": "AUTO_261016_01",
   "status": "ok",
+  "code_version": "7b65306",
   "seed": {
     "lat": 14.23,
     "lon": -102.42,
     "fhr0": 0,
     "fhr1": null,
-    "source": "automatic discovery at 0 h of 2026101612"
+    "source": "stored seed"
   },
   "start_fhr": 0,
   "end_fhr": 36,

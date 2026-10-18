@@ -2,6 +2,7 @@
   "cycle": "2026092512",
   "name": "AUTO_260924_02",
   "status": "ok",
+  "code_version": "cf3f24f-dirty",
   "seed": {
     "lat": 57.36,
     "lon": -170.24,
@@ -36,5 +37,6 @@
     "distance_km": 24,
     "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092512/8.html"
   },
-  "track_end": "outside a closed low at +120, +126 h (1013 hPa at +126 h)"
+  "track_end": "outside a closed low at +120, +132 h (1012 hPa at +132 h)",
+  "fsu_source": "carried over offline from the match of the original collection (FSU's page for older cycles is no longer online); compare.png rebuilt with the recomputed phase.png"
 }

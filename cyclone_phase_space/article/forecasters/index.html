@@ -32,7 +32,7 @@
   <p class="top-links"><a href="https://jkrek17.github.io/web/cyclone/">Live map</a> &middot; <a href="https://jkrek17.github.io/web/article/">The article</a> &middot; <a href="https://jkrek17.github.io/web/article/figures/phase_space_3d.html">3-D phase space</a></p>
 
   <h1>Cyclone Phase Space for the Forecast Desk</h1>
-  <p class="byline">A plain-language guide to the gridded CPS products in AWIPS D2D</p>
+  <p class="byline">A plain-language guide to the gridded CPS products, on the live map and in AWIPS D2D</p>
   <p class="meta">Jason Krekeler, NOAA/NWS Ocean Prediction Center &middot; October 2026 &middot; About a ten-minute read.</p>
 
   <div class="abstract forecasters">
@@ -45,10 +45,13 @@
       opposite sides of the low, which is what a front looks like to the
       model. Those three numbers sort every low into one of seven classes:
       hurricane, subtropical storm, storm in transition, extratropical low,
-      occluded low, and two in-between cases. The products in D2D compute
-      the numbers at every grid point of every model, so every closed low on
-      the chart carries its class on every frame, with no tracker and no
-      advisory required. Use them to type a low before you draw fronts
+      occluded low, and two in-between cases. The products compute the
+      numbers at every grid point, so every closed low on the chart carries
+      its class on every frame, with no tracker and no advisory required.
+      The <a href="https://jkrek17.github.io/web/cyclone/">live map</a> shows
+      the whole globe at a glance on the current GFS run, and one click on a
+      low plots its whole path through the phase space; the same fields are
+      available in D2D on any model. Use them to type a low before you draw fronts
       through it, to time a tropical cyclone's transition, and to decide
       whether a low is still a tropical system, a hybrid, or an extratropical
       low that merely used to be one.
@@ -151,10 +154,18 @@
       once.</figcaption>
   </figure>
 
-  <h2>3. Reading the maps in D2D</h2>
+  <h2>3. Reading the maps</h2>
   <p>
-    Load <code>HCPSclass</code> as an image with MSLP contours. Three things
-    to know about what you see:
+    On the live map every closed low carries a dot in its class colour, and
+    clicking a low plots its track through the three-dimensional phase space
+    on the right, with the current hour marked and the timeline driving both.
+    A low that has stayed closed for a day or more has a track, and for such
+    a low B is taken from the storm's own motion, the way Hart defined it;
+    the B field, and D2D, take the motion from the steering flow instead,
+    because one frame has no track. The two usually agree. Where they do
+    not, the dot carries a thin ring in the field's colour and the card gives
+    both values. In D2D, load <code>HCPSclass</code> as an image with MSLP
+    contours. Three things to know about what you see, on either display:
   </p>
   <ul>
     <li><strong>A coloured blob appears only at a closed low.</strong> The
