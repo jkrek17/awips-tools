@@ -2,6 +2,7 @@
   "cycle": "2026092612",
   "name": "LABRADOR",
   "status": "ok",
+  "code_version": "cf3f24f-dirty",
   "seed": {
     "lat": 56.31,
     "lon": -25.95,
@@ -36,5 +37,6 @@
     "distance_km": 12,
     "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092612/17.html"
   },
-  "track_end": "FHR1 48 h reached"
+  "track_end": "FHR1 48 h reached",
+  "fsu_source": "carried over offline from the match of the original collection (FSU's page for older cycles is no longer online); compare.png rebuilt with the recomputed phase.png"
 }

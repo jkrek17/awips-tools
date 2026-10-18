@@ -2,6 +2,7 @@
   "cycle": "2026092512",
   "name": "GREENLAND",
   "status": "ok",
+  "code_version": "cf3f24f-dirty",
   "seed": {
     "lat": 67.08,
     "lon": -15.86,
@@ -36,5 +37,6 @@
     "distance_km": 31,
     "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092512/13.html"
   },
-  "track_end": "no minimum within 600 km of 68.1,-11.1 at or below 1027 hPa and within 1080 km of the last fix at +108 h"
+  "track_end": "no minimum within 600 km of 68.1,-11.1 at or below 1027 hPa and within 1080 km of the last fix at +108 h",
+  "fsu_source": "carried over offline from the match of the original collection (FSU's page for older cycles is no longer online); compare.png rebuilt with the recomputed phase.png"
 }

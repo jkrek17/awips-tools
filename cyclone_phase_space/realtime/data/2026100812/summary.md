@@ -18,7 +18,7 @@ Class codes (HCPSclass at the center): 0 sym deep warm, 1 sym shallow warm, 2 as
 
 AUTO_261003_01: filled: 0 h MSLP above 1000 hPa in 2 consecutive cycles; marked inactive.
 
-WPAC: lost. No closed low within 400 km of the seed 46.2N 162.2E at +0 h of 2026100812 (stored seed of 2026100712; the track of 2026100712 has no fix at +24 h); marked inactive.
+WPAC: lost. No closed low within 400 km of the seed 46.2N 162.2E at +0 h of 2026100812 (stored seed); marked inactive.
 
 ## Automatic discovery
 

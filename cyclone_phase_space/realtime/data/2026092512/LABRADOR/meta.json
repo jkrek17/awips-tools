@@ -2,6 +2,7 @@
   "cycle": "2026092512",
   "name": "LABRADOR",
   "status": "ok",
+  "code_version": "cf3f24f-dirty",
   "seed": {
     "lat": 56.75,
     "lon": -42.0,
@@ -42,5 +43,6 @@
     "fhr": 72,
     "distance_km": 0
   },
-  "note": "merged into GREENLAND at +72 h"
+  "note": "merged into GREENLAND at +72 h",
+  "fsu_source": "carried over offline from the match of the original collection (FSU's page for older cycles is no longer online); compare.png rebuilt with the recomputed phase.png"
 }

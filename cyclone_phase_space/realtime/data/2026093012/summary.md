@@ -5,14 +5,14 @@ Storm-following phase diagrams from the 12 UTC 2026-09-30 GFS 0.25 degree run, f
 | Storm | FSU | Start position | MSLP (hPa) | Track (h) | Class sequence (h) | Onset std | Completion std | Onset Hart | Completion Hart |
 |---|---|---|---|---|---|---|---|---|---|
 | [AUTO_260924_01](AUTO_260924_01/) | none | 26.6N 110.0W | 1005 | 0-18 | - 0-18 | 0 | 0 | none | 0 |
-| [AUTO_260924_02](AUTO_260924_02/) | [60](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26093012/60.html) | 59.0N 139.7W | 1008 | 0-48 | - 0, 4 12-18, - 24-48 | 0 | 0 | 12 | 12 |
-| [AUTO_260929_01](AUTO_260929_01/) | [12](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26093012/12.html) | 56.8N 19.0W | 952 | 0-72 | 0 0-6, 1 12-18, 3 24-30, - 36-42, 1 48-54, 3 60, - 66, 3 72 | 66 | none | none | 72 |
-| [AUTO_260930_01](AUTO_260930_01/) | none | 85.0N 110.2E | 963 | 0-60 | 6 0-42, - 48-54, 6 60 | 0 | 0 | none | 0 |
+| [AUTO_260924_02](AUTO_260924_02/) | [60](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26093012/60.html) | 59.0N 139.7W | 1008 | 0-114 | - 0, 4 12-18, - 24-54, 4 60-72, 0 78-84, - 90, 4 96-102, - 108-114 | 0 | 0 | 12 | 12 |
+| [AUTO_260929_01](AUTO_260929_01/) | [12](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26093012/12.html) | 56.8N 19.0W | 952 | 0-198 | 0 0-6, 1 12-18, 3 24-30, - 36-42, 1 48-54, 3 60, 4 72-78, - 84, 4 90-102, - 114-120, 4 126, - 132-168, 0 180-186, 1 192-198 | 60 | 72 | 78 | 78 |
+| [AUTO_260930_01](AUTO_260930_01/) | none | 85.0N 110.2E | 963 | 0-60 | 6 0-48, - 54, 6 60 | 0 | 0 | none | 0 |
 | [EPAC](EPAC/) | [1](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26093012/1.html) | 22.5N 164.7W | 984 | 0-198 | - 0-30, 0 36, - 42-48, 0 54-168, 1 174, 0 180-186, 4 192-198 | 0 | none | 186 | 198 |
 
 Class codes (HCPSclass at the center): 0 sym deep warm, 1 sym shallow warm, 2 asym deep warm, 3 asym shallow warm, 4 asym cold, 5 sym cold, 6 shallow cold; - no closed low.
 
-AUTO_260929_02: lost. No closed low within 400 km of the seed 83.7N 172.5W at +0 h of 2026093012 (stored seed of 2026092912; the track of 2026092912 has no fix at +24 h); marked inactive.
+AUTO_260929_02: lost. No closed low within 400 km of the seed 83.7N 172.5W at +0 h of 2026093012 (stored seed); marked inactive.
 
 ## Automatic discovery
 

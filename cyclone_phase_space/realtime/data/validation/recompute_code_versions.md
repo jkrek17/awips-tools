@@ -36,3 +36,17 @@ The meta.json stamp (code_version) is `git rev-parse --short HEAD` at the start 
 | 2026101512 | 01:05 | 5.1 | NOMADS (34) | yes | ok, attempt 1 | 9 | a85cc99 |
 | 2026101612 | 01:09 | 5.4 | NOMADS (34) | yes | ok, attempt 1 | 10 | 7b65306 |
 | 2026101712 | 01:10 | 5.5 | NOMADS (34) | yes | ok, attempt 1 | 13 | 7b65306 |
+
+## Re-run of 24 September 2026 after the rise-cap fix
+
+The recompute above ended the eastern Pacific hurricane's tracks at
++6 h (2026092412, AUTO_260924_06) and at 0 h (2026092418,
+AUTO_260924_01), because GFS fills the eye by 14 to 15 hPa in 6 h and
+the flat 12 hPa rise cap refused the real center. Commit d1848fc made
+the allowed rise grow with the depth of the last fix
+(`track_cps.max_rise`), and the two cycles were re-run with the same
+frozen seeds and the FSU step off, the matches restored offline as
+before. Stamps: 2026092412 carries 047e914 and 2026092418 e957235
+(commits that touch only the README, the article and the validation
+scripts after d1848fc). The hurricane now runs to +198 h and +126 h;
+the other storms of the two cycles are unchanged.

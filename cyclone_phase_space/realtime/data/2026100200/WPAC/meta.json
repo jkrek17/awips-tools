@@ -2,6 +2,7 @@
   "cycle": "2026100200",
   "name": "WPAC",
   "status": "ok",
+  "code_version": "4d645b0-dirty",
   "seed": {
     "lat": 16.68,
     "lon": 145.19,
@@ -35,5 +36,6 @@
     "lon": 144.77,
     "distance_km": 75,
     "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100200/7.html"
-  }
+  },
+  "fsu_source": "carried over offline from the match of the original collection (FSU's page for older cycles is no longer online); compare.png rebuilt with the recomputed phase.png"
 }

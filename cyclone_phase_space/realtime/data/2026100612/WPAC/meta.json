@@ -2,12 +2,13 @@
   "cycle": "2026100612",
   "name": "WPAC",
   "status": "ok",
+  "code_version": "a85cc99",
   "seed": {
     "lat": 33.55,
     "lon": 147.69,
     "fhr0": 0,
     "fhr1": null,
-    "source": "track of 2026100512 at +24 h"
+    "source": "stored seed"
   },
   "start_fhr": 0,
   "end_fhr": 42,
@@ -36,5 +37,6 @@
     "distance_km": 42,
     "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100612/3.html"
   },
-  "track_end": "no minimum within 768 km of 56.8,-175.4 at or below 984 hPa and within 1383 km of the last fix at +54 h"
+  "track_end": "no minimum within 768 km of 56.8,-175.4 at or below 984 hPa and within 1383 km of the last fix at +54 h",
+  "fsu_source": "carried over offline from the match of the original collection (FSU's page for older cycles is no longer online); compare.png rebuilt with the recomputed phase.png"
 }

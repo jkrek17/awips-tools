@@ -2,12 +2,13 @@
   "cycle": "2026093012",
   "name": "AUTO_260930_01",
   "status": "ok",
+  "code_version": "4d645b0-dirty",
   "seed": {
     "lat": 84.98,
     "lon": 110.17,
     "fhr0": 0,
     "fhr1": null,
-    "source": "automatic discovery at 0 h of 2026093012"
+    "source": "stored seed"
   },
   "start_fhr": 0,
   "end_fhr": 60,
@@ -27,10 +28,10 @@
   "completion_standard_h": 0,
   "onset_hart_h": null,
   "completion_hart_h": 0,
-  "class_sequence": "6 0-42, - 48-54, 6 60",
+  "class_sequence": "6 0-48, - 54, 6 60",
   "fsu_number": null,
   "fsu": null,
-  "track_end": "no minimum within 600 km of 79.0,135.8 at or below 988 hPa and within 1080 km of the last fix at +72 h",
+  "track_end": "no minimum within 615 km of 79.0,135.8 at or below 988 hPa and within 1107 km of the last fix at +72 h",
   "discovered": {
     "lat": 84.98,
     "lon": 110.17,

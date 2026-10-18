@@ -7,7 +7,7 @@ Storm-following phase diagrams from the 12 UTC 2026-09-29 GFS 0.25 degree run, f
 | [AUTO_260924_01](AUTO_260924_01/) | [4](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092912/4.html) | 26.8N 111.6W | 990 | 0-90 | 1 0, 4 6, - 12-90 | 0 | 0 | 72 | 72 |
 | [AUTO_260924_02](AUTO_260924_02/) | [5](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092912/5.html) | 57.8N 140.6W | 996 | 0-48 | 1 0, - 6-48 | 18 | 18 | none | 0 |
 | [AUTO_260924_05](AUTO_260924_05/) | [3](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092912/3.html) | 20.9N 123.3W | 1004 | 0-48 | - 0-48 | 0 | none | none | none |
-| [AUTO_260929_01](AUTO_260929_01/) | none | 53.4N 18.5W | 974 | 0-96 | 4 0-6, 3 12, 1 18, 0 24-30, 1 36-42, 3 48-54, - 60, 1 66-84, 4 90, - 96 | 0 | none | 0 | 0 |
+| [AUTO_260929_01](AUTO_260929_01/) | none | 53.4N 18.5W | 974 | 0-96 | 4 0-6, 3 12-18, 0 24-30, 1 36-42, 3 48-54, - 60, 1 66-84, 4 90, - 96 | 0 | none | 0 | 0 |
 | [AUTO_260929_02](AUTO_260929_02/) | none | 83.7N 172.5W | 979 | 0-6 | 4 0-6 | 0 | 0 | 0 | 0 |
 | [EPAC](EPAC/) | [1](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092912/1.html) | 20.2N 164.4W | 961 | 0-198 | 0 0-6, 2 12, - 18-36, 0 42, - 48-78, 0 84-198 | 18 | none | none | none |
 

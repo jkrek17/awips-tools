@@ -2,12 +2,13 @@
   "cycle": "2026092912",
   "name": "AUTO_260924_01",
   "status": "ok",
+  "code_version": "4d645b0-dirty",
   "seed": {
     "lat": 23.91,
     "lon": -113.92,
     "fhr0": 0,
     "fhr1": null,
-    "source": "stored seed of 2026092812; the track of 2026092812 has no fix at +24 h"
+    "source": "stored seed"
   },
   "start_fhr": 0,
   "end_fhr": 90,
@@ -36,5 +37,6 @@
     "distance_km": 76,
     "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092912/4.html"
   },
-  "track_end": "no minimum within 600 km of 49.3,-115.6 at or below 1028 hPa and within 1080 km of the last fix at +102 h"
+  "track_end": "no minimum within 874 km of 49.3,-115.6 at or below 1028 hPa and within 1574 km of the last fix at +102 h",
+  "fsu_source": "carried over offline from the match of the original collection (FSU's page for older cycles is no longer online); compare.png rebuilt with the recomputed phase.png"
 }

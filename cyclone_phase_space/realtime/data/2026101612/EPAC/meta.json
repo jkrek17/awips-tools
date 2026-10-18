@@ -2,12 +2,13 @@
   "cycle": "2026101612",
   "name": "EPAC",
   "status": "ok",
+  "code_version": "7b65306",
   "seed": {
     "lat": 43.72,
     "lon": -174.64,
     "fhr0": 0,
     "fhr1": null,
-    "source": "track of 2026101512 at +24 h"
+    "source": "stored seed"
   },
   "start_fhr": 0,
   "end_fhr": 198,

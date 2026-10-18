@@ -2,6 +2,7 @@
   "cycle": "2026092612",
   "name": "EPAC",
   "status": "ok",
+  "code_version": "cf3f24f-dirty",
   "seed": {
     "lat": 16.71,
     "lon": -154.85,
@@ -35,5 +36,6 @@
     "lon": -155.61,
     "distance_km": 45,
     "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092612/1.html"
-  }
+  },
+  "fsu_source": "carried over offline from the match of the original collection (FSU's page for older cycles is no longer online); compare.png rebuilt with the recomputed phase.png"
 }

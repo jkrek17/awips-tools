@@ -2,6 +2,7 @@
   "cycle": "2026100200",
   "name": "AUTO_261001_01",
   "status": "ok",
+  "code_version": "4d645b0-dirty",
   "seed": {
     "lat": 19.54,
     "lon": -109.56,
@@ -35,5 +36,6 @@
     "lon": -109.55,
     "distance_km": 37,
     "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100200/4.html"
-  }
+  },
+  "fsu_source": "carried over offline from the match of the original collection (FSU's page for older cycles is no longer online); compare.png rebuilt with the recomputed phase.png"
 }

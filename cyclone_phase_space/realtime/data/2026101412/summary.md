@@ -14,11 +14,11 @@ Storm-following phase diagrams from the 12 UTC 2026-10-14 GFS 0.25 degree run, f
 
 Class codes (HCPSclass at the center): 0 sym deep warm, 1 sym shallow warm, 2 asym deep warm, 3 asym shallow warm, 4 asym cold, 5 sym cold, 6 shallow cold; - no closed low.
 
-AUTO_261008_01: lost. No closed low within 400 km of the seed 61.4N 167.8W at +0 h of 2026101412 (track of 2026101312 at +24 h); marked inactive.
+AUTO_261008_01: lost. No closed low within 400 km of the seed 61.4N 167.8W at +0 h of 2026101412 (stored seed); marked inactive.
 
-AUTO_261011_01: lost. No closed low within 400 km of the seed 61.6N 38.6W at +0 h of 2026101412 (stored seed of 2026101312; the track of 2026101312 has no fix at +24 h); marked inactive.
+AUTO_261011_01: lost. No closed low within 400 km of the seed 61.6N 38.6W at +0 h of 2026101412 (stored seed); marked inactive.
 
-AUTO_261013_02: lost. No closed low within 400 km of the seed 47.4N 40.4W at +0 h of 2026101412 (stored seed of 2026101312; the track of 2026101312 has no fix at +24 h); marked inactive.
+AUTO_261013_02: lost. No closed low within 400 km of the seed 47.4N 40.4W at +0 h of 2026101412 (stored seed); marked inactive.
 
 ## Automatic discovery
 

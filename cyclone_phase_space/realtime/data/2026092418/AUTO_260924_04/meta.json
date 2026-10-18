@@ -2,6 +2,7 @@
   "cycle": "2026092418",
   "name": "AUTO_260924_04",
   "status": "ok",
+  "code_version": "e957235",
   "seed": {
     "lat": 81.31,
     "lon": -145.55,
@@ -30,7 +31,7 @@
   "class_sequence": "2 0, 6 6, - 12-18, 6 24-48",
   "fsu_number": null,
   "fsu": null,
-  "track_end": "no minimum within 600 km of 85.6,-113.5 at or below 1008 hPa and within 1080 km of the last fix at +60 h",
+  "track_end": "no minimum within 600 km of 85.6,-113.5 at or below 1020 hPa and within 1080 km of the last fix at +60 h",
   "discovered": {
     "lat": 81.31,
     "lon": -145.55,

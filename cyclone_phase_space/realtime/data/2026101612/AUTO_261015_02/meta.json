@@ -2,12 +2,13 @@
   "cycle": "2026101612",
   "name": "AUTO_261015_02",
   "status": "ok",
+  "code_version": "7b65306",
   "seed": {
     "lat": 81.93,
     "lon": 22.04,
     "fhr0": 0,
     "fhr1": null,
-    "source": "stored seed of 2026101512; the track of 2026101512 has no fix at +24 h"
+    "source": "stored seed"
   },
   "start_fhr": 0,
   "end_fhr": 0,

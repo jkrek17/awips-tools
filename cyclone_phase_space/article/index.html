@@ -55,17 +55,22 @@
       frames is linked into a track that carries its path through the
       three-dimensional phase space and Hart's own motion-relative
       asymmetry from that track; and as AWIPS II derived parameters
-      computed on demand in the CAVE display. On
-      GFS forecasts the class followed Typhoon Dujuan through its full
-      transition on the path the Florida State University phase diagrams
-      traced for the same run. On a synthetic life cycle evaluated with
-      both methods, the class sequence is the same, the asymmetry
-      parameter matches Hart's to 1%, and onset and completion fall at
-      the same hours. For a profile not linear in log
-      pressure the 925 to 700&nbsp;hPa band reads a deep warm core about
-      12% high and the upper band about 9% low, and the lower band a warm
-      seclusion two to three times higher than Hart's layer; the window
-      itself is Hart's circle.
+      computed on demand in the CAVE display. Over 26 GFS cycles the
+      tracked lows were compared with the Florida State University
+      phase diagrams of the same runs, digitized from the published
+      images, at 517 hours timed on both diagrams. With Hart's bands and
+      the track motion the asymmetry agrees with the diagrams to a bias
+      of +1.8&nbsp;m and 12&nbsp;m root mean square, the thermal wind
+      terms to 51 and 39&nbsp;m, the joint class 70% of the time and
+      completion within 6&nbsp;h in 11 of 11 storms. The standard-level
+      bands of the AWIPS fields read the lower term about 17&nbsp;m
+      higher than Hart's bands on the same tracks and agree with the
+      diagrams in class 55% of the time, and the steering-flow
+      asymmetry of the gridded field carries a +5&nbsp;m bias against
+      the track-motion value, largest for slow storms. On a synthetic
+      life cycle evaluated with both methods, the class sequence is the
+      same, the asymmetry parameter matches Hart's to 1%, and onset and
+      completion fall at the same hours.
     </p>
   </div>
 
@@ -788,7 +793,15 @@
     magnitude. The synthetic material, the schematic
     trajectory of Figure 1 and the idealized fields behind Figures 2 to 9
     and 13 to 19, is defined in the figure scripts and summarized figure
-    by figure in Appendix A.
+    by figure in Appendix A. The archive behind the comparison in
+    Section 6 is the daily collection of Section 5: 26 GFS 0.25&deg;
+    cycles, the 12&nbsp;UTC run of every day from 24 September to 17
+    October 2026 with the 18&nbsp;UTC run of 24 September and the
+    00&nbsp;UTC run of 2 October, each storm followed to 198&nbsp;h,
+    187 storm-cycles in all, of which 159 have the Florida State
+    diagrams of the same storm and run saved beside them. Those diagrams
+    are published only as images, so their values were digitized
+    (Appendix A).
   </p>
 
   <h2 id="thermal-wind-from-height">4. Properties of the gridded thermal
@@ -1259,6 +1272,124 @@
   </figure>
 
 
+  <h3 id="fsu-comparison">Against the Florida State diagrams over 26 cycles</h3>
+  <p>
+    The cases above were read by eye. The archive of Section 3 allows
+    the comparison to be made in numbers, on every storm the collection
+    followed that the Florida State page also drew, 159 storm-cycles
+    with 318 diagrams. Each diagram was digitized: the axes
+    calibrated from the tick marks, every marker found and fitted, and
+    the markers timed by walking the trajectory from its labeled ends.
+    An hour counts as verified when it was timed independently on both
+    diagrams of a storm and the two readings of
+    &minus;V<sub>T</sub><sup>L</sup>, which the diagrams share, agree;
+    517 hours are verified and 1110 usable, the rest lost to overlapping
+    markers, the inset map and tangled tracks. Against 48 points read by
+    hand on five diagrams the digitizer agrees to 0.2&nbsp;m in <i>B</i>
+    and 0.07&nbsp;m in the thermal wind, and the two diagrams' readings
+    of &minus;V<sub>T</sub><sup>L</sup> agree to 0.13&nbsp;m on the
+    verified hours, so the digitizing error is negligible beside the
+    differences below. Our tracks were smoothed with the same 24&nbsp;h
+    centered running mean the diagrams carry and paired with them at
+    the shared valid hours of the same run. Our side is evaluated two
+    ways on every track: with the standard-level bands and the
+    steering-flow <i>B</i> of the gridded fields, and with Hart's 900 to
+    600 and 600 to 300&nbsp;hPa bands at 50&nbsp;hPa spacing and the
+    track-motion <i>B</i>.
+  </p>
+  <table>
+    <caption>Ours minus the Florida State diagrams at the 517 verified hours: mean difference and root mean square difference in m, with the count, for the standard-level bands with the steering-flow <i>B</i> (the gridded fields) and for Hart's bands with the track-motion <i>B</i>. Warm and cold are the diagram's own lower core; fast is a track speed above 20&nbsp;kt.</caption>
+    <thead><tr><th scope="col">Term</th><th scope="col">Bands</th><th scope="col">All</th><th scope="col">Warm lower core</th><th scope="col">Cold lower core</th><th scope="col">Faster than 20&nbsp;kt</th><th scope="col">20&nbsp;kt or slower</th></tr></thead>
+    <tbody>
+      <tr><td><i>B</i></td><td>standard, steering-flow <i>B</i></td><td>+7.7 / 16.0 (505)</td><td>+6.0 / 12.5 (321)</td><td>+10.7 / 20.8 (184)</td><td>+6.8 / 14.3 (82)</td><td>+7.8 / 16.3 (421)</td></tr>
+      <tr><td><i>B</i></td><td>Hart's, track-motion <i>B</i></td><td>+1.8 / 12.0 (515)</td><td>+1.0 / 9.8 (333)</td><td>+3.3 / 15.3 (182)</td><td>+5.3 / 13.8 (82)</td><td>+1.1 / 11.6 (433)</td></tr>
+      <tr><td>&minus;V<sub>T</sub><sup>L</sup></td><td>standard, steering-flow <i>B</i></td><td>+11.9 / 56.0 (517)</td><td>+7.3 / 48.2 (333)</td><td>+20.3 / 67.9 (184)</td><td>+2.9 / 83.4 (82)</td><td>+13.1 / 48.5 (433)</td></tr>
+      <tr><td>&minus;V<sub>T</sub><sup>L</sup></td><td>Hart's, track-motion <i>B</i></td><td>&minus;14.2 / 50.7 (517)</td><td>&minus;10.4 / 43.6 (333)</td><td>&minus;21.0 / 61.4 (184)</td><td>&minus;30.2 / 83.0 (82)</td><td>&minus;11.2 / 42.0 (433)</td></tr>
+      <tr><td>&minus;V<sub>T</sub><sup>U</sup></td><td>standard, steering-flow <i>B</i></td><td>&minus;2.3 / 52.4 (517)</td><td>&minus;10.1 / 46.2 (333)</td><td>+11.8 / 62.1 (184)</td><td>&minus;9.2 / 67.1 (82)</td><td>&minus;0.9 / 49.3 (433)</td></tr>
+      <tr><td>&minus;V<sub>T</sub><sup>U</sup></td><td>Hart's, track-motion <i>B</i></td><td>&minus;6.6 / 39.4 (517)</td><td>&minus;4.1 / 37.0 (333)</td><td>&minus;11.2 / 43.3 (184)</td><td>&minus;16.5 / 54.9 (82)</td><td>&minus;4.5 / 35.6 (433)</td></tr>
+    </tbody>
+  </table>
+  <p>
+    Three things follow. First, the band difference of Section 7 is
+    measured: on the same tracks the standard-level lower band reads
+    17&nbsp;m above Hart's band on average over the archive, 26&nbsp;m on the verified hours, and against the
+    diagrams the two sit on opposite sides, the standard band
+    12&nbsp;m high and Hart's 14&nbsp;m low,
+    with the cold cores the worse of the two regimes under both. The
+    upper term, whose bands are closer, is &minus;2 and
+    &minus;7&nbsp;m. What remains with Hart's own bands, a
+    low bias of some 10 to 20&nbsp;m and a scatter of 40 to 50&nbsp;m,
+    belongs to the rest of the comparison: 0.25&deg; against
+    0.5&deg;, a running mean that on the page reaches back before the
+    run, two trackers placing the center, and the diagrams' own
+    rounding; it is largest for fast storms, where a center displaced by
+    one frame's motion changes the window's contents most. Second, the
+    steering-flow substitution for the track motion is measured: the
+    gridded <i>B</i> runs +7.7&nbsp;m above the diagrams where
+    the track-motion <i>B</i> runs +1.8&nbsp;m above, with
+    12&nbsp;m scatter against 16, and on our own tracks,
+    without the diagrams, the two differ by +5.8&nbsp;m for
+    storms under 10&nbsp;kt and +1.2&nbsp;m above 40&nbsp;kt,
+    with the class differing between them at 17% of the
+    slow hours and 4% of the fast. The steering flow is a
+    good stand-in for a storm that moves with it and a poor one for a
+    storm that does not, which is why the live map reads a tracked
+    low's class from the track-motion value and keeps the steering-flow
+    field for the untracked lows and for CAVE. Third, the class and the
+    timing: the joint class agrees with the diagram's at 70% of the
+    verified hours with Hart's bands and the track motion, and at
+    55% with the gridded fields' choices, with the symmetric
+    against asymmetric side alone at 78 and 68%; among the
+    storms that both sides start on the near side of a threshold and
+    both carry across it, completion falls within 6&nbsp;h of the
+    diagram's in 11 of 11 with Hart's bands and
+    7 of 10 with the standard bands, median
+    differences 0 and +6&nbsp;h, and onset, which
+    depends on <i>B</i> alone, in 4 of 9 and 2
+    of 6, with the standard choices early by 9&nbsp;h
+    at the median. The timing counts are small because few storms in
+    four weeks cross a threshold inside a run on both sides.
+    Figure 20 shows the pairs and Figure 21 the timing.
+  </p>
+  <p>
+    The comparison has limits of its own. The pairs are not
+    independent: consecutive hours of one storm and the same storm on
+    consecutive days are strongly correlated, so the counts overstate
+    the effective sample. Both sides are evaluations of the GFS, so
+    nothing here measures either method against an observed structure
+    (Section 7). The detector and the tracker chose the storms, every
+    closed low below 980&nbsp;hPa at the analysis and the lows seeded by
+    hand, which leans the sample toward deep extratropical lows and
+    away from weak tropical systems; Section 7 gives the counts.
+    Within those limits the result is that the gridded engine with
+    Hart's bands and a track reproduces the diagrams to within the
+    differences one expects of two model resolutions and two trackers,
+    and that the two substitutions the gridded fields make, the
+    standard-level bands and the steering flow, are each worth a
+    measured and now stated bias.
+  </p>
+  <figure id="fig20">
+    <img src="figures/figK_fsu_scatter.png"
+         alt="Six scatter plots of our values against the Florida State diagrams' digitized values, our value on the vertical axis, each with a one-to-one line. Top row, the standard bands: B with bias about 8 meters, the lower thermal wind with bias about 12 meters and the upper with bias near minus 3 meters. Bottom row, Hart's bands and the track-motion B: B with bias about 2 meters, the lower thermal wind about 14 meters low and the upper about 7 meters low, all three tighter to the line. Points are red for a warm lower core and blue for a cold one, filled where verified on both diagrams and hollow where read from one.">
+    <figcaption><strong>Figure 20.</strong> Ours against the Florida
+      State diagrams at the paired hours of the archive, both as 24&nbsp;h
+      running means. Top row: the gridded fields' choices, standard-level
+      bands and the steering-flow <i>B</i>. Bottom row: Hart's bands and
+      the track-motion <i>B</i>. Red, a warm lower core on the diagram;
+      blue, cold; filled, verified on both diagrams; hollow, timed on one.
+      The titles carry the bias, root mean square and count of the
+      verified set. (<a href="#src-fig20">Appendix A</a>)</figcaption>
+  </figure>
+  <figure id="fig21" class="half">
+    <img src="figures/figL_fsu_timing.png"
+         alt="Two histograms of ours minus the Florida State diagram's hour, in hours, for onset on the left and completion on the right, each with a blue outline for the standard bands and an orange outline for Hart's bands. Completion with Hart's bands piles up in the bin at zero; the standard bands spread from minus 27 to plus 21 hours. Onset counts are small for both.">
+    <figcaption><strong>Figure 21.</strong> Onset (left) and completion
+      (right) hour, ours minus the diagram's, for the storms both sides
+      carry across the threshold inside the run, with the standard bands
+      and the steering-flow <i>B</i> (blue) and Hart's bands and the
+      track-motion <i>B</i> (orange). (<a href="#src-fig21">Appendix A</a>)</figcaption>
+  </figure>
+
   <h3 id="feature-recognition">Feature recognition on synthetic cases</h3>
   <p>
     The life cycle above exercises one storm. A product that classifies
@@ -1432,11 +1563,16 @@
       steering-opposed system; and, away from a low center, a field that
       is the environment's thickness contrast across the flow rather
       than a storm property. HCPSclass inherits these limits for its
-      asymmetric/symmetric split. Neither HB nor the asymmetric half of
-      HCPSclass has been validated on a real case; a comparison against
-      <i>B</i> computed along a model track with finite-differenced
-      centers, and of the proxy heading against the track heading, is
-      the intended test.</li>
+      asymmetric/symmetric split. The steering-flow substitution is
+      measured in Section 6: on our own tracks the gridded <i>B</i>
+      runs +5.4&nbsp;m above the track-motion <i>B</i>, most for
+      slow storms, and the class read from the two differs at
+      17% of the hours under 10&nbsp;kt; against the Florida
+      State diagrams the bias is +7.7&nbsp;m with the steering
+      flow and +1.8&nbsp;m with the track. A tracked low on the
+      live map is therefore read from the track-motion value, and the
+      steering-flow field is what remains for an untracked low and for
+      CAVE.</li>
     <li>The closed-low detector runs on MSLP and measures relief
       between a center and the 300 to 500&nbsp;km ring, so its floor
       rises with the breadth of the low: on synthetic Gaussian lows in
@@ -1506,17 +1642,18 @@
     <li>The continuous index's weighting (twice the lower term) is a
       display heuristic with no physical derivation; the classification
       is the product to reason from.</li>
-    <li>Validation is the six real cases from five GFS cycles listed in
-      the table at the start of Section 6. Values were sampled along one
-      storm, Typhoon Dujuan, and the comparison with the Florida State
-      diagrams covers that storm alone; the North Atlantic cases were
-      read by class only. Every case in the log was sampled with the
-      former first-order <i>B</i>, the closed-low detector on
-      1000&nbsp;hPa height and the former square window, so its values
-      and detections predate the semicircle means, the MSLP detector and
-      the circular window and are to be re-sampled.
-      The acceptance criteria for removing the
-      experimental label are set out in the package README.</li>
+    <li>The comparison with the Florida State diagrams (Section 6)
+      rests on 517 verified hours from 159 storm-cycles in four
+      weeks of one autumn, correlated along each storm and across
+      consecutive runs of it, with timing counts of about ten storms;
+      the digitizing recovers 43% of the hours the diagrams show,
+      and the hours it drops, in crowded parts of a trajectory, are not
+      a random sample of the rest. The six CAVE cases of the table at
+      the start of Section 6 were read by eye, with the former
+      first-order <i>B</i>, the detector on 1000&nbsp;hPa height and the
+      square window, and stand as illustrations rather than evidence.
+      The acceptance criteria for removing the experimental label are
+      set out in the package README.</li>
     <li>The class is sensitive to where the center is read and to
       how close the storm sits to a threshold, and both were measured
       on the archive. Over its 2205 classed fixes the nearest
@@ -1688,10 +1825,13 @@
       classified on every frame, with the tracked lows' paths through
       the three-dimensional space and Hart's own <i>B</i> from each
       track, and as the same fields in AWIPS.</li>
-    <li>On real GFS forecasts the gridded class followed Typhoon Dujuan through
-      the full transition, deep warm core to cold core to warm seclusion,
-      and the loss of the deep warm core came at the hour the Florida
-      State phase diagrams showed for the same run.</li>
+    <li>Over 26 GFS cycles and 517 verified hours, the tracked lows
+      evaluated with Hart's bands and the track motion agree with the
+      Florida State diagrams of the same runs, digitized from the
+      images, to +1.8&nbsp;m bias and 12&nbsp;m root mean
+      square in <i>B</i>, 51 and 39&nbsp;m in the
+      thermal wind terms, 70% in the joint class and within
+      6&nbsp;h of completion in 11 of 11 storms.</li>
     <li>On a synthetic life cycle evaluated both ways, Hart's method and
       the gridded method assign the same sequence of classes; the gridded
       <i>B</i> matches Hart's to 1%, and onset and completion fall at the
@@ -1704,21 +1844,23 @@
       flow, so a full-basin
       display shows the polar front, the jet, cold domes and the
       trade-wind belt as well as the storms.</li>
-    <li>The thermal wind terms agree with Hart's in sign and timing but
-      not in magnitude. For a profile not linear in ln&nbsp;<i>p</i> the
-      925 to 700&nbsp;hPa band reads a deep warm core about 12% high and
-      the upper band about 9% low, and the lower band reads a warm
-      seclusion two to three times higher than Hart's 900 to
-      600&nbsp;hPa band. The window is Hart's 500&nbsp;km circle; the
-      square used before read cold cores about 50&nbsp;m more negative on
-      a GFS forecast.</li>
-    <li>Parameter <i>B</i>, now computed from true semicircle means,
-      matches Hart's to 1% on the synthetic life cycle and to 0.1% on a
-      storm-scale dipole at every scale tested; the former first-order
-      form, with the square window mean it was used with, read a
-      storm-scale asymmetry at about 60% of Hart's value and delayed onset
-      by two frames. The remaining known biases of <i>B</i>
-      are the layer rescaling and the odd harmonics <i>k</i> &ge; 3.</li>
+    <li>The standard-level bands of the AWIPS fields read the lower
+      term 17&nbsp;m above Hart's bands on the same tracks,
+      12&nbsp;m above the diagrams where Hart's bands read
+      14&nbsp;m below, and agree with the diagrams in class
+      55% of the time against 70%; on synthetic profiles the
+      same band reads a deep warm core about 12% high and a shallow warm
+      seclusion two to three times Hart's value. The window is Hart's
+      500&nbsp;km circle; the square used before read cold cores about
+      50&nbsp;m more negative on a GFS forecast, and the archive was
+      recomputed with the circle.</li>
+    <li>Parameter <i>B</i> from true semicircle means matches Hart's to
+      1% on the synthetic life cycle and to 0.1% on a storm-scale dipole
+      at every scale tested. The steering flow in place of the track
+      motion, the one substitution a single frame forces, is worth
+      +5.4&nbsp;m on average against the track-motion value and
+      a class change at 17% of the hours of slow storms; on
+      the live map a tracked low is read from its own motion.</li>
     <li>The environment's height gradient lowers both thermal wind terms
       as a storm enters a baroclinic zone. That is the transition signal
       by design, and it is shared with Hart's method.</li>

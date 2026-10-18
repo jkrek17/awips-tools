@@ -2,6 +2,7 @@
   "cycle": "2026100200",
   "name": "AUTO_260929_01",
   "status": "ok",
+  "code_version": "4d645b0-dirty",
   "seed": {
     "lat": 65.71,
     "lon": -29.21,
@@ -36,5 +37,6 @@
     "distance_km": 19,
     "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100200/5.html"
   },
-  "track_end": "no minimum within 600 km of 65.8,-22.5 at or below 990 hPa and within 1080 km of the last fix at +60 h"
+  "track_end": "no minimum within 600 km of 65.8,-22.5 at or below 990 hPa and within 1080 km of the last fix at +60 h",
+  "fsu_source": "carried over offline from the match of the original collection (FSU's page for older cycles is no longer online); compare.png rebuilt with the recomputed phase.png"
 }

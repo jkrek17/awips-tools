@@ -22,9 +22,9 @@
       "distance_km": 0
     },
     {
-      "lat": 62.49,
-      "lon": -77.62,
-      "mslp_hpa": 975.0,
+      "lat": 62.51,
+      "lon": -77.61,
+      "mslp_hpa": 974.98,
       "basin": "NATL",
       "action": "added",
       "storm": "AUTO_261001_02"

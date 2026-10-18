@@ -2,12 +2,13 @@
   "cycle": "2026101012",
   "name": "EPAC",
   "status": "ok",
+  "code_version": "a85cc99",
   "seed": {
     "lat": 31.97,
     "lon": 146.29,
     "fhr0": 0,
     "fhr1": null,
-    "source": "track of 2026100912 at +24 h"
+    "source": "stored seed"
   },
   "start_fhr": 0,
   "end_fhr": 102,
@@ -36,5 +37,6 @@
     "distance_km": 51,
     "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101012/1.html"
   },
-  "track_end": "outside a closed low at +108, +114 h (1016 hPa at +114 h)"
+  "track_end": "outside a closed low at +108, +114 h (1016 hPa at +114 h)",
+  "fsu_source": "carried over offline from the match of the original collection (FSU's page for older cycles is no longer online); compare.png rebuilt with the recomputed phase.png"
 }

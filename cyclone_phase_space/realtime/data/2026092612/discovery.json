@@ -5,13 +5,13 @@
   "max_per_day": 6,
   "lows": [
     {
-      "lat": 17.77,
-      "lon": -111.38,
-      "mslp_hpa": 953.05,
+      "lat": 17.76,
+      "lon": -111.49,
+      "mslp_hpa": 938.83,
       "basin": "TROP",
       "action": "known",
       "storm": "AUTO_260924_01",
-      "distance_km": 1
+      "distance_km": 0
     },
     {
       "lat": 19.35,

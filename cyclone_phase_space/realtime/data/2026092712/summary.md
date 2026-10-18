@@ -9,14 +9,12 @@ Storm-following phase diagrams from the 12 UTC 2026-09-27 GFS 0.25 degree run, f
 | [AUTO_260924_05](AUTO_260924_05/) | [3](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092712/3.html) | 22.4N 123.3W | 990 | 0-198 | 3 0-18, 1 24-36, - 42-180, 0 186, - 192-198 | 0 | none | 0 | none |
 | [AUTO_260926_01](AUTO_260926_01/) | [6](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092712/6.html) | 25.9N 129.0E | 957 | 0-6 | 0 0-6 | none | none | none | none |
 | [EPAC](EPAC/) | [1](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092712/1.html) | 16.4N 157.8W | 980 | 0-198 | 0 0-54, 2 60, - 66-84, 0 90, - 96, 0 102, - 108-132, 0 138, 2 144, 0 150, - 156-162, 0 168-198 | none | none | none | none |
-| [GREENLAND](GREENLAND/) | [13](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092712/13.html) | 66.1N 18.8W | 990 | 0-24 | - 0-24 | none | none | none | none |
-| [LABRADOR](LABRADOR/) | [13](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092712/13.html) | 63.0N 18.4W | 986 | 0-6 | 3 0, - 6 | 0 | none | none | none |
+| [GREENLAND](GREENLAND/) | [13](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092712/13.html) | 65.9N 19.0W | 990 | 0-24 | - 0, 3 6, - 12, 3 18, 4 24 | 12 | none | 18 | none |
+| [LABRADOR](LABRADOR/) | [13](http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092712/13.html) | 63.0N 18.4W | 986 | 0-24 | 3 0, - 6-24 | 12 | none | none | none |
 
 Class codes (HCPSclass at the center): 0 sym deep warm, 1 sym shallow warm, 2 asym deep warm, 3 asym shallow warm, 4 asym cold, 5 sym cold, 6 shallow cold; - no closed low.
 
-LABRADOR: merged into GREENLAND at +12 h; its track stops at +6 h.
-
-AUTO_260924_04: lost. No closed low within 400 km of the seed 84.5N 123.1W at +0 h of 2026092712 (stored seed of 2026092612; the track of 2026092612 has no fix at +24 h); marked inactive.
+AUTO_260924_04: lost. No closed low within 400 km of the seed 84.5N 123.1W at +0 h of 2026092712 (stored seed); marked inactive.
 
 ## Automatic discovery
 
