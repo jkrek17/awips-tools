@@ -1517,9 +1517,55 @@
       the circular window and are to be re-sampled.
       The acceptance criteria for removing the
       experimental label are set out in the package README.</li>
+    <li>The class is sensitive to where the center is read and to
+      how close the storm sits to a threshold, and both were measured
+      on the archive. Over its 2205 classed fixes the nearest
+      class-changing boundary is within 5&nbsp;m for 28% and within
+      10&nbsp;m for 52%, with a median margin of 9.5&nbsp;m, almost
+      always the <i>B</i> line: half the fixes are within 10&nbsp;m of
+      <i>B</i> = 10&nbsp;m, where only 5% are within 10&nbsp;m of
+      &minus;V<sub>T</sub><sup>L</sup> = 0 and 3% of
+      &minus;V<sub>T</sub><sup>U</sup> = 0. The symmetric cold core
+      (median margin 2.5&nbsp;m) and the asymmetric deep warm core
+      (4.2&nbsp;m) are the most fragile classes, the asymmetric cold
+      core (23&nbsp;m) and the shallow cold core (45&nbsp;m) the most
+      robust. Of 1904 six-hour steps with a class at both ends the class
+      changes at 21%, and 3.8% of all steps are a change that reverses
+      within 12&nbsp;h, the flicker of the previous item. Displacing
+      the center of each of 183 classed minima on three frames of one
+      run by one grid cell changes the class at some displaced point
+      for 21% of them (39% counting a blank), by 50&nbsp;km for 31%
+      (53%) and by 100&nbsp;km for 44% (73%); the median change of
+      <i>B</i>, the lower and the upper term is 1.0, 5.7 and 3.6&nbsp;m
+      for one cell and 4.0, 22 and 12.6&nbsp;m for 100&nbsp;km. A
+      tracker that places the center a cell or two from the diagram's
+      therefore accounts for part of the scatter in Section 6, and the
+      class at a low should be read with its <i>B</i> margin in
+      view.</li>
+    <li>The detector and the tracker choose the sample. On the same
+      three frames, of 2508 MSLP minima that pass the tracker's first
+      screen, 27% are closed by the tracker's 2&nbsp;hPa ring, 9% by
+      the product's 5&nbsp;hPa ring and 7% receive a class. The share
+      rises with depth and latitude: 44% of minima below 980&nbsp;hPa
+      receive a class, 26% between 980 and 1000&nbsp;hPa and 3% above
+      1000&nbsp;hPa; 16% of minima between 25&deg; and 60&deg; and
+      poleward of 60&deg;, and 1% within 25&deg; of the equator, where
+      the minima are shallow troughs and easterly waves. The classified
+      population is therefore the deep and the midlatitude lows, and
+      the comparison of Section 6, which follows every low below
+      980&nbsp;hPa at the analysis and the storms seeded by hand, leans
+      the same way; weak tropical systems, which the 5&nbsp;hPa ring
+      excludes until they deepen, are under-represented in every
+      statistic here. The recomputed archive is reproducible: rerunning
+      all 26 cycles with the current code from the stored seeds gave
+      identical tracks for the 128 storm-cycles written after the
+      tracker's terrain and reach rules were last changed, and changed
+      16 of the 59 written before, the eastern Pacific hurricane and the
+      lows near Greenland among them.</li>
     <li>The hemisphere factor <i>h</i> is implemented and tested on
       synthetic Southern Hemisphere fields, but nothing has been run on a
-      real Southern Hemisphere storm.</li>
+      real Southern Hemisphere storm, although the live map now shows
+      them on every frame.</li>
   </ul>
 
   <figure id="fig17">

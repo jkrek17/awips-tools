@@ -579,9 +579,9 @@ the deep lows of its analysis on its own (constants at the top of
 - *Rule.* On the 0 h frame (global grid, fields computed once for all
   storms), every point the tracker would accept as a center
   (`track_cps.all_centers`, the rule of `find_center`: the lowest point
-  of its +/- 1 degree box after terrain with surface pressure below
-  950 hPa is masked, MSLP under 1018 hPa, within 85 degrees of the
-  equator) with MSLP below
+  of its +/- 1 degree box after terrain is masked, where MSLP exceeds
+  the surface pressure by more than 60 hPa, MSLP under 1018 hPa, within
+  85 degrees of the equator) with MSLP below
   `AUTO_MSLP_HPA` (980 hPa) and latitude north of `AUTO_LAT_MIN` (0,
   so the northern hemisphere only) is a candidate. Deepest first, a
   candidate within 500 km of a deeper one kept is dropped (one per

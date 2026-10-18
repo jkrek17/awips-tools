@@ -55,7 +55,10 @@ TERRAIN_DEFICIT_HPA = 60.0  # nor is one over terrain: where MSLP exceeds the su
 #                             pressure, and an absolute floor of 950 hPa masked such centers out as terrain
 #                             (the 2 October 2026 00 UTC run's Bering Sea seclusion, 925 hPa)
 POLE_LAT = 85.0  # nor is one poleward of this latitude (the pole row is one repeated value)
-MAX_RISE_HPA = 12.0  # nor one more than this above the previous fix (a handover, not a filling low)
+MAX_RISE_HPA = 12.0  # nor one more than this above the previous fix per 6 h (a handover, not a filling low) ...
+DEEP_RISE_HPA = 980.0  # ... except that a deep low may fill faster: the allowance grows by DEEP_RISE_FRAC of the
+DEEP_RISE_FRAC = 0.25  # fix's depth below DEEP_RISE_HPA (a 930 hPa eye may rise 24.5 hPa in 6 h; GFS fills a
+#                        hurricane's eye by 14 to 15 hPa in 6 h, which the flat 12 hPa cap refused on 24 Sep 2026)
 OUTSIDE_FRAMES = 2  # a track ends after this many consecutive fixes outside the closed-low mask
 MERGE_TRACK_KM = 150.0  # two tracks whose centers are closer than this in a frame: the later one stops
 CLOSED_DEPTH_HPA = 2.0  # the tracker's closed-low test: closed_low_mask with a 2 hPa ring depth
@@ -309,6 +312,15 @@ def find_center(f: dict, lat: float, lon: float, radius_km: float, wrap: bool, m
 
 
 # ------------------------------------------------------------------ tracking
+def max_rise(mslp_hpa: float, hours: float) -> float:
+    """How far above the last fix the next center may lie: MAX_RISE_HPA per
+    6 h, plus DEEP_RISE_FRAC of the fix's depth below DEEP_RISE_HPA, so a
+    filling hurricane is followed through its eye's rapid rise while a
+    handover to a shallower neighbor is still refused."""
+    deep = max(0.0, DEEP_RISE_HPA - float(mslp_hpa))
+    return (MAX_RISE_HPA + DEEP_RISE_FRAC * deep) * max(1.0, float(hours) / 6.0)
+
+
 class Track:
     """One followed low: seed, fixes (one dict per frame) and state."""
 
@@ -367,7 +379,7 @@ def sample_frame(tr: Track, f: dict, p: dict, fhr: int, wrap: bool) -> None:
     cap = reach = None
     if tr.fixes:
         last = tr.fixes[-1]
-        cap = last["mslp_hpa"] + MAX_RISE_HPA
+        cap = last["mslp_hpa"] + max_rise(last["mslp_hpa"], fhr - last["fhr"])
         reach = (last["lat"], last["lon"], tr.reach_rate() * (fhr - last["fhr"]))
     hit = find_center(f, lat, lon, rad, wrap, cap, reach)
     if hit is None:
