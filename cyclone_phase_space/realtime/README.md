@@ -368,6 +368,44 @@ differences:
 - FSU's tracker needs MSLP under 1018 hPa and a 24 h lifetime; a weak or
   short-lived low may not be on its list.
 
+### Digitizing the FSU diagrams and comparing the whole archive
+
+FSU publishes the diagrams only as images, so `fsu_digitize.py` reads
+the values back off them and `fsu_stats.py` compares every storm-cycle
+of the daily collection with its FSU match in numbers:
+
+    python3 fsu_stats.py                     # whole archive, 4 workers, ~3 min
+    python3 fsu_digitize.py data/2026100212/AUTO_260930_01/fsu_phase1.png --cycle 2026100212 --debug /tmp/discs.png
+
+The digitizer calibrates the axes from the tick marks and digit
+templates (embedded in the module; `--build-templates` rebuilds them
+from archive plots), reads the header's start, current and end hours,
+separates the markers from the shading and the ink, fits each as a
+circle, and times the markers by walking the trajectory from the end
+(Z), analysis (C) and start (A) glyphs one marker at a time, stepping
+only where exactly one neighbor passes the checks on the drawn line,
+the drawing order, the forecast cross and the marker's size and color.
+The two plots of a storm share -V_T^L, so an hour timed on both with
+the same value is "verified"; a disagreement drops that walk. Markers
+under the inset map, in overlapping clusters or on tangled tracks are
+left untimed rather than guessed, so a plot is usually "partial".
+
+`fsu_stats.py` smooths our `track.csv` with the same 24 h centered mean
+the diagrams carry, pairs it with the digitized hours of the same run,
+and writes to `data/validation/`: `fsu_stats.md` and `fsu_stats.json`
+(bias, RMS and count of ours minus FSU for B, -V_T^L and -V_T^U, for
+the standard bands with the steering-flow B and for Hart's bands with
+the track-motion B, split by FSU's lower core and by our track speed;
+joint class agreement; onset and completion timing; and, from our
+tracks alone, the steering-flow B against the track-motion B by
+speed), `fsu_pairs.csv` (every pair), `fig_fsu_scatter.png` and
+`fig_fsu_timing.png`. A storm-cycle counts as matched when both FSU
+plots are saved beside its track; `hand_digitized.csv` holds 48 points
+read by hand on five plots as the check on the digitizer (0.2 m in B,
+0.07 m in the thermal wind). The verified set is the headline; points
+timed on one plot only carry an estimated 12% timing error. The
+article's Figures 20 and 21 are these two figures.
+
 ### Example: 2026092412
 
     python3 gfs_cps.py --cycle 2026092412 --region global --hours $(seq 0 6 198) --hart-bands \

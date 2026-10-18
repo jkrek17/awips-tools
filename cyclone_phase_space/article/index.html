@@ -2028,6 +2028,48 @@
       heading for Hart's, for <i>L</i> of 200, 300, 400, 500, 600, 800,
       1000, 1250 and 1500&nbsp;km. The warm-core-top test is printed as a
       table and not plotted.</dd>
+    <dt id="src-fig20">Figure 20</dt>
+    <dd><code>realtime/fsu_stats.py</code>
+      (<code>fig_fsu_scatter.png</code>, copied to
+      <code>figK_fsu_scatter.png</code>), run over the whole daily
+      collection under <code>realtime/data/</code>. Each storm-cycle's
+      two Florida State diagrams, saved by the collector as
+      <code>fsu_phase1.png</code> and <code>fsu_phase2.png</code>, are
+      digitized by <code>realtime/fsu_digitize.py</code>: the plot frame
+      and tick marks are located to a fraction of a pixel, the tick
+      labels read against digit templates cut from archive plots and
+      embedded in the module, a robust line fit maps pixels to data
+      (every plot calibrated with a residual under 0.3&nbsp;px), the
+      header's start, current and end hours are read with the same
+      method, the markers are separated from the shading and the ink
+      and fitted as circles, and the markers are timed by walking the
+      trajectory one marker at a time from the end, analysis and start
+      glyphs, a step taken only where exactly one neighbor passes the
+      checks on the drawn line, the drawing order, the forecast cross
+      and the marker's size and color. An hour timed on both diagrams
+      with the same &minus;V<sub>T</sub><sup>L</sup> is verified; a
+      disagreement drops that walk. Our track
+      (<code>track.csv</code>) is smoothed with
+      <code>track_cps.running_mean</code>, the 24&nbsp;h centered mean,
+      and paired at the shared valid hours. The standard-band values
+      are <code>hvtl</code>, <code>hvtu</code>, <code>hb</code>; Hart's
+      are <code>hvtl_hart</code>, <code>hvtu_hart</code> and the
+      track-motion <code>hb_track</code>, all from
+      <code>track_cps.py</code>. The statistics, the pairs and this
+      figure are written to <code>realtime/data/validation/</code>, with
+      48 hand-read points on five diagrams
+      (<code>hand_digitized.csv</code>) as the check on the
+      digitizer.</dd>
+    <dt id="src-fig21">Figure 21</dt>
+    <dd><code>realtime/fsu_stats.py</code>
+      (<code>fig_fsu_timing.png</code>, copied to
+      <code>figL_fsu_timing.png</code>). Onset and completion are
+      <code>track_cps.onset_completion</code> applied to the smoothed
+      series of both sides: the first hour <i>B</i> exceeds 10&nbsp;m,
+      and the first hour at or after it that
+      &minus;V<sub>T</sub><sup>L</sup> falls below zero; a storm-cycle
+      enters a histogram only when both sides start on the near side of
+      the threshold and both cross it inside the run.</dd>
   </dl>
 
   <h2 id="references">References</h2>
