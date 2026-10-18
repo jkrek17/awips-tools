@@ -69,8 +69,9 @@
   <div class="cards">
     <div class="card">
       <h3>Lower thermal wind, &minus;V<sub>T</sub><sup>L</sup> (HVTL)</h3>
-      <p>Is the core warmer or colder than its surroundings between 925 and
-      700 hPa? Positive is warm, negative is cold. A hurricane reads a few
+      <p>Is the core warmer or colder than its surroundings in the lower
+      troposphere, 900 to 600 hPa on the live map (925 to 700 hPa in D2D)?
+      Positive is warm, negative is cold. A hurricane reads a few
       hundred metres warm; a mature extratropical low a hundred or more cold.</p>
     </div>
     <div class="card">
@@ -95,8 +96,10 @@
       through a low. Each pressure surface dips over the centre. In a warm core
       the dip shrinks with height (the warm column is thick, so the upper
       surfaces are nearly flat); in a cold core the dip grows with height. The
-      lower term measures that change between 925 and 700 hPa, the upper term
-      between 500 and 300 hPa. Warm is positive.</figcaption>
+      lower term measures that change over the lower troposphere (900 to
+      600 hPa on the live map, 925 to 700 hPa in D2D), the upper term over
+      the upper troposphere (600 to 300 hPa on the map, 500 to 300 hPa in
+      D2D). Warm is positive.</figcaption>
   </figure>
 
   <figure>
@@ -180,7 +183,7 @@
       rest as context. The live web map fades them away from the lows for
       this reason.</li>
     <li><strong>Blanks are information.</strong> The lower term goes blank
-      over high terrain (925 hPa is below ground); B goes blank where the
+      over high terrain (its lowest level is below ground); B goes blank where the
       steering flow is under 2 m/s. A blank is not zero.</li>
   </ul>
   <p>
@@ -259,18 +262,20 @@
       asymmetric, enough to change its class. When a low is nearly
       stationary, trust the two thermal winds and your own thickness
       overlay over B.</li>
-    <li><strong>Warm cores read a little strong.</strong> These products use
-      the standard levels (925, 850, 700 and 500, 400, 300 hPa); FSU uses
-      every 50 hPa. On a deep warm core the lower term reads about 15 to 25
-      percent higher than the FSU page. Cold cores agree with FSU to within
-      about 20 m. The class is unaffected; the numbers are not interchangeable
-      with FSU's.</li>
+    <li><strong>The map and D2D use different layers.</strong> The live map
+      uses Hart's own layers, every 50 hPa from 900 to 600 and 600 to 300 hPa,
+      the same as the FSU page, and its class agrees with FSU's about 70
+      percent of the time. D2D uses the standard levels every model carries
+      (925, 850, 700 and 500, 400, 300 hPa), which read a lower warm core
+      about 35 m higher than the map and agree with FSU's class about 55
+      percent of the time. The signs and the sequence of classes carry over;
+      the numbers are not interchangeable between the two displays.</li>
     <li><strong>A class is a state, not an event.</strong> Two adjacent frames
       can straddle a line by a metre. Look at the trend over several hours and
       at the numbers, not the colour alone.</li>
     <li><strong>Terrain.</strong> Near the Rockies, Greenland or the Andes the
       lower term is blank or thin and the class may be missing. Nothing is
-      wrong; there is no 925 hPa air there.</li>
+      wrong; there is no 900 hPa air there.</li>
     <li><strong>The low must be closed.</strong> An open wave or a trough gets
       no class. That is by design, and it means a weak coastal low may appear
       and disappear between frames as the model closes and opens it.</li>

@@ -53,16 +53,17 @@ const MINUS = '−';
 
 const TERM = {
   hb: { name: 'Thermal asymmetry', sym: 'B', band: '900 to 600 hPa' },
-  hvtl: { name: 'Lower thermal wind', sym: `${MINUS}V<sub>T</sub><sup>L</sup>`, band: '925 to 700 hPa' },
-  hvtu: { name: 'Upper thermal wind', sym: `${MINUS}V<sub>T</sub><sup>U</sup>`, band: '500 to 300 hPa' },
+  hvtl: { name: 'Lower thermal wind', sym: `${MINUS}V<sub>T</sub><sup>L</sup>`, band: '900 to 600 hPa' },
+  hvtu: { name: 'Upper thermal wind', sym: `${MINUS}V<sub>T</sub><sup>U</sup>`, band: '600 to 300 hPa' },
 };
 const termHTML = (f) => `${TERM[f].name} (${TERM[f].sym})`;
 
 // The field list in the layers panel: [key, name, hotkey].
 const FIELD_LIST = [['class', 'Class at the low center', '1'], ['hb', `${termHTML('hb')}`, '2'],
   ['hvtl', `${termHTML('hvtl')}`, '3'], ['hvtu', `${termHTML('hvtu')}`, '4']];
-// The B field is the gridded product's, with the steering flow (storms.js, bOf).
-const B_FIELD_NOTE = 'Steering-flow B, as in CAVE';
+// The B field takes the motion from the steering flow, since one frame has no
+// track; a tracked low's own B comes from its motion (storms.js, bOf).
+const B_FIELD_NOTE = 'Across the steering flow; tracked lows use their own motion';
 const TITLES = {
   class: 'Hart class at the low center',
   hb: `${termHTML('hb')}, ${TERM.hb.band}`,
@@ -415,7 +416,7 @@ function buildMap(start) {
     map.addLayer({ id: 'trackpts', type: 'circle', source: 'trackpts',
       paint: { 'circle-radius': 2.4, 'circle-color': ['get', 'hex'], 'circle-stroke-color': '#0b1220', 'circle-stroke-width': 0.8 } });
     // Where a tracked low's class from its own motion (the dot) differs from
-    // the CAVE field's steering-flow class: a thin ring in the field's color
+    // the field's steering-flow class: a thin ring in the field's color
     // just outside the dot, a dark band between the two.
     map.addLayer({ id: 'lows-alt', type: 'circle', source: 'lows', filter: ['has', 'alt'], paint: {
       'circle-radius': ['interpolate', ['linear'], ['zoom'], 0, ['case', ['get', 'deep'], 6.8, 5.2], LABEL_ZOOM, ['case', ['get', 'deep'], 8.8, 7]],

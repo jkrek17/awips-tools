@@ -110,7 +110,7 @@
 
     <footer class="panel-foot">
       Hover a low for its class and values; click it to load its track into the phase space.<br>
-      <span id="foot-b" hidden>Tracked lows take B from the storm's own motion (Hart 2003); the B field takes it from the steering flow, as CAVE does.<br></span>
+      <span id="foot-b" hidden>Hart's own layers, 900 to 600 and 600 to 300 hPa. Tracked lows take B from the storm's own motion (Hart 2003); the B field takes it from the steering flow.<br></span>
       <span id="foot-model">GFS 0.25&deg;</span>, Hart (2003) with a 500&nbsp;km window &middot; Basemap: Esri
     </footer>
   </aside>
@@ -202,16 +202,16 @@
     <p>Every closed low in the model run gets Hart's (2003) three numbers, computed on the <span id="about-model">GFS 0.25&deg;</span> grid within 500&nbsp;km of its center:</p>
     <ul>
       <li><b>Thermal asymmetry (B)</b>, 900 to 600&nbsp;hPa: how lopsided the warm and cold air is across the storm. Above 10&nbsp;m the low is frontal (asymmetric).</li>
-      <li><b>Lower thermal wind (&minus;V<sub>T</sub><sup>L</sup>)</b>, 925 to 700&nbsp;hPa: positive is a warm lower core, negative a cold one.</li>
-      <li><b>Upper thermal wind (&minus;V<sub>T</sub><sup>U</sup>)</b>, 500 to 300&nbsp;hPa: positive is a warm upper core, negative cold aloft.</li>
+      <li><b>Lower thermal wind (&minus;V<sub>T</sub><sup>L</sup>)</b>, 900 to 600&nbsp;hPa: positive is a warm lower core, negative a cold one.</li>
+      <li><b>Upper thermal wind (&minus;V<sub>T</sub><sup>U</sup>)</b>, 600 to 300&nbsp;hPa: positive is a warm upper core, negative cold aloft.</li>
     </ul>
     <p>Together they place the low in one of seven classes, the colors of the dots. A tropical cyclone becoming extratropical usually runs red, yellow, green, then blue (classes 0, 2, 3, 4). Read the class at the center dot, never at the footprint edge.</p>
     <h3>The phase space</h3>
     <p>Click a low to load its whole track into the 3-D phase space on the right: lower thermal wind across, thermal asymmetry in depth and upper thermal wind up, cut into the seven class cells. The ring marks the hour on screen and moves with the timeline. Values beyond the box sit on its wall as hollow dots.</p>
     <h3>On the map</h3>
-    <p>For a tracked low, B and the class come from the storm's own motion between frames, as Hart defines them. The B field, the footprints and CAVE's products take the motion from the model's steering flow instead, since one frame has no track. Where the two classes differ, the dot gets a thin ring in the field's class color, and the card gives both.</p>
+    <p>The layers are Hart's own, 900 to 600 and 600 to 300&nbsp;hPa at 50&nbsp;hPa spacing, and B is the asymmetry of the 900 to 600&nbsp;hPa thickness. For a tracked low, B and the class come from the storm's own motion between frames, as Hart defines them. The B field and the footprints take the motion from the model's steering flow instead, since one frame has no track. Where the two classes differ, the dot gets a thin ring in the field's class color, and the card gives both.</p>
     <p>The fields show where in the run each value sits; they are faded away from the lows by default, since the numbers mean something only at a closed low. The 200&nbsp;km circles and the dots are a rendering aid: the product itself is the square footprint CAVE draws (Layers, product footprint). Terrain minima are false lows over high ground, hidden by default.</p>
-    <p>CAVE names: HCPSclass, HB (thermal asymmetry), HVTL and HVTU (lower and upper thermal wind).</p>
+    <p>The same engine runs in AWIPS as HCPSclass, HB, HVTL and HVTU, on the standard levels every model carries (925 to 700 and 500 to 300&nbsp;hPa) with the steering flow, so its values differ somewhat from this map's.</p>
     <p class="links"><a href="https://jkrek17.github.io/web/article/" data-link="article">Article</a> &middot; <a href="https://jkrek17.github.io/web/forecasters/" data-link="guide">Forecaster guide</a></p>
     <p class="fine">Data: NOAA GFS, run four times a day; tracks from the run's own closed lows, with the daily collection's names and the FSU storms where they match. Map drawn with MapLibre GL JS; basemap from Esri; coastlines from Natural Earth.</p>
   </div>

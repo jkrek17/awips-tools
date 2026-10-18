@@ -15,7 +15,7 @@
 
    B, two ways. The gridded field's B (hb, and the class cls from it) has
    to take the storm's motion from the model's steering flow, since a
-   derived parameter in CAVE sees one frame and has no track. Hart's
+   gridded field sees one frame and has no track. Hart's
    (2003) B uses the storm's own motion; the exporter computes it for every
    tracked low from the motion between fixes (hbt, the class clst, the
    motion spd in kt and hdg in degrees toward, on the track points; hbt,
@@ -79,7 +79,7 @@ const classDiffers = (e) => trackB(e) && e.clst != null && e.cls != null && !bla
 
 // The title of the differing-class mark.
 const diffTitle = (e) => `Classes differ: ${SHORT[clsOf(e)] ?? cls(clsOf(e)).name} (${clsOf(e)}) with B from the storm's motion; ` +
-  `${SHORT[e.cls] ?? cls(e.cls).name} (${e.cls}) in the CAVE field, with B from the steering flow`;
+  `${SHORT[e.cls] ?? cls(e.cls).name} (${e.cls}) in the field, with B from the steering flow`;
 
 // 16 compass points, for a heading in degrees toward.
 const COMPASS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];

@@ -54,8 +54,9 @@
       classified on every frame and each low that persists across
       frames is linked into a track that carries its path through the
       three-dimensional phase space and Hart's own motion-relative
-      asymmetry from that track; and as AWIPS II derived parameters
-      computed on demand in the CAVE display. Over 26 GFS cycles the
+      asymmetry from that track, evaluated with Hart's own 900 to 600
+      and 600 to 300&nbsp;hPa layers; and as AWIPS II derived parameters
+      computed on demand in the CAVE display on the standard levels. Over 26 GFS cycles the
       tracked lows were compared with the Florida State University
       phase diagrams of the same runs, digitized from the published
       images, at 517 hours timed on both diagrams. With Hart's bands and
@@ -948,7 +949,12 @@
     package on public GFS output, and that is the form in which the
     product is meant to be used first. Every six hours an export
     evaluates the four fields on every frame of the latest 0.25&deg;
-    run, out to 198&nbsp;h, finds every closed low, and links the lows
+    run, out to 198&nbsp;h, with Hart's own layers: the thermal wind
+    over 900 to 600 and 600 to 300&nbsp;hPa at 50&nbsp;hPa spacing,
+    which the GFS carries, and <i>B</i> from the 900 to 600&nbsp;hPa
+    thickness with no rescaling, the choices Section 6 shows agree with
+    the Florida State diagrams far better than the standard levels. It
+    finds every closed low, and links the lows
     from frame to frame into tracks: a low is continued to the nearest
     closed low within 600&nbsp;km of the position its recent motion
     projects, one missing frame is bridged, and a track is kept once
@@ -969,8 +975,9 @@
     with the Florida State diagram of the same storm and run where that
     page has one; the archive it builds is the basis of the comparison
     in Section 6. The derived parameters in CAVE are the same engine
-    on a single frame, for the forecaster who wants the fields over the
-    model of their choice inside the workstation.
+    on a single frame and on the standard levels every model carries,
+    for the forecaster who wants the fields over the model of their
+    choice inside the workstation.
   </p>
 
   <h2 id="results">6. Results</h2>

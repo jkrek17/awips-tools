@@ -69,25 +69,36 @@ TRACK_REACH_KM = 600.0  # a center may move this far between 6 h frames (track_c
 TRACK_GAP_FRAMES = 1  # one missing frame is bridged, with the reach scaled by the elapsed time
 TRACK_MIN_FRAMES = 5  # a track is kept when the low stays closed for 24 h (five 6 h frames)
 TRACK_MATCH_KM = 300.0  # a collected storm and a track are the same low when their same-hour centers are this close
-# Hart's B with the storm's own motion. Each frame stores, at every center,
-# the four half-disk means of the 925-700 hPa thickness (scaled to 900-600
-# hPa as the D2D field is) over the 500 km circle; once the frames are
-# linked into tracks the motion between fixes gives the right-minus-left
-# difference as the wavenumber-one interpolation the module uses,
-#   ZR - ZL = mx (S - N) + my (E - W),
-# so the map's tracked lows carry Hart's B as defined (track motion), beside
-# the steering-flow B the gridded CAVE field has to use.
-LAYER_SCALE = 1.4548  # 925-700 hPa thickness rescaled to 900-600 hPa, as in the D2D XML and track_cps
+# The web's products use Hart's own definitions (hart_products): the thermal
+# wind over 900-600 and 600-300 hPa at 50 hPa spacing, and B from the
+# 900-600 hPa thickness with no layer rescaling. (The D2D fields in CAVE use
+# the standard levels 925-700 and 500-300 hPa, which every model carries;
+# gfs_cps.compute_products is that path.) Against the Florida State
+# diagrams over the archive, Hart's layers agree in class 70% of the time
+# against 55% for the standard ones, and the 900-600 hPa B with the track
+# motion has the smallest bias of the three B choices (fsu_stats.py).
+B_LAYER = (900, 600)  # the thickness layer of B, hPa (top, bottom): Hart's
 B_RADIUS_KM = 500.0
 B_THRESHOLD_M = 10.0
+CLOSED_DEPTH_HPA = 5.0  # the product's closed-low ring test, as executeHartClass
+CLOSED_BLOB_KM = 200.0  # and its dilation around each closed low
+IDX_SCALE_M = 100.0  # HCPSidx: 2 tanh(VTL / scale) + tanh(VTU / scale)
+# Hart's B with the storm's own motion. Each frame stores, at every center,
+# the four half-disk means of the B_LAYER thickness over the 500 km circle;
+# once the frames are linked into tracks the motion between fixes gives the
+# right-minus-left difference as the wavenumber-one interpolation the
+# module uses,
+#   ZR - ZL = mx (S - N) + my (E - W),
+# so the map's tracked lows carry Hart's B as defined (track motion), beside
+# the steering-flow B the gridded field has to use.
 
 # Rasters: Web Mercator (EPSG:3857) image covering lon -180..180, lat -85..85.
 LAT_MAX = 85.0
 WIDTH = 2048
 RASTERS = {  # key -> (web ramp, range, units, label)
-    "hb": ("asymmetry", (-40.0, 40.0), "m", "HB, storm-relative 900-600 hPa thickness asymmetry"),
-    "hvtl": ("core", (-300.0, 300.0), "m", "HVTL, lower thermal wind 925-700 hPa"),
-    "hvtu": ("core", (-300.0, 300.0), "m", "HVTU, upper thermal wind 500-300 hPa"),
+    "hb": ("asymmetry", (-40.0, 40.0), "m", "B, 900-600 hPa thickness asymmetry across the steering flow"),
+    "hvtl": ("core", (-300.0, 300.0), "m", "Lower thermal wind, 900-600 hPa"),
+    "hvtu": ("core", (-300.0, 300.0), "m", "Upper thermal wind, 600-300 hPa"),
 }
 LEGEND_STOPS = 16
 # Web ramps: continuous diverging colors for a dark basemap, RAMP_N entries
@@ -446,14 +457,46 @@ def blob_geometry(members: np.ndarray, lat: np.ndarray, lon: np.ndarray):
     return unary_union(polys) if polys else None
 
 
+def b_thickness(f: dict) -> np.ndarray:
+    """The B_LAYER thickness (900-600 hPa, m), each level masked below
+    ground as the module does for HB."""
+    ps = hc.surface_pressure_hpa(f["psfc"])
+    top, bot = B_LAYER
+    return (np.asarray(hc.mask_below_ground(f[f"z{bot}"], ps, float(bot), hc.BELOW_GROUND_CAP_HPA), dtype=float)
+            - np.asarray(hc.mask_below_ground(f[f"z{top}"], ps, float(top), hc.BELOW_GROUND_CAP_HPA), dtype=float))
+
+
+def hart_products(f: dict) -> dict:
+    """The web's products with Hart's own definitions, through the same
+    module functions the D2D entry points call: hvtl and hvtu over
+    HART_LOWER and HART_UPPER (seven levels each, executeBand7), hb from
+    the B_LAYER thickness across the window-mean steering flow with no
+    layer rescaling (as executeB, with the layer changed), the closed-low
+    mask of executeHartClass, cls from the three with hart_class, and idx
+    as executeIndexStd's 2 tanh(VTL/100) + tanh(VTU/100) inside the mask.
+    Needs a frame decoded with Hart's extra levels (gfs_cps hart=True)."""
+    dx, dy, cor = g.grid_metrics(f["lat"], f["lon"].size)
+    r = B_RADIUS_KM
+    out = {}
+    for key, levs in (("hvtl", g.HART_LOWER), ("hvtu", g.HART_UPPER)):
+        out[key] = hc.executeBand7(*[f[f"z{p}"] for p in levs], f["psfc"], dx, dy, r, *map(float, levs))
+    u_s, v_s = hc.steering([f[f"u{p}"] for p in g.WIND_LEVELS], [f[f"v{p}"] for p in g.WIND_LEVELS])
+    u_s, v_s = hc.steering_window_mean(u_s, v_s, dx, dy, r)
+    out["hb"] = hc.parameter_b_grid(b_thickness(f), u_s, v_s, dx, dy, cor, r, 1.0).astype(np.float32)
+    mask = hc.closed_low_mask(hc.pmsl_input_hpa(f["pmsl"], hc.PMSL_KIND_PRESSURE), dx, dy, hc.MIN_RADIUS_KM, r,
+                              CLOSED_DEPTH_HPA, CLOSED_BLOB_KM)
+    out["cls"] = hc.hart_class(out["hb"], out["hvtl"], out["hvtu"], mask, B_THRESHOLD_M)
+    idx = 2.0 * np.tanh(out["hvtl"] / IDX_SCALE_M) + np.tanh(out["hvtu"] / IDX_SCALE_M)
+    out["idx"] = np.where(mask & np.isfinite(idx), idx, np.nan).astype(np.float32)
+    return out
+
+
 def thickness_quadrants(f: dict):
     """(north, south, east, west) half-disk means over B_RADIUS_KM of the
-    925-700 hPa thickness scaled by LAYER_SCALE, each level masked below
-    ground as the module does for HB, on the whole grid."""
+    B_LAYER thickness, each level masked below ground as the module does
+    for HB, on the whole grid."""
     dx, dy, _ = g.grid_metrics(f["lat"], f["lon"].size)
-    ps = hc.surface_pressure_hpa(f["psfc"])
-    thk = (hc.mask_below_ground(f["z700"], ps, 700.0, hc.BELOW_GROUND_CAP_HPA)
-           - hc.mask_below_ground(f["z925"], ps, 925.0, hc.BELOW_GROUND_CAP_HPA)) * LAYER_SCALE
+    thk = b_thickness(f)
     return hc.half_disk_means(np.where(np.isfinite(thk), thk, np.nan), dx, dy, B_RADIUS_KM)
 
 
@@ -462,7 +505,7 @@ def lows_features(f: dict, p: dict, bq=None) -> list[dict]:
     inside it and every product there) and the blob's outline as Polygon or
     MultiPolygon features (two, same id, for a blob across the dateline).
     `bq`, when given, is the (north, south, east, west) half-disk means of
-    the scaled thickness (`thickness_quadrants`); each center then carries
+    the B_LAYER thickness (`thickness_quadrants`); each center then carries
     them as "bq", for the track-motion B of build_storms."""
     lat, lon = f["lat"], f["lon"]
     pm = f["pmsl"] / 100.0
@@ -591,10 +634,10 @@ def export_frame(cycle: str, fhr: int, out: Path, cache: Path) -> dict:
     """Fetch, decode and compute one frame, write its GeoJSON and PNGs.
     Returns the valid time, the number of lows, timings and sizes."""
     t0 = time.time()
-    grib = g.get_grib(cycle, fhr, REGION, cache, "nomads", False)
-    f = g.decode(grib, REGION, False)
+    grib = g.get_grib(cycle, fhr, REGION, cache, "nomads", True)
+    f = g.decode(grib, REGION, True)
     t1 = time.time()
-    p = g.compute_products(f)
+    p = hart_products(f)
     bq = thickness_quadrants(f)
     t2 = time.time()
     fdir = out / "frames" / f"f{fhr:03d}"
@@ -643,13 +686,7 @@ def storms_for(cycle: str, data_dir: Path = DATA) -> tuple[str | None, list[dict
         pts = []
         with (sdir / "track.csv").open() as fh:
             for row in csv.DictReader(fh):
-                c = row.get("class", "")
-                pts.append({"fhr": int(row["fhr"]), "valid": row["valid"].replace("Z", ":00Z"),
-                            "lat": round(float(row["lat"]), 2), "lon": round(float(row["lon"]), 2),
-                            "mslp": round(float(row["mslp_hpa"]), 1),
-                            "cls": int(round(float(c))) if c not in ("", None) else None,
-                            "hvtl": track_val(row, "hvtl"), "hvtu": track_val(row, "hvtu"),
-                            "hb": track_val(row, "hb")})
+                pts.append(collection_point(row))
         fsu = meta.get("fsu_number")
         storms.append({"name": sdir.name, "cycle": pick, "fsu": int(fsu) if fsu is not None else None,
                        "points": pts, "cls_seq": [pt["cls"] for pt in pts],
@@ -661,6 +698,24 @@ def storms_for(cycle: str, data_dir: Path = DATA) -> tuple[str | None, list[dict
 
 
 # ------------------------------------------------------------------ tracks
+def collection_point(row: dict) -> dict:
+    """One track.csv row of the daily collection as a storm point, with
+    Hart's definitions where the collector computed them (hvtl_hart,
+    hvtu_hart over Hart's layers, hb_hart from the 900-600 hPa thickness
+    with the track motion, and the class from those three inside a
+    closed low), else the standard-level columns of an older archive."""
+    vtl, vtu, b = (track_val(row, k) for k in ("hvtl_hart", "hvtu_hart", "hb_hart"))
+    c = row.get("class", "")
+    std_cls = int(round(float(c))) if c not in ("", None) else None
+    if vtl is None or vtu is None or b is None:
+        vtl, vtu, b, cls = track_val(row, "hvtl"), track_val(row, "hvtu"), track_val(row, "hb"), std_cls
+    else:
+        cls = hart_class_point(b, vtl, vtu) if std_cls is not None else None
+    return {"fhr": int(row["fhr"]), "valid": row["valid"].replace("Z", ":00Z"),
+            "lat": round(float(row["lat"]), 2), "lon": round(float(row["lon"]), 2),
+            "mslp": round(float(row["mslp_hpa"]), 1), "cls": cls, "hvtl": vtl, "hvtu": vtu, "hb": b}
+
+
 def link_tracks(frames: list[dict], reach_km: float = TRACK_REACH_KM, gap: int = TRACK_GAP_FRAMES,
                 min_frames: int = TRACK_MIN_FRAMES) -> list[list[dict]]:
     """Link the closed-low centers of consecutive frames into tracks.
@@ -914,6 +969,8 @@ def main(argv=None) -> int:
         "storms": storms,
     }
     index["tracks"] = sum(1 for s_ in storms if s_["source"] == "track")
+    index["bands"] = {"lower_hpa": list(g.HART_LOWER), "upper_hpa": list(g.HART_UPPER), "b_layer_hpa": list(B_LAYER),
+                      "note": "Hart's own layers; the D2D fields in CAVE use 925-700 and 500-300 hPa"}
     index["track_b"] = "track motion (hbt, clst); hb and cls are the gridded field's steering-flow values"
     write_json(out / "index.json", index)
     update_history(out / "history.json", cycle, generated, "index.json")
