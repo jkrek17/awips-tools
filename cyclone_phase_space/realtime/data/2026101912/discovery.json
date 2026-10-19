@@ -1,0 +1,51 @@
+{
+  "cycle": "2026101912",
+  "mslp_below_hpa": 980.0,
+  "lat_above": 0.0,
+  "max_per_day": 6,
+  "lows": [
+    {
+      "lat": 15.05,
+      "lon": 137.74,
+      "mslp_hpa": 925.23,
+      "basin": "TROP",
+      "action": "known",
+      "storm": "AUTO_261017_01",
+      "distance_km": 1
+    },
+    {
+      "lat": 77.73,
+      "lon": -5.54,
+      "mslp_hpa": 967.16,
+      "basin": "NATL",
+      "action": "known",
+      "storm": "AUTO_261018_01",
+      "distance_km": 475
+    },
+    {
+      "lat": 80.64,
+      "lon": 26.46,
+      "mslp_hpa": 972.62,
+      "basin": "80.6N 26.5E",
+      "action": "added",
+      "storm": "AUTO_261019_01"
+    },
+    {
+      "lat": 75.5,
+      "lon": 14.09,
+      "mslp_hpa": 974.47,
+      "basin": "NATL",
+      "action": "added",
+      "storm": "AUTO_261019_02"
+    },
+    {
+      "lat": 65.1,
+      "lon": -35.7,
+      "mslp_hpa": 975.05,
+      "basin": "NATL",
+      "action": "known",
+      "storm": "AUTO_261016_02",
+      "distance_km": 0
+    }
+  ]
+}
