@@ -1,0 +1,49 @@
+{
+  "cycle": "2026102012",
+  "name": "AUTO_261020_01",
+  "status": "ok",
+  "code_version": "8debb60",
+  "seed": {
+    "lat": 70.73,
+    "lon": 73.53,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "automatic discovery at 0 h of 2026102012"
+  },
+  "start_fhr": 0,
+  "end_fhr": 36,
+  "fixes": 7,
+  "start": {
+    "lat": 70.73,
+    "lon": 73.53,
+    "mslp_hpa": 979.5
+  },
+  "end": {
+    "lat": 57.52,
+    "lon": 86.79,
+    "mslp_hpa": 1000.8
+  },
+  "min_mslp_hpa": 979.5,
+  "onset_standard_h": 0,
+  "completion_standard_h": 12,
+  "onset_hart_h": 0,
+  "completion_hart_h": 12,
+  "bands": "hart",
+  "class_sequence": "3 0-6, 4 12-24, 6 30, - 36",
+  "class_sequence_standard": "3 0-6, 4 12-24, 6 30, - 36",
+  "fsu_number": 38,
+  "fsu": {
+    "number": 38,
+    "lat": 70.86,
+    "lon": 73.16,
+    "distance_km": 20,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26102012/38.html"
+  },
+  "track_end": "no minimum within 600 km of 56.3,89.9 at or below 1025 hPa and within 1080 km of the last fix at +48 h",
+  "discovered": {
+    "lat": 70.73,
+    "lon": 73.53,
+    "mslp_hpa": 979.54,
+    "basin": "70.7N 73.5E"
+  }
+}
