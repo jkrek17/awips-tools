@@ -1,0 +1,55 @@
+{
+  "cycle": "2026102312",
+  "name": "AUTO_261023_03",
+  "status": "ok",
+  "code_version": "9103955",
+  "seed": {
+    "lat": 10.8,
+    "lon": -102.03,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "automatic discovery at 0 h of 2026102312"
+  },
+  "start_fhr": 0,
+  "end_fhr": 144,
+  "fixes": 25,
+  "start": {
+    "lat": 10.8,
+    "lon": -102.03,
+    "mslp_hpa": 977.6
+  },
+  "end": {
+    "lat": 17.17,
+    "lon": -103.93,
+    "mslp_hpa": 965.8
+  },
+  "min_mslp_hpa": 965.8,
+  "onset_standard_h": null,
+  "completion_standard_h": null,
+  "onset_hart_h": null,
+  "completion_hart_h": null,
+  "bands": "hart",
+  "class_sequence": "0 0-48, - 54-120, 0 126-144",
+  "class_sequence_standard": "0 0-48, - 54-120, 0 126-144",
+  "fsu_number": 8,
+  "fsu": {
+    "number": 8,
+    "lat": 11.26,
+    "lon": -101.81,
+    "distance_km": 57,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26102312/8.html"
+  },
+  "track_end": "merged into AUTO_261020_02 at +150 h",
+  "merged_into": {
+    "name": "AUTO_261020_02",
+    "fhr": 150,
+    "distance_km": 0
+  },
+  "note": "merged into AUTO_261020_02 at +150 h",
+  "discovered": {
+    "lat": 10.8,
+    "lon": -102.03,
+    "mslp_hpa": 977.6,
+    "basin": "TROP"
+  }
+}
