@@ -1,0 +1,15 @@
+{
+  "cycle": "2026092812",
+  "name": "GREENLAND",
+  "status": "lost",
+  "reason": "No closed low within 400 km of the seed 64.0N 16.0W at +0 h of 2026092812 (stored seed); marked inactive.",
+  "code_version": "4d645b0-dirty",
+  "seed": {
+    "lat": 63.96,
+    "lon": -16.01,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "stored seed"
+  },
+  "fsu_number": null
+}

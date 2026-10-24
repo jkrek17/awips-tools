@@ -1,0 +1,42 @@
+{
+  "cycle": "2026101612",
+  "name": "EPAC",
+  "status": "ok",
+  "code_version": "7b65306",
+  "seed": {
+    "lat": 43.72,
+    "lon": -174.64,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "stored seed"
+  },
+  "start_fhr": 0,
+  "end_fhr": 198,
+  "fixes": 34,
+  "start": {
+    "lat": 43.63,
+    "lon": -174.67,
+    "mslp_hpa": 1002.0
+  },
+  "end": {
+    "lat": 35.74,
+    "lon": -116.35,
+    "mslp_hpa": 1017.0
+  },
+  "min_mslp_hpa": 1001.2,
+  "onset_standard_h": 0,
+  "completion_standard_h": 0,
+  "onset_hart_h": 0,
+  "completion_hart_h": 0,
+  "bands": "hart",
+  "class_sequence": "4 0-84, 1 90-102, 5 108-114, - 120-198",
+  "class_sequence_standard": "4 0-48, 3 54-90, 1 96-114, - 120-198",
+  "fsu_number": 1,
+  "fsu": {
+    "number": 1,
+    "lat": 43.71,
+    "lon": -174.58,
+    "distance_km": 11,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101612/1.html"
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "cycle": "2026101412",
+  "name": "AUTO_261014_01",
+  "status": "ok",
+  "code_version": "a85cc99",
+  "seed": {
+    "lat": 61.8,
+    "lon": -20.06,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "stored seed"
+  },
+  "start_fhr": 0,
+  "end_fhr": 126,
+  "fixes": 22,
+  "start": {
+    "lat": 61.8,
+    "lon": -20.06,
+    "mslp_hpa": 927.8
+  },
+  "end": {
+    "lat": 69.8,
+    "lon": 81.26,
+    "mslp_hpa": 997.2
+  },
+  "min_mslp_hpa": 927.8,
+  "onset_standard_h": 0,
+  "completion_standard_h": null,
+  "onset_hart_h": 18,
+  "completion_hart_h": 126,
+  "bands": "hart",
+  "class_sequence": "1 0-6, 2 12-24, 1 30-84, 0 90-96, 1 102-114, 5 120-126",
+  "class_sequence_standard": "1 0, 3 6-12, 2 18-24, 1 30, 3 36-42, 1 48-90, 0 96, 1 102-114, 3 120-126",
+  "fsu_number": 36,
+  "fsu": {
+    "number": 36,
+    "lat": 62.25,
+    "lon": -19.74,
+    "distance_km": 53,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101412/36.html"
+  },
+  "track_end": "outside a closed low at +132, +144 h (994 hPa at +144 h)",
+  "discovered": {
+    "lat": 61.8,
+    "lon": -20.06,
+    "mslp_hpa": 927.8,
+    "basin": "NATL"
+  }
+}

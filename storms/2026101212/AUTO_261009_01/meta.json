@@ -1,0 +1,15 @@
+{
+  "cycle": "2026101212",
+  "name": "AUTO_261009_01",
+  "status": "merged",
+  "reason": "At 0 h of 2026101212 within 0 km of EPAC; merged into EPAC, marked inactive.",
+  "code_version": "a85cc99",
+  "seed": {
+    "lat": 31.27,
+    "lon": 148.34,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "stored seed"
+  },
+  "fsu_number": null
+}

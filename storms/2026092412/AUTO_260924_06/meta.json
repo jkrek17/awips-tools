@@ -1,0 +1,49 @@
+{
+  "cycle": "2026092412",
+  "name": "AUTO_260924_06",
+  "status": "ok",
+  "code_version": "047e914",
+  "seed": {
+    "lat": 16.65,
+    "lon": -104.21,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "stored seed"
+  },
+  "start_fhr": 0,
+  "end_fhr": 198,
+  "fixes": 33,
+  "start": {
+    "lat": 16.65,
+    "lon": -104.21,
+    "mslp_hpa": 934.1
+  },
+  "end": {
+    "lat": 38.04,
+    "lon": -120.45,
+    "mslp_hpa": 1006.0
+  },
+  "min_mslp_hpa": 931.4,
+  "onset_standard_h": 168,
+  "completion_standard_h": null,
+  "onset_hart_h": null,
+  "completion_hart_h": 132,
+  "bands": "hart",
+  "class_sequence": "0 0-78, 2 84, 0 90-120, - 132-150, 5 156, - 162-168, 5 174-186, 4 192-198",
+  "class_sequence_standard": "0 0-78, 2 84, 0 90-120, - 132-150, 1 156, - 162-168, 3 174-192, 4 198",
+  "fsu_number": 5,
+  "fsu": {
+    "number": 5,
+    "lat": 16.89,
+    "lon": -104.13,
+    "distance_km": 28,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092412/5.html"
+  },
+  "discovered": {
+    "lat": 16.65,
+    "lon": -104.21,
+    "mslp_hpa": 934.11,
+    "basin": "TROP"
+  },
+  "fsu_source": "carried over offline from the match of the original collection (FSU's page for older cycles is no longer online); compare.png rebuilt with the recomputed phase.png"
+}

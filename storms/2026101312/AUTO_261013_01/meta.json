@@ -1,0 +1,50 @@
+{
+  "cycle": "2026101312",
+  "name": "AUTO_261013_01",
+  "status": "ok",
+  "code_version": "a85cc99",
+  "seed": {
+    "lat": 64.29,
+    "lon": -5.76,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "stored seed"
+  },
+  "start_fhr": 0,
+  "end_fhr": 60,
+  "fixes": 11,
+  "start": {
+    "lat": 64.29,
+    "lon": -5.76,
+    "mslp_hpa": 974.5
+  },
+  "end": {
+    "lat": 83.53,
+    "lon": 44.96,
+    "mslp_hpa": 977.5
+  },
+  "min_mslp_hpa": 966.9,
+  "onset_standard_h": 0,
+  "completion_standard_h": 54,
+  "onset_hart_h": 0,
+  "completion_hart_h": 30,
+  "bands": "hart",
+  "class_sequence": "4 0, 3 6-18, 4 24-30, - 36, 4 42-54, 5 60",
+  "class_sequence_standard": "3 0-30, - 36, 3 42, 4 48-60",
+  "fsu_number": 37,
+  "fsu": {
+    "number": 37,
+    "lat": 65.23,
+    "lon": -5.42,
+    "distance_km": 106,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101312/37.html"
+  },
+  "track_end": "no minimum within 600 km of 82.5,42.0 at or below 989 hPa and within 1080 km of the last fix at +72 h",
+  "discovered": {
+    "lat": 64.29,
+    "lon": -5.76,
+    "mslp_hpa": 974.46,
+    "basin": "NATL"
+  },
+  "fsu_source": "carried over offline from the match of the original collection (FSU's page for older cycles is no longer online); compare.png rebuilt with the recomputed phase.png"
+}

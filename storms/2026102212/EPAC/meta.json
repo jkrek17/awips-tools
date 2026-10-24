@@ -1,0 +1,15 @@
+{
+  "cycle": "2026102212",
+  "name": "EPAC",
+  "status": "lost",
+  "reason": "No closed low within 400 km of the seed 29.9N 128.3W at +0 h of 2026102212 (stored seed of 2026102112; the track of 2026102112 has no fix at +24 h); marked inactive.",
+  "code_version": "75f2896",
+  "seed": {
+    "lat": 29.92,
+    "lon": -128.27,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "stored seed of 2026102112; the track of 2026102112 has no fix at +24 h"
+  },
+  "fsu_number": null
+}

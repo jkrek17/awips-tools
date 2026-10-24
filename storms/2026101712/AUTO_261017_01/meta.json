@@ -1,0 +1,49 @@
+{
+  "cycle": "2026101712",
+  "name": "AUTO_261017_01",
+  "status": "ok",
+  "code_version": "7b65306",
+  "seed": {
+    "lat": 12.73,
+    "lon": 146.22,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "stored seed"
+  },
+  "start_fhr": 0,
+  "end_fhr": 168,
+  "fixes": 29,
+  "start": {
+    "lat": 12.73,
+    "lon": 146.22,
+    "mslp_hpa": 971.0
+  },
+  "end": {
+    "lat": 22.64,
+    "lon": 116.74,
+    "mslp_hpa": 980.5
+  },
+  "min_mslp_hpa": 926.3,
+  "onset_standard_h": 0,
+  "completion_standard_h": null,
+  "onset_hart_h": 0,
+  "completion_hart_h": null,
+  "bands": "hart",
+  "class_sequence": "2 0-6, 0 12-144, 2 150, 0 156-168",
+  "class_sequence_standard": "2 0, 0 6-144, 2 150-156, 0 162-168",
+  "fsu_number": 3,
+  "fsu": {
+    "number": 3,
+    "lat": 12.91,
+    "lon": 145.94,
+    "distance_km": 36,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101712/3.html"
+  },
+  "track_end": "no minimum within 600 km of 23.0,115.7 at or below 993 hPa and within 1080 km of the last fix at +180 h",
+  "discovered": {
+    "lat": 12.73,
+    "lon": 146.22,
+    "mslp_hpa": 970.97,
+    "basin": "TROP"
+  }
+}
