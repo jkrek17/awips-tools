@@ -74,7 +74,14 @@ import storm  # noqa: E402
 from domain import BASIN, BASINS, EAST, GLOBAL, KEY, LATS, LONS, NORTH, NX, NY, SOUTH, TESTED, WEST  # noqa: E402
 
 KT = 1.943844
-STEPS = list(range(6, 121, 6))   # every 6 h (Jason 2026-10-16; was 12 h)
+STEPS = list(range(6, 169, 6))   # every 6 h (Jason 2026-10-16; was 12 h) to day 7 (Jason 2026-10-19; was +120 h)
+# The 06/18Z ECMWF IFS and ENS stop at +144 h on AWS, so those cycles end at day 6.
+LAST_STEP = {"00": 168, "06": 144, "12": 168, "18": 144}
+
+
+def steps_for(hh):
+    """The page's leads for a cycle hour: every 6 h to its LAST_STEP."""
+    return [s for s in STEPS if s <= LAST_STEP[hh]]
 MODELS = ("GFS", "ECMWF", "AIFS")
 CAP_KT = 5.0
 RIDE_BELOW, SPREAD_KT, TOL_CELLS = 30.0, 10.0, 2
@@ -379,13 +386,14 @@ def lift_mask(shape):
 
 
 def newest_cycle(now=None):
-    """Newest 00/06/12/18Z cycle whose +120 h is on AWS for all three models and the ENS."""
+    """Newest 00/06/12/18Z cycle whose last lead (LAST_STEP) is on AWS for all three models and the ENS."""
     now = now or dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
     t = now.replace(minute=0, second=0, microsecond=0, hour=now.hour // 6 * 6)
     for _ in range(12):
         ymd, hh = t.strftime("%Y%m%d"), t.strftime("%H")
-        urls = [fetch.gfs_url(ymd, hh, 120) + ".idx", fetch.ec_url("ifs", ymd, hh, 120),
-                fetch.ec_url("aifs-single", ymd, hh, 120), fetch.ec_url("ifs", ymd, hh, 120, "enfo", "ef")]
+        last = LAST_STEP[hh]
+        urls = [fetch.gfs_url(ymd, hh, last) + ".idx", fetch.ec_url("ifs", ymd, hh, last),
+                fetch.ec_url("aifs-single", ymd, hh, last), fetch.ec_url("ifs", ymd, hh, last, "enfo", "ef")]
         if all(fetch.exists(u) for u in urls):
             return ymd + hh
         t -= dt.timedelta(hours=6)
@@ -456,9 +464,10 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     base = dt.datetime.strptime(cycle, "%Y%m%d%H")
     steps, packs = [], []
-    bsteps, bpacks = [], []   # what the boxes get: STEPS plus BOX_STEPS
-    for step in sorted(set(STEPS) | (set(BOX_STEPS) if a.boxes else set())):
-        page = step in STEPS
+    bsteps, bpacks = [], []   # what the boxes get: the page's steps plus BOX_STEPS
+    page_steps = steps_for(hh)
+    for step in sorted(set(page_steps) | (set(BOX_STEPS) if a.boxes else set())):
+        page = step in page_steps
         path = os.path.join(a.out, "f%03d.bin" % step)
         done = os.path.join(a.out, "f%03d.json" % step)
         if os.path.exists(done) and (GLOBAL or os.path.exists(path)):  # resume a partial run of the same cycle

@@ -833,6 +833,7 @@
     if ((lone >> 2) & 3) notes.push(MODEL_NAME[(lone >> 2) & 3] + " alone at 64 kt");
     if (!inTested(lon, lat)) notes.push(Math.abs(lat) < 25 ? "Outside the tested area; tropical cyclones are beyond this blend" : "Outside the area the blend and chances were tested on");
     else if (CHANCE_MONTHS.indexOf(new Date(man.steps[state.step].valid).getUTCMonth()) < 0) notes.push("Chances were fitted on November to March only");
+    if (man.steps[state.step].step > 120) notes.push("Day 6-7: the blend, Core Lifted and chances were tested to day 5 only");
     var foc = FOCUS.cats[b.focus[k]][0];
     var tr = man.steps[state.step].trend ? '<tr><td>Since run 24 h earlier</td><td>' + (V("trend") >= 0 ? "+" : "") + V("trend").toFixed(1) + " kt</td></tr>" : "";
     box.innerHTML = '<div class="h">' + latText(lat, 2) + " " + lonText(lon, 2) + "</div><table>" +
@@ -1051,7 +1052,7 @@
   }
   // builds run about 8.5 h after each cycle, so a run is up to ~21 h old in normal service;
   // past a day a build has been missed
-  // The next run (cycle + 6 h) is built once its ECMWF ensemble reaches +120 h on AWS, which posts
+  // The next run (cycle + 6 h) is built once its ECMWF ensemble reaches its last lead on AWS, which posts
   // about 7 h after 06Z/18Z and 7.7 h after 00Z/12Z; the job checks hourly at :30 and takes ~10 min.
   var NEXT_LAG_MIN = { 0: 510, 6: 460, 12: 510, 18: 460 };
   function nextRun(cycle) {
@@ -1066,7 +1067,7 @@
     var nxt = ("0" + nx.cycle.getUTCHours()).slice(-2) + "Z";
     chip.dataset.state = h > 24 ? "warn" : "ok";
     chip.title = "The newest run on this page is " + h + " h old" + (h > 24 ? " (a newer run is overdue)" : "") + ". " +
-      "The next one, " + nxt + ", is expected about " + hhmm + " UTC: it is built once the ECMWF ensemble reaches +120 h " +
+      "The next one, " + nxt + ", is expected about " + hhmm + " UTC: it is built once the ECMWF ensemble reaches its last lead " +
       "(about 7 h after 06/18Z, 8 h after 00/12Z), checked hourly at :30.";
     chip.lastChild.textContent = fmtTime(cycle.toISOString()) + " run · next " + (late ? nxt + " late" : "~" + hhmm + "Z");
   }
