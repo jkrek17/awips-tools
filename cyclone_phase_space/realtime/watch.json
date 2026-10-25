@@ -399,9 +399,9 @@
     },
     {
       "name": "AUTO_261016_02",
-      "lat": 57.99,
-      "lon": -14.73,
-      "cycle": "2026102412",
+      "lat": 59.95,
+      "lon": 0.4,
+      "cycle": "2026102512",
       "fhr0": 0,
       "fhr1": null,
       "notes": "Found automatically at 0 h of 2026101612: 972.63 hPa, NATL.",
@@ -420,9 +420,9 @@
     },
     {
       "name": "AUTO_261017_01",
-      "lat": 27.7,
-      "lon": 123.32,
-      "cycle": "2026102412",
+      "lat": 30.63,
+      "lon": 126.27,
+      "cycle": "2026102512",
       "fhr0": 0,
       "fhr1": null,
       "notes": "Found automatically at 0 h of 2026101712: 970.97 hPa, TROP.",
@@ -529,9 +529,9 @@
     },
     {
       "name": "AUTO_261022_01",
-      "lat": 60.95,
-      "lon": 179.81,
-      "cycle": "2026102412",
+      "lat": 67.53,
+      "lon": -173.67,
+      "cycle": "2026102512",
       "fhr0": 0,
       "fhr1": null,
       "notes": "Found automatically at 0 h of 2026102212: 962.38 hPa, NPAC.",
@@ -539,9 +539,9 @@
     },
     {
       "name": "AUTO_261023_01",
-      "lat": 75.53,
-      "lon": 120.19,
-      "cycle": "2026102412",
+      "lat": 73.33,
+      "lon": 117.91,
+      "cycle": "2026102512",
       "fhr0": 0,
       "fhr1": null,
       "notes": "Found automatically at 0 h of 2026102312: 970.28 hPa, NPAC.",
@@ -560,12 +560,22 @@
     },
     {
       "name": "AUTO_261023_03",
-      "lat": 12.52,
-      "lon": -102.96,
-      "cycle": "2026102412",
+      "lat": 14.32,
+      "lon": -103.77,
+      "cycle": "2026102512",
       "fhr0": 0,
       "fhr1": null,
       "notes": "Found automatically at 0 h of 2026102312: 977.60 hPa, TROP.",
+      "active": true
+    },
+    {
+      "name": "AUTO_261025_01",
+      "lat": 13.05,
+      "lon": 164.79,
+      "cycle": "2026102512",
+      "fhr0": 0,
+      "fhr1": null,
+      "notes": "Found automatically at 0 h of 2026102512: 954.67 hPa, TROP.",
       "active": true
     }
   ]
