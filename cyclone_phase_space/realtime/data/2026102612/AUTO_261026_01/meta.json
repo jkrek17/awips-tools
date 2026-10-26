@@ -1,0 +1,49 @@
+{
+  "cycle": "2026102612",
+  "name": "AUTO_261026_01",
+  "status": "ok",
+  "code_version": "d99e812",
+  "seed": {
+    "lat": 55.48,
+    "lon": -20.77,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "automatic discovery at 0 h of 2026102612"
+  },
+  "start_fhr": 0,
+  "end_fhr": 84,
+  "fixes": 15,
+  "start": {
+    "lat": 55.48,
+    "lon": -20.77,
+    "mslp_hpa": 961.0
+  },
+  "end": {
+    "lat": 67.06,
+    "lon": 22.17,
+    "mslp_hpa": 1004.0
+  },
+  "min_mslp_hpa": 952.7,
+  "onset_standard_h": 0,
+  "completion_standard_h": 66,
+  "onset_hart_h": 0,
+  "completion_hart_h": 60,
+  "bands": "hart",
+  "class_sequence": "3 0-12, 1 18-48, - 54, 5 60-72, 4 78, - 84",
+  "class_sequence_standard": "3 0-12, 1 18-30, 0 36-48, - 54, 1 60-66, 5 72-78, - 84",
+  "fsu_number": 15,
+  "fsu": {
+    "number": 15,
+    "lat": 55.63,
+    "lon": -20.9,
+    "distance_km": 19,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26102612/15.html"
+  },
+  "track_end": "no minimum within 670 km of 65.1,30.3 at or below 1028 hPa and within 1206 km of the last fix at +96 h",
+  "discovered": {
+    "lat": 55.48,
+    "lon": -20.77,
+    "mslp_hpa": 961.04,
+    "basin": "NATL"
+  }
+}
