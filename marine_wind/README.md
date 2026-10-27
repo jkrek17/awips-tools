@@ -52,7 +52,8 @@ marine_wind/
 
 `.github/workflows/marine_wind.yml` checks every hour (at :30) and runs
 `build.py --domain glob` for every 00, 06, 12 and 18 UTC cycle once its models and
-the ECMWF ensemble reach +120 h on AWS (about 7-8 h after the cycle); a cycle
+the ECMWF ensemble reach the last lead on AWS (+168 h for 00/12 UTC, +144 h for
+06/18 UTC, where the ECMWF IFS and ENS stop; about 7-8 h after the cycle); a cycle
 already published is not rebuilt, and "Publish public site" skips the runs that
 published nothing. One global build
 replaces the two basin builds: the pipeline always downloaded each model's whole
