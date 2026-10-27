@@ -35,13 +35,16 @@
       onset and completion times for extratropical transition. Every
       published evaluation of the parameters is made at a tracked storm
       center. This work evaluates them at every grid point instead,
-      from geopotential height on standard isobaric levels, mean sea
+      from geopotential height on isobaric levels, mean sea
       level pressure, surface pressure and the deep-layer wind, so that
       every closed low on every forecast frame is classified with no
       tracker. At each grid point the height perturbation is
       evaluated over a 500&nbsp;km circle, Hart's window, by sliding
-      extrema along the chords of the disk, the thermal wind is its regression slope against log
-      pressure over 925 to 700&nbsp;hPa and 500 to 300&nbsp;hPa, the
+      extrema along the chords of the disk, the thermal wind is its
+      regression slope against log pressure over Hart's own layers, 900
+      to 600 and 600 to 300&nbsp;hPa at 50&nbsp;hPa spacing, where the
+      model carries them, and over the standard levels 925 to 700 and
+      500 to 300&nbsp;hPa where it does not, the
       asymmetry is the difference of true semicircle means across the
       window-mean deep-layer wind, a steering-flow stand-in for the
       storm motion that a single frame cannot supply, and a 5&nbsp;hPa
@@ -307,13 +310,21 @@
   <p>
     positive when &Delta;Z shrinks with height (warm core), negative when
     it grows (cold core). Hart's own layers are 900&ndash;600 and
-    600&ndash;300&nbsp;hPa, fitted over the 50&nbsp;hPa levels of his data, a
-    spacing carried only by the GFS in this D2D inventory; this package
-    instead uses the universal standard levels
-    925/850/700&nbsp;hPa (lower) and 500/400/300&nbsp;hPa (upper), leaving
-    700&ndash;500&nbsp;hPa deliberately unassigned rather than biasing one
-    band's slope with a layer that straddles Hart's true 600&nbsp;hPa
-    boundary. A level is blanked below ground before any window filter
+    600&ndash;300&nbsp;hPa, fitted over the 50&nbsp;hPa levels of his data.
+    The package carries both of its two band choices. The live map and
+    the daily collection (Section 5) use Hart's layers, seven levels
+    each at 50&nbsp;hPa spacing, which the GFS carries; Section 6 shows
+    they agree with the Florida State diagrams far better than the
+    alternative. The AWIPS fields use the universal standard levels
+    925/850/700&nbsp;hPa (lower) and 500/400/300&nbsp;hPa (upper), because
+    the 50&nbsp;hPa spacing is carried only by the GFS in the D2D
+    inventory and a derived parameter has to run on every model; that
+    choice leaves 700&ndash;500&nbsp;hPa deliberately unassigned rather
+    than biasing one band's slope with a layer that straddles Hart's true
+    600&nbsp;hPa boundary. Where the text below gives a band without
+    naming it, the standard levels are meant, since the synthetic tests
+    of Sections 4, 6 and 7 were built to measure that choice against
+    Hart's. A level is blanked below ground before any window filter
     runs, when <code>psfc &lt; min(p, 900&nbsp;hPa)</code>, a cap that keeps a
     legitimately deep open-ocean low from being mistaken for terrain, and a
     level whose window is less than half valid is blanked rather than
@@ -509,22 +520,26 @@
     40% wavenumber-one asymmetry in an 8&nbsp;m/s westerly the proxy
     returns 8.0&nbsp;m/s from 270&deg; at the center. Below a window-mean
     speed of 2&nbsp;m/s the heading is undefined and <i>B</i> is set to
-    missing. The 925 to 700&nbsp;hPa layer this package uses is not
-    Hart's 900 to 600&nbsp;hPa layer, so the result is rescaled by
+    missing. On the live map the thickness is Hart's own 900 to
+    600&nbsp;hPa layer and no rescaling is needed. The AWIPS field uses
+    the 925 to 700&nbsp;hPa layer, which is not Hart's, so there the
+    result is rescaled by
   </p>
   <p class="eq">&lambda; = ln(900/600) / ln(925/700) = 1.455</p>
   <p>
     The rescaling assumes the layer-mean temperature contrast across the
     storm is the same in 925 to 700&nbsp;hPa as in 900 to 600&nbsp;hPa. In
     a shallow low-level baroclinic zone the deeper layer's contrast is the
-    smaller, so &lambda; overstates <i>B</i> there and biases onset early.
+    smaller, so &lambda; overstates <i>B</i> there and biases onset early;
+    on the archive the rescaled value runs about 1&nbsp;m above the
+    900 to 600&nbsp;hPa value on the same tracks (Section 6).
     The former first-order form also under-read a storm-scale asymmetry,
     which biased onset late; the semicircle means remove that under-read
     (Section 6). The remaining known biases of <i>B</i> are therefore
-    &lambda;, early in a shallow baroclinic zone, and the uncaptured odd
-    harmonics <i>k</i> &ge; 3, such as a warm-seclusion tongue folded into
-    one side of the circle, whose sign is not known in general; the net
-    of the two for a real transition is not known. Away from a closed
+    &lambda;, early in a shallow baroclinic zone, in AWIPS only, and the
+    uncaptured odd harmonics <i>k</i> &ge; 3, such as a warm-seclusion
+    tongue folded into one side of the circle, whose sign is not known in
+    general. Away from a closed
     low, the gridded <i>B</i> is a property of the environment and the
     motion rather than of a storm: it is the thickness contrast across
     the flow over the window, the semicircle difference of the ambient
@@ -737,19 +752,22 @@
       on a GFS forecast and is kept only as an option. In a strong baroclinic zone the environment can move
       the upper term across zero in either formulation.</li>
     <li>Hart regresses over 900 to 600&nbsp;hPa and 600 to 300&nbsp;hPa
-      at 50&nbsp;hPa spacing; this package uses 925, 850, 700&nbsp;hPa and
-      500, 400, 300&nbsp;hPa. The lower band lies entirely below Hart's
+      at 50&nbsp;hPa spacing, and so do the live map and the daily
+      collection. The AWIPS fields use 925, 850, 700&nbsp;hPa and
+      500, 400, 300&nbsp;hPa. That lower band lies entirely below Hart's
       layer, so its magnitude differs from his by an amount that depends
       on the vertical profile of the core anomaly: near zero for a
       profile linear in ln&nbsp;<i>p</i>, and two to three times Hart's
-      value for a shallow warm seclusion (Section 6, Figure 17). Signs
+      value for a shallow warm seclusion (Section 6, Figure 17); on the
+      archive it reads 17&nbsp;m above Hart's band on average. Signs
       and zero crossings carry over.</li>
     <li>Both compute <i>B</i> from semicircle means. Hart's are the two
       half-circle means about the tracked center, split by the tracker's
       storm motion; this package's are half-disk means about every grid
       point, combined as the wavenumber-one interpolation to the heading
-      of a motion proxy, the window-mean deep-layer wind, scaled from the
-      925 to 700&nbsp;hPa layer, and missing for a stationary or
+      of a motion proxy, the window-mean deep-layer wind, on the 900 to
+      600&nbsp;hPa thickness on the live map and scaled from the 925 to
+      700&nbsp;hPa layer in AWIPS, and missing for a stationary or
       steering-opposed storm. On the live map and in the daily
       collection, where the export links lows across frames, Hart's
       <i>B</i> is also computed from each track's own motion, and the
@@ -1513,9 +1531,11 @@
 
   <h2 id="limitations">7. Limitations</h2>
   <ul>
-    <li>The lower band, 925 to 700&nbsp;hPa, lies entirely below Hart's
-      900 to 600&nbsp;hPa layer, and the upper band omits 600 to
-      500&nbsp;hPa. Figure 17 fits Hart's band and two standard-level
+    <li>The AWIPS fields' lower band, 925 to 700&nbsp;hPa, lies entirely
+      below Hart's 900 to 600&nbsp;hPa layer, and their upper band omits
+      600 to 500&nbsp;hPa; the live map does not share this limitation,
+      since it evaluates Hart's layers on the GFS. Figure 17 fits Hart's
+      band and two standard-level
       alternatives to five prescribed height-perturbation profiles. For
       a profile linear in ln&nbsp;<i>p</i> all bands agree. For a shallow
       warm core with cold air above, the seclusion and transition
@@ -1526,13 +1546,15 @@
       mean of the 925/850/700 and 850/700/500&nbsp;hPa slopes tracks
       Hart's band most closely of the estimators tried (root mean square
       difference 25&nbsp;m across the five profiles against 44&nbsp;m for
-      the band in use) and is a candidate for a later revision. An entry
-      point for Hart's exact bands at 50&nbsp;hPa spacing,
-      <code>executeBand7</code>, is implemented but has no
-      derived-parameter definition, so it is available only to the GFS
-      and only by direct call; a comparison on GFS native levels over a
-      set of storms remains the measurement that would convert the band
-      difference into a known bias. Morphing a profile from deep warm
+      the band in use) and is a candidate for a later revision. The
+      entry point for Hart's exact bands at 50&nbsp;hPa spacing,
+      <code>executeBand7</code>, is what the live map runs; in AWIPS it
+      has no derived-parameter definition, since only the GFS could feed
+      it, and a GFS-only Hart-band product in CAVE is one definition
+      away. The comparison of Section 6 is the measurement of the band
+      difference on real storms: 17&nbsp;m in the lower term on average,
+      and a class agreement with the Florida State diagrams of 55%
+      against 75%. Morphing a profile from deep warm
       through the transition shape to deep cold core, completion falls
       at progress 0.71 on Hart's band and 0.77 on the band in use, about
       3&nbsp;h late on a 48&nbsp;h transition, against 0.59 on the
@@ -1856,8 +1878,10 @@
       term 17&nbsp;m above Hart's bands on the same tracks,
       12&nbsp;m above the diagrams where Hart's bands read
       14&nbsp;m below, and agree with the diagrams in class
-      55% of the time against 75%; on synthetic profiles the
-      same band reads a deep warm core about 12% high and a shallow warm
+      55% of the time against 75%, which is why the live map and the
+      daily collection evaluate Hart's layers and only the AWIPS fields
+      keep the standard levels; on synthetic profiles the standard
+      band reads a deep warm core about 12% high and a shallow warm
       seclusion two to three times Hart's value. The window is Hart's
       500&nbsp;km circle; the square used before read cold cores about
       50&nbsp;m more negative on a GFS forecast, and the archive was
