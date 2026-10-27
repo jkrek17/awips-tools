@@ -17,8 +17,7 @@
 
   <p class="byline">Jason Krekeler, NOAA/NWS Ocean Prediction Center &middot; 2026-10-18 (first version 2026-09-18)</p>
   <p class="meta">Code:
-    <a href="https://github.com/jkrek17/awips-tools/tree/main/cyclone_phase_space">github.com/jkrek17/awips-tools</a>
-    (directory <code>cyclone_phase_space/</code>).
+    <a href="https://github.com/jkrek17/awips-tools/tree/main/cyclone_phase_space">github.com/jkrek17/awips-tools</a>.
     Live map: <a href="https://jkrek17.github.io/web/cyclone/">the products on the current GFS run</a>,
     updated every six hours.
     Forecasters: <a href="https://jkrek17.github.io/web/forecasters/">a plain-language guide to the products</a>.
@@ -276,7 +275,8 @@
     point is inside when its planar offset from the center is within
     500&nbsp;km. On a synthetic Gaussian vortex of 150&nbsp;km e-folding
     scale on a 0.25&deg; grid the gridded disk matches the storm-centered
-    circle of <code>cps.hart</code> to a relative difference of
+    circle of the reference implementation of Hart's method written for
+    this work (Appendix A) to a relative difference of
     3.6&nbsp;&times;&nbsp;10<sup>&minus;7</sup> in the lower term, and to
     within 0.2% at 250 and 400&nbsp;km scale. Because
     the window is a circle, a background height gradient contributes the
@@ -290,7 +290,7 @@
     +79&nbsp;m when the gradient runs along a grid axis and to
     +67&nbsp;m at 45&deg; to it; at twice that gradient the upper
     term reads &minus;68 and &minus;90&nbsp;m (Figure 19a). The
-    storm-centered circle of <code>cps.hart</code> gives +69 and
+    storm-centered reference implementation gives +69 and
     &minus;87&nbsp;m at 45&deg; on the same fields, so the remaining
     difference between the two directions belongs to the test field, whose
     tilted plane is defined in degrees of latitude and longitude rather
@@ -325,7 +325,8 @@
     naming it, the standard levels are meant, since the synthetic tests
     of Sections 4, 6 and 7 were built to measure that choice against
     Hart's. A level is blanked below ground before any window filter
-    runs, when <code>psfc &lt; min(p, 900&nbsp;hPa)</code>, a cap that keeps a
+    runs, where the surface pressure is below the smaller of the level's
+    pressure and 900&nbsp;hPa, a cap that keeps a
     legitimately deep open-ocean low from being mistaken for terrain, and a
     level whose window is less than half valid is blanked rather than
     fitted, so that a clipped window near an ice sheet does not yield a
@@ -356,9 +357,9 @@
     negative. On synthetic vortices of 250 and 400&nbsp;km scale the
     square read the lower term high by factors of 1.02 and 1.22, where
     the circle is within 0.2% of Hart's. The circle costs about what
-    the square did (Section 5). The square remains available: setting the
-    module constant <code>WINDOW_SHAPE</code> to <code>"square"</code>
-    reproduces the earlier numbers exactly. The real-case values of
+    the square did (Section 5). The square remains available as a
+    configuration option that reproduces the earlier numbers exactly.
+    The real-case values of
     Section 6 were read with it.
   </p>
   <p>
@@ -505,8 +506,7 @@
     used a first-order form, <i>h</i> (8<i>R</i>/3&pi;) times the
     window-mean thickness gradient projected on the right-hand normal of
     motion, times &lambda;, to which the semicircle form reduces for a
-    uniform gradient; it is retained in the module as
-    <code>parameter_b_grid_gradient</code> for comparison only, and
+    uniform gradient; it is retained for comparison only, and
     Figures 13 and 19d compare against it.
   </p>
   <p>
@@ -582,7 +582,7 @@
     on all three parameters at once preserves both distinctions and
     reduces the operational task from reading two panels and combining
     them visually to sampling one field at the low center.
-    <code>HCPSclass</code> does this with Hart's thresholds, <i>B</i>
+    HCPSclass does this with Hart's thresholds, <i>B</i>
     against 10&nbsp;m and both thermal wind terms against 0, and no
     neutral band on any of the three. The joint space has eight cells;
     the two cells with a cold lower and warm upper core are merged into one
@@ -598,7 +598,7 @@
     a storm in transition, blues for a cold core:
   </p>
   <table>
-    <caption><code>HCPSclass</code>: the seven classes formed from the quadrants of Hart's two diagrams (asymmetric is Hart's term; the storm has a warm and a cold side, that is, it is frontal). A term of exactly zero counts as warm; <i>B</i> of exactly 10&nbsp;m counts as symmetric.</caption>
+    <caption>HCPSclass: the seven classes formed from the quadrants of Hart's two diagrams (asymmetric is Hart's term; the storm has a warm and a cold side, that is, it is frontal). A term of exactly zero counts as warm; <i>B</i> of exactly 10&nbsp;m counts as symmetric.</caption>
     <thead><tr><th scope="col">Code</th><th scope="col">Color</th><th scope="col">Name</th><th scope="col"><i>B</i></th><th scope="col">&minus;V<sub>T</sub><sup>L</sup></th><th scope="col">&minus;V<sub>T</sub><sup>U</sup></th><th scope="col">Typical system</th></tr></thead>
     <tbody>
       <tr><td>0</td><td>red</td><td>symmetric deep warm core</td><td>&le; 10</td><td>warm</td><td>warm</td><td>hurricane, typhoon</td></tr>
@@ -622,7 +622,7 @@
     occludes (4 to 5), the tropical transition of a subtropical storm
     (4, 3, 1, 0) and a hybrid that swings between 1 and 3 across the
     <i>B</i> plane, each computed frame by frame from synthetic height
-    fields. <code>HCPSclass</code> reports a state, not an event. Onset
+    fields. HCPSclass reports a state, not an event. Onset
     and completion are crossings, and a storm whose <i>B</i> passes
     10&nbsp;m in the same frame that &minus;V<sub>T</sub><sup>L</sup>
     passes zero moves from 0 to 4 without visiting 2 or 3. The Evans and
@@ -680,7 +680,7 @@
       and six <em>synthetic</em> life cycles traced through it.
       The planes <i>B</i> = 10&nbsp;m, &minus;V<sub>T</sub><sup>L</sup> = 0
       and &minus;V<sub>T</sub><sup>U</sup> = 0 cut it into the cells of
-      <code>HCPSclass</code>, drawn as translucent boxes in the colors of
+      HCPSclass, drawn as translucent boxes in the colors of
       the class table above and labeled with their codes; class 6 (lower cold, upper warm) is one box
       spanning both halves of the <i>B</i> plane, which is why eight cells
       give seven classes. Each panel is one 168&nbsp;h archetype built
@@ -925,8 +925,8 @@
     overlapping runs, and the chords are then combined row offset by row
     offset. This keeps a full seven-level classification affordable on a
     global grid (Figure 9), at about the cost of the square window used
-    before. The installed footprint is one Python module
-    (<code>cps_HartCPS.py</code>), five XML derived-parameter definitions
+    before. The installed footprint is one Python module, five XML
+    derived-parameter definitions
     (HVTL, HVTU, HB, HCPSidx, HCPSclass) and two colormaps, a diverging
     one for the signed fields and a categorical one for the
     classification. HVTL and HVTU are the negatives of Hart's thermal
@@ -938,7 +938,7 @@
     setting exchanges the north and south half-disks, which flips the
     sign of <i>B</i> for zonal motion without affecting HVTL or HVTU, and
     the constant is verified once per site at installation.
-    <code>executeHartClass</code> adds the semicircle-mean and
+    The class computation adds the semicircle-mean and
     motion-proxy passes to the thermal wind computation and takes a
     median of 2.45&nbsp;s per forecast hour (range 2.28 to 2.66&nbsp;s) on
     a 0.25&deg; global grid, of which the parameter <i>B</i> step is
@@ -963,8 +963,8 @@
   </figure>
   <h3 id="delivery">The live map and the tracked storms</h3>
   <p>
-    The same functions run outside AWIPS in the <code>realtime</code>
-    package on public GFS output, and that is the form in which the
+    The same functions run outside AWIPS in a standalone package on
+    public GFS output, and that is the form in which the
     product is meant to be used first. Every six hours an export
     evaluates the four fields on every frame of the latest 0.25&deg;
     run, out to 198&nbsp;h, with Hart's own layers: the thermal wind
@@ -1186,8 +1186,8 @@
     motion-relative thermal asymmetry, warm to the right of the track,
     that grows from 24&nbsp;h, peaks from 72 to 108&nbsp;h and is gone
     by 144&nbsp;h as the seclusion wraps the warm air into the core.
-    Hart's parameters are evaluated at the center with
-    <code>cps.hart</code>: a 500&nbsp;km circle, 50&nbsp;hPa levels from
+    Hart's parameters are evaluated at the center with the storm-centered
+    reference implementation: a 500&nbsp;km circle, 50&nbsp;hPa levels from
     900 to 600 and 600 to 300&nbsp;hPa, and <i>B</i> from the
     motion-relative semicircle means, with the motion from the track.
     The gridded parameters come from the operational functions on the
@@ -1216,7 +1216,7 @@
     In the deep warm core phase the gridded lower term runs 12% above
     Hart's and the upper term 9% below (126 against 139&nbsp;m at
     0&nbsp;h). The difference is the standard-level band, not the
-    window. On Hart's own circle (<code>cps.hart</code>) the
+    window. On Hart's own circle (the reference implementation) the
     925/850/700&nbsp;hPa regression returns 301&nbsp;m against 270&nbsp;m
     for his 900 to 600&nbsp;hPa band at 0&nbsp;h (11.4%); the gridded
     disk differs from that circle by 0.001&nbsp;m at 0&nbsp;h and 0.1% at
@@ -1547,11 +1547,11 @@
       Hart's band most closely of the estimators tried (root mean square
       difference 25&nbsp;m across the five profiles against 44&nbsp;m for
       the band in use) and is a candidate for a later revision. The
-      entry point for Hart's exact bands at 50&nbsp;hPa spacing,
-      <code>executeBand7</code>, is what the live map runs; in AWIPS it
-      has no derived-parameter definition, since only the GFS could feed
-      it, and a GFS-only Hart-band product in CAVE is one definition
-      away. The comparison of Section 6 is the measurement of the band
+      seven-level band computation the live map runs is in the installed
+      module as well, but has no derived-parameter definition in AWIPS,
+      since only the GFS could feed it; a GFS-only Hart-band product in
+      CAVE is one definition away. The comparison of Section 6 is the
+      measurement of the band
       difference on real storms: 17&nbsp;m in the lower term on average,
       and a class agreement with the Florida State diagrams of 55%
       against 75%. Morphing a profile from deep warm
@@ -1681,9 +1681,7 @@
       a random sample of the rest. The six CAVE cases of the table at
       the start of Section 6 were read by eye, with the former
       first-order <i>B</i>, the detector on 1000&nbsp;hPa height and the
-      square window, and stand as illustrations rather than evidence.
-      The acceptance criteria for removing the experimental label are
-      set out in the package README.</li>
+      square window, and stand as illustrations rather than evidence.</li>
     <li>The class is sensitive to where the center is read and to
       how close the storm sits to a threshold, and both were measured
       on the archive. Over its 2205 classed fixes the nearest
@@ -1840,8 +1838,8 @@
       <i>x</i><sub>R</sub> the across-track coordinate, on a flat
       background, against <i>L</i> from 200 to 1500&nbsp;km, for the
       semicircle form (solid) and the former gradient form (dashed); the
-      reference is <code>cps.hart.parameter_b</code> on a 500&nbsp;km
-      circle, on a 0.25&deg; grid at 30&deg;N 165&deg;E with the heading
+      reference is the storm-centered implementation's <i>B</i> on a
+      500&nbsp;km circle, on a 0.25&deg; grid at 30&deg;N 165&deg;E with the heading
       45&deg;, and the black line at 1 is the uniform-gradient limit.
       (<a href="#src-fig19">Appendix A</a>)</figcaption>
   </figure>
@@ -1905,31 +1903,21 @@
 
   <h2 id="availability">10. Availability</h2>
   <p>
-    The whole project lives at <code>cyclone_phase_space/</code> in the
-    repository linked at the top of this page. Under it:
-    <code>realtime/</code> is the engine as delivered: the six-hourly
-    export that feeds the
-    <a href="https://jkrek17.github.io/web/cyclone/">live global map</a>
-    of the products, the tracker that links lows across frames and
-    computes Hart's <i>B</i> on each track, and the daily collection
+    The whole project is in the repository linked at the top of this
+    page: the engine as delivered, with the six-hourly export that feeds
+    the <a href="https://jkrek17.github.io/web/cyclone/">live global
+    map</a> of the products, the tracker that links lows across frames
+    and computes Hart's <i>B</i> on each track, and the daily collection
     that follows every Northern Hemisphere low under 980&nbsp;hPa and
-    pairs it with the Florida State diagrams, whose archive and the
-    scripts that digitize and compare it are under
-    <code>realtime/data/</code>; <code>article/live/</code> is the map
-    page. <code>D2D/</code> is the AWIPS install tree (derived-parameter
-    Python and XML under <code>D2D/derivedParameters/</code>, colormaps
-    under <code>D2D/colormaps/Grid/</code>); <code>cps/hart.py</code> is
-    the storm-centered reference implementation; <code>docs/</code>
-    holds the technical, user, and installation guides
-    (<code>cyclone_phase_space/docs/</code> and
-    <code>cyclone_phase_space/README.md</code>); and <code>article/</code>
-    is the source for this page. The test suite
-    (<code>cyclone_phase_space/tests/cps</code>,
-    <code>cyclone_phase_space/tests/d2d_cps</code> and
-    <code>cyclone_phase_space/tests/realtime</code>, run with
-    <code>python3 -m pytest cyclone_phase_space/tests -q</code>) counts
-    99 tests, every expected value analytic or from an independent
-    brute-force comparison. No license is specified.
+    pairs it with the Florida State diagrams, together with its archive
+    and the tools that digitize and compare the diagrams; the map page
+    itself; the AWIPS install set, one Python module, five
+    derived-parameter definitions and two colormaps; the storm-centered
+    reference implementation of Hart's method; the technical, user and
+    installation guides; the source and figure scripts of this article
+    (Appendix A); and a test suite of 184 tests, every expected value
+    analytic or from an independent brute-force comparison. No license
+    is specified.
   </p>
 
   <h2 id="appendix-a">Appendix A. Figure provenance and implementation notes</h2>
