@@ -151,8 +151,8 @@
     page (Hart, cited 2026), produced for the cyclones that page's tracker
     identifies in a fixed set of models, which National Hurricane Center
     forecasters cite in their discussions as supporting evidence rather
-    than as a rule (for example Tropical Storm Cristobal in 2008 and
-    Post-Tropical Cyclone Franklin in 2023; Hart 2021), and the
+    than as a rule (Tropical Storm Cristobal and Post-Tropical Cyclone
+    Franklin: National Hurricane Center 2008a,b, 2023; Hart 2021), and the
     International Workshop on Tropical Cyclones has called for further
     development of diagnostics built on the phase space (WMO 2025).
     Those diagrams show one storm at a time, for the storms a tracker
@@ -778,7 +778,8 @@
       detector of Section 2 on any model in the local inventory, with no
       tracker.</li>
     <li>The Florida State page smooths the parameters with a 24&nbsp;h
-      running mean before plotting (Hart, cited 2026); this package's
+      running mean before plotting, as its diagrams state (Hart, cited
+      2026); this package's
       fields are instantaneous per forecast hour, so they are noisier
       frame to frame, and the flicker described in Section 7 is the visible consequence.</li>
     <li>A tracked center is evaluated where the tracker places it; this
@@ -804,7 +805,8 @@
     center or as the colors of the class field; the table at the start of
     Section 6 lists which. The storm-centered comparison is the Florida
     State University cyclone phase page (Hart, cited 2026) for the same
-    GFS runs, computed there at 0.5&deg; and smoothed with a 24&nbsp;h
+    GFS runs, computed there, as each diagram's title and footnote state,
+    at 0.5&deg; and smoothed with a 24&nbsp;h
     running mean before plotting; its values were read from the published
     diagrams, not recomputed. Phase-space magnitudes depend on the
     resolution and dataset they are computed from (Manning and Hart
@@ -1653,16 +1655,19 @@
       so part of every difference is resolution and smoothing rather
       than method, and none of it is a comparison against observed
       structure.</li>
-    <li>A positive lower term is not specific to a warm seclusion.
-      Besson et al. (2026) find a lower-tropospheric warm core, by
-      Hart's &minus;V<sub>T</sub><sup>L</sup>, in most midlatitude
-      cyclones near maximum intensity in ERA5, occluded as well as
-      secluded, and show that the 500&nbsp;km height maximum then sits
-      equatorward of the center in the warm sector rather than marking
-      a core temperature, which is the same mechanism the background
-      plane of Section 8 isolates. Classes 1 and 3 are therefore read
-      as a seclusion only with <i>B</i>, the pressure trend and the
-      surface analysis beside them.</li>
+    <li>The lower term is not a core temperature in a strongly
+      baroclinic cyclone. Besson et al. (2026) find, with a
+      center-minus-ring temperature of their own, a lower-tropospheric
+      warm core in most midlatitude cyclones near maximum intensity in
+      ERA5, occluded as well as secluded, which Hart's
+      &minus;V<sub>T</sub><sup>L</sup> reads as cold because the
+      500&nbsp;km height maximum sits equatorward of the center in the
+      warm sector rather than marking the core; this is the mechanism
+      the background plane of Section 8 isolates. A positive lower term
+      in classes 1 and 3 is therefore read as a seclusion only with
+      <i>B</i>, the pressure trend and the surface analysis beside it,
+      and a negative one does not rule out a warm core under the
+      trough.</li>
     <li>The below-ground rule treats a level as valid wherever the
       surface pressure is at or above the smaller of that level and
       900&nbsp;hPa, so an extrapolated height can enter the window. The
@@ -2282,6 +2287,14 @@
 
   <h2 id="references">References</h2>
   <ul class="refs">
+    <li>Arnott, J. M., J. L. Evans, and F. Chiaromonte, 2004:
+      Characterization of extratropical transition using cluster
+      analysis. <em>Mon. Wea. Rev.</em>, <strong>132</strong>,
+      2916&ndash;2937, https://doi.org/10.1175/MWR2836.1.</li>
+    <li>Besson, M., G. Rivi&egrave;re, and S. Fromang, 2026: A cyclone
+      phase space dedicated to extratropical cyclones. <em>Weather Clim.
+      Dynam.</em>, <strong>7</strong>, 805&ndash;823,
+      https://doi.org/10.5194/wcd-7-805-2026.</li>
     <li>Bieli, M., S. J. Camargo, A. H. Sobel, J. L. Evans, and T. Hall,
       2019a: A global climatology of extratropical transition. Part I:
       Characteristics across basins. <em>J. Climate</em>,
@@ -2292,43 +2305,36 @@
       Statistical performance of the cyclone phase space. <em>J.
       Climate</em>, <strong>32</strong>, 3583&ndash;3597,
       https://doi.org/10.1175/JCLI-D-18-0052.1.</li>
-    <li>Evans, J. L., and M. P. Guishard, 2009: Atlantic subtropical
-      storms. Part I: Diagnostic criteria and composite analysis.
-      <em>Mon. Wea. Rev.</em>, <strong>137</strong>, 2065&ndash;2080,
-      https://doi.org/10.1175/2009MWR2468.1.</li>
-    <li>Arnott, J. M., J. L. Evans, and F. Chiaromonte, 2004:
-      Characterization of extratropical transition using cluster
-      analysis. <em>Mon. Wea. Rev.</em>, <strong>132</strong>,
-      2916&ndash;2937, https://doi.org/10.1175/MWR2836.1.</li>
-    <li>Besson, M., G. Rivi&egrave;re, and S. Fromang, 2026: A cyclone
-      phase space dedicated to extratropical cyclones. <em>Weather Clim.
-      Dyn.</em>, <strong>7</strong>, 805&ndash;823,
-      https://doi.org/10.5194/wcd-7-805-2026.</li>
     <li>Bieli, M., A. H. Sobel, S. J. Camargo, H. Murakami, and G. A.
       Vecchi, 2020: Application of the cyclone phase space to
       extratropical transition in a global climate model. <em>J. Adv.
       Model. Earth Syst.</em>, <strong>12</strong>, e2019MS001878,
       https://doi.org/10.1029/2019MS001878.</li>
-    <li>Evans, J. L., J. M. Arnott, and F. Chiaromonte, 2006: Evaluation
-      of operational model cyclone structure forecasts during
-      extratropical transition. <em>Mon. Wea. Rev.</em>,
-      <strong>134</strong>, 3054&ndash;3072,
-      https://doi.org/10.1175/MWR3236.1.</li>
+    <li>Evans, J. L., and M. P. Guishard, 2009: Atlantic subtropical
+      storms. Part I: Diagnostic criteria and composite analysis.
+      <em>Mon. Wea. Rev.</em>, <strong>137</strong>, 2065&ndash;2080,
+      https://doi.org/10.1175/2009MWR2468.1.</li>
     <li>Evans, J. L., and R. E. Hart, 2003: Objective indicators of the
       life cycle evolution of extratropical transition for Atlantic
       tropical cyclones. <em>Mon. Wea. Rev.</em>, <strong>131</strong>,
       909&ndash;925,
       https://doi.org/10.1175/1520-0493(2003)131&lt;0909:OIOTLC&gt;2.0.CO;2.</li>
+    <li>Evans, J. L., J. M. Arnott, and F. Chiaromonte, 2006: Evaluation
+      of operational model cyclone structure forecasts during
+      extratropical transition. <em>Mon. Wea. Rev.</em>,
+      <strong>134</strong>, 3054&ndash;3072,
+      https://doi.org/10.1175/MWR3236.1.</li>
     <li>Guishard, M. P., J. L. Evans, and R. E. Hart, 2009: Atlantic
       subtropical storms. Part II: Climatology. <em>J. Climate</em>,
       <strong>22</strong>, 3574&ndash;3594,
-      https://doi.org/10.1175/2009JCLI2949.1.</li>
+      https://doi.org/10.1175/2008JCLI2346.1.</li>
     <li>Hart, R. E., 2003: A cyclone phase space derived from thermal wind
       and thermal asymmetry. <em>Mon. Wea. Rev.</em>, <strong>131</strong>,
       585&ndash;616,
       https://doi.org/10.1175/1520-0493(2003)131&lt;0585:ACPSDF&gt;2.0.CO;2.</li>
-    <li>Hart, R. E., 2021: A cyclone phase space. WMO RA IV Workshop on
-      Hurricane Forecasting and Warning, 26 April 2021,
+    <li>Hart, R. E., 2021: The analysis and prediction of hybrid
+      cyclones and structural transition from one perspective. WMO RA IV
+      Workshop on Hurricane Forecasting and Warning, online, 26 April 2021,
       https://severeweather.wmo.int/TCFW/RAIV_Workshop2021/03_CyclonePhaseSpace_BobHart.pdf.</li>
     <li>Hart, R. E., cited 2026: Cyclone phase evolution: Analyses and
       forecasts. Florida State University, accessed 17 September 2026,
@@ -2350,11 +2356,11 @@
       https://doi.org/10.2151/jmsj.2011-402.</li>
     <li>Kofron, D. E., E. A. Ritchie, and J. S. Tyo, 2010: Determination
       of a consistent time for the extratropical transition of tropical
-      cyclones. Part I: Examination of existing methods for finding "ET
-      time." <em>Mon. Wea. Rev.</em>, <strong>138</strong>,
+      cyclones. Part I: Examination of existing methods for finding &ldquo;ET
+      time.&rdquo; <em>Mon. Wea. Rev.</em>, <strong>138</strong>,
       4328&ndash;4343, https://doi.org/10.1175/2010MWR3180.1.</li>
     <li>Manning, D. M., and R. E. Hart, 2007: Evolution of North Atlantic
-      ERA-40 tropical cyclone representation. <em>Geophys. Res.
+      ERA40 tropical cyclone representation. <em>Geophys. Res.
       Lett.</em>, <strong>34</strong>, L05705,
       https://doi.org/10.1029/2006GL028266.</li>
     <li>Michaelis, A. C., and G. M. Lackmann, 2019: Climatological
@@ -2362,16 +2368,20 @@
       high-resolution global simulations. <em>J. Climate</em>,
       <strong>32</strong>, 8733&ndash;8753,
       https://doi.org/10.1175/JCLI-D-19-0259.1.</li>
-    <li>National Hurricane Center, 2008: Tropical Storm Cristobal
-      discussions 12 and 18, 21 and 23 July 2008,
-      https://www.nhc.noaa.gov/archive/2008/al03/al032008.discus.012.shtml
-      and al032008.discus.018.shtml; 2023: Post-Tropical Cyclone
-      Franklin discussion 49, 1 September 2023,
+    <li>National Hurricane Center, 2008a: Tropical Storm Cristobal
+      discussion number 12, 21 July 2008,
+      https://www.nhc.noaa.gov/archive/2008/al03/al032008.discus.012.shtml.</li>
+    <li>National Hurricane Center, 2008b: Tropical Storm Cristobal
+      discussion number 18, 23 July 2008,
+      https://www.nhc.noaa.gov/archive/2008/al03/al032008.discus.018.shtml.</li>
+    <li>National Hurricane Center, 2023: Post-Tropical Cyclone Franklin
+      discussion number 49, 1 September 2023,
       https://www.nhc.noaa.gov/archive/2023/al08/al082023.discus.049.shtml.</li>
     <li>Shapiro, M. A., and D. Keyser, 1990: Fronts, jet streams and the
       tropopause. <em>Extratropical Cyclones: The Erik Palm&eacute;n
       Memorial Volume</em>, C. W. Newton and E. O. Holopainen, Eds., Amer.
-      Meteor. Soc., 167&ndash;191.</li>
+      Meteor. Soc., 167&ndash;191,
+      https://doi.org/10.1007/978-1-944970-33-8_10.</li>
     <li>Studholme, J., K. I. Hodges, and C. M. Brierley, 2015: Objective
       determination of the extratropical transition of tropical cyclones
       in the Northern Hemisphere. <em>Tellus A</em>, <strong>67</strong>,
@@ -2381,13 +2391,13 @@
       community framework for feature detection, tracking, and analysis
       in large datasets. <em>Geosci. Model Dev.</em>, <strong>14</strong>,
       5023&ndash;5048, https://doi.org/10.5194/gmd-14-5023-2021.</li>
-    <li>Veren, D., J. L. Evans, S. C. Jones, and F. Chiaromonte, 2009:
+    <li>Veren, D., J. L. Evans, S. Jones, and F. Chiaromonte, 2009:
       Novel metrics for evaluation of ensemble forecasts of tropical
       cyclone structure. <em>Mon. Wea. Rev.</em>, <strong>137</strong>,
       2830&ndash;2850, https://doi.org/10.1175/2009MWR2655.1.</li>
     <li>WMO, 2025: Workshop on cyclone types and phase transitions, World
       Meteorological Organization Working Group on Tropical Meteorology
-      Research, 11 to 13 November 2025,
+      Research, online, 11 to 13 November 2025,
       https://community.wmo.int/node/35797.</li>
     <li>Zarzycki, C. M., D. R. Thatcher, and C. Jablonowski, 2017:
       Objective tropical cyclone extratropical transition detection in
