@@ -1,11 +1,6 @@
 # Publishes the public web site to the separate public repository (the
 # repository variable PUBLIC_SITE_REPO, for example jkrek17/web) so that this
-# repository can be private. The site is assembled from the live map page
-# (cyclone_phase_space/article/live/, served at /cyclone/ with its data under
-# /cyclone/data/), the forecasters' explainer
-# (cyclone_phase_space/article/forecasters/), the article with its figures
-# (cyclone_phase_space/article/{index.html,style.css,figures/}), the
-# newest live data (the latest/ and storms/ trees of the cps-live branch), the
+# repository can be private. The site is assembled from the
 # North Atlantic and North Pacific marine wind page (marine_wind/page/, served at /marine-wind/
 # with the latest/ tree of the marine-wind-live branch as its data/, plus the
 # model scorecard from the marine-wind-scorecard branch), the verification page
@@ -15,7 +10,10 @@
 # `scores` release of jkrek17/marine-research-data fetched into its data/ at publish
 # time; the weekly job there writes them Mondays 06:00 UTC), the globe kit the globe pages load
 # (globe_kit/, served at /globe-kit/: MapLibre, the shared look and script, the
-# land outline) and nothing else; it is pushed as the
+# land outline), the IBM Plex fonts the projects index uses (fonts/) and
+# nothing else; the cyclone phase space pages (the live map, the article and
+# the forecasters' guide) have their own site, published by
+# cyclone_publish.yml to jkrek17/cyclone, and are not on this one. It is pushed as the
 # single commit of the public repository's main branch with the token in the
 # secret WEB_TOKEN (a fine-grained personal access token scoped to the public
 # repository with Contents: read and write). The public repository serves it
@@ -41,16 +39,12 @@ name: Publish public site
 
 on:
   workflow_run:
-    workflows: ["CPS live map data", "CPS daily collection", "Marine wind data", "Marine wind scorecard", "Verification page data"]
+    workflows: ["Marine wind data", "Marine wind scorecard", "Verification page data"]
     types: [completed]
   push:
     branches: [main]
     paths:
-      - 'cyclone_phase_space/article/live/**'
-      - 'cyclone_phase_space/article/forecasters/**'
-      - 'cyclone_phase_space/article/index.html'
-      - 'cyclone_phase_space/article/style.css'
-      - 'cyclone_phase_space/article/figures/**'
+      - 'cyclone_phase_space/article/live/fonts/**'
       - 'marine_wind/page/**'
       - 'marine_wind/verification_page/**'
       - 'marine_wind/high_seas_page/**'
@@ -107,13 +101,6 @@ jobs:
       - name: Fetch the live data branch
         if: steps.cfg.outputs.ready == 'true'
         run: |
-          git fetch --depth 1 origin cps-live || echo "no cps-live branch yet"
-          rm -rf "$RUNNER_TEMP/live"
-          mkdir -p "$RUNNER_TEMP/live"
-          if git rev-parse --verify -q origin/cps-live >/dev/null; then
-            git --work-tree="$RUNNER_TEMP/live" checkout origin/cps-live -- . 2>/dev/null || true
-            git reset -q
-          fi
           git fetch --depth 1 origin marine-wind-live || echo "no marine-wind-live branch yet"
           rm -rf "$RUNNER_TEMP/marine"
           mkdir -p "$RUNNER_TEMP/marine"
@@ -142,25 +129,10 @@ jobs:
           # as ../globe-kit/).
           mkdir -p "$site/globe-kit"
           cp -r globe_kit/. "$site/globe-kit/"
-          # The live map with its data beside it, served at /cyclone/; the
-          # site root is the projects index (built after the kept folders).
-          mkdir -p "$site/cyclone/data"
-          cp -r cyclone_phase_space/article/live/. "$site/cyclone/"
-          # The plain-language explainer for forecasters, self-contained
-          # (its own stylesheet and figure copies), served at /forecasters/.
-          mkdir -p "$site/forecasters"
-          cp -r cyclone_phase_space/article/forecasters/. "$site/forecasters/"
-          # The article with its figures (the interactive 3-D phase space is
-          # figures/phase_space_3d.html), served at /article/.
-          mkdir -p "$site/article/figures"
-          cp cyclone_phase_space/article/index.html cyclone_phase_space/article/style.css "$site/article/"
-          cp -r cyclone_phase_space/article/figures/. "$site/article/figures/"
-          if [ -d "$RUNNER_TEMP/live/latest" ]; then
-            cp -r "$RUNNER_TEMP/live/latest" "$site/cyclone/data/latest"
-          fi
-          if [ -d "$RUNNER_TEMP/live/storms" ]; then
-            cp -r "$RUNNER_TEMP/live/storms" "$site/cyclone/data/storms"
-          fi
+          # The IBM Plex fonts the projects index (the site root, built after
+          # the kept folders) uses, at /fonts/.
+          mkdir -p "$site/fonts"
+          cp -r cyclone_phase_space/article/live/fonts/. "$site/fonts/"
           # The marine wind page with the newest run beside it, at /marine-wind/.
           mkdir -p "$site/marine-wind/data"
           cp -r marine_wind/page/. "$site/marine-wind/"
@@ -209,8 +181,6 @@ jobs:
           # The kit's files too (../globe-kit/...); the delimiter is # since
           # the paths have slashes.
           kit='\.\./globe-kit/(globe-kit\.js|globe-kit\.css|lib/maplibre-gl\.js|lib/maplibre-gl\.css)'
-          sed -i -E "s#(href|src)=\"(style\.css|card\.js|storms\.js|space3d\.js|app\.js|$kit)\"#\1=\"\2?v=$v\"#g" "$site/cyclone/index.html"
-          grep -c "?v=$v" "$site/cyclone/index.html"
           sed -i -E "s#(href|src)=\"(style\.css|app\.js|scorecard\.js|$kit)\"#\1=\"\2?v=$v\"#g" "$site/marine-wind/index.html"
           sed -i -E "s#(href|src)=\"(style\.css|app\.js)\"#\1=\"\2?v=$v\"#g" "$site/verification/index.html"
           sed -i -E "s#(href|src)=\"(app\.js|$kit)\"#\1=\"\2?v=$v\"#g" "$site/high-seas/index.html"
@@ -223,10 +193,12 @@ jobs:
         env:
           REPO: ${{ vars.PUBLIC_SITE_REPO }}
           TOKEN: ${{ secrets.WEB_TOKEN }}
-          # Folders this workflow writes (cyclone, article, forecasters,
-          # marine-wind, verification, high-seas, research-scores, globe-kit),
-          # plus data/, fonts/ and basemap/,
-          # which the map used at the root before it moved to /cyclone/.
+          # Folders this workflow writes (marine-wind, verification, high-seas,
+          # research-scores, globe-kit, fonts), plus the ones it used to write
+          # and no longer does (cyclone, article and forecasters, now on
+          # their own site; data/ and basemap/, from when the map was the
+          # root page), which are therefore not carried forward and drop off
+          # the site.
           OWN_FOLDERS: cyclone article forecasters marine-wind verification high-seas research-scores globe-kit data fonts basemap
         run: |
           current="$RUNNER_TEMP/current"
