@@ -1,6 +1,6 @@
 # nwp
 
-Byte-range fetch of NWP fields from the AWS open-data mirrors (GFS, GDAS, GEFS, GFS-Wave,
+Byte-range fetch of NWP fields from the AWS open-data mirrors (GFS, GDAS, AI-GFS, GEFS, GFS-Wave,
 ECMWF IFS, AIFS, ENS, AIFS ENS). Only the wanted GRIB records are downloaded, located
 through the `.idx` / `.index` sidecars (each read once per file). Grids come back decoded,
 north-up, lon 0..360, float32.
@@ -10,7 +10,8 @@ north-up, lon 0..360, float32.
 
     nwp.ncep(url, {"UGRD:10 m above ground": "u"}, crop=None)   # NCEP file -> {name: grid} or None
     nwp.ec_fields(base, {("sfc", "10u", None): "u"})             # ECMWF file (no extension)
-    nwp.fields("gfs", "2026101500", 24, names, member=None)      # gfs, gdas, gefs, gfs_wave, ifs, aifs-single
+    nwp.fields("gfs", "2026101500", 24, names, member=None)      # gfs, gdas, aigfs, gefs, gfs_wave, ifs, aifs-single
+    nwp.fields("aigfs", "2026101500", 24, {"UGRD:10 m above ground": "u"})  # AI-GFS (NOAA GraphCast), 3 bucket layouts by date
     nwp.gefs_members(ymd, hh, fh, want)                          # ([members], {name: [n,y,x]})
     nwp.ec_ens("aifs-ens", ymd, hh, step, {"10u": "u", "10v": "v"})
     nwp.newest_cycle(nwp.cycle_list(), lambda c: [url, ...])     # first cycle with all files posted
@@ -19,4 +20,4 @@ north-up, lon 0..360, float32.
 
 `crop=(IY, IX)` is applied as `v[IY, IX].copy()`; without it the full grid is returned.
 `get` returns None on 403/404, retries S3 503 quickly, backs off otherwise, and raises
-`RuntimeError` when it gives up. Tests: `python3 -m pytest nwp/tests`.
+`RuntimeError` when it gives up. Tests: `python3 -m pytest nwp/tests` (`NWP_NETWORK=1` adds the live AI-GFS fetches).

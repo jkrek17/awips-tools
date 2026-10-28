@@ -1,4 +1,4 @@
-"""Byte-range fetch of NWP fields from the AWS open-data mirrors (GFS, GDAS, GEFS,
+"""Byte-range fetch of NWP fields from the AWS open-data mirrors (GFS, GDAS, AI-GFS, GEFS,
 GFS-Wave, ECMWF IFS / AIFS / ENS / AIFS ENS). Only the wanted GRIB records are
 downloaded, found through the .idx / .index sidecars; grids come back decoded,
 north-up, lon 0..360, float32, optionally cropped with crop=(IY, IX)."""
@@ -61,12 +61,12 @@ def ec_fields(base, select, crop=None):
 
 
 def fields(source, cycle, step, names, member=None, crop=None):
-    """source: gfs, gdas, gefs (member), gfs_wave, ifs or aifs-single; cycle 'YYYYMMDDHH'.
+    """source: gfs, gdas, aigfs, gefs (member), gfs_wave, ifs or aifs-single; cycle 'YYYYMMDDHH'.
     names: NCEP {'VAR:level': name} or, for ifs / aifs-single, an ec_fields select."""
     ymd, hh = cycle[:8], cycle[8:10]
     if source in ("ifs", "aifs-single"):
         return ec_fields(sources.ecmwf(source, "oper", "fc", ymd, hh, step), names, crop)
-    url = {"gfs": sources.gfs, "gdas": sources.gdas, "gfs_wave": sources.gfs_wave}.get(source)
+    url = {"gfs": sources.gfs, "gdas": sources.gdas, "aigfs": sources.aigfs, "gfs_wave": sources.gfs_wave}.get(source)
     url = url(ymd, hh, step) if url else sources.gefs(ymd, hh, step, member)
     return ncep(url, names, crop)
 

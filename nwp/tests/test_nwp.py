@@ -165,6 +165,36 @@ def test_urls():
         "20261015/00z/ifs/0p25/oper/20261015000000-24h-oper-fc")
 
 
+def test_aigfs_url_switch_dates():
+    a = nwp.sources.aigfs
+    B = nwp.sources.AIGFS
+    tail = "forecasts_13_levels/graphcastgfs.t00z.pgrb2.0p25.f024"
+    assert (nwp.sources.AIGFS_LIVE_FROM, nwp.sources.AIGFS_OPER_FROM) == ("20251219", "20260416")
+    # before 2025-12-19 the live stream is an older model: hindcast of the current one
+    assert a("20250101", "00", 24) == "%s/hindcast_aigfsdev2.5/graphcastgfs.20250101/00/%s" % (B, tail)
+    assert a("20251218", "18", 6) == "%s/hindcast_aigfsdev2.5/graphcastgfs.20251218/18/forecasts_13_levels/graphcastgfs.t18z.pgrb2.0p25.f006" % B
+    # live stream 2025-12-19 .. 2026-04-15
+    assert a("20251219", "00", 24) == "%s/graphcastgfs.20251219/00/%s" % (B, tail)
+    assert a("20260415", "12", 24) == "%s/graphcastgfs.20260415/12/forecasts_13_levels/graphcastgfs.t12z.pgrb2.0p25.f024" % B
+    # operational feed from 2026-04-16
+    assert a("20260416", "00", 24) == "%s/aigfs.20260416/00/model/atmos/grib2/aigfs.t00z.sfc.f024.grib2" % B
+    assert a("20261015", "06", 384).endswith("aigfs.20261015/06/model/atmos/grib2/aigfs.t06z.sfc.f384.grib2")
+
+
+def test_fields_aigfs_dispatch(monkeypatch):
+    seen = []
+    monkeypatch.setattr(nwp, "ncep", lambda url, want, crop=None: seen.append((url, want, crop)) or {"u": 1})
+    assert nwp.fields("aigfs", "2026011500", 24, {"UGRD:10 m above ground": "u"}, crop="c") == {"u": 1}
+    assert seen == [(nwp.sources.aigfs("20260115", "00", 24), {"UGRD:10 m above ground": "u"}, "c")]
+
+
+@pytest.mark.skipif(not os.environ.get("NWP_NETWORK"), reason="set NWP_NETWORK=1 for the live S3 check")
+@pytest.mark.parametrize("cycle", ["2025111500", "2026011500", "2026050100"])
+def test_aigfs_live_u10(cycle):
+    out = nwp.fields("aigfs", cycle, 24, {"UGRD:10 m above ground": "u"})
+    assert out is not None and out["u"].shape == (721, 1440) and abs(out["u"]).max() > 5
+
+
 def test_ec_ens_sorted_members(monkeypatch):
     recs = [{"param": p, "levtype": "sfc", "number": n, "_offset": 0, "_length": 1}
             for n in (3, 1, 2) for p in ("10u", "10v")] + [{"param": "10u", "levtype": "sfc", "number": 9,
