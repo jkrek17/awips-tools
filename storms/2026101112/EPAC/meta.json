@@ -1,0 +1,37 @@
+{
+  "cycle": "2026101112",
+  "name": "EPAC",
+  "status": "ok",
+  "code_version": "a85cc99",
+  "seed": {
+    "lat": 32.47,
+    "lon": 144.19,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "stored seed"
+  },
+  "start_fhr": 0,
+  "end_fhr": 6,
+  "fixes": 2,
+  "start": {
+    "lat": 32.41,
+    "lon": 144.83,
+    "mslp_hpa": 1008.7
+  },
+  "end": {
+    "lat": 32.45,
+    "lon": 144.24,
+    "mslp_hpa": 1008.5
+  },
+  "min_mslp_hpa": 1008.5,
+  "onset_standard_h": 0,
+  "completion_standard_h": null,
+  "onset_hart_h": null,
+  "completion_hart_h": null,
+  "bands": "hart",
+  "class_sequence": "- 0-6",
+  "class_sequence_standard": "- 0-6",
+  "fsu_number": null,
+  "fsu": null,
+  "track_end": "outside a closed low at +18, +24 h (1010 hPa at +24 h)"
+}

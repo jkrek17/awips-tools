@@ -1,0 +1,37 @@
+{
+  "cycle": "2026101212",
+  "name": "AUTO_261011_01",
+  "status": "ok",
+  "code_version": "a85cc99",
+  "seed": {
+    "lat": 62.44,
+    "lon": -33.7,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "stored seed"
+  },
+  "start_fhr": 0,
+  "end_fhr": 36,
+  "fixes": 7,
+  "start": {
+    "lat": 61.95,
+    "lon": -33.1,
+    "mslp_hpa": 963.6
+  },
+  "end": {
+    "lat": 60.01,
+    "lon": -39.8,
+    "mslp_hpa": 976.3
+  },
+  "min_mslp_hpa": 963.6,
+  "onset_standard_h": 6,
+  "completion_standard_h": null,
+  "onset_hart_h": 18,
+  "completion_hart_h": null,
+  "bands": "hart",
+  "class_sequence": "- 0, 0 6-12, 2 18, 3 24, - 30, 4 36",
+  "class_sequence_standard": "- 0, 2 6-18, 0 24, - 30, 2 36",
+  "fsu_number": null,
+  "fsu": null,
+  "track_end": "outside a closed low at +42, +48 h (982 hPa at +48 h)"
+}

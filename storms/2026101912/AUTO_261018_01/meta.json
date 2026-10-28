@@ -1,0 +1,37 @@
+{
+  "cycle": "2026101912",
+  "name": "AUTO_261018_01",
+  "status": "ok",
+  "code_version": "965c858",
+  "seed": {
+    "lat": 75.23,
+    "lon": -20.41,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "track of 2026101812 at +24 h"
+  },
+  "start_fhr": 0,
+  "end_fhr": 18,
+  "fixes": 3,
+  "start": {
+    "lat": 75.23,
+    "lon": -20.44,
+    "mslp_hpa": 988.2
+  },
+  "end": {
+    "lat": 70.62,
+    "lon": -27.75,
+    "mslp_hpa": 1009.2
+  },
+  "min_mslp_hpa": 988.2,
+  "onset_standard_h": null,
+  "completion_standard_h": null,
+  "onset_hart_h": null,
+  "completion_hart_h": null,
+  "bands": "hart",
+  "class_sequence": "- 0-18",
+  "class_sequence_standard": "- 0-18",
+  "fsu_number": null,
+  "fsu": null,
+  "track_end": "outside a closed low at +24, +30 h (997 hPa at +30 h)"
+}

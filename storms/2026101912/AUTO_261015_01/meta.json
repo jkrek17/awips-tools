@@ -1,0 +1,43 @@
+{
+  "cycle": "2026101912",
+  "name": "AUTO_261015_01",
+  "status": "ok",
+  "code_version": "965c858",
+  "seed": {
+    "lat": 57.77,
+    "lon": 175.5,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "stored seed of 2026101812; the track of 2026101812 has no fix at +24 h"
+  },
+  "start_fhr": 0,
+  "end_fhr": 6,
+  "fixes": 2,
+  "start": {
+    "lat": 57.53,
+    "lon": -178.26,
+    "mslp_hpa": 1001.5
+  },
+  "end": {
+    "lat": 56.27,
+    "lon": -171.24,
+    "mslp_hpa": 998.2
+  },
+  "min_mslp_hpa": 998.2,
+  "onset_standard_h": 0,
+  "completion_standard_h": null,
+  "onset_hart_h": null,
+  "completion_hart_h": null,
+  "bands": "hart",
+  "class_sequence": "- 0-6",
+  "class_sequence_standard": "- 0-6",
+  "fsu_number": null,
+  "fsu": null,
+  "track_end": "merged into AUTO_261014_02 at +18 h",
+  "merged_into": {
+    "name": "AUTO_261014_02",
+    "fhr": 18,
+    "distance_km": 0
+  },
+  "note": "merged into AUTO_261014_02 at +18 h"
+}

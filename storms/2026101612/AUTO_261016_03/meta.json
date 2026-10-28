@@ -1,0 +1,43 @@
+{
+  "cycle": "2026101612",
+  "name": "AUTO_261016_03",
+  "status": "ok",
+  "code_version": "7b65306",
+  "seed": {
+    "lat": 84.97,
+    "lon": 64.62,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "stored seed"
+  },
+  "start_fhr": 0,
+  "end_fhr": 0,
+  "fixes": 1,
+  "start": {
+    "lat": 84.97,
+    "lon": 64.62,
+    "mslp_hpa": 975.6
+  },
+  "end": {
+    "lat": 84.97,
+    "lon": 64.62,
+    "mslp_hpa": 975.6
+  },
+  "min_mslp_hpa": 975.6,
+  "onset_standard_h": 0,
+  "completion_standard_h": 0,
+  "onset_hart_h": null,
+  "completion_hart_h": 0,
+  "bands": "hart",
+  "class_sequence": "- 0",
+  "class_sequence_standard": "4 0",
+  "fsu_number": null,
+  "fsu": null,
+  "track_end": "outside a closed low at +12, +18 h (981 hPa at +18 h)",
+  "discovered": {
+    "lat": 84.97,
+    "lon": 64.62,
+    "mslp_hpa": 975.63,
+    "basin": "85.0N 64.6E"
+  }
+}

@@ -1,0 +1,3 @@
+fhr,valid,lat,lon,mslp_hpa,hvtl,hvtu,hb,idx,class,hvtl_hart,hvtu_hart,hb_track,motion_kt,heading_deg,steering_heading_deg,steering_kt,hb_hart,class_hart
+0,2026-10-19T12:00Z,80.64,26.46,972.6,186.2,-88.6,29.1,1.20,3,104.0,-72.1,64.7,3.3,117.0,24.4,5.8,40.1,3
+6,2026-10-19T18:00Z,80.49,28.25,973.2,274.8,-35.3,,1.64,,207.6,-11.1,59.1,3.3,117.0,174.7,2.7,36.2,

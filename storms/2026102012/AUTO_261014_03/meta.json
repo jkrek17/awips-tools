@@ -1,0 +1,37 @@
+{
+  "cycle": "2026102012",
+  "name": "AUTO_261014_03",
+  "status": "ok",
+  "code_version": "8debb60",
+  "seed": {
+    "lat": 83.08,
+    "lon": -157.0,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "track of 2026101912 at +24 h"
+  },
+  "start_fhr": 0,
+  "end_fhr": 108,
+  "fixes": 19,
+  "start": {
+    "lat": 83.3,
+    "lon": -154.35,
+    "mslp_hpa": 981.2
+  },
+  "end": {
+    "lat": 84.09,
+    "lon": 128.62,
+    "mslp_hpa": 1015.3
+  },
+  "min_mslp_hpa": 981.2,
+  "onset_standard_h": 54,
+  "completion_standard_h": 54,
+  "onset_hart_h": 60,
+  "completion_hart_h": 60,
+  "bands": "hart",
+  "class_sequence": "5 0-36, - 42-48, 5 54, 4 60-72, 5 78, - 84, 5 90, 4 96-102, - 108",
+  "class_sequence_standard": "6 0-36, - 42-48, 6 54-78, - 84, 6 90, 4 96-102, - 108",
+  "fsu_number": null,
+  "fsu": null,
+  "track_end": "no minimum within 600 km of 83.7,103.0 at or below 1039 hPa and within 1080 km of the last fix at +120 h"
+}

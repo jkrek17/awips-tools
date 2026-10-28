@@ -1,0 +1,43 @@
+{
+  "cycle": "2026101212",
+  "name": "AUTO_261009_02",
+  "status": "ok",
+  "code_version": "a85cc99",
+  "seed": {
+    "lat": 19.91,
+    "lon": -106.51,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "stored seed"
+  },
+  "start_fhr": 0,
+  "end_fhr": 192,
+  "fixes": 30,
+  "start": {
+    "lat": 20.46,
+    "lon": -106.19,
+    "mslp_hpa": 982.4
+  },
+  "end": {
+    "lat": 25.85,
+    "lon": -109.57,
+    "mslp_hpa": 1009.4
+  },
+  "min_mslp_hpa": 982.4,
+  "onset_standard_h": 102,
+  "completion_standard_h": 102,
+  "onset_hart_h": null,
+  "completion_hart_h": 60,
+  "bands": "hart",
+  "class_sequence": "- 0-24, 0 30, - 36, 0 42, 6 48, - 60-114, 1 126-132, 5 138-144, - 150-192",
+  "class_sequence_standard": "- 0-24, 0 30, - 36, 2 42-48, - 60-114, 1 126, 4 132-144, - 150-192",
+  "fsu_number": 3,
+  "fsu": {
+    "number": 3,
+    "lat": 20.86,
+    "lon": -106.06,
+    "distance_km": 46,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26101212/3.html"
+  },
+  "fsu_source": "carried over offline from the match of the original collection (FSU's page for older cycles is no longer online); compare.png rebuilt with the recomputed phase.png"
+}

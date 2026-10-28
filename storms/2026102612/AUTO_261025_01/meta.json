@@ -1,0 +1,42 @@
+{
+  "cycle": "2026102612",
+  "name": "AUTO_261025_01",
+  "status": "ok",
+  "code_version": "d99e812",
+  "seed": {
+    "lat": 14.23,
+    "lon": 163.79,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "track of 2026102512 at +24 h"
+  },
+  "start_fhr": 0,
+  "end_fhr": 198,
+  "fixes": 34,
+  "start": {
+    "lat": 14.18,
+    "lon": 162.74,
+    "mslp_hpa": 942.7
+  },
+  "end": {
+    "lat": 27.8,
+    "lon": 144.25,
+    "mslp_hpa": 970.0
+  },
+  "min_mslp_hpa": 942.7,
+  "onset_standard_h": 174,
+  "completion_standard_h": null,
+  "onset_hart_h": 180,
+  "completion_hart_h": null,
+  "bands": "hart",
+  "class_sequence": "- 0-18, 0 24-114, - 120-126, 0 132-144, - 150, 0 156-174, 2 180-198",
+  "class_sequence_standard": "- 0-18, 0 24-114, - 120-126, 0 132-144, - 150, 0 156-168, 2 174-198",
+  "fsu_number": 4,
+  "fsu": {
+    "number": 4,
+    "lat": 14.24,
+    "lon": 162.58,
+    "distance_km": 18,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26102612/4.html"
+  }
+}

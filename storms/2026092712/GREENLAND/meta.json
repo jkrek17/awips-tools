@@ -1,0 +1,44 @@
+{
+  "cycle": "2026092712",
+  "name": "GREENLAND",
+  "status": "ok",
+  "code_version": "4d645b0-dirty",
+  "seed": {
+    "lat": 65.4,
+    "lon": -20.99,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "stored seed"
+  },
+  "start_fhr": 0,
+  "end_fhr": 24,
+  "fixes": 5,
+  "start": {
+    "lat": 65.91,
+    "lon": -18.98,
+    "mslp_hpa": 989.6
+  },
+  "end": {
+    "lat": 67.16,
+    "lon": -10.94,
+    "mslp_hpa": 994.5
+  },
+  "min_mslp_hpa": 988.2,
+  "onset_standard_h": 12,
+  "completion_standard_h": null,
+  "onset_hart_h": null,
+  "completion_hart_h": null,
+  "bands": "hart",
+  "class_sequence": "- 0, 1 6, - 12, 1 18, 3 24",
+  "class_sequence_standard": "- 0, 3 6, - 12, 3 18, 4 24",
+  "fsu_number": 13,
+  "fsu": {
+    "number": 13,
+    "lat": 63.25,
+    "lon": -18.19,
+    "distance_km": 298,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092712/13.html"
+  },
+  "track_end": "outside a closed low at +30, +36 h (1007 hPa at +36 h)",
+  "fsu_source": "carried over offline from the match of the original collection (FSU's page for older cycles is no longer online); compare.png rebuilt with the recomputed phase.png"
+}

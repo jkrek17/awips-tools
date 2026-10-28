@@ -1,0 +1,50 @@
+{
+  "cycle": "2026092418",
+  "name": "AUTO_260924_02",
+  "status": "ok",
+  "code_version": "e957235",
+  "seed": {
+    "lat": 55.23,
+    "lon": 175.04,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "stored seed"
+  },
+  "start_fhr": 0,
+  "end_fhr": 90,
+  "fixes": 16,
+  "start": {
+    "lat": 55.23,
+    "lon": 175.04,
+    "mslp_hpa": 964.3
+  },
+  "end": {
+    "lat": 56.71,
+    "lon": -157.42,
+    "mslp_hpa": 991.3
+  },
+  "min_mslp_hpa": 964.3,
+  "onset_standard_h": null,
+  "completion_standard_h": null,
+  "onset_hart_h": null,
+  "completion_hart_h": 36,
+  "bands": "hart",
+  "class_sequence": "1 0, 5 6, - 12-30, 1 36, 5 42-48, 1 54, 5 60-66, 1 72, 5 78, 1 84-90",
+  "class_sequence_standard": "1 0-6, - 12-30, 1 36-90",
+  "fsu_number": 8,
+  "fsu": {
+    "number": 8,
+    "lat": 55.3,
+    "lon": 174.97,
+    "distance_km": 9,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26092418/8.html"
+  },
+  "track_end": "no minimum within 600 km of 55.6,-156.5 at or below 1015 hPa and within 1080 km of the last fix at +102 h",
+  "discovered": {
+    "lat": 55.23,
+    "lon": 175.04,
+    "mslp_hpa": 964.27,
+    "basin": "NPAC"
+  },
+  "fsu_source": "carried over offline from the match of the original collection (FSU's page for older cycles is no longer online); compare.png rebuilt with the recomputed phase.png"
+}

@@ -1,0 +1,38 @@
+{
+  "cycle": "2026102012",
+  "name": "AUTO_261017_02",
+  "status": "ok",
+  "code_version": "8debb60",
+  "seed": {
+    "lat": 64.83,
+    "lon": -52.59,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "stored seed of 2026101912; the track of 2026101912 has no fix at +24 h"
+  },
+  "start_fhr": 0,
+  "end_fhr": 0,
+  "fixes": 1,
+  "start": {
+    "lat": 64.26,
+    "lon": -52.97,
+    "mslp_hpa": 1002.3
+  },
+  "end": {
+    "lat": 64.26,
+    "lon": -52.97,
+    "mslp_hpa": 1002.3
+  },
+  "min_mslp_hpa": 1002.3,
+  "onset_standard_h": 0,
+  "completion_standard_h": 0,
+  "onset_hart_h": null,
+  "completion_hart_h": 0,
+  "bands": "hart",
+  "class_sequence": "- 0",
+  "class_sequence_standard": "4 0",
+  "fsu_number": null,
+  "fsu": null,
+  "track_end": "outside a closed low at +12, +18 h (1004 hPa at +18 h)",
+  "ended": "filled: 0 h MSLP above 1000 hPa in 2 consecutive cycles; marked inactive"
+}

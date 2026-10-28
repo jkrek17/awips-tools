@@ -1,0 +1,43 @@
+{
+  "cycle": "2026102112",
+  "name": "EPAC",
+  "status": "ok",
+  "code_version": "e7d744c",
+  "seed": {
+    "lat": 29.5,
+    "lon": -128.02,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "track of 2026102012 at +24 h"
+  },
+  "start_fhr": 0,
+  "end_fhr": 12,
+  "fixes": 3,
+  "start": {
+    "lat": 29.92,
+    "lon": -128.27,
+    "mslp_hpa": 1006.6
+  },
+  "end": {
+    "lat": 28.81,
+    "lon": -124.62,
+    "mslp_hpa": 1008.9
+  },
+  "min_mslp_hpa": 1006.6,
+  "onset_standard_h": 0,
+  "completion_standard_h": 0,
+  "onset_hart_h": 0,
+  "completion_hart_h": 0,
+  "bands": "hart",
+  "class_sequence": "- 0-12",
+  "class_sequence_standard": "- 0-12",
+  "fsu_number": 1,
+  "fsu": {
+    "number": 1,
+    "lat": 30.46,
+    "lon": -128.52,
+    "distance_km": 65,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26102112/1.html"
+  },
+  "track_end": "outside a closed low at +18, +24 h (1012 hPa at +24 h)"
+}

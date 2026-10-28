@@ -1,0 +1,44 @@
+{
+  "cycle": "2026100200",
+  "name": "AUTO_260930_01",
+  "status": "ok",
+  "code_version": "4d645b0-dirty",
+  "seed": {
+    "lat": 79.29,
+    "lon": 112.29,
+    "fhr0": 0,
+    "fhr1": null,
+    "source": "stored seed"
+  },
+  "start_fhr": 0,
+  "end_fhr": 60,
+  "fixes": 11,
+  "start": {
+    "lat": 79.29,
+    "lon": 112.29,
+    "mslp_hpa": 980.7
+  },
+  "end": {
+    "lat": 81.71,
+    "lon": 132.38,
+    "mslp_hpa": 1006.0
+  },
+  "min_mslp_hpa": 979.6,
+  "onset_standard_h": 0,
+  "completion_standard_h": 0,
+  "onset_hart_h": 24,
+  "completion_hart_h": 24,
+  "bands": "hart",
+  "class_sequence": "5 0-6, - 12, 4 18-24, - 30, 4 36-54, - 60",
+  "class_sequence_standard": "6 0-6, - 12, 6 18-24, - 30, 4 36-54, - 60",
+  "fsu_number": 39,
+  "fsu": {
+    "number": 39,
+    "lat": 79.14,
+    "lon": 106.45,
+    "distance_km": 123,
+    "url": "http://moe.met.fsu.edu/cyclonephase/gfs/fcst/archive/26100200/39.html"
+  },
+  "track_end": "outside a closed low at +66, +72 h (1010 hPa at +72 h)",
+  "fsu_source": "carried over offline from the match of the original collection (FSU's page for older cycles is no longer online); compare.png rebuilt with the recomputed phase.png"
+}
