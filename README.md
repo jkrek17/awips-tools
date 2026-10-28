@@ -4,10 +4,10 @@ AWIPS tools and procedures.
 
 ## Contents
 
+The cyclone phase space project (the AWIPS derived parameters, the live global map, the article and the forecasters' guide) moved to its own repository, [jkrek17/cyclone](https://github.com/jkrek17/cyclone), with its site at https://jkrek17.github.io/cyclone/.
+
 | Path | What it is |
 |---|---|
-| `cyclone_phase_space/` | Hart cyclone phase space as AWIPS D2D derived parameters: the AWIPS install tree, a storm-centered reference implementation, tests, guides and the published article. See `cyclone_phase_space/README.md`. |
-| `docs/cps/` | Not committed - staged from `cyclone_phase_space/article/` by the Pages workflow (`.github/workflows/pages.yml`) on every build. |
 | `GFE/` | GFE procedures, smart tools and shared utilities. |
 | `legacy_tools/` | Earlier versions kept for reference; see `legacy_tools/VERSION_CONTROL.md`. |
 | `tests/tcwind_jtwc/` | Parser goldens, Python/JavaScript parity, and the GTCM verification. |
