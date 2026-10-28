@@ -11,9 +11,9 @@
 # time; the weekly job there writes them Mondays 06:00 UTC), the globe kit the globe pages load
 # (globe_kit/, served at /globe-kit/: MapLibre, the shared look and script, the
 # land outline), the IBM Plex fonts the projects index uses (fonts/) and
-# nothing else; the cyclone phase space pages (the live map, the article and
-# the forecasters' guide) have their own site, published by
-# cyclone_publish.yml to jkrek17/cyclone, and are not on this one. It is pushed as the
+# nothing else; the cyclone phase space project, with its live map, article
+# and forecasters' guide, lives in the repository jkrek17/cyclone and
+# publishes its own site at https://jkrek17.github.io/cyclone/. It is pushed as the
 # single commit of the public repository's main branch with the token in the
 # secret WEB_TOKEN (a fine-grained personal access token scoped to the public
 # repository with Contents: read and write). The public repository serves it
@@ -44,7 +44,6 @@ on:
   push:
     branches: [main]
     paths:
-      - 'cyclone_phase_space/article/live/fonts/**'
       - 'marine_wind/page/**'
       - 'marine_wind/verification_page/**'
       - 'marine_wind/high_seas_page/**'
@@ -132,7 +131,7 @@ jobs:
           # The IBM Plex fonts the projects index (the site root, built after
           # the kept folders) uses, at /fonts/.
           mkdir -p "$site/fonts"
-          cp -r cyclone_phase_space/article/live/fonts/. "$site/fonts/"
+          cp -r globe_kit/fonts/. "$site/fonts/"
           # The marine wind page with the newest run beside it, at /marine-wind/.
           mkdir -p "$site/marine-wind/data"
           cp -r marine_wind/page/. "$site/marine-wind/"
@@ -195,8 +194,8 @@ jobs:
           TOKEN: ${{ secrets.WEB_TOKEN }}
           # Folders this workflow writes (marine-wind, verification, high-seas,
           # research-scores, globe-kit, fonts), plus the ones it used to write
-          # and no longer does (cyclone, article and forecasters, now on
-          # their own site; data/ and basemap/, from when the map was the
+          # and no longer does (cyclone, article and forecasters, now the
+          # jkrek17/cyclone repository's own site; data/ and basemap/, from when the map was the
           # root page), which are therefore not carried forward and drop off
           # the site.
           OWN_FOLDERS: cyclone article forecasters marine-wind verification high-seas research-scores globe-kit data fonts basemap
