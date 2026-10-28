@@ -2,7 +2,7 @@
    The low centers, MSLP contours, the thermal asymmetry and thermal wind
    rasters and the storm tracks, animated over the forecast hours of the
    latest cycle, on a MapLibre GL (WebGL) globe from the site's globe kit
-   (../globe-kit/globe-kit.js, window.GlobeKit), in the look of the /ndfd/
+   (globe-kit/globe-kit.js, window.GlobeKit), in the look of the /ndfd/
    globe page.
 
    The rasters (Mercator images of the whole map, 85N to 85S) are one
@@ -18,8 +18,8 @@
 const K = window.GlobeKit;
 const FALLBACK_DATA = 'https://raw.githubusercontent.com/jkrek17/awips-tools/cps-live/latest/';
 const LOCAL_DATA = 'data/latest/';  // beside the page when served from the web repository
-const ARTICLE_URL = 'https://jkrek17.github.io/web/article/';  // published with this page
-const GUIDE_URL = 'https://jkrek17.github.io/web/forecasters/';  // the plain-language explainer, published with this page
+const ARTICLE_URL = 'article/';  // published beside this page, which is the site root
+const GUIDE_URL = 'forecasters/';  // the plain-language explainer, published beside this page
 const LABEL_ZOOM = 3;            // pressures at the lows and every isobar from this zoom
 const WIDE_CINT = 8;             // below LABEL_ZOOM, isobars thinned to every 8 hPa
 const CLABEL_ZOOM = 2;           // labels on the bold isobars from this zoom

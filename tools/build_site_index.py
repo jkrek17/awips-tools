@@ -13,7 +13,7 @@ description.
 
 The page uses the wxmap.pro house style (light and dark with a theme switch,
 and its landing page's animated low as the hero) and the self-hosted IBM Plex
-fonts published under cyclone/fonts/.
+fonts published under fonts/.
 
 Usage:
     python3 tools/build_site_index.py SITE_DIR      # writes SITE_DIR/index.html
@@ -28,7 +28,7 @@ import sys
 from html.parser import HTMLParser
 from pathlib import Path
 
-FONTS = 'cyclone/fonts/'
+FONTS = 'fonts/'
 TEST_TAG = re.compile(r'^\[test(?::\s*([^\]]*))?\]\s*', re.I)
 
 
@@ -337,12 +337,6 @@ def render(projects: list[dict]) -> str:
 <title>Projects</title>
 <meta name="description" content="Every project published on this site.">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<script>
-// The live map used to be the root page and keeps its view in the hash (and
-// test data in ?data=), so old links with either go on to the map. #projects
-// is this page's own anchor.
-if ((location.hash.length > 1 && location.hash !== '#projects') || /[?&]data=/.test(location.search)) location.replace('cyclone/' + location.search + location.hash);
-</script>
 <link rel="icon" href="{FAVICON}">
 <style>
 {CSS}</style>
@@ -367,7 +361,7 @@ if ((location.hash.length > 1 && location.hash !== '#projects') || /[?&]data=/.t
       <div class="hero-copy">
         <p class="eyebrow">Marine forecasting · tools and research</p>
         <h1>Forecast tools, live maps and the studies behind them.</h1>
-        <p class="lede">Ocean wind and cyclone guidance, verification scores, and the research that tunes them, published here as they are built.</p>
+        <p class="lede">Ocean wind guidance, verification scores, and the research that tunes them, published here as they are built.</p>
         <div class="actions">
           <a class="btn btn-primary" href="#projects">Browse projects
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M8 3v10M4 9l4 4 4-4"/></svg></a>

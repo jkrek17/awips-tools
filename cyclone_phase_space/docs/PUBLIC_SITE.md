@@ -57,9 +57,40 @@ accepts `?data=<url>` for tests.
    the site and force-pushes it as the single commit of the public
    repository's `main` branch.
 5. In the public repository: Settings > Pages > Source "Deploy from a
+   branch", branch `main`, folder `/ (root)`. The projects index is then
+   at `https://jkrek17.github.io/web/`.
+
+## The cyclone phase space site (its own repository)
+
+The live map, the article and the forecasters' guide are published on a
+site of their own, with no link to the projects site, so they can be
+shared on their own: `cyclone_publish.yml` pushes them to the public
+repository `jkrek17/cyclone` (the map at the root, loading the globe
+kit as `globe-kit/`, its data under `data/`, the article at `article/`
+with the interactive 3-D phase space at `article/figures/`, and the
+guide at `forecasters/`; the pages link to each other with relative
+links). It runs after every live export and daily collection, on a push
+that changes the pages, and by hand. One-time setup:
+
+1. Create the public repository `jkrek17/cyclone` (empty or with a
+   README; the first publish replaces its `main`).
+2. Create a fine-grained token as in step 2 above, with repository
+   access to `cyclone` only and Contents: Read and write.
+3. In `awips-tools`: Settings > Secrets and variables > Actions > New
+   repository secret `CYCLONE_TOKEN` with the token. (A repository
+   variable `CYCLONE_SITE_REPO` overrides the repository name; it is
+   not needed for `jkrek17/cyclone`.)
+4. Run Actions > "Publish cyclone site" > Run workflow once.
+5. In `jkrek17/cyclone`: Settings > Pages > Source "Deploy from a
    branch", branch `main`, folder `/ (root)`. The map is then at
-   `https://jkrek17.github.io/web/cyclone/`, under the projects index at
-   `https://jkrek17.github.io/web/`.
+   `https://jkrek17.github.io/cyclone/`, the article at
+   `https://jkrek17.github.io/cyclone/article/` and the guide at
+   `https://jkrek17.github.io/cyclone/forecasters/`.
+
+The projects site no longer carries these pages: `site_publish.yml`
+owns the `cyclone/`, `article/` and `forecasters/` folders without
+writing them, so they drop off `jkrek17/web` at its next publish and the
+old `/web/cyclone/` links stop working.
 6. Make this repository private whenever you want. Two consequences:
    the article at `jkrek17.github.io/awips-tools/cps/` stops being served
    (Pages needs a public repository on a free account), so move the
