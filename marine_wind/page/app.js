@@ -84,8 +84,8 @@
     colors: ["rgba(0,0,0,0)", "#2c4a6a", "#3c8a96", "#c9c35a", "#e8a93f", "#e06f2e", "#c9372c", "#c86fd8"],
     unit: "%", title: "Storm core chance (%)"
   };
-  // the storm layers' "possible" lines (hazard bits 1, 2, 4)
-  var HAZARD = [[1, "Gale possible", "#fbbf24"], [2, "Storm possible", "#f97316"], [4, "HF possible", "#e879f9"]];
+  // the storm layers' "members agree" lines (hazard bits 1, 2, 4; called "possible" before 29 Oct 2026)
+  var HAZARD = [[1, "Gale, members agree", "#fbbf24"], [2, "Storm, members agree", "#f97316"], [4, "HF, members agree", "#e879f9"]];
   // the warning areas, drawn dashed beside them (field warn, same bits and colours)
   var WARN = [[1, "Gale warning area", "#fbbf24"], [2, "Storm warning area", "#f97316"], [4, "HF warning area", "#e879f9"]];
 
@@ -123,7 +123,7 @@
 
   // ------------------------------------------------------------------- state
   var man = null, grid = null, fieldIx = {}, cache = {}, order = [], frame = null;
-  var state = { layer: "wind", step: 0, lone: true, msl: true, arrows: false, edges: true, tested: true, view: "global", opacity: 0.85, hazard: true, warn: true, track: true };
+  var state = { layer: "wind", step: 0, lone: true, msl: true, arrows: false, edges: true, tested: true, view: "global", opacity: 0.85, hazard: false, warn: true, track: true };
   var map = null, ov = null, octx = null, overlay = $("overlay");
   var hover = null, playTimer = null, lines = null, areas = [], labels = [], rail = null;
   var MAXLAT = K.MAXLAT, TILE = 256, paint = null, paintVersion = 0;
@@ -744,7 +744,7 @@
     if (state.tested) keys.push('<span><i style="border-top:2px dotted ' + TESTED_COLOR + '"></i>Tested area</span>');
     if (state.hazard && hasStorm()) {
       keys.push.apply(keys, HAZARD.map(function (d) { return '<span><i style="border-top:2px solid ' + d[2] + '"></i>' + d[1] + "</span>"; }));
-      keys.push('<span class="wide">Possible lines use the raw member shares (gale 30%+ at 34 kt) and the storm core chance</span>');
+      keys.push('<span class="wide">Members-agree lines use the raw member shares (gale 30%+ at 34 kt) and the storm core chance; they sit inside the warning areas</span>');
     }
     if (state.warn && hasWarn()) {
       keys.push.apply(keys, WARN.map(function (d) { return '<span><i style="border-top:2px dashed ' + d[2] + '"></i>' + d[1] + "</span>"; }));
@@ -800,7 +800,7 @@
     if (hasStorm()) {
       var hzA = { 2: 0, 4: 0 };
       viewCells(function (k, j) { var hb = frame.hazard[k]; if (hb & 2) hzA[2] += 27.8 * 27.8 * Math.cos(gLat(j) * Math.PI / 180); if (hb & 4) hzA[4] += 27.8 * 27.8 * Math.cos(gLat(j) * Math.PI / 180); });
-      h += "<p>Storm possible <b>" + area(hzA[2]) + "</b>, hurricane force possible <b>" + area(hzA[4]) + "</b></p>";
+      h += "<p>Storm, members agree <b>" + area(hzA[2]) + "</b>, hurricane force, members agree <b>" + area(hzA[4]) + "</b></p>";
     }
     if (tracks.length) {
       var step = man.steps[state.step].step, tv = tracks.map(function (t) { return trackAt(t, step); }).filter(function (p) { return p && inView(p.lon, p.lat); });
@@ -852,7 +852,7 @@
       "<tr><td>Pressure</td><td>" + V("msl") + " hPa</td></tr>" +
       (hasStorm() ? '<tr class="sep"><td>Core Lifted</td><td>' + fmt(V("windcore")) + " kt</td></tr>" +
         "<tr><td>Storm core chance</td><td>" + (Math.abs(lat) < 25 ? "not made" : fmt(V("core")) + "%") + "</td></tr>" +
-        (b.hazard[k] ? "<tr><td>Possible</td><td>" + HAZARD.filter(function (d) { return b.hazard[k] & d[0]; }).map(function (d) { return d[1].replace(" possible", ""); }).join(", ") + "</td></tr>" : "") +
+        (b.hazard[k] ? "<tr><td>Members agree</td><td>" + HAZARD.filter(function (d) { return b.hazard[k] & d[0]; }).map(function (d) { return d[1].replace(", members agree", ""); }).join(", ") + "</td></tr>" : "") +
         (b.warn && b.warn[k] ? "<tr><td>Warning area</td><td>" + WARN.filter(function (d) { return b.warn[k] & d[0]; }).map(function (d) { return d[1].replace(" warning area", ""); }).join(", ") + "</td></tr>" : "") : "") +
       "</table>" +
       (notes.length ? '<div class="note-line">' + notes.join("; ") + "</div>" : "");
