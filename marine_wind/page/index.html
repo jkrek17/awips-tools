@@ -53,6 +53,7 @@
       </div>
       <button type="button" class="btn btn-ghost" id="score-btn" aria-controls="scorecard" aria-expanded="false">Scorecard</button>
       <button type="button" class="btn btn-ghost" id="about-btn" aria-controls="about" aria-expanded="false">How it's made</button>
+      <a class="btn btn-ghost" id="recipeLink" href="recipe/" title="The forecast recipe: how the blend, lifts, warning areas and lows are built, with their scores">Recipe</a>
       <a class="btn btn-ghost" id="verifLink" href="../verification/" title="How the models and blends have verified">Verification</a>
       <a class="btn btn-ghost" id="homeLink" href="../">All projects</a>
       <button type="button" class="icon-btn" id="btnLayers" aria-label="Layers" aria-controls="panel" aria-expanded="true" title="Layers (L)"></button>
@@ -162,6 +163,7 @@
   <div class="sheet-body">
     <button type="button" class="icon-btn icon-btn-sm close" id="about-close" aria-label="Close"></button>
     <h2>How the blended wind is made</h2>
+    <p><a href="recipe/">The forecast recipe</a>: every step from blend to warning areas, with its held-out score, on one page.</p>
     <p><b>Blended wind</b> = a weighted average of the GFS, ECMWF and AIFS 10 m wind speeds, plus a quarter of the spread of about 80 ensemble members (31 GEFS and 50 or 51 ECMWF ENS), capped at 5 kt. At +24 h and earlier it adds 15% of the spread instead. Direction comes from the average wind vector.</p>
     <p>Each model is weighted at each point by how many ensemble members are within about 5 kt of it, so a model out on its own counts for less. On 200 test cases this trimmed the error in 25+ kt winds by about 0.1 kt over a plain average. Since 17 Oct 2026 AIFS counts half as much as GFS and ECMWF: on five held-out winter weeks per basin this raised the Core Lifted gale hit score (CSI) from 0.618 to 0.630 in the Atlantic and 0.602 to 0.618 in the Pacific, caught more of the storm force ASCAT saw (59% to 62%, 42% to 50%) and cut the low bias at buoys in 34+ kt winds from about 1.2 kt to 0.5 kt, with gale false alarms up a little (0.125 to 0.149, 0.145 to 0.166). Leaving AIFS out altogether failed in the Pacific.</p>
     <p>Averaging three models flattens the peaks, so the plain average forecasts only about 70% of the gale area that verifies. Adding a little of the spread restores it. Tested on 345 past North Atlantic cases from three seasons, scored against the GFS and ECMWF analyses and against buoys and ships:</p>

@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Marine Wind · Forecast recipe</title>
+<meta name="description" content="The forecast recipe the marine wind project has arrived at: how to turn GFS, ECMWF, the AI models and their ensembles into the most likely wind, warning areas and lows, each step with its held-out score against ASCAT.">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f7f8fa">
+<meta name="color-scheme" content="light">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Cpath d=%22M2 5h8a2 2 0 1 0-2-2M2 8h11a2 2 0 1 1-2 2M2 11h6%22 fill=%22none%22 stroke=%22%230b5fa5%22 stroke-width=%221.4%22 stroke-linecap=%22round%22/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <nav class="crumbs">
+    <a href="../">&larr; Marine Wind map</a>
+    <a href="../../verification/">Verification</a>
+  </nav>
+  <h1>The forecast recipe</h1>
+  <p class="lede">How to turn all the model output into the most likely wind, the warning areas and the lows. Each step was tested on weeks held back from tuning, winter 2025-26, against ASCAT unless it says otherwise. The number beside each step is what it earned.</p>
+</header>
+
+<main>
+
+<section class="glance" aria-labelledby="glance-h">
+  <h2 id="glance-h">At a glance</h2>
+  <ol class="steps">
+    <li><b>Blend the wind:</b> GFS, ECMWF and the AI model at half weight, over the latest three runs.</li>
+    <li><b>Lean into the spread:</b> add a quarter of the spread, capped at 5 kt.</li>
+    <li><b>Lift the cores, not the field:</b> +5 kt where a storm core is likely, 34 kt where a gale core is.</li>
+    <li><b>Draw warning areas from the strongest signal,</b> never from the most likely wind.</li>
+    <li><b>Let the members vote on the lows;</b> trust their depth range, not their position spread.</li>
+    <li><b>Read raw chances as low,</b> and never draw from the 64 kt chance alone.</li>
+    <li><b>Spend desk time on storm cores,</b> day 1-2, above all in the Pacific.</li>
+  </ol>
+</section>
+
+<section aria-labelledby="s1">
+  <h2 id="s1"><span class="n">1</span> Blend the wind</h2>
+  <p>Average GFS, ECMWF and the AI model, with the AI model at half weight. Use the current run and the runs 12 h and 24 h older of each.</p>
+  <ul class="facts">
+    <li>The blend is <b>0.6 to 1.9 kt closer to ASCAT</b> than GFS or ECMWF alone in 25 kt+ water, days 1-5 (Atlantic winter).</li>
+    <li>Against the plain 3-model mean it raises gale skill (CSI) by <b>.03 Atlantic, .04 Pacific</b>, and cuts buoy error by <b>0.4 kt</b>. That held on 40 Atlantic cycles it was never tuned on.</li>
+    <li>The AI model at half weight adds <b>2 to 3 points of storm catch in the Atlantic and 8 in the Pacific</b> over full weight. AIFS runs about 4 kt low at gales in cold air.</li>
+    <li>The older runs add about <b>2 points of storm catch</b> in both basins, but only with step 2. Lagging without the spread lean scores worse than the latest run alone.</li>
+  </ul>
+</section>
+
+<section aria-labelledby="s2">
+  <h2 id="s2"><span class="n">2</span> Lean into the spread</h2>
+  <p>Averaging flattens the peaks, so add <b>a quarter of the spread</b> across the runs or members (0.15 on day 1), <b>capped at 5 kt</b>. This is a deliberate lean toward roughly the 60th percentile, not a bias correction: it puts back the gale area that averaging removes.</p>
+  <ul class="facts">
+    <li>Gale area goes from <b>0.7 to about 1.0 times</b> what verifies.</li>
+    <li>Dropping it costs <b>7 to 8 points of storm catch</b>.</li>
+    <li>Do not raise it for storm force: a bigger lean over-forecasts storm area. That is step 3's job.</li>
+  </ul>
+</section>
+
+<section aria-labelledby="s3">
+  <h2 id="s3"><span class="n">3</span> Lift the cores, not the field</h2>
+  <p>The models put the cores in the right place but run 2 to 6 kt under ASCAT's peaks, more with lead time. They are too smooth, not too shallow. So lift only where a core is likely:</p>
+  <ul class="facts">
+    <li><b>+5 kt where the storm-core likelihood is 35% or more.</b> Storm-force catch goes from <b>15% to 49%</b> of ASCAT storm tiles, with 15% false alarms. On the GFS + ECMWF blend the same lift takes storm catch from <b>36% to 59% Atlantic, 22% to 36% Pacific</b>.</li>
+    <li><b>Then 34 kt where the gale-core chance is 60% or more.</b> Gale catch goes from <b>63% to 76% Atlantic</b> at 1.2 times the ASCAT area, and <b>55% to 67% Pacific</b> at 1.25 times.</li>
+    <li>+8 kt instead of +5 doubles the false alarms. Boosting the whole grid never paid.</li>
+  </ul>
+  <p class="note">The result is the page's <b>Core Lifted</b> wind: the most likely wind.</p>
+</section>
+
+<section aria-labelledby="s4">
+  <h2 id="s4"><span class="n">4</span> Warning areas from the strongest signal</h2>
+  <p>The most likely wind is the wrong thing to warn from: it is built to be right on average, and a miss costs more than a false alarm. Each warning line comes from its own rule.</p>
+  <div class="warn-list">
+    <div class="warn gale">
+      <h3>Gale</h3>
+      <p><b>Strongest model at 30 kt.</b> Covers about <b>97%</b> of ASCAT gale water, at no more area than the desk's grids.</p>
+    </div>
+    <div class="warn storm">
+      <h3>Storm</h3>
+      <p><b>Core Lifted at 39 kt.</b> Covers <b>93%</b> of ASCAT storm water at <b>2.1 times</b> its area. Desk grids draw 3.6 times, the issued text 5 to 6 times.</p>
+    </div>
+    <div class="warn hf">
+      <h3>Hurricane force</h3>
+      <p><b>Strongest model at 44 kt, where at least one member in a hundred has 64 kt nearby.</b> Catches <b>81%</b> of hurricane-force lows within 150 km (issued text 53% at the same area). About 4 in 5 of these areas hold no hurricane-force low: mostly storm cores, about 1 in 5 Greenland tip jets. That over-warning is on purpose.</p>
+    </div>
+  </div>
+  <ul class="facts">
+    <li>Do not throw out a lone storm-force model. Alone at 48 kt it still verifies storm force within 50 km about <b>3 to 4 times in 5</b>. GFS is the lone model 4 times in 5.</li>
+  </ul>
+</section>
+
+<section aria-labelledby="s5">
+  <h2 id="s5"><span class="n">5</span> Let the members vote on the lows</h2>
+  <p>Every ensemble member and deterministic run votes for its own lows. Keep a low where enough of them carry one, at their average position and median depth. Never take depth from the plain ensemble mean: it fills the lows by about 10 hPa by day 7.</p>
+  <ul class="facts">
+    <li>Days 5-7, the vote beats ECMWF, GFS and AIFS at every lead: <b>26 to 100 km closer</b> on position and <b>0.7 to 3.5 hPa closer</b> on central pressure, with ECMWF's rate of false lows.</li>
+    <li><b>Trust the depth range.</b> The members' range holds the analysed pressure about <b>4 times in 5</b> and widens when the error does.</li>
+    <li><b>Ignore the position spread.</b> It does not predict the position error. Draw one ring per lead that holds half the lows (about 320, 370, 410 km at day 5, 6, 7).</li>
+    <li>Days 1-5: the ensemble low track with a cone of 1.2 times the members' spread holds the low about <b>2 times in 3</b> (roughly 75 km wide at day 1, 375 km at day 5).</li>
+  </ul>
+</section>
+
+<section aria-labelledby="s6">
+  <h2 id="s6"><span class="n">6</span> Read the chances as low</h2>
+  <ul class="facts">
+    <li>A raw <b>30% gale share is about 40% true</b>. In the Atlantic a raw <b>7% storm share is about 30% true</b>. The page shows the corrected chances.</li>
+    <li>A storm chance of <b>50% or more verifies about 95%</b> of the time within 100 km.</li>
+    <li>The 64 kt chance has <b>no skill cell by cell</b> and cannot be corrected. Never draw from it alone.</li>
+    <li>For hurricane force, the blend's own peak sorts the cores: about <b>5%</b> reach 64 kt under a 50 kt peak, <b>43%</b> at 50-55 kt, <b>75%</b> above 55 kt.</li>
+  </ul>
+</section>
+
+<section aria-labelledby="s7">
+  <h2 id="s7"><span class="n">7</span> Where desk time pays</h2>
+  <ul class="facts">
+    <li><b>Storm cores.</b> On day 1 the desk catches <b>64%</b> of ASCAT storm-force cells, GFS 26%, the plain blend 11%. This is the one place the forecaster clearly beats the models, and Core Lifted is built to close that gap.</li>
+    <li><b>The Pacific.</b> Pacific storm force is poorly forecast by every method; the desk's grids are the tightest there.</li>
+    <li><b>Not ordinary water.</b> 85% of the water is routine (all models under 30 kt) and takes 83% of the edits, yet there the blend is <b>1 to 2 kt closer to ASCAT</b> than the finished grid.</li>
+  </ul>
+</section>
+
+<section aria-labelledby="show">
+  <h2 id="show">How to show it: one map</h2>
+  <p>Layered in the order a forecaster reads it. Wind is the only fill; everything else is a line or a mark, so nothing hides the wind.</p>
+  <ol class="layers">
+    <li><span class="sw sw-wind" aria-hidden="true"></span><div><b>Most likely wind</b> (Core Lifted) as the colour fill, in the page's wind colours.</div></li>
+    <li><span class="sw sw-warn" aria-hidden="true"></span><div><b>Warning areas</b> as dashed outlines, one colour per hazard: gale yellow, storm orange, hurricane force pink.</div></li>
+    <li><span class="sw sw-poss" aria-hidden="true"></span><div><b>"Possible" lines</b> as thinner solid lines in the same colours.</div></li>
+    <li><span class="sw sw-track" aria-hidden="true"></span><div><b>Lows</b> as the ensemble track and cone, with the GFS, ECMWF and AI model centres as small marks, since a split between the model families is the thing to notice.</div></li>
+    <li><span class="sw sw-iso" aria-hidden="true"></span><div><b>Pressure</b> as light isobars from the 3-model mean, every 4 hPa, and a label on each low with its depth range, such as <i>L 968 (960-978)</i>.</div></li>
+  </ol>
+  <p>A 24 h run-change layer shows the trend. Read it as a glance, not a lean: the truth comes back about a fifth of the way.</p>
+  <p class="note">The marine wind map draws all of this today except the depth-range labels and the day 5-7 lows, which are still to be built as a tab.</p>
+</section>
+
+<section class="awips" aria-labelledby="gfe">
+  <h2 id="gfe">On AWIPS: deterministic models plus GEFS chances</h2>
+  <p>Without ECMWF or AIFS members, this is what carries over, with the same held-out tests rerun on what AWIPS has.</p>
+  <table class="port">
+    <thead><tr><th scope="col">Step</th><th scope="col">In GFE</th></tr></thead>
+    <tbody>
+      <tr><th scope="row"><span class="ok">Ports</span> Blend</th><td>GFS + ECMWF over the latest three runs with the spread lean. Storm catch <b>37% Atlantic, 22% Pacific</b>. Adding AI-GFS cuts false Pacific gale area from 31% to 25% for 2 to 5 points of storm catch; it beats AIFS in that slot.</td></tr>
+      <tr><th scope="row"><span class="ok">Ports</span> Storm lift</th><td>The GEFS 48 kt chance stands in for the core model: storm catch <b>36% to 59% Atlantic, 22% to 36% Pacific</b>, the same as the web page, with a few more false areas. The 0.5 deg grid costs nothing.</td></tr>
+      <tr><th scope="row"><span class="ok">Ports</span> Warning grids</th><td>Gale strongest model 30 kt, storm lifted wind 39 kt, hurricane force strongest model 44 kt where the GEFS 64 kt chance is above zero (25 of 29 held-out Atlantic lows).</td></tr>
+      <tr><th scope="row"><span class="ok">Ports</span> Chances</th><td>Corrected GEFS gale chance in both basins; storm chance corrected in the Atlantic (the Pacific raw is already honest). Leave 64 kt raw.</td></tr>
+      <tr><th scope="row"><span class="part">Fallback</span> Lows</th><td>3-model mean pressure, as the High Seas draft uses now.</td></tr>
+      <tr><th scope="row"><span class="no">Not yet</span></th><td>The gale-core lift (too much area in the Pacific with GEFS alone), the core model as trained (needs ECMWF members) and the day 5-7 member vote. They come back with members. CMC and UKMET are untested.</td></tr>
+    </tbody>
+  </table>
+  <p class="note">The GFE blend procedure is written and waits on a check on a live GFE.</p>
+</section>
+
+<section aria-labelledby="cav">
+  <h2 id="cav">What to watch for</h2>
+  <ul class="facts">
+    <li><b>Winter-trained.</b> One winter, November to March, 30-67N. Not tested in the subtropics or on tropical cyclones.</li>
+    <li><b>March to October</b> the core likelihood is weaker and middle chances run 7 to 10 points high, so Core Lifted over-warns more.</li>
+    <li><b>Fast bombs with a timing split.</b> When the model families are 12-18 h apart, the blend averages two lows and Core Lifted tops out near 45 kt. Read the warning lines for that storm.</li>
+    <li><b>Hurricane-force cores.</b> Even Core Lifted rarely reaches 64 kt; near hurricane-force lows the models run 6 to 16 kt under ASCAT. The warning line, not the wind, carries that risk.</li>
+    <li><b>Pacific scores are thin.</b> ASCAT sees about 4% of the Pacific at 00/12Z, so Pacific results lean on the 06/18Z passes, and Pacific hurricane force cannot be tested.</li>
+    <li><b>Along ice and steep coasts</b> ASCAT is blind in the first 25-30 km, where barrier jets peak.</li>
+  </ul>
+</section>
+
+<section aria-labelledby="dead">
+  <h2 id="dead">Tried and dropped</h2>
+  <p>Each of these was tested and lost to the recipe. Check here before trying one again.</p>
+  <ul class="dead">
+    <li>30 m winds or a stability switch</li>
+    <li>Fronts, jets, quadrant or storm-type clues</li>
+    <li>Extra lift where lows deepen fast</li>
+    <li>Boosting the whole grid</li>
+    <li>Weighting models by recent skill</li>
+    <li>Retraining the core model; +8 kt lift</li>
+    <li>Position ellipses for lows</li>
+    <li>Member-backed storm line</li>
+    <li>Wind built from the pressure gradient</li>
+    <li>Shifting the field to follow the low</li>
+    <li>Machine-learned blend</li>
+  </ul>
+</section>
+
+</main>
+
+<footer>
+  <p>Held out = every fifth week of winter 2025-26 kept back from tuning. Truth is ASCAT unless a line says buoys or analyses. Studies and code: jkrek17/marine-research. Updated 29 October 2026.</p>
+</footer>
+</body>
+</html>
