@@ -18,8 +18,8 @@ Design and scores (winter 2025-26, Atlantic ASCAT; Jason's choices of 15 Oct 202
     hazard    bit 1 gale possible (30%+ of GEFS+ENS members at 34+ kt), bit 2 storm
               possible (core >= 30%), bit 4 hurricane force possible (core >= 90% and
               30%+ of members at 48+ kt); drawn straight from the chances, no padding.
-    warn      warning areas (Jason 17 Oct 2026, drawn beside the possible lines): bit 1 gale where
-              the strongest of GFS/ECMWF/AIFS >= 30 kt, bit 2 storm where Core Lifted >= 39 kt, bit 4
+    warn      warning areas (Jason 17 Oct 2026): bit 1 gale where the strongest of GFS/ECMWF/AIFS
+              >= 30 kt, pieces under 32 cells dropped (29 Oct 2026), bit 2 storm where Core Lifted >= 39 kt, bit 4
               hurricane force where the strongest model >= 44 kt and 1%+ of all members (GEFS, ENS,
               AIFS ENS) reach 64 kt within about a degree. Held-out winter vs ASCAT / the OPC HF-low
               archive (warning forecast study): gale covers 93-98% of the gale water, storm 93% of
@@ -46,6 +46,9 @@ LIFT_KT, LIFT_P = 5.0, 0.35
 GALE_LIFT_KT, GALE_LIFT_P = 34.0, 0.60
 WARN_GALE_KT, WARN_STORM_KT, WARN_HF_KT, WARN_HF_M64, WARN_NB = 30.0, 39.0, 44.0, 0.01, 9   # 9 cells ~ +-1 degree
 WARN_HF_ON = True     # Jason 17 Oct 2026: keep the 1% gate, over-warning is favoured
+WARN_GALE_MIN = 32    # gale pieces under 32 cells (~2 square degrees) dropped (Jason 29 Oct 2026; marine-research
+                      # studies/2026-10-29-warning-specks: held-out caught 99.9 -> 98.9% Atl, 100% Pac, covered
+                      # 98.2 / 98.5%, reach -10% / -13%, pieces per map 16 -> 3.6 Atl, 27 -> 4.3 Pac)
 GALE_P, STORM_P, HF_P, HF_M48 = 0.30, 0.30, 0.90, 0.30
 CONE_K = {24: 1.02, 48: 1.13, 72: 1.17, 96: 1.27, 120: 1.33}
 NB = (9, 13)          # ~100 km box on the 0.25 degree grid
@@ -135,10 +138,42 @@ def products(wind, P, members):
     return windcore, hz
 
 
-def warning_areas(speeds, windcore, pmem):
-    """Warning-area bits (see warn above). speeds [3, y, x] GFS/IFS/AIFS, pmem [n, y, x] all members (kt)."""
+def drop_small(mask, n):
+    """mask without its 8-connected pieces under n cells (pieces joined across the date line when WRAP)."""
+    lab, k = ndimage.label(mask, np.ones((3, 3), bool))
+    if not k:
+        return mask
+    if WRAP:
+        # join labels that touch across the seam: last column next to the first, rows r-1..r+1
+        parent = np.arange(k + 1)
+
+        def root(i):
+            while parent[i] != i:
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+            return i
+        ny = lab.shape[0]
+        for r in np.nonzero(lab[:, -1])[0]:
+            for rr in range(max(r - 1, 0), min(r + 2, ny)):
+                if lab[rr, 0]:
+                    a, b = root(lab[r, -1]), root(lab[rr, 0])
+                    parent[max(a, b)] = min(a, b)
+        roots = np.array([root(i) for i in range(k + 1)])
+        lab = roots[lab]
+    size = np.bincount(lab.ravel(), minlength=k + 1)
+    keep = size >= n
+    keep[0] = False
+    return keep[lab]
+
+
+def warning_areas(speeds, windcore, pmem, ocean=None):
+    """Warning-area bits (see warn above). speeds [3, y, x] GFS/IFS/AIFS, pmem [n, y, x] all members (kt).
+    ocean [y, x] (optional) clips the areas to water before small gale pieces are dropped."""
     mx = speeds.max(0)
-    out = (mx >= WARN_GALE_KT).astype(np.uint8) | ((windcore >= WARN_STORM_KT).astype(np.uint8) << 1)
+    gale = mx >= WARN_GALE_KT
+    if ocean is not None:
+        gale &= ocean
+    out = drop_small(gale, WARN_GALE_MIN).astype(np.uint8) | ((windcore >= WARN_STORM_KT).astype(np.uint8) << 1)
     if WARN_HF_ON:
         m64 = ndimage.maximum_filter((pmem >= 64).mean(0), size=WARN_NB, mode=_mode())
         out |= ((mx >= WARN_HF_KT) & (m64 >= WARN_HF_M64)).astype(np.uint8) << 2

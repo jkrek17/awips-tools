@@ -748,7 +748,7 @@
     }
     if (state.warn && hasWarn()) {
       keys.push.apply(keys, WARN.map(function (d) { return '<span><i style="border-top:2px dashed ' + d[2] + '"></i>' + d[1] + "</span>"; }));
-      keys.push('<span class="wide">Warning areas: gale where the strongest model has 30 kt, storm where Core Lifted has 39 kt, HF where the strongest model has 44 kt and 1% of members 64 kt nearby (most false HF areas are storm cores); tested at 24-48 h in winter</span>');
+      keys.push('<span class="wide">Warning areas: gale where the strongest model has 30 kt (pieces under ~2 sq deg left out), storm where Core Lifted has 39 kt, HF where the strongest model has 44 kt and 1% of members 64 kt nearby (most false HF areas are storm cores); tested at 24-48 h in winter</span>');
     }
     if (state.track && tracks.length) keys.push('<span><i style="border-top:2px dashed #fff"></i>Low track, hPa</span>',
       '<span><i style="border:0;height:9px;vertical-align:-1px;background:rgba(231,238,248,0.3);box-shadow:0 0 0 1px rgba(255,255,255,0.8) inset"></i>Cone, 2 in 3</span>');
