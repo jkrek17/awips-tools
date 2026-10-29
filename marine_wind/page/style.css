@@ -65,6 +65,10 @@
 .sc-tip .h { color: var(--faint); font-family: var(--mono); }
 .sc-tip b { float: right; margin-left: 12px; font-weight: 400; font-family: var(--mono); }
 
+/* the recipe link fits the top bar only on wider screens; the About sheet carries it too */
+@media (max-width: 900px) {
+  #recipeLink { display: none; }
+}
 @media (max-width: 760px) {
   #verifLink { display: none; }
 }
