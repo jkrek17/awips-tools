@@ -119,7 +119,7 @@ FIELDS = [
     ("windcore", 2, "kt", "Core Lifted (most likely wind, storm cores kept): wind + 5 kt where core likelihood >= 35%; in the OPC boxes at least 34 kt where the gale core is 60%+"),
     ("hazard", 1, "", "Possible: bit 1 gale (30%+ of members 34+), bit 2 storm (core 30%+), bit 4 hurricane force (core 90%+ and 30%+ of members 48+)"),
     ("p34raw", 1, "%", "Members at 34 kt or more"),
-    ("warn", 1, "", "Warning areas: bit 1 gale (strongest model 30+ kt), bit 2 storm (Core Lifted 39+ kt), bit 4 hurricane force (strongest model 44+ kt and 1%+ of members 64+ within about a degree)"),
+    ("warn", 1, "", "Warning areas: bit 1 gale (strongest model 30+ kt, pieces under 32 cells dropped), bit 2 storm (Core Lifted 39+ kt), bit 4 hurricane force (strongest model 44+ kt and 1%+ of members 64+ within about a degree)"),
 ]
 # kept in vals (and so in the forecast record) but not drawn: galecore (%) and galelift, Core Lifted
 # with the gale-core lift everywhere (the same as windcore inside the two OPC boxes)
@@ -319,7 +319,7 @@ def step_values(ymd, hh, step):
         "focus": focus_grid(speeds), "lone": lone_flags(speeds), "msl": msl - 900.0,
         "core": 100 * core, "windcore": windcore, "hazard": hazard,
         "galecore": 100 * galecore, "galelift": galelift,
-        "warn": np.where(ocean, storm.warning_areas(speeds, windcore, pmem), 0).astype(np.uint8),
+        "warn": np.where(ocean, storm.warning_areas(speeds, windcore, pmem, ocean), 0).astype(np.uint8),
     }
     stats = dict(step=step, members=len(mu), gefs=len(gefs), ens=0 if ens is None else len(ens["u"]),
                  aifs_ens=0 if aens is None else len(aens["u"]), prob_members=len(pmem), trend=prev is not None,
