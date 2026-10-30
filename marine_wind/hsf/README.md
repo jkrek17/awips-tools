@@ -31,7 +31,12 @@ storm and hurricane force for each, issued, draft and both. The page shows it un
 - Fit the grid's own area: warning-level winds in their own tight core, lesser winds in
   ALSO / ELSEWHERE with a lower range. Each range tops out at its category (gale 45, storm
   60, under gale 30); the top is the grid peak rounded up to 5 kt. A few pixels of storm
-  force are enough for a storm warning.
+  force are enough for a storm warning. A small gale core (under a quarter of the area round
+  it and under ~12 sq deg) is written as one area with the wider range ("WINDS 25 TO 40 KT"),
+  not as a separate little box beside the big one (Jason 10-30).
+- Seas: when the high end is more than double the low end, say where they peak, the desk's
+  wording: "SEAS 3 TO 8 M...HIGHEST NEAR 35N175W." (Jason 10-30; the desk does this on 65% of
+  ranges over 2.5x in 2025-26).
 - Warning areas are drawn below their level: gale around 30 kt, storm around 39 kt (the page's
   storm hazard line), hurricane force around 60 kt. Winter 2025-26 Pacific against ASCAT with the
   60 nm ring billed: gale at 30 kt covers 94% of real gale water at 43% of the desk's area; storm
