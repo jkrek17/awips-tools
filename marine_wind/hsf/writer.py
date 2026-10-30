@@ -52,11 +52,14 @@ class Rules:
     complex_nm: float = 600.0     # lows this close that share one 25 kt+ area form one complex low
     share_nm: float = 300.0       # a low "touches" a wind area when the area comes this close to it
     area_buffer_deg: float = 3.0  # lows must be inside the forecast area or this close to it
+    seas_peak_ratio: float = 2.0  # seas range wider than this (high over low): say where the highest are
+    absorb_share: float = 0.25    # a gale core under this share of the area round it, and
+    absorb_cells: int = 200       # under this many cells (~12 sq deg), joins that area
 
 
 def lon_txt(x):
-    x = x % 360
-    if abs(x - 180) < 1e-6:
+    x = round(x) % 360   # rounded first, so 179.8 reads 180W, not 180E
+    if x == 180:
         return "180W"
     return "%dE" % round(x) if x < 180 else "%dW" % round(360 - x)
 
@@ -335,12 +338,25 @@ def fmt_wind(r):
     return "WINDS %d TO %d KT." % r
 
 
-def fmt_seas(r):
+def seas_peak(hs, mask):
+    """(lat, lon, m) of the highest seas inside mask, or None."""
+    v = np.where(mask & np.isfinite(hs), hs, -np.inf)
+    i = np.unravel_index(np.argmax(v), v.shape)
+    return None if not np.isfinite(v[i]) else (i, float(v[i]))
+
+
+def fmt_seas(r, at=None, ratio=2.0):
+    """' SEAS 3 TO 8 M...HIGHEST NEAR 35N175W.': the desk names where the seas peak when the
+    range is wide (issued 2025-26: on 65% of ranges over 2.5x, 40% at 2-2.5x, 11% at 2x);
+    Jason 10-30: whenever the high is more than double the low."""
     if r is None:
         return ""
     lo, hi = r
     f = lambda v: ("%g" % v)
-    return " SEAS TO %s M." % f(hi) if lo is None else " SEAS %s TO %s M." % (f(lo), f(hi))
+    if lo is None:
+        return " SEAS TO %s M." % f(hi)
+    near = "...HIGHEST NEAR %s" % ll_txt(at[0], at[1]) if at and hi > ratio * lo else ""
+    return " SEAS %s TO %s M%s." % (f(lo), f(hi), near)
 
 
 # ---------------------------------------------------------------- one valid time
@@ -351,6 +367,7 @@ class Tier:
     wind: tuple
     seas: tuple | None
     mask: np.ndarray = field(repr=False)
+    seas_at: tuple | None = None   # (lat, lon, m) of the highest seas in the tier
 
 
 def regions_at(wind, sea, thr, rules):
@@ -453,18 +470,47 @@ def areas_for_time(wind, hs, sea, grid, lows, rules=Rules()):
                       {0: 30, 34: 45, 48: 60}.get(top, 85))
             if wr[1] > cap:
                 wr = (LO_FOR_HI[cap], cap)
-            tiers.append(Tier(lv, ph, wr, seas_range(hs[(new if new.any() else ph["mask"]) & sea]), ph["mask"]))
+            sm = (new if new.any() else ph["mask"]) & sea
+            tiers.append(Tier(lv, ph, wr, seas_range(hs[sm]), ph["mask"], _peak_at(hs, sm, grid)))
             done |= ph["mask"]
             upper = thr
+        tiers = absorb_small_core(tiers, hs, sea, grid, members[:1], rules)
         if tiers:
             systems.append(dict(low=low, lows=members, tiers=tiers, top=top, region=reg))
     return systems
 
 
+def _peak_at(hs, mask, grid):
+    pk = seas_peak(hs, mask)
+    return None if pk is None else (float(grid.lats[pk[0][0]]), float(grid.lons[pk[0][1]]), pk[1])
+
+
+def absorb_small_core(tiers, hs, sea, grid, lows, rules):
+    """A gale core much smaller than the sub-gale area round it is written as one area with the
+    wider range ('FROM 54N TO 61N BETWEEN 144W AND 151W WINDS 25 TO 40 KT'), as the desk would,
+    not as a separate small box beside the big one (Jason 10-30, 00Z 30 Oct Gulf of Alaska +6 h).
+    The paragraph keeps its gale warning heading."""
+    if len(tiers) < 2:
+        return tiers
+    core, outer = tiers[-2], tiers[-1]
+    if core.level != 34 or outer.level != rules.outer_kt or core.mask.sum() >= min(rules.absorb_share * outer.mask.sum(), rules.absorb_cells):
+        return tiers
+    region = core.mask | outer.mask
+    # the outer area's own shape when it already holds the core, else one shape round both
+    ph = outer.phrase if not (core.mask & ~outer.mask).any() else describe_parts(region, sea, grid, lows, rules)
+    hi = core.wind[1]
+    upper = tiers[-3].mask if len(tiers) > 2 else np.zeros_like(region)
+    sm = ph["mask"] & sea & ~upper
+    if not sm.any():
+        sm = ph["mask"] & sea
+    merged = Tier(rules.outer_kt, ph, (LO_FOR_HI[hi], hi), seas_range(hs[sm]), ph["mask"], _peak_at(hs, sm, grid))
+    return tiers[:-2] + [merged]
+
+
 WARN = {64: "HURRICANE FORCE WIND WARNING", 48: "STORM WARNING", 34: "GALE WARNING", 0: ""}
 
 
-def time_text(sysd, hour, lead_word=None):
+def time_text(sysd, hour, lead_word=None, ratio=2.0):
     """One paragraph: '.24 HOUR FORECAST LOW 56N149W 983 MB. WITHIN ... WINDS .. SEAS ..'"""
     head = "" if hour == 0 else "%d HOUR FORECAST " % hour
     low = sysd["low"]
@@ -495,7 +541,10 @@ def time_text(sysd, hour, lead_word=None):
             seas = (None if any(x[0] is None for x in seas) else min(x[0] for x in seas), max(x[1] for x in seas))
         else:
             seas = None
-        parts.append("%s%s %s%s" % (pre, "...AND ".join(t.phrase["text"] for t in g), fmt_wind(g[0].wind), fmt_seas(seas)))
+        pk = [t.seas_at for t in g if t.seas_at]
+        at = max(pk, key=lambda p: p[2]) if pk else None
+        parts.append("%s%s %s%s" % (pre, "...AND ".join(t.phrase["text"] for t in g), fmt_wind(g[0].wind),
+                                     fmt_seas(seas, at, ratio)))
     return "." + " ".join(x for x in (head.strip(), " ".join(parts)) if x)
 
 
@@ -645,7 +694,7 @@ def write_product(fields, grid, sea, rules=Rules(), hours=None):
                 lead = "NEW" if (h > 0 and h == first_seen) else None
                 n_now = len(ent[h].get("lows") or [])
                 prev_n = n_now
-                out.append(time_text(ent[h], h, lead))
+                out.append(time_text(ent[h], h, lead, rules.seas_peak_ratio))
                 pieces.append(dict(key=key, hour=h, text=out[-1], top=top, tiers=ent[h]["tiers"], low=ent[h]["low"]))
                 prev_present = True
             elif prev_present:
