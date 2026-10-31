@@ -1,0 +1,89 @@
+{
+ "hours": [
+  0,
+  6,
+  12,
+  18
+ ],
+ "updated": "2026-10-31T02:28Z",
+ "methods": [
+  "windcore",
+  "blend",
+  "nomem",
+  "mean3",
+  "gfs",
+  "ecmwf",
+  "aifs",
+  "gefs_mean",
+  "ens_mean",
+  "aifsens_mean",
+  "ndfd"
+ ],
+ "referees": [
+  "analysis",
+  "gdas",
+  "ifs",
+  "ascat",
+  "buoys",
+  "ships+buoys"
+ ],
+ "leads": [
+  24,
+  48,
+  72,
+  96,
+  120
+ ],
+ "basins": {
+  "natl": {
+   "hour": 12,
+   "hours": [
+    0,
+    6,
+    12,
+    18
+   ],
+   "first": "20250301",
+   "last": "20261029",
+   "days": 608,
+   "referees": [
+    "analysis",
+    "gdas",
+    "ifs",
+    "ascat",
+    "buoys",
+    "ships+buoys"
+   ],
+   "areas": [
+    "box",
+    "desk"
+   ],
+   "desk_first": "20260114"
+  },
+  "npac": {
+   "hour": 0,
+   "hours": [
+    0,
+    6,
+    12,
+    18
+   ],
+   "first": "20250301",
+   "last": "20261029",
+   "days": 608,
+   "referees": [
+    "analysis",
+    "gdas",
+    "ifs",
+    "ascat",
+    "buoys",
+    "ships+buoys"
+   ],
+   "areas": [
+    "box",
+    "desk"
+   ],
+   "desk_first": "20260114"
+  }
+ }
+}
