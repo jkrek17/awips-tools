@@ -1,0 +1,2096 @@
+{
+ "basin": "natl",
+ "basin_name": "North Atlantic",
+ "cycle": "2026-10-31T12:00Z",
+ "built": "2026-10-31T20:45Z",
+ "grid": {
+  "north": 67.0,
+  "south": 18.0,
+  "west": -95.0,
+  "east": 10.0,
+  "ny": 197,
+  "nx": 421,
+  "res": 0.25
+ },
+ "fields": [
+  {
+   "name": "wind",
+   "scale": 2,
+   "unit": "kt",
+   "desc": "Blended wind: support-weighted 3-model base + min(k x member spread, 5 kt)",
+   "offset": 0
+  },
+  {
+   "name": "dir",
+   "scale": 0.5,
+   "unit": "deg",
+   "desc": "Direction the wind blows from (3-model mean vector)",
+   "offset": 0
+  },
+  {
+   "name": "mean",
+   "scale": 2,
+   "unit": "kt",
+   "desc": "Base: 3 models weighted by member support",
+   "offset": 0
+  },
+  {
+   "name": "boost",
+   "scale": 20,
+   "unit": "kt",
+   "desc": "Added wind",
+   "offset": 0
+  },
+  {
+   "name": "sigma",
+   "scale": 4,
+   "unit": "kt",
+   "desc": "Member spread (std dev of all GEFS and ENS members)",
+   "offset": 0
+  },
+  {
+   "name": "gfs",
+   "scale": 2,
+   "unit": "kt",
+   "desc": "GFS",
+   "offset": 0
+  },
+  {
+   "name": "ecmwf",
+   "scale": 2,
+   "unit": "kt",
+   "desc": "ECMWF",
+   "offset": 0
+  },
+  {
+   "name": "aifs",
+   "scale": 2,
+   "unit": "kt",
+   "desc": "AIFS",
+   "offset": 0
+  },
+  {
+   "name": "p34",
+   "scale": 1,
+   "unit": "%",
+   "desc": "Chance of 34 kt or more (member share, recalibrated)",
+   "offset": 0
+  },
+  {
+   "name": "p48",
+   "scale": 1,
+   "unit": "%",
+   "desc": "Chance of 48 kt or more (member share, recalibrated)",
+   "offset": 0
+  },
+  {
+   "name": "p64",
+   "scale": 1,
+   "unit": "%",
+   "desc": "Chance of 64 kt or more (member share, recalibrated)",
+   "offset": 0
+  },
+  {
+   "name": "p48raw",
+   "scale": 1,
+   "unit": "%",
+   "desc": "Members at 48 kt or more",
+   "offset": 0
+  },
+  {
+   "name": "p64raw",
+   "scale": 1,
+   "unit": "%",
+   "desc": "Members at 64 kt or more",
+   "offset": 0
+  },
+  {
+   "name": "trend",
+   "scale": 2,
+   "unit": "kt",
+   "desc": "Change of the 3-model mean since the run 24 h earlier",
+   "offset": 64.0
+  },
+  {
+   "name": "nomem",
+   "scale": 2,
+   "unit": "kt",
+   "desc": "Deterministic blend: 3 models weighted by support among 9 lagged runs + min(0.3 x their spread, 5 kt)",
+   "offset": 0
+  },
+  {
+   "name": "nomemdiff",
+   "scale": 2,
+   "unit": "kt",
+   "desc": "Deterministic blend minus the blended wind",
+   "offset": 64.0
+  },
+  {
+   "name": "focus",
+   "scale": 1,
+   "unit": "",
+   "desc": "0 ride, 1 agree, 2 focus, 3 high impact",
+   "offset": 0
+  },
+  {
+   "name": "lone",
+   "scale": 1,
+   "unit": "",
+   "desc": "Lone model: bits 0-1 at 48 kt, bits 2-3 at 64 kt (1 GFS, 2 ECMWF, 3 AIFS)",
+   "offset": 0
+  },
+  {
+   "name": "msl",
+   "scale": 1,
+   "unit": "hPa-900",
+   "desc": "3-model mean sea-level pressure minus 900 hPa",
+   "offset": 0
+  },
+  {
+   "name": "core",
+   "scale": 1,
+   "unit": "%",
+   "desc": "Core likelihood: chance of 48+ kt within about 50 km (ASCAT-trained)",
+   "offset": 0
+  },
+  {
+   "name": "windcore",
+   "scale": 2,
+   "unit": "kt",
+   "desc": "Core Lifted (most likely wind, storm cores kept): wind + 5 kt where core likelihood >= 35%; in the OPC boxes at least 34 kt where the gale core is 60%+",
+   "offset": 0
+  },
+  {
+   "name": "hazard",
+   "scale": 1,
+   "unit": "",
+   "desc": "Possible: bit 1 gale (30%+ of members 34+), bit 2 storm (core 30%+), bit 4 hurricane force (core 90%+ and 30%+ of members 48+)",
+   "offset": 0
+  },
+  {
+   "name": "p34raw",
+   "scale": 1,
+   "unit": "%",
+   "desc": "Members at 34 kt or more",
+   "offset": 0
+  },
+  {
+   "name": "warn",
+   "scale": 1,
+   "unit": "",
+   "desc": "Warning areas: bit 1 gale (strongest model 30+ kt, pieces under 32 cells dropped), bit 2 storm (Core Lifted 39+ kt), bit 4 hurricane force (strongest model 44+ kt and 1%+ of members 64+ within about a degree)",
+   "offset": 0
+  }
+ ],
+ "cap_kt": 5.0,
+ "steps": [
+  {
+   "step": 6,
+   "members": 81,
+   "gefs": 31,
+   "ens": 50,
+   "aifs_ens": 51,
+   "prob_members": 132,
+   "trend": true,
+   "nomem_runs": 9,
+   "max_wind": 47.5,
+   "gale_cells": 529,
+   "focus_cells": 256,
+   "lone_cells": 40,
+   "centres": [
+    [
+     "L",
+     57.25,
+     -43.25,
+     1004.5
+    ],
+    [
+     "L",
+     47.75,
+     -52.25,
+     998.8
+    ],
+    [
+     "L",
+     41.5,
+     -48.5,
+     991.4
+    ],
+    [
+     "L",
+     32.0,
+     -20.75,
+     1011.2
+    ],
+    [
+     "L",
+     29.75,
+     -6.5,
+     1013.4
+    ],
+    [
+     "H",
+     31.5,
+     -6.75,
+     1022.1
+    ],
+    [
+     "H",
+     28.25,
+     -16.5,
+     1018.8
+    ],
+    [
+     "H",
+     24.75,
+     9.75,
+     1018.3
+    ],
+    [
+     "H",
+     23.25,
+     5.75,
+     1018.2
+    ],
+    [
+     "H",
+     19.0,
+     -71.0,
+     1017.7
+    ]
+   ],
+   "core_model": true,
+   "storm_cells": 241,
+   "hf_cells": 0,
+   "valid": "2026-10-31T18:00Z",
+   "k": 0.15
+  },
+  {
+   "step": 12,
+   "members": 81,
+   "gefs": 31,
+   "ens": 50,
+   "aifs_ens": 51,
+   "prob_members": 132,
+   "trend": true,
+   "nomem_runs": 9,
+   "max_wind": 49.5,
+   "gale_cells": 793,
+   "focus_cells": 290,
+   "lone_cells": 92,
+   "centres": [
+    [
+     "L",
+     61.75,
+     8.5,
+     1024.5
+    ],
+    [
+     "L",
+     60.25,
+     -39.5,
+     1007.1
+    ],
+    [
+     "L",
+     49.0,
+     -50.5,
+     997.1
+    ],
+    [
+     "L",
+     44.25,
+     -46.25,
+     985.9
+    ],
+    [
+     "L",
+     32.5,
+     -20.5,
+     1012.1
+    ],
+    [
+     "L",
+     29.75,
+     -6.25,
+     1015.1
+    ],
+    [
+     "H",
+     66.5,
+     -44.75,
+     1019.5
+    ],
+    [
+     "H",
+     32.0,
+     -5.75,
+     1023.3
+    ],
+    [
+     "H",
+     28.25,
+     -16.5,
+     1019.0
+    ],
+    [
+     "H",
+     25.0,
+     9.5,
+     1018.7
+    ],
+    [
+     "H",
+     19.0,
+     -71.0,
+     1019.5
+    ]
+   ],
+   "core_model": true,
+   "storm_cells": 619,
+   "hf_cells": 63,
+   "valid": "2026-11-01T00:00Z",
+   "k": 0.15
+  },
+  {
+   "step": 18,
+   "members": 81,
+   "gefs": 31,
+   "ens": 50,
+   "aifs_ens": 51,
+   "prob_members": 132,
+   "trend": true,
+   "nomem_runs": 9,
+   "max_wind": 50.0,
+   "gale_cells": 1269,
+   "focus_cells": 783,
+   "lone_cells": 168,
+   "centres": [
+    [
+     "L",
+     62.0,
+     -37.75,
+     1008.3
+    ],
+    [
+     "L",
+     61.5,
+     8.75,
+     1023.6
+    ],
+    [
+     "L",
+     47.5,
+     -44.25,
+     980.1
+    ],
+    [
+     "L",
+     43.0,
+     6.75,
+     1014.4
+    ],
+    [
+     "H",
+     32.0,
+     -5.75,
+     1022.3
+    ],
+    [
+     "H",
+     28.25,
+     -16.75,
+     1018.0
+    ],
+    [
+     "H",
+     19.0,
+     -71.0,
+     1019.1
+    ]
+   ],
+   "core_model": true,
+   "storm_cells": 853,
+   "hf_cells": 80,
+   "valid": "2026-11-01T06:00Z",
+   "k": 0.15
+  },
+  {
+   "step": 24,
+   "members": 81,
+   "gefs": 31,
+   "ens": 50,
+   "aifs_ens": 51,
+   "prob_members": 132,
+   "trend": true,
+   "nomem_runs": 9,
+   "max_wind": 48.0,
+   "gale_cells": 1803,
+   "focus_cells": 1029,
+   "lone_cells": 251,
+   "centres": [
+    [
+     "L",
+     66.5,
+     -76.0,
+     990.1
+    ],
+    [
+     "L",
+     59.75,
+     8.75,
+     1024.7
+    ],
+    [
+     "L",
+     51.5,
+     -43.75,
+     970.7
+    ],
+    [
+     "L",
+     42.25,
+     6.25,
+     1012.7
+    ],
+    [
+     "H",
+     65.75,
+     -43.75,
+     1022.7
+    ],
+    [
+     "H",
+     31.75,
+     -6.25,
+     1022.1
+    ],
+    [
+     "H",
+     28.25,
+     -16.75,
+     1018.5
+    ],
+    [
+     "H",
+     19.0,
+     -71.0,
+     1019.5
+    ]
+   ],
+   "core_model": true,
+   "storm_cells": 780,
+   "hf_cells": 0,
+   "valid": "2026-11-01T12:00Z",
+   "k": 0.15
+  },
+  {
+   "step": 30,
+   "members": 81,
+   "gefs": 31,
+   "ens": 50,
+   "aifs_ens": 51,
+   "prob_members": 132,
+   "trend": true,
+   "nomem_runs": 9,
+   "max_wind": 48.0,
+   "gale_cells": 2383,
+   "focus_cells": 883,
+   "lone_cells": 165,
+   "centres": [
+    [
+     "L",
+     66.0,
+     -75.5,
+     992.3
+    ],
+    [
+     "L",
+     55.0,
+     -44.5,
+     963.2
+    ],
+    [
+     "L",
+     40.0,
+     7.5,
+     1012.0
+    ],
+    [
+     "L",
+     39.25,
+     -0.25,
+     1016.8
+    ],
+    [
+     "H",
+     62.5,
+     8.75,
+     1032.8
+    ],
+    [
+     "H",
+     37.0,
+     -3.25,
+     1021.6
+    ],
+    [
+     "H",
+     31.5,
+     -6.5,
+     1022.7
+    ],
+    [
+     "H",
+     28.25,
+     -16.5,
+     1017.5
+    ],
+    [
+     "H",
+     23.25,
+     5.75,
+     1018.4
+    ],
+    [
+     "H",
+     21.0,
+     -12.75,
+     1015.6
+    ],
+    [
+     "H",
+     19.0,
+     -71.0,
+     1017.2
+    ]
+   ],
+   "core_model": true,
+   "storm_cells": 1800,
+   "hf_cells": 0,
+   "valid": "2026-11-01T18:00Z",
+   "k": 0.25
+  },
+  {
+   "step": 36,
+   "members": 81,
+   "gefs": 31,
+   "ens": 50,
+   "aifs_ens": 51,
+   "prob_members": 132,
+   "trend": true,
+   "nomem_runs": 9,
+   "max_wind": 54.5,
+   "gale_cells": 2413,
+   "focus_cells": 1122,
+   "lone_cells": 56,
+   "centres": [
+    [
+     "L",
+     57.25,
+     -45.25,
+     960.2
+    ],
+    [
+     "L",
+     42.0,
+     -35.5,
+     1014.0
+    ],
+    [
+     "H",
+     62.0,
+     7.75,
+     1034.9
+    ],
+    [
+     "H",
+     32.0,
+     -5.75,
+     1024.4
+    ],
+    [
+     "H",
+     28.25,
+     -16.5,
+     1018.7
+    ],
+    [
+     "H",
+     23.5,
+     6.0,
+     1020.0
+    ],
+    [
+     "H",
+     21.25,
+     -11.75,
+     1018.5
+    ],
+    [
+     "H",
+     19.0,
+     -71.0,
+     1018.4
+    ]
+   ],
+   "core_model": true,
+   "storm_cells": 1945,
+   "hf_cells": 0,
+   "valid": "2026-11-02T00:00Z",
+   "k": 0.25
+  },
+  {
+   "step": 42,
+   "members": 81,
+   "gefs": 31,
+   "ens": 50,
+   "aifs_ens": 51,
+   "prob_members": 132,
+   "trend": true,
+   "nomem_runs": 9,
+   "max_wind": 51.0,
+   "gale_cells": 1995,
+   "focus_cells": 864,
+   "lone_cells": 12,
+   "centres": [
+    [
+     "L",
+     60.75,
+     -64.5,
+     988.3
+    ],
+    [
+     "L",
+     58.75,
+     -45.5,
+     962.5
+    ],
+    [
+     "L",
+     43.5,
+     -33.75,
+     1014.5
+    ],
+    [
+     "H",
+     62.0,
+     8.0,
+     1037.0
+    ],
+    [
+     "H",
+     32.0,
+     -5.75,
+     1023.2
+    ],
+    [
+     "H",
+     28.25,
+     -16.5,
+     1018.0
+    ],
+    [
+     "H",
+     23.5,
+     6.0,
+     1020.1
+    ],
+    [
+     "H",
+     19.0,
+     -71.0,
+     1017.6
+    ]
+   ],
+   "core_model": true,
+   "storm_cells": 1682,
+   "hf_cells": 0,
+   "valid": "2026-11-02T06:00Z",
+   "k": 0.25
+  },
+  {
+   "step": 48,
+   "members": 81,
+   "gefs": 31,
+   "ens": 50,
+   "aifs_ens": 51,
+   "prob_members": 132,
+   "trend": true,
+   "nomem_runs": 9,
+   "max_wind": 42.0,
+   "gale_cells": 882,
+   "focus_cells": 546,
+   "lone_cells": 4,
+   "centres": [
+    [
+     "L",
+     60.5,
+     -46.0,
+     975.2
+    ],
+    [
+     "L",
+     42.25,
+     1.25,
+     1019.4
+    ],
+    [
+     "H",
+     61.75,
+     7.5,
+     1038.4
+    ],
+    [
+     "H",
+     31.5,
+     -6.5,
+     1023.4
+    ],
+    [
+     "H",
+     28.25,
+     -16.5,
+     1018.7
+    ],
+    [
+     "H",
+     23.75,
+     6.5,
+     1017.7
+    ],
+    [
+     "H",
+     19.0,
+     -71.0,
+     1018.2
+    ]
+   ],
+   "core_model": true,
+   "storm_cells": 1289,
+   "hf_cells": 13,
+   "valid": "2026-11-02T12:00Z",
+   "k": 0.25
+  },
+  {
+   "step": 54,
+   "members": 81,
+   "gefs": 31,
+   "ens": 50,
+   "aifs_ens": 51,
+   "prob_members": 132,
+   "trend": true,
+   "nomem_runs": 9,
+   "max_wind": 40.5,
+   "gale_cells": 291,
+   "focus_cells": 393,
+   "lone_cells": 0,
+   "centres": [
+    [
+     "L",
+     57.5,
+     -56.25,
+     989.4
+    ],
+    [
+     "H",
+     61.75,
+     7.25,
+     1040.0
+    ],
+    [
+     "H",
+     31.75,
+     -6.0,
+     1022.8
+    ],
+    [
+     "H",
+     28.25,
+     -16.5,
+     1017.5
+    ],
+    [
+     "H",
+     23.5,
+     6.0,
+     1018.9
+    ],
+    [
+     "H",
+     19.0,
+     -71.0,
+     1016.8
+    ]
+   ],
+   "core_model": true,
+   "storm_cells": 1046,
+   "hf_cells": 84,
+   "valid": "2026-11-02T18:00Z",
+   "k": 0.25
+  },
+  {
+   "step": 60,
+   "members": 81,
+   "gefs": 31,
+   "ens": 50,
+   "aifs_ens": 51,
+   "prob_members": 132,
+   "trend": true,
+   "nomem_runs": 9,
+   "max_wind": 37.5,
+   "gale_cells": 49,
+   "focus_cells": 376,
+   "lone_cells": 0,
+   "centres": [
+    [
+     "L",
+     62.25,
+     -42.75,
+     1001.1
+    ],
+    [
+     "L",
+     57.0,
+     -54.5,
+     992.9
+    ],
+    [
+     "H",
+     61.25,
+     7.25,
+     1040.9
+    ],
+    [
+     "H",
+     36.25,
+     5.25,
+     1020.7
+    ],
+    [
+     "H",
+     31.5,
+     -6.5,
+     1022.0
+    ],
+    [
+     "H",
+     28.25,
+     -16.5,
+     1018.1
+    ],
+    [
+     "H",
+     23.5,
+     6.0,
+     1019.4
+    ],
+    [
+     "H",
+     19.0,
+     -71.0,
+     1018.1
+    ]
+   ],
+   "core_model": true,
+   "storm_cells": 660,
+   "hf_cells": 0,
+   "valid": "2026-11-03T00:00Z",
+   "k": 0.25
+  },
+  {
+   "step": 66,
+   "members": 81,
+   "gefs": 31,
+   "ens": 50,
+   "aifs_ens": 51,
+   "prob_members": 132,
+   "trend": true,
+   "nomem_runs": 9,
+   "max_wind": 36.0,
+   "gale_cells": 44,
+   "focus_cells": 429,
+   "lone_cells": 0,
+   "centres": [
+    [
+     "L",
+     57.0,
+     -52.0,
+     994.9
+    ],
+    [
+     "L",
+     45.75,
+     -94.75,
+     999.1
+    ],
+    [
+     "H",
+     62.5,
+     -45.5,
+     1010.6
+    ],
+    [
+     "H",
+     61.25,
+     7.25,
+     1040.6
+    ],
+    [
+     "H",
+     35.5,
+     7.5,
+     1019.8
+    ],
+    [
+     "H",
+     31.5,
+     -6.5,
+     1019.4
+    ],
+    [
+     "H",
+     28.25,
+     -16.5,
+     1016.5
+    ],
+    [
+     "H",
+     23.25,
+     5.75,
+     1018.9
+    ],
+    [
+     "H",
+     19.0,
+     -71.0,
+     1017.5
+    ]
+   ],
+   "core_model": true,
+   "storm_cells": 0,
+   "hf_cells": 0,
+   "valid": "2026-11-03T06:00Z",
+   "k": 0.25
+  },
+  {
+   "step": 72,
+   "members": 81,
+   "gefs": 31,
+   "ens": 50,
+   "aifs_ens": 51,
+   "prob_members": 132,
+   "trend": true,
+   "nomem_runs": 9,
+   "max_wind": 36.5,
+   "gale_cells": 61,
+   "focus_cells": 466,
+   "lone_cells": 0,
+   "centres": [
+    [
+     "L",
+     64.25,
+     -55.5,
+     1003.6
+    ],
+    [
+     "L",
+     54.25,
+     -51.0,
+     996.5
+    ],
+    [
+     "L",
+     46.0,
+     -93.5,
+     1000.4
+    ],
+    [
+     "H",
+     64.0,
+     -45.0,
+     1016.6
+    ],
+    [
+     "H",
+     61.25,
+     7.25,
+     1040.7
+    ],
+    [
+     "H",
+     31.5,
+     -6.5,
+     1018.3
+    ],
+    [
+     "H",
+     23.25,
+     5.75,
+     1017.4
+    ],
+    [
+     "H",
+     19.0,
+     -71.0,
+     1017.7
+    ]
+   ],
+   "core_model": true,
+   "storm_cells": 1,
+   "hf_cells": 0,
+   "valid": "2026-11-03T12:00Z",
+   "k": 0.25
+  },
+  {
+   "step": 78,
+   "members": 81,
+   "gefs": 31,
+   "ens": 50,
+   "aifs_ens": 51,
+   "prob_members": 132,
+   "trend": true,
+   "nomem_runs": 9,
+   "max_wind": 35.5,
+   "gale_cells": 87,
+   "focus_cells": 496,
+   "lone_cells": 0,
+   "centres": [
+    [
+     "L",
+     59.0,
+     -47.5,
+     997.8
+    ],
+    [
+     "L",
+     54.75,
+     -47.75,
+     996.3
+    ],
+    [
+     "L",
+     45.75,
+     -92.25,
+     1000.7
+    ],
+    [
+     "H",
+     66.0,
+     -43.25,
+     1021.6
+    ],
+    [
+     "H",
+     61.25,
+     7.25,
+     1040.2
+    ],
+    [
+     "H",
+     31.5,
+     -6.5,
+     1017.8
+    ],
+    [
+     "H",
+     28.25,
+     -16.5,
+     1015.8
+    ],
+    [
+     "H",
+     23.25,
+     5.75,
+     1018.2
+    ],
+    [
+     "H",
+     19.0,
+     -71.0,
+     1015.7
+    ]
+   ],
+   "core_model": true,
+   "storm_cells": 44,
+   "hf_cells": 0,
+   "valid": "2026-11-03T18:00Z",
+   "k": 0.25
+  },
+  {
+   "step": 84,
+   "members": 81,
+   "gefs": 31,
+   "ens": 50,
+   "aifs_ens": 51,
+   "prob_members": 132,
+   "trend": true,
+   "nomem_runs": 9,
+   "max_wind": 38.0,
+   "gale_cells": 28,
+   "focus_cells": 279,
+   "lone_cells": 0,
+   "centres": [
+    [
+     "L",
+     55.5,
+     -46.0,
+     997.4
+    ],
+    [
+     "H",
+     61.25,
+     7.25,
+     1040.5
+    ],
+    [
+     "H",
+     35.25,
+     6.5,
+     1019.2
+    ],
+    [
+     "H",
+     31.0,
+     -7.75,
+     1018.3
+    ],
+    [
+     "H",
+     28.25,
+     -16.5,
+     1017.2
+    ],
+    [
+     "H",
+     23.25,
+     5.75,
+     1019.3
+    ],
+    [
+     "H",
+     19.0,
+     -71.0,
+     1017.3
+    ]
+   ],
+   "core_model": true,
+   "storm_cells": 75,
+   "hf_cells": 0,
+   "valid": "2026-11-04T00:00Z",
+   "k": 0.25
+  },
+  {
+   "step": 90,
+   "members": 81,
+   "gefs": 31,
+   "ens": 50,
+   "aifs_ens": 51,
+   "prob_members": 132,
+   "trend": true,
+   "nomem_runs": 9,
+   "max_wind": 31.5,
+   "gale_cells": 0,
+   "focus_cells": 147,
+   "lone_cells": 0,
+   "centres": [
+    [
+     "L",
+     56.75,
+     -45.0,
+     998.2
+    ],
+    [
+     "L",
+     46.0,
+     -94.75,
+     1000.9
+    ],
+    [
+     "L",
+     44.25,
+     -42.75,
+     1014.2
+    ],
+    [
+     "H",
+     61.25,
+     7.25,
+     1039.5
+    ],
+    [
+     "H",
+     31.5,
+     -6.5,
+     1017.5
+    ],
+    [
+     "H",
+     28.25,
+     -16.5,
+     1016.2
+    ],
+    [
+     "H",
+     23.25,
+     5.75,
+     1019.9
+    ],
+    [
+     "H",
+     19.0,
+     -71.0,
+     1016.8
+    ]
+   ],
+   "core_model": true,
+   "storm_cells": 191,
+   "hf_cells": 0,
+   "valid": "2026-11-04T06:00Z",
+   "k": 0.25
+  },
+  {
+   "step": 96,
+   "members": 81,
+   "gefs": 31,
+   "ens": 50,
+   "aifs_ens": 51,
+   "prob_members": 132,
+   "trend": true,
+   "nomem_runs": 9,
+   "max_wind": 29.0,
+   "gale_cells": 0,
+   "focus_cells": 130,
+   "lone_cells": 0,
+   "centres": [
+    [
+     "L",
+     63.75,
+     -51.0,
+     1006.7
+    ],
+    [
+     "L",
+     58.0,
+     -44.5,
+     1002.2
+    ],
+    [
+     "L",
+     47.0,
+     10.0,
+     1019.6
+    ],
+    [
+     "L",
+     46.75,
+     -39.25,
+     1013.6
+    ],
+    [
+     "H",
+     61.25,
+     7.0,
+     1039.0
+    ],
+    [
+     "H",
+     44.75,
+     7.25,
+     1025.8
+    ],
+    [
+     "H",
+     35.0,
+     6.5,
+     1019.9
+    ],
+    [
+     "H",
+     31.75,
+     -6.25,
+     1018.7
+    ],
+    [
+     "H",
+     23.25,
+     5.75,
+     1019.3
+    ],
+    [
+     "H",
+     19.0,
+     -71.0,
+     1016.9
+    ]
+   ],
+   "core_model": true,
+   "storm_cells": 299,
+   "hf_cells": 0,
+   "valid": "2026-11-04T12:00Z",
+   "k": 0.25
+  },
+  {
+   "step": 102,
+   "members": 81,
+   "gefs": 31,
+   "ens": 50,
+   "aifs_ens": 51,
+   "prob_members": 132,
+   "trend": true,
+   "nomem_runs": 9,
+   "max_wind": 29.0,
+   "gale_cells": 0,
+   "focus_cells": 235,
+   "lone_cells": 0,
+   "centres": [
+    [
+     "L",
+     59.0,
+     -44.0,
+     1006.0
+    ],
+    [
+     "L",
+     30.75,
+     -5.25,
+     1012.9
+    ],
+    [
+     "H",
+     64.5,
+     -19.75,
+     1030.4
+    ],
+    [
+     "H",
+     61.5,
+     7.75,
+     1038.0
+    ],
+    [
+     "H",
+     35.0,
+     8.0,
+     1019.9
+    ],
+    [
+     "H",
+     31.75,
+     -6.25,
+     1020.2
+    ],
+    [
+     "H",
+     28.25,
+     -16.5,
+     1017.5
+    ],
+    [
+     "H",
+     23.25,
+     5.75,
+     1020.7
+    ],
+    [
+     "H",
+     19.0,
+     -71.0,
+     1015.0
+    ]
+   ],
+   "core_model": true,
+   "storm_cells": 314,
+   "hf_cells": 0,
+   "valid": "2026-11-04T18:00Z",
+   "k": 0.25
+  },
+  {
+   "step": 108,
+   "members": 81,
+   "gefs": 31,
+   "ens": 50,
+   "aifs_ens": 51,
+   "prob_members": 132,
+   "trend": true,
+   "nomem_runs": 9,
+   "max_wind": 31.0,
+   "gale_cells": 0,
+   "focus_cells": 178,
+   "lone_cells": 0,
+   "centres": [
+    [
+     "L",
+     58.75,
+     7.25,
+     1031.8
+    ],
+    [
+     "L",
+     58.5,
+     -43.75,
+     1010.7
+    ],
+    [
+     "H",
+     61.5,
+     7.75,
+     1037.1
+    ],
+    [
+     "H",
+     45.0,
+     7.0,
+     1028.3
+    ],
+    [
+     "H",
+     32.0,
+     -5.75,
+     1021.8
+    ],
+    [
+     "H",
+     28.25,
+     -16.5,
+     1019.1
+    ],
+    [
+     "H",
+     23.25,
+     5.75,
+     1021.6
+    ],
+    [
+     "H",
+     19.0,
+     -71.0,
+     1016.0
+    ]
+   ],
+   "core_model": true,
+   "storm_cells": 319,
+   "hf_cells": 0,
+   "valid": "2026-11-05T00:00Z",
+   "k": 0.25
+  },
+  {
+   "step": 114,
+   "members": 81,
+   "gefs": 31,
+   "ens": 50,
+   "aifs_ens": 51,
+   "prob_members": 132,
+   "trend": true,
+   "nomem_runs": 9,
+   "max_wind": 31.0,
+   "gale_cells": 0,
+   "focus_cells": 190,
+   "lone_cells": 0,
+   "centres": [
+    [
+     "L",
+     58.75,
+     7.25,
+     1030.2
+    ],
+    [
+     "L",
+     58.0,
+     -42.75,
+     1012.2
+    ],
+    [
+     "L",
+     42.0,
+     -37.5,
+     1007.8
+    ],
+    [
+     "H",
+     61.5,
+     7.5,
+     1035.5
+    ],
+    [
+     "H",
+     45.25,
+     7.25,
+     1027.9
+    ],
+    [
+     "H",
+     32.0,
+     -5.75,
+     1022.0
+    ],
+    [
+     "H",
+     28.25,
+     -16.5,
+     1018.6
+    ],
+    [
+     "H",
+     23.25,
+     5.75,
+     1021.5
+    ],
+    [
+     "H",
+     19.0,
+     -71.0,
+     1015.4
+    ],
+    [
+     "H",
+     19.0,
+     8.75,
+     1017.4
+    ]
+   ],
+   "core_model": true,
+   "storm_cells": 272,
+   "hf_cells": 0,
+   "valid": "2026-11-05T06:00Z",
+   "k": 0.25
+  },
+  {
+   "step": 120,
+   "members": 81,
+   "gefs": 31,
+   "ens": 50,
+   "aifs_ens": 51,
+   "prob_members": 132,
+   "trend": true,
+   "nomem_runs": 9,
+   "max_wind": 31.5,
+   "gale_cells": 0,
+   "focus_cells": 1164,
+   "lone_cells": 0,
+   "centres": [
+    [
+     "L",
+     59.25,
+     -38.5,
+     1013.7
+    ],
+    [
+     "L",
+     59.0,
+     7.25,
+     1030.5
+    ],
+    [
+     "L",
+     47.5,
+     -86.5,
+     1004.8
+    ],
+    [
+     "L",
+     42.5,
+     2.25,
+     1017.7
+    ],
+    [
+     "H",
+     61.25,
+     7.25,
+     1035.0
+    ],
+    [
+     "H",
+     44.25,
+     7.5,
+     1028.5
+    ],
+    [
+     "H",
+     31.5,
+     -6.5,
+     1022.1
+    ],
+    [
+     "H",
+     23.25,
+     5.75,
+     1020.2
+    ],
+    [
+     "H",
+     19.0,
+     -71.0,
+     1015.6
+    ],
+    [
+     "H",
+     19.0,
+     8.75,
+     1016.1
+    ]
+   ],
+   "core_model": true,
+   "storm_cells": 133,
+   "hf_cells": 0,
+   "valid": "2026-11-05T12:00Z",
+   "k": 0.25
+  },
+  {
+   "step": 126,
+   "members": 81,
+   "gefs": 31,
+   "ens": 50,
+   "aifs_ens": 51,
+   "prob_members": 132,
+   "trend": true,
+   "nomem_runs": 9,
+   "max_wind": 31.5,
+   "gale_cells": 0,
+   "focus_cells": 1961,
+   "lone_cells": 0,
+   "centres": [
+    [
+     "L",
+     58.75,
+     -40.75,
+     1013.0
+    ],
+    [
+     "H",
+     62.5,
+     7.75,
+     1034.2
+    ],
+    [
+     "H",
+     44.25,
+     7.5,
+     1028.2
+    ],
+    [
+     "H",
+     31.75,
+     -6.25,
+     1023.1
+    ],
+    [
+     "H",
+     28.25,
+     -16.5,
+     1019.8
+    ],
+    [
+     "H",
+     23.25,
+     5.75,
+     1021.1
+    ],
+    [
+     "H",
+     19.0,
+     -71.0,
+     1013.8
+    ]
+   ],
+   "core_model": true,
+   "storm_cells": 41,
+   "hf_cells": 0,
+   "valid": "2026-11-05T18:00Z",
+   "k": 0.25
+  },
+  {
+   "step": 132,
+   "members": 81,
+   "gefs": 31,
+   "ens": 50,
+   "aifs_ens": 51,
+   "prob_members": 132,
+   "trend": true,
+   "nomem_runs": 9,
+   "max_wind": 33.0,
+   "gale_cells": 0,
+   "focus_cells": 2498,
+   "lone_cells": 19,
+   "centres": [
+    [
+     "H",
+     45.0,
+     7.0,
+     1028.3
+    ],
+    [
+     "H",
+     32.0,
+     -5.5,
+     1024.3
+    ],
+    [
+     "H",
+     28.25,
+     -16.5,
+     1021.4
+    ],
+    [
+     "H",
+     23.25,
+     5.75,
+     1021.4
+    ],
+    [
+     "H",
+     19.0,
+     -71.0,
+     1015.0
+    ]
+   ],
+   "core_model": true,
+   "storm_cells": 89,
+   "hf_cells": 0,
+   "valid": "2026-11-06T00:00Z",
+   "k": 0.25
+  },
+  {
+   "step": 138,
+   "members": 81,
+   "gefs": 31,
+   "ens": 50,
+   "aifs_ens": 51,
+   "prob_members": 132,
+   "trend": true,
+   "nomem_runs": 9,
+   "max_wind": 34.0,
+   "gale_cells": 2,
+   "focus_cells": 2562,
+   "lone_cells": 6,
+   "centres": [
+    [
+     "L",
+     45.25,
+     -85.5,
+     1011.0
+    ],
+    [
+     "L",
+     35.0,
+     -40.0,
+     1006.8
+    ],
+    [
+     "H",
+     45.0,
+     7.0,
+     1026.8
+    ],
+    [
+     "H",
+     31.5,
+     -6.5,
+     1023.6
+    ],
+    [
+     "H",
+     28.25,
+     -16.5,
+     1020.7
+    ],
+    [
+     "H",
+     25.25,
+     8.25,
+     1020.7
+    ],
+    [
+     "H",
+     19.0,
+     -71.0,
+     1014.6
+    ]
+   ],
+   "core_model": true,
+   "storm_cells": 83,
+   "hf_cells": 0,
+   "valid": "2026-11-06T06:00Z",
+   "k": 0.25
+  },
+  {
+   "step": 144,
+   "members": 81,
+   "gefs": 31,
+   "ens": 50,
+   "aifs_ens": 51,
+   "prob_members": 132,
+   "trend": true,
+   "nomem_runs": 9,
+   "max_wind": 32.5,
+   "gale_cells": 0,
+   "focus_cells": 2164,
+   "lone_cells": 0,
+   "centres": [
+    [
+     "L",
+     33.25,
+     -39.5,
+     1006.9
+    ],
+    [
+     "H",
+     44.25,
+     7.75,
+     1024.7
+    ],
+    [
+     "H",
+     31.5,
+     -6.5,
+     1023.2
+    ],
+    [
+     "H",
+     28.25,
+     -16.5,
+     1022.0
+    ],
+    [
+     "H",
+     19.0,
+     -71.0,
+     1015.3
+    ]
+   ],
+   "core_model": true,
+   "storm_cells": 273,
+   "hf_cells": 0,
+   "valid": "2026-11-06T12:00Z",
+   "k": 0.25
+  },
+  {
+   "step": 150,
+   "members": 81,
+   "gefs": 31,
+   "ens": 50,
+   "aifs_ens": 51,
+   "prob_members": 132,
+   "trend": true,
+   "nomem_runs": 9,
+   "max_wind": 32.0,
+   "gale_cells": 0,
+   "focus_cells": 1528,
+   "lone_cells": 0,
+   "centres": [
+    [
+     "H",
+     45.5,
+     7.25,
+     1025.3
+    ],
+    [
+     "H",
+     31.75,
+     -6.25,
+     1023.6
+    ],
+    [
+     "H",
+     28.25,
+     -16.5,
+     1021.0
+    ],
+    [
+     "H",
+     19.0,
+     -71.0,
+     1013.7
+    ]
+   ],
+   "core_model": true,
+   "storm_cells": 140,
+   "hf_cells": 0,
+   "valid": "2026-11-06T18:00Z",
+   "k": 0.25
+  },
+  {
+   "step": 156,
+   "members": 81,
+   "gefs": 31,
+   "ens": 50,
+   "aifs_ens": 51,
+   "prob_members": 132,
+   "trend": true,
+   "nomem_runs": 9,
+   "max_wind": 30.5,
+   "gale_cells": 0,
+   "focus_cells": 1000,
+   "lone_cells": 0,
+   "centres": [
+    [
+     "L",
+     61.25,
+     -44.75,
+     999.5
+    ],
+    [
+     "L",
+     42.0,
+     -81.25,
+     1008.3
+    ],
+    [
+     "H",
+     45.5,
+     7.25,
+     1025.0
+    ],
+    [
+     "H",
+     32.0,
+     -5.75,
+     1024.5
+    ],
+    [
+     "H",
+     28.25,
+     -16.5,
+     1022.1
+    ],
+    [
+     "H",
+     25.25,
+     8.25,
+     1019.8
+    ],
+    [
+     "H",
+     19.0,
+     -71.0,
+     1015.4
+    ]
+   ],
+   "core_model": true,
+   "storm_cells": 91,
+   "hf_cells": 0,
+   "valid": "2026-11-07T00:00Z",
+   "k": 0.25
+  },
+  {
+   "step": 162,
+   "members": 81,
+   "gefs": 31,
+   "ens": 50,
+   "aifs_ens": 51,
+   "prob_members": 132,
+   "trend": true,
+   "nomem_runs": 9,
+   "max_wind": 30.5,
+   "gale_cells": 0,
+   "focus_cells": 1296,
+   "lone_cells": 0,
+   "centres": [
+    [
+     "L",
+     43.0,
+     -81.0,
+     1007.5
+    ],
+    [
+     "L",
+     37.5,
+     -32.75,
+     998.6
+    ],
+    [
+     "H",
+     45.0,
+     7.0,
+     1024.2
+    ],
+    [
+     "H",
+     32.0,
+     -5.75,
+     1023.5
+    ],
+    [
+     "H",
+     28.25,
+     -16.5,
+     1020.7
+    ],
+    [
+     "H",
+     25.25,
+     8.25,
+     1019.4
+    ],
+    [
+     "H",
+     19.0,
+     -71.0,
+     1015.2
+    ]
+   ],
+   "core_model": true,
+   "storm_cells": 29,
+   "hf_cells": 0,
+   "valid": "2026-11-07T06:00Z",
+   "k": 0.25
+  },
+  {
+   "step": 168,
+   "members": 81,
+   "gefs": 31,
+   "ens": 50,
+   "aifs_ens": 51,
+   "prob_members": 132,
+   "trend": true,
+   "nomem_runs": 9,
+   "max_wind": 32.0,
+   "gale_cells": 0,
+   "focus_cells": 1918,
+   "lone_cells": 0,
+   "centres": [
+    [
+     "L",
+     44.75,
+     -81.5,
+     1007.6
+    ],
+    [
+     "L",
+     39.0,
+     -71.75,
+     1006.0
+    ],
+    [
+     "L",
+     38.75,
+     -33.5,
+     997.4
+    ],
+    [
+     "H",
+     31.5,
+     -6.5,
+     1022.3
+    ],
+    [
+     "H",
+     28.25,
+     -16.5,
+     1021.0
+    ],
+    [
+     "H",
+     19.0,
+     -71.0,
+     1016.3
+    ]
+   ],
+   "core_model": true,
+   "storm_cells": 4,
+   "hf_cells": 0,
+   "valid": "2026-11-07T12:00Z",
+   "k": 0.25
+  }
+ ]
+}
