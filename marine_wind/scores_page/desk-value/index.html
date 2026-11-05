@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Research Scores · Desk value</title>
+<meta name="description" content="Where the marine desk's issued wind grids add or lose value against the model blend outside storm and hurricane force: by wind band, forecast day, basin and situation, against ASCAT, winter 2026.">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f7f8fa">
+<meta name="color-scheme" content="light">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Cpath d=%22M2 12l4-5 3 3 5-7%22 fill=%22none%22 stroke=%22%230b73b8%22 stroke-width=%221.6%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E">
+<link rel="stylesheet" href="../../marine-wind/recipe/style.css">
+<style>
+  figure { margin: 12px 0 4px; }
+  figure img { width: 100%; height: auto; display: block; border: 1px solid var(--rule); border-radius: 6px; background: #fff; }
+  figcaption { font-size: 14px; color: var(--muted); margin-top: 6px; }
+</style>
+</head>
+<body>
+<header class="top">
+  <nav class="crumbs">
+    <a href="../">&larr; Research scores</a>
+    <a href="../../marine-wind/recipe/">Forecast recipe</a>
+    <a href="../../verification/">Verification</a>
+  </nav>
+  <h1>Where the desk adds value, outside storm force</h1>
+  <p class="lede">The desk's issued wind grids against the page's model blend, scored against ASCAT. Storm and hurricane force, where the desk is already known to earn its keep, are left out. Winter 13 January to 31 March 2026, both basins, OPC High Seas areas.</p>
+</header>
+
+<main>
+
+<section class="glance" aria-labelledby="glance-h">
+  <h2 id="glance-h">At a glance</h2>
+  <ol class="steps">
+    <li><b>Below storm force the blend is closer to ASCAT than the desk</b> in both basins, on days 1 to 5, in every band and every situation tested.</li>
+    <li><b>20-33 kt water is where the desk loses most:</b> about 1.1 kt Atlantic and 0.9 kt Pacific (days 1-3). The desk reads about 2 kt high there.</li>
+    <li><b>Under 20 kt</b> the gap is about half a knot. <b>In gale water</b> it is about half a knot, and on day 1 in the Atlantic the two are even.</li>
+    <li><b>Near lows the desk falls furthest behind</b> (about 1.4 kt in 20-33 kt water). Warm air over a cooler sea is where it is closest.</li>
+    <li><b>Gale areas:</b> the desk catches more ASCAT gale water than the blend at 34 kt, but only by drawing more area. The blend drawn at 32 kt catches more again, over less area than the desk.</li>
+  </ol>
+</section>
+
+<section aria-labelledby="s1">
+  <h2 id="s1"><span class="n">1</span> By wind band and day</h2>
+  <figure>
+    <img src="gap_by_day.svg" alt="Four panels: desk error minus blend error by forecast day, for three wind bands, Atlantic and Pacific, against ASCAT and against the analysis. Every point sits above zero.">
+    <figcaption>Above zero: the blend was closer. The band is what the blend said at that spot. Bars show the range over the 12 winter weeks.</figcaption>
+  </figure>
+  <ul class="facts">
+    <li>Against ASCAT the desk is <b>0.4-1.2 kt</b> farther off under 20 kt, <b>0.8-1.5 kt</b> at 20-33 kt and <b>0.3-1.5 kt</b> in gale water. The gap grows from day 3.</li>
+    <li>Against the analysis the gap looks larger, <b>1-4 kt in gale water</b>. The analysis is itself a model and smooths the peaks, so read the ASCAT row for how strong.</li>
+    <li>Banding by what ASCAT saw instead of by the blend gives the same picture below gale. In gale water the gap shrinks to 0.2-0.3 kt and is not clear of zero.</li>
+  </ul>
+</section>
+
+<section aria-labelledby="s2">
+  <h2 id="s2"><span class="n">2</span> By situation</h2>
+  <figure>
+    <img src="gap_by_situation.svg" alt="Desk error minus blend error, days 1-3, by situation and wind band, Atlantic and Pacific. All points sit right of zero; near lows is furthest right.">
+    <figcaption>Days 1-3 against ASCAT. Right of zero: the blend was closer. Situations come from the analysis at the valid time.</figcaption>
+  </figure>
+  <ul class="facts">
+    <li><b>Near lows</b> (within 500 km of a centre under 1000 hPa) the desk is <b>1.1-1.4 kt</b> farther off below gale, against 0.5-1.1 kt away from lows.</li>
+    <li><b>Cold air over a warmer sea</b> (behind fronts) costs more than <b>warm air over a cooler sea</b> (warm sector) at 20-33 kt: 1.4 vs 0.7 kt Atlantic, 1.2 vs 0.7 kt Pacific.</li>
+    <li><b>Coasts and ice edges</b> look no different from open ocean. ASCAT is blind in the first 25-30 km offshore, so a barrier jet right at the coast is not tested here.</li>
+  </ul>
+</section>
+
+<section aria-labelledby="s3">
+  <h2 id="s3"><span class="n">3</span> Gale areas</h2>
+  <figure>
+    <img src="gale_trade.svg" alt="Share of ASCAT gale cells caught against gale area drawn, for the desk and for the blend drawn at 26 to 34 kt.">
+    <figcaption>Days 1-3, cell by cell against ASCAT. A ratio of 1 means the gale area drawn matches the gale area ASCAT saw.</figcaption>
+  </figure>
+  <ul class="facts">
+    <li>At 34 kt the blend catches <b>75%</b> of ASCAT gale cells in the Atlantic and <b>64%</b> in the Pacific, over about the right area (0.95x). The desk catches <b>85%</b> and <b>77%</b>, over <b>1.4x</b> and <b>1.8x</b> the area (days 1-3).</li>
+    <li>Drawn at <b>32 kt</b>, the blend catches <b>89%</b> Atlantic over 1.3x and <b>82%</b> Pacific over 1.7x. That is more gale caught over less area than the desk drew. A blend line at 31-33 kt does this on every day 1 to 5 in both basins. The only exceptions are three thin slices, where the desk held its own: Atlantic coasts on day 3, and Pacific coasts and near lows on day 1.</li>
+    <li>So the desk's extra gale catch comes from drawing more area, not from knowing where. A lower line on the blend does it better.</li>
+  </ul>
+</section>
+
+<section aria-labelledby="s4">
+  <h2 id="s4">What this means for desk time</h2>
+  <ul class="facts">
+    <li>Outside storm cores, the blend as it stands was closer to ASCAT than the issued grid everywhere tested, most of all near lows. (The desk's edits still beat an automatic update of its own previous grid; it is the starting grid that the blend beats.)</li>
+    <li>This backs step 7 of the <a href="../../marine-wind/recipe/">forecast recipe</a>: spend desk time on storm cores and warning areas, and start the rest from the blend.</li>
+  </ul>
+</section>
+
+<section aria-labelledby="cav">
+  <h2 id="cav">What to watch for</h2>
+  <ul class="facts">
+    <li><b>One winter half.</b> The desk grids cover OPC water only from 13 January 2026, so this is 12 weeks. The RSS ASCAT feed stopped on 12 October 2026, so this winter is not scored yet.</li>
+    <li><b>ASCAT's share.</b> At 00/12Z ASCAT sees about 44% of the Atlantic water scored against the analysis, and about 2% of the Pacific. The Pacific rests on the 06/18Z passes.</li>
+    <li><b>The desk grid is the issued wind speed.</b> Warnings in the text and the HSF wording are not scored here.</li>
+    <li><b>Core Lifted</b> differs from the blend only in storm and gale cores. Its replay exists for just two of these weeks, where it caught gale like the blend (66% vs 67%), too few weeks to score on its own.</li>
+  </ul>
+</section>
+
+</main>
+
+<footer>
+  <p>Truth ASCAT (real 10 m wind, rain dropped) unless a panel says analysis. Blend = the page's blend (GFS, ECMWF, AIFS at half weight, plus the spread lean). Desk = NDFD oceanic wind grids, the update after each 00/12Z run. Study and code: jkrek17/marine-research, studies/2026-11-05-desk-value-bands. Updated 5 November 2026.</p>
+</footer>
+</body>
+</html>
