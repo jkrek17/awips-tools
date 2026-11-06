@@ -148,7 +148,9 @@ def cell_table(obs, inside, thr):
 def rows_for(valid, basin, lead, referee, obs, r, c, f, lats, lons):
     out = []
     tl = tiles(lats, lons, r, c)
-    for prod in ("wind", "windcore"):
+    for prod in ("wind", "windcore", "best"):
+        if prod not in f:     # best: from 6 Nov 2026
+            continue
         out.append(dict(product=prod, **dict(zip("hit miss fa cn".split(), tile_table(tl, obs, f[prod][r, c])))))
     for prod, (bit, thr) in HZ.items():
         out.append(dict(product=prod, **dict(zip("hit miss fa cn".split(), cell_table(obs, (f["hazard"][r, c] & bit) > 0, thr)))))
@@ -203,7 +205,7 @@ def run(valid, basin):
             continue
         f = {}
         for i, fd in enumerate(build.FIELDS):
-            if fd[0] in ("wind", "windcore", "hazard", "warn"):
+            if fd[0] in ("wind", "windcore", "best", "hazard", "warn"):
                 f[fd[0]] = packed[i].astype(np.float32) / fd[1] - (fd[4] if len(fd) > 4 else 0)
         f["hazard"] = f["hazard"].astype(np.uint8)
         if "warn" in f:

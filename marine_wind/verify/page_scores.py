@@ -8,7 +8,8 @@ did against every truth source we use, one basin and one valid time per run.
 Forecasts come from the page job's forecast record (pipeline/record.py), else are rebuilt with the page's
 own pipeline (build.step_values), so the blends are exactly what the page showed (or would have shown):
 
-    windcore      Core Lifted (the page's main wind): the blend + 5 kt where the core likelihood is 35%+, and in the
+    best          Best Wind, the drawn wind from 6 Nov 2026 (build.FIELDS; absent from older records)
+    windcore      Core Lifted (the page's main wind until 6 Nov 2026; still the storm warning line): the blend + 5 kt where the core likelihood is 35%+, and in the
                   OPC boxes (from 17 Oct 2026) at least 34 kt where the gale core is 60%+
     blend         the blend before the core lift: support-weighted 3 models + min(k x spread, 5 kt)
     nomem         deterministic blend (no members; the GFE candidate)
@@ -64,7 +65,7 @@ STEPS = [24, 48, 72, 96, 120]
 HOUR = {"natl": 12, "npac": 0}      # the hours scored before mid-October 2026 (the default of --hour)
 HOURS = (0, 6, 12, 18)
 LOW_EDGES = (0.0, 1.0, 2.0, 5.0, 10.0)   # percent
-METHODS = ["windcore", "blend", "nomem", "mean3", "gfs", "ecmwf", "aifs", "gefs_mean", "ens_mean", "aifsens_mean", "ndfd"]
+METHODS = ["windcore", "best", "blend", "nomem", "mean3", "gfs", "ecmwf", "aifs", "gefs_mean", "ens_mean", "aifsens_mean", "ndfd"]
 GRID_REFS = ["analysis", "gdas", "ifs"]
 DESK_FROM = dt.datetime(2026, 1, 13, 12)   # NDFD oceanic holds the OPC high-seas water from the 22Z issuance of 13 Jan 2026 (before: 14% of the Atlantic box, 25% of the Pacific)
 TILE_MIN = 150
@@ -330,6 +331,8 @@ def run(valid_ymd, basin, hour=None):
         fc = {"windcore": vals["windcore"], "blend": vals["wind"], "nomem": vals["nomem"],
               "mean3": (vals["gfs"] + vals["ecmwf"] + vals["aifs"]) / 3,
               "gfs": vals["gfs"], "ecmwf": vals["ecmwf"], "aifs": vals["aifs"]}
+        if vals.get("best") is not None:      # Best Wind, the drawn wind from 6 Nov 2026 (older records lack it)
+            fc["best"] = vals["best"]
         fc.update({k: v for k, v in extra.items() if v is not None})
         if stats.get("nomem_runs", 0) < 9:      # as on the page, but scored only with all 9 runs, as tested
             fc.pop("nomem")
@@ -399,6 +402,8 @@ def run(valid_ymd, basin, hour=None):
                                                **point_scores(sample(g2, LATS, LONS, o[k, 0], o[k, 1]), o[k, 2])))
         if stats.get("core_model"):
             f = {"wind": vals["wind"], "windcore": vals["windcore"], "hazard": vals["hazard"].astype(np.uint8)}
+            if vals.get("best") is not None:
+                f["best"] = vals["best"]
             if vals.get("warn") is not None:
                 f["warn"] = vals["warn"].astype(np.uint8)
             if asc is not None:
