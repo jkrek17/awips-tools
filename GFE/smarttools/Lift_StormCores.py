@@ -31,6 +31,11 @@ at 42 kt, then an extra 0 -> 4 kt between 48 and 52 kt (no jumps; total
     gale-force areas about unchanged (gale area +2-3%)
   Same as steps (+6 at 42, +4 more at 48) within 1 pt everywhere.
   Extra lift 6 (steps): Atlantic HF 73% but HF area 1.6x.
+"Lift where: this grid's own wind" (no GFS/ECMWF needed; ramps 36-40 and
+44-48 of the Fcst Wind itself; scored on the GFE blend only):
+    storm-force catch Atlantic 76%, Pacific 64%; HF Atlantic 60% at 0.93x;
+    gales exactly the blend's.  Do not use it on a single model: ECMWF alone
+    needs a start near 30, and no setting fit GFS alone.
 Extra lift 0, plain step (+6 kt where >= 42 kt):
     storm-force catch  Atlantic 35% -> 74%, Pacific 22% -> 63%
     storm area vs ASCAT 1.02x / 1.16x; false storm tiles 283 / 147
@@ -80,6 +85,12 @@ HF_CEIL_KT = 60.0
 # Same bands as marine-research rk.features.hf_ceiling (pattern drill map-wide factors).
 HF_CEIL_FACTORS = ((2.0, 0.70), (5.0, 0.79), (None, 0.83))
 
+# Trigger on the grid's own wind instead (Jason 16:54Z "a simple tool to run on any model or blend"). Scored on the
+# GFE blend only: a blend runs weaker than the stronger model, so the ramps start lower.  Same held-out scores.
+OWN_START_KT, OWN_FULL_KT, OWN_START2_KT, OWN_FULL2_KT = 36.0, 40.0, 44.0, 48.0
+TRIGGER_MODELS = "Stronger of GFS/ECMWF"
+TRIGGER_OWN = "This grid's own wind (blend, 36-40 / 44-48)"
+
 STORM_KT = 48.0
 HF_KT = 64.0
 
@@ -92,6 +103,7 @@ SFC_T_SOURCES = [("t", "SFC"), ("tsfc", "SFC")]
 AIR2M_T_SOURCES = [("t", "FHAG2"), ("t", "2FHAG")]
 
 VariableList = [
+    ("Lift where", TRIGGER_MODELS, "radio", [TRIGGER_MODELS, TRIGGER_OWN]),
     ("Lift (kt)", LIFT_KT, "numeric"),
     ("Lift starts where the stronger of GFS/ECMWF reaches (kt)", START_KT, "numeric"),
     ("Full lift at (kt)", FULL_KT, "numeric"),
@@ -205,24 +217,32 @@ class Tool(SmartScript.SmartScript):
                 pass
 
         notes, used, missing, speeds = [], [], [], []
-        for alias in ("GFS", "ECMWF"):
-            found = self._fetch(alias, WIND_SOURCES, GridTimeRange)
-            if found is None:
-                missing.append(alias)
-                continue
-            used.append(found[0])
-            speeds.append(self._speed_kt(found, notes))
-        if not speeds:
-            self.statusBarMsg("Lift_StormCores: no GFS or ECMWF 10 m wind found, Wind unchanged", "U")
-            return Wind
-        if missing:
-            notes.append("%s missing, used %s only" % (" and ".join(missing), used[0]))
-        strongest = np.fmax(speeds[0], speeds[-1])
+        own = varDict.get("Lift where", TRIGGER_MODELS) == TRIGGER_OWN
+        if own:
+            strongest = mag_kt
+            start, full = OWN_START_KT, OWN_FULL_KT
+            used.append("Fcst Wind itself")
+        else:
+            for alias in ("GFS", "ECMWF"):
+                found = self._fetch(alias, WIND_SOURCES, GridTimeRange)
+                if found is None:
+                    missing.append(alias)
+                    continue
+                used.append(found[0])
+                speeds.append(self._speed_kt(found, notes))
+            if not speeds:
+                self.statusBarMsg("Lift_StormCores: no GFS or ECMWF 10 m wind found, Wind unchanged", "U")
+                return Wind
+            if missing:
+                notes.append("%s missing, used %s only" % (" and ".join(missing), used[0]))
+            strongest = np.fmax(speeds[0], speeds[-1])
 
         add1 = np.where(mask, ramp(strongest, lift, start, full), 0.0)
         lift2 = float(varDict.get("Extra lift for HF (kt, 0 = off)", 0.0) or 0.0)
         start2 = float(varDict.get("Extra lift starts at (kt)", START2_KT))
         full2 = float(varDict.get("Full extra lift at (kt)", FULL2_KT))
+        if own:
+            start2, full2 = OWN_START2_KT, OWN_FULL2_KT
         add2 = np.where(mask, ramp(strongest, lift2, start2, full2), 0.0) if lift2 > 0 else np.zeros(mask.shape)
         new_kt = mag_kt + add1 + add2
         lifted, lifted2 = add1 > 0, add2 > 0

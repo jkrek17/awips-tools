@@ -151,8 +151,20 @@ check("ramp has no jump bigger than 0.2 kt per 0.1 kt", step.max() <= 0.15 + 1e-
 check("full <= start is a plain step", L.ramp(np.array([41.9, 42.0]), 6, 42, 42).tolist() == [0.0, 6.0])
 tool, (mag, _) = run(s, d, var=dict(ramped, **{"Extra lift for HF (kt, 0 = off)": 0.0}))
 check("extra lift 0: first ramp only", abs(mag[5, 5] - 46) < 1e-6, mag[5, 5])
-check("dialog defaults are the picked ramps 6 (38-42) + 4 (48-52)",
-      [v[1] for v in L.VariableList[:6]] == [6.0, 38.0, 42.0, 4.0, 48.0, 52.0], L.VariableList[:6])
+nums = [v[1] for v in L.VariableList if v[2] == "numeric"][:6]
+check("dialog defaults are the picked ramps 6 (38-42) + 4 (48-52)", nums == [6.0, 38.0, 42.0, 4.0, 48.0, 52.0], nums)
+check("default trigger is GFS/ECMWF", L.VariableList[0][1] == L.TRIGGER_MODELS, L.VariableList[0])
+
+print("7. own-wind trigger (no models needed)")
+w = np.full(SHAPE, 30.0)
+w[1, 1], w[2, 2], w[3, 3], w[4, 4] = 38.0, 41.0, 46.0, 50.0
+tool, (mag, _) = run({}, {}, var={"Lift where": L.TRIGGER_OWN, "Extra lift for HF (kt, 0 = off)": 4.0}, wind=vec(w))
+check("30 kt untouched", mag[10, 10] == 30, mag[10, 10])
+check("38 kt: half the first ramp (+3)", abs(mag[1, 1] - 41) < 1e-6, mag[1, 1])
+check("41 kt: full first lift (+6)", abs(mag[2, 2] - 47) < 1e-6, mag[2, 2])
+check("46 kt: +6 and half the extra (+2)", abs(mag[3, 3] - 54) < 1e-6, mag[3, 3])
+check("50 kt: +10", abs(mag[4, 4] - 60) < 1e-6, mag[4, 4])
+check("message says the grid itself", "Fcst Wind itself" in tool.msgs[-1][1], tool.msgs[-1])
 
 print()
 print("FAILED: %s" % FAILURES if FAILURES else "all ok")
