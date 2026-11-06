@@ -1,14 +1,13 @@
 /* Marine Wind: draws one layer of the newest run's global grids
    (data/global/manifest.json + fFFF/NAME.gz, made by marine_wind/pipeline/build.py
    --domain glob) on a MapLibre GL (WebGL) globe over the Esri ocean basemap, with
-   pressure, the blend's 34/48 kt edges, wind arrows, lone-model storm signals and
-   the area the blend was tested on, and a point readout. Styled like the site's
+   pressure, wind arrows, lone-model storm signals and a point readout. Styled like the site's
    /ndfd/ globe page.
 
    The field is coloured on the CPU into 256 px Mercator raster tiles, made on demand
    from the grid (a custom "mwfield://" tile protocol, up to zoom 7, then scaled up
    cell by cell), with land cut out of each tile so the basemap's land shows; the
-   GPU wraps them onto the globe. Lines (isobars, edges, lone outlines, graticule)
+   GPU wraps them onto the globe. Lines (isobars, lone outlines, graticule)
    are GeoJSON layers; text (H/L, isobar values, lone labels, graticule labels) and
    arrows go on a 2D overlay canvas, because the page loads no map fonts, and skip
    anything on the far side of the globe. The map, overlay canvas, graticule, land,
@@ -37,48 +36,24 @@
              "#8fbb6e", "#c9c35a", "#e8a93f", "#e06f2e", "#c9372c"],
     unit: "%", title: "Chance (%)"
   };
-  var BOOST = {
-    stops: [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5],
-    colors: ["#1b1d21", "#262338", "#2f2a48", "#3a3159", "#47396b", "#55427d",
-             "#654c8f", "#7657a1", "#8a63b2", "#9f71c2", "#b583d1"],
-    unit: "kt", title: "Added wind (kt)"
-  };
   var SPREAD = {
     stops: [0, 2, 4, 6, 8, 10, 12, 15],
     colors: ["#1b1d21", "#25303a", "#2f4552", "#3b5d68", "#4a787b", "#6b9479", "#a3ab64", "#d8b44c"],
     unit: "kt", title: "Member spread (kt)"
   };
-  var TREND = {
-    stops: [-99, -15, -10, -6, -3, 3, 6, 10, 15],
-    colors: ["#2b5fa8", "#3874b8", "#5a93c6", "#8fb4d2", "rgba(0,0,0,0)",
-             "#d9a274", "#d47647", "#c6512f", "#a8301f"],
-    labels: ["", "-15", "-10", "-6", "-3", "+3", "+6", "+10", "+15"],
-    unit: "kt", title: "Change since the run 24 h earlier (kt)"
-  };
-  var DIFF = {
-    stops: [-99, -6, -4, -2, -1, 1, 2, 4, 6],
-    colors: ["#2b5fa8", "#3874b8", "#5a93c6", "#8fb4d2", "rgba(0,0,0,0)",
-             "#d9a274", "#d47647", "#c6512f", "#a8301f"],
-    labels: ["", "-6", "-4", "-2", "-1", "+1", "+2", "+4", "+6"],
-    unit: "kt", title: "Deterministic blend minus blended wind (kt)"
-  };
   var FOCUS = {
     cats: [["Ride", "rgba(0,0,0,0)"], ["Agree", "#3a4049"], ["Focus", "#d9a640"], ["High impact", "#d2483b"]],
     title: "Where to look"
   };
-  var TREND_MIN = 25;   // run change is drawn only where either run has this much wind
   // what an all-clear layer means, so a blank map doesn't read as a failed load
   var EMPTY = {
     p34: "No point reaches a 5% chance of 34 kt at this hour",
     p48: "No point reaches a 5% chance of 48 kt at this hour",
     p64: "No point reaches a 5% chance of 64 kt at this hour",
-    trend: "No change of 3 kt or more in 25+ kt wind since the run 24 h earlier",
-    nomemdiff: "The two blends are within 1 kt everywhere either has 25+ kt",
     focus: "Models agree everywhere at this hour"
   };
   var MODEL_COLOR = ["", "#f08a5d", "#7fb0ee", "#c3a6f0"];
   var MODEL_NAME = ["", "GFS", "ECMWF", "AIFS"];
-  var TESTED_COLOR = "#e8c46a";
   var CORE = {
     stops: [0, 10, 20, 30, 35, 50, 70, 90],
     colors: ["rgba(0,0,0,0)", "#2c4a6a", "#3c8a96", "#c9c35a", "#e8a93f", "#e06f2e", "#c9372c", "#c86fd8"],
@@ -92,18 +67,12 @@
   var LAYERS = [
     ["Forecast"],
     ["wind", "Blended wind", WIND],
-    ["mean", "Model base (weighted average)", WIND],
-    ["boost", "Added wind", BOOST],
     ["Storm layers (test)"],
     ["windcore", "Core Lifted", WIND],
     ["core", "Storm core chance", CORE],
     ["Where to look"],
     ["focus", "Model agreement", FOCUS],
     ["sigma", "Member spread", SPREAD],
-    ["trend", "Change since yesterday's run", TREND],
-    ["Deterministic blend (GFE test)"],
-    ["nomem", "Deterministic blend", WIND],
-    ["nomemdiff", "Difference from blended wind", DIFF],
     ["Ensemble chance"],
     ["p34", "Gale, 34 kt+", PROB],
     ["p48", "Storm, 48 kt+", PROB],
@@ -123,7 +92,7 @@
 
   // ------------------------------------------------------------------- state
   var man = null, grid = null, fieldIx = {}, cache = {}, order = [], frame = null;
-  var state = { layer: "wind", step: 0, lone: true, msl: true, arrows: false, edges: true, tested: true, view: "global", opacity: 0.85, hazard: false, warn: true, track: true };
+  var state = { layer: "wind", step: 0, lone: true, msl: true, arrows: false, view: "global", opacity: 0.85, hazard: false, warn: true, track: true };
   var map = null, ov = null, octx = null, overlay = $("overlay");
   var hover = null, playTimer = null, lines = null, areas = [], labels = [], rail = null;
   var MAXLAT = K.MAXLAT, TILE = 256, paint = null, paintVersion = 0;
@@ -165,12 +134,16 @@
       return d;
     });
   }
+  // fields the build still writes (verification scores nomem) but the page stopped showing
+  // on 6 Nov 2026: not downloaded, about a third of each lead
+  var UNUSED = { mean: 1, boost: 1, trend: 1, nomem: 1, nomemdiff: 1 };
   function loadStep(i) {
     var st = man.steps[i];
     if (cache[st.step]) return cache[st.step];
-    var p = Promise.all(man.fields.map(function (f) { return loadField(st.step, f.name); })).then(function (arrs) {
+    var want = man.fields.filter(function (f) { return !UNUSED[f.name]; });
+    var p = Promise.all(want.map(function (f) { return loadField(st.step, f.name); })).then(function (arrs) {
       var b = {};
-      man.fields.forEach(function (f, k) { b[f.name] = arrs[k]; });
+      want.forEach(function (f, k) { b[f.name] = arrs[k]; });
       return b;
     });
     p.catch(function () { delete cache[st.step]; });
@@ -203,20 +176,7 @@
   // what the field tiles draw: the layer's bytes, colour table and the cells to leave clear
   function paintField(buf) {
     var pal = layerDef(state.layer)[2], data = buf[state.layer], tab = colorTable(pal);
-    // run change and blend difference: only where either has 25 kt or more
     var keep = null;
-    if (state.layer === "nomemdiff") {
-      var wf = buf.wind, nf = buf.nomem, ws = man.fields[fieldIx.wind].scale, ns = man.fields[fieldIx.nomem].scale;
-      keep = function (i) { return wf[i] / ws >= TREND_MIN || nf[i] / ns >= TREND_MIN; };
-    }
-    if (state.layer === "trend") {
-      var g = buf.gfs, e = buf.ecmwf, a = buf.aifs;
-      var ms = man.fields[fieldIx.gfs].scale, tf = man.fields[fieldIx.trend];
-      keep = function (i) {
-        var now = (g[i] + e[i] + a[i]) / (3 * ms), was = now - (data[i] / tf.scale - (tf.offset || 0));
-        return now >= TREND_MIN || was >= TREND_MIN;
-      };
-    }
     // does anything show at all (for the empty-layer note)
     var shown = 0, n = grid.nx * grid.ny;
     for (var c = 0; c < n && !shown; c++) if (tab[data[c] * 4 + 3] && (!keep || keep(c))) shown++;
@@ -362,8 +322,6 @@
     var m = buf.msl, levs = [];
     for (var lev = 940; lev <= 1052; lev += 4) levs.push(lev - 0.5);
     var iso = contour(function (i, j) { return m[j * nx + i] + 900; }, levs, 0, J0, nx, J1, true);
-    var w = buf.wind, sc = man.fields[fieldIx.wind].scale;
-    var ed = contour(function (i, j) { return w[j * nx + i] / sc; }, [34, 48], 0, J0, nx, J1, true);
     var isoLines = {};
     levs.forEach(function (l) { if (iso[l].length) isoLines[l + 0.5] = polylines(iso[l]); });
     var hz = {}, h = buf.hazard;
@@ -374,7 +332,7 @@
     if (wb) WARN.forEach(function (d) {
       wz[d[0]] = polylines(contour(function (i, j) { return wb[j * nx + i] & d[0] ? 1 : 0; }, [0.5], 0, J0, nx, J1, true)[0.5]);
     });
-    return { iso: isoLines, e34: polylines(ed[34]), e48: polylines(ed[48]), hz: hz, wz: wz };
+    return { iso: isoLines, hz: hz, wz: wz };
   }
 
   // lone-model areas: connected components of each (model, threshold) mask
@@ -424,8 +382,6 @@
     var isoF = [];
     if (state.msl) Object.keys(lines.iso).forEach(function (l) { isoF.push(multiLine(lines.iso[l], { lev: +l })); });
     setData("isobars", featureColl(isoF));
-    var showEdges = state.edges && state.layer !== "focus";
-    setData("edges", featureColl(showEdges ? [multiLine(lines.e34, { lev: 34 }), multiLine(lines.e48, { lev: 48 })] : []));
     setData("lone", featureColl(state.lone ? areas.map(function (a) { return multiLine(a.lines, { thr: a.thr, color: MODEL_COLOR[a.model] }); }) : []));
     setData("hazard", featureColl(state.hazard && hasStorm() ? HAZARD.map(function (d) { return multiLine(lines.hz[d[0]] || [], { bit: d[0], color: d[2] }); }) : []));
     setData("warn", featureColl(state.warn && hasWarn() ? WARN.map(function (d) { return multiLine(lines.wz[d[0]] || [], { bit: d[0], color: d[2] }); }) : []));
@@ -495,11 +451,6 @@
   }
 
   // ------------------------------------------------------------- map setup
-  function testedArea() {
-    return featureColl((grid.tested || []).map(function (b) {
-      return multiLine([[[b.west, b.south], [b.east, b.south], [b.east, b.north], [b.west, b.north], [b.west, b.south]]], { name: b.name });
-    }));
-  }
   function inTested(lon, lat) {
     return (grid.tested || []).some(function (b) {
       return lat >= b.south && lat <= b.north && ((lon - b.west) % 360 + 360) % 360 <= b.east - b.west;
@@ -516,17 +467,13 @@
       map.addLayer({ id: "field", type: "raster", source: "field", paint: { "raster-resampling": "nearest", "raster-fade-duration": 0, "raster-opacity": state.opacity } });
       map.addSource("graticule", { type: "geojson", data: K.graticule() });
       map.addLayer({ id: "graticule", type: "line", source: "graticule", paint: K.GRATICULE_PAINT });
-      map.addSource("tested", { type: "geojson", data: testedArea() });
-      map.addLayer({ id: "tested", type: "line", source: "tested", paint: { "line-color": TESTED_COLOR, "line-opacity": 0.85, "line-width": 1.4, "line-dasharray": [1, 2.5] } });
-      ["cone", "isobars", "edges", "hazard", "warn", "lone", "track", "trackpts"].forEach(function (id) { map.addSource(id, { type: "geojson", data: featureColl([]), tolerance: 0.2 }); });
+      ["cone", "isobars", "hazard", "warn", "lone", "track", "trackpts"].forEach(function (id) { map.addSource(id, { type: "geojson", data: featureColl([]), tolerance: 0.2 }); });
       map.addLayer({ id: "cone", type: "fill", source: "cone", paint: { "fill-color": "#e7eef8", "fill-opacity": 0.2 } });
       map.addLayer({ id: "cone-edge", type: "line", source: "cone", paint: { "line-color": "rgba(255,255,255,0.8)", "line-width": 1.1 } });
       // every 8 hPa zoomed out, every 4 hPa once zoomed in
       var iso = { "line-color": "rgba(231,238,248,0.55)", "line-width": 0.9 };
       map.addLayer({ id: "isobars8", type: "line", source: "isobars", filter: ["==", ["%", ["get", "lev"], 8], 0], paint: iso });
       map.addLayer({ id: "isobars4", type: "line", source: "isobars", minzoom: 2.5, filter: ["!=", ["%", ["get", "lev"], 8], 0], paint: iso });
-      map.addLayer({ id: "edge34", type: "line", source: "edges", filter: ["==", ["get", "lev"], 34], paint: { "line-color": "rgba(255,255,255,0.9)", "line-width": 1, "line-dasharray": [4, 3] } });
-      map.addLayer({ id: "edge48", type: "line", source: "edges", filter: ["==", ["get", "lev"], 48], paint: { "line-color": "rgba(255,255,255,0.9)", "line-width": 1.6 } });
       map.addLayer({ id: "hazard-halo", type: "line", source: "hazard", paint: { "line-color": "rgba(5,10,20,0.7)", "line-width": 3.4 } });
       map.addLayer({ id: "hazard", type: "line", source: "hazard", paint: { "line-color": ["get", "color"], "line-width": 1.6 } });
       map.addLayer({ id: "warn-halo", type: "line", source: "warn", paint: { "line-color": "rgba(5,10,20,0.7)", "line-width": 3.4 } });
@@ -543,7 +490,6 @@
         "circle-radius": ["case", ["has", "now"], 5.5, 3.5],
         "circle-color": ["case", ["has", "now"], "#38bdf8", ["==", ["get", "past"], 1], "#ffffff", "#0f1829"],
         "circle-stroke-color": "#ffffff", "circle-stroke-width": ["case", ["has", "now"], 2, 1.5] } });
-      setTested();
       loadLand();
       ready();
     });
@@ -566,7 +512,6 @@
     return { top: tb.bottom + 8, bottom: r.height - tl.top + 8, left: panelOpen ? 312 + 24 : 16, right: r.width > 760 ? 56 : 12 };
   }
   var note = K.note;
-  function setTested() { if (map.getLayer("tested")) map.setLayoutProperty("tested", "visibility", state.tested ? "visible" : "none"); }
 
   // -------------------------------------------------------------- overlay
   // screen position of a lon/lat, as a list: empty when it is off screen or on the far side of the globe
@@ -718,7 +663,7 @@
     p64: "Share of members at 64 kt+, adjusted to how often model analyses had 64 kt+",
     core: "Chance that ASCAT sees 48 kt+ within about 50 km"
   };
-  var CHANCE_FIT = "; fitted inside the tested area on November to March, untested elsewhere and in other months";
+  var CHANCE_FIT = "; fitted on 30-67N in the two OPC basins, November to March, untested elsewhere and in other months";
   var CHANCE_MONTHS = [10, 11, 0, 1, 2];   // getUTCMonth of Nov-Mar
   function legend() {
     var def = layerDef(state.layer), pal = def[2], el = $("legend"), h;
@@ -728,20 +673,16 @@
       }).join("") + "</div>";
     } else {
       var title = def[1] === "Blended wind" || pal !== WIND ? pal.title.replace(/ \((kt|%)\)$/, "") : def[1];
-      var cond = state.layer === "trend" ? ", where either run has " + TREND_MIN + "+ kt" : state.layer === "nomemdiff" ? ", where either has " + TREND_MIN + "+ kt" : "";
       var labs = pal.labels || pal.stops, n = pal.colors.length;
-      h = '<div class="legend-head"><span>' + title + cond + '</span><span class="unit">' + pal.unit + "</span></div>" +
+      h = '<div class="legend-head"><span>' + title + '</span><span class="unit">' + pal.unit + "</span></div>" +
         '<div class="legend-bar">' + pal.colors.map(function (c) { return '<span style="background:' + c + '"></span>'; }).join("") + "</div>" +
         '<div class="legend-labels">' + labs.map(function (t, k) {
           return k && t !== "" ? '<span style="left:' + (k / n * 100).toFixed(2) + '%">' + t + "</span>" : "";
         }).join("") + "</div>";
     }
-    if (LEGEND_NOTE[state.layer]) h += '<div class="legend-note">' + LEGEND_NOTE[state.layer] + (state.layer === "core" ? "; trained inside the tested area on winter 2025-26" : CHANCE_FIT) + "</div>";
+    if (LEGEND_NOTE[state.layer]) h += '<div class="legend-note">' + LEGEND_NOTE[state.layer] + (state.layer === "core" ? "; trained on 30-67N in the two OPC basins, winter 2025-26" : CHANCE_FIT) + "</div>";
     var keys = [];
-    if (state.edges && state.layer !== "focus") keys.push('<span><i style="border-top:1px dashed #fff"></i>34 kt edge</span>',
-      '<span><i style="border-top:2px solid #fff"></i>48 kt edge</span>');
     if (state.msl) keys.push('<span><i style="border-top:1px solid rgba(231,238,248,0.6)"></i>Isobars, 4 hPa</span>');
-    if (state.tested) keys.push('<span><i style="border-top:2px dotted ' + TESTED_COLOR + '"></i>Tested area</span>');
     if (state.hazard && hasStorm()) {
       keys.push.apply(keys, HAZARD.map(function (d) { return '<span><i style="border-top:2px solid ' + d[2] + '"></i>' + d[1] + "</span>"; }));
       keys.push('<span class="wide">Members-agree lines use the raw member shares (gale 30%+ at 34 kt) and the storm core chance; they sit inside the warning areas</span>');
@@ -835,19 +776,15 @@
     else if (CHANCE_MONTHS.indexOf(new Date(man.steps[state.step].valid).getUTCMonth()) < 0) notes.push("Chances were fitted on November to March only");
     if (man.steps[state.step].step > 120) notes.push("Day 6-7: the blend, Core Lifted and chances were tested to day 5 only");
     var foc = FOCUS.cats[b.focus[k]][0];
-    var tr = man.steps[state.step].trend ? '<tr><td>Since run 24 h earlier</td><td>' + (V("trend") >= 0 ? "+" : "") + V("trend").toFixed(1) + " kt</td></tr>" : "";
     box.innerHTML = '<div class="h">' + latText(lat, 2) + " " + lonText(lon, 2) + "</div><table>" +
       "<tr><td>Blended wind</td><td>" + fmt(V("wind")) + " kt " + Math.round(V("dir") / 10) * 10 + "°</td></tr>" +
-      "<tr><td>Model base</td><td>" + fmt(V("mean")) + " kt</td></tr>" +
-      "<tr><td>Added</td><td>+" + V("boost").toFixed(1) + " kt</td></tr>" +
-      "<tr><td>Deterministic blend</td><td>" + fmt(V("nomem")) + " kt</td></tr>" +
       '<tr class="sep"><td>GFS</td><td>' + fmt(V("gfs")) + " kt</td></tr>" +
       "<tr><td>ECMWF</td><td>" + fmt(V("ecmwf")) + " kt</td></tr>" +
       "<tr><td>AIFS</td><td>" + fmt(V("aifs")) + " kt</td></tr>" +
       '<tr class="sep"><td>Member spread</td><td>' + V("sigma").toFixed(1) + " kt</td></tr>" +
       "<tr><td>Chance 34 / 48 / 64</td><td>" + fmt(V("p34")) + " / " + fmt(V("p48")) + " / " + fmt(V("p64")) + "%</td></tr>" +
       (fieldIx.p34raw != null ? "<tr><td>Raw members 34 / 48 / 64</td><td>" + fmt(V("p34raw")) + " / " + fmt(V("p48raw")) + " / " + fmt(V("p64raw")) + "%</td></tr>"
-        : "<tr><td>Raw members 48 / 64</td><td>" + fmt(V("p48raw")) + " / " + fmt(V("p64raw")) + "%</td></tr>") + tr +
+        : "<tr><td>Raw members 48 / 64</td><td>" + fmt(V("p48raw")) + " / " + fmt(V("p64raw")) + "%</td></tr>") +
       "<tr><td>Agreement</td><td>" + foc + "</td></tr>" +
       "<tr><td>Pressure</td><td>" + V("msl") + " hPa</td></tr>" +
       (hasStorm() ? '<tr class="sep"><td>Core Lifted</td><td>' + fmt(V("windcore")) + " kt</td></tr>" +
@@ -1002,11 +939,11 @@
     $("prev").addEventListener("click", function () { setStep(state.step - 1); });
     $("next").addEventListener("click", function () { setStep(state.step + 1); });
     $("play").addEventListener("click", togglePlay);
-    var OV = [["ov-lone", "lone", "s"], ["ov-msl", "msl", "i"], ["ov-arrows", "arrows", "a"], ["ov-edges", "edges", "e"], ["ov-tested", "tested", "t"],
+    var OV = [["ov-lone", "lone", "s"], ["ov-msl", "msl", "i"], ["ov-arrows", "arrows", "a"],
               ["ov-hazard", "hazard", "h"], ["ov-warn", "warn", "w"], ["ov-track", "track", "c"]];
-    if (!hasStorm()) { $("storm-sec").hidden = true; OV = OV.slice(0, 5); }
+    if (!hasStorm()) { $("storm-sec").hidden = true; OV = OV.slice(0, 3); }
     else if (!hasWarn()) { $("warn-row").hidden = true; OV = OV.filter(function (p) { return p[1] !== "warn"; }); }
-    function overlayChanged() { legend(); setTested(); if (frame) { updateLines(); placeLabels(); drawOverlay(); } }
+    function overlayChanged() { legend(); if (frame) { updateLines(); placeLabels(); drawOverlay(); } }
     OV.forEach(function (p) {
       $(p[0]).checked = state[p[1]];
       $(p[0]).addEventListener("change", function () { state[p[1]] = this.checked; overlayChanged(); });
