@@ -4,8 +4,8 @@ Lift_StormCores - Add a few knots to the Wind grid where the models already show
 What it does, in forecaster terms: a blended Wind grid tends to smear out the
 storm-force (48+ kt) core of a deep low.  This tool takes the Fcst Wind grid you
 already have (usually from the blend procedure) and, wherever the stronger of
-the deterministic GFS and ECMWF 10 m winds is at least the threshold, adds the
-lift to the wind speed.  Direction is not touched.  It uses the newest GFS and
+the deterministic GFS and ECMWF 10 m winds is strong, adds a lift to the wind
+speed that ramps in with that model wind.  Direction is not touched.  It uses the newest GFS and
 ECMWF run that has a 10 m wind grid for the grid's time.  If a selected edit
 area exists only cells inside it change; otherwise the whole grid.
 
@@ -23,13 +23,15 @@ water cells only, and the tool lifts every cell in the edit area.
 Scored on five held-out winter weeks (Nov 2025 - Mar 2026) against ASCAT,
 5x5 deg storm tiles, Pacific including the 06/18Z passes (marine-research
 studies/2026-11-06-gfe-wind-tool/findings.md).
-Defaults, two steps: +6 kt where the stronger model >= 42 kt, then +6 kt more
-where it is >= 48 kt (picked on tune weeks for storm AND HF):
-    storm-force catch Atlantic 75%, Pacific 66%; storm area 1.05x / 1.26x
-    HF catch Atlantic 73% (84 of 115 tiles), Pacific 6 of 15; HF area 1.6x
-    / 1.4x ASCAT's (0.9x on tune weeks)
-  Extra lift 4 instead of 6: HF Atlantic 60% at 0.93x area, storm the same.
-Extra lift 0 (one step, +6 kt where >= 42 kt):
+Defaults: the lift ramps from 0 kt where the stronger model is 38 kt to 6 kt
+at 42 kt, then an extra 0 -> 4 kt between 48 and 52 kt (no jumps; total
++10 kt at 52 kt and up).  Picked on tune weeks for storm AND HF:
+    storm-force catch Atlantic 75%, Pacific 64%; storm area 1.05x / 1.23x
+    HF catch Atlantic 59% (68 of 115 tiles), HF area 0.92x; Pacific 3 of 15
+    gale-force areas about unchanged (gale area +2-3%)
+  Same as steps (+6 at 42, +4 more at 48) within 1 pt everywhere.
+  Extra lift 6 (steps): Atlantic HF 73% but HF area 1.6x.
+Extra lift 0, plain step (+6 kt where >= 42 kt):
     storm-force catch  Atlantic 35% -> 74%, Pacific 22% -> 63%
     storm area vs ASCAT 1.02x / 1.16x; false storm tiles 283 / 147
     gale-force areas unchanged
@@ -64,10 +66,14 @@ ScreenList = ["VECTOR"]
 
 # Defaults picked on tune weeks (most storm catch, storm area <= ASCAT's, gales unchanged).
 LIFT_KT = 6.0
-THRESH_KT = 42.0
-# Second step for HF (Jason 16:42Z "good at both storm and HF"): a further lift where the stronger model is higher.
-LIFT2_KT = 6.0
-THRESH2_KT = 48.0
+# The lift ramps in (Jason 16:49Z: a step jumps 41 -> 47): 0 kt where the stronger model is at START, full at FULL,
+# straight line between.  FULL <= START gives a plain step at START.
+START_KT = 38.0
+FULL_KT = 42.0
+# Second, extra lift for HF (Jason 16:42Z "good at both storm and HF"; 16:49Z "+6, +4").
+LIFT2_KT = 4.0
+START2_KT = 48.0
+FULL2_KT = 52.0
 GEFS_FLOOR_P = 50.0  # percent
 HF_CEIL_KT = 60.0
 # (sea minus 2 m air below this edge, deg C -> factor on the 925 mb wind); None = no upper edge.
@@ -87,14 +93,24 @@ AIR2M_T_SOURCES = [("t", "FHAG2"), ("t", "2FHAG")]
 
 VariableList = [
     ("Lift (kt)", LIFT_KT, "numeric"),
-    ("Where the stronger of GFS/ECMWF is at least (kt)", THRESH_KT, "numeric"),
+    ("Lift starts where the stronger of GFS/ECMWF reaches (kt)", START_KT, "numeric"),
+    ("Full lift at (kt)", FULL_KT, "numeric"),
     ("Extra lift for HF (kt, 0 = off)", LIFT2_KT, "numeric"),
-    ("Extra lift where the stronger is at least (kt)", THRESH2_KT, "numeric"),
+    ("Extra lift starts at (kt)", START2_KT, "numeric"),
+    ("Full extra lift at (kt)", FULL2_KT, "numeric"),
     ("GEFS storm floor", "Off", "radio", ["Off", "On"]),
     ("HF ceiling check", "Off", "radio", ["Off", "On"]),
 ]
 
 _TO_KT = {"kt": 1.0, "kts": 1.0, "knots": 1.0, "m/s": 1.943844, "mph": 0.868976}
+
+
+def ramp(strongest, lift, start, full):
+    """Lift in kt: 0 below start, `lift` at and above full, straight line between (a step when full <= start)."""
+    s = np.nan_to_num(np.asarray(strongest, dtype=float), nan=-999.0)
+    if full <= start:
+        return np.where(s >= start, float(lift), 0.0)
+    return float(lift) * np.clip((s - start) / (full - start), 0.0, 1.0)
 
 
 def _first(grid):
@@ -169,9 +185,10 @@ class Tool(SmartScript.SmartScript):
                 "(925 mb x stability under %g kt)" % (n_flag, n_hf, HF_CEIL_KT))
 
     def execute(self, Wind, Wind_GridInfo, GridTimeRange, varDict, editArea=None):
-        """Lift Wind speed where the stronger model wind is at least the threshold."""
+        """Lift Wind speed, ramping in with the stronger model wind."""
         lift = float(varDict["Lift (kt)"])
-        thresh = float(varDict["Where the stronger of GFS/ECMWF is at least (kt)"])
+        start = float(varDict.get("Lift starts where the stronger of GFS/ECMWF reaches (kt)", START_KT))
+        full = float(varDict.get("Full lift at (kt)", FULL_KT))
         mag, direction = Wind
 
         try:
@@ -202,12 +219,13 @@ class Tool(SmartScript.SmartScript):
             notes.append("%s missing, used %s only" % (" and ".join(missing), used[0]))
         strongest = np.fmax(speeds[0], speeds[-1])
 
-        lifted = (strongest >= thresh) & mask
-        new_kt = np.where(lifted, mag_kt + lift, mag_kt)
+        add1 = np.where(mask, ramp(strongest, lift, start, full), 0.0)
         lift2 = float(varDict.get("Extra lift for HF (kt, 0 = off)", 0.0) or 0.0)
-        thresh2 = float(varDict.get("Extra lift where the stronger is at least (kt)", THRESH2_KT))
-        lifted2 = (strongest >= thresh2) & mask if lift2 > 0 else np.zeros(mask.shape, dtype=bool)
-        new_kt = np.where(lifted2, new_kt + lift2, new_kt)
+        start2 = float(varDict.get("Extra lift starts at (kt)", START2_KT))
+        full2 = float(varDict.get("Full extra lift at (kt)", FULL2_KT))
+        add2 = np.where(mask, ramp(strongest, lift2, start2, full2), 0.0) if lift2 > 0 else np.zeros(mask.shape)
+        new_kt = mag_kt + add1 + add2
+        lifted, lifted2 = add1 > 0, add2 > 0
 
         floored = np.zeros(mask.shape, dtype=bool)
         if varDict.get("GEFS storm floor") == "On":
@@ -225,7 +243,7 @@ class Tool(SmartScript.SmartScript):
         if varDict.get("HF ceiling check") == "On":
             notes.append(self._hf_check(new_kt, GridTimeRange))
 
-        self.statusBarMsg("Lift_StormCores: runs %s; %d cells lifted %g kt, %d more %g kt, %d floored to %g kt%s"
+        self.statusBarMsg("Lift_StormCores: runs %s; %d cells lifted (up to %g kt), %d more (up to %g kt), %d floored to %g kt%s"
                           % (", ".join(used), int(lifted.sum()), lift, int(lifted2.sum()), lift2,
                              int(floored.sum()), STORM_KT,
                              "".join("; " + n for n in notes)), "R")

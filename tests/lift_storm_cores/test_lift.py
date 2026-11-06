@@ -55,8 +55,9 @@ def vec(mag):
 
 def run(store, dbs, var=None, area=None, wind=None):
     SS.store, SS.dbs = store, dbs
-    v = {"Lift (kt)": 6.0, "Where the stronger of GFS/ECMWF is at least (kt)": 44.0,
-         "GEFS storm floor": "Off", "HF ceiling check": "Off"}
+    v = {"Lift (kt)": 6.0, "Lift starts where the stronger of GFS/ECMWF reaches (kt)": 44.0,
+         "Full lift at (kt)": 44.0, "Extra lift for HF (kt, 0 = off)": 0.0,
+         "GEFS storm floor": "Off", "HF ceiling check": "Off"}  # plain step at 44, one step
     v.update(var or {})
     tool = L.Tool(None)
     w = wind if wind is not None else vec(np.full(SHAPE, 40.0))
@@ -134,17 +135,24 @@ check("wind not changed by the check (only the lift)", mag[10, 10] == 66.0 and m
 tool, (mag, _) = run(s, d, var={"HF ceiling check": "On", "Lift (kt)": 0.0}, wind=wind)
 check("with no lift the grid is identical", np.all(mag == 66.0))
 
-print("6. second (HF) step")
-s, d = models(gfs_kt=grid({(1, 1): 45, (2, 2): 50}))
-tool, (mag, _) = run(s, d, var={"Extra lift for HF (kt, 0 = off)": 6.0,
-                                "Extra lift where the stronger is at least (kt)": 48.0})
-check("45 kt cell: first step only", mag[1, 1] == 46, mag[1, 1])
-check("50 kt cell: both steps", mag[2, 2] == 52, mag[2, 2])
-check("second-step count reported", "1 more 6 kt" in tool.msgs[-1][1], tool.msgs[-1])
-tool, (mag, _) = run(s, d, var={"Extra lift for HF (kt, 0 = off)": 0.0})
-check("extra lift 0: one step", mag[2, 2] == 46, mag[2, 2])
-check("dialog defaults are the picked 6/42 then 6/48",
-      [v[1] for v in L.VariableList[:4]] == [6.0, 42.0, 6.0, 48.0], L.VariableList[:4])
+print("6. ramps and second (HF) step")
+s, d = models(gfs_kt=grid({(1, 1): 45, (2, 2): 50, (3, 3): 40, (4, 4): 37, (5, 5): 55}))
+ramped = {"Lift starts where the stronger of GFS/ECMWF reaches (kt)": 38.0, "Full lift at (kt)": 42.0,
+          "Extra lift for HF (kt, 0 = off)": 4.0, "Extra lift starts at (kt)": 48.0, "Full extra lift at (kt)": 52.0}
+tool, (mag, _) = run(s, d, var=ramped)
+check("37 kt: below the ramp", mag[4, 4] == 40, mag[4, 4])
+check("40 kt: half way up the first ramp (+3)", abs(mag[3, 3] - 43) < 1e-6, mag[3, 3])
+check("45 kt: full first lift only", abs(mag[1, 1] - 46) < 1e-6, mag[1, 1])
+check("50 kt: +6 and half the extra (+2)", abs(mag[2, 2] - 48) < 1e-6, mag[2, 2])
+check("55 kt: +6 +4", abs(mag[5, 5] - 50) < 1e-6, mag[5, 5])
+x = np.linspace(30, 60, 301)
+step = np.diff(L.ramp(x, 6, 38, 42) + L.ramp(x, 4, 48, 52))
+check("ramp has no jump bigger than 0.2 kt per 0.1 kt", step.max() <= 0.15 + 1e-9, step.max())
+check("full <= start is a plain step", L.ramp(np.array([41.9, 42.0]), 6, 42, 42).tolist() == [0.0, 6.0])
+tool, (mag, _) = run(s, d, var=dict(ramped, **{"Extra lift for HF (kt, 0 = off)": 0.0}))
+check("extra lift 0: first ramp only", abs(mag[5, 5] - 46) < 1e-6, mag[5, 5])
+check("dialog defaults are the picked ramps 6 (38-42) + 4 (48-52)",
+      [v[1] for v in L.VariableList[:6]] == [6.0, 38.0, 42.0, 4.0, 48.0, 52.0], L.VariableList[:6])
 
 print()
 print("FAILED: %s" % FAILURES if FAILURES else "all ok")
