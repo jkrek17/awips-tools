@@ -292,6 +292,58 @@ def _tr_key(tr):
 
 
 
+class HFCheck:
+    """What the HF core read, over the edit area and all grids, for the status message.
+
+    On a day with nothing near hurricane force the core raises nothing, so the
+    message shows the inputs instead: peak GFS 925 mb wind, the sea minus 2 m
+    air range, the peak 925 x stability ceiling against its 55 kt gate, and the
+    peak model wind against the 52 kt ramp start.  Values outside what the sea
+    can produce are flagged as a likely units or grid-name problem.
+    """
+
+    def __init__(self):
+        self.grids = self.raised = self.open = 0
+        self.w925 = self.ceiling = self.model = -np.inf
+        self.sa_lo, self.sa_hi = np.inf, -np.inf
+
+    def add(self, s925, sea_minus_air, model_peak, mask, hf_add):
+        m = np.asarray(mask, bool) & np.isfinite(s925) & np.isfinite(sea_minus_air)
+        self.grids += 1
+        self.raised += int((np.asarray(hf_add) > 0).sum())
+        if not m.any():
+            return
+        w, sa = np.asarray(s925, float)[m], np.asarray(sea_minus_air, float)[m]
+        ceiling = w * stability_factor(sa)
+        self.open += int((ceiling >= HF_GATE_KT).sum())
+        self.w925 = max(self.w925, float(w.max()))
+        self.ceiling = max(self.ceiling, float(ceiling.max()))
+        self.model = max(self.model, float(np.nanmax(np.asarray(model_peak, float)[m])))
+        self.sa_lo, self.sa_hi = min(self.sa_lo, float(sa.min())), max(self.sa_hi, float(sa.max()))
+
+    def problems(self):
+        out = []
+        if self.grids and np.isfinite(self.w925) and not 5.0 <= self.w925 <= 200.0:
+            out.append("925 mb wind peak %.0f kt looks wrong (units or grid?)" % self.w925)
+        if self.grids and np.isfinite(self.sa_lo) and (self.sa_lo < -20.0 or self.sa_hi > 30.0):
+            out.append("sea minus air %.0f to %.0f C looks wrong (units or grid?)" % (self.sa_lo, self.sa_hi))
+        return out
+
+    def text(self, n_times):
+        if not self.grids:
+            return "HF core CHECK: inputs not read for any grid (see note)"
+        if not np.isfinite(self.w925):
+            return "HF core CHECK: inputs read for %d of %d grids but none inside the edit area" % (
+                self.grids, n_times)
+        line = ("HF core CHECK: read %d of %d grids; peak GFS 925 mb %.0f kt; sea minus air %.0f to %.0f C; "
+                "peak 925 x stability %.0f kt (gate %d); %d cells past gate; peak model wind %.0f kt "
+                "(ramp starts %d); %d cells raised" % (
+                    self.grids, n_times, self.w925, self.sa_lo, self.sa_hi, self.ceiling, HF_GATE_KT, self.open,
+                    self.model, HF_CORE_RAMP[0], self.raised))
+        bad = self.problems()
+        return line + ("; WARNING " + "; ".join(bad) if bad else "")
+
+
 # ==================== SETTINGS WINDOW ====================
 
 NAVY, OXBLOOD, CREAM, GREY = "#1f3354", "#7a1f2b", "#fbf7ee", "#555555"
@@ -602,11 +654,11 @@ class Procedure(SmartScript.SmartScript):
                     if note not in notes:
                         notes.append(note)
                 else:
-                    hf_add = np.where(mask, hf_core(np.fmax.reduce(cur_speeds), *hf_in), 0.0)
+                    model_peak = np.fmax.reduce(cur_speeds)
+                    hf_add = np.where(mask, hf_core(model_peak, *hf_in), 0.0)
                     add = add + hf_add
-                    # Counted so the message says it ran (a quiet run is not a missing read).
-                    self._hf_grids += 1
-                    self._hf_points += int((hf_add > 0).sum())
+                    # Kept for the HF core check in the message, so a quiet day still shows what was read.
+                    self._hf_check.add(hf_in[0], hf_in[1], model_peak, mask, hf_add)
             add = np.where(mask, add, 0.0)
             speed = speed + add
             lifted = int((add > 0).sum())
@@ -630,9 +682,11 @@ class Procedure(SmartScript.SmartScript):
 
     def execute(self, editArea, timeRange, varDict=None):
         # A varDict carrying any setting (another procedure, the tests) skips the window.
+        from_window = False
         if varDict and any(k in varDict for k in DEFAULTS):
             chosen = dict(DEFAULTS, **varDict)
         else:
+            from_window = True
             chosen = self._show_gui()
             if chosen is None:
                 self.statusBarMsg("Make_BestWind: cancelled, nothing written", "R")
@@ -663,7 +717,7 @@ class Procedure(SmartScript.SmartScript):
         summary: List[str] = []
         problems: List[str] = []
         total_lifted = 0
-        self._hf_grids = self._hf_points = 0
+        self._hf_check = HFCheck()
         mask = None
         for i, tr in enumerate(times):
             self.statusBarMsg("Make_BestWind %d/%d" % (i + 1, len(times)), "R")
@@ -693,8 +747,7 @@ class Procedure(SmartScript.SmartScript):
                                        "on (%s), %d cells lifted" % (
                                            TRIGGER_OWN if settings["own"] else TRIGGER_MODELS, total_lifted)))
         if settings["lift_on"] and settings["hf_core"]:
-            parts.append("HF core: 925 mb wind and stability read for %d of %d grids, %d cells raised" % (
-                self._hf_grids, len(times), self._hf_points))
+            parts.append(self._hf_check.text(len(times)))
         message = "; ".join(parts)
         if summary:
             message += ". Runs used: " + " | ".join(summary)
@@ -705,6 +758,25 @@ class Procedure(SmartScript.SmartScript):
         status = "U" if problems else "R"
         print(message)
         self.statusBarMsg(message, status)
+        if from_window:
+            self._show_summary(parts, problems, notes)
+
+    def _show_summary(self, parts, problems, notes):
+        """After a run from the window, a short pop-up with the HF core check on its own lines."""
+        try:
+            import tkinter as tk
+            from tkinter import messagebox
+            root = tk.Tk()
+            root.withdraw()
+            text = "\n".join(p.replace("HF core CHECK: ", "HF core check:\n  ").replace("; ", "\n  ")
+                             if p.startswith("HF core") else p for p in parts)
+            extra = problems + notes
+            if extra:
+                text += "\n\n" + "\n".join(extra)
+            messagebox.showinfo("Make Best Wind", text, parent=root)
+            root.destroy()
+        except Exception:   # no display: the status bar already has it
+            pass
 
 
 __all__ = ["Procedure"]

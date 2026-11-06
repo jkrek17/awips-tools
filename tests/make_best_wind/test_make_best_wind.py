@@ -251,8 +251,21 @@ s[(gfs_id, "t", "SFC")] = {"units": "K", "grids": [(tr0, const(281.0))]}
 s[(gfs_id, "t", "FHAG2")] = {"units": "K", "grids": [(tr0, const(280.0))]}   # sea - air 1 C -> 0.70
 p = run(s, d, hf_on)
 add = (written(p)[0] - base)[:4, 0]
-check("message says HF core read and how many cells", any("HF core: 925 mb wind and stability read for 1 of 1 grids"
-      in m[1] for m in p.msgs), p.msgs[-1:])
+msg = p.msgs[-1][1]
+check("HF core CHECK in message: inputs, gate and cells raised",
+      "HF core CHECK: read 1 of 1 grids; peak GFS 925 mb 90 kt; sea minus air 1 to 1 C; "
+      "peak 925 x stability 63 kt (gate 55); 599 cells past gate" in msg and "2 cells raised" in msg and "WARNING" not in msg, msg)
+s[(gfs_id, "wind", "MB925")]["units"] = "m/s"
+s[(gfs_id, "wind", "MB925")]["grids"] = [(tr0, vec(const(400.0)))]
+msg = run(s, d, hf_on).msgs[-1][1]
+check("implausible 925 wind is flagged", "WARNING 925 mb wind peak" in msg, msg)
+s[(gfs_id, "wind", "MB925")] = {"units": "kts", "grids": [(tr0, vec(w925))]}
+quiet = M.HFCheck()
+quiet.add(np.full((2, 2), 40.0), np.full((2, 2), 3.0), np.full((2, 2), 35.0), np.ones((2, 2), bool), np.zeros((2, 2)))
+qt = quiet.text(1)
+check("quiet day: inputs shown, nothing raised", "peak GFS 925 mb 40 kt" in qt and "peak 925 x stability 32 kt"
+      in qt and "0 cells past gate" in qt and "0 cells raised" in qt and "WARNING" not in qt, qt)
+check("not read: says so", "not read" in M.HFCheck().text(3))
 check("HF core: +0 at 50, +3 at 54, +6 at 56, +0 where 925 x 0.70 < 55",
       np.allclose(add, [0, 3, 6, 0], atol=1e-3), add)
 check("HF core default Off", M.DEFAULTS["HF core (targeted by 925 mb wind and stability)"] == "Off")

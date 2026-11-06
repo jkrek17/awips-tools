@@ -14,8 +14,9 @@ interpolation of a 6-hourly model, and the HF core option (skipped and said
 when GFS 925 mb data are missing; ramp 52-56 kt only where 925 mb wind x
 stability factor >= 55 kt), lagged runs Off (current runs only), no dependency
 on `grid_fetch`, and the settings window (Cancel writes nothing; the window's
-choices are used; a varDict skips it). The window itself needs tkinter and
-was checked by hand under Xvfb.
+choices are used; a varDict skips it). The HF core check in the message
+(inputs read, gate, cells raised; a quiet day; a units warning) is tested too.
+The window and the pop-up need tkinter and were checked by hand under Xvfb.
 
 GFE calls the procedure makes that are guesses to check on AWIPS:
 `findDatabase` / `getGridInfo` for runs and inventory, `getGrids(...,
