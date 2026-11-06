@@ -4,22 +4,26 @@ A public web page, served at `/marine-wind/` on the public site, that shows a
 blended 10 m wind forecast for the whole globe (0.25°, shown to 85N and 85S) on a
 map that pans and zooms, and where forecasters should look. Buttons jump to the
 OPC Atlantic (18–67N, 95W–10E) and Pacific (18–67N, 135E–115W) chart areas. The
-blend was tuned and tested only on 30–67N in those two basins; the page outlines
-that area and the readout flags points outside it.
+blend was tuned and tested only on 30–67N in those two basins; the readout flags
+points outside it.
 
 | Layer | What it shows |
 |---|---|
 | Blended wind | base + min(k × member spread, 5 kt); k = 0.25, 0.15 at +24 h and earlier |
-| Model base, added wind | the two parts of the blend; the base weights GFS, ECMWF and AIFS at each point by the share of members within about 5 kt of each |
 | Model agreement | ride (all models < 30 kt), agree, focus (split across 34 kt or a 10 kt range near gale), high impact (split across 48 or 64 kt) |
 | Member spread | standard deviation of about 80 GEFS + ECMWF ENS member speeds |
 | Ensemble chance | share of members at 34, 48 and 64 kt or more: GEFS + ENS plus the 51-member AIFS ensemble (Brier score 6% better at 34 kt and 11% at 48 kt on 265 hindcast cases) |
-| Deterministic blend (GFE test) | a blend that needs no ensemble members, for GFE: GFS, ECMWF and AIFS weighted by support among 9 runs (these and the same models from the runs 12 h and 24 h earlier, same valid time) + min(0.3 x spread of the 9, 5 kt); and its difference from the blended wind where either has 25+ kt |
 | Single models | GFS, ECMWF, AIFS |
 
-Overlays: sea-level pressure, the blend's 34 and 48 kt edges, wind arrows, and
-lone-model signals (one model at 48 or 64 kt that neither other model has
-within about 50 km), and the tested area. Hovering a point lists every value there.
+Overlays: sea-level pressure, wind arrows, and lone-model signals (one model at
+48 or 64 kt that neither other model has within about 50 km). Hovering a point
+lists every value there.
+
+Taken off the page on 6 Nov 2026 to cut clutter: model base and added wind (the
+two parts of the blend), change since the run 24 h earlier, the deterministic
+blend and its difference from the blended wind, the 34 and 48 kt edges and the
+tested-area outline. The build still writes `mean`, `boost`, `trend`, `nomem`
+and `nomemdiff` (verification scores `nomem`); the page skips downloading them.
 The side panel sums up what is in view.
 
 ## Why this blend
@@ -102,7 +106,7 @@ side). The page loads no map fonts. The field is
 coloured in the browser into 256 px raster tiles made on demand from the grid (a
 `mwfield://` tile protocol), with land (the kit's `land.json`) cut out of each tile so the
 basemap's land and a sharp coast show; the GPU wraps them onto the globe.
-Isobars, the 34 and 48 kt edges and the lone-model outlines are contoured in the
+Isobars, the hazard and warning lines and the lone-model outlines are contoured in the
 browser once per lead and drawn as line layers. Text (H and L, isobar values,
 lone-model labels, graticule labels) and the wind arrows go on a 2D canvas over
 the map, leaving out anything on the far side of the globe or crowded on its rim.
