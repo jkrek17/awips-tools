@@ -65,6 +65,8 @@ Scores (held-out, against ASCAT, 5 held-out winter weeks Nov 2025 - Mar 2026,
 Near the coast (Greenland barrier and tip-jet flow) ASCAT is blind, so none of
 this is scored there; trust the GFS family's strength in those flows.
 
+Self-contained: needs only SmartScript and numpy (model_aliases is used for
+database names when present, else GFS/D2D_GFS and D2D_ECMWF/nECMWF0p25).
 Not tested on AWIPS: the D2D database and element names come from
 model_aliases and the GFE calls listed in tests/make_best_wind/README.md.
 """
@@ -78,8 +80,10 @@ import numpy as np
 
 import SmartScript
 
-import grid_fetch
-import model_aliases
+try:
+    import model_aliases
+except ImportError:
+    model_aliases = None
 
 try:
     import AbsTime
@@ -141,6 +145,75 @@ VariableList = [
 _TO_KT = {"kt": 1.0, "kts": 1.0, "knots": 1.0, "knot": 1.0, "m/s": 1.943844, "mph": 0.868976}
 
 
+
+# Database names per model, used when model_aliases is missing or older than this procedure.  The procedure keeps
+# its own run and inventory lookups, so it does not depend on the version of the grid fetch helper on the server.
+FALLBACK_DATABASES = {"GFS": ("GFS", "D2D_GFS"), "ECMWF": ("D2D_ECMWF", "nECMWF0p25")}
+
+
+def database_candidates(alias, element="Wind"):
+    """Database base names for a model: model_aliases when it has them, then FALLBACK_DATABASES."""
+    names = []
+    if model_aliases is not None:
+        for fn, args in (("get_database_candidates_for_element", (alias, element)),
+                         ("get_database_candidates", (alias,))):
+            try:
+                names += list(getattr(model_aliases, fn)(*args))
+            except Exception:
+                pass
+    names += list(FALLBACK_DATABASES.get(alias, ()))
+    seen, out = set(), []
+    for n in names:
+        if n and n not in seen:
+            seen.add(n)
+            out.append(n)
+    return out
+
+
+def model_run_time(model_id):
+    """Cycle time (unix s) from a database id ending in _YYYYMMDD_HHMM, else None."""
+    import calendar
+    parts = (model_id or "").split("_")
+    if len(parts) < 2:
+        return None
+    try:
+        return calendar.timegm(time.strptime(parts[-2] + parts[-1], "%Y%m%d%H%M"))
+    except ValueError:
+        return None
+
+
+def list_model_runs(smart_script, alias, run_depth):
+    """[(cycle_unix, {database_name: model_id})] newest first, from findDatabase over the candidate names."""
+    runs = {}
+    for base in database_candidates(alias):
+        for offset in range(0, -run_depth, -1):
+            try:
+                db = smart_script.findDatabase(base, offset)
+                model_id = db.modelIdentifier() if db is not None else None
+            except Exception:
+                model_id = None
+            cycle = model_run_time(model_id)
+            if cycle is not None:
+                runs.setdefault(cycle, {}).setdefault(base, model_id)
+    return sorted(runs.items(), key=lambda item: item[0], reverse=True)
+
+
+def grid_times(smart_script, model_id, element, level, time_range):
+    """[(start_unix, end_unix, grid_time_range)] of one element in one database over time_range, sorted."""
+    try:
+        infos = smart_script.getGridInfo(model_id, element, level, time_range)
+    except Exception:
+        return []
+    out = []
+    for info in infos or []:
+        try:
+            tr = info.gridTime()
+            out.append((tr.startTime().unixTime(), tr.endTime().unixTime(), tr))
+        except Exception:
+            continue
+    out.sort(key=lambda item: item[0])
+    return out
+
 def ramp(strongest, lift, start, full):
     """Lift in kt: 0 below start, `lift` at and above full, straight line between."""
     s = np.nan_to_num(np.asarray(strongest, dtype=float), nan=-999.0)
@@ -181,7 +254,7 @@ def det_blend(runs, speeds):
 
 def time_recipe(inventory, start, end):
     """("direct", tr) when a model grid overlaps start-end, ("interp", trA, trB, w) between
-    two close grids, else None.  inventory is grid_fetch.grid_times output."""
+    two close grids, else None.  inventory is grid_times() output."""
     for g_start, g_end, g_tr in inventory:
         if g_start < end and g_end > start:
             return ("direct", g_tr)
@@ -230,7 +303,7 @@ class Procedure(SmartScript.SmartScript):
 
     def _target_times(self, selection):
         """Fcst Wind grids in the selection, else the Wind time-constraint slots in it."""
-        existing = grid_fetch.grid_times(self, "Fcst", "Wind", FCST_LEVEL, selection)
+        existing = grid_times(self, "Fcst", "Wind", FCST_LEVEL, selection)
         if existing:
             return [tr for _, _, tr in existing]
         try:
@@ -243,23 +316,20 @@ class Procedure(SmartScript.SmartScript):
     def _model_runs(self, alias):
         """[(cycle_unix, {database: model_id})] newest first, once per alias."""
         if alias not in self._runs:
-            self._runs[alias] = grid_fetch.list_model_runs(self, alias, run_depth=RUN_DEPTH)
+            self._runs[alias] = list_model_runs(self, alias, RUN_DEPTH)
         return self._runs[alias]
 
     def _find(self, alias, databases, tr, window, sources=None):
         """(model_id, element, level, recipe) of the first source of one cycle covering tr, else None."""
         start, end = _tr_key(tr)
-        try:
-            preferred = model_aliases.get_database_candidates_for_element(alias, "Wind")
-        except Exception:
-            preferred = ()
+        preferred = database_candidates(alias)
         order = [n for n in preferred if n in databases] + [n for n in databases if n not in preferred]
         for name in order:
             model_id = databases[name]
             for element, level in (sources or WIND_SOURCES):
                 key = (model_id, element, level)
                 if key not in self._inventory:
-                    self._inventory[key] = grid_fetch.grid_times(self, model_id, element, level, window)
+                    self._inventory[key] = grid_times(self, model_id, element, level, window)
                 recipe = time_recipe(self._inventory[key], start, end)
                 if recipe is not None:
                     return model_id, element, level, recipe

@@ -15,6 +15,8 @@ sys.path.insert(0, os.path.join(REPO, "tests", "blend_wind_gust_wave_pmsl"))
 import gfe_fakes  # noqa: E402
 
 SS = gfe_fakes.install()
+import types  # noqa: E402
+sys.modules["grid_fetch"] = types.ModuleType("grid_fetch")   # an old server copy without grid_times: must not matter
 import Make_BestWind as M  # noqa: E402
 
 KT = 1.943844
@@ -252,6 +254,15 @@ check("HF core: +0 at 50, +3 at 54, +6 at 56, +0 where 925 x 0.70 < 55",
       np.allclose(add, [0, 3, 6, 0], atol=1e-3), add)
 check("HF core default Off", {v[0]: v for v in M.VariableList}["HF core (targeted by 925 mb wind and stability)"][1] == "Off")
 check("stability factors 0.70 / 0.79 / 0.83", np.allclose(M.stability_factor(np.array([1.0, 3.0, 6.0])), [0.70, 0.79, 0.83]))
+
+print("12. self-contained: no grid_fetch, database names without model_aliases")
+check("does not use grid_fetch", not hasattr(M, "grid_fetch"))
+saved = M.model_aliases
+M.model_aliases = None
+check("fallback names GFS", M.database_candidates("GFS") == ["GFS", "D2D_GFS"], M.database_candidates("GFS"))
+check("fallback names ECMWF", M.database_candidates("ECMWF") == ["D2D_ECMWF", "nECMWF0p25"], M.database_candidates("ECMWF"))
+M.model_aliases = saved
+check("run time parsed from id", M.model_run_time("X_D2D_GFS_19700102_1200") == 86400 + 12 * 3600)
 
 print()
 print("FAILED: %s" % FAILURES if FAILURES else "all ok")
