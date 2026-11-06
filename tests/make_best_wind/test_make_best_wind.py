@@ -268,7 +268,9 @@ check("temp grid written once per time, SCALAR, beside Wind", len(ceil) == 1 and
 g = ceil[0][3]
 check("temp grid: 925 x 0.70 where >= 55 (63 kt), 0 where 49", np.isclose(g[0, 0], 63.0) and g[3, 0] == 0.0,
       g[:4, 0])
-check("temp grid said in message", "HFCeiling925 temp grid" in p.msgs[-1][1] and "1 of 1 times" in p.msgs[-1][1])
+sa = [c for c in p.created if c[1] == M.SEA_AIR_GRID]
+check("SeaMinusAir temp grid = 1 C", len(sa) == 1 and np.allclose(sa[0][3], 1.0))
+check("temp grid said in message", "temp grids HFCeiling925" in p.msgs[-1][1] and "1 of 1 times" in p.msgs[-1][1])
 check("temp grid default Off, none written", not [c for c in run(s, d).created if c[1] == M.CEILING_GRID])
 quiet = M.HFCheck()
 quiet.add(np.full((2, 2), 40.0), np.full((2, 2), 3.0), np.full((2, 2), 35.0), np.ones((2, 2), bool), np.zeros((2, 2)))

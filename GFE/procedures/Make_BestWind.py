@@ -40,8 +40,9 @@ What it does, for every Fcst Wind grid in the selected time range
    the low-level jet can bring hurricane force down.  Not a blanket: it adds
    nothing where the models are under 52 kt or the air is too stable.  If the
    GFS 925 mb wind or temperatures are not found it is skipped and said so.
-   Option "Show where it could fire" writes a temporary grid HFCeiling925:
-   925 mb wind x stability factor (kt) where >= 55 kt, 0 elsewhere.
+   Option "Show where it could fire" writes temporary grids HFCeiling925
+   (925 mb wind x stability factor, kt, where >= 55 kt, 0 elsewhere) and
+   SeaMinusAir (GFS surface minus 2 m temperature, C).
 
 Missing data: a lagged run that is not on the server is left out and named in
 the closing message.  If a model has no current run for a time, the other
@@ -149,6 +150,7 @@ K_LIFT2 = "Extra lift for HF (kt, 0 = off)"
 K_HF = "HF core (targeted by 925 mb wind and stability)"
 K_CEILING = "Temp grid of 925 mb wind x stability"
 CEILING_GRID = "HFCeiling925"   # temporary Fcst grid: 925 mb wind x stability factor where >= HF_GATE_KT, else 0
+SEA_AIR_GRID = "SeaMinusAir"    # temporary Fcst grid: GFS surface (sea) temperature minus 2 m air (C)
 DEFAULTS = {K_LAGGED: "On", K_LIFT_ON: "On", K_TRIGGER: TRIGGER_MODELS, K_LIFT: LIFT_KT, K_LIFT2: LIFT2_KT,
             K_HF: "Off", K_CEILING: "Off"}
 
@@ -404,9 +406,11 @@ class BestWindDialog:
             box, "Add an HF core where the 925 mb jet can mix down", self.hf,
             "+0 to +6 kt as the stronger model goes 52 -> 56 kt, only where GFS 925 mb wind x stability >= 55 kt. "
             "Atlantic HF catch 59% -> 70%, but HF area grows from 0.9x to 1.7x ASCAT's. Needs the lift on.")
-        self._check(box, "Show where it could fire: temp grid %s" % CEILING_GRID, self.ceiling,
-                    "925 mb wind x stability in kt where it is %d kt or more, 0 elsewhere. A temporary grid "
-                    "next to Wind; works with the lift off too. Nothing is saved." % HF_GATE_KT)
+        self._check(box, "Show where it could fire: temp grids %s and %s" % (CEILING_GRID, SEA_AIR_GRID),
+                    self.ceiling,
+                    "%s = 925 mb wind x stability (kt) where %d kt or more, else 0. %s = sea minus 2 m air (C): "
+                    "factor 0.70 under 2, 0.79 for 2-5, 0.83 over 5. Temporary; works with the lift off."
+                    % (CEILING_GRID, HF_GATE_KT, SEA_AIR_GRID))
 
         buttons = tk.Frame(main, bg=CREAM)
         buttons.pack(fill=tk.X, pady=(8, 0))
@@ -767,8 +771,8 @@ class Procedure(SmartScript.SmartScript):
         if settings["lift_on"] and settings["hf_core"]:
             parts.append(self._hf_check.text(len(times)))
         if settings["ceiling_grid"]:
-            parts.append("%s temp grid (925 mb wind x stability >= %d kt, else 0): %d of %d times" % (
-                CEILING_GRID, HF_GATE_KT, self._ceiling_grids, len(times)))
+            parts.append("temp grids %s (925 mb wind x stability >= %d kt, else 0) and %s (C): %d of %d times" % (
+                CEILING_GRID, HF_GATE_KT, SEA_AIR_GRID, self._ceiling_grids, len(times)))
         message = "; ".join(parts)
         if summary:
             message += ". Runs used: " + " | ".join(summary)
@@ -792,6 +796,13 @@ class Procedure(SmartScript.SmartScript):
                             minAllowedValue=0.0, maxAllowedValue=200.0, units="kts", precision=0)
         except TypeError:   # older createGrid without the keyword arguments
             self.createGrid("Fcst", CEILING_GRID, "SCALAR", grid, tr)
+        diff = np.asarray(sea_minus_air, float).astype(np.float32)
+        try:
+            self.createGrid("Fcst", SEA_AIR_GRID, "SCALAR", diff, tr,
+                            descriptiveName="GFS sea minus 2 m air (C, Make_BestWind)",
+                            minAllowedValue=-30.0, maxAllowedValue=30.0, units="C", precision=1)
+        except TypeError:
+            self.createGrid("Fcst", SEA_AIR_GRID, "SCALAR", diff, tr)
         self._ceiling_grids += 1
 
     def _show_summary(self, parts, problems, notes):
