@@ -40,6 +40,8 @@ What it does, for every Fcst Wind grid in the selected time range
    the low-level jet can bring hurricane force down.  Not a blanket: it adds
    nothing where the models are under 52 kt or the air is too stable.  If the
    GFS 925 mb wind or temperatures are not found it is skipped and said so.
+   Option "Show where it could fire" writes a temporary grid HFCeiling925:
+   925 mb wind x stability factor (kt) where >= 55 kt, 0 elsewhere.
 
 Missing data: a lagged run that is not on the server is left out and named in
 the closing message.  If a model has no current run for a time, the other
@@ -145,8 +147,10 @@ K_TRIGGER = "Lift where"
 K_LIFT = "Lift (kt)"
 K_LIFT2 = "Extra lift for HF (kt, 0 = off)"
 K_HF = "HF core (targeted by 925 mb wind and stability)"
+K_CEILING = "Temp grid of 925 mb wind x stability"
+CEILING_GRID = "HFCeiling925"   # temporary Fcst grid: 925 mb wind x stability factor where >= HF_GATE_KT, else 0
 DEFAULTS = {K_LAGGED: "On", K_LIFT_ON: "On", K_TRIGGER: TRIGGER_MODELS, K_LIFT: LIFT_KT, K_LIFT2: LIFT2_KT,
-            K_HF: "Off"}
+            K_HF: "Off", K_CEILING: "Off"}
 
 # The settings window is BestWindDialog (tkinter, like Blend_WindGustWavePmsl),
 # so GFE's own variable list stays empty.
@@ -365,6 +369,7 @@ class BestWindDialog:
         self.lift = tk.DoubleVar(value=LIFT_KT)
         self.lift2 = tk.DoubleVar(value=LIFT2_KT)
         self.hf = tk.BooleanVar(value=False)
+        self.ceiling = tk.BooleanVar(value=False)
 
         main = tk.Frame(master, padx=16, pady=12, bg=CREAM)
         main.pack(fill=tk.BOTH, expand=True)
@@ -399,6 +404,9 @@ class BestWindDialog:
             box, "Add an HF core where the 925 mb jet can mix down", self.hf,
             "+0 to +6 kt as the stronger model goes 52 -> 56 kt, only where GFS 925 mb wind x stability >= 55 kt. "
             "Atlantic HF catch 59% -> 70%, but HF area grows from 0.9x to 1.7x ASCAT's. Needs the lift on.")
+        self._check(box, "Show where it could fire: temp grid %s" % CEILING_GRID, self.ceiling,
+                    "925 mb wind x stability in kt where it is %d kt or more, 0 elsewhere. A temporary grid "
+                    "next to Wind; works with the lift off too. Nothing is saved." % HF_GATE_KT)
 
         buttons = tk.Frame(main, bg=CREAM)
         buttons.pack(fill=tk.X, pady=(8, 0))
@@ -448,13 +456,15 @@ class BestWindDialog:
         self.lift.set(LIFT_KT)
         self.lift2.set(LIFT2_KT)
         self.hf.set(False)
+        self.ceiling.set(False)
         self._refresh()
 
     def values(self):
         def on(b):
             return "On" if b else "Off"
         return {K_LAGGED: on(self.lagged.get()), K_LIFT_ON: on(self.lift_on.get()), K_TRIGGER: self.trigger.get(),
-                K_LIFT: float(self.lift.get()), K_LIFT2: float(self.lift2.get()), K_HF: on(self.hf.get())}
+                K_LIFT: float(self.lift.get()), K_LIFT2: float(self.lift2.get()), K_HF: on(self.hf.get()),
+                K_CEILING: on(self.ceiling.get())}
 
     def _run(self):
         self.callback(self.values())
@@ -637,6 +647,15 @@ class Procedure(SmartScript.SmartScript):
         _, direction = self.UVToMagDir(u_mean, v_mean)
         direction = np.mod(np.asarray(direction, dtype=float), 360.0)
 
+        hf_in = None
+        self._hf_in_last = None
+        if (settings["lift_on"] and settings["hf_core"]) or settings["ceiling_grid"]:
+            hf_in = self._hf_inputs(tr, window, notes)
+            self._hf_in_last = hf_in
+            if hf_in is None:
+                note = "HF core inputs not found: GFS 925 mb wind or surface/2 m temperature"
+                if note not in notes:
+                    notes.append(note)
         lifted = 0
         if settings["lift_on"]:
             if settings["own"]:
@@ -648,12 +667,7 @@ class Procedure(SmartScript.SmartScript):
             if settings["lift2"] > 0:
                 add = add + ramp(strongest, settings["lift2"], *r2)
             if settings["hf_core"]:
-                hf_in = self._hf_inputs(tr, window, notes)
-                if hf_in is None:
-                    note = "HF core skipped: GFS 925 mb wind or surface/2 m temperature not found"
-                    if note not in notes:
-                        notes.append(note)
-                else:
+                if hf_in is not None:
                     model_peak = np.fmax.reduce(cur_speeds)
                     hf_add = np.where(mask, hf_core(model_peak, *hf_in), 0.0)
                     add = add + hf_add
@@ -698,6 +712,7 @@ class Procedure(SmartScript.SmartScript):
             "lift": float(chosen[K_LIFT]),
             "lift2": float(chosen[K_LIFT2] or 0.0),
             "hf_core": chosen[K_HF] == "On",
+            "ceiling_grid": chosen.get(K_CEILING, "Off") == "On",
         }
         times = self._target_times(timeRange)
         if not times:
@@ -718,6 +733,7 @@ class Procedure(SmartScript.SmartScript):
         problems: List[str] = []
         total_lifted = 0
         self._hf_check = HFCheck()
+        self._ceiling_grids = 0
         mask = None
         for i, tr in enumerate(times):
             self.statusBarMsg("Make_BestWind %d/%d" % (i + 1, len(times)), "R")
@@ -732,6 +748,8 @@ class Procedure(SmartScript.SmartScript):
             speed = np.where(np.isfinite(speed), np.maximum(speed, 0.0), 0.0)
             grid = ((speed * from_kt).astype(np.float32), direction.astype(np.float32))
             self.createGrid("Fcst", "Wind", "VECTOR", grid, tr)
+            if settings["ceiling_grid"] and self._hf_in_last is not None:
+                self._write_ceiling(tr, *self._hf_in_last)
             total_lifted += lifted
             line = "%s: %s" % (when, text)
             if missing:
@@ -748,6 +766,9 @@ class Procedure(SmartScript.SmartScript):
                                            TRIGGER_OWN if settings["own"] else TRIGGER_MODELS, total_lifted)))
         if settings["lift_on"] and settings["hf_core"]:
             parts.append(self._hf_check.text(len(times)))
+        if settings["ceiling_grid"]:
+            parts.append("%s temp grid (925 mb wind x stability >= %d kt, else 0): %d of %d times" % (
+                CEILING_GRID, HF_GATE_KT, self._ceiling_grids, len(times)))
         message = "; ".join(parts)
         if summary:
             message += ". Runs used: " + " | ".join(summary)
@@ -760,6 +781,18 @@ class Procedure(SmartScript.SmartScript):
         self.statusBarMsg(message, status)
         if from_window:
             self._show_summary(parts, problems, notes)
+
+    def _write_ceiling(self, tr, s925_kt, sea_minus_air):
+        """Temporary grid HFCeiling925: 925 mb wind x stability factor (kt) where >= the gate, 0 elsewhere."""
+        ceiling = np.nan_to_num(np.asarray(s925_kt, float) * stability_factor(sea_minus_air), nan=0.0)
+        grid = np.where(ceiling >= HF_GATE_KT, ceiling, 0.0).astype(np.float32)
+        try:
+            self.createGrid("Fcst", CEILING_GRID, "SCALAR", grid, tr,
+                            descriptiveName="925mb wind x stability >= %d kt (Make_BestWind)" % HF_GATE_KT,
+                            minAllowedValue=0.0, maxAllowedValue=200.0, units="kts", precision=0)
+        except TypeError:   # older createGrid without the keyword arguments
+            self.createGrid("Fcst", CEILING_GRID, "SCALAR", grid, tr)
+        self._ceiling_grids += 1
 
     def _show_summary(self, parts, problems, notes):
         """After a run from the window, a short pop-up with the HF core check on its own lines."""

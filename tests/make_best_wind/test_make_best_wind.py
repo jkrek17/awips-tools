@@ -241,7 +241,7 @@ base = written(run(s, d, lift_on))[0]
 hf_on = dict(lift_on, **{"HF core (targeted by 925 mb wind and stability)": "On"})
 p = run(s, d, hf_on)
 check("no 925 data: HF core skipped, grid as without it", np.allclose(written(p)[0], base))
-check("skip is said", any("HF core skipped" in m[1] for m in p.msgs), p.msgs[-1:])
+check("skip is said", any("HF core inputs not found" in m[1] for m in p.msgs), p.msgs[-1:])
 gfs_id = d["GFS"][0]
 w925 = const(90.0)       # x 0.70 = 63 >= 55: open
 w925[3, 0] = 70.0        # x 0.70 = 49: too stable, closed
@@ -260,6 +260,16 @@ s[(gfs_id, "wind", "MB925")]["grids"] = [(tr0, vec(const(400.0)))]
 msg = run(s, d, hf_on).msgs[-1][1]
 check("implausible 925 wind is flagged", "WARNING 925 mb wind peak" in msg, msg)
 s[(gfs_id, "wind", "MB925")] = {"units": "kts", "grids": [(tr0, vec(w925))]}
+p = run(s, d, {M.K_CEILING: "On"})   # lift off: the temp grid is still made
+ceil = [c for c in p.created if c[1] == M.CEILING_GRID]
+wind = [c for c in p.created if c[1] == "Wind"]
+check("temp grid written once per time, SCALAR, beside Wind", len(ceil) == 1 and len(wind) == 1
+      and ceil[0][2] == "SCALAR", [c[:3] for c in p.created])
+g = ceil[0][3]
+check("temp grid: 925 x 0.70 where >= 55 (63 kt), 0 where 49", np.isclose(g[0, 0], 63.0) and g[3, 0] == 0.0,
+      g[:4, 0])
+check("temp grid said in message", "HFCeiling925 temp grid" in p.msgs[-1][1] and "1 of 1 times" in p.msgs[-1][1])
+check("temp grid default Off, none written", not [c for c in run(s, d).created if c[1] == M.CEILING_GRID])
 quiet = M.HFCheck()
 quiet.add(np.full((2, 2), 40.0), np.full((2, 2), 3.0), np.full((2, 2), 35.0), np.ones((2, 2), bool), np.zeros((2, 2)))
 qt = quiet.text(1)
