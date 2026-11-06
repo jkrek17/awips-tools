@@ -585,6 +585,18 @@ _DEFAULT_ALIAS_DATA: Dict[str, Dict] = {
             "parameter_overrides": {"WaveHeight": "HTSGW", "WaveDirection": "DIRPW", "WavePeriod": "PERPW"},
         },
     },
+    "AIFS": {
+        # Database names are a guess: AIFS has not been seen on a real D2D yet.
+        # Run CheckModelSources to find the real name, then fix it here or in
+        # model_aliases.overrides.json.
+        "display_name": "ECMWF AIFS",
+        "gfe_databases": (),
+        "d2d_databases": ("D2D_AIFS", "AIFS", "ECMWF-AIFS", "nAIFS0p25"),
+        "default_levels": {"wind": "10FHAG"},
+        "tags": ("atmo", "global"),
+        "synonyms": ("ECMWF-AIFS", "AIFS-SINGLE"),
+        "max_runs": 2,
+    },
     "CMC": {
         "display_name": "Canadian Global",
         "gfe_databases": (),

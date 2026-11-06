@@ -37,6 +37,21 @@ Times
 Wind is blended as speed (weighted mean of the model speeds) and direction
 (of the weighted mean u/v), so models that disagree on direction do not cut
 the blended speed.  The edit area, if one is selected, limits the change.
+
+Deterministic blend for Wind (checkbox)
+    Wind ignores the weights and uses the recipe on the marine wind page
+    (layer "Deterministic blend"): GFS, ECMWF and AIFS, each weighted point by
+    point by how many of 9 runs sit near its speed (these 3 models plus the
+    same models' runs 12 h and 24 h earlier, valid at the same time; Gaussian
+    kernel DET_SUPPORT_KT wide), plus min(DET_SPREAD_K x spread of the 9,
+    DET_CAP_KT).  Direction is the mean u/v of the current runs.  A run that
+    is not on the server is left out and named in the closing message; the
+    blend needs at least one current model run.  Gust, waves and pmsl keep
+    the weights.  Gusts are never left below the new Wind, also when
+    WindGust is not being blended.
+    Tested by hindcast on 12Z runs (265 cases, 30-67N): about 90% of the
+    member blend's gain against analyses, about 40% of its gale hits at
+    ships and buoys.
 """
 
 from __future__ import annotations
@@ -75,6 +90,16 @@ MIN_RUN_DEPTH = 2
 DEFAULT_GUST_FACTOR = 1.3
 
 FCST_LEVEL = "SFC"
+
+# Deterministic blend for Wind (see the docstring).  Speeds in kt.
+DET_MODELS = ("GFS", "ECMWF", "AIFS")
+DET_LAGS_HOURS = (12, 24)
+DET_SUPPORT_KT = 5.0
+DET_SPREAD_K = 0.3
+DET_CAP_KT = 5.0
+# Runs searched per model: enough to reach 24 h back on a 6-hourly model
+# whose newest run is still arriving.
+DET_RUN_DEPTH = 6
 
 
 @dataclass(frozen=True)
@@ -221,6 +246,7 @@ class BlendDialog:
         self.pct_labels: Dict[str, tk.Label] = {}
         self.elements = {key: tk.BooleanVar(value=True) for key in ELEMENT_ORDER}
         self.gust_factor = tk.DoubleVar(value=DEFAULT_GUST_FACTOR)
+        self.deterministic = tk.BooleanVar(value=False)
 
         master.title("Blend Wind/Gust/Wave/pmsl")
         main = tk.Frame(master, padx=12, pady=12)
@@ -250,6 +276,13 @@ class BlendDialog:
         for key in ELEMENT_ORDER:
             tk.Checkbutton(frame, text=key, variable=self.elements[key]).pack(side=tk.LEFT, padx=6)
 
+        frame = tk.LabelFrame(main, text="Wind", padx=10, pady=6)
+        frame.pack(fill=tk.X, pady=(0, 8))
+        tk.Checkbutton(frame, text="Deterministic blend for Wind (GFS, ECMWF, AIFS; ignores the weights)",
+                       variable=self.deterministic, command=self._update).pack(anchor=tk.W)
+        tk.Label(frame, text="Weighted by agreement with their runs 12 h and 24 h earlier, plus 0.3 x their spread",
+                 font=("Arial", 9), fg="gray").pack(anchor=tk.W)
+
         frame = tk.LabelFrame(main, text="Gusts", padx=10, pady=6)
         frame.pack(fill=tk.X, pady=(0, 8))
         tk.Label(frame, text="Gust factor for a model run with no gust grid (wind speed x factor):",
@@ -273,18 +306,19 @@ class BlendDialog:
         for alias, var in self.weights.items():
             pct = int(round(100.0 * var.get() / total)) if total else 0
             self.pct_labels[alias].config(text="%d%%" % pct)
-        self.message.config(text="" if total else "Move at least one slider above 0")
+        self.message.config(text="" if total or self.deterministic.get() else "Move at least one slider above 0")
 
     def _run(self):
         weights = {alias: var.get() for alias, var in self.weights.items() if var.get() > 0}
         elements = [key for key in ELEMENT_ORDER if self.elements[key].get()]
-        if not weights:
-            messagebox.showerror("Blend", "Give at least one model a weight above 0.")
-            return
+        deterministic = bool(self.deterministic.get())
         if not elements:
             messagebox.showerror("Blend", "Select at least one element.")
             return
-        self.callback({"weights": weights, "elements": elements,
+        if not weights and not (deterministic and elements == ["Wind"]):
+            messagebox.showerror("Blend", "Give at least one model a weight above 0.")
+            return
+        self.callback({"weights": weights, "elements": elements, "deterministic": deterministic,
                        "gust_factor": float(self.gust_factor.get())})
         self.master.destroy()
 
@@ -312,15 +346,16 @@ class Procedure(SmartScript.SmartScript):
           weights      {model alias: weight}, at least one above 0
           elements     any of Wind, WindGust, WaveHeight, pmsl (default all)
           gust_factor  wind-to-gust factor for model runs without gusts
+          deterministic  True: Wind from the deterministic blend, not the weights
         """
 
-        settings = varDict if varDict and "weights" in varDict else self._show_gui()
+        settings = varDict if varDict and ("weights" in varDict or "deterministic" in varDict) else self._show_gui()
         if settings is None:
             self.statusBarMsg("Blend cancelled", "R")
             return
 
         try:
-            weights, elements, gust_factor = self._read_settings(settings)
+            weights, elements, gust_factor, deterministic = self._read_settings(settings)
         except ValueError as exc:
             self._fail(str(exc))
             return
@@ -328,8 +363,11 @@ class Procedure(SmartScript.SmartScript):
         self.log("=" * 70)
         self.log("BLEND WIND/GUST/WAVE/PMSL")
         self.log("=" * 70)
-        self.log("Weights: " + ", ".join("%s %.0f%%" % (a, 100 * w) for a, w in weights.items()))
-        self.log("Elements: " + ", ".join(elements))
+        det_wind = deterministic and "Wind" in elements
+        weighted = [e for e in elements if not (det_wind and e == "Wind")]
+        if weighted:
+            self.log("Weights: " + ", ".join("%s %.0f%%" % (a, 100 * w) for a, w in weights.items()))
+        self.log("Elements: " + ", ".join(elements) + ("  (Wind: deterministic blend)" if det_wind else ""))
 
         mask = self._edit_area_mask(editArea)
 
@@ -353,11 +391,20 @@ class Procedure(SmartScript.SmartScript):
 
         # --- Pick each model's run and check it has everything ---------------
         plans: List[ModelPlan] = []
-        for alias, weight in weights.items():
+        for alias, weight in (weights.items() if weighted else ()):
             self.statusBarMsg("Checking %s runs..." % alias, "R")
-            plan, model_problems = self._plan_model(alias, weight, elements, targets, window)
+            plan, model_problems = self._plan_model(alias, weight, weighted, targets, window)
             plans.append(plan)
             problems.extend(model_problems)
+
+        det_plans: List[ModelPlan] = []
+        det_notes: List[str] = []
+        if det_wind:
+            self.statusBarMsg("Checking GFS, ECMWF and AIFS runs...", "R")
+            det_plans, det_notes = self._plan_deterministic(targets, window)
+            if not any(p.weight > 0 for p in det_plans):
+                problems.append("Deterministic blend: no complete Wind run of GFS, ECMWF or AIFS - "
+                                + "; ".join(det_notes))
 
         for plan in plans:
             for note in plan.skipped:
@@ -374,12 +421,20 @@ class Procedure(SmartScript.SmartScript):
             for elem, src in plan.sources.items():
                 self.log("  %-10s %-10s <- %s %s %s%s" % (plan.label, elem, src.model_id, src.element, src.level,
                                                          "  (wind x %.2f)" % gust_factor if src.from_wind else ""))
+        if det_wind:
+            det_runs = ["%s %s" % (p.label, time.strftime("%HZ %m/%d", time.gmtime(p.cycles["atmo"])))
+                        for p in det_plans]
+            self.log("Deterministic blend runs: " + ", ".join(det_runs))
+            for note in det_notes:
+                self.log("  Left out " + note)
+            run_summary.append("Wind from %d runs (%s)" % (len(det_plans), ", ".join(det_runs)))
         self.log("Runs: " + ", ".join(run_summary))
 
         # --- Read every model grid once and reject empty ones -----------------
         self.statusBarMsg("Checking model grids...", "R")
         try:
-            self._check_grids(plans, elements)
+            self._check_grids(plans, weighted)
+            self._check_grids(det_plans, ["Wind"])
         except BlendError as exc:
             self._fail("Nothing was changed - %s" % exc)
             return
@@ -391,7 +446,10 @@ class Procedure(SmartScript.SmartScript):
                 total = len(targets[elem])
                 for i, tr in enumerate(targets[elem]):
                     self.statusBarMsg("%s %d/%d" % (elem, i + 1, total), "R")
-                    result, covered = self._blend(elem, tr, plans, gust_factor)
+                    if det_wind and elem == "Wind":
+                        result, covered = self._blend_deterministic(tr, det_plans)
+                    else:
+                        result, covered = self._blend(elem, tr, plans, gust_factor)
                     self._write(elem, tr, result, covered, mask)
                     written.append("%s %s" % (elem, fmt_time(tr.startTime().unixTime())))
         except BlendError as exc:
@@ -400,10 +458,18 @@ class Procedure(SmartScript.SmartScript):
             self._fail("Blend stopped: %s\n%s" % (exc, done))
             return
 
+        if det_wind and "WindGust" not in elements:
+            raised = self._raise_gusts(timeRange, mask)
+            if raised:
+                written.append("WindGust raised to Wind in %d grids" % raised)
+                self.log("  WindGust raised to the new Wind in %d grids" % raised)
+
         notes = [n for plan in plans for n in plan.skipped]
         message = "Blend done: %d grids from %s." % (len(written), ", ".join(run_summary))
         if notes:
             message += " Newer runs skipped as incomplete: " + "; ".join(notes)
+        if det_wind and det_notes:
+            message += " Left out of the deterministic blend: " + "; ".join(det_notes)
         self.log(message)
         self.statusBarMsg(message, "R")
 
@@ -424,6 +490,7 @@ class Procedure(SmartScript.SmartScript):
 
     @staticmethod
     def _read_settings(settings: Dict):
+        deterministic = bool(settings.get("deterministic", False))
         raw = settings.get("weights") or {}
         weights: Dict[str, float] = {}
         for alias, weight in raw.items():
@@ -435,11 +502,6 @@ class Procedure(SmartScript.SmartScript):
             if not model_aliases.has_alias(alias):
                 raise ValueError("%s is not a known model." % alias)
             weights[model_aliases.resolve_alias(alias)] = weights.get(model_aliases.resolve_alias(alias), 0.0) + weight
-        if not weights:
-            raise ValueError("No model has a weight above 0.")
-        total = sum(weights.values())
-        weights = {alias: weight / total for alias, weight in weights.items()}
-
         elements = [e for e in ELEMENT_ORDER if e in (settings.get("elements") or ELEMENT_ORDER)]
         unknown = set(settings.get("elements") or ()) - set(ELEMENT_ORDER)
         if unknown:
@@ -447,10 +509,15 @@ class Procedure(SmartScript.SmartScript):
         if not elements:
             raise ValueError("No element selected.")
 
+        if not weights and not (deterministic and elements == ["Wind"]):
+            raise ValueError("No model has a weight above 0.")
+        total = sum(weights.values())
+        weights = {alias: weight / total for alias, weight in weights.items()}
+
         gust_factor = float(settings.get("gust_factor", DEFAULT_GUST_FACTOR))
         if gust_factor < 1.0:
             raise ValueError("Gust factor must be at least 1.0.")
-        return weights, elements, gust_factor
+        return weights, elements, gust_factor, deterministic
 
     def _fail(self, message: str):
         """Report an error loudly: the status bar, and a dialog if the GUI ran."""
@@ -531,6 +598,62 @@ class Procedure(SmartScript.SmartScript):
             plan.skipped.extend("%s %s" % (plan.label, r) for r in reasons)
 
         return plan, problems
+
+    def _plan_deterministic(self, targets, window):
+        """Wind sources for the deterministic blend.
+
+        Returns (plans, notes).  Each model's newest complete Wind run is a plan
+        with weight 1 (a current run); the same model's runs DET_LAGS_HOURS
+        earlier are plans with weight 0.  Runs that are missing or incomplete
+        are left out and described in notes.
+        """
+
+        plans: List[ModelPlan] = []
+        notes: List[str] = []
+        for alias in DET_MODELS:
+            try:
+                cfg = model_aliases.get_model_config(alias)
+            except Exception:
+                notes.append("%s (not a known model)" % alias)
+                continue
+            runs = grid_fetch.list_model_runs(self, alias, dataset="atmo",
+                                              run_depth=max(cfg.max_runs, DET_RUN_DEPTH))
+            if not runs:
+                names = model_aliases.get_database_candidates(alias, dataset="atmo")
+                notes.append("%s (no database found; looked for %s)" % (alias, ", ".join(names) or "none"))
+                continue
+
+            by_cycle = dict(runs)
+            newest = None
+            for cycle, databases in runs:
+                sources, missing = self._resolve_run(alias, cfg, databases, ["Wind"], targets, window)
+                if not missing:
+                    newest = cycle
+                    plan = ModelPlan(alias=alias, label=alias, weight=1.0)
+                    plan.cycles["atmo"] = cycle
+                    plan.sources.update(sources)
+                    plans.append(plan)
+                    break
+            if newest is None:
+                notes.append("%s (no complete Wind run among the newest %d)" % (alias, len(runs)))
+                continue
+
+            for lag in DET_LAGS_HOURS:
+                cycle = newest - lag * 3600
+                label = "%s -%dh" % (alias, lag)
+                databases = by_cycle.get(cycle)
+                if databases is None:
+                    notes.append("%s %s (not on the server)" % (alias, fmt_cycle(cycle)))
+                    continue
+                sources, missing = self._resolve_run(alias, cfg, databases, ["Wind"], targets, window)
+                if missing:
+                    notes.append("%s %s (%s)" % (alias, fmt_cycle(cycle), missing[0]))
+                    continue
+                plan = ModelPlan(alias=alias, label=label, weight=0.0)
+                plan.cycles["atmo"] = cycle
+                plan.sources.update(sources)
+                plans.append(plan)
+        return plans, notes
 
     def _resolve_run(self, alias, cfg, databases: Dict[str, str], wanted, targets, window):
         """Sources for every wanted element from one cycle, and what is missing."""
@@ -691,6 +814,81 @@ class Procedure(SmartScript.SmartScript):
             _, direction = self.UVToMagDir(u_sum / safe, v_sum / safe)
             return (value, np.asarray(direction, dtype=float)), covered
         return value, covered
+
+    def _blend_deterministic(self, tr, plans: List[ModelPlan]):
+        """Deterministic blend of Wind at one time (see the docstring)."""
+
+        key = tr_key(tr)
+        kt = unit_factor("kt", self._units("Fcst", "Wind", FCST_LEVEL)) or 1.0
+        current, runs, u_cur, v_cur = [], [], [], []
+        for plan in plans:
+            src = plan.sources["Wind"]
+            u, v = self._read(plan, src, src.recipes[key], "Wind")
+            speed = np.hypot(u, v) / kt  # kt
+            bad = empty_reason(speed)
+            if bad:
+                raise BlendError("%s wind for %s is empty (%s) - %s"
+                                 % (plan.label, fmt_time(key[0]), bad, src.model_id))
+            runs.append(speed)
+            if plan.weight > 0:
+                current.append(speed)
+                u_cur.append(u)
+                v_cur.append(v)
+
+        runs = np.array(runs)
+        current = np.array(current)
+        ok = np.isfinite(runs)
+        n = ok.sum(0)
+        run_vals = np.where(ok, runs, 0.0)
+
+        # Support: share of the runs near each current model's speed.
+        weights = []
+        for speed in current:
+            near = np.exp(-0.5 * ((runs - speed[None]) / DET_SUPPORT_KT) ** 2)
+            share = np.where(ok, near, 0.0).sum(0) / np.maximum(n, 1)
+            weights.append(np.where(np.isfinite(speed), share + 1e-6, 0.0))
+        weights = np.array(weights)
+        w_sum = weights.sum(0)
+        covered = w_sum > 0
+        safe = np.where(covered, w_sum, 1.0)
+        base = (weights * np.where(np.isfinite(current), current, 0.0)).sum(0) / safe
+
+        mean = run_vals.sum(0) / np.maximum(n, 1)
+        var = np.where(ok, (runs - mean[None]) ** 2, 0.0).sum(0) / np.maximum(n, 1)
+        boost = np.where(n >= 2, np.minimum(DET_SPREAD_K * np.sqrt(var), DET_CAP_KT), 0.0)
+        speed = (base + boost) * kt
+
+        cur_ok = np.isfinite(np.array(u_cur))
+        count = np.maximum(cur_ok.sum(0), 1)
+        u_mean = np.where(cur_ok, u_cur, 0.0).sum(0) / count
+        v_mean = np.where(cur_ok, v_cur, 0.0).sum(0) / count
+        _, direction = self.UVToMagDir(u_mean, v_mean)
+        return (speed, np.asarray(direction, dtype=float)), covered
+
+    def _raise_gusts(self, selection, mask: np.ndarray) -> int:
+        """Raise existing Fcst WindGust to the strongest Fcst Wind it overlaps."""
+
+        count = 0
+        for _, _, gust_tr in grid_fetch.grid_times(self, "Fcst", "WindGust", FCST_LEVEL, selection):
+            gust = self.getGrids("Fcst", "WindGust", FCST_LEVEL, gust_tr, mode="First", noDataError=0)
+            if gust is None:
+                continue
+            wind_max = None
+            for _, _, wind_tr in grid_fetch.grid_times(self, "Fcst", "Wind", FCST_LEVEL, gust_tr):
+                wind = self.getGrids("Fcst", "Wind", FCST_LEVEL, wind_tr, mode="First", noDataError=0)
+                if wind is None:
+                    continue
+                speed = np.asarray(wind[0], dtype=float)
+                wind_max = speed if wind_max is None else np.maximum(wind_max, speed)
+            if wind_max is None:
+                continue
+            gust = np.asarray(gust, dtype=float)
+            low = mask & (gust < wind_max)
+            if low.any():
+                self.createGrid("Fcst", "WindGust", "SCALAR",
+                                np.where(low, wind_max, gust).astype(np.float32), gust_tr)
+                count += 1
+        return count
 
     def _write(self, elem: str, tr, result, covered: np.ndarray, mask: np.ndarray):
         spec = ELEMENT_SPECS[elem]

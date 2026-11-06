@@ -193,6 +193,88 @@ wv = written(p, "WaveHeight")[0][1]
 check("land keeps the Fcst value, sea is blended", wv[5, 2] == 3 and abs(wv[5, 10] - 2.5 * FT) < 1e-3,
       (wv[5, 2], wv[5, 10]))
 
+# ---- Deterministic blend for Wind ------------------------------------------
+GFS00, GFSP12 = "X_GRID__GFS_19700102_0000", "X_GRID__GFS_19700101_1200"
+EC00, ECP12 = "X_D2D_ECMWF_19700102_0000", "X_D2D_ECMWF_19700101_1200"
+AI12, AI00, AIP12 = ("X_D2D_AIFS_19700102_1200", "X_D2D_AIFS_19700102_0000",
+                     "X_D2D_AIFS_19700101_1200")
+# Speeds in kt at the test point for each run (EC and AIFS stored in m/s).
+DET_KT = {GFS12: 40.0, GFS00: 36.0, GFSP12: 30.0,
+          EC12: 30.0, EC00: 32.0, ECP12: 28.0,
+          AI12: 33.0, AI00: 34.0, AIP12: 31.0}
+
+
+def det_runs(with_aifs=True):
+    def mutate(s, d):
+        def wind(model_id, units, step):
+            spd = DET_KT[model_id] / (KT if units == "m/s" else 1.0)
+            s[(model_id, "Wind" if units == "kts" else "wind", "SFC" if units == "kts" else "FHAG10")] = {
+                "units": units,
+                "grids": series(42, 78, step, lambda h: (field(spd), field(270 if model_id != EC12 else 250, False)))}
+        d["GFS"] = [GFS18, GFS12, "X_GRID__GFS_19700102_0600", GFS00, "X_GRID__GFS_19700101_1800", GFSP12]
+        for m in (GFS12, GFS00, GFSP12):
+            wind(m, "kts", 3)
+        d["D2D_ECMWF"] = [EC12, EC00, ECP12]
+        for m in (EC12, EC00, ECP12):
+            wind(m, "m/s", 6)
+        if with_aifs:
+            d["D2D_AIFS"] = [AI12, AI00, AIP12]
+            for m in (AI12, AI00, AIP12):
+                wind(m, "m/s", 6)
+    return mutate
+
+
+def run_det(elements, weights=None, mutate=None):
+    s, d = base_store()
+    if mutate:
+        mutate(s, d)
+    SS.store, SS.dbs = s, d
+    proc = B.Procedure(None)
+    var = {"weights": weights or {}, "elements": elements, "deterministic": True, "gust_factor": 1.3}
+    proc.execute(None, tr(48, 72), var)
+    return proc
+
+
+def det_expected(current, lagged):
+    runs = np.array(current + lagged)
+    w = np.array([np.exp(-0.5 * ((runs - c) / 5.0) ** 2).mean() + 1e-6 for c in current])
+    return (w * np.array(current)).sum() / w.sum() + min(0.3 * runs.std(), 5.0)
+
+
+print("10. Deterministic blend, Wind only, no weights")
+p = run_det(["Wind"], mutate=det_runs())
+w = written(p, "Wind")[0][1]
+exp = det_expected([40, 30, 33], [36, 30, 32, 28, 34, 31])
+check("speed = support-weighted 3 models + 0.3 x spread of 9 runs", abs(w[0][5, 5] - exp) < 1e-3, (w[0][5, 5], exp))
+check("an off-point value is the same recipe", abs(w[0][5, 6] - exp) < 1e-3, w[0][5, 6])
+check("direction from the mean u/v of the 3 current runs", 255 < w[1][5, 5] < 265, w[1][5, 5])
+g = [c for c in p.created if c[1] == "WindGust"]
+check("Fcst gusts (7 kt) raised to the new Wind", len(g) == 8 and abs(g[0][3][5, 5] - exp) < 1e-3,
+      (len(g), g[0][3][5, 5] if g else None))
+check("status lists 9 runs", "Wind from 9 runs" in last_msg(p)[1] and last_msg(p)[0] == "R", last_msg(p))
+
+print("11. Deterministic blend without AIFS on the server")
+p = run_det(["Wind"], mutate=det_runs(with_aifs=False))
+w = written(p, "Wind")[0][1]
+exp = det_expected([40, 30], [36, 30, 32, 28])
+check("blends the 6 GFS and ECMWF runs", abs(w[0][5, 5] - exp) < 1e-3, (w[0][5, 5], exp))
+check("status names AIFS as left out", "Left out" in last_msg(p)[1] and "AIFS" in last_msg(p)[1], last_msg(p))
+
+print("12. Deterministic Wind with weighted gusts and pmsl")
+p = run_det(["Wind", "WindGust", "pmsl"], weights={"GFS": 1}, mutate=det_runs())
+w = written(p, "Wind")[0][1]
+g = written(p, "WindGust")[0][1]
+pm = written(p, "pmsl")[0][1]
+check("Wind is the deterministic blend", abs(w[0][5, 5] - det_expected([40, 30, 33], [36, 30, 32, 28, 34, 31])) < 1e-3,
+      w[0][5, 5])
+check("GFS gust (25 kt) raised to the new Wind", abs(g[5, 5] - w[0][5, 5]) < 1e-3, g[5, 5])
+check("pmsl from the GFS weight", abs(pm[5, 5] - 1010) < 1e-3, pm[5, 5])
+
+print("13. Deterministic blend with no model on the server")
+p = run_det(["Wind"], mutate=lambda s, d: [d.pop(k) for k in ("GFS", "D2D_GFS", "D2D_ECMWF")])
+check("nothing written", not p.created, len(p.created))
+check("error says no complete Wind run", last_msg(p)[0] == "U" and "no complete Wind run" in last_msg(p)[1], last_msg(p))
+
 print()
 if FAILURES:
     print("%d check(s) failed: %s" % (len(FAILURES), ", ".join(FAILURES)))

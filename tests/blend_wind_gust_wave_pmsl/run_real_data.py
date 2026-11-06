@@ -11,6 +11,12 @@ checks what it wrote and plots the models beside the blend.
     python3 run_real_data.py                        # W Atlantic, from now, 90 h
     python3 run_real_data.py --box 30,55,-150,-120 --hours 72 --weights GFS=1,ECMWF=1
     python3 run_real_data.py --start 2026101306
+    python3 run_real_data.py --source aws --deterministic   # Wind from the deterministic blend
+
+With --deterministic, AIFS is added (wind and pmsl, as D2D_AIFS), enough
+cycles are offered to reach 24 h before each model's newest run, and Wind is
+checked against the marine wind page's own code (marine_wind/pipeline/build.py
+support_base) run on the same model grids.
 
 Needs numpy, matplotlib, requests and eccodes (pip install eccodes).
 Writes the log, maps and cache to out/ (gitignored).
@@ -45,6 +51,8 @@ def parse_args():
     a.add_argument("--cycles", type=int, default=3, help="newest cycles offered per model (default 3)")
     a.add_argument("--source", choices=("direct", "aws"), default="direct",
                    help="direct: NOMADS and data.ecmwf.int (default); aws: their S3 open-data mirrors")
+    a.add_argument("--deterministic", action="store_true",
+                   help="Wind from the deterministic blend (GFS, ECMWF, AIFS and their runs 12 h and 24 h earlier)")
     return a.parse_args()
 
 
@@ -52,7 +60,7 @@ def uv_to_magdir(u, v):
     return np.hypot(u, v), np.mod(270.0 - np.degrees(np.arctan2(v, u)), 360.0)
 
 
-def build_store(t0, t1, n_cycles):
+def build_store(t0, t1, n_cycles, aifs=False):
     """Model databases from the newest cycles on the servers, plus Fcst grids to replace."""
     store, dbs, notes = {}, {}, []
     tr = gfe_fakes.time_range
@@ -106,6 +114,18 @@ def build_store(t0, t1, n_cycles):
                 add(mid, "WaveHeight", "MSL", "m", c + s * H,
                     lambda ymd=ymd, hh=hh, s=s: M.ec_fields(ymd, hh, s, "wave", ("swh",))["swh"])
 
+    for ymd, hh in (cycles if aifs else ()):
+        c = M.cycle_unix(ymd, hh)
+        steps = [s for s in M.ec_steps(ymd, hh, "oper", "aifs-single") if c + s * H <= last]
+        notes.append("AIFS  %s %sZ: %3d steps posted up to the period's end" % (ymd, hh, len(steps)))
+        if steps:
+            mid = "XXX_GRID_D2D_AIFS_%s_%s00" % (ymd, hh)
+            dbs.setdefault("D2D_AIFS", []).append(mid)
+            for s in steps:
+                f = (lambda ymd=ymd, hh=hh, s=s: M.ec_fields(ymd, hh, s, "oper", ("10u", "10v", "msl"), "aifs-single"))
+                add(mid, "wind", "FHAG10", "m/s", c + s * H, lambda f=f: uv_to_magdir(f()["10u"], f()["10v"]))
+                add(mid, "pmsl", "MSL", "Pa", c + s * H, lambda f=f: f()["msl"])
+
     shape = (len(M.LATS), len(M.LONS))
     for elem, units, val in (("Wind", "kts", None), ("WindGust", "kts", 0.0),
                              ("WaveHeight", "ft", 0.0), ("pmsl", "mb", 1013.0)):
@@ -126,7 +146,8 @@ def main():
         t0 = int(time.time()) // (3 * H) * (3 * H)
     t1 = t0 + args.hours // 3 * 3 * H
 
-    store, dbs, notes = build_store(t0, t1, args.cycles)
+    n_cycles = max(args.cycles, 6) if args.deterministic else args.cycles
+    store, dbs, notes = build_store(t0, t1, n_cycles, aifs=args.deterministic)
     SS.store, SS.dbs, SS.shape = store, dbs, (len(M.LATS), len(M.LONS))
     print("\n".join(notes))
 
@@ -140,9 +161,20 @@ def main():
 
     B.Procedure._plan_model = capture  # keep each model's plan to plot what was blended
 
+    det_plans = []
+    plan_det = B.Procedure._plan_deterministic
+
+    def capture_det(self, *a, **k):
+        found, det_notes = plan_det(self, *a, **k)
+        det_plans.extend(found)
+        return found, det_notes
+
+    B.Procedure._plan_deterministic = capture_det
+
     started = time.time()
     proc = B.Procedure(None)
-    proc.execute(None, gfe_fakes.time_range(t0, t1 - t0 + H), {"weights": weights, "gust_factor": 1.3})
+    proc.execute(None, gfe_fakes.time_range(t0, t1 - t0 + H),
+                 {"weights": weights, "gust_factor": 1.3, "deterministic": args.deterministic})
     print("\n%.0f s, %d model grid reads, %d Fcst grids written" % (time.time() - started, SS.reads, len(proc.created)))
     status = proc.msgs[-1] if proc.msgs else ("", "")
     print("status [%s]: %s" % status)
@@ -152,6 +184,9 @@ def main():
     blend = {(c[1], c[4].startTime().unixTime()): c[3] for c in proc.created}
     times = sorted({t for _, t in blend})
     ok = verify(blend, times, plans, proc, weights)
+    if args.deterministic:
+        ok = verify_deterministic(blend, times, det_plans, proc) and ok
+        return 0 if ok else 1
     plot(blend, times, plans, proc, weights)
     return 0 if ok else 1
 
@@ -180,6 +215,31 @@ def verify(blend, times, plans, proc, weights):
     print("  min gust - wind:  %.2f kt" % gust_wind)
     print("  pmsl vs weighted model mean at %s: max diff %.4f mb" % (fmt(ts), pmsl_err))
     return not nonfinite and not constant and gust_wind >= -1e-6 and pmsl_err < 0.01
+
+
+def verify_deterministic(blend, times, det_plans, proc):
+    """Wind against the marine wind page's own recipe on the same model grids."""
+    sys.path.insert(0, os.path.join(HERE, "..", "..", "marine_wind", "pipeline"))
+    import build  # the page's pipeline; support_base, NOMEM_K and CAP_KT
+
+    print("\ndeterministic blend from %d runs: %s" % (
+        len(det_plans), ", ".join("%s %s" % (p.label, time.strftime("%HZ %d", time.gmtime(p.cycles["atmo"])))
+                                  for p in det_plans)))
+    worst = 0.0
+    for ts in times:
+        speeds = [model_values(proc, p, "Wind", ts)[0] for p in det_plans]
+        current = np.array([s for s, p in zip(speeds, det_plans) if p.weight > 0])
+        runs = np.array(speeds)
+        expect = build.support_base(current, runs) + np.minimum(build.NOMEM_K * runs.std(0), build.CAP_KT)
+        got = blend[("Wind", ts)][0]
+        worst = max(worst, float(np.nanmax(np.abs(got - expect))))
+    ts = times[len(times) // 2]
+    got = blend[("Wind", ts)][0]
+    cur = np.array([model_values(proc, p, "Wind", ts)[0] for p in det_plans if p.weight > 0])
+    print("  Wind vs the page recipe, all %d times: max diff %.4f kt" % (len(times), worst))
+    print("  at %s: blend mean %.1f kt, max %.1f; 3-model mean %.1f; cells 34+ kt: blend %d, 3-model mean %d" % (
+        fmt(ts), np.mean(got), np.max(got), np.mean(cur.mean(0)), (got >= 34).sum(), (cur.mean(0) >= 34).sum()))
+    return worst < 0.01
 
 
 def fmt(t):

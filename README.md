@@ -17,7 +17,8 @@ The cyclone phase space project (the AWIPS derived parameters, the live global m
 | `GFE/procedures/CreateXML.py` | The site's chart XML procedure, now filling isobars and Highs/Lows from 17N up to the GFE grid's edge from a seam-matched model blend. See below. |
 | `GFE/utilities/PressureGapFill.py` | The gap-fill module that does it. |
 | `tests/pressure_gap_fill/` | Its checks, an end-to-end run of CreateXML.py, and a synthetic WPAC plot. |
-| `GFE/procedures/Blend_WindGustWavePmsl.py` | Blends Wind, WindGust, WaveHeight and pmsl from one set of model weights, using each model's newest complete run; writes nothing if any model grid is missing or empty. |
+| `GFE/procedures/Blend_WindGustWavePmsl.py` | Blends Wind, WindGust, WaveHeight and pmsl from one set of model weights, using each model's newest complete run (or Wind from the deterministic blend: GFS, ECMWF and AIFS with their runs 12 h and 24 h earlier); writes nothing if any model grid is missing or empty. |
+| `GFE/procedures/Check_ModelSources.py` | Read only: lists which model databases GFE can see (GFS, ECMWF, AIFS, ensembles, CMC, UKMET), how many runs of each it keeps, and their 10 m wind. |
 | `tests/blend_wind_gust_wave_pmsl/` | Its scenario checks on a fake GFE, and a run on the newest real GFS and ECMWF data with maps. |
 | `web/TCWind_JTWC/` | Google Apps Script web app for that tool: live JTWC and NHC bulletins, a best-track archive, and the verification findings. |
 | `web/HFArchiveExport/` | Google Apps Script web app that exports the restricted HF low sheet as CSV for `tools/publish.py`. |
