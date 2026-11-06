@@ -22,8 +22,14 @@ water cells only, and the tool lifts every cell in the edit area.
 
 Scored on five held-out winter weeks (Nov 2025 - Mar 2026) against ASCAT,
 5x5 deg storm tiles, Pacific including the 06/18Z passes (marine-research
-studies/2026-11-06-gfe-wind-tool/findings.md).  Defaults (+6 kt where the
-stronger model >= 42 kt):
+studies/2026-11-06-gfe-wind-tool/findings.md).
+Defaults, two steps: +6 kt where the stronger model >= 42 kt, then +6 kt more
+where it is >= 48 kt (picked on tune weeks for storm AND HF):
+    storm-force catch Atlantic 75%, Pacific 66%; storm area 1.05x / 1.26x
+    HF catch Atlantic 73% (84 of 115 tiles), Pacific 6 of 15; HF area 1.6x
+    / 1.4x ASCAT's (0.9x on tune weeks)
+  Extra lift 4 instead of 6: HF Atlantic 60% at 0.93x area, storm the same.
+Extra lift 0 (one step, +6 kt where >= 42 kt):
     storm-force catch  Atlantic 35% -> 74%, Pacific 22% -> 63%
     storm area vs ASCAT 1.02x / 1.16x; false storm tiles 283 / 147
     gale-force areas unchanged
@@ -31,9 +37,8 @@ stronger model >= 42 kt):
   storm score, so pick 44 if storm area must stay under ASCAT's.
   Page Core Lifted on the same weeks: 62% / 40%.
   GEFS storm floor: adds almost nothing on top of the lift (left Off).
-  HF is NOT fixed: HF catch 26% Atlantic.  Lift 10, threshold 44 raised
-  Atlantic HF catch to 60% at 0.93x ASCAT's HF area (storm catch -2 pts);
-  a setting to try for HF, not a scored pick.  The HF ceiling check was
+  One step leaves HF at 26% Atlantic; the second step is what lifts HF.
+  The HF ceiling check was
   right 88% of the time when it called an HF cell "probably storm".
 Greenland barrier and tip-jet flow (not scorable, ASCAT blind near coast):
 trust the GFS family's strength there; ECMWF ran 10-20 kt low on 29 Oct.
@@ -60,6 +65,9 @@ ScreenList = ["VECTOR"]
 # Defaults picked on tune weeks (most storm catch, storm area <= ASCAT's, gales unchanged).
 LIFT_KT = 6.0
 THRESH_KT = 42.0
+# Second step for HF (Jason 16:42Z "good at both storm and HF"): a further lift where the stronger model is higher.
+LIFT2_KT = 6.0
+THRESH2_KT = 48.0
 GEFS_FLOOR_P = 50.0  # percent
 HF_CEIL_KT = 60.0
 # (sea minus 2 m air below this edge, deg C -> factor on the 925 mb wind); None = no upper edge.
@@ -80,6 +88,8 @@ AIR2M_T_SOURCES = [("t", "FHAG2"), ("t", "2FHAG")]
 VariableList = [
     ("Lift (kt)", LIFT_KT, "numeric"),
     ("Where the stronger of GFS/ECMWF is at least (kt)", THRESH_KT, "numeric"),
+    ("Extra lift for HF (kt, 0 = off)", LIFT2_KT, "numeric"),
+    ("Extra lift where the stronger is at least (kt)", THRESH2_KT, "numeric"),
     ("GEFS storm floor", "Off", "radio", ["Off", "On"]),
     ("HF ceiling check", "Off", "radio", ["Off", "On"]),
 ]
@@ -194,6 +204,10 @@ class Tool(SmartScript.SmartScript):
 
         lifted = (strongest >= thresh) & mask
         new_kt = np.where(lifted, mag_kt + lift, mag_kt)
+        lift2 = float(varDict.get("Extra lift for HF (kt, 0 = off)", 0.0) or 0.0)
+        thresh2 = float(varDict.get("Extra lift where the stronger is at least (kt)", THRESH2_KT))
+        lifted2 = (strongest >= thresh2) & mask if lift2 > 0 else np.zeros(mask.shape, dtype=bool)
+        new_kt = np.where(lifted2, new_kt + lift2, new_kt)
 
         floored = np.zeros(mask.shape, dtype=bool)
         if varDict.get("GEFS storm floor") == "On":
@@ -211,8 +225,9 @@ class Tool(SmartScript.SmartScript):
         if varDict.get("HF ceiling check") == "On":
             notes.append(self._hf_check(new_kt, GridTimeRange))
 
-        self.statusBarMsg("Lift_StormCores: runs %s; %d cells lifted %g kt, %d floored to %g kt%s"
-                          % (", ".join(used), int(lifted.sum()), lift, int(floored.sum()), STORM_KT,
+        self.statusBarMsg("Lift_StormCores: runs %s; %d cells lifted %g kt, %d more %g kt, %d floored to %g kt%s"
+                          % (", ".join(used), int(lifted.sum()), lift, int(lifted2.sum()), lift2,
+                             int(floored.sum()), STORM_KT,
                              "".join("; " + n for n in notes)), "R")
         return new_kt / to_kt, direction
 

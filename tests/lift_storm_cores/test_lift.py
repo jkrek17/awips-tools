@@ -134,6 +134,18 @@ check("wind not changed by the check (only the lift)", mag[10, 10] == 66.0 and m
 tool, (mag, _) = run(s, d, var={"HF ceiling check": "On", "Lift (kt)": 0.0}, wind=wind)
 check("with no lift the grid is identical", np.all(mag == 66.0))
 
+print("6. second (HF) step")
+s, d = models(gfs_kt=grid({(1, 1): 45, (2, 2): 50}))
+tool, (mag, _) = run(s, d, var={"Extra lift for HF (kt, 0 = off)": 6.0,
+                                "Extra lift where the stronger is at least (kt)": 48.0})
+check("45 kt cell: first step only", mag[1, 1] == 46, mag[1, 1])
+check("50 kt cell: both steps", mag[2, 2] == 52, mag[2, 2])
+check("second-step count reported", "1 more 6 kt" in tool.msgs[-1][1], tool.msgs[-1])
+tool, (mag, _) = run(s, d, var={"Extra lift for HF (kt, 0 = off)": 0.0})
+check("extra lift 0: one step", mag[2, 2] == 46, mag[2, 2])
+check("dialog defaults are the picked 6/42 then 6/48",
+      [v[1] for v in L.VariableList[:4]] == [6.0, 42.0, 6.0, 48.0], L.VariableList[:4])
+
 print()
 print("FAILED: %s" % FAILURES if FAILURES else "all ok")
 sys.exit(1 if FAILURES else 0)
