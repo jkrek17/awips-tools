@@ -193,7 +193,7 @@ base = written(run(s, d))[0]
 mag, _ = written(run(s, d, {"Core lift": "On", "Lift where": M.TRIGGER_OWN}))
 add = (mag - base)[:6, 0]
 check("own trigger: 36-40 / 44-48 ramps", np.allclose(add, [0, 3, 6, 8, 10, 10], atol=1e-3), add)
-tool_dialog = {v[0]: v for v in M.VariableList}
+tool_dialog = {k: (k, v) for k, v in M.DEFAULTS.items()}
 check("dialog defaults On / models / 6 / 4", tool_dialog["Core lift"][1] == "On"
       and tool_dialog["Lift where"][1] == M.TRIGGER_MODELS and tool_dialog["Lift (kt)"][1] == 6.0
       and tool_dialog["Extra lift for HF (kt, 0 = off)"][1] == 4.0)
@@ -252,7 +252,7 @@ s[(gfs_id, "t", "FHAG2")] = {"units": "K", "grids": [(tr0, const(280.0))]}   # s
 add = (written(run(s, d, hf_on))[0] - base)[:4, 0]
 check("HF core: +0 at 50, +3 at 54, +6 at 56, +0 where 925 x 0.70 < 55",
       np.allclose(add, [0, 3, 6, 0], atol=1e-3), add)
-check("HF core default Off", {v[0]: v for v in M.VariableList}["HF core (targeted by 925 mb wind and stability)"][1] == "Off")
+check("HF core default Off", M.DEFAULTS["HF core (targeted by 925 mb wind and stability)"] == "Off")
 check("stability factors 0.70 / 0.79 / 0.83", np.allclose(M.stability_factor(np.array([1.0, 3.0, 6.0])), [0.70, 0.79, 0.83]))
 
 print("13. lagged runs Off: current runs only")
@@ -264,7 +264,7 @@ p = run(s, d, {"Lagged runs (12 h and 24 h older GFS/ECMWF)": "Off"})
 want = det_blend_direct([g[0], e[0]], [g[0], e[0]])
 check("blend from the two current runs only", np.allclose(written(p)[0], want, atol=1e-3))
 check("message says lagged runs off", "lagged runs off" in p.msgs[-1][1], p.msgs[-1])
-check("default On", {v[0]: v for v in M.VariableList}["Lagged runs (12 h and 24 h older GFS/ECMWF)"][1] == "On")
+check("default On", M.DEFAULTS["Lagged runs (12 h and 24 h older GFS/ECMWF)"] == "On")
 
 print("12. self-contained: no grid_fetch, database names without model_aliases")
 check("does not use grid_fetch", not hasattr(M, "grid_fetch"))
@@ -275,15 +275,20 @@ check("fallback names ECMWF", M.database_candidates("ECMWF") == ["D2D_ECMWF", "n
 M.model_aliases = saved
 check("run time parsed from id", M.model_run_time("X_D2D_GFS_19700102_1200") == 86400 + 12 * 3600)
 
-print("14. dialog layout (GFE variable list)")
-names = [v[0] for v in M.VariableList]
-check("row names unique (GFE keys rows by name)", len(names) == len(set(names)))
-check("every setting has a row with its default", all(k in names and
-      {v[0]: v for v in M.VariableList}[k][1] == M.DEFAULTS[k] for k in M.DEFAULTS))
-check("rows are label / radio / scale", all(v[2] in ("label", "radio", "scale") for v in M.VariableList))
-check("sliders carry [min, max] and step", all(len(v) == 5 and v[3][0] <= v[1] <= v[3][1]
-      for v in M.VariableList if v[2] == "scale"))
-check("label rows add nothing to the settings", run(s, d, {n: "" for n in names if n not in M.DEFAULTS}) is not None)
+print("14. settings window")
+check("GFE variable list empty (own window)", M.VariableList == [])
+check("dialog defaults match", M.DEFAULTS[M.K_LIFT] == 6.0 and M.DEFAULTS[M.K_LIFT2] == 4.0
+      and M.DEFAULTS[M.K_HF] == "Off" and M.DEFAULTS[M.K_LAGGED] == "On")
+SS.store, SS.dbs = s, d
+proc = M.Procedure(None)
+proc._show_gui = lambda: None
+proc.execute(None, TR, {})
+check("Cancel writes nothing", not proc.created)
+proc = M.Procedure(None)
+proc._show_gui = lambda: dict(M.DEFAULTS, **{M.K_LIFT_ON: "Off"})
+proc.execute(None, TR, None)
+plain = written(run(s, d))
+check("window settings are used", np.allclose(written(proc)[0], plain[0]))
 
 print()
 print("FAILED: %s" % FAILURES if FAILURES else "all ok")

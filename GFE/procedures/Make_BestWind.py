@@ -148,32 +148,9 @@ K_HF = "HF core (targeted by 925 mb wind and stability)"
 DEFAULTS = {K_LAGGED: "On", K_LIFT_ON: "On", K_TRIGGER: TRIGGER_MODELS, K_LIFT: LIFT_KT, K_LIFT2: LIFT2_KT,
             K_HF: "Off"}
 
-# GFE's own dialog. Label rows are notes (their names must be unique); the
-# setting rows use the K_ keys above, so another procedure can pass them as varDict.
-VariableList = [
-    ("Make Best Wind: GFS/ECMWF blend, then a lift in the storm cores. Run over an ocean edit area.", "", "label"),
-    (" ", "", "label"),
-    ("1. BLEND", "", "label"),
-    (K_LAGGED, "On", "radio", ["On", "Off"]),
-    ("   On = scored blend: each model weighted by how its earlier runs agree, plus 0.3 x their spread.", "",
-     "label"),
-    ("   Off = current GFS and ECMWF only. Quicker, but not the blend that was scored.", "", "label"),
-    ("  ", "", "label"),
-    ("2. STORM-CORE LIFT   (held-out vs ASCAT: storm catch 35% -> 75% Atl, 22% -> 64% Pac; gales unchanged)",
-     "", "label"),
-    (K_LIFT_ON, "On", "radio", ["On", "Off"]),
-    (K_TRIGGER, TRIGGER_MODELS, "radio", [TRIGGER_MODELS, TRIGGER_OWN]),
-    ("   Stronger model: ramps in over 38-42 kt, extra over 48-52 kt.  Own wind: 36-40 kt and 44-48 kt.", "",
-     "label"),
-    (K_LIFT, LIFT_KT, "scale", [0, 10], 1),
-    (K_LIFT2, LIFT2_KT, "scale", [0, 8], 1),
-    ("   ", "", "label"),
-    ("3. HURRICANE-FORCE CORE (optional, needs Core lift On)", "", "label"),
-    (K_HF, "Off", "radio", ["Off", "On"]),
-    ("   +0 to +6 kt as the stronger model goes 52 -> 56 kt, only where GFS 925 mb wind x stability >= 55 kt.",
-     "", "label"),
-    ("   Atlantic HF catch 59% -> 70%, but HF area grows from 0.9x to 1.7x ASCAT's.", "", "label"),
-]
+# The settings window is BestWindDialog (tkinter, like Blend_WindGustWavePmsl),
+# so GFE's own variable list stays empty.
+VariableList = []
 
 _TO_KT = {"kt": 1.0, "kts": 1.0, "knots": 1.0, "knot": 1.0, "m/s": 1.943844, "mph": 0.868976}
 
@@ -313,6 +290,127 @@ def _tr_key(tr):
     return (tr.startTime().unixTime(), tr.endTime().unixTime())
 
 
+
+
+# ==================== SETTINGS WINDOW ====================
+
+NAVY, OXBLOOD, CREAM, GREY = "#1f3354", "#7a1f2b", "#fbf7ee", "#555555"
+
+
+class BestWindDialog:
+    """Settings window: three boxed groups, a short note under every choice, Run / Defaults / Cancel."""
+
+    def __init__(self, master, callback):
+        import tkinter as tk
+        self.tk, self.master, self.callback = tk, master, callback
+        master.title("Make Best Wind")
+        master.configure(bg=CREAM)
+        master.resizable(False, False)
+        master.protocol("WM_DELETE_WINDOW", self._cancel)
+        self.lagged = tk.BooleanVar(value=True)
+        self.lift_on = tk.BooleanVar(value=True)
+        self.trigger = tk.StringVar(value=TRIGGER_MODELS)
+        self.lift = tk.DoubleVar(value=LIFT_KT)
+        self.lift2 = tk.DoubleVar(value=LIFT2_KT)
+        self.hf = tk.BooleanVar(value=False)
+
+        main = tk.Frame(master, padx=16, pady=12, bg=CREAM)
+        main.pack(fill=tk.BOTH, expand=True)
+        tk.Label(main, text="Make Best Wind", font=("Arial", 15, "bold"), fg=NAVY, bg=CREAM).pack(anchor=tk.W)
+        tk.Label(main, text="GFS/ECMWF blend, then a lift in the storm cores. Run it over an ocean edit area.",
+                 font=("Arial", 9), fg=GREY, bg=CREAM).pack(anchor=tk.W, pady=(0, 10))
+
+        box = self._group(main, "1. Blend")
+        self._check(box, "Use the 12 h and 24 h older runs", self.lagged,
+                    "Weights each model by how its own earlier runs agree, plus 0.3 x their spread. This is the "
+                    "scored blend. Off: current runs only, quicker.")
+
+        box = self._group(main, "2. Storm-core lift")
+        self._check(box, "Lift the storm cores", self.lift_on,
+                    "Held-out vs ASCAT: storm-force catch 35% -> 75% Atlantic, 22% -> 64% Pacific; gales unchanged.",
+                    command=self._refresh)
+        self.trigger_widgets = []
+        for value, note in ((TRIGGER_MODELS, "ramps in over 38-42 kt, extra over 48-52 kt"),
+                            (TRIGGER_OWN, "ramps in over 36-40 kt and 44-48 kt; reads no other model")):
+            row = tk.Frame(box, bg=CREAM)
+            row.pack(fill=tk.X, padx=(22, 0))
+            b = tk.Radiobutton(row, text=value, variable=self.trigger, value=value, bg=CREAM,
+                               activebackground=CREAM, anchor=tk.W, width=24, highlightthickness=0)
+            b.pack(side=tk.LEFT)
+            tk.Label(row, text=note, font=("Arial", 8), fg=GREY, bg=CREAM).pack(side=tk.LEFT)
+            self.trigger_widgets.append(b)
+        self.scales = [self._scale(box, "Lift at storm force (kt)", self.lift, 0, 10),
+                       self._scale(box, "Extra lift toward HF (kt)", self.lift2, 0, 8)]
+
+        box = self._group(main, "3. Hurricane-force core (optional)")
+        self.hf_check = self._check(
+            box, "Add an HF core where the 925 mb jet can mix down", self.hf,
+            "+0 to +6 kt as the stronger model goes 52 -> 56 kt, only where GFS 925 mb wind x stability >= 55 kt. "
+            "Atlantic HF catch 59% -> 70%, but HF area grows from 0.9x to 1.7x ASCAT's. Needs the lift on.")
+
+        buttons = tk.Frame(main, bg=CREAM)
+        buttons.pack(fill=tk.X, pady=(8, 0))
+        tk.Button(buttons, text="Run", command=self._run, bg=NAVY, fg="white", activebackground=OXBLOOD,
+                  activeforeground="white", font=("Arial", 11, "bold"), width=12).pack(side=tk.LEFT)
+        tk.Button(buttons, text="Defaults", command=self._defaults, width=10).pack(side=tk.LEFT, padx=8)
+        tk.Button(buttons, text="Cancel", command=self._cancel, width=10).pack(side=tk.RIGHT)
+        master.bind("<Return>", lambda e: self._run())
+        master.bind("<Escape>", lambda e: self._cancel())
+        self._refresh()
+
+    def _group(self, parent, title):
+        tk = self.tk
+        box = tk.LabelFrame(parent, text=" %s " % title, padx=10, pady=6, fg=OXBLOOD, bg=CREAM,
+                            font=("Arial", 10, "bold"))
+        box.pack(fill=tk.X, pady=(0, 10))
+        return box
+
+    def _check(self, parent, text, var, note, command=None):
+        tk = self.tk
+        c = tk.Checkbutton(parent, text=text, variable=var, bg=CREAM, activebackground=CREAM, anchor=tk.W, highlightthickness=0,
+                           font=("Arial", 10, "bold"), fg=NAVY, command=command)
+        c.pack(fill=tk.X)
+        tk.Label(parent, text=note, font=("Arial", 8), fg=GREY, bg=CREAM, wraplength=480, justify=tk.LEFT
+                 ).pack(anchor=tk.W, padx=(22, 0), pady=(0, 4))
+        return c
+
+    def _scale(self, parent, text, var, lo, hi):
+        tk = self.tk
+        row = tk.Frame(parent, bg=CREAM)
+        row.pack(fill=tk.X, padx=(22, 0))
+        tk.Label(row, text=text, width=24, anchor=tk.W, bg=CREAM).pack(side=tk.LEFT)
+        sc = tk.Scale(row, from_=lo, to=hi, resolution=1, orient=tk.HORIZONTAL, variable=var, length=220,
+                      bg=CREAM, troughcolor="#e6dcc6", highlightthickness=0)
+        sc.pack(side=tk.LEFT)
+        return sc
+
+    def _refresh(self):
+        state = self.tk.NORMAL if self.lift_on.get() else self.tk.DISABLED
+        for w in self.trigger_widgets + self.scales + [self.hf_check]:
+            w.config(state=state)
+
+    def _defaults(self):
+        self.lagged.set(True)
+        self.lift_on.set(True)
+        self.trigger.set(TRIGGER_MODELS)
+        self.lift.set(LIFT_KT)
+        self.lift2.set(LIFT2_KT)
+        self.hf.set(False)
+        self._refresh()
+
+    def values(self):
+        def on(b):
+            return "On" if b else "Off"
+        return {K_LAGGED: on(self.lagged.get()), K_LIFT_ON: on(self.lift_on.get()), K_TRIGGER: self.trigger.get(),
+                K_LIFT: float(self.lift.get()), K_LIFT2: float(self.lift2.get()), K_HF: on(self.hf.get())}
+
+    def _run(self):
+        self.callback(self.values())
+        self.master.destroy()
+
+    def _cancel(self):
+        self.callback(None)
+        self.master.destroy()
 
 class Procedure(SmartScript.SmartScript):
     """Blend GFS and ECMWF 10 m wind, then lift the storm cores."""
@@ -514,8 +612,27 @@ class Procedure(SmartScript.SmartScript):
 
     # ------------------------------------------------------------ execute
 
+    def _show_gui(self):
+        """Settings from the window, or None if cancelled."""
+        import tkinter as tk
+        result = [None]
+
+        def callback(values):
+            result[0] = values
+        root = tk.Tk()
+        BestWindDialog(root, callback)
+        root.mainloop()
+        return result[0]
+
     def execute(self, editArea, timeRange, varDict=None):
-        chosen = dict(DEFAULTS, **(varDict or {}))
+        # A varDict carrying any setting (another procedure, the tests) skips the window.
+        if varDict and any(k in varDict for k in DEFAULTS):
+            chosen = dict(DEFAULTS, **varDict)
+        else:
+            chosen = self._show_gui()
+            if chosen is None:
+                self.statusBarMsg("Make_BestWind: cancelled, nothing written", "R")
+                return
         settings = {
             "lagged": chosen[K_LAGGED] != "Off",
             "lift_on": chosen[K_LIFT_ON] != "Off",
