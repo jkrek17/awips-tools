@@ -18,6 +18,7 @@ The cyclone phase space project (the AWIPS derived parameters, the live global m
 | `GFE/utilities/PressureGapFill.py` | The gap-fill module that does it. |
 | `tests/pressure_gap_fill/` | Its checks, an end-to-end run of CreateXML.py, and a synthetic WPAC plot. |
 | `GFE/procedures/Blend_WindGustWavePmsl.py` | Blends Wind, WindGust, WaveHeight and pmsl from one set of model weights, using each model's newest complete run; writes nothing if any model grid is missing or empty. |
+| `GFE/procedures/Make_BestWind.py` | Builds the whole marine 10 m Wind grid: GFS/ECMWF blend (weighted by agreement with their 12 h and 24 h older runs, plus 0.3 x spread), then a ramped storm-core lift and an optional HF core targeted by GFS 925 mb wind x stability. Run over an ocean edit area. |
 | `tests/blend_wind_gust_wave_pmsl/` | Its scenario checks on a fake GFE, and a run on the newest real GFS and ECMWF data with maps. |
 | `web/TCWind_JTWC/` | Google Apps Script web app for that tool: live JTWC and NHC bulletins, a best-track archive, and the verification findings. |
 | `web/HFArchiveExport/` | Google Apps Script web app that exports the restricted HF low sheet as CSV for `tools/publish.py`. |
