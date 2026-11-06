@@ -18,7 +18,11 @@ What it does, for every Fcst Wind grid in the selected time range
    weighted by how many of the runs sit near its speed (a Gaussian, 5 kt
    wide), so a model that stands alone against its own earlier runs and the
    other model counts for less.  Then it adds 0.3 x the spread of the runs
-   (at most 5 kt), because the weighted mean runs weak in deep lows.  This is
+   (at most 5 kt), because the weighted mean runs weak in deep lows.
+   Option "Lagged runs" Off: only the two current runs are used (weights and
+   spread from those two).  Quicker and works when older runs are gone, but
+   it is not the blend that was scored: with two runs the spread term is just
+   0.15 x the GFS-ECMWF difference.  This is
    the "deterministic blend" of the marine wind page (rk.features.det_blend,
    without AIFS).
 3. Direction is that of the mean wind vector of the two current runs.
@@ -134,12 +138,41 @@ WIND925_SOURCES = [("wind", "MB925"), ("wind", "925MB")]   # guesses: check on A
 SFC_T_SOURCES = [("t", "SFC"), ("tsfc", "SFC")]
 AIR2M_T_SOURCES = [("t", "FHAG2"), ("t", "2FHAG")]
 
+# Setting keys (also what another procedure passes as varDict).
+K_LAGGED = "Lagged runs (12 h and 24 h older GFS/ECMWF)"
+K_LIFT_ON = "Core lift"
+K_TRIGGER = "Lift where"
+K_LIFT = "Lift (kt)"
+K_LIFT2 = "Extra lift for HF (kt, 0 = off)"
+K_HF = "HF core (targeted by 925 mb wind and stability)"
+DEFAULTS = {K_LAGGED: "On", K_LIFT_ON: "On", K_TRIGGER: TRIGGER_MODELS, K_LIFT: LIFT_KT, K_LIFT2: LIFT2_KT,
+            K_HF: "Off"}
+
+# GFE's own dialog. Label rows are notes (their names must be unique); the
+# setting rows use the K_ keys above, so another procedure can pass them as varDict.
 VariableList = [
-    ("Core lift", "On", "radio", ["On", "Off"]),
-    ("Lift where", TRIGGER_MODELS, "radio", [TRIGGER_MODELS, TRIGGER_OWN]),
-    ("Lift (kt)", LIFT_KT, "numeric"),
-    ("Extra lift for HF (kt, 0 = off)", LIFT2_KT, "numeric"),
-    ("HF core (targeted by 925 mb wind and stability)", "Off", "radio", ["Off", "On"]),
+    ("Make Best Wind: GFS/ECMWF blend, then a lift in the storm cores. Run over an ocean edit area.", "", "label"),
+    (" ", "", "label"),
+    ("1. BLEND", "", "label"),
+    (K_LAGGED, "On", "radio", ["On", "Off"]),
+    ("   On = scored blend: each model weighted by how its earlier runs agree, plus 0.3 x their spread.", "",
+     "label"),
+    ("   Off = current GFS and ECMWF only. Quicker, but not the blend that was scored.", "", "label"),
+    ("  ", "", "label"),
+    ("2. STORM-CORE LIFT   (held-out vs ASCAT: storm catch 35% -> 75% Atl, 22% -> 64% Pac; gales unchanged)",
+     "", "label"),
+    (K_LIFT_ON, "On", "radio", ["On", "Off"]),
+    (K_TRIGGER, TRIGGER_MODELS, "radio", [TRIGGER_MODELS, TRIGGER_OWN]),
+    ("   Stronger model: ramps in over 38-42 kt, extra over 48-52 kt.  Own wind: 36-40 kt and 44-48 kt.", "",
+     "label"),
+    (K_LIFT, LIFT_KT, "scale", [0, 10], 1),
+    (K_LIFT2, LIFT2_KT, "scale", [0, 8], 1),
+    ("   ", "", "label"),
+    ("3. HURRICANE-FORCE CORE (optional, needs Core lift On)", "", "label"),
+    (K_HF, "Off", "radio", ["Off", "On"]),
+    ("   +0 to +6 kt as the stronger model goes 52 -> 56 kt, only where GFS 925 mb wind x stability >= 55 kt.",
+     "", "label"),
+    ("   Atlantic HF catch 59% -> 70%, but HF area grows from 0.9x to 1.7x ASCAT's.", "", "label"),
 ]
 
 _TO_KT = {"kt": 1.0, "kts": 1.0, "knots": 1.0, "knot": 1.0, "m/s": 1.943844, "mph": 0.868976}
@@ -280,6 +313,7 @@ def _tr_key(tr):
     return (tr.startTime().unixTime(), tr.endTime().unixTime())
 
 
+
 class Procedure(SmartScript.SmartScript):
     """Blend GFS and ECMWF 10 m wind, then lift the storm cores."""
 
@@ -408,7 +442,7 @@ class Procedure(SmartScript.SmartScript):
 
     # ------------------------------------------------------------ one time
 
-    def _collect(self, tr, window, notes):
+    def _collect(self, tr, window, notes, lags=LAGS_HOURS):
         """Per model: [(label, u, v)] with the current run first, plus what was missing."""
         out, missing = {}, []
         for alias in MODELS:
@@ -426,7 +460,7 @@ class Procedure(SmartScript.SmartScript):
             cycle, _, uv = current
             entries = [("%s %s" % (alias, _hhz(cycle)), uv)]
             by_cycle = dict(runs)
-            for lag in LAGS_HOURS:
+            for lag in lags:
                 databases = by_cycle.get(cycle - lag * 3600)
                 found = self._find(alias, databases, tr, window) if databases else None
                 uv = self._read_run(found, notes) if found else None
@@ -439,7 +473,7 @@ class Procedure(SmartScript.SmartScript):
 
     def _make_one(self, tr, window, settings, mask, notes):
         """Return ((speed_kt, direction), lifted_count, run_text, missing) or None if both models missing."""
-        collected, missing = self._collect(tr, window, notes)
+        collected, missing = self._collect(tr, window, notes, LAGS_HOURS if settings["lagged"] else ())
         if not collected:
             return None, 0, "", missing
         current = [entries[0][1] for entries in collected.values()]
@@ -481,13 +515,14 @@ class Procedure(SmartScript.SmartScript):
     # ------------------------------------------------------------ execute
 
     def execute(self, editArea, timeRange, varDict=None):
-        varDict = varDict or {}
+        chosen = dict(DEFAULTS, **(varDict or {}))
         settings = {
-            "lift_on": varDict.get("Core lift", "On") != "Off",
-            "own": varDict.get("Lift where", TRIGGER_MODELS) == TRIGGER_OWN,
-            "lift": float(varDict.get("Lift (kt)", LIFT_KT)),
-            "lift2": float(varDict.get("Extra lift for HF (kt, 0 = off)", LIFT2_KT) or 0.0),
-            "hf_core": varDict.get("HF core (targeted by 925 mb wind and stability)", "Off") == "On",
+            "lagged": chosen[K_LAGGED] != "Off",
+            "lift_on": chosen[K_LIFT_ON] != "Off",
+            "own": chosen[K_TRIGGER] == TRIGGER_OWN,
+            "lift": float(chosen[K_LIFT]),
+            "lift2": float(chosen[K_LIFT2] or 0.0),
+            "hf_core": chosen[K_HF] == "On",
         }
         times = self._target_times(timeRange)
         if not times:
@@ -530,6 +565,8 @@ class Procedure(SmartScript.SmartScript):
             summary.append(line)
 
         parts = ["Make_BestWind: %d of %d grids written" % (len(summary), len(times))]
+        if not settings["lagged"]:
+            parts.append("lagged runs off (current GFS and ECMWF only; not the scored blend)")
         parts.append("core lift %s" % ("off" if not settings["lift_on"] else
                                        "on (%s), %d cells lifted" % (
                                            TRIGGER_OWN if settings["own"] else TRIGGER_MODELS, total_lifted)))

@@ -255,6 +255,17 @@ check("HF core: +0 at 50, +3 at 54, +6 at 56, +0 where 925 x 0.70 < 55",
 check("HF core default Off", {v[0]: v for v in M.VariableList}["HF core (targeted by 925 mb wind and stability)"][1] == "Off")
 check("stability factors 0.70 / 0.79 / 0.83", np.allclose(M.stability_factor(np.array([1.0, 3.0, 6.0])), [0.70, 0.79, 0.83]))
 
+print("13. lagged runs Off: current runs only")
+rng = np.random.RandomState(1)
+g = {lag: 20 + 25 * rng.rand(*SHAPE) for lag in (0, 12, 24)}
+e = {lag: 20 + 25 * rng.rand(*SHAPE) for lag in (0, 12, 24)}
+s, d = setup(g, {k: v / KT for k, v in e.items()})
+p = run(s, d, {"Lagged runs (12 h and 24 h older GFS/ECMWF)": "Off"})
+want = det_blend_direct([g[0], e[0]], [g[0], e[0]])
+check("blend from the two current runs only", np.allclose(written(p)[0], want, atol=1e-3))
+check("message says lagged runs off", "lagged runs off" in p.msgs[-1][1], p.msgs[-1])
+check("default On", {v[0]: v for v in M.VariableList}["Lagged runs (12 h and 24 h older GFS/ECMWF)"][1] == "On")
+
 print("12. self-contained: no grid_fetch, database names without model_aliases")
 check("does not use grid_fetch", not hasattr(M, "grid_fetch"))
 saved = M.model_aliases
@@ -263,6 +274,16 @@ check("fallback names GFS", M.database_candidates("GFS") == ["GFS", "D2D_GFS"], 
 check("fallback names ECMWF", M.database_candidates("ECMWF") == ["D2D_ECMWF", "nECMWF0p25"], M.database_candidates("ECMWF"))
 M.model_aliases = saved
 check("run time parsed from id", M.model_run_time("X_D2D_GFS_19700102_1200") == 86400 + 12 * 3600)
+
+print("14. dialog layout (GFE variable list)")
+names = [v[0] for v in M.VariableList]
+check("row names unique (GFE keys rows by name)", len(names) == len(set(names)))
+check("every setting has a row with its default", all(k in names and
+      {v[0]: v for v in M.VariableList}[k][1] == M.DEFAULTS[k] for k in M.DEFAULTS))
+check("rows are label / radio / scale", all(v[2] in ("label", "radio", "scale") for v in M.VariableList))
+check("sliders carry [min, max] and step", all(len(v) == 5 and v[3][0] <= v[1] <= v[3][1]
+      for v in M.VariableList if v[2] == "scale"))
+check("label rows add nothing to the settings", run(s, d, {n: "" for n in names if n not in M.DEFAULTS}) is not None)
 
 print()
 print("FAILED: %s" % FAILURES if FAILURES else "all ok")
