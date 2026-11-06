@@ -15,6 +15,8 @@ sys.path.insert(0, os.path.join(REPO, "tests", "blend_wind_gust_wave_pmsl"))
 import gfe_fakes  # noqa: E402
 
 SS = gfe_fakes.install()
+import types  # noqa: E402
+sys.modules["grid_fetch"] = types.ModuleType("grid_fetch")   # an old server copy without grid_times: must not matter
 import Make_BestWind as M  # noqa: E402
 
 KT = 1.943844
@@ -191,7 +193,7 @@ base = written(run(s, d))[0]
 mag, _ = written(run(s, d, {"Core lift": "On", "Lift where": M.TRIGGER_OWN}))
 add = (mag - base)[:6, 0]
 check("own trigger: 36-40 / 44-48 ramps", np.allclose(add, [0, 3, 6, 8, 10, 10], atol=1e-3), add)
-tool_dialog = {v[0]: v for v in M.VariableList}
+tool_dialog = {k: (k, v) for k, v in M.DEFAULTS.items()}
 check("dialog defaults On / models / 6 / 4", tool_dialog["Core lift"][1] == "On"
       and tool_dialog["Lift where"][1] == M.TRIGGER_MODELS and tool_dialog["Lift (kt)"][1] == 6.0
       and tool_dialog["Extra lift for HF (kt, 0 = off)"][1] == 4.0)
@@ -239,7 +241,7 @@ base = written(run(s, d, lift_on))[0]
 hf_on = dict(lift_on, **{"HF core (targeted by 925 mb wind and stability)": "On"})
 p = run(s, d, hf_on)
 check("no 925 data: HF core skipped, grid as without it", np.allclose(written(p)[0], base))
-check("skip is said", any("HF core skipped" in m[1] for m in p.msgs), p.msgs[-1:])
+check("skip is said", any("HF core inputs not found" in m[1] for m in p.msgs), p.msgs[-1:])
 gfs_id = d["GFS"][0]
 w925 = const(90.0)       # x 0.70 = 63 >= 55: open
 w925[3, 0] = 70.0        # x 0.70 = 49: too stable, closed
@@ -247,11 +249,74 @@ tr0 = gfe_fakes.time_range(T0)
 s[(gfs_id, "wind", "MB925")] = {"units": "kts", "grids": [(tr0, vec(w925))]}
 s[(gfs_id, "t", "SFC")] = {"units": "K", "grids": [(tr0, const(281.0))]}
 s[(gfs_id, "t", "FHAG2")] = {"units": "K", "grids": [(tr0, const(280.0))]}   # sea - air 1 C -> 0.70
-add = (written(run(s, d, hf_on))[0] - base)[:4, 0]
+p = run(s, d, hf_on)
+add = (written(p)[0] - base)[:4, 0]
+msg = p.msgs[-1][1]
+check("HF core CHECK in message: inputs, gate and cells raised",
+      "HF core CHECK: read 1 of 1 grids; peak GFS 925 mb 90 kt; sea minus air 1 to 1 C; "
+      "peak 925 x stability 63 kt (gate 55); 599 cells past gate" in msg and "2 cells raised" in msg and "WARNING" not in msg, msg)
+s[(gfs_id, "wind", "MB925")]["units"] = "m/s"
+s[(gfs_id, "wind", "MB925")]["grids"] = [(tr0, vec(const(400.0)))]
+msg = run(s, d, hf_on).msgs[-1][1]
+check("implausible 925 wind is flagged", "WARNING 925 mb wind peak" in msg, msg)
+s[(gfs_id, "wind", "MB925")] = {"units": "kts", "grids": [(tr0, vec(w925))]}
+p = run(s, d, {M.K_CEILING: "On"})   # lift off: the temp grid is still made
+ceil = [c for c in p.created if c[1] == M.CEILING_GRID]
+wind = [c for c in p.created if c[1] == "Wind"]
+check("temp grid written once per time, SCALAR, beside Wind", len(ceil) == 1 and len(wind) == 1
+      and ceil[0][2] == "SCALAR", [c[:3] for c in p.created])
+g = ceil[0][3]
+check("temp grid: 925 x 0.70 where >= 55 (63 kt), 0 where 49", np.isclose(g[0, 0], 63.0) and g[3, 0] == 0.0,
+      g[:4, 0])
+sa = [c for c in p.created if c[1] == M.SEA_AIR_GRID]
+check("SeaMinusAir temp grid = 1 C", len(sa) == 1 and np.allclose(sa[0][3], 1.0))
+check("temp grid said in message", "temp grids HFCeiling925" in p.msgs[-1][1] and "1 of 1 times" in p.msgs[-1][1])
+check("temp grid default Off, none written", not [c for c in run(s, d).created if c[1] == M.CEILING_GRID])
+quiet = M.HFCheck()
+quiet.add(np.full((2, 2), 40.0), np.full((2, 2), 3.0), np.full((2, 2), 35.0), np.ones((2, 2), bool), np.zeros((2, 2)))
+qt = quiet.text(1)
+check("quiet day: inputs shown, nothing raised", "peak GFS 925 mb 40 kt" in qt and "peak 925 x stability 32 kt"
+      in qt and "0 cells past gate" in qt and "0 cells raised" in qt and "WARNING" not in qt, qt)
+check("not read: says so", "not read" in M.HFCheck().text(3))
 check("HF core: +0 at 50, +3 at 54, +6 at 56, +0 where 925 x 0.70 < 55",
       np.allclose(add, [0, 3, 6, 0], atol=1e-3), add)
-check("HF core default Off", {v[0]: v for v in M.VariableList}["HF core (targeted by 925 mb wind and stability)"][1] == "Off")
+check("HF core default Off", M.DEFAULTS["HF core (targeted by 925 mb wind and stability)"] == "Off")
 check("stability factors 0.70 / 0.79 / 0.83", np.allclose(M.stability_factor(np.array([1.0, 3.0, 6.0])), [0.70, 0.79, 0.83]))
+
+print("13. lagged runs Off: current runs only")
+rng = np.random.RandomState(1)
+g = {lag: 20 + 25 * rng.rand(*SHAPE) for lag in (0, 12, 24)}
+e = {lag: 20 + 25 * rng.rand(*SHAPE) for lag in (0, 12, 24)}
+s, d = setup(g, {k: v / KT for k, v in e.items()})
+p = run(s, d, {"Lagged runs (12 h and 24 h older GFS/ECMWF)": "Off"})
+want = det_blend_direct([g[0], e[0]], [g[0], e[0]])
+check("blend from the two current runs only", np.allclose(written(p)[0], want, atol=1e-3))
+check("message says lagged runs off", "lagged runs off" in p.msgs[-1][1], p.msgs[-1])
+check("default On", M.DEFAULTS["Lagged runs (12 h and 24 h older GFS/ECMWF)"] == "On")
+
+print("12. self-contained: no grid_fetch, database names without model_aliases")
+check("does not use grid_fetch", not hasattr(M, "grid_fetch"))
+saved = M.model_aliases
+M.model_aliases = None
+check("fallback names GFS", M.database_candidates("GFS") == ["GFS", "D2D_GFS"], M.database_candidates("GFS"))
+check("fallback names ECMWF", M.database_candidates("ECMWF") == ["D2D_ECMWF", "nECMWF0p25"], M.database_candidates("ECMWF"))
+M.model_aliases = saved
+check("run time parsed from id", M.model_run_time("X_D2D_GFS_19700102_1200") == 86400 + 12 * 3600)
+
+print("14. settings window")
+check("GFE variable list empty (own window)", M.VariableList == [])
+check("dialog defaults match", M.DEFAULTS[M.K_LIFT] == 6.0 and M.DEFAULTS[M.K_LIFT2] == 4.0
+      and M.DEFAULTS[M.K_HF] == "Off" and M.DEFAULTS[M.K_LAGGED] == "On")
+SS.store, SS.dbs = s, d
+proc = M.Procedure(None)
+proc._show_gui = lambda: None
+proc.execute(None, TR, {})
+check("Cancel writes nothing", not proc.created)
+proc = M.Procedure(None)
+proc._show_gui = lambda: dict(M.DEFAULTS, **{M.K_LIFT_ON: "Off"})
+proc.execute(None, TR, None)
+plain = written(run(s, d))
+check("window settings are used", np.allclose(written(proc)[0], plain[0]))
 
 print()
 print("FAILED: %s" % FAILURES if FAILURES else "all ok")

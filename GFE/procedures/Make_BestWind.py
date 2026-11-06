@@ -18,7 +18,11 @@ What it does, for every Fcst Wind grid in the selected time range
    weighted by how many of the runs sit near its speed (a Gaussian, 5 kt
    wide), so a model that stands alone against its own earlier runs and the
    other model counts for less.  Then it adds 0.3 x the spread of the runs
-   (at most 5 kt), because the weighted mean runs weak in deep lows.  This is
+   (at most 5 kt), because the weighted mean runs weak in deep lows.
+   Option "Lagged runs" Off: only the two current runs are used (weights and
+   spread from those two).  Quicker and works when older runs are gone, but
+   it is not the blend that was scored: with two runs the spread term is just
+   0.15 x the GFS-ECMWF difference.  This is
    the "deterministic blend" of the marine wind page (rk.features.det_blend,
    without AIFS).
 3. Direction is that of the mean wind vector of the two current runs.
@@ -36,6 +40,9 @@ What it does, for every Fcst Wind grid in the selected time range
    the low-level jet can bring hurricane force down.  Not a blanket: it adds
    nothing where the models are under 52 kt or the air is too stable.  If the
    GFS 925 mb wind or temperatures are not found it is skipped and said so.
+   Option "Show where it could fire" writes temporary grids HFCeiling925
+   (925 mb wind x stability factor, kt, where >= 55 kt, 0 elsewhere) and
+   SeaMinusAir (GFS surface minus 2 m temperature, C).
 
 Missing data: a lagged run that is not on the server is left out and named in
 the closing message.  If a model has no current run for a time, the other
@@ -65,6 +72,8 @@ Scores (held-out, against ASCAT, 5 held-out winter weeks Nov 2025 - Mar 2026,
 Near the coast (Greenland barrier and tip-jet flow) ASCAT is blind, so none of
 this is scored there; trust the GFS family's strength in those flows.
 
+Self-contained: needs only SmartScript and numpy (model_aliases is used for
+database names when present, else GFS/D2D_GFS and D2D_ECMWF/nECMWF0p25).
 Not tested on AWIPS: the D2D database and element names come from
 model_aliases and the GFE calls listed in tests/make_best_wind/README.md.
 """
@@ -78,8 +87,10 @@ import numpy as np
 
 import SmartScript
 
-import grid_fetch
-import model_aliases
+try:
+    import model_aliases
+except ImportError:
+    model_aliases = None
 
 try:
     import AbsTime
@@ -130,16 +141,94 @@ WIND925_SOURCES = [("wind", "MB925"), ("wind", "925MB")]   # guesses: check on A
 SFC_T_SOURCES = [("t", "SFC"), ("tsfc", "SFC")]
 AIR2M_T_SOURCES = [("t", "FHAG2"), ("t", "2FHAG")]
 
-VariableList = [
-    ("Core lift", "On", "radio", ["On", "Off"]),
-    ("Lift where", TRIGGER_MODELS, "radio", [TRIGGER_MODELS, TRIGGER_OWN]),
-    ("Lift (kt)", LIFT_KT, "numeric"),
-    ("Extra lift for HF (kt, 0 = off)", LIFT2_KT, "numeric"),
-    ("HF core (targeted by 925 mb wind and stability)", "Off", "radio", ["Off", "On"]),
-]
+# Setting keys (also what another procedure passes as varDict).
+K_LAGGED = "Lagged runs (12 h and 24 h older GFS/ECMWF)"
+K_LIFT_ON = "Core lift"
+K_TRIGGER = "Lift where"
+K_LIFT = "Lift (kt)"
+K_LIFT2 = "Extra lift for HF (kt, 0 = off)"
+K_HF = "HF core (targeted by 925 mb wind and stability)"
+K_CEILING = "Temp grid of 925 mb wind x stability"
+CEILING_GRID = "HFCeiling925"   # temporary Fcst grid: 925 mb wind x stability factor where >= HF_GATE_KT, else 0
+SEA_AIR_GRID = "SeaMinusAir"    # temporary Fcst grid: GFS surface (sea) temperature minus 2 m air (C)
+DEFAULTS = {K_LAGGED: "On", K_LIFT_ON: "On", K_TRIGGER: TRIGGER_MODELS, K_LIFT: LIFT_KT, K_LIFT2: LIFT2_KT,
+            K_HF: "Off", K_CEILING: "Off"}
+
+# The settings window is BestWindDialog (tkinter, like Blend_WindGustWavePmsl),
+# so GFE's own variable list stays empty.
+VariableList = []
 
 _TO_KT = {"kt": 1.0, "kts": 1.0, "knots": 1.0, "knot": 1.0, "m/s": 1.943844, "mph": 0.868976}
 
+
+
+# Database names per model, used when model_aliases is missing or older than this procedure.  The procedure keeps
+# its own run and inventory lookups, so it does not depend on the version of the grid fetch helper on the server.
+FALLBACK_DATABASES = {"GFS": ("GFS", "D2D_GFS"), "ECMWF": ("D2D_ECMWF", "nECMWF0p25")}
+
+
+def database_candidates(alias, element="Wind"):
+    """Database base names for a model: model_aliases when it has them, then FALLBACK_DATABASES."""
+    names = []
+    if model_aliases is not None:
+        for fn, args in (("get_database_candidates_for_element", (alias, element)),
+                         ("get_database_candidates", (alias,))):
+            try:
+                names += list(getattr(model_aliases, fn)(*args))
+            except Exception:
+                pass
+    names += list(FALLBACK_DATABASES.get(alias, ()))
+    seen, out = set(), []
+    for n in names:
+        if n and n not in seen:
+            seen.add(n)
+            out.append(n)
+    return out
+
+
+def model_run_time(model_id):
+    """Cycle time (unix s) from a database id ending in _YYYYMMDD_HHMM, else None."""
+    import calendar
+    parts = (model_id or "").split("_")
+    if len(parts) < 2:
+        return None
+    try:
+        return calendar.timegm(time.strptime(parts[-2] + parts[-1], "%Y%m%d%H%M"))
+    except ValueError:
+        return None
+
+
+def list_model_runs(smart_script, alias, run_depth):
+    """[(cycle_unix, {database_name: model_id})] newest first, from findDatabase over the candidate names."""
+    runs = {}
+    for base in database_candidates(alias):
+        for offset in range(0, -run_depth, -1):
+            try:
+                db = smart_script.findDatabase(base, offset)
+                model_id = db.modelIdentifier() if db is not None else None
+            except Exception:
+                model_id = None
+            cycle = model_run_time(model_id)
+            if cycle is not None:
+                runs.setdefault(cycle, {}).setdefault(base, model_id)
+    return sorted(runs.items(), key=lambda item: item[0], reverse=True)
+
+
+def grid_times(smart_script, model_id, element, level, time_range):
+    """[(start_unix, end_unix, grid_time_range)] of one element in one database over time_range, sorted."""
+    try:
+        infos = smart_script.getGridInfo(model_id, element, level, time_range)
+    except Exception:
+        return []
+    out = []
+    for info in infos or []:
+        try:
+            tr = info.gridTime()
+            out.append((tr.startTime().unixTime(), tr.endTime().unixTime(), tr))
+        except Exception:
+            continue
+    out.sort(key=lambda item: item[0])
+    return out
 
 def ramp(strongest, lift, start, full):
     """Lift in kt: 0 below start, `lift` at and above full, straight line between."""
@@ -181,7 +270,7 @@ def det_blend(runs, speeds):
 
 def time_recipe(inventory, start, end):
     """("direct", tr) when a model grid overlaps start-end, ("interp", trA, trB, w) between
-    two close grids, else None.  inventory is grid_fetch.grid_times output."""
+    two close grids, else None.  inventory is grid_times() output."""
     for g_start, g_end, g_tr in inventory:
         if g_start < end and g_end > start:
             return ("direct", g_tr)
@@ -207,6 +296,188 @@ def _tr_key(tr):
     return (tr.startTime().unixTime(), tr.endTime().unixTime())
 
 
+
+
+class HFCheck:
+    """What the HF core read, over the edit area and all grids, for the status message.
+
+    On a day with nothing near hurricane force the core raises nothing, so the
+    message shows the inputs instead: peak GFS 925 mb wind, the sea minus 2 m
+    air range, the peak 925 x stability ceiling against its 55 kt gate, and the
+    peak model wind against the 52 kt ramp start.  Values outside what the sea
+    can produce are flagged as a likely units or grid-name problem.
+    """
+
+    def __init__(self):
+        self.grids = self.raised = self.open = 0
+        self.w925 = self.ceiling = self.model = -np.inf
+        self.sa_lo, self.sa_hi = np.inf, -np.inf
+
+    def add(self, s925, sea_minus_air, model_peak, mask, hf_add):
+        m = np.asarray(mask, bool) & np.isfinite(s925) & np.isfinite(sea_minus_air)
+        self.grids += 1
+        self.raised += int((np.asarray(hf_add) > 0).sum())
+        if not m.any():
+            return
+        w, sa = np.asarray(s925, float)[m], np.asarray(sea_minus_air, float)[m]
+        ceiling = w * stability_factor(sa)
+        self.open += int((ceiling >= HF_GATE_KT).sum())
+        self.w925 = max(self.w925, float(w.max()))
+        self.ceiling = max(self.ceiling, float(ceiling.max()))
+        self.model = max(self.model, float(np.nanmax(np.asarray(model_peak, float)[m])))
+        self.sa_lo, self.sa_hi = min(self.sa_lo, float(sa.min())), max(self.sa_hi, float(sa.max()))
+
+    def problems(self):
+        out = []
+        if self.grids and np.isfinite(self.w925) and not 5.0 <= self.w925 <= 200.0:
+            out.append("925 mb wind peak %.0f kt looks wrong (units or grid?)" % self.w925)
+        if self.grids and np.isfinite(self.sa_lo) and (self.sa_lo < -20.0 or self.sa_hi > 30.0):
+            out.append("sea minus air %.0f to %.0f C looks wrong (units or grid?)" % (self.sa_lo, self.sa_hi))
+        return out
+
+    def text(self, n_times):
+        if not self.grids:
+            return "HF core CHECK: inputs not read for any grid (see note)"
+        if not np.isfinite(self.w925):
+            return "HF core CHECK: inputs read for %d of %d grids but none inside the edit area" % (
+                self.grids, n_times)
+        line = ("HF core CHECK: read %d of %d grids; peak GFS 925 mb %.0f kt; sea minus air %.0f to %.0f C; "
+                "peak 925 x stability %.0f kt (gate %d); %d cells past gate; peak model wind %.0f kt "
+                "(ramp starts %d); %d cells raised" % (
+                    self.grids, n_times, self.w925, self.sa_lo, self.sa_hi, self.ceiling, HF_GATE_KT, self.open,
+                    self.model, HF_CORE_RAMP[0], self.raised))
+        bad = self.problems()
+        return line + ("; WARNING " + "; ".join(bad) if bad else "")
+
+
+# ==================== SETTINGS WINDOW ====================
+
+NAVY, OXBLOOD, CREAM, GREY = "#1f3354", "#7a1f2b", "#fbf7ee", "#555555"
+
+
+class BestWindDialog:
+    """Settings window: three boxed groups, a short note under every choice, Run / Defaults / Cancel."""
+
+    def __init__(self, master, callback):
+        import tkinter as tk
+        self.tk, self.master, self.callback = tk, master, callback
+        master.title("Make Best Wind")
+        master.configure(bg=CREAM)
+        master.resizable(False, False)
+        master.protocol("WM_DELETE_WINDOW", self._cancel)
+        self.lagged = tk.BooleanVar(value=True)
+        self.lift_on = tk.BooleanVar(value=True)
+        self.trigger = tk.StringVar(value=TRIGGER_MODELS)
+        self.lift = tk.DoubleVar(value=LIFT_KT)
+        self.lift2 = tk.DoubleVar(value=LIFT2_KT)
+        self.hf = tk.BooleanVar(value=False)
+        self.ceiling = tk.BooleanVar(value=False)
+
+        main = tk.Frame(master, padx=16, pady=12, bg=CREAM)
+        main.pack(fill=tk.BOTH, expand=True)
+        tk.Label(main, text="Make Best Wind", font=("Arial", 15, "bold"), fg=NAVY, bg=CREAM).pack(anchor=tk.W)
+        tk.Label(main, text="GFS/ECMWF blend, then a lift in the storm cores. Run it over an ocean edit area.",
+                 font=("Arial", 9), fg=GREY, bg=CREAM).pack(anchor=tk.W, pady=(0, 10))
+
+        box = self._group(main, "1. Blend")
+        self._check(box, "Use the 12 h and 24 h older runs", self.lagged,
+                    "Weights each model by how its own earlier runs agree, plus 0.3 x their spread. This is the "
+                    "scored blend. Off: current runs only, quicker.")
+
+        box = self._group(main, "2. Storm-core lift")
+        self._check(box, "Lift the storm cores", self.lift_on,
+                    "Held-out vs ASCAT: storm-force catch 35% -> 75% Atlantic, 22% -> 64% Pacific; gales unchanged.",
+                    command=self._refresh)
+        self.trigger_widgets = []
+        for value, note in ((TRIGGER_MODELS, "ramps in over 38-42 kt, extra over 48-52 kt"),
+                            (TRIGGER_OWN, "ramps in over 36-40 kt and 44-48 kt; reads no other model")):
+            row = tk.Frame(box, bg=CREAM)
+            row.pack(fill=tk.X, padx=(22, 0))
+            b = tk.Radiobutton(row, text=value, variable=self.trigger, value=value, bg=CREAM,
+                               activebackground=CREAM, anchor=tk.W, width=24, highlightthickness=0)
+            b.pack(side=tk.LEFT)
+            tk.Label(row, text=note, font=("Arial", 8), fg=GREY, bg=CREAM).pack(side=tk.LEFT)
+            self.trigger_widgets.append(b)
+        self.scales = [self._scale(box, "Lift at storm force (kt)", self.lift, 0, 10),
+                       self._scale(box, "Extra lift toward HF (kt)", self.lift2, 0, 8)]
+
+        box = self._group(main, "3. Hurricane-force core (optional)")
+        self.hf_check = self._check(
+            box, "Add an HF core where the 925 mb jet can mix down", self.hf,
+            "+0 to +6 kt as the stronger model goes 52 -> 56 kt, only where GFS 925 mb wind x stability >= 55 kt. "
+            "Atlantic HF catch 59% -> 70%, but HF area grows from 0.9x to 1.7x ASCAT's. Needs the lift on.")
+        self._check(box, "Show where it could fire: temp grids %s and %s" % (CEILING_GRID, SEA_AIR_GRID),
+                    self.ceiling,
+                    "%s = 925 mb wind x stability (kt) where %d kt or more, else 0. %s = sea minus 2 m air (C): "
+                    "factor 0.70 under 2, 0.79 for 2-5, 0.83 over 5. Temporary; works with the lift off."
+                    % (CEILING_GRID, HF_GATE_KT, SEA_AIR_GRID))
+
+        buttons = tk.Frame(main, bg=CREAM)
+        buttons.pack(fill=tk.X, pady=(8, 0))
+        tk.Button(buttons, text="Run", command=self._run, bg=NAVY, fg="white", activebackground=OXBLOOD,
+                  activeforeground="white", font=("Arial", 11, "bold"), width=12).pack(side=tk.LEFT)
+        tk.Button(buttons, text="Defaults", command=self._defaults, width=10).pack(side=tk.LEFT, padx=8)
+        tk.Button(buttons, text="Cancel", command=self._cancel, width=10).pack(side=tk.RIGHT)
+        master.bind("<Return>", lambda e: self._run())
+        master.bind("<Escape>", lambda e: self._cancel())
+        self._refresh()
+
+    def _group(self, parent, title):
+        tk = self.tk
+        box = tk.LabelFrame(parent, text=" %s " % title, padx=10, pady=6, fg=OXBLOOD, bg=CREAM,
+                            font=("Arial", 10, "bold"))
+        box.pack(fill=tk.X, pady=(0, 10))
+        return box
+
+    def _check(self, parent, text, var, note, command=None):
+        tk = self.tk
+        c = tk.Checkbutton(parent, text=text, variable=var, bg=CREAM, activebackground=CREAM, anchor=tk.W, highlightthickness=0,
+                           font=("Arial", 10, "bold"), fg=NAVY, command=command)
+        c.pack(fill=tk.X)
+        tk.Label(parent, text=note, font=("Arial", 8), fg=GREY, bg=CREAM, wraplength=480, justify=tk.LEFT
+                 ).pack(anchor=tk.W, padx=(22, 0), pady=(0, 4))
+        return c
+
+    def _scale(self, parent, text, var, lo, hi):
+        tk = self.tk
+        row = tk.Frame(parent, bg=CREAM)
+        row.pack(fill=tk.X, padx=(22, 0))
+        tk.Label(row, text=text, width=24, anchor=tk.W, bg=CREAM).pack(side=tk.LEFT)
+        sc = tk.Scale(row, from_=lo, to=hi, resolution=1, orient=tk.HORIZONTAL, variable=var, length=220,
+                      bg=CREAM, troughcolor="#e6dcc6", highlightthickness=0)
+        sc.pack(side=tk.LEFT)
+        return sc
+
+    def _refresh(self):
+        state = self.tk.NORMAL if self.lift_on.get() else self.tk.DISABLED
+        for w in self.trigger_widgets + self.scales + [self.hf_check]:
+            w.config(state=state)
+
+    def _defaults(self):
+        self.lagged.set(True)
+        self.lift_on.set(True)
+        self.trigger.set(TRIGGER_MODELS)
+        self.lift.set(LIFT_KT)
+        self.lift2.set(LIFT2_KT)
+        self.hf.set(False)
+        self.ceiling.set(False)
+        self._refresh()
+
+    def values(self):
+        def on(b):
+            return "On" if b else "Off"
+        return {K_LAGGED: on(self.lagged.get()), K_LIFT_ON: on(self.lift_on.get()), K_TRIGGER: self.trigger.get(),
+                K_LIFT: float(self.lift.get()), K_LIFT2: float(self.lift2.get()), K_HF: on(self.hf.get()),
+                K_CEILING: on(self.ceiling.get())}
+
+    def _run(self):
+        self.callback(self.values())
+        self.master.destroy()
+
+    def _cancel(self):
+        self.callback(None)
+        self.master.destroy()
+
 class Procedure(SmartScript.SmartScript):
     """Blend GFS and ECMWF 10 m wind, then lift the storm cores."""
 
@@ -230,7 +501,7 @@ class Procedure(SmartScript.SmartScript):
 
     def _target_times(self, selection):
         """Fcst Wind grids in the selection, else the Wind time-constraint slots in it."""
-        existing = grid_fetch.grid_times(self, "Fcst", "Wind", FCST_LEVEL, selection)
+        existing = grid_times(self, "Fcst", "Wind", FCST_LEVEL, selection)
         if existing:
             return [tr for _, _, tr in existing]
         try:
@@ -243,23 +514,20 @@ class Procedure(SmartScript.SmartScript):
     def _model_runs(self, alias):
         """[(cycle_unix, {database: model_id})] newest first, once per alias."""
         if alias not in self._runs:
-            self._runs[alias] = grid_fetch.list_model_runs(self, alias, run_depth=RUN_DEPTH)
+            self._runs[alias] = list_model_runs(self, alias, RUN_DEPTH)
         return self._runs[alias]
 
     def _find(self, alias, databases, tr, window, sources=None):
         """(model_id, element, level, recipe) of the first source of one cycle covering tr, else None."""
         start, end = _tr_key(tr)
-        try:
-            preferred = model_aliases.get_database_candidates_for_element(alias, "Wind")
-        except Exception:
-            preferred = ()
+        preferred = database_candidates(alias)
         order = [n for n in preferred if n in databases] + [n for n in databases if n not in preferred]
         for name in order:
             model_id = databases[name]
             for element, level in (sources or WIND_SOURCES):
                 key = (model_id, element, level)
                 if key not in self._inventory:
-                    self._inventory[key] = grid_fetch.grid_times(self, model_id, element, level, window)
+                    self._inventory[key] = grid_times(self, model_id, element, level, window)
                 recipe = time_recipe(self._inventory[key], start, end)
                 if recipe is not None:
                     return model_id, element, level, recipe
@@ -338,7 +606,7 @@ class Procedure(SmartScript.SmartScript):
 
     # ------------------------------------------------------------ one time
 
-    def _collect(self, tr, window, notes):
+    def _collect(self, tr, window, notes, lags=LAGS_HOURS):
         """Per model: [(label, u, v)] with the current run first, plus what was missing."""
         out, missing = {}, []
         for alias in MODELS:
@@ -356,7 +624,7 @@ class Procedure(SmartScript.SmartScript):
             cycle, _, uv = current
             entries = [("%s %s" % (alias, _hhz(cycle)), uv)]
             by_cycle = dict(runs)
-            for lag in LAGS_HOURS:
+            for lag in lags:
                 databases = by_cycle.get(cycle - lag * 3600)
                 found = self._find(alias, databases, tr, window) if databases else None
                 uv = self._read_run(found, notes) if found else None
@@ -369,7 +637,7 @@ class Procedure(SmartScript.SmartScript):
 
     def _make_one(self, tr, window, settings, mask, notes):
         """Return ((speed_kt, direction), lifted_count, run_text, missing) or None if both models missing."""
-        collected, missing = self._collect(tr, window, notes)
+        collected, missing = self._collect(tr, window, notes, LAGS_HOURS if settings["lagged"] else ())
         if not collected:
             return None, 0, "", missing
         current = [entries[0][1] for entries in collected.values()]
@@ -383,6 +651,15 @@ class Procedure(SmartScript.SmartScript):
         _, direction = self.UVToMagDir(u_mean, v_mean)
         direction = np.mod(np.asarray(direction, dtype=float), 360.0)
 
+        hf_in = None
+        self._hf_in_last = None
+        if (settings["lift_on"] and settings["hf_core"]) or settings["ceiling_grid"]:
+            hf_in = self._hf_inputs(tr, window, notes)
+            self._hf_in_last = hf_in
+            if hf_in is None:
+                note = "HF core inputs not found: GFS 925 mb wind or surface/2 m temperature"
+                if note not in notes:
+                    notes.append(note)
         lifted = 0
         if settings["lift_on"]:
             if settings["own"]:
@@ -394,13 +671,12 @@ class Procedure(SmartScript.SmartScript):
             if settings["lift2"] > 0:
                 add = add + ramp(strongest, settings["lift2"], *r2)
             if settings["hf_core"]:
-                hf_in = self._hf_inputs(tr, window, notes)
-                if hf_in is None:
-                    note = "HF core skipped: GFS 925 mb wind or surface/2 m temperature not found"
-                    if note not in notes:
-                        notes.append(note)
-                else:
-                    add = add + hf_core(np.fmax.reduce(cur_speeds), *hf_in)
+                if hf_in is not None:
+                    model_peak = np.fmax.reduce(cur_speeds)
+                    hf_add = np.where(mask, hf_core(model_peak, *hf_in), 0.0)
+                    add = add + hf_add
+                    # Kept for the HF core check in the message, so a quiet day still shows what was read.
+                    self._hf_check.add(hf_in[0], hf_in[1], model_peak, mask, hf_add)
             add = np.where(mask, add, 0.0)
             speed = speed + add
             lifted = int((add > 0).sum())
@@ -410,14 +686,37 @@ class Procedure(SmartScript.SmartScript):
 
     # ------------------------------------------------------------ execute
 
+    def _show_gui(self):
+        """Settings from the window, or None if cancelled."""
+        import tkinter as tk
+        result = [None]
+
+        def callback(values):
+            result[0] = values
+        root = tk.Tk()
+        BestWindDialog(root, callback)
+        root.mainloop()
+        return result[0]
+
     def execute(self, editArea, timeRange, varDict=None):
-        varDict = varDict or {}
+        # A varDict carrying any setting (another procedure, the tests) skips the window.
+        from_window = False
+        if varDict and any(k in varDict for k in DEFAULTS):
+            chosen = dict(DEFAULTS, **varDict)
+        else:
+            from_window = True
+            chosen = self._show_gui()
+            if chosen is None:
+                self.statusBarMsg("Make_BestWind: cancelled, nothing written", "R")
+                return
         settings = {
-            "lift_on": varDict.get("Core lift", "On") != "Off",
-            "own": varDict.get("Lift where", TRIGGER_MODELS) == TRIGGER_OWN,
-            "lift": float(varDict.get("Lift (kt)", LIFT_KT)),
-            "lift2": float(varDict.get("Extra lift for HF (kt, 0 = off)", LIFT2_KT) or 0.0),
-            "hf_core": varDict.get("HF core (targeted by 925 mb wind and stability)", "Off") == "On",
+            "lagged": chosen[K_LAGGED] != "Off",
+            "lift_on": chosen[K_LIFT_ON] != "Off",
+            "own": chosen[K_TRIGGER] == TRIGGER_OWN,
+            "lift": float(chosen[K_LIFT]),
+            "lift2": float(chosen[K_LIFT2] or 0.0),
+            "hf_core": chosen[K_HF] == "On",
+            "ceiling_grid": chosen.get(K_CEILING, "Off") == "On",
         }
         times = self._target_times(timeRange)
         if not times:
@@ -437,6 +736,8 @@ class Procedure(SmartScript.SmartScript):
         summary: List[str] = []
         problems: List[str] = []
         total_lifted = 0
+        self._hf_check = HFCheck()
+        self._ceiling_grids = 0
         mask = None
         for i, tr in enumerate(times):
             self.statusBarMsg("Make_BestWind %d/%d" % (i + 1, len(times)), "R")
@@ -451,6 +752,8 @@ class Procedure(SmartScript.SmartScript):
             speed = np.where(np.isfinite(speed), np.maximum(speed, 0.0), 0.0)
             grid = ((speed * from_kt).astype(np.float32), direction.astype(np.float32))
             self.createGrid("Fcst", "Wind", "VECTOR", grid, tr)
+            if settings["ceiling_grid"] and self._hf_in_last is not None:
+                self._write_ceiling(tr, *self._hf_in_last)
             total_lifted += lifted
             line = "%s: %s" % (when, text)
             if missing:
@@ -460,9 +763,16 @@ class Procedure(SmartScript.SmartScript):
             summary.append(line)
 
         parts = ["Make_BestWind: %d of %d grids written" % (len(summary), len(times))]
+        if not settings["lagged"]:
+            parts.append("lagged runs off (current GFS and ECMWF only; not the scored blend)")
         parts.append("core lift %s" % ("off" if not settings["lift_on"] else
                                        "on (%s), %d cells lifted" % (
                                            TRIGGER_OWN if settings["own"] else TRIGGER_MODELS, total_lifted)))
+        if settings["lift_on"] and settings["hf_core"]:
+            parts.append(self._hf_check.text(len(times)))
+        if settings["ceiling_grid"]:
+            parts.append("temp grids %s (925 mb wind x stability >= %d kt, else 0) and %s (C): %d of %d times" % (
+                CEILING_GRID, HF_GATE_KT, SEA_AIR_GRID, self._ceiling_grids, len(times)))
         message = "; ".join(parts)
         if summary:
             message += ". Runs used: " + " | ".join(summary)
@@ -473,6 +783,44 @@ class Procedure(SmartScript.SmartScript):
         status = "U" if problems else "R"
         print(message)
         self.statusBarMsg(message, status)
+        if from_window:
+            self._show_summary(parts, problems, notes)
+
+    def _write_ceiling(self, tr, s925_kt, sea_minus_air):
+        """Temporary grid HFCeiling925: 925 mb wind x stability factor (kt) where >= the gate, 0 elsewhere."""
+        ceiling = np.nan_to_num(np.asarray(s925_kt, float) * stability_factor(sea_minus_air), nan=0.0)
+        grid = np.where(ceiling >= HF_GATE_KT, ceiling, 0.0).astype(np.float32)
+        try:
+            self.createGrid("Fcst", CEILING_GRID, "SCALAR", grid, tr,
+                            descriptiveName="925mb wind x stability >= %d kt (Make_BestWind)" % HF_GATE_KT,
+                            minAllowedValue=0.0, maxAllowedValue=200.0, units="kts", precision=0)
+        except TypeError:   # older createGrid without the keyword arguments
+            self.createGrid("Fcst", CEILING_GRID, "SCALAR", grid, tr)
+        diff = np.asarray(sea_minus_air, float).astype(np.float32)
+        try:
+            self.createGrid("Fcst", SEA_AIR_GRID, "SCALAR", diff, tr,
+                            descriptiveName="GFS sea minus 2 m air (C, Make_BestWind)",
+                            minAllowedValue=-30.0, maxAllowedValue=30.0, units="C", precision=1)
+        except TypeError:
+            self.createGrid("Fcst", SEA_AIR_GRID, "SCALAR", diff, tr)
+        self._ceiling_grids += 1
+
+    def _show_summary(self, parts, problems, notes):
+        """After a run from the window, a short pop-up with the HF core check on its own lines."""
+        try:
+            import tkinter as tk
+            from tkinter import messagebox
+            root = tk.Tk()
+            root.withdraw()
+            text = "\n".join(p.replace("HF core CHECK: ", "HF core check:\n  ").replace("; ", "\n  ")
+                             if p.startswith("HF core") else p for p in parts)
+            extra = problems + notes
+            if extra:
+                text += "\n\n" + "\n".join(extra)
+            messagebox.showinfo("Make Best Wind", text, parent=root)
+            root.destroy()
+        except Exception:   # no display: the status bar already has it
+            pass
 
 
 __all__ = ["Procedure"]

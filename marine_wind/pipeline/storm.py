@@ -26,6 +26,15 @@ Design and scores (winter 2025-26, Atlantic ASCAT; Jason's choices of 15 Oct 202
               the Atlantic storm water at 2.1x its area (no line forecasts Pacific storm well), HF
               81% of HF lows within 150 km, with about 4 in 5 HF areas having no HF low (mostly storm
               cores warned a category high, about 1 in 5 Cape Farewell tip jets).
+    best      Best Wind (Jason 6 Nov 2026, the drawn wind in place of Core Lifted): the blend plus
+              0 -> 6 kt as the stronger of GFS/ECMWF goes 36 -> 40 kt, 0 -> 4 kt more over 44 -> 48 kt,
+              and an HF core of 0 -> 6 kt more over 52 -> 56 kt where the GEFS 48 kt share (max within
+              ~100 km) is 30%+; open water, |lat| >= 25; same gale-core floor as Core Lifted. Held-out vs
+              ASCAT (marine-research studies/2026-11-06-gfe-wind-tool, page follow-up): storm tiles caught
+              Atl 74% / Pac 55% at 1.00x / 0.96x ASCAT's area (Core Lifted 62% / 41% at 0.71x / 0.51x),
+              Atl HF 62% at 1.33x (Core Lifted 16%), Pac HF 6 of 15 with no false HF tile. Its 39 kt line
+              would be 1.4x wider than Core Lifted's at equal coverage, so the storm warning line and the
+              High Seas draft stay on Core Lifted (computed, not drawn).
     tracks    ensemble low track: each member's own low matched within 700 km of a
               3-model-mean low (< 1005 hPa, 40+ kt within 800 km), median position and
               central pressure; cone radius = K(lead) x median member distance from it,
@@ -178,6 +187,30 @@ def warning_areas(speeds, windcore, pmem, ocean=None):
         m64 = ndimage.maximum_filter((pmem >= 64).mean(0), size=WARN_NB, mode=_mode())
         out |= ((mx >= WARN_HF_KT) & (m64 >= WARN_HF_M64)).astype(np.uint8) << 2
     return out
+
+
+BEST_RAMPS = ((6.0, 36.0), (4.0, 44.0))   # (kt, start): 0 -> kt over start .. start + 4 of the stronger model
+BEST_HF = (6.0, 52.0, 0.30)                # HF core: 0 -> 6 kt over 52 .. 56 where GEFS 48 kt share (nb max) >= 30%
+BEST_RAMP_WIDTH = 4.0
+BEST_MIN_LAT = 25.0
+
+
+def _ramp(x, kt, start, width=BEST_RAMP_WIDTH):
+    return kt * np.clip((x - start) / width, 0.0, 1.0)
+
+
+def best_wind(wind, gfs, ecmwf, gefs_p48, ocean, lats):
+    """Best Wind (kt) before the gale-core floor: wind + the ramps on the stronger of GFS/ECMWF + the HF core
+    where the GEFS 48 kt member share, max over the NB box, is >= 30%. Lifts open water at |lat| >= 25 only."""
+    strong = np.nan_to_num(np.fmax(gfs, ecmwf), nan=-1.0)
+    add = sum(_ramp(strong, kt, start) for kt, start in BEST_RAMPS)
+    p48nb = ndimage.maximum_filter(np.nan_to_num(gefs_p48, nan=0.0), size=NB, mode=_mode())
+    add = add + np.where(p48nb >= BEST_HF[2], _ramp(strong, BEST_HF[0], BEST_HF[1]), 0.0)
+    lat = np.abs(np.asarray(lats, float))
+    if lat.ndim == 1:   # row latitudes
+        lat = lat[:, None]
+    on = ocean & (lat >= BEST_MIN_LAT)
+    return np.where(on, wind + add, wind).astype(np.float32)
 
 
 def gale_lift(windcore, Pg):

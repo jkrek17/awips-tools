@@ -23,6 +23,7 @@
   /* one fixed colour per method (dataviz reference palette, dark steps); ensemble means
      take their parent model's colour, dashed */
   --m-windcore: #3987e5;
+  --m-best: #7a1f2b;
   --m-nomem: #d95926;
   --m-blend: #199e70;
   --m-gfs: #c98500;

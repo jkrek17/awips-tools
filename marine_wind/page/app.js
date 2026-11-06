@@ -68,7 +68,8 @@
     ["Forecast"],
     ["wind", "Blended wind", WIND],
     ["Storm layers (test)"],
-    ["windcore", "Core Lifted", WIND],
+    ["best", "Best Wind", WIND],
+    ["windcore", "Core Lifted", WIND],   // shown only for runs built before Best Wind (6 Nov 2026)
     ["core", "Storm core chance", CORE],
     ["Where to look"],
     ["focus", "Model agreement", FOCUS],
@@ -661,7 +662,8 @@
     p34: "Share of members at 34 kt+, adjusted to how often ASCAT saw 34 kt+ in a box about 75 km across",
     p48: "Share of members at 48 kt+, adjusted to how often ASCAT saw 48 kt+ in a box about 75 km across",
     p64: "Share of members at 64 kt+, adjusted to how often model analyses had 64 kt+",
-    core: "Chance that ASCAT sees 48 kt+ within about 50 km"
+    core: "Chance that ASCAT sees 48 kt+ within about 50 km",
+    best: "Blended wind + up to 10 kt where GFS or ECMWF has 36-48 kt, + up to 6 kt more at 52-56 kt where GEFS members agree on 48 kt; the storm warning line still comes from Core Lifted"
   };
   var CHANCE_FIT = "; fitted on 30-67N in the two OPC basins, November to March, untested elsewhere and in other months";
   var CHANCE_MONTHS = [10, 11, 0, 1, 2];   // getUTCMonth of Nov-Mar
@@ -680,7 +682,8 @@
           return k && t !== "" ? '<span style="left:' + (k / n * 100).toFixed(2) + '%">' + t + "</span>" : "";
         }).join("") + "</div>";
     }
-    if (LEGEND_NOTE[state.layer]) h += '<div class="legend-note">' + LEGEND_NOTE[state.layer] + (state.layer === "core" ? "; trained on 30-67N in the two OPC basins, winter 2025-26" : CHANCE_FIT) + "</div>";
+    if (LEGEND_NOTE[state.layer]) h += '<div class="legend-note">' + LEGEND_NOTE[state.layer] + (state.layer === "core" ? "; trained on 30-67N in the two OPC basins, winter 2025-26" :
+      state.layer === "best" ? "; tested on 30-67N in the two OPC basins, winter 2025-26" : CHANCE_FIT) + "</div>";
     var keys = [];
     if (state.msl) keys.push('<span><i style="border-top:1px solid rgba(231,238,248,0.6)"></i>Isobars, 4 hPa</span>');
     if (state.hazard && hasStorm()) {
@@ -787,7 +790,8 @@
         : "<tr><td>Raw members 48 / 64</td><td>" + fmt(V("p48raw")) + " / " + fmt(V("p64raw")) + "%</td></tr>") +
       "<tr><td>Agreement</td><td>" + foc + "</td></tr>" +
       "<tr><td>Pressure</td><td>" + V("msl") + " hPa</td></tr>" +
-      (hasStorm() ? '<tr class="sep"><td>Core Lifted</td><td>' + fmt(V("windcore")) + " kt</td></tr>" +
+      (hasStorm() ? '<tr class="sep"><td>' + (fieldIx.best !== undefined ? "Best Wind" : "Core Lifted") + "</td><td>" +
+        fmt(V(fieldIx.best !== undefined ? "best" : "windcore")) + " kt</td></tr>" +
         "<tr><td>Storm core chance</td><td>" + (Math.abs(lat) < 25 ? "not made" : fmt(V("core")) + "%") + "</td></tr>" +
         (b.hazard[k] ? "<tr><td>Members agree</td><td>" + HAZARD.filter(function (d) { return b.hazard[k] & d[0]; }).map(function (d) { return d[1].replace(", members agree", ""); }).join(", ") + "</td></tr>" : "") +
         (b.warn && b.warn[k] ? "<tr><td>Warning area</td><td>" + WARN.filter(function (d) { return b.warn[k] & d[0]; }).map(function (d) { return d[1].replace(" warning area", ""); }).join(", ") + "</td></tr>" : "") : "") +
@@ -880,6 +884,7 @@
     if (b) start = { bounds: VIEWS[b[1]].bounds, key: b[1] };
     var m = /^#(\w+)\/(\d+)(?:\/([\d.]+)\/(-?[\d.]+)\/(-?[\d.]+))?$/.exec(location.hash);
     if (m) {
+      if (m[1] === "windcore" && fieldIx.best !== undefined) m[1] = "best";   // links from before 6 Nov 2026
       if (layerDef(m[1]) && layerDef(m[1]).length > 1) state.layer = m[1];
       man.steps.forEach(function (s, i) { if (s.step === +m[2]) state.step = i; });
       if (m[3]) start = { center: [+m[5], +m[4]], zoom: +m[3], key: null };
@@ -1034,6 +1039,11 @@
   }).then(function (m) {
     man = m; grid = m.grid;
     m.fields.forEach(function (f, i) { fieldIx[f.name] = i; });
+    // Best Wind replaced the drawn Core Lifted on 6 Nov 2026 (Core Lifted still sets the storm warning line)
+    if (fieldIx.best !== undefined) {
+      UNUSED.windcore = 1;
+      LAYERS = LAYERS.filter(function (L) { return L[0] !== "windcore"; });
+    }
     var c = new Date(m.cycle);
     $("runInfo").textContent = "GFS, ECMWF, AIFS + " + m.steps[0].members + " members" +
       (m.steps[0].prob_members > m.steps[0].members ? " (" + m.steps[0].prob_members + " for chances)" : "");

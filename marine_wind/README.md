@@ -110,8 +110,8 @@ Isobars, the hazard and warning lines and the lone-model outlines are contoured 
 browser once per lead and drawn as line layers. Text (H and L, isobar values,
 lone-model labels, graticule labels) and the wind arrows go on a 2D canvas over
 the map, leaving out anything on the far side of the globe or crowded on its rim.
-The storm layers (from `storm.py`, live since #97) add two map layers (most
-likely wind with cores kept (Core Lifted), storm core chance), the gale/storm/HF possible
+The storm layers (from `storm.py`, live since #97) add two map layers (Best Wind,
+the blend with storm cores ramped in from 6 Nov 2026 (Core Lifted before, still the storm warning line), storm core chance), the gale/storm/HF possible
 lines contoured from the `hazard` bits, and the ensemble low tracks from
 `tracks.json`: solid to the shown lead, dashed beyond, with the cone. The view is kept in the link (`#layer/lead/zoom/lat/lon`); older `?basin=npac`
 links open the Pacific area. The Model scorecard opens for the basin the map is centred on.
@@ -202,7 +202,7 @@ python3 marine_wind/scorecard/scorecard.py --backfill 30 --scores marine_wind/pa
 ## Verification page (Oct 2026)
 
 A separate page, `/verification/`, shows forecasters how every model and blend
-on this page has verified: Core Lifted (the page's main wind: blend + storm cores), the blend before
+on this page has verified: Best Wind (the page's main wind from 6 Nov 2026), Core Lifted (blend + storm cores, the main wind before), the blend before
 the core lift, the deterministic blend, the plain 3-model average, GFS, ECMWF,
 AIFS and the GEFS, ENS and AIFS ENS means. Truth: the GDAS + IFS analysis mean
 (or either alone), ASCAT, moored buoys, and ships + buoys. Both basins valid

@@ -33,7 +33,9 @@ North Atlantic, npac for the North Pacific; see domain.py):
     dir       direction the wind blows from, from the 3-model mean wind vector
     msl       3-model mean sea-level pressure
     core      storm layers (storm.py): chance (%) that ASCAT sees 48+ kt within ~50 km
-    windcore  Core Lifted: wind + 5 kt where core >= 35% (the most likely wind with storm cores kept)
+    windcore  Core Lifted: wind + 5 kt where core >= 35% (the most likely wind with storm cores kept); since
+              6 Nov 2026 not drawn, but still the storm warning line and the High Seas draft's wind
+    best      Best Wind, the drawn wind: wind + ramps on the stronger of GFS/ECMWF + HF core (storm.best_wind)
     hazard    bit 1 gale possible, bit 2 storm possible, bit 4 hurricane force possible
               (plus tracks.json: the ensemble low tracks with central pressure and cone size)
 
@@ -120,6 +122,7 @@ FIELDS = [
     ("hazard", 1, "", "Possible: bit 1 gale (30%+ of members 34+), bit 2 storm (core 30%+), bit 4 hurricane force (core 90%+ and 30%+ of members 48+)"),
     ("p34raw", 1, "%", "Members at 34 kt or more"),
     ("warn", 1, "", "Warning areas: bit 1 gale (strongest model 30+ kt, pieces under 32 cells dropped), bit 2 storm (Core Lifted 39+ kt), bit 4 hurricane force (strongest model 44+ kt and 1%+ of members 64+ within about a degree)"),
+    ("best", 2, "kt", "Best Wind (the drawn wind since 6 Nov 2026): wind + 0-6 kt as the stronger of GFS/ECMWF goes 36-40 kt + 0-4 kt over 44-48 kt + an HF core 0-6 kt over 52-56 kt where 30%+ of GEFS members have 48 kt within ~100 km; open water 25+ deg from the equator; Core Lifted's gale-core floor"),
 ]
 # kept in vals (and so in the forecast record) but not drawn: galecore (%) and galelift, Core Lifted
 # with the gale-core lift everywhere (the same as windcore inside the two OPC boxes)
@@ -310,6 +313,10 @@ def step_values(ymd, hh, step):
     nomem = nomem_blend(speeds, lagged)
     # storm layers: core likelihood, Core Lifted wind, possible areas, low positions for the track
     core, galecore, windcore, galelift, hazard, ocean, lows = core_layers(step, mean + boost, boost, speeds, members, aens, lowx, dets, gefs, ens)
+    # Best Wind: the drawn wind; the storm warning line and the High Seas draft stay on Core Lifted (windcore)
+    gefs_p48 = (members[:len(gefs)] >= 48).mean(0)
+    best = storm.best_wind(mean + boost, speeds[0], speeds[1], gefs_p48, ocean, LATS)
+    best = np.where(lift_mask(best.shape), storm.gale_lift(best, galecore), best).astype(np.float32)
     vals = {
         "wind": mean + boost, "dir": wdir, "mean": mean, "boost": boost, "sigma": sigma,
         "gfs": speeds[0], "ecmwf": speeds[1], "aifs": speeds[2],
@@ -317,7 +324,7 @@ def step_values(ymd, hh, step):
         "p34raw": p34raw, "p48raw": p48raw, "p64raw": p64raw, "trend": trend,
         "nomem": nomem, "nomemdiff": nomem - (mean + boost),
         "focus": focus_grid(speeds), "lone": lone_flags(speeds), "msl": msl - 900.0,
-        "core": 100 * core, "windcore": windcore, "hazard": hazard,
+        "core": 100 * core, "windcore": windcore, "hazard": hazard, "best": best,
         "galecore": 100 * galecore, "galelift": galelift,
         "warn": np.where(ocean, storm.warning_areas(speeds, windcore, pmem, ocean), 0).astype(np.uint8),
     }

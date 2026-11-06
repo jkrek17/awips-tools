@@ -17,7 +17,8 @@
   ];
   var GRID = { analysis: 1, gdas: 1, ifs: 1, ascat: 1 };
   var METHODS = [
-    { k: "windcore", name: "Core Lifted", sub: "blend + 5 kt in storm cores, gale cores to 34 kt", c: "--m-windcore", ours: 1 },
+    { k: "best", name: "Best Wind", sub: "blend + ramps where GFS or ECMWF has 36-48 kt, HF core where GEFS agrees (from 6 Nov 2026)", c: "--m-best", ours: 1 },
+    { k: "windcore", name: "Core Lifted", sub: "blend + 5 kt in storm cores, gale cores to 34 kt; storm warning line", c: "--m-windcore", ours: 1 },
     { k: "blend", name: "Blend, no core lift", c: "--m-blend", ours: 1 },
     { k: "nomem", name: "Deterministic blend", sub: "no members", c: "--m-nomem", ours: 1 },
     { k: "mean3", name: "3-model average", c: "--m-mean3" },
@@ -67,7 +68,7 @@
   var MET = {}; METRICS.forEach(function (m) { MET[m.k] = m; });
 
   var st = { basin: "natl", ref: "analysis", lead: "all", hour: "all", area: "box", from: null, to: null, preset: "last30", metric: "tc48", thr: 48,
-             on: { windcore: 1, blend: 1, nomem: 1, gfs: 1, ecmwf: 1, aifs: 1, ndfd: 1 } };
+             on: { best: 1, windcore: 1, blend: 1, nomem: 1, gfs: 1, ecmwf: 1, aifs: 1, ndfd: 1 } };
   var idx = null, cache = {};
 
   // ------------------------------------------------------------------ state <-> URL
