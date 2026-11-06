@@ -602,7 +602,11 @@ class Procedure(SmartScript.SmartScript):
                     if note not in notes:
                         notes.append(note)
                 else:
-                    add = add + hf_core(np.fmax.reduce(cur_speeds), *hf_in)
+                    hf_add = np.where(mask, hf_core(np.fmax.reduce(cur_speeds), *hf_in), 0.0)
+                    add = add + hf_add
+                    # Counted so the message says it ran (a quiet run is not a missing read).
+                    self._hf_grids += 1
+                    self._hf_points += int((hf_add > 0).sum())
             add = np.where(mask, add, 0.0)
             speed = speed + add
             lifted = int((add > 0).sum())
@@ -659,6 +663,7 @@ class Procedure(SmartScript.SmartScript):
         summary: List[str] = []
         problems: List[str] = []
         total_lifted = 0
+        self._hf_grids = self._hf_points = 0
         mask = None
         for i, tr in enumerate(times):
             self.statusBarMsg("Make_BestWind %d/%d" % (i + 1, len(times)), "R")
@@ -687,6 +692,9 @@ class Procedure(SmartScript.SmartScript):
         parts.append("core lift %s" % ("off" if not settings["lift_on"] else
                                        "on (%s), %d cells lifted" % (
                                            TRIGGER_OWN if settings["own"] else TRIGGER_MODELS, total_lifted)))
+        if settings["lift_on"] and settings["hf_core"]:
+            parts.append("HF core: 925 mb wind and stability read for %d of %d grids, %d cells raised" % (
+                self._hf_grids, len(times), self._hf_points))
         message = "; ".join(parts)
         if summary:
             message += ". Runs used: " + " | ".join(summary)

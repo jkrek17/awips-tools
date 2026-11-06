@@ -249,7 +249,10 @@ tr0 = gfe_fakes.time_range(T0)
 s[(gfs_id, "wind", "MB925")] = {"units": "kts", "grids": [(tr0, vec(w925))]}
 s[(gfs_id, "t", "SFC")] = {"units": "K", "grids": [(tr0, const(281.0))]}
 s[(gfs_id, "t", "FHAG2")] = {"units": "K", "grids": [(tr0, const(280.0))]}   # sea - air 1 C -> 0.70
-add = (written(run(s, d, hf_on))[0] - base)[:4, 0]
+p = run(s, d, hf_on)
+add = (written(p)[0] - base)[:4, 0]
+check("message says HF core read and how many cells", any("HF core: 925 mb wind and stability read for 1 of 1 grids"
+      in m[1] for m in p.msgs), p.msgs[-1:])
 check("HF core: +0 at 50, +3 at 54, +6 at 56, +0 where 925 x 0.70 < 55",
       np.allclose(add, [0, 3, 6, 0], atol=1e-3), add)
 check("HF core default Off", M.DEFAULTS["HF core (targeted by 925 mb wind and stability)"] == "Off")
