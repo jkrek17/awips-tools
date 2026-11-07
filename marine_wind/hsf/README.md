@@ -48,8 +48,9 @@ storm and hurricane force for each, issued, draft and both. The page shows it un
   storm hazard line), hurricane force around 60 kt. Winter 2025-26 Pacific against ASCAT with the
   60 nm ring billed: gale at 30 kt covers 94% of real gale water at 43% of the desk's area; storm
   at 39 kt on Core Lifted (held-out weeks) covers 66% of storm water, at 44 kt 48%.
-- Synopsis, 24 and 48 h, plus an in-between step each time a low's warning category goes up
-  (none to gale, gale to storm, storm to hurricane force).
+- Synopsis, 24 and 48 h only (Jason 11-07: the off-hour steps had more problems). Lows are
+  still tracked every 6 h behind the scenes. `Rules(between_steps=True)` brings back an
+  in-between step each time a low's warning category goes up.
   Complex lows: "COMPLEX LOW WITH MAIN CENTER ..." only.
 - Each low keeps its own paragraph: a low that was briefly part of another low's complex does not
   carry its own winds into that paragraph later. Within a category, lows at the synopsis come
@@ -73,8 +74,8 @@ storm and hurricane force for each, issued, draft and both. The page shows it un
 The desk issues every 6 h, the synopsis valid 4.5 h before it is due (00Z due 0430Z, 06Z due
 1030Z, 12Z due 1630Z, 18Z due 2230Z). The page build cuts the two boxes at every page lead, 6 h apart
 (`STEPS` in `pipeline/build.py`), so cycle C writes the draft whose synopsis is C+6 h:
-the 00Z run, on the page about 07-08Z, drafts the 06Z forecast due 1030Z. In-between steps
-are 6 h apart.
+the 00Z run, on the page about 07-08Z, drafts the 06Z forecast due 1030Z. In-between steps (when
+switched on) are 6 h apart.
 
 ## Try it
     MARINE_DOMAIN=npac python3 build_hsf.py --box path/to/latest/npac --basin pac --out /tmp/hsf

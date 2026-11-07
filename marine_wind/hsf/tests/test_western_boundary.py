@@ -2,7 +2,7 @@
 still outside it (Jason 11-07, 12Z 7 Nov Pacific NDFD draft: winds coming in across 180W were
 split into a paragraph with no low, a NEW LOW and a gale absorbed an hour later).
 
-A gale low runs east from 165E, so its winds reach the 180W edge before its centre does. The
+A gale low runs east from 148E, so its winds reach the 180W edge before its centre does. The
 writer must name it "LOW W OF AREA ..." while the centre is west of 180W, not call it NEW
 (it was on the map at the synopsis), keep it in one paragraph to 48 h, and write no paragraph
 without a low.
@@ -28,14 +28,14 @@ def check(name, ok, got=None):
 
 
 lats = 62.0 - 0.25 * np.arange(129)        # 62N..30N
-lons = 150.0 + 0.25 * np.arange(401)       # 150E..110W
+lons = 135.0 + 0.25 * np.arange(461)       # 135E..110W
 grid = Grid(lats, lons)
 LAT, LON = grid.LAT, grid.LON
 sea = LON >= 180.0                         # the forecast area: east of 180W, all water
 
 
 def centre(h):
-    return 45.0, 165.0 + 1.0 * h            # 45N165E moving E ~40 kt
+    return 45.0, 148.0 + 1.0 * h            # 45N148E moving E ~40 kt: W of the area at 24 h
 
 
 fields = {}
