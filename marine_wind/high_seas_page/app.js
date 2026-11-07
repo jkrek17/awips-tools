@@ -172,17 +172,76 @@
       }
     });
     spans.sort(function (x, y) { return x.s - y.s; });
-    var html = "", pos = 0;
-    spans.forEach(function (x) {
-      html += esc(text.slice(pos, x.s)) + '<span class="hs-ar" data-i="' + x.i + '">' + esc(text.slice(x.s, x.e)) + "</span>";
-      pos = x.e;
+    // the text in paragraphs (blocks between blank lines), each wrapped so it can be copied on
+    // its own; the characters inside the <pre> stay exactly the product text
+    var html = "", pos = 0, si = 0, re2 = /\n\n/g, m2, cuts = [0];
+    while ((m2 = re2.exec(text))) cuts.push(m2.index + 1, m2.index + 2);
+    cuts.push(text.length);
+    function piece(a, b) {   // text a..b with its area spans
+      var out = "";
+      while (si < spans.length && spans[si].s >= a && spans[si].e <= b) {
+        var x = spans[si++];
+        out += esc(text.slice(a, x.s)) + '<span class="hs-ar" data-i="' + x.i + '">' + esc(text.slice(x.s, x.e)) + "</span>";
+        a = x.e;
+      }
+      return out + esc(text.slice(a, b));
+    }
+    paras = [];
+    for (var c = 0; c + 1 < cuts.length; c += 2) {
+      var a = cuts[c], b = cuts[c + 1], body = text.slice(a, b), pi = paras.length;
+      if (pos < a) html += piece(pos, a);   // the blank line between paragraphs
+      // copy buttons only on forecast paragraphs, not the valid-time lines or section headers
+      var own = /^(\.\.\.|\.)/.test(body) && !/^\.(WARNINGS|SYNOPSIS AND FORECAST)\.\s*$/.test(body);
+      paras.push({ text: body.replace(/\n*$/, "") + "\n", track: own ? trackFor(body) : -1 });
+      html += '<span class="hs-para" data-p="' + pi + '">' +
+        (own ? '<button type="button" class="hs-cp" data-p="' + pi + '" title="Copy this paragraph" aria-label="Copy this paragraph"></button>' : "") +
+        (own && paras[pi].track >= 0 ? '<button type="button" class="hs-go" data-p="' + pi + '" title="Show this low on the map" aria-label="Show this low on the map"></button>' : "") +
+        piece(a, b) + "</span>";
+      pos = b;
+    }
+    $("text").innerHTML = html + piece(pos, text.length);
+    document.querySelectorAll("#text .hs-cp").forEach(function (el) {
+      el.addEventListener("click", function () { copyText(paras[+el.dataset.p].text, el); });
     });
-    $("text").innerHTML = html + esc(text.slice(pos));
+    document.querySelectorAll("#text .hs-go").forEach(function (el) {
+      el.addEventListener("click", function () { flyTrack(paras[+el.dataset.p].track); });
+    });
     document.querySelectorAll("#text .hs-ar").forEach(function (el) {
       el.addEventListener("mouseenter", function () { focusArea(+el.dataset.i, el); });
       el.addEventListener("mouseleave", function () { focusArea(-1, el); });
       el.addEventListener("click", function () { focusArea(+el.dataset.i, el, true); });
     });
+  }
+  var paras = [];
+  // the warning low a paragraph is about: its first named centre, matched to a track point
+  function trackFor(body) {
+    var m = /LOW(?: WITH MAIN CENTER)? (\d+)N(\d+)([EW])/.exec(body);
+    if (!m) return -1;
+    var la = +m[1], lo = m[3] === "W" ? 360 - +m[2] : +m[2];
+    return (doc.tracks || []).findIndex(function (t) {
+      return t.points.some(function (p) { return Math.round(p.lat) === la && ((Math.round(p.lon) % 360) + 360) % 360 === lo % 360; });
+    });
+  }
+  function flyTrack(t) {
+    var tr = (doc.tracks || [])[t];
+    if (!map || !tr || !tr.points.length) return;
+    var xs = tr.points.map(function (p) { return lon(p.lon); }), ys = tr.points.map(function (p) { return p.lat; });
+    map.fitBounds([[Math.min.apply(null, xs), Math.min.apply(null, ys)], [Math.max.apply(null, xs), Math.max.apply(null, ys)]], { padding: 120, maxZoom: 5, duration: 600 });
+    show(tr.points[0].hour);
+  }
+  // plain text only on the clipboard (no page colours, padding or line spacing), so a paste
+  // into email, an editor or AWIPS gets the product lines as written
+  function copyText(t, btn) {
+    function done() { if (!btn) return; btn.classList.add("ok"); setTimeout(function () { btn.classList.remove("ok"); }, 1500); }
+    function fallback() {
+      var ta = document.createElement("textarea");
+      ta.value = t; ta.setAttribute("readonly", ""); ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      try { if (document.execCommand("copy")) done(); } catch (e) { /* the text stays selected */ }
+      document.body.removeChild(ta);
+    }
+    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(t).then(done, fallback);
+    else fallback();
   }
   function focusArea(i, el, fly) {
     document.querySelectorAll("#text .hs-ar.on").forEach(function (x) { x.classList.remove("on"); });
@@ -235,8 +294,16 @@
     $("shadeName").textContent = src === "ndfd" ? "none for NDFD" : SOURCES[src] + " wind";
     $("copyBtn").addEventListener("click", function () {
       if (!doc) return;
-      navigator.clipboard.writeText(doc.text).then(function () { $("copyBtn").textContent = "Copied"; setTimeout(function () { $("copyBtn").textContent = "Copy text"; }, 1500); },
-        function () { var r = document.createRange(); r.selectNodeContents($("text")); var s = getSelection(); s.removeAllRanges(); s.addRange(r); });
+      var t = compare && textTab === "draft" ? doc.draft_text : doc.text, b = $("copyBtn");
+      copyText(t, null);
+      b.textContent = "Copied"; setTimeout(function () { b.textContent = "Copy all"; }, 1500);
+    });
+    // a copy by hand from the text: plain text only (the buttons add nothing to it)
+    $("text").addEventListener("copy", function (e) {
+      var t = String(getSelection());
+      if (!t || !e.clipboardData) return;
+      e.clipboardData.setData("text/plain", t.replace(/\r\n?/g, "\n").replace(/[ \t\u00a0]+$/gm, ""));
+      e.preventDefault();
     });
     var data = fetch(DATA + "?t=" + Date.now()).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
     // the box manifest, for the wind underneath; the draft must come from the same run
