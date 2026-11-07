@@ -19,9 +19,13 @@
   var B = BASINS[basin];
   // ?view=compare: the previous run's draft against the forecast the desk issued for it
   var compare = q.get("view") === "compare";
+  // ?layout=block (one block, copy per paragraph), cards (a card per storm), index (storm list over the block)
+  var LAYOUTS = { block: "One block", cards: "Storm cards", index: "Storm list" };
+  var layout = (q.get("layout") || "block").toLowerCase();
+  if (!LAYOUTS[layout]) layout = "block";
   var FILE = src === "corelift" ? basin : basin + "-" + src;
   var DATA = "../marine-wind/data/hsf/" + (compare ? "compare-" + basin : FILE) + ".json";
-  function link(b, s, c) { return "?basin=" + b + (s === "corelift" ? "" : "&src=" + s) + (c ? "&view=compare" : ""); }
+  function link(b, s, c, l) { l = l || layout; return "?basin=" + b + (s === "corelift" ? "" : "&src=" + s) + (c ? "&view=compare" : "") + (l === "block" ? "" : "&layout=" + l); }
   var cmp = null, textTab = "issued";
   var LEVELS = { 34: "Gale", 48: "Storm", 64: "Hurricane force" };
 
@@ -187,23 +191,64 @@
       return out + esc(text.slice(a, b));
     }
     paras = [];
+    var parts = [];   // in text order: {gap: html} or {p: index, html}
     for (var c = 0; c + 1 < cuts.length; c += 2) {
       var a = cuts[c], b = cuts[c + 1], body = text.slice(a, b), pi = paras.length;
-      if (pos < a) html += piece(pos, a);   // the blank line between paragraphs
-      // copy buttons only on forecast paragraphs, not the valid-time lines or section headers
+      if (pos < a) parts.push({ gap: piece(pos, a) });   // the blank line between paragraphs
+      // buttons only on forecast paragraphs, not the valid-time lines or section headers
       var own = /^(\.\.\.|\.)/.test(body) && !/^\.(WARNINGS|SYNOPSIS AND FORECAST)\.\s*$/.test(body);
-      paras.push({ text: body.replace(/\n*$/, "") + "\n", track: own ? trackFor(body) : -1 });
-      html += '<span class="hs-para" data-p="' + pi + '">' +
-        (own ? '<button type="button" class="hs-cp" data-p="' + pi + '" title="Copy this paragraph" aria-label="Copy this paragraph"></button>' : "") +
-        (own && paras[pi].track >= 0 ? '<button type="button" class="hs-go" data-p="' + pi + '" title="Show this low on the map" aria-label="Show this low on the map"></button>' : "") +
-        piece(a, b) + "</span>";
+      paras.push({ text: body.replace(/\n*$/, "") + "\n", own: own, track: own ? trackFor(body) : -1, info: own ? paraInfo(body) : null });
+      parts.push({ p: pi, html: piece(a, b) });
       pos = b;
     }
-    $("text").innerHTML = html + piece(pos, text.length);
-    document.querySelectorAll("#text .hs-cp").forEach(function (el) {
+    var tail = piece(pos, text.length);
+    function btns(pi) {
+      return (paras[pi].own ? '<button type="button" class="hs-cp" data-p="' + pi + '" title="Copy this paragraph" aria-label="Copy this paragraph"></button>' : "") +
+        (paras[pi].track >= 0 ? '<button type="button" class="hs-go" data-p="' + pi + '" title="Show this low on the map" aria-label="Show this low on the map"></button>' : "");
+    }
+    var el = $("text");
+    el.className = "hs-text hs-lay-" + layout;
+    if (layout === "cards") {
+      // one card per paragraph: a header (level, low, peak wind, buttons) over the paragraph's text;
+      // the header is not part of any copy
+      html = parts.map(function (x) {
+        if (x.gap !== undefined) return "";
+        var P = paras[x.p];
+        if (!P.own) return '<div class="hs-plain" data-p="' + x.p + '">' + x.html + "</div>";
+        var I = P.info;
+        return '<div class="hs-cardp hs-para" style="--lvl:' + I.colour + '" data-p="' + x.p + '"><div class="hs-ch" aria-hidden="false">' +
+          '<b class="hs-lvl" style="--lvl:' + I.colour + '">' + I.level + "</b><span>" + esc(I.low) + "</span>" +
+          (I.peak ? "<span>peak " + I.peak + " kt</span>" : "") + '<span class="hs-chb">' + btns(x.p) + "</span></div>" +
+          '<div class="hs-cb">' + x.html.replace(/\n$/, "") + "</div></div>";
+      }).join("") + (tail ? '<div class="hs-plain">' + tail + "</div>" : "");
+    } else if (layout === "index") {
+      // a short list of the storms at the top, then the product text as one block
+      var rows = paras.map(function (P, i) { return [P, i]; }).filter(function (x) { return x[0].own; }).map(function (x) {
+        var I = x[0].info;
+        return '<div class="hs-ix" data-p="' + x[1] + '"><b class="hs-lvl" style="--lvl:' + I.colour + '">' + I.level + "</b>" +
+          '<a href="#" class="hs-jump" data-p="' + x[1] + '">' + esc(I.low) + "</a>" + (I.peak ? "<span>peak " + I.peak + " kt</span>" : "<span></span>") +
+          '<span class="hs-chb">' + btns(x[1]) + "</span></div>";
+      }).join("");
+      $("index").innerHTML = rows;
+      html = parts.map(function (x) { return x.gap !== undefined ? x.gap : '<span class="hs-para" data-p="' + x.p + '">' + x.html + "</span>"; }).join("") + tail;
+    } else {
+      html = parts.map(function (x) { return x.gap !== undefined ? x.gap : '<span class="hs-para" data-p="' + x.p + '">' + btns(x.p) + x.html + "</span>"; }).join("") + tail;
+    }
+    $("index").hidden = layout !== "index";
+    el.innerHTML = html;
+    document.querySelectorAll("#index .hs-jump").forEach(function (a) {
+      a.addEventListener("click", function (e) {
+        e.preventDefault();
+        var t = el.querySelector('.hs-para[data-p="' + a.dataset.p + '"]');
+        el.querySelectorAll(".hs-para.lit").forEach(function (x) { x.classList.remove("lit"); });
+        if (t) { t.classList.add("lit"); el.scrollTop = t.offsetTop - el.offsetTop - 8; }
+        flyTrack(paras[+a.dataset.p].track);
+      });
+    });
+    document.querySelectorAll("#text .hs-cp, #index .hs-cp").forEach(function (el) {
       el.addEventListener("click", function () { copyText(paras[+el.dataset.p].text, el); });
     });
-    document.querySelectorAll("#text .hs-go").forEach(function (el) {
+    document.querySelectorAll("#text .hs-go, #index .hs-go").forEach(function (el) {
       el.addEventListener("click", function () { flyTrack(paras[+el.dataset.p].track); });
     });
     document.querySelectorAll("#text .hs-ar").forEach(function (el) {
@@ -212,7 +257,25 @@
       el.addEventListener("click", function () { focusArea(+el.dataset.i, el, true); });
     });
   }
-  var paras = [];
+  var paras = [], shown = "";
+  // a paragraph without a low: "AREA NEAR 38N36W", with the hour it starts if not the synopsis
+  function areaName(flat) {
+    var t = flat.replace(/^\.\.\..+?\.\.\. ?/, ""), h = /^\.(\d+) HOUR FORECAST/.exec(t);
+    var pt = /(\d+N\d+[EW])/.exec(t), la = /(\d+N)\b/.exec(t), lo = /(\d+[EW])\b/.exec(t);
+    var at = pt ? pt[1] : la && lo ? la[1] + lo[1] : "";
+    return (at ? "AREA NEAR " + at : "AREA") + (h ? " FROM " + h[1] + " H" : "");
+  }
+  // a paragraph's level, first low and highest wind, for the card and list headers
+  function paraInfo(body) {
+    var w = /^\.\.\.(.+?) WARNING\.\.\./.exec(body), lvl = w ? w[1] : "SYNOPSIS";
+    var m = /((?:NEW )?(?:COMPLEX )?LOW(?: WITH MAIN CENTER)? \d+N\d+[EW](?: \d+ MB)?)/.exec(body.replace(/\s+/g, " "));
+    var peak = 0, re = /(\d+) KT/g, k;
+    var flat = body.replace(/\s+/g, " ");
+    while ((k = re.exec(flat))) if (!/MOVING \w+ $/.test(flat.slice(Math.max(0, k.index - 20), k.index))) peak = Math.max(peak, +k[1]);
+    var colour = lvl === "HURRICANE FORCE" ? "#a855f7" : lvl === "STORM" ? "#ef4444" : lvl === "GALE" ? "#f59e0b" : "#94a3b8";
+    var label = { "HURRICANE FORCE": "HF", STORM: "STORM", GALE: "GALE" }[lvl] || "NO WARN";
+    return { level: label, colour: colour, low: m ? m[1] : areaName(flat), peak: peak };
+  }
   // the warning low a paragraph is about: its first named centre, matched to a track point
   function trackFor(body) {
     var m = /LOW(?: WITH MAIN CENTER)? (\d+)N(\d+)([EW])/.exec(body);
@@ -260,8 +323,8 @@
   function render() {
     $("runLine").textContent = compare ? "Issued vs draft from the " + K.fmtTime(doc.cycle) + " run"
       : "Draft from the " + K.fmtTime(doc.cycle) + " run";
-    var shown = compare && textTab === "draft" ? doc.draft_text : doc.text;
-    if (compare && textTab !== "draft") $("text").textContent = shown;
+    shown = compare && textTab === "draft" ? doc.draft_text : doc.text;
+    if (compare && textTab !== "draft") { $("text").className = "hs-text"; $("index").hidden = true; $("text").textContent = shown; }
     else linkText(shown);
     if (compare) {
       $("cmpStats").innerHTML = statsHTML();
@@ -291,6 +354,9 @@
     $("sources").innerHTML = Object.keys(SOURCES).map(function (s) {
       return '<a href="' + link(basin, s, compare) + '" aria-current="' + (s === src) + '">' + SOURCES[s] + "</a>";
     }).join("");
+    $("layouts").innerHTML = Object.keys(LAYOUTS).map(function (l) {
+      return '<a href="' + link(basin, src, compare, l) + '" aria-current="' + (l === layout) + '">' + LAYOUTS[l] + "</a>";
+    }).join("");
     $("shadeName").textContent = src === "ndfd" ? "none for NDFD" : SOURCES[src] + " wind";
     $("copyBtn").addEventListener("click", function () {
       if (!doc) return;
@@ -299,9 +365,37 @@
       b.textContent = "Copied"; setTimeout(function () { b.textContent = "Copy all"; }, 1500);
     });
     // a copy by hand from the text: plain text only (the buttons add nothing to it)
+    // a copy by hand from the text: the product's own characters for the part selected, as plain
+    // text only. The browser's own copy of a selection rebuilds the text from the layout and can
+    // drop or add line breaks, so the selection is mapped back onto the product text instead.
     $("text").addEventListener("copy", function (e) {
-      var t = String(getSelection());
-      if (!t || !e.clipboardData) return;
+      var sel = getSelection();
+      if (!sel.rangeCount || sel.isCollapsed || !e.clipboardData || !shown) return;
+      var r = sel.getRangeAt(0), el = $("text"), t;
+      function off(box, node, o) {   // characters of box's text before (node, o)
+        var x = document.createRange();
+        x.selectNodeContents(box);
+        try { x.setEnd(node, o); } catch (err) { return 0; }
+        return x.toString().length;
+      }
+      function within(box, src) {
+        var a = box.contains(r.startContainer) ? off(box, r.startContainer, r.startOffset) : 0;
+        var b = box.contains(r.endContainer) ? off(box, r.endContainer, r.endOffset) : src.length;
+        return src.slice(a, b);
+      }
+      if (!el.querySelector(".hs-cardp")) {
+        t = el.textContent === shown ? within(el, shown) : String(sel);
+      } else {
+        var hit = [];
+        el.querySelectorAll(".hs-cardp, .hs-plain").forEach(function (x) { if (r.intersectsNode(x) && x.dataset.p !== undefined) hit.push(x); });
+        if (hit.length === 1) {
+          var box = hit[0].querySelector(".hs-cb") || hit[0], src = paras[+hit[0].dataset.p].text.replace(/\n$/, "");
+          t = box.textContent === src ? within(box, src) : String(sel);
+        } else {
+          // across cards: the whole paragraphs touched, with the product's blank lines between them
+          t = hit.map(function (x) { return paras[+x.dataset.p].text; }).join("\n");
+        }
+      }
       e.clipboardData.setData("text/plain", t.replace(/\r\n?/g, "\n").replace(/[ \t\u00a0]+$/gm, ""));
       e.preventDefault();
     });

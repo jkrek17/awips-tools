@@ -21,20 +21,39 @@
   .hs-note { font-size: 11.5px; color: var(--text-3); padding: 0 16px 8px; }
   .hs-text { flex: 1; overflow: auto; margin: 0; padding: 10px 16px 16px; border-top: 1px solid var(--border);
     font: 12.5px/1.5 var(--mono); white-space: pre; color: var(--text); }
-  .hs-text { position: relative; padding-left: 40px; }
+  .hs-text { position: relative; }
+  .hs-text.hs-lay-block { padding-left: 40px; }
   .hs-text .hs-para { display: inline; }
   .hs-text .hs-cp, .hs-text .hs-go { position: absolute; left: 6px; width: 15px; height: 15px; margin-top: 2px; padding: 0;
     border: 0; border-radius: 3px; background: transparent; color: var(--text-3); cursor: pointer; opacity: 0.55; user-select: none; }
   .hs-text .hs-go { left: 22px; }
-  .hs-text .hs-cp::before { content: ""; position: absolute; inset: 2px 4px 4px 2px; border: 1.4px solid currentColor; border-radius: 2px; }
-  .hs-text .hs-cp::after { content: ""; position: absolute; inset: 5px 1px 1px 5px; border: 1.4px solid currentColor; border-radius: 2px; background: var(--surface-solid, #0f1a2e); }
-  .hs-text .hs-go::before { content: ""; position: absolute; inset: 3px; border: 1.4px solid currentColor; border-radius: 50%; }
-  .hs-text .hs-go::after { content: ""; position: absolute; left: 6px; top: 6px; width: 3px; height: 3px; border-radius: 50%; background: currentColor; }
+  .hs-cp::before { content: ""; position: absolute; inset: 2px 4px 4px 2px; border: 1.4px solid currentColor; border-radius: 2px; }
+  .hs-cp::after { content: ""; position: absolute; inset: 5px 1px 1px 5px; border: 1.4px solid currentColor; border-radius: 2px; background: var(--surface-solid, #0f1a2e); }
+  .hs-go::before { content: ""; position: absolute; inset: 3px; border: 1.4px solid currentColor; border-radius: 50%; }
+  .hs-go::after { content: ""; position: absolute; left: 6px; top: 6px; width: 3px; height: 3px; border-radius: 50%; background: currentColor; }
   .hs-text .hs-para:hover > .hs-cp, .hs-text .hs-para:hover > .hs-go, .hs-text .hs-cp:focus-visible, .hs-text .hs-go:focus-visible { opacity: 1; color: var(--accent); }
-  .hs-text .hs-cp.ok { color: #4ade80; opacity: 1; }
-  .hs-text .hs-cp.ok::before { inset: 3px 5px 5px 4px; border-width: 0 2px 2px 0; border-radius: 0; transform: rotate(45deg); }
-  .hs-text .hs-cp.ok::after { display: none; }
+  .hs-cp.ok { color: #4ade80; opacity: 1; }
+  .hs-cp.ok::before { inset: 3px 5px 5px 4px; border-width: 0 2px 2px 0; border-radius: 0; transform: rotate(45deg); }
+  .hs-cp.ok::after { display: none; }
   .hs-text .hs-para:has(> .hs-cp:hover) { background: var(--accent-soft); }
+  /* storm cards (?layout=cards) and storm list (?layout=index) */
+  .hs-text.hs-lay-cards { padding-left: 12px; padding-right: 12px; }
+  .hs-text .hs-chb { display: inline-flex; gap: 6px; margin-left: auto; }
+  .hs-text .hs-chb .hs-cp, .hs-text .hs-chb .hs-go, .hs-index .hs-cp, .hs-index .hs-go { position: relative; left: auto; margin: 0; opacity: 0.8; }
+  .hs-text .hs-cardp { display: block; border: 1px solid var(--border); border-left: 3px solid var(--lvl, var(--border)); border-radius: var(--radius-sm); margin: 0 0 10px; }
+  .hs-ch { display: flex; align-items: center; gap: 10px; padding: 5px 8px; border-bottom: 1px solid var(--border); font: 600 11.5px var(--font); color: var(--text-2); white-space: normal; user-select: none; }
+  .hs-cb { padding: 6px 10px 8px; }
+  .hs-plain { display: block; margin: 0 0 10px; color: var(--text-2); }
+  .hs-lvl { font: 700 10.5px var(--mono); letter-spacing: .04em; padding: 1px 6px; border-radius: 3px; color: #0a1120; background: var(--lvl); }
+  .hs-index { padding: 6px 16px 8px; border-top: 1px solid var(--border); display: grid; gap: 4px; }
+  .hs-index[hidden] { display: none; }
+  .hs-ix { display: grid; grid-template-columns: 70px 1fr 80px 44px; align-items: center; gap: 8px; font: 12px var(--mono); color: var(--text-2); }
+  .hs-ix .hs-lvl { justify-self: start; }
+  .hs-ix a { color: var(--text); text-decoration: none; border-bottom: 1px dotted var(--text-3); justify-self: start; }
+  .hs-ix .hs-chb { display: inline-flex; gap: 6px; }
+  .hs-index .hs-cp, .hs-index .hs-go { width: 15px; height: 15px; padding: 0; border: 0; background: transparent; color: var(--text-3); cursor: pointer; }
+  .hs-index .hs-cp:hover, .hs-index .hs-go:hover { color: var(--accent); }
+  .hs-text .hs-para.lit { background: var(--accent-soft); }
   .hs-text mark { background: var(--accent-soft); color: var(--text); border-radius: 3px; }
   .hs-legend { display: flex; gap: 12px; padding: 0 16px 8px; font-size: 11.5px; color: var(--text-2); flex-wrap: wrap; }
   .hs-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
@@ -82,6 +101,7 @@
       <a class="btn btn-ghost" id="plainLink" href="../marine-wind/data/hsf/pac.txt" target="_blank" rel="noopener">Plain text</a>
     </div>
     <div class="hs-src"><span>Wind grid</span><nav id="sources" aria-label="Wind grid the draft is written from"></nav></div>
+    <div class="hs-src"><span>Layout</span><nav id="layouts" aria-label="How the text is laid out"></nav></div>
     <div class="hs-steps" id="steps" role="group" aria-label="Time shown on the map"></div>
     <div class="hs-legend"><span><i style="background:#a855f7"></i>64+ kt</span><span><i style="background:#ef4444"></i>48-63</span><span><i style="background:#f59e0b"></i>34-47</span><span><i style="background:#38bdf8"></i>25-33</span><span>Shading: <span id="shadeName">Core Lifted wind</span> · outlines: draft areas · L: lows in the text · white line: warning low tracks · yellow dashed: High Seas forecast area</span></div>
     <p class="hs-note">Written automatically by rules from the chosen wind grid (Core Lifted: the most likely wind, storm cores kept), the 3-model mean pressure and GFS-Wave seas. A draft for the forecaster to edit, not the official forecast.</p>
@@ -90,6 +110,7 @@
       <div id="cmpStats"></div>
       <div class="hs-steps" id="textTabs" role="group" aria-label="Text shown"></div>
     </div>
+    <div class="hs-index" id="index" hidden></div>
     <pre class="hs-text" id="text"></pre>
   </section>
 </div>
