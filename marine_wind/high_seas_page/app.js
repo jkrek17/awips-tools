@@ -108,7 +108,7 @@
   function features(h) {
     return {
       type: "FeatureCollection",
-      features: doc.areas.map(function (a, i) { return [a, i]; }).filter(function (x) { return x[0].hour === h; }).map(function (x) {
+      features: doc.areas.map(function (a, i) { return [a, i]; }).filter(function (x) { return x[0].hour === h && inFocus(x[1]); }).map(function (x) {
         var a = x[0];
         return { type: "Feature", properties: { colour: colour(a.wind[1]), letter: a.letter, i: x[1] },
                  geometry: { type: "Polygon", coordinates: a.rings.map(function (r) { return r.map(function (p) { return [lon(p[0]), p[1]]; }); }) } };
@@ -124,6 +124,7 @@
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     (doc.lows || []).forEach(function (l) {
       if (l.hour !== hour) return;
+      if (focus >= 0 && !paras[focus].lows[Math.round(l.lat) + "," + ((Math.round(l.lon) % 360) + 360) % 360]) return;
       ov.proj(lon(l.lon), l.lat).forEach(function (p) {
         ctx.font = "800 20px " + getComputedStyle(document.body).getPropertyValue("--font");
         ctx.lineWidth = 3; ctx.strokeStyle = "rgba(7,13,25,0.9)"; ctx.strokeText("L", p.x, p.y);
@@ -133,8 +134,8 @@
       });
     });
     ctx.font = "700 12px " + getComputedStyle(document.body).getPropertyValue("--mono");
-    doc.areas.forEach(function (a) {
-      if (a.hour !== hour || !a.rings.length) return;
+    doc.areas.forEach(function (a, i) {
+      if (a.hour !== hour || !a.rings.length || !inFocus(i)) return;
       var r = a.rings[0], x = 0, y = 0;
       r.forEach(function (p) { x += p[0]; y += p[1]; });
       ov.proj(lon(x / r.length), y / r.length).forEach(function (p) {
@@ -197,14 +198,24 @@
       if (pos < a) parts.push({ gap: piece(pos, a) });   // the blank line between paragraphs
       // buttons only on forecast paragraphs, not the valid-time lines or section headers
       var own = /^(\.\.\.|\.)/.test(body) && !/^\.(WARNINGS|SYNOPSIS AND FORECAST)\.\s*$/.test(body);
-      paras.push({ text: body.replace(/\n*$/, "") + "\n", own: own, track: own ? trackFor(body) : -1, info: own ? paraInfo(body) : null });
+      paras.push({ text: body.replace(/\n*$/, "") + "\n", own: own, track: own ? trackFor(body) : -1, info: own ? paraInfo(body) : null,
+                   a: a, b: b, lows: lowsIn(body) });
       parts.push({ p: pi, html: piece(a, b) });
       pos = b;
     }
     var tail = piece(pos, text.length);
+    // each area's paragraph: where its phrase sits in the text; an area whose phrase was not
+    // found goes with the area before it (the areas come in text order)
+    areaPara = doc.areas.map(function (a, i) {
+      var sp = spans.filter(function (x) { return x.i === i; })[0];
+      if (!sp) return -1;
+      for (var k = 0; k < paras.length; k++) if (sp.s >= paras[k].a && sp.s < paras[k].b) return k;
+      return -1;
+    });
+    for (var q2 = 1; q2 < areaPara.length; q2++) if (areaPara[q2] < 0) areaPara[q2] = areaPara[q2 - 1];
     function btns(pi) {
       return (paras[pi].own ? '<button type="button" class="hs-cp" data-p="' + pi + '" title="Copy this paragraph" aria-label="Copy this paragraph"></button>' : "") +
-        (paras[pi].track >= 0 ? '<button type="button" class="hs-go" data-p="' + pi + '" title="Show this low on the map" aria-label="Show this low on the map"></button>' : "");
+        (paras[pi].own ? '<button type="button" class="hs-go" data-p="' + pi + '" title="Show only this on the map (again for all)" aria-label="Show only this on the map"></button>' : "");
     }
     var el = $("text");
     el.className = "hs-text hs-lay-" + layout;
@@ -240,16 +251,16 @@
       a.addEventListener("click", function (e) {
         e.preventDefault();
         var t = el.querySelector('.hs-para[data-p="' + a.dataset.p + '"]');
-        el.querySelectorAll(".hs-para.lit").forEach(function (x) { x.classList.remove("lit"); });
-        if (t) { t.classList.add("lit"); el.scrollTop = t.offsetTop - el.offsetTop - 8; }
-        flyTrack(paras[+a.dataset.p].track);
+        var p = +a.dataset.p;
+        setFocus(focus === p ? -1 : p);
+        if (t && focus >= 0) el.scrollTop = t.offsetTop - el.offsetTop - 8;
       });
     });
     document.querySelectorAll("#text .hs-cp, #index .hs-cp").forEach(function (el) {
       el.addEventListener("click", function () { copyText(paras[+el.dataset.p].text, el); });
     });
     document.querySelectorAll("#text .hs-go, #index .hs-go").forEach(function (el) {
-      el.addEventListener("click", function () { flyTrack(paras[+el.dataset.p].track); });
+      el.addEventListener("click", function () { var p = +el.dataset.p; setFocus(focus === p ? -1 : p); });
     });
     document.querySelectorAll("#text .hs-ar").forEach(function (el) {
       el.addEventListener("mouseenter", function () { focusArea(+el.dataset.i, el); });
@@ -285,12 +296,55 @@
       return t.points.some(function (p) { return Math.round(p.lat) === la && ((Math.round(p.lon) % 360) + 360) % 360 === lo % 360; });
     });
   }
-  function flyTrack(t) {
-    var tr = (doc.tracks || [])[t];
-    if (!map || !tr || !tr.points.length) return;
-    var xs = tr.points.map(function (p) { return lon(p.lon); }), ys = tr.points.map(function (p) { return p.lat; });
-    map.fitBounds([[Math.min.apply(null, xs), Math.min.apply(null, ys)], [Math.max.apply(null, xs), Math.max.apply(null, ys)]], { padding: 120, maxZoom: 5, duration: 600 });
-    show(tr.points[0].hour);
+  // ---- one storm at a time: the picker, the map buttons and the list rows set the focus
+  var focus = -1, areaPara = [];
+  function inFocus(i) { return focus < 0 || areaPara[i] === focus; }
+  function posKey(la, lo, ew) { var x = ew === "W" ? 360 - lo : lo; return la + "," + ((x % 360) + 360) % 360; }
+  function lowsIn(body) {   // the centres a paragraph names, as "lat,lon east"
+    var out = {}, re = /(\d+)N(\d+)([EW]) \d+ MB/g, m, flat = body.replace(/\s+/g, " ");
+    while ((m = re.exec(flat))) out[posKey(+m[1], +m[2], m[3])] = 1;
+    return out;
+  }
+  function drawTracks() {
+    if (!map || !map.getSource("tracks") || !doc) return;
+    var tf = [];
+    (doc.tracks || []).forEach(function (t, k) {
+      if (focus >= 0 && paras[focus].track !== k) return;
+      tf.push({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: t.points.map(function (p) { return [lon(p.lon), p.lat]; }) } });
+      t.points.forEach(function (p) { tf.push({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [lon(p.lon), p.lat] } }); });
+    });
+    map.getSource("tracks").setData({ type: "FeatureCollection", features: tf });
+  }
+  function stormChips() {
+    var list = paras.map(function (P, i) { return [P, i]; }).filter(function (x) { return x[0].own; });
+    $("storms").innerHTML = '<button type="button" data-p="-1">All</button>' + list.map(function (x) {
+      var I = x[0].info, at = /(\d+N\d+[EW])/.exec(I.low);
+      return '<button type="button" data-p="' + x[1] + '" style="--lvl:' + I.colour + '"><i></i>' + (I.level === "NO WARN" ? "" : I.level + " ") + (at ? at[1] : I.low) + "</button>";
+    }).join("");
+    document.querySelectorAll("#storms button").forEach(function (b) { b.addEventListener("click", function () { setFocus(+b.dataset.p); }); });
+  }
+  function setFocus(p) {
+    focus = p;
+    document.querySelectorAll("#storms button").forEach(function (b) { b.setAttribute("aria-pressed", String(+b.dataset.p === p)); });
+    $("text").classList.toggle("hs-focusing", p >= 0);
+    document.querySelectorAll("#text [data-p].hs-para, #text .hs-plain, #index .hs-ix").forEach(function (x) {
+      x.classList.toggle("off", p >= 0 && +x.dataset.p !== p);
+    });
+    document.querySelectorAll("#text .hs-go, #index .hs-go").forEach(function (b) { b.classList.toggle("on", +b.dataset.p === p); });
+    // the times this storm has areas at; the others are hidden while it is picked
+    var hrs = {};
+    doc.areas.forEach(function (a, i) { if (inFocus(i)) hrs[a.hour] = 1; });
+    document.querySelectorAll("#steps button").forEach(function (b) { b.hidden = p >= 0 && !hrs[b.dataset.h] && +b.dataset.h !== 0; });
+    drawTracks();
+    var first = p >= 0 ? Math.min.apply(null, Object.keys(hrs).map(Number).concat([999])) : 0;
+    show(p >= 0 && first < 999 ? (hrs[hour] ? hour : first) : hour);
+    if (map) {
+      var xs = [], ys = [];
+      doc.areas.forEach(function (a, i) { if (p >= 0 && inFocus(i)) a.rings.forEach(function (r) { r.forEach(function (q) { xs.push(lon(q[0])); ys.push(q[1]); }); }); });
+      var tr = p >= 0 ? (doc.tracks || [])[paras[p].track] : null;
+      if (tr) tr.points.forEach(function (q) { xs.push(lon(q.lon)); ys.push(q.lat); });
+      if (xs.length) map.fitBounds([[Math.min.apply(null, xs), Math.min.apply(null, ys)], [Math.max.apply(null, xs), Math.max.apply(null, ys)]], { padding: { top: 100, bottom: 60, left: Math.min(640, innerWidth / 2), right: 60 }, maxZoom: 5, duration: 600 });
+    }
   }
   // plain text only on the clipboard (no page colours, padding or line spacing), so a paste
   // into email, an editor or AWIPS gets the product lines as written
@@ -338,7 +392,10 @@
       return '<button type="button" data-h="' + h + '">' + (h ? h + " H" : "SYNOPSIS") + "</button>";
     }).join("");
     document.querySelectorAll("#steps button").forEach(function (b) { b.addEventListener("click", function () { show(+b.dataset.h); }); });
-    show(0);
+    var ownText = !(compare && textTab !== "draft");
+    $("stormRow").hidden = !ownText;
+    if (ownText) { stormChips(); if (focus >= paras.length) focus = -1; setFocus(focus); }
+    else { focus = -1; drawTracks(); show(0); }
   }
 
   function start() {
@@ -435,12 +492,7 @@
             var b = doc.boundary.map(function (p) { return [lon(p[0]), p[1]]; });
             map.getSource("boundary").setData({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: b.concat([b[0]]) } });
           }
-          var tf = [];
-          (doc.tracks || []).forEach(function (t) {
-            tf.push({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: t.points.map(function (p) { return [lon(p.lon), p.lat]; }) } });
-            t.points.forEach(function (p) { tf.push({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [lon(p.lon), p.lat] } }); });
-          });
-          map.getSource("tracks").setData({ type: "FeatureCollection", features: tf });
+          drawTracks();
           show(hour);
         });
       });

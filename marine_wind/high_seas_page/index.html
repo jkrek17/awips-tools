@@ -54,6 +54,14 @@
   .hs-index .hs-cp, .hs-index .hs-go { width: 15px; height: 15px; padding: 0; border: 0; background: transparent; color: var(--text-3); cursor: pointer; }
   .hs-index .hs-cp:hover, .hs-index .hs-go:hover { color: var(--accent); }
   .hs-text .hs-para.lit { background: var(--accent-soft); }
+  /* one storm at a time (Show row, map buttons) */
+  .hs-storms button { font: 600 11.5px var(--mono); padding: 4px 8px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: transparent; color: var(--text-2); cursor: pointer; }
+  .hs-storms button i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; background: var(--lvl); vertical-align: 0; }
+  .hs-storms button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  .hs-text .off, .hs-index .off { opacity: 0.3; }
+  .hs-text.hs-lay-cards .off, .hs-text.hs-lay-cards.hs-focusing .hs-plain { display: none; }
+  .hs-go.on { color: var(--accent) !important; opacity: 1 !important; }
+  .hs-steps button[hidden] { display: none; }
   .hs-text mark { background: var(--accent-soft); color: var(--text); border-radius: 3px; }
   .hs-legend { display: flex; gap: 12px; padding: 0 16px 8px; font-size: 11.5px; color: var(--text-2); flex-wrap: wrap; }
   .hs-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
@@ -102,6 +110,7 @@
     </div>
     <div class="hs-src"><span>Wind grid</span><nav id="sources" aria-label="Wind grid the draft is written from"></nav></div>
     <div class="hs-src"><span>Layout</span><nav id="layouts" aria-label="How the text is laid out"></nav></div>
+    <div class="hs-src" id="stormRow"><span>Show</span><nav id="storms" class="hs-storms" aria-label="Storm shown on the map"></nav></div>
     <div class="hs-steps" id="steps" role="group" aria-label="Time shown on the map"></div>
     <div class="hs-legend"><span><i style="background:#a855f7"></i>64+ kt</span><span><i style="background:#ef4444"></i>48-63</span><span><i style="background:#f59e0b"></i>34-47</span><span><i style="background:#38bdf8"></i>25-33</span><span>Shading: <span id="shadeName">Core Lifted wind</span> · outlines: draft areas · L: lows in the text · white line: warning low tracks · yellow dashed: High Seas forecast area</span></div>
     <p class="hs-note">Written automatically by rules from the chosen wind grid (Core Lifted: the most likely wind, storm cores kept), the 3-model mean pressure and GFS-Wave seas. A draft for the forecaster to edit, not the official forecast.</p>
