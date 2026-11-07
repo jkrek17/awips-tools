@@ -44,6 +44,11 @@ storm and hurricane force for each, issued, draft and both. The page shows it un
 - Synopsis, 24 and 48 h, plus an in-between step each time a low's warning category goes up
   (none to gale, gale to storm, storm to hurricane force).
   Complex lows: "COMPLEX LOW WITH MAIN CENTER ..." only.
+- Each low keeps its own paragraph: a low that was briefly part of another low's complex does not
+  carry its own winds into that paragraph later. Within a category, lows at the synopsis come
+  before NEW ones. A low that goes away near another reads "LOW ABSORBED BY LOW 53N144W DESCRIBED
+  BELOW", with "INLAND AND CONDITIONS" when it was last seen over land (no GFS-Wave seas there).
+  Test: `python3 marine_wind/hsf/tests/test_low_paragraphs.py`.
 
 ## Valid times
 The desk issues every 6 h, the synopsis valid 4.5 h before it is due (00Z due 0430Z, 06Z due

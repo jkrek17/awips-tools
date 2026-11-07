@@ -19,6 +19,7 @@ empty sea added (share of the candidate outside the region).
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -634,7 +635,9 @@ def write_product(fields, grid, sea, rules=Rules(), hours=None):
     tracks = link_tracks(lows)
     per = {}          # system id (first track id, or 'free<n>') -> {hour: system}
     free = 0
-    sys_of_tid = {}
+    sys_of_tid = {}   # track id -> paragraph key, for every centre of a system
+    main_of_tid = {}  # track id -> paragraph key, only where that centre was the system's main one
+    spare = 1000000   # keys for a system whose centres' keys are all held at that hour
     for h in lows:
         tl = tracks[h]
         lowlist = []
@@ -642,16 +645,41 @@ def write_product(fields, grid, sea, rules=Rules(), hours=None):
         for tid, lw in tl:
             lowlist.append((lw[0], lw[1], lw[2], motion(lw, nxt.get(tid), nxt_h.get(h, 6) - h) if h == 0 else None, tid))
         systems = areas_for_time(fields[h]["wind"], fields[h]["hs"], sea, grid, [l for l in lowlist], rules)
-        # merge several regions owned by the same low into one system entry
-        for s in systems:
+        # Each system at this hour gets its own paragraph key, and two systems never share one.
+        # A system takes the key its main centre (or another centre) carried as a MAIN centre
+        # earlier; a centre that was only a secondary member of a complex low passes that key on
+        # only when nobody else holds it at this hour. Without this, a trailing low that was once
+        # grouped with a departing one dragged its own storm core into that low's paragraph
+        # (Jason 11-07, 06Z 7 Nov Pacific NDFD draft: 45N176W core under the 49N148W low at +30/+48).
+        taken = set()
+        order = sorted(range(len(systems)), key=lambda i: (not systems[i]["low"],
+                                                           not any(m[4] in main_of_tid for m in systems[i]["lows"]),
+                                                           systems[i]["low"][2] if systems[i]["low"] else 0))
+        for s in (systems[i] for i in order):
             if s["low"]:
-                key = None
-                for m in s["lows"]:
-                    if m[4] in sys_of_tid:
-                        key = sys_of_tid[m[4]]
-                        break
+                tids = [s["low"][4]] + [m[4] for m in s["lows"] if m[4] != s["low"][4]]
+                mains = [main_of_tid[t] for t in tids if t in main_of_tid]
+                # among the main keys, the one whose centre at the previous step lies nearest
+                # this system's main centre: the low the text was already following
+                pv = prv_h.get(h)
+
+                def _gap(k):
+                    p = per.get(k, {}).get(pv)
+                    if not p or not p["low"]:
+                        return 1e9
+                    return grid_dist(p["low"][0], p["low"][1], s["low"][0], s["low"][1])
+                mains.sort(key=_gap)
+                cands = mains + tids
+                key = next((k for k in cands if k not in taken), None)
                 if key is None:
-                    key = s["low"][4]
+                    key, spare = spare, spare + 1
+                # a centre as deep as the main one that carries this key leads the paragraph,
+                # so the named low follows its own track
+                own = [m for m in s["lows"] if main_of_tid.get(m[4]) == key and m[2] == s["low"][2]]
+                if own and own[0] is not s["low"]:
+                    s["low"] = own[0]
+                    s["lows"] = [own[0]] + [m for m in s["lows"] if m is not own[0]]
+                main_of_tid[s["low"][4]] = key
                 for m in s["lows"]:
                     sys_of_tid[m[4]] = key
             else:
@@ -662,6 +690,7 @@ def write_product(fields, grid, sea, rules=Rules(), hours=None):
                         key = k
                 if key is None:
                     key, free = "free%d" % free, free + 1
+            taken.add(key)
             ent = per.setdefault(key, {})
             if h in ent:
                 ent[h]["tiers"] += s["tiers"]
@@ -704,12 +733,35 @@ def write_product(fields, grid, sea, rules=Rules(), hours=None):
                     out.append(".%d HOUR FORECAST CONDITIONS DIMINISHED." % h)
                     pieces.append(dict(key=key, hour=h, text=out[-1], top=top, tiers=[], low=None))
                 elif ent.get(h) is None and isinstance(key, int) and not low_alive:
-                    # absorbed: the system's last centre ends up within complex_nm of another low
+                    # absorbed: the system's last centre ends up within complex_nm of another low.
+                    # Name that low when it has its own paragraph then, and say INLAND when the
+                    # centre was last seen over land ("LOW INLAND AND CONDITIONS ABSORBED BY LOW
+                    # 53N144W DESCRIBED BELOW.", Jason 11-07)
                     last_h = max(x for x in ent if x < h)
                     last = ent[last_h]["low"]
-                    absorbed = last and any(grid_dist(last[0], last[1], l[3], l[4]) <= rules.complex_nm
-                                            for _, l in tracks.get(h, []))
-                    out.append(".%d HOUR FORECAST LOW %s." % (h, "ABSORBED" if absorbed else "DISSIPATED"))
+                    if last:   # the centre's last position on its own track, not only at shown times
+                        seen = [l for x in hours if last_h <= x < h for t_, l in tracks.get(x, []) if t_ == last[4]]
+                        if seen:
+                            last = (seen[-1][0], seen[-1][1], seen[-1][2], None, last[4], seen[-1][3], seen[-1][4])
+                    near_l = sorted((grid_dist(last[0], last[1], l[3], l[4]), t_) for t_, l in tracks.get(h, [])) if last else []
+                    absorbed = bool(near_l) and near_l[0][0] <= rules.complex_nm
+                    by = None
+                    for d_, t_ in near_l:
+                        k_ = main_of_tid.get(t_)
+                        if d_ <= rules.complex_nm and k_ is not None and k_ != key and per.get(k_, {}).get(h, {}).get("low"):
+                            by = k_
+                            break
+                    if absorbed and by is not None and h % 24 == 0:   # the absorbing low is described at 24 and 48 h
+                        yy = int(round((grid.lats[0] - last[5 if len(last) > 5 else 0]) * 4))
+                        xx = int(round((last[6 if len(last) > 5 else 1] - grid.lons[0]) * 4))
+                        # over land = no GFS-Wave seas there (the forecast area's edge is not a coast)
+                        hs_l = fields[max(x for x in hours if x < h and x in fields)]["hs"]
+                        inland = 0 <= yy < sea.shape[0] and 0 <= xx < sea.shape[1] and not np.isfinite(hs_l[yy, xx])
+                        bl = per[by][h]["low"]
+                        out.append(".%d HOUR FORECAST LOW %sABSORBED BY LOW %s {REL:%s}." % (
+                            h, "INLAND AND CONDITIONS " if inland else "", ll_txt(bl[0], bl[1]), by))
+                    else:
+                        out.append(".%d HOUR FORECAST LOW %s." % (h, "ABSORBED" if absorbed else "DISSIPATED"))
                     pieces.append(dict(key=key, hour=h, text=out[-1], top=top, tiers=[], low=None))
                 else:
                     out.append(".%d HOUR FORECAST CONDITIONS DIMINISHED." % h)
@@ -718,10 +770,20 @@ def write_product(fields, grid, sea, rules=Rules(), hours=None):
                 break
         if out:
             paras[key] = (top, out)
-    warn = []
-    for lv in (64, 48, 34):
-        for key, (top, out) in sorted(paras.items(), key=lambda kv: str(kv[0])):
-            if top == lv:
-                warn.append("...%s...\n" % WARN[lv] + "\n".join(out))
-    syn = [("\n".join(out)) for key, (top, out) in paras.items() if top < 34]
+    # lows already there at the synopsis first, then NEW ones by the hour they start
+    seq = [key for lv in (64, 48, 34)
+           for key, (top, out) in sorted(paras.items(), key=lambda kv: (min(per[kv[0]]), str(kv[0]))) if top == lv]
+    seq += [key for key, (top, out) in paras.items() if top < 34]
+    where = {k: i for i, k in enumerate(seq)}
+
+    def rel(key, line):   # "{REL:k}" -> DESCRIBED ABOVE / BELOW, from where k's paragraph sits
+        for k in where:
+            tag = "{REL:%s}" % k
+            if tag in line:
+                line = line.replace(tag, "DESCRIBED ABOVE" if where[k] < where[key] else "DESCRIBED BELOW")
+        return re.sub(r" \{REL:[^}]*\}", "", line)
+    for p_ in pieces:
+        p_["text"] = rel(p_["key"], p_["text"])
+    warn = ["...%s...\n" % WARN[paras[k][0]] + "\n".join(rel(k, x) for x in paras[k][1]) for k in seq if paras[k][0] >= 34]
+    syn = ["\n".join(rel(k, x) for x in paras[k][1]) for k in seq if paras[k][0] < 34]
     return "\n\n".join(warn), "\n\n".join(syn), dict(per=per, tracks=tracks, pieces=pieces)
