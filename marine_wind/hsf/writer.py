@@ -475,6 +475,25 @@ def areas_for_time(wind, hs, sea, grid, lows, rules=Rules()):
     groups = {}
     for i in range(len(lows)):
         groups.setdefault(root(i), []).append(i)
+    # every centre of a complex low lies within complex_nm of its MAIN centre, not just of some
+    # other member: a chain 48N159W - 48N151W - 55N143W made the 977 mb low 715 nm from the main
+    # one part of the complex, so the low that crossed 180W was "ABSORBED" at 48 h while the desk
+    # kept it as its own low with the storm area behind it (issued HSFEP1 12Z 7 Nov:
+    # ".48 HOUR FORECAST LOW 48N163W 970 MB")
+    hs_ok = np.isfinite(hs)
+    edge0 = ndimage.binary_dilation(sea, iterations=2)
+
+    def out0(l):
+        y, x = grid.cell(l[0], l[1])
+        return bool(hs_ok[y, x] and not edge0[y, x])
+    for idx in list(groups.values()):
+        left = sorted(idx, key=lambda i: (out0(lows[i]), lows[i][2]))
+        while left:
+            m = left[0]
+            take = [i for i in left if i == m or grid_dist(lows[i][0], lows[i][1], lows[m][0], lows[m][1]) <= rules.complex_nm]
+            for i in take:
+                parent[i] = m
+            left = [i for i in left if i not in take]
     # every wind cell goes to its nearest low (within attach_nm); a complex low takes the cells
     # of all its centres. Cells with no low near form stand-alone areas.
     owned = {}
@@ -494,23 +513,34 @@ def areas_for_time(wind, hs, sea, grid, lows, rules=Rules()):
                 # area joining the complex no longer takes the paragraph over
                 owned[("g", r_)] = [sorted((lows[k] for k in idx), key=lambda l: (outside(l), l[2])), reg]
         rest = allw & (near_d > rules.attach_nm)
+
+        def nearest_owner(piece, reg, skip=None):
+            """Of the systems holding part of the connected wind area reg, the one whose centre
+            lies nearest the piece (the desk puts the 180W flow under the low that brought it,
+            48N163W, not under the bigger complex further east)."""
+            best = None
+            for k_, (mem, r_k) in owned.items():
+                if k_ == skip or not (r_k & reg).any() or not mem:
+                    continue
+                dd = min(float(dists[lows.index(m)][piece].min()) for m in mem)
+                if best is None or dd < best[0]:
+                    best = (dd, k_)
+            return None if best is None else best[1]
         # cells beyond attach_nm of every low but in the same connected wind area as a low's
-        # cells belong to that low's system (the one holding most of the area), not to a
+        # cells belong to the nearest system holding part of that area, not to a
         # paragraph of their own: the far south-west flow of a big low near the 180W edge became
         # a STORM WARNING with no low (Jason 11-07, 12Z 7 Nov Pacific NDFD draft, +42 h)
         for reg in outer:
             left = rest & reg
             if not left.any():
                 continue
-            share = [(int((v[1] & reg).sum()), k) for k, v in owned.items()]
-            share = [s_ for s_ in share if s_[0] > 0]
-            if share:
-                k = max(share)[1]
+            k = nearest_owner(left, reg)
+            if k is not None:
                 owned[k][1] = owned[k][1] | left
                 rest &= ~left
         # a low outside the forecast area keeps the winds it brings in (its own circulation, within
         # share_nm of it). A far piece that is a small part of another system's connected wind area
-        # goes to that system: a weak dent west of 180W must not split the big low's trailing flow
+        # goes to the nearest such system: a weak dent west of 180W must not split the big low's trailing flow
         # along the edge into paragraphs of its own (same draft, +42/+48 h)
         for k in list(owned):
             members, reg_k = owned[k]
@@ -521,10 +551,8 @@ def areas_for_time(wind, hs, sea, grid, lows, rules=Rules()):
                 piece = reg_k & reg
                 if not piece.any() or dk[piece].min() <= rules.share_nm or piece.sum() >= 0.25 * reg.sum():
                     continue
-                share = [(int((v[1] & reg).sum()), k2) for k2, v in owned.items() if k2 != k]
-                share = [s_ for s_ in share if s_[0] > 0]
-                if share:
-                    k2 = max(share)[1]
+                k2 = nearest_owner(piece, reg, skip=k)
+                if k2 is not None:
                     owned[k2][1] = owned[k2][1] | piece
                     owned[k][1] = owned[k][1] & ~piece
             if owned[k][1].sum() < rules.min_cells:
@@ -574,9 +602,20 @@ def areas_for_time(wind, hs, sea, grid, lows, rules=Rules()):
             done |= ph["mask"]
             upper = thr
         tiers = absorb_small_core(tiers, hs, sea, grid, members[:1], rules, room)
+        tiers = continuous_ranges(tiers)
         if tiers:
             systems.append(dict(low=low, lows=members, tiers=tiers, top=top, region=reg))
     return systems
+
+
+def continuous_ranges(tiers):
+    """Wind ranges run on without gaps: each lower tier tops out where the one above starts
+    (Jason 11-07: "55 TO 70, 40 TO 55, 25 TO 40", not "55 TO 70, 45 TO 60, 20 TO 30"). The
+    lowest tier never drops below 20 TO 30."""
+    for i in range(1, len(tiers)):
+        hi = max(tiers[i - 1].wind[0], 30)
+        tiers[i].wind = (LO_FOR_HI[hi], hi)
+    return tiers
 
 
 def _peak_at(hs, mask, grid):
