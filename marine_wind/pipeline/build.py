@@ -122,7 +122,7 @@ FIELDS = [
     ("hazard", 1, "", "Possible: bit 1 gale (30%+ of members 34+), bit 2 storm (core 30%+), bit 4 hurricane force (core 90%+ and 30%+ of members 48+)"),
     ("p34raw", 1, "%", "Members at 34 kt or more"),
     ("warn", 1, "", "Warning areas: bit 1 gale (strongest model 30+ kt, pieces under 32 cells dropped), bit 2 storm (Core Lifted 39+ kt), bit 4 hurricane force (strongest model 44+ kt and 1%+ of members 64+ within about a degree)"),
-    ("best", 2, "kt", "Best Wind (the drawn wind since 6 Nov 2026): wind + 0-6 kt as the stronger of GFS/ECMWF goes 36-40 kt + 0-4 kt over 44-48 kt + an HF core 0-6 kt over 52-56 kt where 30%+ of GEFS members have 48 kt within ~100 km; open water 25+ deg from the equator; Core Lifted's gale-core floor"),
+    ("best", 2, "kt", "Best Wind (the drawn wind since 6 Nov 2026): wind + 0-6 kt as the stronger of GFS/ECMWF goes 36-40 kt + 0-4 kt over 44-48 kt + an HF core 0-6 kt over 52-56 kt where 30%+ of GEFS members have 48 kt within ~100 km; open water 25+ deg from the equator; at least 34 kt where the gale core is 80%+ (since 7 Nov 2026; 60% before)"),
 ]
 # kept in vals (and so in the forecast record) but not drawn: galecore (%) and galelift, Core Lifted
 # with the gale-core lift everywhere (the same as windcore inside the two OPC boxes)
@@ -316,7 +316,7 @@ def step_values(ymd, hh, step):
     # Best Wind: the drawn wind; the storm warning line and the High Seas draft stay on Core Lifted (windcore)
     gefs_p48 = (members[:len(gefs)] >= 48).mean(0)
     best = storm.best_wind(mean + boost, speeds[0], speeds[1], gefs_p48, ocean, LATS)
-    best = np.where(lift_mask(best.shape), storm.gale_lift(best, galecore), best).astype(np.float32)
+    best = np.where(lift_mask(best.shape), storm.gale_lift(best, galecore, storm.BEST_GALE_P), best).astype(np.float32)
     vals = {
         "wind": mean + boost, "dir": wdir, "mean": mean, "boost": boost, "sigma": sigma,
         "gfs": speeds[0], "ecmwf": speeds[1], "aifs": speeds[2],
