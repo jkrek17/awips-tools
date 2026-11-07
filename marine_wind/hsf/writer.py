@@ -52,7 +52,7 @@ class Rules:
     hi_round: str = "up"          # round the grid peak up to 5 kt (matches the desk: top ~ GFS max rounded up)
     complex_nm: float = 600.0     # lows this close that share one 25 kt+ area form one complex low
     share_nm: float = 300.0       # a low "touches" a wind area when the area comes this close to it
-    area_buffer_deg: float = 3.0  # lows must be inside the forecast area or this close to it
+    area_buffer_deg: float = 3.0  # lows over land count only this close to the area (ocean lows: anywhere)
     seas_peak_ratio: float = 2.0  # seas range wider than this (high over low): say where the highest are
     absorb_share: float = 0.25    # a gale core under this share of the area round it, and
     absorb_cells: int = 200       # under this many cells (~12 sq deg), joins that area
