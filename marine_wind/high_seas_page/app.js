@@ -278,7 +278,9 @@
   }
   // a paragraph's level, first low and highest wind, for the card and list headers
   function paraInfo(body) {
-    var w = /^\.\.\.(.+?) WARNING\.\.\./.exec(body), lvl = w ? w[1] : "SYNOPSIS";
+    var w = /^\.\.\.(.+?) WARNING\.\.\./.exec(body), hdr = w ? w[1] : "";
+    // "HURRICANE FORCE WIND WARNING", "STORM WARNING", "GALE WARNING"
+    var lvl = /HURRICANE/.test(hdr) ? "HURRICANE FORCE" : /STORM/.test(hdr) ? "STORM" : /GALE/.test(hdr) ? "GALE" : "SYNOPSIS";
     var m = /((?:NEW )?(?:COMPLEX )?LOW(?: WITH MAIN CENTER)? \d+N\d+[EW](?: \d+ MB)?)/.exec(body.replace(/\s+/g, " "));
     var peak = 0, re = /(\d+) KT/g, k;
     var flat = body.replace(/\s+/g, " ");
