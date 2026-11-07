@@ -48,6 +48,11 @@ g2[-1, 4] = 42                       # row at 20N
 check("no lift within 25 deg of the equator", storm.best_wind(wind, g2, ifs, p48, ocean, lats)[-1, 4] == 30)
 check("NaN model ignored", storm.best_wind(wind, gfs, np.full((ny, nx), np.nan), p48, ocean, lats)[row, 4] == 36)
 
+# gale floor: Core Lifted at 60%, Best Wind at 80% (7 Nov 2026)
+w = np.array([30.0, 30.0, 30.0, 40.0]); pg = np.array([0.59, 0.7, 0.85, 0.9])
+check("Core Lifted floor at 60%", list(storm.gale_lift(w, pg)) == [30, 34, 34, 40])
+check("Best Wind floor at 80%", list(storm.gale_lift(w, pg, storm.BEST_GALE_P)) == [30, 30, 34, 40])
+
 print()
 print("FAILED: %s" % FAIL if FAIL else "all ok")
 sys.exit(1 if FAIL else 0)

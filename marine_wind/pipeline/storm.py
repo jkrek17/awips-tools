@@ -193,6 +193,8 @@ BEST_RAMPS = ((6.0, 36.0), (4.0, 44.0))   # (kt, start): 0 -> kt over start .. s
 BEST_HF = (6.0, 52.0, 0.30)                # HF core: 0 -> 6 kt over 52 .. 56 where GEFS 48 kt share (nb max) >= 30%
 BEST_RAMP_WIDTH = 4.0
 BEST_MIN_LAT = 25.0
+BEST_GALE_P = 0.80   # Best Wind's gale-core floor (Jason 7 Nov 2026; marine-research studies/2026-11-07-most-likely-wind:
+                     # held-out gale area 1.27 -> 1.05x ASCAT Atl, 1.38 -> 1.13x Pac, error unchanged, storm/HF untouched)
 
 
 def _ramp(x, kt, start, width=BEST_RAMP_WIDTH):
@@ -213,9 +215,9 @@ def best_wind(wind, gfs, ecmwf, gefs_p48, ocean, lats):
     return np.where(on, wind + add, wind).astype(np.float32)
 
 
-def gale_lift(windcore, Pg):
-    """Core Lifted raised to at least 34 kt where the gale core is 60%+."""
-    return np.where(Pg >= GALE_LIFT_P, np.maximum(windcore, GALE_LIFT_KT), windcore)
+def gale_lift(windcore, Pg, p=GALE_LIFT_P):
+    """Raised to at least 34 kt where the gale-core chance is p or more (Core Lifted 60%, Best Wind 80%)."""
+    return np.where(Pg >= p, np.maximum(windcore, GALE_LIFT_KT), windcore)
 
 
 # ---------------------------------------------------------------- ensemble low track
