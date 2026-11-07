@@ -19,8 +19,8 @@
   var B = BASINS[basin];
   // ?view=compare: the previous run's draft against the forecast the desk issued for it
   var compare = q.get("view") === "compare";
-  // ?layout=block (one block, copy per paragraph), cards (a card per storm), index (storm list over the block)
-  var LAYOUTS = { block: "One block", cards: "Storm cards", index: "Storm list" };
+  // ?layout=block (one block, copy per paragraph), cards (a card per storm), list (storm list over the block)
+  var LAYOUTS = { block: "One block", cards: "Storm cards", list: "Storm list" };
   var layout = (q.get("layout") || "block").toLowerCase();
   if (!LAYOUTS[layout]) layout = "block";
   var FILE = src === "corelift" ? basin : basin + "-" + src;
@@ -221,7 +221,7 @@
           (I.peak ? "<span>peak " + I.peak + " kt</span>" : "") + '<span class="hs-chb">' + btns(x.p) + "</span></div>" +
           '<div class="hs-cb">' + x.html.replace(/\n$/, "") + "</div></div>";
       }).join("") + (tail ? '<div class="hs-plain">' + tail + "</div>" : "");
-    } else if (layout === "index") {
+    } else if (layout === "list") {
       // a short list of the storms at the top, then the product text as one block
       var rows = paras.map(function (P, i) { return [P, i]; }).filter(function (x) { return x[0].own; }).map(function (x) {
         var I = x[0].info;
@@ -234,7 +234,7 @@
     } else {
       html = parts.map(function (x) { return x.gap !== undefined ? x.gap : '<span class="hs-para" data-p="' + x.p + '">' + btns(x.p) + x.html + "</span>"; }).join("") + tail;
     }
-    $("index").hidden = layout !== "index";
+    $("index").hidden = layout !== "list";
     el.innerHTML = html;
     document.querySelectorAll("#index .hs-jump").forEach(function (a) {
       a.addEventListener("click", function (e) {
