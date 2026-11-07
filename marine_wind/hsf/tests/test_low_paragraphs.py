@@ -14,7 +14,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from writer import Grid, Rules, write_product  # noqa: E402
+from writer import Grid, Rules, Tier, continuous_ranges, write_product  # noqa: E402
 
 FAIL = []
 
@@ -81,6 +81,17 @@ check("the trailing low has its own paragraph", len(b) == 1, paras)
 if b:
     check("... under a storm warning", b[0].startswith("...STORM WARNING..."), b[0][:40])
     check("... that carries it to 48 h", ".48 HOUR FORECAST LOW 47N1" in b[0], b[0])
+
+gaps = []
+for ln in (warn + "\n" + syn).split("\n"):
+    w = [tuple(map(int, x)) for x in re.findall(r"WINDS (\d+) TO (\d+) KT", ln)]
+    gaps += [(a_, b_) for a_, b_ in zip(w, w[1:]) if b_[1] < a_[0]]
+check("wind ranges run on without gaps (55 TO 70, 40 TO 55, 25 TO 40)", not gaps, gaps)
+
+z = np.zeros((2, 2), bool)
+got = [t.wind for t in continuous_ranges([Tier(64, {}, (55, 70), None, z), Tier(48, {}, (45, 60), None, z),
+                                          Tier(25, {}, (20, 30), None, z)])]
+check("HF tiers read 55 TO 70, 40 TO 55, 25 TO 40 (Jason 11-07)", got == [(55, 70), (40, 55), (25, 40)], got)
 
 print("FAIL: %s" % FAIL if FAIL else "all passed")
 sys.exit(1 if FAIL else 0)
