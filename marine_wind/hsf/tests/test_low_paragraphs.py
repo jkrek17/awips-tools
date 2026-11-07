@@ -92,6 +92,10 @@ z = np.zeros((2, 2), bool)
 got = [t.wind for t in continuous_ranges([Tier(64, {}, (55, 70), None, z), Tier(48, {}, (45, 60), None, z),
                                           Tier(25, {}, (20, 30), None, z)])]
 check("HF tiers read 55 TO 70, 40 TO 55, 25 TO 40 (Jason 11-07)", got == [(55, 70), (40, 55), (25, 40)], got)
+got = [t.wind for t in continuous_ranges([Tier(48, {}, (35, 50), None, z), Tier(34, {}, (30, 45), None, z)])]
+check("under a storm core the gale area reads 25 TO 40 (desk habit)", got == [(35, 50), (25, 40)], got)
+check("no 20 TO 30 area inside a warning (desk: 12-14% of warning times)", "20 TO 30" not in warn, warn)
+check("no storm range above 40 TO 55", "45 TO 60" not in warn and "50 TO 60" not in warn, warn)
 
 print("FAIL: %s" % FAIL if FAIL else "all passed")
 sys.exit(1 if FAIL else 0)

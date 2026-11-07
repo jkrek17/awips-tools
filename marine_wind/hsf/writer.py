@@ -56,6 +56,8 @@ class Rules:
     seas_peak_ratio: float = 2.0  # seas range wider than this (high over low): say where the highest are
     absorb_share: float = 0.25    # a gale core under this share of the area round it, and
     absorb_cells: int = 200       # under this many cells (~12 sq deg), joins that area
+    warn_tiers_only: bool = True  # warnings carry their categories only, no 20 TO 30 area (desk habit)
+    storm_cap: int = 55           # a storm range tops out at 40 TO 55
 
 
 def lon_txt(x):
@@ -570,8 +572,14 @@ def areas_for_time(wind, hs, sea, grid, lows, rules=Rules()):
         low = members[0] if members else None
         top = max([0] + [lv for lv in rules.levels if clean(reg & (wind >= lv), sea, rules, rules.core_min_cells).any()])
         levels = [lv for lv in sorted(rules.levels, reverse=True) if lv <= top]
-        levels = levels[:2] if top >= 48 else levels[:1]
-        levels = [lv for lv in levels] + [rules.outer_kt]
+        # the desk's tiers (issued HSFEP1/HSFAT1 2025-26, 848 issuances each): a warning gives its
+        # core and the categories below it down to gale, and no 20 TO 30 area (that appears in only
+        # 12-14% of desk warning times): gale one range (81% of desk gale times), storm two
+        # (core + gale), hurricane force three (core, storm, gale). Areas under gale (the
+        # synopsis section) keep their one 20 TO 30 range.
+        levels = levels if (top >= 34 and rules.warn_tiers_only) else (levels[:2] if top >= 48 else levels[:1])
+        if not (top >= 34 and rules.warn_tiers_only):
+            levels = levels + [rules.outer_kt]
         tiers, done = [], np.zeros_like(reg)
         upper = None
         for lv in levels:
@@ -593,8 +601,9 @@ def areas_for_time(wind, hs, sea, grid, lows, rules=Rules()):
             wr = wind_range(wind[src], rules)
             # each tier tops out at its own category: warning-level winds sit in their own core,
             # lesser winds get a lower range (gale tier 45, the outer tier 30)
-            cap = min(85 if lv >= 64 else 60 if lv >= 48 else 45 if lv >= 34 else 30,
-                      {0: 30, 34: 45, 48: 60}.get(top, 85))
+            # storm tops out at 40 TO 55 (desk: 45 TO 60 is under 2% of storm ranges)
+            cap = min(85 if lv >= 64 else rules.storm_cap if lv >= 48 else 45 if lv >= 34 else 30,
+                      {0: 30, 34: 45, 48: rules.storm_cap}.get(top, 85))
             if wr[1] > cap:
                 wr = (LO_FOR_HI[cap], cap)
             sm = (new if new.any() else ph["mask"]) & sea
@@ -611,9 +620,12 @@ def areas_for_time(wind, hs, sea, grid, lows, rules=Rules()):
 def continuous_ranges(tiers):
     """Wind ranges run on without gaps: each lower tier tops out where the one above starts
     (Jason 11-07: "55 TO 70, 40 TO 55, 25 TO 40", not "55 TO 70, 45 TO 60, 20 TO 30"). The
-    lowest tier never drops below 20 TO 30."""
+    lowest tier never drops below 20 TO 30. Under a storm core the gale area reads 25 TO 40, as
+    the desk writes it (35 TO 50 then 25 TO 40: 581 times, then 25 TO 35: 339; issued 2025-26)."""
     for i in range(1, len(tiers)):
         hi = max(tiers[i - 1].wind[0], 30)
+        if tiers[i - 1].level == 48 and tiers[i].level == 34:
+            hi = max(hi, 40)
         tiers[i].wind = (LO_FOR_HI[hi], hi)
     return tiers
 
