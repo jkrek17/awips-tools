@@ -56,6 +56,7 @@ class Rules:
     seas_peak_ratio: float = 2.0  # seas range wider than this (high over low): say where the highest are
     absorb_share: float = 0.25    # a gale core under this share of the area round it, and
     absorb_cells: int = 200       # under this many cells (~12 sq deg), joins that area
+    between_steps: bool = False   # add 6-hourly steps where a low's category rises (off since 11-07)
 
 
 def lon_txt(x):
@@ -867,7 +868,9 @@ def write_product(fields, grid, sea, rules=Rules(), hours=None):
         # each higher category, if it holds for the next step or peaks in between
         cat = {h: (ent[h]["top"] if h in ent else 0) for h in hours}
         shown, out = [0, 24, 48], []
-        for a_, b_ in ((0, 24), (24, 48)):
+        # Jason 11-07: the first guess shows 00, 24 and 48 h only (the off-hour steps had more
+        # problems); Rules.between_steps brings the in-between steps back
+        for a_, b_ in (((0, 24), (24, 48)) if rules.between_steps else ()):
             now = cat[a_]
             for h in [x for x in hours if a_ < x < b_]:
                 if cat[h] >= 34 and cat[h] > now and (cat.get(nxt_h.get(h), 0) >= cat[h] or cat[h] > cat[b_]):
@@ -875,7 +878,7 @@ def write_product(fields, grid, sea, rules=Rules(), hours=None):
                     now = cat[h]
         shown.sort()
         top = max(cat.get(h, 0) for h in shown)   # the heading follows the times the text shows
-        first_seen = min(ent)
+        first_seen = min([h for h in shown if h in ent] or [min(ent)])   # first time the text shows it
         prev_present = False
         prev_n = None
         for h in shown:
