@@ -52,7 +52,7 @@ class Rules:
     hi_round: str = "up"          # round the grid peak up to 5 kt (matches the desk: top ~ GFS max rounded up)
     complex_nm: float = 600.0     # lows this close that share one 25 kt+ area form one complex low
     share_nm: float = 300.0       # a low "touches" a wind area when the area comes this close to it
-    area_buffer_deg: float = 3.0  # lows must be inside the forecast area or this close to it
+    area_buffer_deg: float = 3.0  # lows over land count only this close to the area (ocean lows: anywhere)
     seas_peak_ratio: float = 2.0  # seas range wider than this (high over low): say where the highest are
     absorb_share: float = 0.25    # a gale core under this share of the area round it, and
     absorb_cells: int = 200       # under this many cells (~12 sq deg), joins that area
@@ -89,6 +89,54 @@ class Grid:
         x = math.cos(p1) * np.sin(p2) - math.sin(p1) * np.cos(p2) * np.cos(dl)
         b = (np.degrees(np.arctan2(y, x)) + 360) % 360
         return d, b
+
+    def cell(self, lat, lon):
+        """(row, col) of the grid cell nearest lat, lon, clipped to the grid."""
+        y = int(round((self.lats[0] - lat) / self.dlat))
+        x = int(round((lon - self.lons[0]) / self.dlat))
+        return min(max(y, 0), len(self.lats) - 1), min(max(x, 0), len(self.lons) - 1)
+
+
+def ocean_mask(hs):
+    """The open ocean: the largest connected body of cells with seas (drops lakes)."""
+    wet = np.isfinite(hs)
+    lab, n = ndimage.label(wet)
+    if n == 0:
+        return wet
+    return lab == (np.argmax(ndimage.sum(wet, lab, range(1, n + 1))) + 1)
+
+
+def area_side(sea, ocean, grid, inside_nm=30.0):
+    """side(lat, lon) -> "W", "NW", ... for a low over the ocean outside the forecast area, None
+    for a low in the area or over land. W / E when the area lies east / west of the low along
+    its own latitude (the desk's "LOW W OF AREA 51N173E", even beside the slanted 172E-180W
+    edge); N / S (NW, SE ...) when the low is beyond the area's north or south edge; otherwise
+    the bearing from the nearest area cell."""
+    if not sea.any():
+        return lambda lat, lon: None
+    k = math.cos(math.radians(float(np.mean(grid.lats))))
+    dist, (iy, ix) = ndimage.distance_transform_edt(~sea, sampling=(1.0, k), return_indices=True)
+    rows = np.nonzero(sea.any(1))[0]
+    cols = np.nonzero(sea.any(0))[0]
+
+    def side(lat, lon):
+        y, x = grid.cell(lat, lon)
+        if sea[y, x] or not ocean[y, x] or dist[y, x] * grid.dlat * 60 <= inside_nm:
+            return None
+        row = np.nonzero(sea[y])[0]
+        if row.size:
+            if row.min() > x:
+                return "W"
+            if row.max() < x:
+                return "E"
+        else:
+            ns = "N" if y < rows.min() else "S" if y > rows.max() else ""
+            ew = "W" if x < cols.min() else "E" if x > cols.max() else ""
+            if ns:
+                return ns + ew
+        b = bearing(grid.lats[iy[y, x]], grid.lons[ix[y, x]], lat, lon)
+        return DIR8[int((b + 22.5) // 45) % 8]
+    return side
 
 
 def score(cand, region, sea, w):
@@ -159,7 +207,12 @@ def _group_text(radius, dirs, semi):
     return "%d NM %s AND %s %s" % (radius, "...".join(names[:-1]) if len(names) > 2 else names[0], names[-1], word), word
 
 
-def best_radial(region, sea, grid, low, rules):
+def best_radial(region, sea, grid, low, rules, room=None):
+    """room: the sea a mariner would plot the shape over (the forecast area plus open ocean
+    outside it). A quadrant pays for the empty ocean it covers outside the area too, so a low
+    west of the area gets the quadrants that face into it, as the desk writes them (SE, NE, E),
+    not a long S quadrant down the boundary (Jason 11-07: 'WITHIN 840 NM S QUADRANT')."""
+    room = sea if room is None else room | sea
     d, b = grid.dist_bearing(low[0], low[1])
     if d[region].min() > rules.attach_nm:
         return None
@@ -178,7 +231,7 @@ def best_radial(region, sea, grid, low, rules):
     for dirs, semi, ang in shapes:
         for r in radii:
             m = ang & (d <= r)
-            sc, catch, extra = score(m, region, sea, rules.extra_weight)
+            sc, catch, extra = score(m, region, room, rules.extra_weight)
             cands.append((sc, catch, extra, r, dirs, semi, m))
     cands.sort(key=lambda t: -t[0])
     best = cands[0]
@@ -190,7 +243,7 @@ def best_radial(region, sea, grid, low, rules):
         if c2[5] is None or best[5] is None or set(c2[4]) & set(best[4]):
             continue
         m = best[6] | c2[6]
-        sc, catch, extra = score(m, region, sea, rules.extra_weight)
+        sc, catch, extra = score(m, region, room, rules.extra_weight)
         if two is None or sc > two[0]:
             two = (sc, catch, extra, m, c2)
     if two and two[0] > best[0] + 0.03:
@@ -264,13 +317,13 @@ def best_line(region, sea, grid, rules):
 CENTER_NAMES = ["MAIN CENTER", "SECOND CENTER", "THIRD CENTER", "FOURTH CENTER"]
 
 
-def describe(region, sea, grid, lows, rules):
+def describe(region, sea, grid, lows, rules, room=None):
     """Pick the phrase for one region, box first. With several centers (a complex low) a
     quadrant phrase names its center: '... QUADRANT OF SECOND CENTER'."""
     box_c = best_box(region, sea, grid, rules)
     others = []
     for i, low in enumerate(lows):
-        r = best_radial(region, sea, grid, low, rules)
+        r = best_radial(region, sea, grid, low, rules, room)
         if r:
             if len(lows) > 1:
                 r["text"] += " OF " + CENTER_NAMES[min(i, 3)]
@@ -287,17 +340,17 @@ def describe(region, sea, grid, lows, rules):
     return best
 
 
-def describe_parts(region, sea, grid, lows, rules, max_parts=2):
+def describe_parts(region, sea, grid, lows, rules, max_parts=2, room=None):
     """Describe a level as one shape, or as up to three separate shapes joined with '...AND'
     when its pieces lie apart (two separate gale areas around one low)."""
-    one = describe(region, sea, grid, lows, rules)
+    one = describe(region, sea, grid, lows, rules, room)
     lab, n = ndimage.label(region, structure=np.ones((3, 3)))
     if n < 2:
         return one
     sizes = ndimage.sum(region, lab, range(1, n + 1))
     order = np.argsort(sizes)[::-1][:max_parts]
     # only pieces that hold a real share of the level get their own phrase
-    parts = [describe(lab == (i + 1), sea, grid, lows, rules) for i in order
+    parts = [describe(lab == (i + 1), sea, grid, lows, rules, room) for i in order
              if sizes[i] >= max(rules.min_cells, 0.15 * region.sum())]
     if len(parts) < 2:
         return one
@@ -399,6 +452,13 @@ def areas_for_time(wind, hs, sea, grid, lows, rules=Rules()):
     stand alone. Per system, at most three tiers: the top level core, the next level down
     (only under a storm or hurricane-force core), then everything at outer_kt and up (ELSEWHERE)."""
     outer = regions_at(wind, sea, rules.outer_kt, rules)
+    wet = np.isfinite(hs)
+    room = ocean_mask(hs) | sea   # where a quadrant is plotted: the area and open ocean round it
+    edge = ndimage.binary_dilation(sea, iterations=2)
+
+    def outside(l):   # a low over the ocean beyond the forecast area
+        y, x = grid.cell(l[0], l[1])
+        return bool(wet[y, x] and not edge[y, x])
     # complex lows: lows that touch the same wind area and lie within complex_nm of each other
     dists = [grid.dist_bearing(l[0], l[1])[0] for l in lows]
     parent = list(range(len(lows)))
@@ -429,8 +489,46 @@ def areas_for_time(wind, hs, sea, grid, lows, rules=Rules()):
             idx = [i for i in range(len(lows)) if root(i) == r_]
             reg = allw & np.isin(near_i, idx) & (near_d <= rules.attach_nm)
             if reg.sum() >= rules.min_cells:
-                owned[("g", r_)] = [sorted((lows[k] for k in idx), key=lambda l: l[2]), reg]
+                # main centre: the deepest one in the area (the deepest outside only when all
+                # are), so the paragraph keeps following its own low; a deeper low beyond the
+                # area joining the complex no longer takes the paragraph over
+                owned[("g", r_)] = [sorted((lows[k] for k in idx), key=lambda l: (outside(l), l[2])), reg]
         rest = allw & (near_d > rules.attach_nm)
+        # cells beyond attach_nm of every low but in the same connected wind area as a low's
+        # cells belong to that low's system (the one holding most of the area), not to a
+        # paragraph of their own: the far south-west flow of a big low near the 180W edge became
+        # a STORM WARNING with no low (Jason 11-07, 12Z 7 Nov Pacific NDFD draft, +42 h)
+        for reg in outer:
+            left = rest & reg
+            if not left.any():
+                continue
+            share = [(int((v[1] & reg).sum()), k) for k, v in owned.items()]
+            share = [s_ for s_ in share if s_[0] > 0]
+            if share:
+                k = max(share)[1]
+                owned[k][1] = owned[k][1] | left
+                rest &= ~left
+        # a low outside the forecast area keeps the winds it brings in (its own circulation, within
+        # share_nm of it). A far piece that is a small part of another system's connected wind area
+        # goes to that system: a weak dent west of 180W must not split the big low's trailing flow
+        # along the edge into paragraphs of its own (same draft, +42/+48 h)
+        for k in list(owned):
+            members, reg_k = owned[k]
+            if not members or not all(outside(m) for m in members):
+                continue
+            dk = np.min(np.stack([dists[lows.index(m)] for m in members]), 0)
+            for reg in outer:
+                piece = reg_k & reg
+                if not piece.any() or dk[piece].min() <= rules.share_nm or piece.sum() >= 0.25 * reg.sum():
+                    continue
+                share = [(int((v[1] & reg).sum()), k2) for k2, v in owned.items() if k2 != k]
+                share = [s_ for s_ in share if s_[0] > 0]
+                if share:
+                    k2 = max(share)[1]
+                    owned[k2][1] = owned[k2][1] | piece
+                    owned[k][1] = owned[k][1] & ~piece
+            if owned[k][1].sum() < rules.min_cells:
+                del owned[k]
     else:
         rest = allw
     # stand-alone areas within about a degree of each other form one paragraph
@@ -455,7 +553,7 @@ def areas_for_time(wind, hs, sea, grid, lows, rules=Rules()):
             sub = clean(reg & (wind >= thr), sea, rules, rules.core_min_cells if core else None)
             if sub.sum() < (rules.core_min_cells if core else rules.min_cells):
                 continue
-            ph = describe_parts(sub, sea, grid, members[:1], rules)
+            ph = describe_parts(sub, sea, grid, members[:1], rules, room=room)
             new = ph["mask"] & ~done
             if tiers and new.sum() < 0.15 * ph["mask"].sum():
                 continue   # same shape as the tier above: nothing new to say
@@ -475,7 +573,7 @@ def areas_for_time(wind, hs, sea, grid, lows, rules=Rules()):
             tiers.append(Tier(lv, ph, wr, seas_range(hs[sm]), ph["mask"], _peak_at(hs, sm, grid)))
             done |= ph["mask"]
             upper = thr
-        tiers = absorb_small_core(tiers, hs, sea, grid, members[:1], rules)
+        tiers = absorb_small_core(tiers, hs, sea, grid, members[:1], rules, room)
         if tiers:
             systems.append(dict(low=low, lows=members, tiers=tiers, top=top, region=reg))
     return systems
@@ -486,7 +584,7 @@ def _peak_at(hs, mask, grid):
     return None if pk is None else (float(grid.lats[pk[0][0]]), float(grid.lons[pk[0][1]]), pk[1])
 
 
-def absorb_small_core(tiers, hs, sea, grid, lows, rules):
+def absorb_small_core(tiers, hs, sea, grid, lows, rules, room=None):
     """A gale core much smaller than the sub-gale area round it is written as one area with the
     wider range ('FROM 54N TO 61N BETWEEN 144W AND 151W WINDS 25 TO 40 KT'), as the desk would,
     not as a separate small box beside the big one (Jason 10-30, 00Z 30 Oct Gulf of Alaska +6 h).
@@ -498,7 +596,7 @@ def absorb_small_core(tiers, hs, sea, grid, lows, rules):
         return tiers
     region = core.mask | outer.mask
     # the outer area's own shape when it already holds the core, else one shape round both
-    ph = outer.phrase if not (core.mask & ~outer.mask).any() else describe_parts(region, sea, grid, lows, rules)
+    ph = outer.phrase if not (core.mask & ~outer.mask).any() else describe_parts(region, sea, grid, lows, rules, room=room)
     hi = core.wind[1]
     upper = tiers[-3].mask if len(tiers) > 2 else np.zeros_like(region)
     sm = ph["mask"] & sea & ~upper
@@ -517,11 +615,12 @@ def time_text(sysd, hour, lead_word=None, ratio=2.0):
     low = sysd["low"]
     lows = sysd.get("lows") or ([low] if low else [])
     lw = lead_word + " " if lead_word else ""
+    out = "%s OF AREA " % sysd["where"] if sysd.get("where") else ""   # "LOW W OF AREA 51N173E 1002 MB"
     if len(lows) > 1:
-        head += "%sCOMPLEX LOW WITH MAIN CENTER %s %d MB%s." % (lw, ll_txt(lows[0][0], lows[0][1]), lows[0][2],
-                                                             " " + lows[0][3] if len(lows[0]) > 3 and lows[0][3] else "")
+        head += "%sCOMPLEX LOW WITH MAIN CENTER %s%s %d MB%s." % (lw, out, ll_txt(lows[0][0], lows[0][1]), lows[0][2],
+                                                               " " + lows[0][3] if len(lows[0]) > 3 and lows[0][3] else "")
     elif low:
-        head += "%sLOW %s %d MB." % (lw, ll_txt(low[0], low[1]), low[2])
+        head += "%sLOW %s%s %d MB." % (lw, out, ll_txt(low[0], low[1]), low[2])
         if len(low) > 3 and low[3]:
             head = head[:-1] + " " + low[3] + "."
     if sysd.get("note"):
@@ -584,9 +683,9 @@ def link_tracks(lows_by_hour, max_kt=70.0):
     """lows_by_hour: {hour: [low,...]} at any steps -> {hour: [(track_id, low), ...]}. A low links
     to the nearest unclaimed low of the previous step within max_kt x the step length."""
     out, nid, prev, ph = {}, 0, [], None
+    gap = []   # (track id, low, hour) of tracks missing at the previous step only
     for h in sorted(lows_by_hour):
         max_nm = max_kt * (h - ph if ph is not None else 6)
-        ph = h
         cur = []
         used = set()
         for lw in lows_by_hour[h]:
@@ -597,6 +696,14 @@ def link_tracks(lows_by_hour, max_kt=70.0):
                 d = grid_dist(lw[3], lw[4], pl[3], pl[4])
                 if d <= max_nm and (best is None or d < best[0]):
                     best = (d, tid)
+            # a low missed for one step (a weak centre the finder skips) keeps its track,
+            # so it is not called NEW when it comes back
+            for tid, pl, hh in gap if best is None else []:
+                if tid in used:
+                    continue
+                d = grid_dist(lw[3], lw[4], pl[3], pl[4])
+                if d <= max_kt * (h - hh) and (best is None or d < best[0]):
+                    best = (d, tid)
             if best:
                 tid = best[1]
             else:
@@ -604,7 +711,9 @@ def link_tracks(lows_by_hour, max_kt=70.0):
             used.add(tid)
             cur.append((tid, lw))
         out[h] = cur
-        prev = cur
+        seen = {t for t, _ in cur}
+        gap = [(t, l, ph) for t, l in prev if t not in seen] if ph is not None else []
+        prev, ph = cur, h
     return out
 
 
@@ -627,12 +736,24 @@ def write_product(fields, grid, sea, rules=Rules(), hours=None):
     nxt_h = {a: b for a, b in zip(hours[:-1], hours[1:])}
     prv_h = {b: a for a, b in zip(hours[:-1], hours[1:])}
     near = ndimage.binary_dilation(sea, iterations=int(rules.area_buffer_deg * 4))
+    # lows over the open ocean anywhere in the grid are followed too, not only those near the
+    # forecast area: a low west of 180W keeps one track as it crosses in, owns the winds it
+    # brings into the area, and is named "LOW W OF AREA 51N173E 1002 MB" (the desk's wording).
+    # Before, a low dropped in and out of the 3 deg buffer, so its winds became a paragraph with
+    # no low or a "NEW LOW" (Jason 11-07, 12Z 7 Nov Pacific NDFD draft along 180W). Lows over
+    # land still count only near the area; inland water (Great Lakes) is not open ocean.
+    ocean = ocean_mask(fields[hours[0]]["hs"]) | sea
+    side = area_side(sea, ocean, grid)
     lows = {}
     for h in hours:
         if h in fields:
             lows[h] = [l for l in find_lows(fields[h]["msl"], sea, grid)
-                       if near[int(round((grid.lats[0] - l[3]) * 4)), int(round((l[4] - grid.lons[0]) * 4))]]
+                       if (lambda y, x: near[y, x] or ocean[y, x])(*grid.cell(l[3], l[4]))]
     tracks = link_tracks(lows)
+    born = {}   # track id -> the first hour its low is seen anywhere in the grid
+    for h in sorted(tracks):
+        for tid, _ in tracks[h]:
+            born.setdefault(tid, h)
     per = {}          # system id (first track id, or 'free<n>') -> {hour: system}
     free = 0
     sys_of_tid = {}   # track id -> paragraph key, for every centre of a system
@@ -720,15 +841,26 @@ def write_product(fields, grid, sea, rules=Rules(), hours=None):
         prev_n = None
         for h in shown:
             if h in ent and ent[h]["tiers"]:
-                lead = "NEW" if (h > 0 and h == first_seen) else None
+                # NEW only for a low that forms after the synopsis, not one that was already on
+                # the map then (outside the area, or too weak to have winds) and only now brings
+                # winds into the area
+                lw_ = ent[h]["low"]
+                lead = "NEW" if (h > 0 and h == first_seen and (lw_ is None or born.get(lw_[4], h) > 0)) else None
+                ent[h]["where"] = side(lw_[0], lw_[1]) if lw_ else None
                 n_now = len(ent[h].get("lows") or [])
                 prev_n = n_now
                 out.append(time_text(ent[h], h, lead, rules.seas_peak_ratio))
                 pieces.append(dict(key=key, hour=h, text=out[-1], top=top, tiers=ent[h]["tiers"], low=ent[h]["low"]))
                 prev_present = True
             elif prev_present:
-                gone = h not in ent
-                low_alive = any(sys_of_tid.get(tid) == key for tid, _ in tracks.get(h, []))
+                # the paragraph's own last main centre is still there and in no other system
+                # (a secondary centre that was once in this complex does not count, nor a centre
+                # another paragraph now holds: that one was absorbed)
+                lm = ent[max(x for x in ent if x < h)]["low"]
+                held = {m[4]: k_ for k_, e_ in per.items() if e_.get(h) for m in e_[h]["lows"]}
+                low_alive = (lm is not None and any(tid == lm[4] for tid, _ in tracks.get(h, []))
+                             and held.get(lm[4], key) == key) if isinstance(key, int) else \
+                    any(sys_of_tid.get(tid) == key for tid, _ in tracks.get(h, []))
                 if not ent.get(h) and low_alive:
                     out.append(".%d HOUR FORECAST CONDITIONS DIMINISHED." % h)
                     pieces.append(dict(key=key, hour=h, text=out[-1], top=top, tiers=[], low=None))
