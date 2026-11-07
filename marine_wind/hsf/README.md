@@ -49,6 +49,17 @@ storm and hurricane force for each, issued, draft and both. The page shows it un
   before NEW ones. A low that goes away near another reads "LOW ABSORBED BY LOW 53N144W DESCRIBED
   BELOW", with "INLAND AND CONDITIONS" when it was last seen over land (no GFS-Wave seas there).
   Test: `python3 marine_wind/hsf/tests/test_low_paragraphs.py`.
+- Lows outside the area (Jason 11-07): lows over open ocean anywhere in the box are tracked, not
+  only those within 3 degrees of the area, so a system crossing 180W (or 35W) keeps one paragraph.
+  Its low is named the desk's way, "LOW W OF AREA 51N173E 1002 MB" (E / N / S / NW ... OF AREA in
+  either basin). NEW means the low formed after the synopsis, not that its winds just reached the
+  area. A wind area beyond 900 nm of every low joins the low holding most of the same connected
+  wind area instead of becoming a paragraph with no low; a weak low outside the area keeps only
+  winds within 300 nm of it when they are a small part of another system's wind area. A complex
+  low's main centre is its deepest centre inside the area. A track may skip one 6 h step. Quadrants
+  pay for open ocean outside the area too, so a low west of 180W gets quadrants facing into the
+  area or a box, not "WITHIN 840 NM S QUADRANT".
+  Test: `python3 marine_wind/hsf/tests/test_western_boundary.py`.
 
 ## Valid times
 The desk issues every 6 h, the synopsis valid 4.5 h before it is due (00Z due 0430Z, 06Z due
