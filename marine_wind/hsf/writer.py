@@ -58,7 +58,7 @@ class Rules:
     absorb_cells: int = 200       # under this many cells (~12 sq deg), joins that area
     warn_tiers_only: bool = True  # warnings carry their categories only, no 20 TO 30 area (desk habit)
     storm_cap: int = 55           # a storm range tops out at 40 TO 55
-    between_steps: bool = False   # add 6-hourly steps where a low's category rises (off since 11-07)
+    between_steps: bool = True    # add a 6-hourly step where a low's category rises (its worst area only)
 
 
 def lon_txt(x):
@@ -880,8 +880,8 @@ def write_product(fields, grid, sea, rules=Rules(), hours=None):
         # each higher category, if it holds for the next step or peaks in between
         cat = {h: (ent[h]["top"] if h in ent else 0) for h in hours}
         shown, out = [0, 24, 48], []
-        # Jason 11-07: the first guess shows 00, 24 and 48 h only (the off-hour steps had more
-        # problems); Rules.between_steps brings the in-between steps back
+        # in-between steps only where the warning category goes up; Rules.between_steps=False
+        # gives 00, 24 and 48 h only
         for a_, b_ in (((0, 24), (24, 48)) if rules.between_steps else ()):
             now = cat[a_]
             for h in [x for x in hours if a_ < x < b_]:
@@ -903,8 +903,14 @@ def write_product(fields, grid, sea, rules=Rules(), hours=None):
                 ent[h]["where"] = side(lw_[0], lw_[1]) if lw_ else None
                 n_now = len(ent[h].get("lows") or [])
                 prev_n = n_now
-                out.append(time_text(ent[h], h, lead, rules.seas_peak_ratio))
-                pieces.append(dict(key=key, hour=h, text=out[-1], top=top, tiers=ent[h]["tiers"], low=ent[h]["low"]))
+                sysd = ent[h]
+                if h % 24:
+                    # an in-between step gives only the worst conditions, the area that raised the
+                    # warning level (Jason 11-11: gale at 00 h, storm at 12 h -> only the 35 TO 50
+                    # area at 12 h)
+                    sysd = dict(ent[h], tiers=ent[h]["tiers"][:1])
+                out.append(time_text(sysd, h, lead, rules.seas_peak_ratio))
+                pieces.append(dict(key=key, hour=h, text=out[-1], top=top, tiers=sysd["tiers"], low=ent[h]["low"]))
                 prev_present = True
             elif prev_present:
                 # the paragraph's own last main centre is still there and in no other system
