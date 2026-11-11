@@ -8,7 +8,11 @@ model-written draft on `/high-seas/` and never reads it.
   `.FORECASTER`, with the three valid-time lines moved on 6 hours. The forecaster can also paste text in.
 - **Live map:** every area the text describes, drawn as you type (`hsf-read.js`), coloured by the top
   wind of its range; one forecast time at a time, and the map follows the paragraph the cursor is in.
-  Click an area to select its paragraph.
+  Click an area to select its paragraph. Each warning block's main low is drawn as a track through
+  its forecast hours, so a mistyped position shows as a jump.
+- **Slips read as meant:** a misspelled QUADRANT or SEMICIRCLE, `LINE FROM a AND b`, `FROM 128W AND
+  170W`, `AMD`, `MM`, a missing `NM`, `54O`, `60M` are drawn the way they were meant, and each is still
+  listed as "Mapped as ..." so it gets fixed in the text.
 - **Checks:** every check of Jason's Apps Script "OPC High Seas Forecast Validator", with the fixes
   of 11 Nov 2026, plus coordinates out of range, seas in KT, and the map's own notes: an area it could
   not read, or one that falls outside the forecast waters (`hsf-check.js`). Click a check to select
@@ -35,9 +39,9 @@ On the last 400 issued products of each basin (late summer to 11 Nov 2026):
 | | Areas mapped | Forecast times with every area mapped |
 | --- | --- | --- |
 | Atlantic, `issued.py` | 80% | 63% |
-| Atlantic, `hsf-read.js` | 96% | 89% |
+| Atlantic, `hsf-read.js` | 96.5% | 89.5% |
 | Pacific, `issued.py` | 82% | 67% |
-| Pacific, `hsf-read.js` | 96% | 86% |
+| Pacific, `hsf-read.js` | 96.2% | 86.9% |
 
 Where both readers draw an area, 90% of the shapes agree (overlap over 0.9 of their union). Most of
 what is still not drawn is real slips in the issued text (`60M`, `3746W`, `54O NM`, `AMD`, a missing

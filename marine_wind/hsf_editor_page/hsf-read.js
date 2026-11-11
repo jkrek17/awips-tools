@@ -448,7 +448,7 @@
 
   var NOISE = [
     /^\s*(?:\.\.\.|\.|,)?\s*/,
-    new RegExp("(?:\\.\\.\\.)?\\s*EXCEPT (?:WHERE|AS) (?:OTHERWISE )?(?:DESCRIBED|NOTED|STATED)(?: ABOVE| BELOW| AND| IN (?:THE )?(?:WARNINGS?|SYNOPSIS)(?: SECTION)?| IN PART II| (?:WITH|BY) (?:THE )?(?:(?:COMPLEX |NEW )?LOW(?: " + LL + ")?|(?:POST-)?TROPICAL (?:STORM|CYCLONE|DEPRESSION) [A-Z-]+|HURRICANE [A-Z-]+|(?:GALE|STORM|HURRICANE FORCE)(?: WIND)? WARNING|" + LL + "))*\\s*(?:\\.\\.\\.)?", "g"),
+    new RegExp("(?:\\.\\.\\.)?\\s*EXCEPT (?:WHERE|AS) (?:OTHERWISE )?(?:DESCRIBED|NOTED|STATED)(?: ABOVE| BELOW| AND| IN (?:THE )?(?:WARNINGS?|SYNOPSIS)(?: SECTION)?| IN (?:THE )?(?:GALE|STORM|HURRICANE FORCE)(?: WIND)? WARNING| IN PART II| (?:WITH|BY) (?:THE )?(?:(?:COMPLEX |NEW )?LOW(?: " + LL + ")?|(?:POST-)?TROPICAL (?:STORM|CYCLONE|DEPRESSION) [A-Z-]+|HURRICANE [A-Z-]+|(?:GALE|STORM|HURRICANE FORCE)(?: WIND)? WARNING|" + LL + "))*\\s*(?:\\.\\.\\.)?", "g"),
     new RegExp("^(?:[A-Z ]*?)(?:LOW|HIGH|CENTER) " + LL + " \\d{3,4}(?: MB)?(?: (?:MOVING|DRIFTING) [A-Z]+(?: \\d+ KT)?| (?:NEARLY )?STATIONARY)?\\s+(?=WITHIN|FROM|BETWEEN|[NSEW]{1,2} OF)"),
     new RegExp("\\bTO (?:THE )?(?:(?:NE|NW|SE|SW|N|E|S|W) )?(?:COAST OF )?(?:GREENLAND|ALASKA|LABRADOR)(?: COAST)?\\b(?! TO)", "g"),
     /(?:WITHIN )?AN AREA (?=[NSEW]+ OF|OF)/g,
@@ -461,8 +461,36 @@
   var SEP_RE = /^(?:\s|\.\.\.|\.|,|;|AND\b|ALSO\b|ELSEWHERE\b|AS WELL AS\b|PLUS\b|ADDITIONALLY\b|OTHERWISE\b|INCLUDING\b(?! THE BERING| THE (?:[NSEW]{1,2} )?GULF OF)|EXCEPT(?: FOR)?\b(?! THE BERING))*/;
   var FILLER_RE = /^(?:THE|IN|OVER|AREA|WATERS|FORECAST|WITHIN(?= AN AREA| THE)|AN|NEAR(?=\s*$))\b\s*/;
 
+  // slips the map reads the way they were meant (the checks still list each one)
+  var SLIPS = [
+    [/\b(?:SEMI-?C[A-Z]*|SEMCIRCLES?|SEMI-?CIRLCES?)\b/g, function (w) { return /S$/.test(w) && !/SEMICIRCLE$/.test(w) ? "SEMICIRCLES" : "SEMICIRCLE"; }, /^SEMICIRCLES?$/],
+    [/\b(?:QUA[A-Z]*NT|QUA[A-Z]*NTS|QUDRANTS?|QAUDRANTS?)\b/g, function (w) { return /S$/.test(w) ? "QUADRANTS" : "QUADRANT"; }, /^QUADRANTS?$/],
+    [new RegExp("\\b((?:LINE|FRONT|TROUGH)(?: FROM)? " + LL + ") AND (" + LL + ")", "g"), "$1 TO $2"],
+    [/\bFROM (\d+(?:\.\d+)?[EW]) AND (\d+(?:\.\d+)?[EW])\b/g, "BETWEEN $1 AND $2"],
+    [/\bAMD\b/g, "AND"],
+    [/\b(\d+) MM\b/g, "$1 NM"],
+    [/\bNM NM\b/g, "NM"],
+    [/\b(\d+)O\b/g, "$10"],
+    [/\b(\d{2,4}) N (?=(?:NE|NW|SE|SW|N|E|S|W)\b)/g, "$1 NM "],
+    [/\b(\d{2,4}) (?=(?:NE|NW|SE|SW|N|E|S|W) (?:QUADRANTS?|SEMICIRCLES?)\b)/g, "$1 NM "],
+    [/\b(FROM|TO) (\d{1,2})M\b/g, "$1 $2N"]
+  ];
+  function fixSlips(s, out) {
+    SLIPS.forEach(function (f) {
+      s = s.replace(f[0], function () {
+        var args = arguments, m = args[0];
+        if (f[2] && f[2].test(m)) return m;
+        var r = typeof f[1] === "function" ? f[1](m) : f[1].replace(/\$(\d)/g, function (x, k) { return args[+k] || ""; });
+        if (r !== m) out.push({ from: m, to: r });
+        return r;
+      });
+    });
+    return s;
+  }
+
   function areaGeom(text, ctx) {
-    var s = text.replace(/\s+/g, " ").trim(), i;
+    var guessed = [];
+    var s = fixSlips(text.replace(/\s+/g, " ").trim(), guessed), i;
     for (i = 0; i < NOISE.length; i++) s = s.replace(NOISE[i], function (x) { return i === 0 ? "" : " "; });
     s = s.replace(/\s+/g, " ").trim().replace(/[.\s]+$/, "");
     var groups = [], cur = null, pos = 0, unread = [], prevKind = null;
@@ -516,7 +544,7 @@
     var g = sub && sub.length ? diff(add, sub) : add;
     var built = !!(g && g.length);
     g = built ? ctx.B.clip(g) : [];
-    return { geom: g, ok: unread.length === 0 && groups.length > 0, unread: unread, outside: built && !g.length };
+    return { geom: g, ok: unread.length === 0 && groups.length > 0, unread: unread, outside: built && !g.length, guessed: guessed };
   }
 
   // ---------------------------------------------------------------- paragraphs
@@ -594,7 +622,7 @@
       // movement or fronts in the same sentence are not areas ("MOVING NE 25 KT")
       if (/MOVING [A-Z]+ ?$/.test(seg)) continue;
       var a = areaGeom(seg, ctx);
-      blocks.push({ tier: tier, area_text: seg, wind: [m[1] ? +m[1] : 0, +m[2]], seas: seas, geom: a.geom, ok: a.ok && (a.geom.length > 0 || a.outside), outside: !!a.outside, unread: a.unread });
+      blocks.push({ tier: tier, area_text: seg, wind: [m[1] ? +m[1] : 0, +m[2]], seas: seas, geom: a.geom, ok: a.ok && (a.geom.length > 0 || a.outside), outside: !!a.outside, unread: a.unread, guessed: a.guessed });
     }
     return { hour: hour, lows: lows, blocks: blocks, flat: flat };
   }
@@ -624,7 +652,7 @@
     while ((m = mid.exec(t))) if (m.index < endAll) starts.push(m.index + 1 + (m[0].length - 1));
     starts.push(endAll);
     starts = starts.filter(function (v, i, a) { return a.indexOf(v) === i; }).sort(function (a, b) { return a - b; });
-    var warning = "", sysLows = [];
+    var warning = "", sysLows = [], sys = -1, lastHour = -1;
     for (var i = 0; i < starts.length - 1; i++) {
       var a = starts[i], b = starts[i + 1];
       var chunk = t.slice(a, b);
@@ -632,22 +660,41 @@
       if (a < (w0 > -1 ? w0 : s0)) continue;
       var section = s0 > -1 && a >= s0 ? "synopsis" : "warnings";
       var hd = /^\s*\.\.\.\s*([A-Z ]+?)\s*\.\.\.\s*$/m.exec(chunk);
-      if (/^\s*\.(WARNINGS|SYNOPSIS AND FORECAST)\./.test(chunk)) { warning = ""; sysLows = []; continue; }
+      if (/^\s*\.(WARNINGS|SYNOPSIS AND FORECAST)\./.test(chunk)) { warning = ""; sysLows = []; lastHour = -1; continue; }
       if (hd && chunk.trim().indexOf("...") === 0) {
         warning = hd[1].replace(/\s*WARNING$/, "").trim();
-        sysLows = [];
+        sysLows = []; sys++; lastHour = -1;
         continue;
       }
       if (section === "synopsis") warning = "";
       // a paragraph that starts a new system resets the lows carried into later hours
+      var hour0 = /^\s*\.?\s*(\d{1,2}) HOUR FORECAST/.exec(chunk);
+      // a system: one warning block, or in the synopsis section a run of paragraphs whose hours rise
+      if (section === "synopsis" && (lastHour < 0 || (hour0 ? +hour0[1] : 0) <= lastHour)) { sys++; sysLows = []; }
+      if (sys < 0) sys = 0;
       var r = readPara(chunk, B, sysLows, 0);
-      if (r.hour === 0 && section === "synopsis") sysLows = [];
+      lastHour = r.hour;
       if (r.lows.length) sysLows = r.lows;
       var trimEnd = b;
       while (trimEnd > a && /\s/.test(t[trimEnd - 1])) trimEnd--;
-      out.paras.push({ start: a, end: trimEnd, section: section, warning: warning, hour: r.hour, lows: r.lows, blocks: r.blocks, text: r.flat });
+      out.paras.push({ start: a, end: trimEnd, section: section, warning: warning, system: sys, hour: r.hour, lows: r.lows, blocks: r.blocks, text: r.flat });
     }
+    out.tracks = tracks(out.paras);
     return out;
+  }
+
+  // the track of each system's main low through its forecast hours (two or more positions)
+  function tracks(paras) {
+    var by = {};
+    paras.forEach(function (p) {
+      var L = p.lows.filter(function (l) { return l.kind === "L"; });
+      if (!L.length) return;
+      var main = L.filter(function (l) { return /MAIN|FIRST|MEAN|ORIGINAL/.test(l.label); })[0] || L[0];
+      var t = by[p.system] || (by[p.system] = { system: p.system, section: p.section, warning: p.warning, points: [] });
+      if (!t.points.some(function (q) { return q.hour === p.hour; })) t.points.push({ hour: p.hour, lat: main.lat, lon: main.lon, mb: main.mb });
+    });
+    return Object.keys(by).map(function (k) { return by[k]; }).filter(function (t) { return t.points.length > 1; })
+      .map(function (t) { t.points.sort(function (a, b) { return a.hour - b.hour; }); return t; });
   }
 
   // the official limits text of each basin and its outline

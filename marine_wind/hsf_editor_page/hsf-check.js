@@ -172,6 +172,10 @@
     // ---- the map reader: areas it could not draw, or that fall outside the forecast waters
     if (read && read.paras) read.paras.forEach(function (p) {
       p.blocks.forEach(function (b) {
+        (b.guessed || []).forEach(function (g) {
+          var w = locate(t, g.from, p.start, p.end);
+          issue(out, "warning", "Map", "Mapped as " + g.to, g.from, w[0], w[1]);
+        });
         if (b.outside && !b.unread.length) {
           var pos = locate(t, b.area_text, p.start, p.end);
           issue(out, "warning", "Map", "This area lies outside the forecast waters", short(b.area_text), pos[0], pos[1]);

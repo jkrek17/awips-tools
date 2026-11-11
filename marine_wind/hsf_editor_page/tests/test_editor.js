@@ -32,7 +32,11 @@ test("Pacific: the slips in the issued product are caught", function () {
   assert(has(/Seas given in KT.*SEAS 8 TO 14 KT/), "seas in KT");
   assert(has(/Unrecognized word: SEMICIRICLE/), "SEMICIRICLE");
   assert(has(/Dots/), "dot run");
-  assert(has(/map could not read.*40N133W 31N141W/), "FROM 40N133W AND 31N141W");
+  // slips the map reads as meant, and still lists
+  assert(has(/Mapped as LINE FROM 40N133W TO 31N141W: LINE FROM 40N133W AND 31N141W/), "FROM 40N133W AND 31N141W");
+  assert(has(/Mapped as BETWEEN 128W AND 170W/), "FROM 128W AND 170W");
+  assert(has(/Mapped as SEMICIRCLE: SEMICIRICLE/), "SEMICIRICLE on the map");
+  assert(!has(/map could not/), "every Pacific area mapped");
   // every issue points at text that holds its word
   is.forEach(function (i) { assert(i.end > i.at, "empty selection for " + i.msg); });
 });

@@ -224,11 +224,34 @@
     return { type: "FeatureCollection", features: f };
   }
   function shift(g) { return g.map(function (p) { return p.map(function (r) { return r.map(function (q) { return [q[0] - 360, q[1]]; }); }); }); }
+  // each warning block's main low through its forecast hours
+  function trackFeatures() {
+    var f = [], X = function (lon) { return basin === "pac" ? lon - 360 : lon; };
+    (read.tracks || []).forEach(function (t) {
+      var lvl = /HURRICANE/.test(t.warning) ? "hf" : /STORM/.test(t.warning) ? "storm" : /GALE/.test(t.warning) ? "gale" : "low";
+      f.push({ type: "Feature", properties: { lvl: lvl }, geometry: { type: "LineString", coordinates: t.points.map(function (p) { return [X(p.lon), p.lat]; }) } });
+      t.points.forEach(function (p) {
+        f.push({ type: "Feature", properties: { lvl: lvl, now: p.hour === hour ? 1 : 0 }, geometry: { type: "Point", coordinates: [X(p.lon), p.lat] } });
+      });
+    });
+    return { type: "FeatureCollection", features: f };
+  }
   function drawMap() {
     if (!mapReady || !read) return;
     map.getSource("areas").setData(features());
+    map.getSource("tracks").setData(trackFeatures());
     markers.forEach(function (m) { m.remove(); });
     markers = [];
+    // hour labels on the track positions away from the time shown
+    (read.tracks || []).forEach(function (t) {
+      t.points.forEach(function (p) {
+        if (p.hour === hour) return;
+        var el = document.createElement("div");
+        el.className = "trackpt";
+        el.textContent = p.hour ? p.hour + "h" : "0h";
+        markers.push(new maplibregl.Marker({ element: el, offset: [0, -11] }).setLngLat([basin === "pac" ? p.lon - 360 : p.lon, p.lat]).addTo(map));
+      });
+    });
     read.paras.forEach(function (p) {
       if (p.hour !== hour) return;
       p.lows.forEach(function (l) {
@@ -273,6 +296,11 @@
       map.addLayer({ id: "land", type: "fill", source: "land", paint: { "fill-color": "#f3eee2" } });
       map.addLayer({ id: "land-line", type: "line", source: "land", paint: { "line-color": "#b9ae96", "line-width": 0.7 } });
       map.addLayer({ id: "area-focus", type: "line", source: "areas", filter: ["==", ["get", "focus"], 1], paint: { "line-color": "#14213d", "line-width": 2.6 } });
+      map.addSource("tracks", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      map.addLayer({ id: "track-line", type: "line", source: "tracks", filter: ["==", ["geometry-type"], "LineString"],
+        paint: { "line-color": "#14213d", "line-width": 1.8, "line-dasharray": [2, 1.5], "line-opacity": 0.85 } });
+      map.addLayer({ id: "track-pts", type: "circle", source: "tracks", filter: ["==", ["geometry-type"], "Point"],
+        paint: { "circle-radius": ["case", ["==", ["get", "now"], 1], 0, 3.5], "circle-color": "#ffffff", "circle-stroke-color": "#14213d", "circle-stroke-width": 1.5 } });
       map.addSource("boundary", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
       map.addLayer({ id: "boundary", type: "line", source: "boundary", paint: { "line-color": "#7a1f2b", "line-width": 1.6, "line-dasharray": [3, 2] } });
       fetch("../globe-kit/land.json").then(function (r) { return r.json(); }).then(function (j) { map.getSource("land").setData(j); }).catch(function () {});
