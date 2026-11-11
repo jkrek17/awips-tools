@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>High Seas Editor</title>
+<meta name="description" content="Write the OPC High Seas Forecast (Atlantic or Pacific) starting from the last issued product, with its warning areas redrawn on a map as you type, the desk's text checks, and copy buttons for the forecast editor's Warnings and Synopsis boxes. Separate from the model-written draft.">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14213d">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Cpath d=%22M2 3h12v10H2z%22 fill=%22%23fbf8f1%22 stroke=%22%2314213d%22 stroke-width=%221.4%22/%3E%3Cpath d=%22M4 6h5M4 9h3%22 stroke=%22%237a1f2b%22 stroke-width=%221.3%22/%3E%3C/svg%3E">
+<link rel="stylesheet" href="../globe-kit/lib/maplibre-gl.css">
+<style>
+  @font-face { font-family: "Plex"; src: url("../fonts/IBMPlexSans-Regular-Latin1.woff2") format("woff2"); font-weight: 400; }
+  @font-face { font-family: "Plex"; src: url("../fonts/IBMPlexSans-SemiBold-Latin1.woff2") format("woff2"); font-weight: 600; }
+  :root {
+    --cream: #fbf8f1; --paper: #ffffff; --line: #ddd5c4; --navy: #14213d; --ink: #1d2433; --muted: #5b6475;
+    --ox: #7a1f2b; --ox-soft: #f4e6e6; --ok: #2f6b3a;
+    --gale: #d39a1c; --storm: #c0392b; --hf: #7d3c98; --low: #5d7fa3;
+    --gap: 12px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--cream); color: var(--ink); font: 14px/1.4 "Plex", system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 16px; background: var(--navy); color: #fff; }
+  header h1 { font-size: 16px; font-weight: 600; margin: 0 8px 0 0; letter-spacing: .01em; }
+  header .seg { display: inline-flex; border: 1px solid #ffffff55; border-radius: 6px; overflow: hidden; }
+  header .seg button { font: 600 13px "Plex", sans-serif; padding: 5px 12px; border: 0; background: transparent; color: #dfe5f0; cursor: pointer; }
+  header .seg button[aria-pressed="true"] { background: var(--cream); color: var(--navy); }
+  header .note { margin-left: auto; font-size: 12px; color: #c9d1e0; }
+  button.btn { font: 600 13px "Plex", sans-serif; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--ox); background: var(--ox); color: #fff; cursor: pointer; white-space: nowrap; }
+  button.btn.ghost { background: var(--paper); color: var(--ox); }
+  button.btn.light { background: transparent; border-color: #ffffff88; color: #fff; }
+  button.btn.done { background: var(--ok); border-color: var(--ok); color: #fff; }
+  main { display: grid; grid-template-columns: minmax(520px, 46%) 1fr; gap: var(--gap); padding: var(--gap); height: calc(100% - 52px); }
+  .col { display: flex; flex-direction: column; min-height: 0; gap: var(--gap); }
+  .card { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; display: flex; flex-direction: column; min-height: 0; }
+  .bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .bar .info { margin-left: auto; color: var(--muted); font-size: 12px; }
+  #editor { flex: 1; min-height: 240px; width: 100%; border: 0; resize: none; padding: 10px 12px; outline: none;
+    font: 13px/1.45 "Courier New", Courier, monospace; color: #000; background: var(--paper); white-space: pre; overflow: auto; border-radius: 0 0 8px 8px; }
+  #editor::selection { background: #f2d4a6; }
+  .issues { flex: 0 0 auto; max-height: 34%; overflow: auto; }
+  .issues h2 { font-size: 13px; margin: 0; }
+  #issueList { list-style: none; margin: 0; padding: 4px 6px 8px; }
+  #issueList li { display: grid; grid-template-columns: 62px 1fr; gap: 8px; align-items: baseline; padding: 4px 6px; border-radius: 5px; cursor: pointer; font-size: 13px; }
+  #issueList li:hover { background: var(--ox-soft); }
+  #issueList .sev { font: 600 11px "Plex", sans-serif; text-transform: uppercase; letter-spacing: .04em; }
+  #issueList .error .sev { color: var(--storm); }
+  #issueList .warning .sev { color: #9a6a00; }
+  #issueList .info .sev { color: var(--low); }
+  #issueList b { font: 600 12.5px "Courier New", monospace; }
+  .clean { color: var(--ok); font-weight: 600; padding: 8px 12px; }
+  .mapcard { flex: 1; position: relative; overflow: hidden; }
+  #map { position: absolute; inset: 0; border-radius: 0 0 8px 8px; }
+  .mapwrap { position: relative; flex: 1; min-height: 300px; }
+  .hours { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+  .hours button { font: 600 12.5px "Plex", sans-serif; padding: 4px 10px; border-radius: 5px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); cursor: pointer; }
+  .hours button[aria-pressed="true"] { background: var(--navy); border-color: var(--navy); color: #fff; }
+  .hours button .vt { font-weight: 400; color: inherit; opacity: .75; margin-left: 4px; }
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 2px; margin-right: 4px; vertical-align: -2px; }
+  .lowmark { font: 700 15px "Plex", sans-serif; text-align: center; line-height: 1; text-shadow: 0 0 3px #fff, 0 0 3px #fff; pointer-events: none; }
+  .lowmark small { display: block; font-size: 11px; font-weight: 600; color: var(--ink); }
+  .lowmark.L { color: var(--storm); } .lowmark.H { color: #1f4e9c; }
+  .maptip { position: absolute; left: 10px; bottom: 10px; z-index: 2; background: #fffffff0; border: 1px solid var(--line); border-radius: 6px; padding: 6px 9px; font-size: 12px; max-width: 70%; pointer-events: none; }
+  .maptip:empty { display: none; }
+  dialog { border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px; max-width: 420px; color: var(--ink); background: var(--paper); }
+  dialog::backdrop { background: #14213d55; }
+  dialog p { margin: 0 0 14px; }
+  dialog .row { display: flex; gap: 8px; justify-content: flex-end; }
+  @media (max-width: 900px) {
+    main { grid-template-columns: 1fr; height: auto; }
+    .col { min-height: auto; }
+    #editor { min-height: 380px; }
+    .mapwrap { min-height: 420px; }
+    header .note { margin-left: 0; width: 100%; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>High Seas Editor</h1>
+  <span class="seg" role="group" aria-label="Basin">
+    <button id="b-atl" aria-pressed="false">Atlantic</button>
+    <button id="b-pac" aria-pressed="false">Pacific</button>
+  </span>
+  <button class="btn light" id="load" title="Replace the text with the last issued forecast, its valid times moved on 6 hours">Start from last issued</button>
+  <span class="note" id="note"></span>
+</header>
+<main>
+  <section class="col">
+    <div class="card" style="flex:1">
+      <div class="bar">
+        <button class="btn" id="copyWarn">Copy Warnings box</button>
+        <button class="btn" id="copySyn">Copy Synopsis box</button>
+        <button class="btn ghost" id="copyAll">Copy all</button>
+        <span class="info" id="saved"></span>
+      </div>
+      <textarea id="editor" spellcheck="false" wrap="off" autocapitalize="characters" aria-label="High seas forecast text"></textarea>
+    </div>
+    <div class="card issues">
+      <div class="bar"><h2 id="issueHead">Checks</h2><span class="info">Click a line to select it in the text</span></div>
+      <ul id="issueList"></ul>
+    </div>
+  </section>
+  <section class="col">
+    <div class="card mapcard">
+      <div class="bar">
+        <span class="hours" id="hours"></span>
+        <span class="legend">
+          <span><i style="background:var(--low)"></i>Below gale</span>
+          <span><i style="background:var(--gale)"></i>Gale</span>
+          <span><i style="background:var(--storm)"></i>Storm</span>
+          <span><i style="background:var(--hf)"></i>Hurricane force</span>
+        </span>
+      </div>
+      <div class="mapwrap"><div id="map"></div><div class="maptip" id="tip"></div></div>
+    </div>
+  </section>
+</main>
+<dialog id="ask"><p id="askText"></p><div class="row"><button class="btn ghost" value="no" id="askNo">Cancel</button><button class="btn" value="yes" id="askYes">Replace</button></div></dialog>
+<script src="../globe-kit/lib/maplibre-gl.js" defer></script>
+<script src="lib/polygon-clipping.min.js" defer></script>
+<script src="hsf-read.js" defer></script>
+<script src="hsf-check.js" defer></script>
+<script src="app.js" defer></script>
+</body>
+</html>
