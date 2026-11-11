@@ -24,6 +24,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from areas import AREAS, inside, outline  # noqa: E402
 from writer import WARN, Grid, Rules, write_product  # noqa: E402
+from hazards import HOURS as HAZARD_HOURS, hazard_text  # noqa: E402
 
 # (box lead of the synopsis, HSF hours): run C writes the C+6 h issuance from 6-hourly box
 # leads; a box with only 12-hourly leads (built before BOX_STEPS) gives the C+12 h one
@@ -66,6 +67,31 @@ def wave_heights(cycle, leads):
         hs = w["hs"].astype(np.float32)
         hs[(hs > 50) | (hs < 0)] = np.nan
         out[fh] = hs
+    return out
+
+
+# GFS fields for fog and freezing spray (hazards.py): 2 m air, sea surface (TMP:surface over open
+# water), visibility and sea ice
+GFS_HAZ = {"TMP:2 m above ground": "t2", "TMP:surface": "sst", "VIS:surface": "vis", "ICEC:surface": "ice"}
+
+
+def hazard_fields(cycle, syn_lead):
+    """{hour: dict(t2 C, sst C, vis m, ice)} at the synopsis, 24 h and 48 h from the GFS run of the
+    same cycle; {} when the GFS fields cannot be read (the draft then goes out without them)."""
+    sys.path.insert(0, os.path.join(HERE, "..", "pipeline"))
+    import fetch
+    ymd, hh = cycle.strftime("%Y%m%d"), cycle.strftime("%H")
+    out = {}
+    try:
+        for h in HAZARD_HOURS:
+            g = fetch._ncep(fetch.gfs_url(ymd, hh, syn_lead + h), GFS_HAZ)
+            if g is None:
+                raise RuntimeError("GFS +%dh missing" % (syn_lead + h))
+            out[h] = dict(t2=g["t2"].astype(np.float32) - 273.15, sst=g["sst"].astype(np.float32) - 273.15,
+                          vis=g["vis"].astype(np.float32), ice=g["ice"].astype(np.float32))
+    except Exception as e:   # fog and spray are extras; never stop the wind draft
+        print("fog / freezing spray skipped: %s" % e)
+        return {}
     return out
 
 
@@ -169,13 +195,25 @@ def ndfd_wind(syn_time, hours, lats, lons):
     return out
 
 
-def draft(fields, lats, lons, basin="pac", rules=None):
-    """fields: {hour: dict(wind kt, msl hPa, hs m)} with hours from the synopsis. Returns
-    (warnings, synopsis_text, areas, lows, tracks): every described area with its outline, the
-    low centers the text names, and each warning low's track."""
+def draft(fields, lats, lons, basin="pac", rules=None, haz=None):
+    """fields: {hour: dict(wind kt, msl hPa, hs m)} with hours from the synopsis; haz: {hour:
+    dict(t2, sst, vis, ice)} for fog and freezing spray (hazard_fields). Returns (warnings,
+    synopsis_text, areas, lows, tracks, hazards): every described area with its outline, the
+    low centers the text names, each warning low's track and the fog / spray areas."""
     grid = Grid(lats, lons)
     sea = inside(AREAS[basin], grid.LON % 360, grid.LAT) & np.isfinite(fields[0]["hs"])
-    warn, syn, dbg = write_product(fields, grid, sea, rules or Rules())
+    rules = rules or Rules()
+    warn, syn, dbg = write_product(fields, grid, sea, rules)
+    hazards = []
+    if haz:
+        hf = {h: dict(haz[h], wind=fields[h]["wind"]) for h in haz if h in fields}
+        hwarn, hsyn, hareas = hazard_text(hf, sea, grid, rules)
+        # desk order: wind warnings, then the heavy freezing spray warning; synopsis paragraphs,
+        # then fog, then freezing spray
+        warn = "\n\n".join(t for t in (warn, hwarn) if t)
+        syn = "\n\n".join(t for t in [syn] + hsyn if t)
+        hazards = [dict(hour=a["hour"], kind=a["kind"], level=a["level"], text=a["text"],
+                        rings=outline(a["mask"], lats, lons)) for a in hareas]
     areas = []
     for p in dbg["pieces"]:
         for i, t in enumerate(p["tiers"]):
@@ -196,7 +234,7 @@ def draft(fields, lats, lons, basin="pac", rules=None):
                for h in sorted(ent) if ent[h].get("low")]
         if len(pts) > 1:
             tracks.append(dict(warning=WARN[tops[key]], points=pts))
-    return warn, syn, areas, lows, tracks
+    return warn, syn, areas, lows, tracks, hazards
 
 
 def product(syn_time, warn, syn):
@@ -222,6 +260,7 @@ def main():
     else:
         raise SystemExit("page box lacks the leads for a draft: has %s" % sorted(box))
     hs = wave_heights(cycle, leads)
+    haz = hazard_fields(cycle, SYN_LEAD)
     syn_time = cycle + dt.timedelta(hours=SYN_LEAD)
     os.makedirs(a.out, exist_ok=True)
     if a.prev:
@@ -243,7 +282,7 @@ def main():
         else:
             continue
         fields = {h: dict(wind=wind[h], msl=box[SYN_LEAD + h]["msl"] + 900.0, hs=hs[SYN_LEAD + h]) for h in HOURS}
-        warn, syn, areas, lows, tracks = draft(fields, lats, lons, a.basin)
+        warn, syn, areas, lows, tracks, hazards = draft(fields, lats, lons, a.basin, haz=haz)
         text = product(syn_time, warn, syn)
         name = a.basin if key == "corelift" else "%s-%s" % (a.basin, key)
         with open(os.path.join(a.out, "%s.txt" % name), "w") as f:
@@ -251,8 +290,9 @@ def main():
         doc = dict(basin=a.basin, wind_source=key, wind_field=field, cycle=cycle.strftime("%Y-%m-%dT%H:00Z"),
                    synopsis=syn_time.strftime("%Y-%m-%dT%H:00Z"),
                    built=dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
-                   source="Marine wind page: %s, 3-model mean pressure; GFS-Wave seas" % label,
-                   hours=list(HOURS), text=text, areas=areas, lows=lows, tracks=tracks,
+                   source="Marine wind page: %s, 3-model mean pressure; GFS-Wave seas" % label
+                   + ("; fog and freezing spray from GFS" if haz else ""),
+                   hours=list(HOURS), text=text, areas=areas, hazards=hazards, lows=lows, tracks=tracks,
                    boundary=[[x - 360 if a.basin == "atl" else x, y] for x, y in AREAS[a.basin]],
                    box_leads={h: SYN_LEAD + h for h in HOURS})
         with open(os.path.join(a.out, "%s.json" % name), "w") as f:

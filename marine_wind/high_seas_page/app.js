@@ -33,7 +33,7 @@
   function fromCompare(c) {
     cmp = c;
     var d = c.drafts[src] || c.drafts.corelift;
-    return { cycle: d.cycle, synopsis: c.synopsis, hours: [0, 24, 48], text: c.issued_text, areas: d.areas,
+    return { cycle: d.cycle, synopsis: c.synopsis, hours: [0, 24, 48], text: c.issued_text, areas: d.areas, hazards: d.hazards || [],
              lows: d.lows, tracks: d.tracks, boundary: c.boundary, draft_text: d.text };
   }
   function k(n) { return Math.round(n / 1000) + "k"; }
@@ -116,6 +116,20 @@
     };
   }
 
+  // fog and freezing spray areas (synopsis, 24 h, 48 h), one switch for both; while a paragraph is
+  // picked only that paragraph's kind is drawn
+  var HAZ = { fog: "#d4d4d8", spray: "#67e8f9", heavy: "#f472b6" };
+  var hazOn = true;
+  try { hazOn = localStorage.getItem("hs-haz") !== "0"; } catch (e) { /* default on */ }
+  function hazColour(a) { return a.kind === "fog" ? HAZ.fog : a.level === "heavy" ? HAZ.heavy : HAZ.spray; }
+  function hazShown(a) { return hazOn && (focus < 0 || (paras[focus] && paras[focus].haz === a.kind)); }
+  function hazFeatures(h) {
+    return { type: "FeatureCollection", features: (doc.hazards || []).filter(function (a) { return a.hour === h && hazShown(a); }).map(function (a) {
+      return { type: "Feature", properties: { colour: hazColour(a), fog: a.kind === "fog" },
+               geometry: { type: "Polygon", coordinates: a.rings.map(function (r) { return r.map(function (p) { return [lon(p[0]), p[1]]; }); }) } };
+    }) };
+  }
+
   function labels() {
     if (!ov || !doc) return;
     ov.clear();
@@ -131,6 +145,17 @@
         ctx.fillStyle = "#ef4444"; ctx.fillText("L", p.x, p.y);
         ctx.font = "700 11px " + getComputedStyle(document.body).getPropertyValue("--mono");
         ctx.strokeText(String(l.mb), p.x, p.y + 17); ctx.fillStyle = "#e7eef8"; ctx.fillText(String(l.mb), p.x, p.y + 17);
+      });
+    });
+    ctx.font = "700 11px " + getComputedStyle(document.body).getPropertyValue("--mono");
+    (doc.hazards || []).forEach(function (a) {
+      if (a.hour !== hour || !a.rings.length || !hazShown(a)) return;
+      var r = a.rings[0], x = 0, y = 0;
+      r.forEach(function (p) { x += p[0]; y += p[1]; });
+      ov.proj(lon(x / r.length), y / r.length).forEach(function (p) {
+        var t = a.kind === "fog" ? "FOG" : a.level === "heavy" ? "HVY SPRAY" : "SPRAY", w = ctx.measureText(t).width + 8;
+        ctx.fillStyle = "rgba(7,13,25,0.8)"; ctx.fillRect(p.x - w / 2, p.y - 8, w, 16);
+        ctx.fillStyle = hazColour(a); ctx.fillText(t, p.x, p.y + 0.5);
       });
     });
     ctx.font = "700 12px " + getComputedStyle(document.body).getPropertyValue("--mono");
@@ -153,6 +178,7 @@
     document.querySelectorAll("#steps button").forEach(function (b) { b.setAttribute("aria-pressed", String(+b.dataset.h === h)); });
     if (map && map.getSource("areas")) map.getSource("areas").setData(features(h));
     if (map && map.getSource("issued")) map.getSource("issued").setData(issuedFeatures(h));
+    if (map && map.getSource("hazards")) map.getSource("hazards").setData(hazFeatures(h));
     showWind(h);
     var t = new Date(new Date(doc.synopsis).getTime() + h * 3600e3).toISOString();
     $("validTime").textContent = K.fmtValid(t);
@@ -198,7 +224,8 @@
       if (pos < a) parts.push({ gap: piece(pos, a) });   // the blank line between paragraphs
       // buttons only on forecast paragraphs, not the valid-time lines or section headers
       var own = /^(\.\.\.|\.)/.test(body) && !/^\.(WARNINGS|SYNOPSIS AND FORECAST)\.\s*$/.test(body);
-      paras.push({ text: body.replace(/\n*$/, "") + "\n", own: own, track: own ? trackFor(body) : -1, info: own ? paraInfo(body) : null,
+      var hz = /^(?:\.\.\.HEAVY FREEZING SPRAY WARNING\.\.\.\s*)?\.(?:\d+ HOUR FORECAST )?(DENSE FOG|(?:LIGHT|MODERATE)[A-Z ]*FREEZING SPRAY)/.exec(body.replace(/\s+/g, " "));
+      paras.push({ haz: hz ? (/FOG/.test(hz[1]) ? "fog" : "spray") : null, text: body.replace(/\n*$/, "") + "\n", own: own, track: own ? trackFor(body) : -1, info: own ? paraInfo(body) : null,
                    a: a, b: b, lows: lowsIn(body) });
       parts.push({ p: pi, html: piece(a, b) });
       pos = b;
@@ -278,6 +305,12 @@
   }
   // a paragraph's level, first low and highest wind, for the card and list headers
   function paraInfo(body) {
+    var fl = body.replace(/\s+/g, " ");
+    if (/^\.(?:\d+ HOUR FORECAST )?DENSE FOG/.test(fl)) return { level: "FOG", colour: HAZ.fog, low: "DENSE FOG", peak: 0 };
+    if (/FREEZING SPRAY/.test(fl.split(" ").slice(0, 8).join(" "))) {
+      var hv = /HEAVY FREEZING SPRAY WARNING/.test(fl);
+      return { level: hv ? "HVY SPRAY" : "SPRAY", colour: hv ? HAZ.heavy : HAZ.spray, low: "FREEZING SPRAY", peak: 0 };
+    }
     var w = /^\.\.\.(.+?) WARNING\.\.\./.exec(body), hdr = w ? w[1] : "";
     // "HURRICANE FORCE WIND WARNING", "STORM WARNING", "GALE WARNING"
     var lvl = /HURRICANE/.test(hdr) ? "HURRICANE FORCE" : /STORM/.test(hdr) ? "STORM" : /GALE/.test(hdr) ? "GALE" : "SYNOPSIS";
@@ -321,7 +354,7 @@
     var list = paras.map(function (P, i) { return [P, i]; }).filter(function (x) { return x[0].own; });
     $("storms").innerHTML = '<button type="button" data-p="-1">All</button>' + list.map(function (x) {
       var I = x[0].info, at = /(\d+N\d+[EW])/.exec(I.low);
-      return '<button type="button" data-p="' + x[1] + '" style="--lvl:' + I.colour + '"><i></i>' + (I.level === "NO WARN" ? "" : I.level + " ") + (at ? at[1] : I.low) + "</button>";
+      return '<button type="button" data-p="' + x[1] + '" style="--lvl:' + I.colour + '"><i></i>' + (x[0].haz ? I.level : (I.level === "NO WARN" ? "" : I.level + " ") + (at ? at[1] : I.low)) + "</button>";
     }).join("");
     document.querySelectorAll("#storms button").forEach(function (b) { b.addEventListener("click", function () { setFocus(+b.dataset.p); }); });
   }
@@ -336,13 +369,16 @@
     // the times this storm has areas at; the others are hidden while it is picked
     var hrs = {};
     doc.areas.forEach(function (a, i) { if (inFocus(i)) hrs[a.hour] = 1; });
+    var hzp = p >= 0 && paras[p] ? paras[p].haz : null;
+    if (hzp) { hrs = {}; (doc.hazards || []).forEach(function (a) { if (a.kind === hzp) hrs[a.hour] = 1; }); }
     document.querySelectorAll("#steps button").forEach(function (b) { b.hidden = p >= 0 && !hrs[b.dataset.h] && +b.dataset.h !== 0; });
     drawTracks();
     var first = p >= 0 ? Math.min.apply(null, Object.keys(hrs).map(Number).concat([999])) : 0;
     show(p >= 0 && first < 999 ? (hrs[hour] ? hour : first) : hour);
     if (map) {
       var xs = [], ys = [];
-      doc.areas.forEach(function (a, i) { if (p >= 0 && inFocus(i)) a.rings.forEach(function (r) { r.forEach(function (q) { xs.push(lon(q[0])); ys.push(q[1]); }); }); });
+      doc.areas.forEach(function (a, i) { if (p >= 0 && !hzp && inFocus(i)) a.rings.forEach(function (r) { r.forEach(function (q) { xs.push(lon(q[0])); ys.push(q[1]); }); }); });
+      (doc.hazards || []).forEach(function (a) { if (hzp && a.kind === hzp) a.rings.forEach(function (r) { r.forEach(function (q) { xs.push(lon(q[0])); ys.push(q[1]); }); }); });
       var tr = p >= 0 ? (doc.tracks || [])[paras[p].track] : null;
       if (tr) tr.points.forEach(function (q) { xs.push(lon(q.lon)); ys.push(q.lat); });
       if (xs.length) map.fitBounds([[Math.min.apply(null, xs), Math.min.apply(null, ys)], [Math.max.apply(null, xs), Math.max.apply(null, ys)]], { padding: { top: 100, bottom: 60, left: Math.min(640, innerWidth / 2), right: 60 }, maxZoom: 5, duration: 600 });
@@ -412,7 +448,7 @@
       }).join("");
       document.querySelectorAll("#textTabs button").forEach(function (b) { b.addEventListener("click", function () { textTab = b.dataset.t; render(); }); });
     }
-    var hours = doc.hours.filter(function (h) { return h === 0 || doc.areas.some(function (a) { return a.hour === h; }); });
+    var hours = doc.hours.filter(function (h) { return h === 0 || doc.areas.concat(doc.hazards || []).some(function (a) { return a.hour === h; }); });
     $("steps").innerHTML = hours.map(function (h) {
       return '<button type="button" data-h="' + h + '">' + (h ? h + " H" : "SYNOPSIS") + "</button>";
     }).join("");
@@ -440,6 +476,13 @@
       return '<a href="' + link(basin, src, compare, l) + '" aria-current="' + (l === layout) + '">' + LAYOUTS[l] + "</a>";
     }).join("");
     $("shadeName").textContent = src === "ndfd" ? "none for NDFD" : SOURCES[src] + " wind";
+    $("hazBtn").setAttribute("aria-pressed", String(hazOn));
+    $("hazBtn").addEventListener("click", function () {
+      hazOn = !hazOn;
+      try { localStorage.setItem("hs-haz", hazOn ? "1" : "0"); } catch (e) { /* this visit only */ }
+      $("hazBtn").setAttribute("aria-pressed", String(hazOn));
+      if (doc) show(hour);
+    });
     $("copyBtn").addEventListener("click", function () {
       if (!doc) return;
       var t = compare && textTab === "draft" ? doc.draft_text : doc.text, b = $("copyBtn");
@@ -519,6 +562,11 @@
         // the area whose phrase is under the pointer in the text
         map.addLayer({ id: "area-focus-fill", type: "fill", source: "areas", filter: ["==", ["get", "i"], -1], paint: { "fill-color": ["get", "colour"], "fill-opacity": 0.12 } });
         map.addLayer({ id: "area-focus", type: "line", source: "areas", filter: ["==", ["get", "i"], -1], paint: { "line-color": "#ffffff", "line-width": 4 } });
+        // fog (dashed grey) and freezing spray (cyan; heavy pink) outlines
+        map.addSource("hazards", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+        map.addLayer({ id: "haz-casing", type: "line", source: "hazards", paint: { "line-color": "#0a1120", "line-width": 3.5, "line-opacity": 0.7 } });
+        map.addLayer({ id: "haz-fog", type: "line", source: "hazards", filter: ["==", ["get", "fog"], true], paint: { "line-color": ["get", "colour"], "line-width": 1.8, "line-dasharray": [2, 1.5] } });
+        map.addLayer({ id: "haz-spray", type: "line", source: "hazards", filter: ["==", ["get", "fog"], false], paint: { "line-color": ["get", "colour"], "line-width": 1.8, "line-dasharray": [0.6, 1.2] } });
         // the issued forecast's areas (compare view)
         map.addSource("issued", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
         map.addLayer({ id: "issued-line", type: "line", source: "issued", paint: { "line-color": "#f8fafc", "line-width": 2, "line-dasharray": [1.5, 1.5] } });

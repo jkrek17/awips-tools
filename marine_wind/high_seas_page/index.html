@@ -65,6 +65,9 @@
   .hs-text mark { background: var(--accent-soft); color: var(--text); border-radius: 3px; }
   .hs-legend { display: flex; gap: 12px; padding: 0 16px 8px; font-size: 11.5px; color: var(--text-2); flex-wrap: wrap; }
   .hs-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  .hs-haz { font: 600 11.5px var(--font); padding: 1px 8px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: transparent; color: var(--text-2); cursor: pointer; }
+  .hs-haz[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  .hs-haz i { background: transparent !important; border: 2px dashed; width: 8px; height: 8px; margin-left: 2px; }
   .hs-basins { display: flex; gap: 4px; }
   .hs-text .hs-ar { cursor: pointer; border-bottom: 1px dotted var(--text-3); }
   .hs-text .hs-ar:hover, .hs-text .hs-ar.on { background: var(--accent-soft); color: var(--accent); border-bottom-color: var(--accent); }
@@ -113,8 +116,8 @@
     <div class="hs-src"><span>Layout</span><nav id="layouts" aria-label="How the text is laid out"></nav></div>
     <div class="hs-src" id="stormRow"><span>Show</span><nav id="storms" class="hs-storms" aria-label="Storm shown on the map"></nav></div>
     <div class="hs-steps" id="steps" role="group" aria-label="Time shown on the map"></div>
-    <div class="hs-legend"><span><i style="background:#a855f7"></i>64+ kt</span><span><i style="background:#ef4444"></i>48-63</span><span><i style="background:#f59e0b"></i>34-47</span><span><i style="background:#38bdf8"></i>25-33</span><span>Shading: <span id="shadeName">Core Lifted wind</span> · outlines: draft areas · L: lows in the text · white line: warning low tracks · yellow dashed: High Seas forecast area</span></div>
-    <p class="hs-note">Written automatically by rules from the chosen wind grid (Core Lifted: the most likely wind, storm cores kept), the 3-model mean pressure and GFS-Wave seas. A draft for the forecaster to edit, not the official forecast.</p>
+    <div class="hs-legend"><span><i style="background:#a855f7"></i>64+ kt</span><span><i style="background:#ef4444"></i>48-63</span><span><i style="background:#f59e0b"></i>34-47</span><span><i style="background:#38bdf8"></i>25-33</span><button type="button" class="hs-haz" id="hazBtn" aria-pressed="true" title="Show the fog and freezing spray areas"><i style="border-color:#d4d4d8"></i>Fog <i style="border-color:#67e8f9;border-style:dotted"></i>Spray</button><span>Shading: <span id="shadeName">Core Lifted wind</span> · outlines: draft areas · L: lows in the text · white line: warning low tracks · yellow dashed: High Seas forecast area</span></div>
+    <p class="hs-note">Written automatically by rules from the chosen wind grid (Core Lifted: the most likely wind, storm cores kept), the 3-model mean pressure and GFS-Wave seas. Fog (synopsis, 24 and 48 h): GFS surface visibility under 1 nm. Freezing spray: the Overland icing predictor from the wind, GFS air and sea temperature; heavy spray makes a warning. A draft for the forecaster to edit, not the official forecast.</p>
     <div id="cmpBox" class="hs-cmp" hidden>
       <p class="hs-cmp-key">White dotted: the issued forecast's areas · colours: the draft's areas</p>
       <div id="cmpStats"></div>
