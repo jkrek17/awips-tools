@@ -217,7 +217,7 @@
         if (!b.geom || !b.geom.length) return;
         f.push({ type: "Feature", properties: { pid: pi, bid: bi, top: b.wind[1], lvl: level(b.wind[1]), focus: pi === focusPara ? 1 : 0,
           tip: (p.warning ? p.warning + " WARNING: " : "") + (b.wind[0] ? b.wind[0] + " TO " : "TO ") + b.wind[1] + " KT" + (b.seas ? ", SEAS " + (b.seas[0] ? b.seas[0] + " TO " : "TO ") + b.seas[1] + " " + b.seas[2] : "") },
-          geometry: { type: "MultiPolygon", coordinates: basin === "pac" ? shift(b.geom) : b.geom } });
+          geometry: { type: "MultiPolygon", coordinates: basin === "pac" ? shift(b.draw || b.geom) : (b.draw || b.geom) } });
       });
     });
     f.sort(function (a, b) { return a.properties.top - b.properties.top; });

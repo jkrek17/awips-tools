@@ -176,6 +176,11 @@
           var w = locate(t, g.from, p.start, p.end);
           issue(out, "warning", "Map", "Mapped as " + g.to, g.from, w[0], w[1]);
         });
+        if (b.open && b.geom && b.geom.length) {
+          var op = locate(t, b.area_text, p.start, p.end);
+          issue(out, "warning", "Map", b.open === "lat" ? "No latitude limits, so this area runs the full height of the forecast waters"
+            : "No longitude limits, so this area runs the full width of the forecast waters", short(b.area_text), op[0], op[1]);
+        }
         if (b.outside && !b.unread.length) {
           var pos = locate(t, b.area_text, p.start, p.end);
           issue(out, "warning", "Map", "This area lies outside the forecast waters", short(b.area_text), pos[0], pos[1]);
