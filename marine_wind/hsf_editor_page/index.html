@@ -35,7 +35,10 @@
   .bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
   .bar .info { margin-left: auto; color: var(--muted); font-size: 12px; }
   #editor { flex: 1; min-height: 240px; width: 100%; border: 0; resize: none; padding: 10px 12px; outline: none;
-    font: 13px/1.45 "Courier New", Courier, monospace; color: #000; background: var(--paper); white-space: pre; overflow: auto; border-radius: 0 0 8px 8px; }
+    font: 13px/1.45 "Courier New", Courier, monospace; color: #000; background: var(--paper); white-space: pre; overflow: auto; border-radius: 0 0 8px 8px;
+    /* a faint rule at column 66, the send width */
+    background-image: linear-gradient(to right, transparent calc(12px + 66ch), #ecdcdc calc(12px + 66ch), #ecdcdc calc(12px + 66ch + 1px), transparent calc(12px + 66ch + 1px));
+    background-attachment: local; }
   #editor::selection { background: #f2d4a6; }
   .issues { flex: 0 0 auto; max-height: 34%; overflow: auto; }
   .issues h2 { font-size: 13px; margin: 0; }

@@ -135,6 +135,51 @@
     });
   }
 
+  // ---------------------------------------------------------------- wrap as you type
+  // The paragraph the cursor is in ("." paragraph, up to a blank line or the next ".") is rewrapped at
+  // the send width on every edit, as the product will be sent. Header lines, the valid-time lines and
+  // the section names are left alone. The cursor keeps its place among the words.
+  var W = (window.HsfCheck && HsfCheck.SEND_WIDTH) || 66, reflowing = false;
+  function wrapWords(words) {
+    var out = [], cur = "";
+    words.forEach(function (w) {
+      if (!cur) cur = w;
+      else if (cur.length + 1 + w.length <= W) cur += " " + w;
+      else { out.push(cur); cur = w; }
+    });
+    if (cur) out.push(cur);
+    return out.join("\n");
+  }
+  function isHeader(line) { return /^\s*\.\.\..*\.\.\.\s*$/.test(line) || /^\s*\.[A-Z ]+\.\s*$/.test(line); }
+  function reflow() {
+    var v = ed.value, c = ed.selectionStart;
+    if (c !== ed.selectionEnd) return;
+    var lines = v.split("\n"), starts = [], o = 0, i, li = 0;
+    for (i = 0; i < lines.length; i++) { starts.push(o); if (c >= o) li = i; o += lines[i].length + 1; }
+    if (!lines[li].trim()) return;
+    var a = li, b = li;
+    var PSTART = /^\s*\.(?!\.)/;   // ".LOW ..." or ".24 HOUR FORECAST ..." ("..." starts no paragraph)
+    if (isHeader(lines[li])) return;
+    while (a > 0 && !PSTART.test(lines[a]) && lines[a - 1].trim() && !isHeader(lines[a - 1])) a--;
+    while (b + 1 < lines.length && lines[b + 1].trim() && !PSTART.test(lines[b + 1]) && !isHeader(lines[b + 1])) b++;
+    if (!PSTART.test(lines[a])) return;   // the valid-time lines at the top, or loose text
+    var from = starts[a], to = starts[b] + lines[b].length, old = v.slice(from, to);
+    var tail = /[ \t]+$/.exec(old), words = old.split(/\s+/).filter(Boolean);
+    var neu = wrapWords(words) + (tail ? " " : "");
+    if (neu === old) return;
+    // where the cursor goes: after the same number of non-space characters (and a space, if it followed one)
+    var before = v.slice(from, c), k = before.replace(/\s+/g, "").length, sp = /\s$/.test(before), at = 0, n = 0;
+    while (at < neu.length && n < k) { if (!/\s/.test(neu[at])) n++; at++; }
+    if (sp && at < neu.length && /\s/.test(neu[at])) at++;
+    reflowing = true;
+    ed.setSelectionRange(from, to);
+    var ok = false;
+    try { ok = document.execCommand("insertText", false, neu); } catch (e) { ok = false; }   // keeps undo
+    if (!ok || ed.value.slice(from, from + neu.length) !== neu) ed.setRangeText(neu, from, to, "end");
+    ed.setSelectionRange(from + at, from + at);
+    reflowing = false;
+  }
+
   // ---------------------------------------------------------------- read, check, draw
   function schedule() {
     clearTimeout(timer); timer = setTimeout(update, 180);
@@ -218,7 +263,10 @@
     if (changed && !quiet) drawMap();
   }
   ["keyup", "click", "select"].forEach(function (ev) { ed.addEventListener(ev, function () { followCursor(false); }); });
-  ed.addEventListener("input", schedule);
+  ed.addEventListener("input", function (e) {
+    if (!reflowing && (!e.inputType || /^(insert|delete)/.test(e.inputType)) && e.inputType !== "insertLineBreak") reflow();
+    schedule();
+  });
 
   // ---------------------------------------------------------------- map
   function features() {
