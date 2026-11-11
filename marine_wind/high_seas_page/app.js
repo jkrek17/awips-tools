@@ -359,8 +359,24 @@
       try { if (document.execCommand("copy")) done(); } catch (e) { /* the text stays selected */ }
       document.body.removeChild(ta);
     }
-    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(t).then(done, fallback);
+    if (navigator.clipboard && window.isSecureContext && window.ClipboardItem && navigator.clipboard.write) {
+      navigator.clipboard.write([new ClipboardItem({
+        "text/plain": new Blob([t], { type: "text/plain" }),
+        "text/html": new Blob([productHTML(t)], { type: "text/html" })
+      })]).then(done, function () { navigator.clipboard.writeText(t).then(done, fallback); });
+    } else if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(t).then(done, fallback);
     else fallback();
+  }
+  // The same text for word processors (Google Docs, Word, email): one paragraph per product line,
+  // no spacing between them, in a monospace font small enough that a 68-character line fits a
+  // page with wide margins (68 x 0.6 x 9 pt = 5.1 in), so the editor never wraps a line itself.
+  // Plain-text targets (AWIPS, editors, paste without formatting) take the text/plain copy.
+  function productHTML(t) {
+    var lines = t.replace(/\n$/, "").split("\n");
+    return '<meta charset="utf-8"><div style="font-family:\'Courier New\',Courier,monospace;font-size:9pt">' + lines.map(function (l) {
+      return '<p style="margin-top:0pt;margin-bottom:0pt;line-height:1.0"><span style="font-family:\'Courier New\',Courier,monospace;font-size:9pt">' +
+        (l ? esc(l) : "<br>") + "</span></p>";
+    }).join("") + "</div>";
   }
   function focusArea(i, el, fly) {
     document.querySelectorAll("#text .hs-ar.on").forEach(function (x) { x.classList.remove("on"); });
@@ -455,7 +471,9 @@
           t = hit.map(function (x) { return paras[+x.dataset.p].text; }).join("\n");
         }
       }
-      e.clipboardData.setData("text/plain", t.replace(/\r\n?/g, "\n").replace(/[ \t\u00a0]+$/gm, ""));
+      t = t.replace(/\r\n?/g, "\n").replace(/[ \t\u00a0]+$/gm, "");
+      e.clipboardData.setData("text/plain", t);
+      e.clipboardData.setData("text/html", productHTML(t));
       e.preventDefault();
     });
     var data = fetch(DATA + "?t=" + Date.now()).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
