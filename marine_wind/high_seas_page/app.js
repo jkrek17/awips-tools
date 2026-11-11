@@ -371,6 +371,13 @@
   // no spacing between them, in a monospace font small enough that a 68-character line fits a
   // page with wide margins (68 x 0.6 x 9 pt = 5.1 in), so the editor never wraps a line itself.
   // Plain-text targets (AWIPS, editors, paste without formatting) take the text/plain copy.
+  function warningSection(t) {
+    var a = t.search(/^\.WARNINGS\.\s*$/m);
+    if (a < 0) return "";
+    var b = t.slice(a).search(/^\.SYNOPSIS AND FORECAST\.\s*$/m);
+    var sec = (b < 0 ? t.slice(a) : t.slice(a, a + b)).replace(/\s+$/, "");
+    return /^\.\.\./m.test(sec) ? sec + "\n" : "";
+  }
   function productHTML(t) {
     var lines = t.replace(/\n$/, "").split("\n");
     return '<meta charset="utf-8"><div style="font-family:\'Courier New\',Courier,monospace;font-size:9pt">' + lines.map(function (l) {
@@ -438,6 +445,14 @@
       var t = compare && textTab === "draft" ? doc.draft_text : doc.text, b = $("copyBtn");
       copyText(t, null);
       b.textContent = "Copied"; setTimeout(function () { b.textContent = "Copy all"; }, 1500);
+    });
+    // the warning section alone: from ".WARNINGS." up to ".SYNOPSIS AND FORECAST." (or the end)
+    $("copyWarn").addEventListener("click", function () {
+      if (!doc) return;
+      var t = warningSection(compare && textTab === "draft" ? doc.draft_text : doc.text), b = $("copyWarn");
+      if (!t) { b.textContent = "No warnings"; setTimeout(function () { b.textContent = "Copy warnings"; }, 1500); return; }
+      copyText(t, null);
+      b.textContent = "Copied"; setTimeout(function () { b.textContent = "Copy warnings"; }, 1500);
     });
     // a copy by hand from the text: plain text only (the buttons add nothing to it)
     // a copy by hand from the text: the product's own characters for the part selected, as plain
