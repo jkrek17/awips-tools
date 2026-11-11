@@ -60,6 +60,7 @@
   .lowmark { font: 700 15px "Plex", sans-serif; text-align: center; line-height: 1; text-shadow: 0 0 3px #fff, 0 0 3px #fff; pointer-events: none; }
   .lowmark small { display: block; font-size: 11px; font-weight: 600; color: var(--ink); }
   .lowmark.L { color: var(--storm); } .lowmark.H { color: #1f4e9c; }
+  .trackpt { font: 600 10.5px "Plex", sans-serif; color: var(--navy); text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 2px #fff; pointer-events: none; }
   .maptip { position: absolute; left: 10px; bottom: 10px; z-index: 2; background: #fffffff0; border: 1px solid var(--line); border-radius: 6px; padding: 6px 9px; font-size: 12px; max-width: 70%; pointer-events: none; }
   .maptip:empty { display: none; }
   dialog { border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px; max-width: 420px; color: var(--ink); background: var(--paper); }
@@ -110,6 +111,7 @@
           <span><i style="background:var(--gale)"></i>Gale</span>
           <span><i style="background:var(--storm)"></i>Storm</span>
           <span><i style="background:var(--hf)"></i>Hurricane force</span>
+          <span><i style="background:none;border-top:2px dashed var(--navy);height:0;width:16px;vertical-align:3px;border-radius:0"></i>Low track</span>
         </span>
       </div>
       <div class="mapwrap"><div id="map"></div><div class="maptip" id="tip"></div></div>
