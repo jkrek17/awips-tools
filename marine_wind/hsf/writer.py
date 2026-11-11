@@ -56,6 +56,9 @@ class Rules:
     seas_peak_ratio: float = 2.0  # seas range wider than this (high over low): say where the highest are
     absorb_share: float = 0.25    # a gale core under this share of the area round it, and
     absorb_cells: int = 200       # under this many cells (~12 sq deg), joins that area
+    warn_tiers_only: bool = True  # warnings carry their categories only, no 20 TO 30 area (desk habit)
+    storm_cap: int = 55           # a storm range tops out at 40 TO 55
+    between_steps: bool = True    # add a 6-hourly step where a low's category rises (its worst area only)
 
 
 def lon_txt(x):
@@ -570,8 +573,14 @@ def areas_for_time(wind, hs, sea, grid, lows, rules=Rules()):
         low = members[0] if members else None
         top = max([0] + [lv for lv in rules.levels if clean(reg & (wind >= lv), sea, rules, rules.core_min_cells).any()])
         levels = [lv for lv in sorted(rules.levels, reverse=True) if lv <= top]
-        levels = levels[:2] if top >= 48 else levels[:1]
-        levels = [lv for lv in levels] + [rules.outer_kt]
+        # the desk's tiers (issued HSFEP1/HSFAT1 2025-26, 848 issuances each): a warning gives its
+        # core and the categories below it down to gale, and no 20 TO 30 area (that appears in only
+        # 12-14% of desk warning times): gale one range (81% of desk gale times), storm two
+        # (core + gale), hurricane force three (core, storm, gale). Areas under gale (the
+        # synopsis section) keep their one 20 TO 30 range.
+        levels = levels if (top >= 34 and rules.warn_tiers_only) else (levels[:2] if top >= 48 else levels[:1])
+        if not (top >= 34 and rules.warn_tiers_only):
+            levels = levels + [rules.outer_kt]
         tiers, done = [], np.zeros_like(reg)
         upper = None
         for lv in levels:
@@ -593,8 +602,9 @@ def areas_for_time(wind, hs, sea, grid, lows, rules=Rules()):
             wr = wind_range(wind[src], rules)
             # each tier tops out at its own category: warning-level winds sit in their own core,
             # lesser winds get a lower range (gale tier 45, the outer tier 30)
-            cap = min(85 if lv >= 64 else 60 if lv >= 48 else 45 if lv >= 34 else 30,
-                      {0: 30, 34: 45, 48: 60}.get(top, 85))
+            # storm tops out at 40 TO 55 (desk: 45 TO 60 is under 2% of storm ranges)
+            cap = min(85 if lv >= 64 else rules.storm_cap if lv >= 48 else 45 if lv >= 34 else 30,
+                      {0: 30, 34: 45, 48: rules.storm_cap}.get(top, 85))
             if wr[1] > cap:
                 wr = (LO_FOR_HI[cap], cap)
             sm = (new if new.any() else ph["mask"]) & sea
@@ -611,9 +621,12 @@ def areas_for_time(wind, hs, sea, grid, lows, rules=Rules()):
 def continuous_ranges(tiers):
     """Wind ranges run on without gaps: each lower tier tops out where the one above starts
     (Jason 11-07: "55 TO 70, 40 TO 55, 25 TO 40", not "55 TO 70, 45 TO 60, 20 TO 30"). The
-    lowest tier never drops below 20 TO 30."""
+    lowest tier never drops below 20 TO 30. Under a storm core the gale area reads 25 TO 40, as
+    the desk writes it (35 TO 50 then 25 TO 40: 581 times, then 25 TO 35: 339; issued 2025-26)."""
     for i in range(1, len(tiers)):
         hi = max(tiers[i - 1].wind[0], 30)
+        if tiers[i - 1].level == 48 and tiers[i].level == 34:
+            hi = max(hi, 40)
         tiers[i].wind = (LO_FOR_HI[hi], hi)
     return tiers
 
@@ -867,7 +880,9 @@ def write_product(fields, grid, sea, rules=Rules(), hours=None):
         # each higher category, if it holds for the next step or peaks in between
         cat = {h: (ent[h]["top"] if h in ent else 0) for h in hours}
         shown, out = [0, 24, 48], []
-        for a_, b_ in ((0, 24), (24, 48)):
+        # in-between steps only where the warning category goes up; Rules.between_steps=False
+        # gives 00, 24 and 48 h only
+        for a_, b_ in (((0, 24), (24, 48)) if rules.between_steps else ()):
             now = cat[a_]
             for h in [x for x in hours if a_ < x < b_]:
                 if cat[h] >= 34 and cat[h] > now and (cat.get(nxt_h.get(h), 0) >= cat[h] or cat[h] > cat[b_]):
@@ -875,7 +890,7 @@ def write_product(fields, grid, sea, rules=Rules(), hours=None):
                     now = cat[h]
         shown.sort()
         top = max(cat.get(h, 0) for h in shown)   # the heading follows the times the text shows
-        first_seen = min(ent)
+        first_seen = min([h for h in shown if h in ent] or [min(ent)])   # first time the text shows it
         prev_present = False
         prev_n = None
         for h in shown:
@@ -888,8 +903,14 @@ def write_product(fields, grid, sea, rules=Rules(), hours=None):
                 ent[h]["where"] = side(lw_[0], lw_[1]) if lw_ else None
                 n_now = len(ent[h].get("lows") or [])
                 prev_n = n_now
-                out.append(time_text(ent[h], h, lead, rules.seas_peak_ratio))
-                pieces.append(dict(key=key, hour=h, text=out[-1], top=top, tiers=ent[h]["tiers"], low=ent[h]["low"]))
+                sysd = ent[h]
+                if h % 24:
+                    # an in-between step gives only the worst conditions, the area that raised the
+                    # warning level (Jason 11-11: gale at 00 h, storm at 12 h -> only the 35 TO 50
+                    # area at 12 h)
+                    sysd = dict(ent[h], tiers=ent[h]["tiers"][:1])
+                out.append(time_text(sysd, h, lead, rules.seas_peak_ratio))
+                pieces.append(dict(key=key, hour=h, text=out[-1], top=top, tiers=sysd["tiers"], low=ent[h]["low"]))
                 prev_present = True
             elif prev_present:
                 # the paragraph's own last main centre is still there and in no other system

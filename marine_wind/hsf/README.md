@@ -32,7 +32,12 @@ storm and hurricane force for each, issued, draft and both. The page shows it un
   ALSO / ELSEWHERE with a lower range. The top tier's range comes from the grid peak rounded
   up to 5 kt (capped at its category); each lower range then tops out where the one above
   starts, so the ranges run on without gaps: "55 TO 70", "40 TO 55", "25 TO 40" (Jason 11-07),
-  never below "20 TO 30". A few pixels of storm
+  never below "20 TO 30". The desk's habits, from 848 issued HSFEP1 and HSFAT1 each (Oct 2025 - Nov 2026, Jason
+  11-07 "learn from the real forecasts"): a warning carries its own categories only, with no
+  20 TO 30 area (gale one range, storm core + gale, hurricane force core + storm + gale); under a
+  storm core the gale area reads 25 TO 40; storm ranges top out at 40 TO 55. Areas below gale
+  (the synopsis section) keep their 20 TO 30 range. Rules.warn_tiers_only and Rules.storm_cap
+  switch these. A few pixels of storm
   force are enough for a storm warning. A small gale core (under a quarter of the area round
   it and under ~12 sq deg) is written as one area with the wider range ("WINDS 25 TO 40 KT"),
   not as a separate little box beside the big one (Jason 10-30).
@@ -43,8 +48,10 @@ storm and hurricane force for each, issued, draft and both. The page shows it un
   storm hazard line), hurricane force around 60 kt. Winter 2025-26 Pacific against ASCAT with the
   60 nm ring billed: gale at 30 kt covers 94% of real gale water at 43% of the desk's area; storm
   at 39 kt on Core Lifted (held-out weeks) covers 66% of storm water, at 44 kt 48%.
-- Synopsis, 24 and 48 h, plus an in-between step each time a low's warning category goes up
-  (none to gale, gale to storm, storm to hurricane force).
+- Synopsis, 24 and 48 h, plus an in-between step only where a low's warning category goes up
+  (none to gale, gale to storm, storm to hurricane force). An in-between step gives only the
+  worst conditions, the area at the new category (Jason 11-11: gale at 00 h, storm at 12 h ->
+  only the 35 TO 50 area at 12 h). `Rules(between_steps=False)` gives 00, 24 and 48 h only.
   Complex lows: "COMPLEX LOW WITH MAIN CENTER ..." only.
 - Each low keeps its own paragraph: a low that was briefly part of another low's complex does not
   carry its own winds into that paragraph later. Within a category, lows at the synopsis come
