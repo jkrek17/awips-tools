@@ -66,16 +66,22 @@ storm and hurricane force for each, issued, draft and both. The page shows it un
   wind area instead of becoming a paragraph with no low; a weak low outside the area keeps only
   winds within 300 nm of it when they are a small part of another system's wind area. A complex
   low's main centre is its deepest centre inside the area, and every other centre lies within
-  600 nm of it (no chains). Stray wind goes to the nearest system sharing its wind area. A track may skip one 6 h step,
-  but only to a centre one ordinary 6 h step away (a 12 h bridge to a low 600 nm off once headed a
-  GALE WARNING whose text showed only 20 TO 30 KT, Jason 11-11). A centre that forms inside the winds
-  of a paragraph whose own low has nothing left takes that paragraph over (redevelopment), and the
-  synopsis motion follows it: one warning, not "LOW DISSIPATED" beside a "NEW LOW" over the same
-  gale (Jason 11-11, 06Z 11 Nov Atlantic, 61N68W then 61N63W). A paragraph ends at its first
+  600 nm of it (no chains). Stray wind goes to the nearest system sharing its wind area.
+  Low tracks (Jason 11-11, "the low tracking has not been working great"): each 6 h step is matched
+  as a whole, each track against where its last motion points; a low moves at most 60 kt, 40 kt
+  when both ends are 995 MB or weaker; a track may skip one step only to a centre within 240 nm and
+  8 hPa. In the 06Z 11 Nov run this removed every weak-low "run" of 50-65 kt (Atlantic 4, Pacific 3).
+  Test: `tests/test_tracks.py`. A centre that has led no paragraph yet and holds the winds of a
+  paragraph whose own low has nothing left takes that paragraph over (redevelopment, or a gale the
+  lows hand on), and the synopsis motion follows it: one warning, not "LOW DISSIPATED" beside a
+  "NEW LOW" over the same gale (Jason 11-11, 06Z 11 Nov Atlantic, 61N68W then 61N63W). A step names
+  a low inside the area only when its winds come within 350 nm of it (`Rules.name_nm`); otherwise it
+  reads ".24 HOUR FORECAST FROM 62N TO 66N ..." (the Davis Strait gale was written under a 1011 MB
+  low 600 nm east). A paragraph ends at its first
   "CONDITIONS DIMINISHED" or "DISSIPATED"; its heading counts only the times it shows. Quadrants
   pay for open ocean outside the area too, so a low west of 180W gets quadrants facing into the
   area or a box, not "WITHIN 840 NM S QUADRANT".
-  Tests: `python3 marine_wind/hsf/tests/test_western_boundary.py`, `tests/test_redevelop.py`.
+  Tests: `python3 marine_wind/hsf/tests/test_western_boundary.py`, `tests/test_redevelop.py`, `tests/test_tracks.py`.
 
 ## Valid times
 The desk issues every 6 h, the synopsis valid 4.5 h before it is due (00Z due 0430Z, 06Z due

@@ -46,6 +46,7 @@ class Rules:
     extra_weight: float = 0.6     # penalty per unit of empty sea added (as share of candidate)
     box_margin: float = 0.08      # a non-box form must beat the box by this much
     attach_nm: float = 900.0      # a region within this of a low belongs to that low
+    name_nm: float = 350.0        # a step names its low only when its winds come within this of it
     hi_from: str = "max"          # top of the wind range from the region's max ("few pixels" rule)
     hi_add: float = 0.0           # kt added to the grid peak before picking the range
     hi_pct: float = 99.0          # percentile used when hi_from == "pct"
@@ -731,43 +732,61 @@ def bearing(la1, lo1, la2, lo2):
     return (math.degrees(math.atan2(y, x)) + 360) % 360
 
 
-def link_tracks(lows_by_hour, max_kt=70.0):
-    """lows_by_hour: {hour: [low,...]} at any steps -> {hour: [(track_id, low), ...]}. A low links
-    to the nearest unclaimed low of the previous step within max_kt x the step length."""
-    out, nid, prev, ph = {}, 0, [], None
-    gap = []   # (track id, low, hour) of tracks missing at the previous step only
+def link_tracks(lows_by_hour, max_kt=60.0, weak_kt=40.0, weak_mb=995):
+    """lows_by_hour: {hour: [low,...]} at any steps -> {hour: [(track_id, low), ...]}.
+
+    Each step is matched as a whole (the pairing with the least total cost, not deepest low
+    first), and a track is judged against where it was heading, not only where it was:
+    - cost = distance to the position the track's last motion points to (half its last step
+      carried on), plus 20 nm for each hPa of change beyond 4 hPa;
+    - a low may move at most max_kt, or weak_kt when both ends are weak_mb or weaker (weak
+      lows that "ran" 50-65 kt were jumps to another centre in 11 Nov's run: 61N63W -> 65N56W
+      -> 63N44W, 41N179E -> 39N171E -> back east);
+    - a track missing for one step (a weak centre the finder skips) can pick up again within
+      240 nm of its last centre and 8 hPa of its depth (a 12 h bridge once joined 44N62W to a
+      different low 600 nm WSW, Jason 11-11; another joined 62N154W 983 inland to 57N154W 995)."""
+    from scipy.optimize import linear_sum_assignment
+    out, nid, ph = {}, 0, None
+    live = {}     # track id -> (last hour, last low, previous low or None)
     for h in sorted(lows_by_hour):
-        max_nm = max_kt * (h - ph if ph is not None else 6)
+        cur_l = lows_by_hour[h]
+        cand = [(tid, v) for tid, v in live.items()
+                if ph is not None and (v[0] == ph or (v[0] < ph and ph - v[0] <= 6 and h - v[0] <= 12))]
+        BIG = 1e6
+        cost = np.full((len(cur_l), max(len(cand), 1)), BIG)
+        for i, lw in enumerate(cur_l):
+            for j, (tid, (lh, pl, pp)) in enumerate(cand):
+                dt = h - lh
+                d = grid_dist(lw[3], lw[4], pl[3], pl[4])
+                kt = weak_kt if min(lw[2], pl[2]) >= weak_mb else max_kt
+                if dt > h - ph and (d > weak_kt * 6 or abs(lw[2] - pl[2]) > 8):
+                    continue                # a bridged gap: a nearby centre of like depth only
+                if d > kt * dt:
+                    continue
+                if pp is not None:          # carry on half the last step's motion
+                    f = 0.5 * dt / max(lh - pp[5], 1)
+                    py, px = pl[3] + f * (pl[3] - pp[3]), pl[4] + f * (pl[4] - pp[4])
+                    dp = grid_dist(lw[3], lw[4], py, px)
+                else:
+                    dp = d
+                cost[i, j] = dp + 20.0 * max(0, abs(lw[2] - pl[2]) - 4) + (60.0 if dt > h - ph else 0.0)
+        tid_of = [None] * len(cur_l)
+        if cand and cur_l:
+            rows, cols = linear_sum_assignment(cost)
+            for r, c in zip(rows, cols):
+                if cost[r, c] < BIG:
+                    tid_of[r] = cand[c][0]
         cur = []
-        used = set()
-        for lw in lows_by_hour[h]:
-            best = None
-            for tid, pl in prev:
-                if tid in used:
-                    continue
-                d = grid_dist(lw[3], lw[4], pl[3], pl[4])
-                if d <= max_nm and (best is None or d < best[0]):
-                    best = (d, tid)
-            # a low missed for one step (a weak centre the finder skips) keeps its track,
-            # so it is not called NEW when it comes back
-            for tid, pl, hh in gap if best is None else []:
-                if tid in used:
-                    continue
-                d = grid_dist(lw[3], lw[4], pl[3], pl[4])
-                # no farther than one ordinary step's reach: a 12 h bridge once joined 44N62W
-                # to a different low 600 nm WSW (Jason 11-11, 06Z 11 Nov Atlantic draft)
-                if d <= max_kt * 6 and (best is None or d < best[0]):
-                    best = (d, tid)
-            if best:
-                tid = best[1]
+        for i, lw in enumerate(cur_l):
+            if tid_of[i] is None:
+                tid_of[i], nid = nid, nid + 1
+                live[tid_of[i]] = (h, lw, None)
             else:
-                tid, nid = nid, nid + 1
-            used.add(tid)
-            cur.append((tid, lw))
+                lh, pl, _ = live[tid_of[i]]
+                live[tid_of[i]] = (h, lw, tuple(pl) + (lh,))
+            cur.append((tid_of[i], lw))
         out[h] = cur
-        seen = {t for t, _ in cur}
-        gap = [(t, l, ph) for t, l in prev if t not in seen] if ph is not None else []
-        prev, ph = cur, h
+        ph = h
     return out
 
 
@@ -844,19 +863,24 @@ def write_product(fields, grid, sea, rules=Rules(), hours=None):
                         return 1e9
                     return grid_dist(p["low"][0], p["low"][1], s["low"][0], s["low"][1])
                 mains.sort(key=_gap)
-                # a centre that forms after the synopsis inside the winds of a paragraph whose own
-                # low has nothing left at this step takes that paragraph over (redevelopment: the
-                # old centre fills inland, the new one carries its gales). Without this the same
-                # gale read as one warning ending "LOW DISSIPATED" and a second "NEW LOW" warning
-                # (Jason 11-11, 06Z 11 Nov Atlantic: 61N68W at 00 h, NEW LOW 61N63W at 6 h).
+                # a centre that has led no paragraph yet, holding the winds of a paragraph whose own
+                # low has nothing left at this step, takes that paragraph over: the wind area is the
+                # same weather (redevelopment, or a gale the lows hand on as they come and go).
+                # Without this the same gale read as one warning ending "LOW DISSIPATED" and a
+                # second "NEW LOW" warning (Jason 11-11, 06Z 11 Nov Atlantic: 61N68W at 00 h, NEW
+                # LOW 61N63W at 6 h, then 59N69W and 63N44W in turn under the Davis Strait gale).
+                # Same weather: the areas overlap by a quarter of the smaller, or overlap at all
+                # with the centres within complex_nm.
                 hand = []
-                if not mains and pv is not None and born.get(s["low"][4]) == h:
+                if not mains and pv is not None:
                     for k_, e_ in per.items():
                         p_ = e_.get(pv)
-                        if (isinstance(k_, int) and k_ not in taken and p_ and p_["low"] and p_["tiers"]
-                                and (p_["region"] & s["region"]).sum() > 0
-                                and grid_dist(p_["low"][0], p_["low"][1], s["low"][0], s["low"][1]) <= rules.complex_nm):
-                            hand.append(((p_["region"] & s["region"]).sum(), k_))
+                        if not (isinstance(k_, int) and k_ not in taken and p_ and p_["low"] and p_["tiers"]):
+                            continue
+                        ov = int((p_["region"] & s["region"]).sum())
+                        small = min(int(p_["region"].sum()), int(s["region"].sum()))
+                        if ov and (ov >= 0.25 * small or grid_dist(p_["low"][0], p_["low"][1], s["low"][0], s["low"][1]) <= rules.complex_nm):
+                            hand.append((ov, k_))
                     hand = [k_ for _, k_ in sorted(hand, reverse=True)]
                 cands = mains + hand + tids
                 key = next((k for k in cands if k not in taken), None)
@@ -943,6 +967,15 @@ def write_product(fields, grid, sea, rules=Rules(), hours=None):
                     # warning level (Jason 11-11: gale at 00 h, storm at 12 h -> only the 35 TO 50
                     # area at 12 h)
                     sysd = dict(ent[h], tiers=ent[h]["tiers"][:1])
+                # a step names its low only when its winds reach within name_nm of it: a gale
+                # 600 nm from a weak 1011 MB low is not that low's (Jason 11-11, 06Z 11 Nov
+                # Atlantic: Davis Strait gale written under LOW 62N43W). The step then reads
+                # ".24 HOUR FORECAST FROM 62N TO 66N ..." the desk's way for an area with no low
+                # (a low outside the area keeps its name: "LOW W OF AREA" is how the desk ties
+                # winds coming in to it)
+                if sysd["low"] and not sysd.get("where") and sysd["region"].any() and \
+                        grid.dist_bearing(sysd["low"][0], sysd["low"][1])[0][sysd["region"]].min() > rules.name_nm:
+                    sysd = dict(sysd, low=None, lows=[], where=None)
                 out.append(time_text(sysd, h, lead, rules.seas_peak_ratio))
                 pieces.append(dict(key=key, hour=h, text=out[-1], top=top, tiers=sysd["tiers"], low=ent[h]["low"]))
                 prev_present = True
