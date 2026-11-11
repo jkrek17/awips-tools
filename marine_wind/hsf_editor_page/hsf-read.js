@@ -662,7 +662,35 @@
       }
       if (b.geom.length) before.push(b.geom);
     });
-    return { hour: hour, lows: lows, blocks: blocks, flat: flat };
+    return { hour: hour, lows: lows, blocks: blocks, flat: flat, hazards: blocks.length ? [] : hazards(body, ctx) };
+  }
+
+  // fog and freezing spray paragraphs (no winds): ".DENSE FOG. VSBY OCCASIONALLY LESS THAN 1 NM <area>.",
+  // ".24 HOUR FORECAST MODERATE TO HEAVY FREEZING SPRAY <area>. ELSEWHERE LIGHT TO MODERATE
+  // FREEZING SPRAY <area>." -> [{kind: fog|spray, level: dense|light|moderate|heavy, words, area_text, geom, draw, ok}]
+  function hazards(body, ctx) {
+    var out = [], m;
+    var one = function (kind, lvl, words, area) {
+      area = area.replace(/[\s.,]+$/, "").trim();
+      if (!area) return;
+      var a = areaGeom(area, ctx);
+      out.push({ kind: kind, level: lvl, words: words, area_text: area, geom: a.geom, draw: a.geom, ok: a.ok && a.geom.length > 0, unread: a.unread });
+    };
+    if ((m = /^DENSE FOG\b\.?\s*(?:VSBY\s+(?:OCCASIONALLY\s+)?(?:LESS THAN|BELOW|UNDER)\s+\d+(?:\.\d+)?\s*NM\.?\s*)?([\s\S]*)$/.exec(body))) {
+      one("fog", "dense", "DENSE FOG", m[1]);
+    } else if (/^(?:AREAS OF\s+)?(?:LIGHT|MODERATE|HEAVY)\b[A-Z ]*?FREEZING SPRAY\b/.test(body)) {
+      body.split(/\.?\s*\bELSEWHERE\s+/).forEach(function (part) {
+        var k = /^((?:AREAS OF\s+)?(?:LIGHT|MODERATE|HEAVY)(?:\s+TO\s+(?:MODERATE|HEAVY))?)\s+FREEZING SPRAY\s*([\s\S]*)$/.exec(part.trim());
+        if (!k) return;
+        one("spray", /HEAVY/.test(k[1]) ? "heavy" : /MODERATE/.test(k[1]) ? "moderate" : "light", k[1] + " FREEZING SPRAY", k[2]);
+      });
+      // ELSEWHERE: outside the areas already given
+      for (var i = 1; i < out.length; i++) {
+        var prev = union(out.slice(0, i).map(function (h) { return h.geom; }).filter(function (g) { return g.length; }));
+        if (out[i].geom.length && prev && prev.length) { var d = diff(out[i].geom, prev); if (d && d.length) out[i].draw = d; }
+      }
+    }
+    return out;
   }
 
   // ---------------------------------------------------------------- product
@@ -715,7 +743,7 @@
       if (r.lows.length) sysLows = r.lows;
       var trimEnd = b;
       while (trimEnd > a && /\s/.test(t[trimEnd - 1])) trimEnd--;
-      out.paras.push({ start: a, end: trimEnd, section: section, warning: warning, system: sys, hour: r.hour, lows: r.lows, blocks: r.blocks, text: r.flat });
+      out.paras.push({ start: a, end: trimEnd, section: section, warning: warning, system: sys, hour: r.hour, lows: r.lows, blocks: r.blocks, hazards: r.hazards, text: r.flat });
     }
     out.tracks = tracks(out.paras);
     return out;

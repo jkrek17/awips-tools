@@ -112,4 +112,21 @@ test("lowercase and level checks", function () {
   assert(/Winds to 35 KT in the synopsis section/.test(is));
 });
 
+test("fog and freezing spray paragraphs are drawn", function () {
+  var t = "SYNOPSIS VALID 1800 UTC NOV 11.\n\n.WARNINGS.\n\n...HEAVY FREEZING SPRAY WARNING...\n" +
+    ".MODERATE TO HEAVY FREEZING SPRAY FROM 58N TO 62N BETWEEN 165W AND 175W. ELSEWHERE LIGHT TO MODERATE FREEZING SPRAY N OF 56N W OF 160W.\n\n" +
+    ".SYNOPSIS AND FORECAST.\n\n.DENSE FOG. VSBY OCCASIONALLY LESS THAN 1 NM FROM 50N TO 53N BETWEEN 160W AND 174W.\n" +
+    ".24 HOUR FORECAST DENSE FOG WITHIN 60 NM OF A LINE FROM 49N154W TO 49N160W.\n";
+  var r = R.read(t, "pac"), hz = [];
+  r.paras.forEach(function (p) { (p.hazards || []).forEach(function (h) { hz.push([p.hour, h.kind, h.level, h.ok, p.warning]); }); });
+  assert(hz.length === 4, JSON.stringify(hz));
+  assert(hz[0][1] === "spray" && hz[0][2] === "heavy" && hz[0][3] && /FREEZING SPRAY/.test(hz[0][4]), JSON.stringify(hz[0]));
+  assert(hz[1][2] === "moderate" && hz[1][3], JSON.stringify(hz[1]));
+  assert(hz[2][1] === "fog" && hz[2][0] === 0 && hz[2][3], JSON.stringify(hz[2]));
+  assert(hz[3][1] === "fog" && hz[3][0] === 24 && hz[3][3], JSON.stringify(hz[3]));
+  var spr = r.paras.filter(function (p) { return (p.hazards || []).length === 2; })[0].hazards;
+  assert(R.areaOf(spr[1].draw) < R.areaOf(spr[1].geom), "ELSEWHERE spray not drawn outside the heavy area");
+  assert(r.paras.every(function (p) { return !p.blocks.length; }), "fog or spray read as wind");
+});
+
 console.log(n + " tests passed");
