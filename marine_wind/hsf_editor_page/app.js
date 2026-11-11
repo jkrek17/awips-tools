@@ -96,12 +96,15 @@
       if (!r.ok) throw new Error("the archive answered HTTP " + r.status);
       prod = await r.text();
     } catch (e) {
-      note("Could not fetch " + B.pil + ": " + (e.message || e) + ". Paste the text in instead.");
-      return;
+      note("Could not reach the text archive (" + (e.message || e) + ")");
+      return pasteIssued("The text archive could not be reached. Paste the last issued " + B.pil + " here (from AWIPS or ocean.weather.gov) and the page moves its valid times on 6 hours.");
     }
     if (from !== basin) return;
+    useIssued(prod, B);
+  }
+  function useIssued(prod, B) {
     var t = opcPart(prod);
-    if (!t) { note("The fetched " + B.pil + " has no SYNOPSIS VALID line. Paste the text in instead."); return; }
+    if (!t) { note("That " + B.pil + " has no SYNOPSIS VALID line"); return pasteIssued("No SYNOPSIS VALID line was found. Paste the whole " + B.pil + " here."); }
     var iss = /\n(\d{3,4}) UTC \w{3} (\w{3}) (\d+) (\d{4})/.exec(prod);
     var year = iss ? +iss[4] : new Date().getUTCFullYear();
     var label = iss ? B.pil + " issued " + iss[1] + " UTC " + iss[2] + " " + iss[3] : B.pil;
@@ -111,6 +114,15 @@
     note("Started from " + label + ", valid times moved on 6 h");
     hour = 0; focusPara = -1;
     update();
+  }
+  // when the archive cannot be reached: paste the issued product instead
+  function pasteIssued(text) {
+    var dlg = $("paste"), B = BASINS[basin];
+    $("pasteText").textContent = text;
+    $("pasteBox").value = "";
+    $("pasteUse").onclick = function () { var v = $("pasteBox").value; dlg.close(); if (v.trim()) useIssued(v.toUpperCase(), B); };
+    $("pasteNo").onclick = function () { dlg.close(); };
+    if (dlg.showModal) dlg.showModal();
   }
   function confirmReplace(text) {
     var dlg = $("ask");
@@ -351,6 +363,22 @@
   $("b-atl").onclick = function () { if (basin !== "atl") { save(); setBasin("atl"); } };
   $("b-pac").onclick = function () { if (basin !== "pac") { save(); setBasin("pac"); } };
   $("load").onclick = function () { loadIssued(true); };
+  $("help").onclick = function () { var d = $("howto"); if (d.showModal) d.showModal(); };
+  $("howtoClose").onclick = function () { $("howto").close(); };
+
+  // a newer copy of the page is out: offer a reload (the draft is kept in this browser)
+  var mine = (/[?&]v=([\w-]+)/.exec((document.querySelector('script[src*="app.js"]') || {}).src || "") || [])[1];
+  async function checkVersion() {
+    if (!mine || document.hidden) return;
+    try {
+      var html = await (await fetch(location.pathname + "?check=" + Date.now(), { cache: "no-store" })).text();
+      var live = (/app\.js\?v=([\w-]+)/.exec(html) || [])[1];
+      if (live && live !== mine) $("newer").hidden = false;
+    } catch (e) { /* offline: try again later */ }
+  }
+  $("reload").onclick = function () { save(); location.reload(); };
+  setInterval(checkVersion, 10 * 60e3);
+  document.addEventListener("visibilitychange", checkVersion);
 
   initMap();
   setBasin(basin);

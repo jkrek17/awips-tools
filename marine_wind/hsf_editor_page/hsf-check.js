@@ -169,6 +169,9 @@
       }
     }
 
+    // ---- across forecast times: low speed and depth, hour order, gaps between wind ranges, seas for the winds
+    if (read && read.paras) acrossTimes(t, read, out);
+
     // ---- the map reader: areas it could not draw, or that fall outside the forecast waters
     if (read && read.paras) read.paras.forEach(function (p) {
       p.blocks.forEach(function (b) {
@@ -195,6 +198,83 @@
     var order = { error: 0, warning: 1, info: 2 };
     out.sort(function (a, b) { return order[a.sev] - order[b.sev] || a.at - b.at; });
     return out;
+  }
+
+  // ---- checks that read the product as a whole (thresholds from 1200 issued products per basin, 2026)
+  var FAST_KT = 70;          // a low moving faster than this between steps: ~1% of steps, mostly typed positions
+  var DEEPEN_6H = 15, FILL_6H = 12;   // MB per 6 h; issued lows pass these about 1 time in 1000
+  var SEAS_MIN = [[64, 5], [48, 4], [34, 2.5]];   // lowest top seas (M) issued with these winds, about 1 in 200
+  function nm(a, b) {
+    var r = Math.PI / 180, d = Math.sin(a.lat * r) * Math.sin(b.lat * r) + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.cos((a.lon - b.lon) * r);
+    return Math.acos(Math.min(1, d)) * 3440;
+  }
+  function hh(h) { return h ? (h < 10 ? "0" : "") + h + " HOUR" : "synopsis"; }
+  function find(t, re, a, b) {
+    re = new RegExp(re.source, "g");
+    re.lastIndex = a;
+    var m = re.exec(t);
+    return m && m.index < b ? [m.index, m.index + m[0].length, m[0].replace(/\s+/g, " ")] : null;
+  }
+  function esc(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+  function acrossTimes(t, read, out) {
+    var P = read.paras;
+    (read.tracks || []).forEach(function (tr) {
+      var flagged = {};
+      for (var i = 1; i < tr.points.length; i++) {
+        var a = tr.points[i - 1], b = tr.points[i], h = b.hour - a.hour;
+        if (h <= 0) continue;
+        var pb = P[b.para], at = pb ? find(t, new RegExp(esc(b.raw || "")), pb.start, pb.end) : null;
+        if (!at) at = pb ? [pb.start, pb.start + 1, ""] : [0, 0, ""];
+        var kt = nm(a, b) / h;
+        if (kt > FAST_KT && !flagged[i - 1]) {
+          flagged[i] = 1;
+          issue(out, "warning", "Across times", "Low moves " + Math.round(kt) + " KT from " + (a.raw || "") + " (" + hh(a.hour) + ") to " + (b.raw || "") +
+            " (" + hh(b.hour) + "): check the position", b.raw || "", at[0], at[1]);
+        }
+        if (a.mb && b.mb) {
+          var d6 = (b.mb - a.mb) / h * 6, mbAt = find(t, new RegExp("\\b" + b.mb + "\\s+MB\\b"), pb.start, pb.end) || at;
+          if (d6 <= -DEEPEN_6H) issue(out, "warning", "Across times", "Low deepens " + (a.mb - b.mb) + " MB in " + h + " h (" + a.mb + " to " + b.mb + " MB): check the pressure", b.mb + " MB", mbAt[0], mbAt[1]);
+          else if (d6 >= FILL_6H) issue(out, "warning", "Across times", "Low fills " + (b.mb - a.mb) + " MB in " + h + " h (" + a.mb + " to " + b.mb + " MB): check the pressure", b.mb + " MB", mbAt[0], mbAt[1]);
+        }
+      }
+    });
+    // forecast hours in order inside each warning
+    var last = {};
+    P.forEach(function (p) {
+      if (p.section !== "warnings") return;
+      var k = p.system, prev = last[k];
+      if (prev && p.hour && p.hour <= prev.hour) {   // several synopsis paragraphs in one warning are normal
+        var w = find(t, /\d{1,2} HOUR FORECAST/, p.start, p.end) || [p.start, p.start + 1, ""];
+        issue(out, "warning", "Across times", (p.hour === prev.hour ? "Second " + hh(p.hour) + " FORECAST in this warning" : hh(p.hour) + " FORECAST comes after the " + (prev.hour ? hh(prev.hour) + " FORECAST" : "synopsis")), w[2], w[0], w[1]);
+      }
+      last[k] = p;
+    });
+    // inside each paragraph: no gap between one range and the ELSEWHERE range below it; seas that fit the winds
+    var WRE = /\bWINDS?\s+(?:(?:LESS THAN|UP TO|TO)\s+)?(?:(\d+)\s+TO\s+)?(\d+)\s*KT\b/;
+    P.forEach(function (p) {
+      var pos = p.start, prev = null;
+      p.blocks.forEach(function (b) {
+        if (!b.wind[1] || b.wind[1] > 150) return;
+        var src = (b.wind[0] ? b.wind[0] + "\\s+TO\\s+" : "(?:(?:LESS THAN|UP TO|TO)\\s+)?") + b.wind[1] + "\\s*KT\\b";
+        var w = find(t, new RegExp("\\bWINDS?\\s+" + src), pos, p.end) || find(t, new RegExp(src), pos, p.end);
+        if (!w) return;
+        pos = w[1];
+        if (prev && b.tier === "elsewhere" && b.wind[1] < prev.wind[0]) {
+          issue(out, "warning", "Wind", "Gap between wind ranges: " + (prev.wind[0] ? prev.wind[0] + " TO " : "TO ") + prev.wind[1] + " KT, then " +
+            (b.wind[0] ? b.wind[0] + " TO " : "TO ") + b.wind[1] + " KT (nothing for " + b.wind[1] + " TO " + prev.wind[0] + " KT)", w[2], w[0], w[1]);
+        }
+        if (b.seas && b.seas[2] === "M") {
+          for (var i = 0; i < SEAS_MIN.length; i++) if (b.wind[1] >= SEAS_MIN[i][0]) {
+            if (b.seas[1] < SEAS_MIN[i][1]) {
+              var s = find(t, /SEAS\s+(?:(?:LESS THAN|UP TO|TO)\s+)?[\d.]+(?:\s+TO\s+[\d.]+)?\s*M\b/, w[1], p.end) || w;
+              issue(out, "warning", "Seas", "Seas to " + b.seas[1] + " M are low for winds to " + b.wind[1] + " KT (issued forecasts give at least " + SEAS_MIN[i][1] + " M)", s[2], s[0], s[1]);
+            }
+            break;
+          }
+        }
+        prev = b;
+      });
+    });
   }
 
   function short(s) { s = s.replace(/\s+/g, " ").trim(); return s.length > 60 ? s.slice(0, 57) + "..." : s; }
