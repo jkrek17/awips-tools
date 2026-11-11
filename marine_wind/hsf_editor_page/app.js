@@ -256,7 +256,7 @@
     read.paras.forEach(function (p, i) { if (c >= p.start && c <= p.end + 1) k = i; });
     var changed = k !== focusPara;
     focusPara = k;
-    if (k > -1 && read.paras[k].hour !== hour && (read.paras[k].blocks.length || read.paras[k].lows.length)) {
+    if (k > -1 && read.paras[k].hour !== hour && (read.paras[k].blocks.length || read.paras[k].lows.length || (read.paras[k].hazards || []).length)) {
       hour = read.paras[k].hour;
       if (!quiet) { drawHours(); drawMap(); return; }
     }
@@ -283,6 +283,22 @@
     f.sort(function (a, b) { return a.properties.top - b.properties.top; });
     return { type: "FeatureCollection", features: f };
   }
+  // your fog and freezing spray paragraphs at the time shown (grey dashed fog, teal spray, pink heavy)
+  var HAZ = { fog: "#6b7280", spray: "#0e7490", heavy: "#be185d" };
+  function hazardFeatures() {
+    var f = [];
+    read.paras.forEach(function (p, pi) {
+      if (p.hour !== hour) return;
+      (p.hazards || []).forEach(function (h) {
+        var g = h.draw && h.draw.length ? h.draw : h.geom;
+        if (!g || !g.length) return;
+        f.push({ type: "Feature", properties: { pid: pi, focus: pi === focusPara ? 1 : 0, fog: h.kind === "fog" ? 1 : 0,
+          colour: h.kind === "fog" ? HAZ.fog : h.level === "heavy" ? HAZ.heavy : HAZ.spray, tip: h.words },
+          geometry: { type: "MultiPolygon", coordinates: basin === "pac" ? shift(g) : g } });
+      });
+    });
+    return { type: "FeatureCollection", features: f };
+  }
   function shift(g) { return g.map(function (p) { return p.map(function (r) { return r.map(function (q) { return [q[0] - 360, q[1]]; }); }); }); }
   // each warning block's main low through its forecast hours
   function trackFeatures() {
@@ -300,6 +316,7 @@
     if (!mapReady || !read) return;
     map.getSource("areas").setData(features());
     map.getSource("tracks").setData(trackFeatures());
+    if (map.getSource("haz")) map.getSource("haz").setData(hazardFeatures());
     markers.forEach(function (m) { m.remove(); });
     markers = [];
     // hour labels on the track positions away from the time shown
@@ -352,6 +369,10 @@
       var col = ["match", ["get", "lvl"], "hf", COLOURS.hf, "storm", COLOURS.storm, "gale", COLOURS.gale, COLOURS.low];
       map.addLayer({ id: "area-fill", type: "fill", source: "areas", paint: { "fill-color": col, "fill-opacity": ["case", ["==", ["get", "focus"], 1], 0.55, 0.38] } });
       map.addLayer({ id: "area-line", type: "line", source: "areas", paint: { "line-color": col, "line-width": 1.6 } });
+      map.addSource("haz", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      map.addLayer({ id: "haz-fill", type: "fill", source: "haz", paint: { "fill-color": ["get", "colour"], "fill-opacity": ["case", ["==", ["get", "focus"], 1], 0.28, 0.14] } });
+      map.addLayer({ id: "haz-fog", type: "line", source: "haz", filter: ["==", ["get", "fog"], 1], paint: { "line-color": ["get", "colour"], "line-width": ["case", ["==", ["get", "focus"], 1], 2.6, 1.6], "line-dasharray": [3, 2] } });
+      map.addLayer({ id: "haz-spray", type: "line", source: "haz", filter: ["==", ["get", "fog"], 0], paint: { "line-color": ["get", "colour"], "line-width": ["case", ["==", ["get", "focus"], 1], 2.6, 1.6], "line-dasharray": [1, 1.5] } });
       map.addSource("land", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
       map.addLayer({ id: "land", type: "fill", source: "land", paint: { "fill-color": "#f3eee2" } });
       map.addLayer({ id: "land-line", type: "line", source: "land", paint: { "line-color": "#b9ae96", "line-width": 0.7 } });
@@ -379,6 +400,17 @@
       var f = e.features[0];
       e.features.forEach(function (g) { if (g.properties.top > f.properties.top) f = g; });
       var p = read.paras[f.properties.pid];
+      if (p) select(p.start, p.end);
+    });
+    map.on("mousemove", "haz-fill", function (e) {
+      if (map.queryRenderedFeatures(e.point, { layers: ["area-fill"] }).length) return;   // wind areas first
+      map.getCanvas().style.cursor = "pointer";
+      $("tip").textContent = e.features[0].properties.tip + " (click to find it in the text)";
+    });
+    map.on("mouseleave", "haz-fill", function () { map.getCanvas().style.cursor = ""; $("tip").textContent = ""; });
+    map.on("click", "haz-fill", function (e) {
+      if (map.queryRenderedFeatures(e.point, { layers: ["area-fill"] }).length) return;
+      var p = read.paras[e.features[0].properties.pid];
       if (p) select(p.start, p.end);
     });
   }
