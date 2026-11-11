@@ -416,19 +416,38 @@
   }
 
   // ---------------------------------------------------------------- copy
+  // Copies carry two forms. text/plain is the product as sent, for AWIPS and plain editors.
+  // text/html is one paragraph per line with no spacing between them, in Courier New 9 pt, so
+  // Google Docs and Word keep each 66-character line as it is: no wrap, no blank gaps.
+  function productHTML(t) {
+    var lines = t.replace(/\n$/, "").split("\n");
+    return '<meta charset="utf-8"><div style="font-family:\'Courier New\',Courier,monospace;font-size:9pt">' + lines.map(function (l) {
+      return '<p style="margin-top:0pt;margin-bottom:0pt;line-height:1.0"><span style="font-family:\'Courier New\',Courier,monospace;font-size:9pt">' +
+        (l ? esc(l) : "<br>") + "</span></p>";
+    }).join("") + "</div>";
+  }
   function copy(text, btn, label) {
     if (!text) { flash(btn, "Nothing in this section", label); return; }
     var ok = function () { flash(btn, "Copied", label, true); };
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(ok, function () { fallback(text) ? ok() : flash(btn, "Copy failed", label); });
-    else if (fallback(text)) ok(); else flash(btn, "Copy failed", label);
+    var bad = function () { fallback(text) ? ok() : flash(btn, "Copy failed", label); };
+    if (navigator.clipboard && window.ClipboardItem && navigator.clipboard.write && window.isSecureContext) {
+      navigator.clipboard.write([new ClipboardItem({
+        "text/plain": new Blob([text], { type: "text/plain" }),
+        "text/html": new Blob([productHTML(text)], { type: "text/html" })
+      })]).then(ok, bad);
+    } else bad();
   }
   function fallback(text) {
+    // the old copy command, with both forms set in its copy event
+    var set = function (e) { e.clipboardData.setData("text/plain", text); e.clipboardData.setData("text/html", productHTML(text)); e.preventDefault(); };
+    document.addEventListener("copy", set);
     var ta = document.createElement("textarea");
     ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
     document.body.appendChild(ta); ta.select();
     var ok = false;
     try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
     document.body.removeChild(ta);
+    document.removeEventListener("copy", set);
     return ok;
   }
   function flash(btn, msg, label, good) {
