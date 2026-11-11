@@ -49,6 +49,30 @@ test("Pacific: the slips in the issued product are caught", function () {
   is.forEach(function (i) { assert(i.end > i.at, "empty selection for " + i.msg); });
 });
 
+test("checks across forecast times", function () {
+  var is = C.check(pac, R.read(pac, "pac"));
+  function has(re) { return is.some(function (i) { return re.test(i.msg + ": " + i.word); }); }
+  assert(has(/Low moves 96 KT from 50N174W \(synopsis\) to 51N189W/), "typed position as a jump");
+  assert(has(/Gap between wind ranges: 50 TO 60 KT, then 35 TO 45 KT/), "gap between ranges");
+  var t = ".WARNINGS.\n\n...STORM WARNING...\n.LOW 50N150W 990 MB. WITHIN 120 NM S SEMICIRCLE WINDS 40 TO 50 KT. SEAS 2 TO 3 M.\n" +
+    ".48 HOUR FORECAST LOW 52N145W 960 MB. WITHIN 120 NM S SEMICIRCLE WINDS 40 TO 50 KT. SEAS 6 TO 9 M.\n" +
+    ".24 HOUR FORECAST LOW 51N148W 975 MB. WITHIN 120 NM S SEMICIRCLE WINDS 40 TO 50 KT. SEAS 6 TO 9 M.\n";
+  is = C.check(t, R.read(t, "pac"));
+  assert(has(/Seas to 3 M are low for winds to 50 KT/), "seas for winds");
+  assert(has(/24 HOUR FORECAST comes after the 48 HOUR FORECAST/), "hour order");
+  assert(!has(/Low moves/), "slow low not flagged");
+});
+
+test("named coasts and Hecate Strait", function () {
+  ["WITHIN 60 NM OF CALIFORNIA COAST FROM 34N TO 40N", "WITHIN 90 NM OF THE COAST OF VANCOUVER ISLAND", "WITHIN HECATE STRAIT",
+    "WITHIN 120 NM NE AND E OF A FRONT TO EXTEND FROM 50N140W TO 45N145W", "WITHIN 60 NM ON EITHER SIDE OF A LINE FROM 50N140W TO 45N145W"
+  ].forEach(function (s) { var g = R._areaGeom(s, "pac", []); assert(g.ok && g.geom.length, s); });
+  var ca = R._areaGeom("WITHIN 60 NM OF CALIFORNIA COAST FROM 34N TO 40N", "pac", []).geom, ys = [];
+  JSON.stringify(ca).replace(/\[(-?[\d.]+),(-?[\d.]+)\]/g, function (m, x, y) { ys.push(+y); });
+  assert(Math.min.apply(0, ys) >= 34 && Math.max.apply(0, ys) <= 40, "California coast cut to 34N-40N");
+  assert(R._areaGeom("WITHIN 60 NM OF THE LABRADOR COAST", "atl", []).ok, "Labrador");
+});
+
 test("Pacific areas across the date line stay in 0-360", function () {
   var g = R._areaGeom("WITHIN 300 NM OF 50N180W", "pac", []).geom;
   g.forEach(function (p) { p[0].forEach(function (q) { assert(q[0] >= 172 && q[0] <= 190, q[0]); }); });

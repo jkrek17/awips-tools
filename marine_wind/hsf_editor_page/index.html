@@ -67,6 +67,15 @@
   dialog::backdrop { background: #14213d55; }
   dialog p { margin: 0 0 14px; }
   dialog .row { display: flex; gap: 8px; justify-content: flex-end; }
+  dialog.wide { max-width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow: auto; }
+  dialog h2 { font-size: 17px; margin: 0 0 6px; color: var(--navy); }
+  dialog h3 { font-size: 14px; margin: 14px 0 4px; color: var(--ox); }
+  dialog ul { margin: 0 0 4px; padding-left: 20px; }
+  dialog li { margin: 3px 0; }
+  .sw { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin: 0 4px 0 2px; vertical-align: -1px; }
+  #pasteBox { width: 100%; min-height: 260px; margin: 0 0 12px; font: 12.5px/1.4 "Courier New", monospace; border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+  .newer { background: var(--ox-soft); color: var(--ox); border-bottom: 1px solid var(--line); padding: 6px 16px; font-size: 13px; display: flex; gap: 10px; align-items: center; }
+  .newer[hidden] { display: none; }
   @media (max-width: 900px) {
     main { grid-template-columns: 1fr; height: auto; }
     .col { min-height: auto; }
@@ -84,8 +93,10 @@
     <button id="b-pac" aria-pressed="false">Pacific</button>
   </span>
   <button class="btn light" id="load" title="Replace the text with the last issued forecast, its valid times moved on 6 hours">Start from last issued</button>
+  <button class="btn light" id="help">How to</button>
   <span class="note" id="note"></span>
 </header>
+<div class="newer" id="newer" hidden>A newer version of this page is out. <button class="btn" id="reload">Reload</button> Your draft is kept.</div>
 <main>
   <section class="col">
     <div class="card" style="flex:1">
@@ -118,6 +129,36 @@
     </div>
   </section>
 </main>
+<dialog id="paste" class="wide"><p id="pasteText"></p><textarea id="pasteBox" spellcheck="false" wrap="off" aria-label="Issued forecast text"></textarea>
+  <div class="row"><button class="btn ghost" id="pasteNo">Cancel</button><button class="btn" id="pasteUse">Use this text</button></div></dialog>
+<dialog id="howto" class="wide" aria-labelledby="howtoHead">
+  <h2 id="howtoHead">How to use the High Seas Editor</h2>
+  <h3>Writing</h3>
+  <ul>
+    <li>Pick <b>Atlantic</b> or <b>Pacific</b>. With no draft, the page loads the last issued HSFAT1 or HSFEP1 and moves its valid times on 6 hours. <b>Start from last issued</b> does that again on demand. The model-written draft is never used here.</li>
+    <li>Type in the text box. Your draft is saved in this browser as you type, one per basin. It stays through reloads but not on another computer.</li>
+    <li>If the text archive can't be reached, you'll be asked to paste the issued product instead.</li>
+  </ul>
+  <h3>Map</h3>
+  <ul>
+    <li>The map redraws every area in the text for the time chosen above it: <b>Synopsis</b>, <b>6 h</b> up to <b>48 h</b>. Click in a paragraph and the map moves to its time and outlines its areas. Click an area to jump to its paragraph.</li>
+    <li>Colours follow the top wind of each area: <span class="sw" style="background:var(--low)"></span>below gale, <span class="sw" style="background:var(--gale)"></span>gale 34-47, <span class="sw" style="background:var(--storm)"></span>storm 48-63, <span class="sw" style="background:var(--hf)"></span>hurricane force 64+.</li>
+    <li>An <b>ELSEWHERE</b> area is drawn outside the areas listed before it. A side of a line is the ground the line sweeps toward that side. <b>E</b> and <b>W OF GREENLAND</b> split at 43.5W. The dashed line is the track of each warning's low, labelled by hour, so a typed position shows as a jump.</li>
+    <li>The dashed oxblood outline is the forecast area.</li>
+  </ul>
+  <h3>Checks</h3>
+  <ul>
+    <li><b>Error</b>: wrong as written, e.g. a coordinate out of range, seas in KT, gale or more in the synopsis section, winds above the warning level.</li>
+    <li><b>Warning</b>: worth a look, e.g. an unknown word, missing dots, a low moving over 70 KT or deepening 15 MB in 6 h, a gap between wind ranges, seas low for the winds, a forecast hour out of order, or an area with no latitude limits. "Mapped as ..." means the map read a slip the way it was probably meant.</li>
+    <li><b>Info</b>: wording the map can't draw. The text itself may be fine.</li>
+    <li>Click any line to select that text in the box.</li>
+  </ul>
+  <h3>Sending</h3>
+  <ul>
+    <li><b>Copy Warnings box</b> and <b>Copy Synopsis box</b> give the text for the forecast editor's two boxes, wrapped at 66 characters, without the section headers. <b>Copy all</b> gives the whole product as sent.</li>
+  </ul>
+  <div class="row"><button class="btn" id="howtoClose">Close</button></div>
+</dialog>
 <dialog id="ask"><p id="askText"></p><div class="row"><button class="btn ghost" value="no" id="askNo">Cancel</button><button class="btn" value="yes" id="askYes">Replace</button></div></dialog>
 <script src="../globe-kit/lib/maplibre-gl.js" defer></script>
 <script src="lib/polygon-clipping.min.js" defer></script>
