@@ -41,7 +41,7 @@ On the last 400 issued products of each basin (late summer to 11 Nov 2026):
 | Atlantic, `issued.py` | 80% | 63% |
 | Atlantic, `hsf-read.js` | 96.5% | 89.5% |
 | Pacific, `issued.py` | 82% | 67% |
-| Pacific, `hsf-read.js` | 96.2% | 86.9% |
+| Pacific, `hsf-read.js` | 96.3% | 87.1% |
 
 Where both readers draw an area, 90% of the shapes agree (overlap over 0.9 of their union). Most of
 what is still not drawn is real slips in the issued text (`60M`, `3746W`, `54O NM`, `AMD`, a missing
@@ -52,7 +52,8 @@ Shape rules: quadrant = bearing +-45 deg about the named direction, semicircle +
 LINE` = the ground the line sweeps when moved 40 deg toward that side (the desk's lines run to a coast
 or the area edge); `E OF GREENLAND` / `W OF GREENLAND` split at 43.5W; the Bering Sea is the water north
 of the Aleutian chain and west of Alaska. Land is drawn over the areas, so a box that runs onto a coast
-shows only its water.
+shows only its water. An ELSEWHERE area is drawn outside the areas given before it in the same
+paragraph. A lone `BETWEEN 128W AND 170W` (or `FROM 40N TO 50N`) is drawn edge to edge and listed as a warning.
 
 ## Try it locally
 

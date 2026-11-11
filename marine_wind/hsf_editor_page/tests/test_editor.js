@@ -37,6 +37,14 @@ test("Pacific: the slips in the issued product are caught", function () {
   assert(has(/Mapped as BETWEEN 128W AND 170W/), "FROM 128W AND 170W");
   assert(has(/Mapped as SEMICIRCLE: SEMICIRICLE/), "SEMICIRICLE on the map");
   assert(!has(/map could not/), "every Pacific area mapped");
+  assert(has(/No latitude limits.*FROM 128W AND 170W/), "lone longitude band flagged");
+  // ELSEWHERE is drawn outside the areas before it: W OF 163W loses the 163W-167W strip of E OF 167W
+  var b = r.paras[0].blocks;
+  assert.strictEqual(b[1].tier, "elsewhere");
+  assert(R.areaOf(b[1].draw) < R.areaOf(b[1].geom) - 1, "elsewhere not cut");
+  // "MB.FROM" with no space still reads the box
+  var g = R.read(".WARNINGS.\n\n...GALE WARNING...\n.LOW 49N134W 996 MB.FROM 45N TO 50N BETWEEN 132W AND 142W WINDS 25 TO 35 KT. SEAS 3 TO 4 M.\n", "pac").paras[0].blocks[0];
+  assert(g.ok && !g.open, "MB.FROM");
   // every issue points at text that holds its word
   is.forEach(function (i) { assert(i.end > i.at, "empty selection for " + i.msg); });
 });

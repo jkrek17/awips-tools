@@ -525,17 +525,18 @@
         if (cur.kinds.shape || hit.kind === "shape" || cur.kinds[hit.kind] || Object.keys(cur.kinds).length >= 2) unionSep = true;
       }
       if (except) {
-        cur = { geom: hit.geom, kinds: {}, op: "except" };
+        cur = { geom: hit.geom, kinds: {}, op: "except", names: [] };
         cur.kinds[hit.kind] = 1;
         groups.push(cur);
       } else if (unionSep && !(cur && cur.op === "except" && !/\.\.\.|,|AND/.test(gap))) {
-        cur = { geom: hit.geom, kinds: {}, op: "add" };
+        cur = { geom: hit.geom, kinds: {}, op: "add", names: [] };
         cur.kinds[hit.kind] = 1;
         groups.push(cur);
       } else {
         cur.geom = cur.geom && hit.geom ? inter(cur.geom, hit.geom) : (cur.geom || hit.geom);
         cur.kinds[hit.kind] = 1;
       }
+      cur.names.push(hit.name);
       pos = hit.end;
       prevKind = hit.kind;
     }
@@ -544,7 +545,14 @@
     var g = sub && sub.length ? diff(add, sub) : add;
     var built = !!(g && g.length);
     g = built ? ctx.B.clip(g) : [];
-    return { geom: g, ok: unread.length === 0 && groups.length > 0, unread: unread, outside: built && !g.length, guessed: guessed };
+    // a lone "BETWEEN 128W AND 170W" or "FROM 40N TO 50N" has no limits on the other axis: drawn edge to edge
+    var open = null;
+    groups.forEach(function (gr) {
+      if (gr.op !== "add" || gr.names.length !== 1) return;
+      if (/^lonband/.test(gr.names[0])) open = "lat";
+      else if (gr.names[0] === "latband" && !open) open = "lon";
+    });
+    return { geom: g, ok: unread.length === 0 && groups.length > 0, unread: unread, outside: built && !g.length, guessed: guessed, open: open };
   }
 
   // ---------------------------------------------------------------- paragraphs
@@ -579,7 +587,8 @@
   function readPara(p, B, sysLows, hourDefault) {
     var flat = p.replace(/…/g, "...").replace(/\s+/g, " ").trim().toUpperCase();
     flat = flat.replace(/\bNEAR (\d+(?:\.\d+)?[NS]) (\d+(?:\.\d+)?[EW])/g, "NEAR $1$2")
-      .replace(/\b(\d+\.\d+[NS]) (\d+(?:\.\d+)?[EW])\b/g, "$1$2");
+      .replace(/\b(\d+\.\d+[NS]) (\d+(?:\.\d+)?[EW])\b/g, "$1$2")
+      .replace(/(\d MB)\.(?=[A-Z])/g, "$1. ");
     var hour = hourDefault;
     var hm = /^\.?\s*(\d{1,2}) HOUR FORECAST\s*/.exec(flat);
     var body = flat;
@@ -622,8 +631,18 @@
       // movement or fronts in the same sentence are not areas ("MOVING NE 25 KT")
       if (/MOVING [A-Z]+ ?$/.test(seg)) continue;
       var a = areaGeom(seg, ctx);
-      blocks.push({ tier: tier, area_text: seg, wind: [m[1] ? +m[1] : 0, +m[2]], seas: seas, geom: a.geom, ok: a.ok && (a.geom.length > 0 || a.outside), outside: !!a.outside, unread: a.unread, guessed: a.guessed });
+      blocks.push({ tier: tier, area_text: seg, wind: [m[1] ? +m[1] : 0, +m[2]], seas: seas, geom: a.geom, ok: a.ok && (a.geom.length > 0 || a.outside), outside: !!a.outside, unread: a.unread, guessed: a.guessed, open: a.open });
     }
+    // ELSEWHERE means outside the areas already given in the paragraph: draw it that way
+    var before = [];
+    blocks.forEach(function (b) {
+      b.draw = b.geom;
+      if (b.tier === "elsewhere" && before.length && b.geom.length) {
+        var d = diff(b.geom, union(before));
+        if (d && d.length) b.draw = d;
+      }
+      if (b.geom.length) before.push(b.geom);
+    });
     return { hour: hour, lows: lows, blocks: blocks, flat: flat };
   }
 
