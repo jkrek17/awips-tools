@@ -1,0 +1,56 @@
+# High Seas Editor (`/hsf-editor/`)
+
+A page for writing the OPC High Seas Forecast (HSFAT1 or HSFEP1) by hand. It is separate from the
+model-written draft on `/high-seas/` and never reads it.
+
+- **Starting text:** the last issued product for the basin, from the IEM text archive (it sends CORS
+  headers, so the browser can read it; ocean.weather.gov does not), cut from `SYNOPSIS VALID` to
+  `.FORECASTER`, with the three valid-time lines moved on 6 hours. The forecaster can also paste text in.
+- **Live map:** every area the text describes, drawn as you type (`hsf-read.js`), coloured by the top
+  wind of its range; one forecast time at a time, and the map follows the paragraph the cursor is in.
+  Click an area to select its paragraph.
+- **Checks:** every check of Jason's Apps Script "OPC High Seas Forecast Validator", with the fixes
+  of 11 Nov 2026, plus coordinates out of range, seas in KT, and the map's own notes: an area it could
+  not read, or one that falls outside the forecast waters (`hsf-check.js`). Click a check to select
+  the text.
+- **Copy:** Warnings box, Synopsis box (no header lines) and all, rejoined and wrapped at 66
+  characters as the Apps Script's "Show Text to Send" does.
+- **Draft:** kept in the browser (localStorage), one per basin.
+
+## Files
+
+| File | What it is |
+| --- | --- |
+| `hsf-read.js` | HSF text to map areas (browser and node). The JavaScript successor of `marine_wind/hsf/issued.py`'s reader, widened for quadrant lists, EXCEPT, Greenland, Bering Sea, Gulf of St Lawrence, coast and tropical cyclone wording |
+| `hsf-check.js` | The checks and the send text (browser and node) |
+| `app.js`, `index.html` | The page; the map is MapLibre from `../globe-kit/` with its land outline |
+| `lib/polygon-clipping.min.js` | polygon-clipping 0.15.7 (MIT), for unions, intersections and EXCEPT |
+| `tests/test_editor.js` | Offline tests on the issued products of 1630 UTC 11 Nov 2026 (`tests/fixtures/`) |
+| `tests/coverage.js` | How much of the last N issued products the reader can draw (needs network) |
+
+## Reader coverage
+
+On the last 400 issued products of each basin (late summer to 11 Nov 2026):
+
+| | Areas mapped | Forecast times with every area mapped |
+| --- | --- | --- |
+| Atlantic, `issued.py` | 80% | 63% |
+| Atlantic, `hsf-read.js` | 96% | 89% |
+| Pacific, `issued.py` | 82% | 67% |
+| Pacific, `hsf-read.js` | 96% | 86% |
+
+Where both readers draw an area, 90% of the shapes agree (overlap over 0.9 of their union). Most of
+what is still not drawn is real slips in the issued text (`60M`, `3746W`, `54O NM`, `AMD`, a missing
+`NM`), which the page lists as map notes, plus rare wording: coasts other than Greenland's, Bristol
+Bay, Cook Inlet. Run `node tests/coverage.js 400 30` to see the commonest misses.
+
+Shape rules: quadrant = bearing +-45 deg about the named direction, semicircle +-90; `<dirs> OF A
+LINE` = the ground the line sweeps when moved 40 deg toward that side (the desk's lines run to a coast
+or the area edge); `E OF GREENLAND` / `W OF GREENLAND` split at 43.5W; the Bering Sea is the water north
+of the Aleutian chain and west of Alaska. Land is drawn over the areas, so a box that runs onto a coast
+shows only its water.
+
+## Try it locally
+
+Serve a folder holding `hsf-editor/` (this folder), `globe-kit/` and `fonts/` side by side, and open
+`/hsf-editor/?basin=atl` or `?basin=pac`. `?test=1` exposes the page state to a headless check.

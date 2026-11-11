@@ -8,7 +8,8 @@
 # of the verification-data branch), the research scores page
 # (marine_wind/scores_page/, served at /research-scores/ with the four files of the
 # `scores` release of jkrek17/marine-research-data fetched into its data/ at publish
-# time; the weekly job there writes them Mondays 06:00 UTC), the globe kit the globe pages load
+# time; the weekly job there writes them Mondays 06:00 UTC), the high seas editor
+# (marine_wind/hsf_editor_page/, served at /hsf-editor/), the globe kit the globe pages load
 # (globe_kit/, served at /globe-kit/: MapLibre, the shared look and script, the
 # land outline), the IBM Plex fonts the projects index uses (fonts/) and
 # nothing else; the cyclone phase space project, with its live map, article
@@ -47,6 +48,7 @@ on:
       - 'marine_wind/page/**'
       - 'marine_wind/verification_page/**'
       - 'marine_wind/high_seas_page/**'
+      - 'marine_wind/hsf_editor_page/**'
       - 'marine_wind/scores_page/**'
       - 'globe_kit/**'
       - '.github/workflows/site_publish.yml'
@@ -155,6 +157,11 @@ jobs:
           # marine wind page's data/hsf/ (published just above).
           mkdir -p "$site/high-seas"
           cp -r marine_wind/high_seas_page/. "$site/high-seas/"
+          # The high seas editor (write the HSF from the last issued product, live map and
+          # checks), at /hsf-editor/. No data: it reads the issued text from the IEM archive.
+          mkdir -p "$site/hsf-editor"
+          cp -r marine_wind/hsf_editor_page/. "$site/hsf-editor/"
+          rm -rf "$site/hsf-editor/tests"
           # The research scores page, at /research-scores/. Its data is the four files of the
           # public `scores` release of jkrek17/marine-research-data (no token). The release
           # sends no CORS headers, so the browser cannot fetch them: they are copied here.
@@ -183,6 +190,7 @@ jobs:
           sed -i -E "s#(href|src)=\"(style\.css|app\.js|scorecard\.js|$kit)\"#\1=\"\2?v=$v\"#g" "$site/marine-wind/index.html"
           sed -i -E "s#(href|src)=\"(style\.css|app\.js)\"#\1=\"\2?v=$v\"#g" "$site/verification/index.html"
           sed -i -E "s#(href|src)=\"(app\.js|$kit)\"#\1=\"\2?v=$v\"#g" "$site/high-seas/index.html"
+          sed -i -E "s#(href|src)=\"(app\.js|hsf-read\.js|hsf-check\.js|lib/polygon-clipping\.min\.js|$kit)\"#\1=\"\2?v=$v\"#g" "$site/hsf-editor/index.html"
           sed -i -E "s#(href|src)=\"(style\.css|app\.js)\"#\1=\"\2?v=$v\"#g" "$site/research-scores/index.html"
           touch "$site/.nojekyll"
           du -sh "$site"
@@ -192,13 +200,13 @@ jobs:
         env:
           REPO: ${{ vars.PUBLIC_SITE_REPO }}
           TOKEN: ${{ secrets.WEB_TOKEN }}
-          # Folders this workflow writes (marine-wind, verification, high-seas,
+          # Folders this workflow writes (marine-wind, verification, high-seas, hsf-editor,
           # research-scores, globe-kit, fonts), plus the ones it used to write
           # and no longer does (cyclone, article and forecasters, now the
           # jkrek17/cyclone repository's own site; data/ and basemap/, from when the map was the
           # root page), which are therefore not carried forward and drop off
           # the site.
-          OWN_FOLDERS: cyclone article forecasters marine-wind verification high-seas research-scores globe-kit data fonts basemap
+          OWN_FOLDERS: cyclone article forecasters marine-wind verification high-seas hsf-editor research-scores globe-kit data fonts basemap
         run: |
           current="$RUNNER_TEMP/current"
           rm -rf "$current"
