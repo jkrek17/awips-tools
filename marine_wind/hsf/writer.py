@@ -754,7 +754,9 @@ def link_tracks(lows_by_hour, max_kt=70.0):
                 if tid in used:
                     continue
                 d = grid_dist(lw[3], lw[4], pl[3], pl[4])
-                if d <= max_kt * (h - hh) and (best is None or d < best[0]):
+                # no farther than one ordinary step's reach: a 12 h bridge once joined 44N62W
+                # to a different low 600 nm WSW (Jason 11-11, 06Z 11 Nov Atlantic draft)
+                if d <= max_kt * 6 and (best is None or d < best[0]):
                     best = (d, tid)
             if best:
                 tid = best[1]
@@ -842,7 +844,21 @@ def write_product(fields, grid, sea, rules=Rules(), hours=None):
                         return 1e9
                     return grid_dist(p["low"][0], p["low"][1], s["low"][0], s["low"][1])
                 mains.sort(key=_gap)
-                cands = mains + tids
+                # a centre that forms after the synopsis inside the winds of a paragraph whose own
+                # low has nothing left at this step takes that paragraph over (redevelopment: the
+                # old centre fills inland, the new one carries its gales). Without this the same
+                # gale read as one warning ending "LOW DISSIPATED" and a second "NEW LOW" warning
+                # (Jason 11-11, 06Z 11 Nov Atlantic: 61N68W at 00 h, NEW LOW 61N63W at 6 h).
+                hand = []
+                if not mains and pv is not None and born.get(s["low"][4]) == h:
+                    for k_, e_ in per.items():
+                        p_ = e_.get(pv)
+                        if (isinstance(k_, int) and k_ not in taken and p_ and p_["low"] and p_["tiers"]
+                                and (p_["region"] & s["region"]).sum() > 0
+                                and grid_dist(p_["low"][0], p_["low"][1], s["low"][0], s["low"][1]) <= rules.complex_nm):
+                            hand.append(((p_["region"] & s["region"]).sum(), k_))
+                    hand = [k_ for _, k_ in sorted(hand, reverse=True)]
+                cands = mains + hand + tids
                 key = next((k for k in cands if k not in taken), None)
                 if key is None:
                     key, spare = spare, spare + 1
@@ -872,6 +888,14 @@ def write_product(fields, grid, sea, rules=Rules(), hours=None):
                 ent[h]["lows"] = sorted({m[4]: m for m in ent[h]["lows"] + s["lows"]}.values(), key=lambda l: l[2])
             else:
                 ent[h] = s
+    # a paragraph handed to a new centre at the first step moves the way the text does: the
+    # synopsis motion runs from its low to the centre carrying the paragraph next
+    h1 = nxt_h.get(0)
+    for ent in per.values():
+        a, b = ent.get(0), ent.get(h1)
+        if a and b and a["low"] and b["low"] and a["low"][4] != b["low"][4]:
+            a["low"] = tuple(a["low"][:3]) + (motion((0, 0, 0) + tuple(a["low"][:2]), (0, 0, 0) + tuple(b["low"][:2]), h1),) + tuple(a["low"][4:])
+            a["lows"] = [a["low"] if m[4] == a["low"][4] else m for m in a["lows"]]
     # choose times: synopsis, 24, 48, plus 6-hourly steps where the level goes up
     paras, pieces = {}, []
     for key, ent in per.items():
@@ -889,6 +913,16 @@ def write_product(fields, grid, sea, rules=Rules(), hours=None):
                     shown.append(h)
                     now = cat[h]
         shown.sort()
+        # the text ends at the first shown time the system is gone after it was there, so a
+        # later time cannot raise the heading (a GALE WARNING over a 20 TO 30 paragraph whose
+        # gale came only after "CONDITIONS DIMINISHED", Jason 11-11)
+        seen_ = False
+        for i_, h in enumerate(shown):
+            here = h in ent and bool(ent[h]["tiers"])
+            if seen_ and not here:
+                shown = shown[:i_ + 1]
+                break
+            seen_ = seen_ or here
         top = max(cat.get(h, 0) for h in shown)   # the heading follows the times the text shows
         first_seen = min([h for h in shown if h in ent] or [min(ent)])   # first time the text shows it
         prev_present = False

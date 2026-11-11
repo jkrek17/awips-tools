@@ -66,10 +66,16 @@ storm and hurricane force for each, issued, draft and both. The page shows it un
   wind area instead of becoming a paragraph with no low; a weak low outside the area keeps only
   winds within 300 nm of it when they are a small part of another system's wind area. A complex
   low's main centre is its deepest centre inside the area, and every other centre lies within
-  600 nm of it (no chains). Stray wind goes to the nearest system sharing its wind area. A track may skip one 6 h step. Quadrants
+  600 nm of it (no chains). Stray wind goes to the nearest system sharing its wind area. A track may skip one 6 h step,
+  but only to a centre one ordinary 6 h step away (a 12 h bridge to a low 600 nm off once headed a
+  GALE WARNING whose text showed only 20 TO 30 KT, Jason 11-11). A centre that forms inside the winds
+  of a paragraph whose own low has nothing left takes that paragraph over (redevelopment), and the
+  synopsis motion follows it: one warning, not "LOW DISSIPATED" beside a "NEW LOW" over the same
+  gale (Jason 11-11, 06Z 11 Nov Atlantic, 61N68W then 61N63W). A paragraph ends at its first
+  "CONDITIONS DIMINISHED" or "DISSIPATED"; its heading counts only the times it shows. Quadrants
   pay for open ocean outside the area too, so a low west of 180W gets quadrants facing into the
   area or a box, not "WITHIN 840 NM S QUADRANT".
-  Test: `python3 marine_wind/hsf/tests/test_western_boundary.py`.
+  Tests: `python3 marine_wind/hsf/tests/test_western_boundary.py`, `tests/test_redevelop.py`.
 
 ## Valid times
 The desk issues every 6 h, the synopsis valid 4.5 h before it is due (00Z due 0430Z, 06Z due
