@@ -3,7 +3,7 @@
 Each hour the workflow runs this against the previous state (the `scatterometer-data` branch) and the
 newest marine wind data (the `marine-wind-live` branch), and writes the new state:
 
-    OUT/data/index.json            the pass list with scores (the page reads this); `rss` = days of RSS ASCAT in (days, through); `nesdis.newest` = end of the newest NESDIS pass
+    OUT/data/index.json            the pass list with scores (the page reads this); `rss` = days of RSS ASCAT in (days, through); `nesdis.newest` and `knmi.newest` = end of the newest NESDIS and KNMI pass
     OUT/data/pass/<id>-<basin>.bin one file per pass and basin (format below)
     OUT/data/mosaic/<basin>-<YYYYMMDDHH>.bin
                                    one file per 00/12Z time and basin: the passes of the 12 h around it stitched into one
@@ -18,12 +18,14 @@ newest marine wind data (the `marine-wind-live` branch), and writes the new stat
                                    only what is new
     OUT/cache/rss.json             RSS ASCAT days (YYYYMMDD -> done, satellites posted, last try), see below
     OUT/cache/nesdis.json          NESDIS Metop-B days (YYYYMMDD -> fetched, tried, n: cells per pseudo-pass key), see below
+    OUT/cache/knmi.json            KNMI Metop-C granules handled (title -> start, done, check, cells, n: cells per basin, fails), see below
 
 Sources. NOAA STAR (nwp/nwp/star.py): OSCAT-3 and Metop-B/C coastal ultra-high-resolution ASCAT, posted 3-4 h after the
 pass; the ASCAT is a coastal product, about 9-12% of a basin per 12 h. Remote Sensing Systems (nwp/nwp/rss_ascat.py): daily
 0.25 degree Metop-B and Metop-C maps with full swaths over the open ocean, posted about 2 days after the day ends (lately
 about 5). NESDIS (nwp/nwp/nesdis_ascat.py): Metop-B ASCAT, full swaths, from NOAA AOML's daily 0.25 degree maps through NOAA
-ERDDAP, about 1 h after the pass (Metop-C is not served). Winds are the 10 m wind as served, in knots (RSS's is
+ERDDAP, about 1 h after the pass (Metop-C is not served). KNMI (nwp/nwp/podaac_ascat.py): Metop-C ASCAT 25 km Level 2 from NASA
+PO.DAAC, full orbits over the open ocean, listed about 2.5-4 h after the orbit starts (Earthdata login needed, see below). Winds are the 10 m wind as served, in knots (RSS's is
 equivalent-neutral, used as STAR's are, no conversion; NESDIS's is the 10 m neutral wind, m/s x 1.94384).
 
 RSS ASCAT. Each UTC day in the 7-day window that is not done (cache/rss.json) is asked for, both satellites, at most once
@@ -52,6 +54,21 @@ replaces it where it stands: same id and file, scored again against the forecast
 are built again; a pass that did not grow is left alone. When RSS posts the day its Metop-B cells replace the NESDIS ones in
 every mosaic (the passes stay in the list). NESDIS's own node numbers are the other way round from RSS's (RSS node 0 is the
 descending pass; its AS/DS prefixes follow the reader's node, so rss_metop*_AS holds descending cells).
+
+KNMI Metop-C ASCAT. The login comes from the environment variables EARTHDATA_USER and EARTHDATA_PASS; without them
+the source is skipped with one log line. Each run lists the granules of the last 7 days (NASA CMR, public) and downloads,
+newest first and at most --knmi-max (30) a run, those not yet in cache/knmi.json that are in the last --knmi-days days
+(default 2) or on a day RSS Metop-C is not done for (rss_covers_c, for both days a granule touches); a granule on an
+RSS-covered day in the last --knmi-days days is downloaded only to be compared (check_only, never kept: a backfill for the
+self-check). Each granule (about 1 MB, one orbit) is one real pass per basin with MIN_CELLS water cells, not split by
+synoptic hour: id <granule start YYYYMMDDTHHMM>-knmi_metopc, prefix knmi_metopc, label "Metop-C (KNMI)", start, end and
+middle the earliest, latest and mean cell time in that basin. The cells (cells with a quality-control failure, failed
+inversion, land, ice or a bad sigma-0 are dropped by the reader; rain stays as the flag) are put on the grid by
+grid_points like STAR's points, so a 0.25 degree cell holds the mean of the 25 km cells in it. A granule is final once
+posted: it is handled once. A refused login stops the downloads of that run with one line; any other failure counts
+against the granule (given up on after 3). KnmiCheck prints the self-check at the end of the run (see its docstring):
+speed percentiles, the zonal wind under both direction conventions, bias against the marine wind grid and against RSS
+Metop-C (same satellite) and NESDIS Metop-B cells in the index within 30 min of the granule.
 
 Passes. UHR ASCAT comes as regional chunks of one orbit: files of the same prefix starting <= 20 min apart
 are one pass. An OSCAT-3 file is one half-orbit and is one pass. OSCAT-3 file names carry the time the file
@@ -89,7 +106,7 @@ latest, f24 and f48 in turn uint8 grid[n] (kt rounded, 255 = no forecast) and ui
 
 Mosaics (index `format` 2). For each time V = 00Z and 12Z of the last 7 days (14 per basin) and each basin, every pass
 whose middle is in [V - 6 h, V + 6 h) (the end is excluded, so a pass belongs to one mosaic) is stitched into one map; where
-swaths overlap RSS ASCAT wins over NESDIS Metop-B, which wins over STAR ASCAT, which wins over OSCAT-3, then the pass whose
+swaths overlap RSS ASCAT wins over NESDIS Metop-B and KNMI Metop-C (equal rank), which win over STAR ASCAT, which wins over OSCAT-3, then the pass whose
 middle is nearest V, a tie goes to the newer. A mosaic that gains RSS or NESDIS cells is built again. A mosaic whose
 window closed less than 4 h ago is `open` (STAR posts 3-4 h after a pass): it is shown but left out of the summary.
 
@@ -100,7 +117,7 @@ least 80% of the observed cells; the cells of a pass that lacks it are left out 
 `unscored_ascat`) says how many. `score` is the pass score (see above) on the unflagged, scored cells of the whole mosaic,
 `score_ascat` the same on the ASCAT cells only (`n` is the number of cells scored). `peak` has, per lead, the highest
 unflagged observed cell (`all` and `ascat`): idx (global flat index), obs, grid and warn at that cell. `sats` counts
-all observed cells by satellite family (`ASCAT` includes `RSS` and `NESDIS`, the cells of those alone; STAR's coastal ASCAT is the rest), `water` the water cells of the basin box (coverage = n / water). The map lines
+all observed cells by satellite family (`ASCAT` includes `RSS`, `NESDIS` and `KNMI`, the cells of those alone; STAR's coastal ASCAT is the rest), `water` the water cells of the basin box (coverage = n / water). The map lines
 are those of V: `vsel` is the run and step picked for V, `fc[lead]` repeats it (null cycle when V has none) and
 `grid_area_box` counts the water cells of the whole box at or above 34/48/64 kt per lead. A mosaic is built again when its
 pass set changes, a pass in it is redone or gains a lead, or V's own forecast changed.
@@ -109,8 +126,8 @@ Summary (index `summary`, basin -> lead -> "ascat" | "all"): the sums over the c
 scores above: `obs`, `grid`, `catch`, `line` at 34/48/64 (observed cells at the threshold, grid cells at it on the same
 cells, observed cells inside the gale|storm|HF lines, scored cells inside them: catch / line is the share of line cells that
 were seen and reached the threshold), `nmos_obs` and `nmos_line` (mosaics with any), `enough` and `enough_line` (at least
-50 cells and 3 mosaics: otherwise no ratio), `mosaics`, `n`, coverage of the basin water per mosaic (`times`, `with_rss` and `with_nesdis` (mosaics with any
-RSS or NESDIS cell), `cov_mean`, `cov_min`, `cov_max`) and `worst`, the 8 highest mosaic peaks of the week (valid, obs, grid at the peak cell, grid_max over
+50 cells and 3 mosaics: otherwise no ratio), `mosaics`, `n`, coverage of the basin water per mosaic (`times`, `with_rss`, `with_nesdis` and `with_knmi` (mosaics with any
+RSS, NESDIS or KNMI cell), `cov_mean`, `cov_min`, `cov_max`) and `worst`, the 8 highest mosaic peaks of the week (valid, obs, grid at the peak cell, grid_max over
 the seen cells, warn bits, idx).
 
 Mosaic .bin (gzip, little endian): uint32 n; uint32 idx[n] (global flat index, ascending); uint8 obs[n], dir[n],
@@ -120,7 +137,7 @@ f48 in turn uint8 grid[n] and warn[n] of the cell's own pass (255 = pass has no 
 not forecast) and uint8 warn[ny*nx] (bits as above, 255 = none) over the basin box (`box` in the index entry: iy0, ny, ix0,
 nx; rows north first, columns west first, see box_cols) at V.
 
-    python3 build.py --live DIR --state DIR --out DIR [--days 1] [--workers 5]
+    python3 build.py --live DIR --state DIR --out DIR [--days 1] [--knmi-days 2] [--knmi-max 30] [--workers 5]
         --live   a checkout holding latest/global/ of marine-wind-live (manifest.json, fSSS/best.gz, warn.gz)
         --state  the previous state (the scatterometer-data branch checked out; may be empty or missing)"""
 from __future__ import annotations
@@ -142,7 +159,7 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "nwp"))
-from nwp import nesdis_ascat, rss_ascat, star  # noqa: E402
+from nwp import nesdis_ascat, podaac_ascat, rss_ascat, star  # noqa: E402
 
 NX, NY = 1440, 721
 BOXES = {"natl": dict(north=67.0, south=18.0, west=-95.0, east=10.0),
@@ -159,12 +176,16 @@ MIN_CELLS = 200
 GROUP_MIN = 20                 # UHR chunks of one pass start at most this far apart
 NOMINAL_MIN = {"uhr": 10, "oscat": 55}   # length of the last file of a pass (minutes)
 SAT = {"oscat3": "OSCAT-3", "UHR_METOP-B": "Metop-B", "UHR_METOP-C": "Metop-C", "rss_metopb": "RSS Metop-B",
-       "rss_metopc": "RSS Metop-C", "nesdis_metopb": "Metop-B (NESDIS)"}
+       "rss_metopc": "RSS Metop-C", "nesdis_metopb": "Metop-B (NESDIS)", "knmi_metopc": "Metop-C (KNMI)"}
 RSS_SATS = ("b", "c")
 RSS_RETRY = dt.timedelta(minutes=55)    # an RSS day not posted yet is asked for again after this
 RSS_LATE = dt.timedelta(days=7)         # a day this old is used with only one satellite posted
 RSS_GIVE_UP = dt.timedelta(days=10)     # and not asked for any more after this
 NESDIS_RETRY = dt.timedelta(minutes=55)  # a NESDIS day older than yesterday that failed is asked for again after this
+KNMI_DAYS = 2                  # KNMI Metop-C: granules of this many days back are all taken (--knmi-days)
+KNMI_MAX = 30                  # downloads per run
+KNMI_FAILS = 3                 # a granule that failed this often is given up on
+KNMI_MATCH = dt.timedelta(minutes=30)   # self-check: a reference pass counts when its bracket is this close to the granule's
 NESDIS_FINAL = dt.timedelta(days=2)     # a NESDIS day is done when it is this old and was fetched after it ended
 ISO = "%Y-%m-%dT%H:%MZ"
 THRESH = (34, 48, 64)
@@ -811,6 +832,205 @@ def fetch_nesdis(now, ns, rs, water, inbox, fetch=None):
     return new
 
 
+# ---------- KNMI Metop-C ASCAT 25 km (near real time, NASA PO.DAAC) ----------
+
+def rss_covers_c(rs, key):
+    """Is the day used from RSS with Metop-C in it? Then KNMI's Metop-C granules of it are not needed."""
+    st = rs.get(key) or {}
+    return bool(st.get("done")) and "c" in st.get("sats", "")
+
+
+def knmi_covered(rs, g):
+    """Does RSS Metop-C (done) cover every UTC day the granule touches?"""
+    days = {g["start"].strftime("%Y%m%d"), g["end"].strftime("%Y%m%d")}
+    return all(rss_covers_c(rs, k) for k in days)
+
+
+def knmi_passes(g, c, water, inbox):
+    """One granule's cells (nwp.podaac_ascat.cells, t_min after 00 UTC of the granule's start day) -> one real pass per basin
+    with MIN_CELLS water cells in the OPC box: dict(key, id, prefix, basin, start, end, mid, files [], pts, check_only).
+    The id is <granule start YYYYMMDDTHHMM>-knmi_metopc (the same for both basins; a pseudo-pass is keyed by (id, basin)),
+    start, end and mid the earliest, latest and mean cell time inside the basin. The 25 km cells are put on the page grid
+    like STAR's points (grid_points: the mean of the cells falling in a 0.25 degree cell, no half-cell shift)."""
+    th = np.radians(c["dir_deg"].astype(np.float64))
+    spd = c["spd_kt"].astype(np.float64)
+    pts = dict(lat=c["lat"], lon=c["lon"], u=(-spd * np.sin(th)).astype(np.float32), v=(-spd * np.cos(th)).astype(np.float32),
+               spd=c["spd_kt"], q=c["rain"].astype(np.uint8))
+    iy = np.round((90 - c["lat"].astype(np.float64)) * 4).astype(np.int64)
+    ix = np.round((c["lon"].astype(np.float64) + 180) * 4).astype(np.int64) % NX
+    flat = iy * NX + ix
+    day0 = dt.datetime(g["start"].year, g["start"].month, g["start"].day)
+    stamp = g["start"].strftime("%Y%m%dT%H%M")
+    out = []
+    for basin, m in inbox.items():
+        k = (m & water).ravel()[flat] & (iy >= 0) & (iy < NY)
+        if k.sum() < MIN_CELLS:
+            continue
+        t = c["t_min"][k].astype(np.float64)
+        out.append(dict(key="knmi_metopc-%s-%s" % (stamp, basin), id="%s-knmi_metopc" % stamp, prefix="knmi_metopc", basin=basin,
+                        start=day0 + dt.timedelta(minutes=float(t.min())), end=day0 + dt.timedelta(minutes=float(t.max())),
+                        mid=day0 + dt.timedelta(minutes=round(float(t.mean()))), files=[], pts={n: v[k] for n, v in pts.items()},
+                        check_only=False))
+    return out
+
+
+def fetch_knmi(now, kn, rs, water, inbox, days=KNMI_DAYS, cap=KNMI_MAX, env=None, listing=None, download=None):
+    """KNMI Metop-C ASCAT granules from NASA PO.DAAC (nwp/nwp/podaac_ascat.py) -> pass dicts (knmi_passes). Without
+    EARTHDATA_USER and EARTHDATA_PASS in the environment (`env`) it logs one line and returns nothing. Lists the granules of
+    the last KEEP_DAYS days (CMR, public), takes those of the last `days` days and those of older days RSS has not covered
+    with Metop-C, newest first, at most `cap` downloads a run, each granule once (kn: cache/knmi.json, title -> dict(start,
+    n {basin: cells}, check)). A granule on days RSS Metop-C is done for is downloaded only when it is in the last `days`
+    days (a backfill), for the self-check: its passes come back with check_only True and must not be kept. A refused login
+    stops the downloads (one log line, nothing recorded); another failure counts against the granule (KNMI_FAILS)."""
+    creds = podaac_ascat.credentials(env)
+    if creds is None:
+        print("KNMI Metop-C: EARTHDATA_USER / EARTHDATA_PASS not set, skipped", flush=True)
+        return []
+    listing = listing or podaac_ascat.granules
+    if download is None:
+        sess = podaac_ascat.session(*creds)
+        download = lambda url: podaac_ascat.download(url, sess)   # noqa: E731
+    try:
+        gs = listing(now - dt.timedelta(days=KEEP_DAYS), now)
+    except Exception as e:   # CMR down: next run
+        print("KNMI Metop-C: granule search failed (%s: %s)" % (type(e).__name__, e), file=sys.stderr, flush=True)
+        return []
+    recent = now - dt.timedelta(days=days)
+    want = []
+    for g in sorted(gs, key=lambda g: g["start"], reverse=True):
+        st = kn.get(g["title"], {})
+        if st.get("done") or st.get("fails", 0) >= KNMI_FAILS:
+            continue
+        covered = knmi_covered(rs, g)
+        if covered and g["start"] < recent:
+            continue
+        want.append((g, covered))
+    new, n_dl, n_fail = [], 0, 0
+    for g, covered in want[:cap]:
+        day0 = dt.datetime(g["start"].year, g["start"].month, g["start"].day)
+        try:
+            c = podaac_ascat.cells(download(g["url"]), day=day0)
+        except podaac_ascat.AuthError as e:
+            print("KNMI Metop-C: Earthdata login refused (%s); no more downloads this run" % e, file=sys.stderr, flush=True)
+            break
+        except Exception as e:   # one bad granule must not stop the rest
+            st = kn.setdefault(g["title"], dict(start=g["start"].strftime(ISO)))
+            st["fails"] = st.get("fails", 0) + 1
+            n_fail += 1
+            print("KNMI %s failed (%s: %s)" % (g["title"], type(e).__name__, e), file=sys.stderr, flush=True)
+            continue
+        n_dl += 1
+        ps = knmi_passes(g, c, water, inbox)
+        for p in ps:
+            p["check_only"] = covered
+        kn[g["title"]] = dict(start=g["start"].strftime(ISO), done=True, check=covered, cells=int(c["lat"].size),
+                              n={p["basin"]: int(p["pts"]["lat"].size) for p in ps})
+        new += ps
+    print("KNMI Metop-C: %d granules listed, %d to get, %d downloaded (cap %d), %d failed, %d passes%s" % (
+        len(gs), len(want), n_dl, cap, n_fail, sum(1 for p in new if not p["check_only"]),
+        ", %d for the self-check only" % sum(1 for p in new if p["check_only"]) if any(p["check_only"] for p in new) else ""), flush=True)
+    cut = (now - dt.timedelta(days=KEEP_DAYS + 2)).strftime(ISO)
+    for k in [k for k, v in kn.items() if v.get("start", "") < cut]:
+        del kn[k]
+    return new
+
+
+class KnmiCheck:
+    """The self-check of the KNMI Metop-C source, printed once at the end of a run (the first run on real data is in
+    GitHub Actions, so the log has to say whether the reader's units and direction convention are right). Per pass it
+    gathers, over the 0.25 degree cells: KNMI speeds against the marine wind grid at the newest run's step (bias and SD,
+    unflagged cells), and the cells KNMI shares with reference passes in the index whose time bracket is within KNMI_MATCH
+    of the granule's: the same satellite from RSS ("RSS Metop-C", after RSS posts the day) and NESDIS Metop-B (a different
+    satellite, so only where swaths overlap in time and place). For those it prints n matched, speed bias (KNMI minus
+    reference) and SD, and the mean absolute direction difference with the direction as read and with it turned
+    through 180 degrees: the right convention is the one with the small difference. Whatever is matched, it also prints the
+    percentiles of the KNMI cell speeds and the mean zonal wind at 30-60N (westerly, positive, under both conventions)."""
+    REFS = ("RSS Metop-C", "Metop-B (NESDIS)")
+
+    def __init__(self, dirs):
+        self.dirs, self.bins = dirs, {}
+        self.spd, self.u, self.rain, self.cells, self.granules = [], [], [], 0, set()
+        self.pairs = {k: ([], [], []) for k in self.REFS}   # speed difference, direction difference as read, flipped
+        self.grid = ([], set())
+
+    def _bin(self, e):
+        for d in self.dirs:
+            f = os.path.join(d, e["file"])
+            if f in self.bins:
+                return self.bins[f]
+            if os.path.exists(f):
+                with open(f, "rb") as fh:
+                    self.bins[f] = unpack_pass(fh.read())
+                return self.bins[f]
+        return None
+
+    def add(self, p, res, entries, grids=None):
+        """p a KNMI pass dict, res process_pass's {basin: (idx, spd, dir, flag)}, entries the index entries so far (dict),
+        grids {basin: (grid kt array or None, step)} the marine wind grid at the cell indexes."""
+        self.granules.add(p["id"])
+        pts = p["pts"]
+        self.spd.append(pts["spd"])
+        self.rain.append(pts["q"])
+        k = (pts["lat"] >= 30) & (pts["lat"] <= 60)
+        self.u.append(pts["u"][k])
+        for basin, (idx, spd, direction, flag) in res.items():
+            self.cells += int(idx.size)
+            ok = flag == 0
+            g = (grids or {}).get(basin)
+            if g and g[0] is not None:
+                have = ok & (g[0] != 255)
+                self.grid[0].append(spd[have] - g[0][have].astype(np.float64))
+                self.grid[1].add(g[1])
+            for e in entries.values():
+                if e["basin"] != basin or e["sat"] not in self.REFS:
+                    continue
+                if _t(e["start"]) > p["end"] + KNMI_MATCH or _t(e["end"]) < p["start"] - KNMI_MATCH:
+                    continue
+                u = self._bin(e)
+                if u is None:
+                    continue
+                _, i, j = np.intersect1d(idx, u["idx"], assume_unique=True, return_indices=True)
+                both = ok[i] & (u["flag"][j] == 0)
+                i, j = i[both], j[both]
+                if not i.size:
+                    continue
+                d, ref = self.pairs[e["sat"]], u["dir"][j].astype(np.float64) * 2
+                d[0].append(spd[i] - u["obs"][j].astype(np.float64))
+                d[1].append(np.abs((direction[i] - ref + 180) % 360 - 180))
+                d[2].append(np.abs((direction[i] + 180 - ref + 180) % 360 - 180))
+
+    def report(self):
+        if not self.granules:
+            return
+        spd = np.concatenate(self.spd)
+        pc = np.percentile(spd, [1, 25, 50, 75, 99])
+        print("KNMI self-check: %d passes, %d cells put on the grid, %d raw cells; speed kt p1 %.1f p25 %.1f p50 %.1f p75 %.1f "
+              "p99 %.1f max %.1f; rain-flagged %.1f%%" % (len(self.granules), self.cells, spd.size, *pc, spd.max(),
+                                                        100 * float(np.concatenate(self.rain).mean())), flush=True)
+        u = np.concatenate(self.u)
+        if u.size:
+            print("KNMI self-check: mean zonal wind 30-60N %+.1f kt as read (+ is westerly, the right sign for the extratropics), "
+                  "%+.1f kt if the direction were turned 180 degrees (%d cells)" % (u.mean(), -u.mean(), u.size), flush=True)
+        if self.grid[0]:
+            d = np.concatenate(self.grid[0])
+            print("KNMI self-check vs the marine wind grid (newest run, step %s h): n %d, speed bias %+.1f kt, SD %.1f kt" % (
+                "/".join(str(x) for x in sorted(self.grid[1] - {None})) or "?", d.size, d.mean(), d.std()), flush=True)
+        for kind, (ds, da, df) in self.pairs.items():
+            if not ds:
+                print("KNMI self-check vs %s: no matched cells" % kind, flush=True)
+                continue
+            ds, da, df = (np.concatenate(x) for x in (ds, da, df))
+            verdict = "too few cells to judge" if ds.size < 200 else (
+                "direction convention as read is right" if da.mean() < df.mean() else "DIRECTION LOOKS TURNED 180 DEGREES: check podaac_ascat.wind_is_from")
+            print("KNMI self-check vs %s: n matched %d, speed bias %+.2f kt, SD %.2f kt, direction mean abs difference %.1f deg as read, "
+                  "%.1f deg if turned 180: %s" % (kind, ds.size, ds.mean(), ds.std(), da.mean(), df.mean(), verdict), flush=True)
+
+
+def sat_label(prefix):
+    """SAT label of a pass prefix: knmi_metopc as it is, <tag>_AS / <tag>_DS without the node."""
+    return SAT[prefix] if prefix in SAT else SAT[prefix[:-3]]
+
+
 def pass_key(p):
     """What a pass dict (new, or grown) replaces in the entries: its id, or for a pseudo-pass (id, basin) -> predicate."""
     return (lambda k: k == (p["id"], p["basin"])) if "pts" in p else (lambda k: k[0] == p["id"])
@@ -917,6 +1137,7 @@ def build_mosaic(basin, v, members, sel, fc, water_box):
     ascat = np.array([is_ascat(e["sat"]) for e, _ in members], bool)[pi]
     rss = np.array([is_rss(e["sat"]) for e, _ in members], bool)[pi]
     nes = np.array([is_nesdis(e["sat"]) for e, _ in members], bool)[pi]
+    knm = np.array([is_knmi(e["sat"]) for e, _ in members], bool)[pi]
     cell = cell_leads(members, pi, pos)
     blobs = [np.uint32(n).tobytes(), idx.astype("<u4").tobytes(), obs.tobytes(), dr.tobytes(), fl.tobytes(), pi.tobytes()]
     for lead in LEADS:
@@ -950,7 +1171,8 @@ def build_mosaic(basin, v, members, sel, fc, water_box):
                obs_max=round(float(obsf[ok].max()), 1) if ok.any() else 0.0, water=int(water_box.sum()),
                box=dict(iy0=iy0, ny=ny, ix0=ix0, nx=nx), fc=fcinfo, vsel=vsel, score=sc, score_ascat=sca, peak=peak,
                unscored=uns, unscored_ascat=uns_a, grid_area_box=area, sig=[pass_sig(e) for e, _ in members],
-               sats={"ASCAT": int(ascat.sum()), "OSCAT-3": int((~ascat).sum()), "RSS": int(rss.sum()), "NESDIS": int(nes.sum())})
+               sats={"ASCAT": int(ascat.sum()), "OSCAT-3": int((~ascat).sum()), "RSS": int(rss.sum()), "NESDIS": int(nes.sum()),
+                     "KNMI": int(knm.sum())})
     return gzip.compress(b"".join(blobs), 9, mtime=0), ent
 
 
@@ -962,13 +1184,18 @@ def is_nesdis(sat):
     return sat.endswith("(NESDIS)")
 
 
+def is_knmi(sat):
+    return sat.endswith("(KNMI)")
+
+
 def is_ascat(sat):
     return is_rss(sat) or sat.startswith("Metop")
 
 
 def source_rank(sat):
-    """Overlap priority in the stitch: RSS ASCAT 3, NESDIS Metop-B 2, STAR ASCAT 1, OSCAT-3 0."""
-    return 3 if is_rss(sat) else 2 if is_nesdis(sat) else 1 if is_ascat(sat) else 0
+    """Overlap priority in the stitch: RSS ASCAT 3, NESDIS Metop-B and KNMI Metop-C 2 (different satellites, so they rarely
+    overlap; where they do the pass nearest V wins, then the newer), STAR ASCAT 1, OSCAT-3 0."""
+    return 3 if is_rss(sat) else 2 if is_nesdis(sat) or is_knmi(sat) else 1 if is_ascat(sat) else 0
 
 
 def unpack_mosaic(blob, ent):
@@ -1047,7 +1274,8 @@ def _group_summary(ms, lead, group):
     key = "score_ascat" if group == "ascat" else "score"
     cov = [(m["sats"]["ASCAT"] if group == "ascat" else m["n"]) / m["water"] for m in ms if m["water"]]
     S = dict(times=len(ms), with_rss=sum(1 for m in ms if (m.get("sats") or {}).get("RSS", 0) > 0),
-             with_nesdis=sum(1 for m in ms if (m.get("sats") or {}).get("NESDIS", 0) > 0), cov_mean=round(float(np.mean(cov)), 4) if cov else None, cov_min=round(min(cov), 4) if cov else None,
+             with_nesdis=sum(1 for m in ms if (m.get("sats") or {}).get("NESDIS", 0) > 0),
+             with_knmi=sum(1 for m in ms if (m.get("sats") or {}).get("KNMI", 0) > 0), cov_mean=round(float(np.mean(cov)), 4) if cov else None, cov_min=round(min(cov), 4) if cov else None,
              cov_max=round(max(cov), 4) if cov else None, mosaics=0, n=0, obs=[0] * 3, grid=[0] * 3, catch=[0] * 3, line=[0] * 3,
              nmos_obs=[0] * 3, nmos_line=[0] * 3, min_seen=MIN_SEEN, min_mosaics=MIN_MOSAICS)
     worst = []
@@ -1130,6 +1358,9 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--days", type=int, default=1, help="days back from today to list (0-8; default 1: today and yesterday)")
     ap.add_argument("--workers", type=int, default=5)
+    ap.add_argument("--knmi-days", type=int, default=KNMI_DAYS, help="KNMI Metop-C: take every granule of this many days back, "
+                    "also where RSS has the day (for the self-check); older days only where RSS lacks Metop-C (default 2)")
+    ap.add_argument("--knmi-max", type=int, default=KNMI_MAX, help="most KNMI granules to download per run")
     ap.add_argument("--record-max", type=int, default=RECORD_MAX, help="most forecast record artifacts to download per run")
     ap.add_argument("--changed-file", help="write 'true' or 'false' here: whether the state gained a pass or a cycle")
     a = ap.parse_args()
@@ -1166,6 +1397,12 @@ def main():
     ns = read_json(os.path.join(a.state, "cache", "nesdis.json"), {})
     ns0 = nesdis_sig(ns, now)
     todo += fetch_nesdis(now, ns, rs, water, inbox)
+    kn = read_json(os.path.join(a.state, "cache", "knmi.json"), {})
+    kn0 = json.dumps(kn, sort_keys=True)
+    kn_new = fetch_knmi(now, kn, rs, water, inbox, days=max(0, a.knmi_days), cap=max(0, a.knmi_max))
+    todo += [p for p in kn_new if not p["check_only"]]
+    checks = [p for p in kn_new if p["check_only"]]
+    chk = KnmiCheck([os.path.join(a.out, "data"), os.path.join(a.state, "data")])
 
     entries = {(e["id"], e["basin"]): e for e in prev["passes"]}
     # f24 and f48 from the forecast records where the cache lacks the cycle: for the new passes and for
@@ -1209,6 +1446,7 @@ def main():
                 seen[p["key"]] = dict(id=p["id"], files=len(p["files"]))
             touched.add((p["id"], p["basin"]) if "pts" in p else p["id"])
             mid = pass_mid(p)
+            grids = {}
             sel = pick_leads(cycles, mid)
             for basin, (idx, spd, direction, flag) in res.items():
                 leads, fcinfo, sc = {}, {}, {}
@@ -1216,17 +1454,30 @@ def main():
                     leads[lead] = lead_fields(fc, sel[lead], basin, idx)
                     fcinfo[lead] = lead_info(sel[lead])
                     sc[lead] = None if leads[lead] is None else score(spd, flag, leads[lead][0], leads[lead][1])
+                if p["prefix"] == "knmi_metopc":
+                    grids[basin] = (None if leads["latest"] is None else leads["latest"][0], (fcinfo["latest"] or {}).get("step"))
                 name = "%s-%s" % (p["id"], basin)
                 with open(os.path.join(pdir, name + ".bin"), "wb") as f:
                     f.write(pack_pass(idx, spd, direction, flag, leads))
                 ok = flag == 0
                 entries[(p["id"], basin)] = dict(
-                    id=p["id"], basin=basin, sat=SAT[p["prefix"][:-3]], prefix=p["prefix"],
+                    id=p["id"], basin=basin, sat=sat_label(p["prefix"]), prefix=p["prefix"],
                     start=p["start"].strftime(ISO), end=p["end"].strftime(ISO), mid=mid.strftime(ISO),
                     n=int(idx.size), flagged=int((~ok).sum()), obs_max=round(float(spd[ok].max()), 1) if ok.any() else 0.0,
                     fc=fcinfo, score=sc, file="pass/%s.bin" % name)
                 n_new += 1
             print("  %s: %s" % (p["id"], ", ".join("%s %d" % (b, r[0].size) for b, r in res.items()) or "no cells"), flush=True)
+            if p["prefix"] == "knmi_metopc" and p["basin"] in res:
+                chk.add(p, {p["basin"]: res[p["basin"]]}, entries, grids)
+    for p in checks:   # KNMI granules on days RSS Metop-C has: compared, never kept
+        try:
+            res = process_pass(p, water, inbox)
+        except Exception as e:
+            print("failed %s: %s" % (p["id"], e), file=sys.stderr)
+            continue
+        if p["basin"] in res:
+            chk.add(p, {p["basin"]: res[p["basin"]]}, entries)
+    chk.report()
 
     cut = (now - dt.timedelta(days=KEEP_DAYS)).strftime(ISO)
     n_fill = rescore(list(entries.values()), cycles, fc, pdir, a.state, cut)
@@ -1251,14 +1502,16 @@ def main():
         json.dump(rs, f)
     with open(os.path.join(cache, "nesdis.json"), "w") as f:
         json.dump(ns, f)
+    with open(os.path.join(cache, "knmi.json"), "w") as f:
+        json.dump(kn, f)
     rs_done = sorted(k for k, v in rs.items() if v.get("done"))
     index = dict(built=now.strftime("%Y-%m-%dT%H:%M:%SZ"), keep_days=KEEP_DAYS,
                  grid=dict(res=0.25, north=90, west=-180, nx=NX), cycle=live_cycle, format=FORMAT, rss=dict(days=rs_done, through=rs_done[-1] if rs_done else None),
-                 nesdis=dict(newest=max((e["end"] for e in kept if e["sat"].endswith("(NESDIS)")), default=None)), passes=kept, mosaics=mosaics,
+                 nesdis=dict(newest=max((e["end"] for e in kept if e["sat"].endswith("(NESDIS)")), default=None)), knmi=dict(newest=max((e["end"] for e in kept if is_knmi(e["sat"])), default=None)), passes=kept, mosaics=mosaics,
                  summary=summarize(mosaics))
     with open(os.path.join(a.out, "data", "index.json"), "w") as f:
         json.dump(index, f, separators=(",", ":"))
-    changed = bool(n_new) or new_cycle or bool(n_fill) or bool(n_rec) or bool(n_mos) or rs_done != rs_done0 or nesdis_sig(ns, now) != ns0 or read_json(mp, {}) != misses0
+    changed = bool(n_new) or new_cycle or bool(n_fill) or bool(n_rec) or bool(n_mos) or rs_done != rs_done0 or nesdis_sig(ns, now) != ns0 or json.dumps(kn, sort_keys=True) != kn0 or read_json(mp, {}) != misses0
     if a.changed_file:
         with open(a.changed_file, "w") as f:
             f.write("true" if changed else "false")
