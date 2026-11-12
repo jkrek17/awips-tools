@@ -31,7 +31,7 @@
 # is old; a pass that gained cells is replaced under its id and its mosaics rebuilt.
 #
 # KNMI Metop-C ASCAT 25 km (NASA PO.DAAC, listed about 2.5-4 h after the orbit starts; needs the repo secrets
-# EARTHDATA_USER and EARTHDATA_PASS, given to the Build step only; without them the source is skipped with one log line):
+# EARTHDATA_TOKEN (preferred; made on the Earthdata profile page) or EARTHDATA_USER and EARTHDATA_PASS, given to the Build step only; without them the source is skipped with one log line):
 # the granules of the last 2 days plus any older day RSS has not covered with Metop-C, at most 30 downloads of about
 # 1 MB a run, each one real pass. The log carries a "KNMI self-check" (units, direction convention, bias against RSS
 # Metop-C and NESDIS Metop-B where they overlap).
@@ -119,6 +119,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           EARTHDATA_USER: ${{ secrets.EARTHDATA_USER }}
           EARTHDATA_PASS: ${{ secrets.EARTHDATA_PASS }}
+          EARTHDATA_TOKEN: ${{ secrets.EARTHDATA_TOKEN }}
         run: |
           python3 marine_wind/scat/build.py --live "$RUNNER_TEMP/live" --state "$RUNNER_TEMP/state" \
             --out "$RUNNER_TEMP/out" --days "$DAYS" --knmi-days "$KNMI_DAYS" --changed-file "$RUNNER_TEMP/changed"

@@ -883,13 +883,17 @@ def fetch_knmi(now, kn, rs, water, inbox, days=KNMI_DAYS, cap=KNMI_MAX, env=None
     days (a backfill), for the self-check: its passes come back with check_only True and must not be kept. A refused login
     stops the downloads (one log line, nothing recorded); another failure counts against the granule (KNMI_FAILS)."""
     creds = podaac_ascat.credentials(env)
-    if creds is None:
-        print("KNMI Metop-C: EARTHDATA_USER / EARTHDATA_PASS not set, skipped", flush=True)
+    tok = ((os.environ if env is None else env).get("EARTHDATA_TOKEN") or "").strip()
+    if creds is None and not tok:
+        print("KNMI Metop-C: EARTHDATA_TOKEN (or EARTHDATA_USER / EARTHDATA_PASS) not set, skipped", flush=True)
         return []
     listing = listing or podaac_ascat.granules
     if download is None:
         try:
-            sess = podaac_ascat.session(*creds)
+            if tok:   # a token made on the Earthdata profile page ("Generate Token"): no password needed
+                sess = podaac_ascat.EarthdataSession(None, None, bearer=tok)
+            else:
+                sess = podaac_ascat.session(*creds)
         except podaac_ascat.AuthError as e:
             print("KNMI Metop-C: Earthdata login refused (%s)" % e, file=sys.stderr, flush=True)
             return []

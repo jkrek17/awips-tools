@@ -192,3 +192,8 @@ def test_bearer_sent_to_podaac_only(monkeypatch):
 
 def test_credentials_strip():
     assert pa.credentials({"EARTHDATA_USER": " jk \n", "EARTHDATA_PASS": "pw\n"}) == ("jk", "pw")
+
+
+def test_token_only_session():
+    s = pa.EarthdataSession(None, None, bearer="tok")
+    assert s.auth is None and s.bearer == "tok"
