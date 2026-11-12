@@ -12,6 +12,11 @@
 # commit of the orphan branch scatterometer-data, force-pushed (about 1-2 MB for the week),
 # and Publish public site serves data/ at /scatterometer/data/. Main is never touched.
 #
+# +24 h and +48 h come from the cache when it holds that cycle; otherwise from the marine
+# wind job's forecast record artifacts (about 90 MB each, at most 40 downloads a run, so a
+# first run fills in over a few hours), and passes already published get those leads
+# filled in later.
+#
 # By hand (Actions > Scatterometer data > Run workflow): `days` lists that many days back
 # (0-8) to fill a gap; the server keeps about a month.
 
@@ -29,6 +34,7 @@ on:
 
 permissions:
   contents: write
+  actions: read   # lists and downloads the forecast record artifacts (marine_wind/pipeline/record.py)
 
 concurrency:
   group: scatterometer-data
@@ -73,6 +79,7 @@ jobs:
       - name: Build
         env:
           DAYS: ${{ github.event.inputs.days || '1' }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           python3 marine_wind/scat/test_build.py
           python3 marine_wind/scat/build.py --live "$RUNNER_TEMP/live" --state "$RUNNER_TEMP/state" \

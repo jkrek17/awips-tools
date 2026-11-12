@@ -139,6 +139,104 @@ def test_oscat_time_fix_and_grouping():
     assert len({p["key"] for p in ps}) == 2
 
 
+
+def make_cache(tmp, cycle="2026111200", built="2026-11-12T08:47Z"):
+    import json
+    d = os.path.join(tmp, "cache", cycle)
+    os.makedirs(d)
+    for k in b.BOXES:
+        iy0, ny, ix0, nx = b.box_cols(k)
+        np.savez_compressed(os.path.join(d, k + ".npz"), **{"%s%03d" % (n, st): np.full((ny, nx), 80 if n == "best" else 1, np.uint8)
+                                                           for n in ("best", "warn") for st in b.STEPS})
+    json.dump(dict(cycle=cycle, built=built, best_scale=2, warn_scale=1), open(os.path.join(d, "meta.json"), "w"))
+    return os.path.join(tmp, "cache")
+
+
+def test_records_partial_cycles_and_misses():
+    import tempfile
+    now = D(2026, 11, 12, 12, 0)
+    with tempfile.TemporaryDirectory() as tmp:
+        cache = make_cache(tmp)
+        cycles = b.load_cycles(cache)
+        calls = []
+
+        def fetch(c, step):
+            calls.append((c, step))
+            if c == "2026111018":
+                return "none"
+            if c == "2026111012":
+                return "nobest"
+            return np.full((721, 1440), 100, np.uint8), np.full((721, 1440), 4, np.uint8)
+        wants = [("2026111112", 24), ("2026111018", 48), ("2026111012", 48), ("2026111200", 24), ("2026111100", 24), ("2026111100", 24)]
+        n = b.ensure_records(cache, cycles, wants, now, 10, fetch)
+        assert n == 2 and calls == [("2026111112", 24), ("2026111018", 48), ("2026111012", 48), ("2026111100", 24)]   # cached cycle and the duplicate skipped
+        cyc = b.load_cycles(cache)
+        assert cyc["2026111112"]["steps"] == [24] and cyc["2026111112"]["partial"] and not cyc["2026111200"]["partial"]
+        # a partial cycle is never the "latest" run, and serves f24 only for its step
+        s = b.pick_leads(cyc, D(2026, 11, 12, 12, 0))
+        assert s["latest"][0] == "2026111200" and s["f24"] == ("2026111112", 24) and s["f48"] is None
+        fc = b.Forecasts(cyc)
+        r, c = b.box_pos("natl", np.array([(90 - 50) * 1440 + (-30 + 180) * 4]))
+        assert fc.field("2026111112", "natl", "best", 24)[r, c][0] == 100 and fc.field("2026111112", "natl", "warn", 24)[r, c][0] == 4
+        # misses: not asked again within a day, asked again after; "nobest" never
+        calls.clear()
+        assert b.ensure_records(cache, cyc, wants, now + dt.timedelta(hours=1), 10, fetch) == 0 and calls == []
+        b.ensure_records(cache, cyc, wants, now + dt.timedelta(days=1, hours=1), 10, fetch)
+        assert calls == [("2026111018", 48)]
+        # budget
+        calls.clear()
+        os.remove(os.path.join(cache, "record_misses.json"))
+        shutil_rm = __import__("shutil").rmtree
+        shutil_rm(os.path.join(cache, "2026111112"))
+        b.ensure_records(cache, b.load_cycles(cache), [("2026111112", 24), ("2026111106", 24), ("2026111100", 48)], now, 2, fetch)
+        assert len(calls) == 2
+        # an old cycle (artifacts last 14 days) is not asked for
+        calls.clear()
+        b.ensure_records(cache, cyc, [("2026102000", 24)], now, 5, fetch)
+        assert calls == []
+
+
+def test_prune_shrinks_then_drops():
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        cache = make_cache(tmp, "2026110700", "2026-11-07T08:47Z")
+        b.prune(cache, D(2026, 11, 12, 12, 0))      # 5.5 days: steps 24 and 48 only
+        c = b.load_cycles(cache)["2026110700"]
+        assert c["steps"] == [24, 48] and c["partial"]
+        with np.load(os.path.join(cache, "2026110700", "natl.npz")) as z:
+            assert sorted(z.files) == ["best024", "best048", "warn024", "warn048"]
+        b.prune(cache, D(2026, 11, 20, 0, 0))
+        assert b.load_cycles(cache) == {}
+
+
+def test_rescore_fills_a_null_lead():
+    import tempfile
+    import json
+    with tempfile.TemporaryDirectory() as tmp:
+        cache = os.path.join(tmp, "cache")      # the f24 cycle of a pass at 2026-11-12 00Z, only from a record
+        os.makedirs(cache)
+        b.store_step(cache, "2026111100", 24, np.full((721, 1440), 90, np.uint8), np.full((721, 1440), 2, np.uint8))
+        cycles = b.load_cycles(cache)
+        fc = b.Forecasts(cycles)
+        idx = np.array([(90 - 50) * 1440 + (-30 + 180) * 4 + i for i in range(3)], np.int64)
+        obs, flag = np.array([40, 50, 20], np.float32), np.array([0, 0, 1], np.uint8)
+        pdir = os.path.join(tmp, "pass")
+        os.makedirs(pdir)
+        latest = (np.array([30, 31, 32], np.float32), np.array([1, 1, 1], np.uint8))
+        open(os.path.join(pdir, "x-natl.bin"), "wb").write(b.pack_pass(idx, obs, np.zeros(3, np.float32), flag, {"latest": latest, "f24": None, "f48": None}))
+        e = dict(id="x", basin="natl", start="2026-11-11T23:50Z", mid="2026-11-12T00:00Z", file="pass/x-natl.bin",
+                 fc=dict(latest=b.lead_info(("2026111100", 24)), f24=None, f48=None), score=dict(latest={"keep": 1}, f24=None, f48=None))
+        assert b.rescore([e], cycles, fc, pdir, tmp, "2026-11-01T00:00Z") == 1
+        assert e["fc"]["f24"]["cycle"] == "2026111100" and e["fc"]["f24"]["valid"] == "2026-11-12T00:00Z" and e["fc"]["f48"] is None
+        assert e["score"]["latest"] == {"keep": 1}
+        assert e["score"]["f24"]["grid"] == [2, 0, 0]       # 45 kt on the two unflagged cells: 34 yes, 48 no
+        assert e["score"]["f24"]["catch"] == [2, 1, 0] and e["score"]["f24"]["line"] == [2, 2, 0]   # warn 2 = storm line
+        u = b.unpack_pass(open(os.path.join(pdir, "x-natl.bin"), "rb").read())
+        assert u["leads"]["f24"][0].tolist() == [45, 45, 45] and u["leads"]["f24"][1].tolist() == [2, 2, 2]
+        assert u["leads"]["latest"][0].tolist() == [30, 31, 32] and (u["leads"]["f48"][0] == 255).all()
+        assert u["obs"].tolist() == [40, 50, 20] and u["flag"].tolist() == [0, 0, 1]
+        assert b.rescore([e], cycles, fc, pdir, tmp, "2026-11-01T00:00Z") == 0
+
 if __name__ == "__main__":
     n = 0
     for name, f in sorted(globals().items()):
