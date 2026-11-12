@@ -1,4 +1,4 @@
-/* Scatterometer: NOAA STAR scatterometer winds (OSCAT-3, Metop-B and Metop-C ASCAT) over the two OPC basins,
+/* Scatterometer: NOAA STAR scatterometer winds (OSCAT-3, coastal Metop-B and Metop-C ASCAT) and RSS open-ocean ASCAT over the two OPC basins,
    set against the marine wind page's Best Wind and warning lines. Two views: "Mosaic" (default), the passes
    of the 12 h around 00Z or 12Z stitched into one map with the Best Wind and warning lines of the whole basin
    at that time, one score (each cell against the forecast nearest its own pass) and a 7-day summary of the mosaics;
@@ -47,8 +47,9 @@
 
   // ------------------------------------------------------------- formats
   function basinOf(p) { return /pac/i.test(p.basin) ? "pac" : "atl"; }
-  function satShort(s) { return s === "OSCAT-3" ? "OSCAT-3" : s; }
-  function isAscat(p) { return /^Metop/.test(p.sat); }
+  function satShort(s) { return /^RSS /.test(s) ? s.slice(4) + " (RSS)" : s; }
+  function isAscat(p) { return /^(RSS )?Metop/.test(p.sat); }
+  var RSS_NOTE = "RSS ASCAT arrives about 2 to 5 days after the pass; recent mosaics use STAR's coastal ASCAT only.";
   function hhmm(d) { return K.pad(d.getUTCHours()) + ":" + K.pad(d.getUTCMinutes()) + "Z"; }
   function dayTime(iso) { var d = new Date(iso); return K.DAYS[d.getUTCDay()] + " " + d.getUTCDate() + " " + hhmm(d); }
   function dayHour(iso) { var d = new Date(iso); return K.pad(d.getUTCHours()) + "Z " + K.DAYS[d.getUTCDay()] + " " + d.getUTCDate() + " " + K.MONS[d.getUTCMonth()]; }
@@ -286,18 +287,21 @@
     var m = selectedM(), box = $("mdetail");
     if (!m) { box.innerHTML = '<p class="empty">No ' + BASIN[state.basin].name + ' mosaic for this time: no pass fell in its 12 hours.</p>'; return; }
     var L = state.lead, f = m.fc[L], sc = mScore(m, L), cov = mCoverage(m), A = (m.sats.ASCAT || 0) / m.water, O = (m.sats["OSCAT-3"] || 0) / m.water;
+    var R = (m.sats.RSS || 0) / m.water, AS = A - R;   // RSS ASCAT, and STAR's coastal ASCAT (what is left of ASCAT)
     var members = (cur && cur.mosaic && cur.entry === m ? cur.members : m.passes.map(function (id) { return index.passes.filter(function (p) { return p.id === id && basinOf(p) === basinOf(m); })[0] || null; }));
     var h = "<h3>" + BASIN[state.basin].name + ", valid " + validLabel(m.valid) + "</h3>";
     if (m.open) h += '<p class="warnp">Still filling: STAR posts a pass 3 to 4 h after it flies, so the later passes of these 12 hours are not in yet. Left out of the 7-day summary until the window is complete.</p>';
-    h += "<p>" + (state.oscat ? "ASCAT and OSCAT-3 saw <b>" + pct(cov) + "%</b> of the basin water in these 12 hours: <b>" + pct(A) + "%</b> ASCAT, <b>" + pct(O) + "%</b> OSCAT-3." :
-      "ASCAT saw <b>" + pct(cov) + "%</b> of the basin water in these 12 hours (OSCAT-3 left out).") + " Unseen water is left uncoloured." +
-      '</p><div class="covbar" aria-hidden="true"><span style="width:' + (100 * A) + '%;background:#e8d27a"></span>' + (state.oscat ? '<span style="width:' + (100 * O) + '%;background:#2f5a8a"></span>' : "") + "</div>";
+    var split = R > 0 ? "<b>" + pct(R) + "%</b> RSS ASCAT, <b>" + pct(AS) + "%</b> STAR coastal ASCAT" : "<b>" + pct(A) + "%</b> STAR coastal ASCAT (no RSS ASCAT yet)";
+    h += "<p>" + (state.oscat ? "ASCAT and OSCAT-3 saw <b>" + pct(cov) + "%</b> of the basin water in these 12 hours: " + split + ", <b>" + pct(O) + "%</b> OSCAT-3." :
+      "ASCAT saw <b>" + pct(cov) + "%</b> of the basin water in these 12 hours: " + split + " (OSCAT-3 left out).") + " Unseen water is left uncoloured." +
+      '</p><div class="covbar" aria-hidden="true"><span style="width:' + (100 * R) + '%;background:#c9821a"></span><span style="width:' + (100 * AS) + '%;background:#e8d27a"></span>' + (state.oscat ? '<span style="width:' + (100 * O) + '%;background:#2f5a8a"></span>' : "") + "</div>" +
+      (R > 0 ? "" : '<p class="fine" style="font-size:11px;color:var(--text-3)">' + RSS_NOTE + "</p>");
     h += '<table class="mini mtable"><tr><th>Pass</th><th>Middle</th><th>From ' + hrZ(m.valid, 0) + "Z</th></tr>" +
       members.map(function (p, i) {
         if (!p) return "<tr><td>" + m.passes[i] + "</td><td></td><td></td></tr>";
         var off = (new Date(p.mid) - new Date(m.valid)) / 3600000;
         return "<tr" + (!state.oscat && p.sat === "OSCAT-3" ? ' style="opacity:.4"' : "") + "><td>" + satShort(p.sat) + "</td><td>" + hhmm(new Date(p.mid)) + "</td><td>" + (off < 0 ? "&minus;" : "+") + h1(Math.abs(off)) + " h</td></tr>";
-      }).join("") + '</table><p class="fine" style="font-size:11px;color:var(--text-3)">Where swaths overlap, ASCAT is shown over OSCAT-3, then the pass nearest the valid time.</p>';
+      }).join("") + '</table><p class="fine" style="font-size:11px;color:var(--text-3)">Where swaths overlap, RSS ASCAT is shown over STAR ASCAT over OSCAT-3, then the pass nearest the valid time.</p>';
     if (!f || !sc) {
       h += '<p class="warnp">No ' + leadWords(L) + ' score for this time: ' + (L === "latest" ? "no saved run built before the passes falls within 6 to 54 h of them" : "that model run was not saved for most of the passes (the saved runs build up over the days)") + ".</p>";
     } else {
@@ -327,7 +331,8 @@
     var box = $("week"), S = weekS(), sat = state.oscat ? "ASCAT and OSCAT-3" : "ASCAT", lw = leadName(state.lead);
     $("weekHead").textContent = BASIN[state.basin].name + ", " + lw + (state.oscat ? ", all satellites" : ", ASCAT only");
     if (!S || !S.times) { box.innerHTML = '<p class="sumnote">The summary appears once the first 12 h window of this basin has closed.</p>'; return; }
-    var h = '<p class="sumnote" style="margin-top:6px"><b>' + sat + " saw on average " + pct(S.cov_mean) + "% of the basin water per 12 h this week</b> (" + S.times + " mosaics, " + pct(S.cov_min) + " to " + pct(S.cov_max) + "%).</p>";
+    var h = '<p class="sumnote" style="margin-top:6px"><b>' + sat + " saw on average " + pct(S.cov_mean) + "% of the basin water per 12 h this week</b> (" + S.times + " mosaics, " + pct(S.cov_min) + " to " + pct(S.cov_max) + "%). " +
+      (S.with_rss ? S.with_rss + " of the " + S.times + " mosaics include RSS ASCAT (open-ocean swaths); the others have STAR's coastal ASCAT only." : "None of the " + S.times + " mosaics includes RSS ASCAT yet.") + " " + RSS_NOTE + "</p>";
     if (!S.mosaics) { box.innerHTML = h + '<p class="sumnote">No ' + lw + ' score yet: the saved runs for most of the passes are not there (they build up over the days).</p>'; return; }
     var NAMES = ["gale", "storm", "HF"], few = '<span class="dim">too few seen</span>';
     h += '<table class="mini wk"><tr><th>Level</th><th>Grid / seen area</th><th>Lines caught</th></tr>' +
