@@ -21,10 +21,18 @@ north-up, lon 0..360, float32.
     star.passes(day)  -> [(prefix, url, start)];  star.points(url) -> {lat, lon (-180..180), u, v, spd (kt), q}
     from nwp import rss_ascat                                    # Remote Sensing Systems ASCAT, daily 0.25 deg, full swaths
     rss_ascat.day("b", date) -> {lat, lon (-180..180), spd_kt, dir_deg (from), t_min (after 00 UTC), rain, node} or None (404)
+    from nwp import nesdis_ascat                                 # NESDIS Metop-B ASCAT, near real time, via NOAA ERDDAP
+    nesdis_ascat.day(date, (south, north, west, east)) -> the same dict as rss_ascat.day, or None when the day is not there yet
 
 RSS ASCAT (`rss_ascat.day(sat, date)`, sat `b` or `c`) is the open-ocean ASCAT that STAR's coastal product lacks: one
 1-3 MB file per satellite and UTC day, posted about 2 days late (lately about 5); cell centres sit at x.125 degrees. Winds are
 RSS's equivalent-neutral 10 m wind in knots, used as STAR winds are (no conversion). Format: the module docstring.
+
+NESDIS ASCAT (`nesdis_ascat.day(date, box)`, Metop-B only) is the same open-ocean ASCAT about 1 hour after the pass, from
+NOAA AOML's daily 0.25 degree maps through ERDDAP (one time step per UTC day that grows as passes arrive; csv, 2-5 MB per
+request, one request per box piece, the box is split at the date line). Speeds are the 10 m neutral wind in knots, direction
+FROM, time in minutes (the server's "hour" is seconds). It matches RSS Metop-B cell for cell (bias 0.0 kt, SD 1.0 kt); note RSS's
+node 0 is NESDIS's descending pass. Format: the module docstring.
 
 `crop=(IY, IX)` is applied as `v[IY, IX].copy()`; without it the full grid is returned.
 `get` returns None on 403/404, retries S3 503 quickly, backs off otherwise, and raises

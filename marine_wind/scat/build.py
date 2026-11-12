@@ -3,7 +3,7 @@
 Each hour the workflow runs this against the previous state (the `scatterometer-data` branch) and the
 newest marine wind data (the `marine-wind-live` branch), and writes the new state:
 
-    OUT/data/index.json            the pass list with scores (the page reads this); `rss` = days of RSS ASCAT in (days, through)
+    OUT/data/index.json            the pass list with scores (the page reads this); `rss` = days of RSS ASCAT in (days, through); `nesdis.newest` = end of the newest NESDIS pass
     OUT/data/pass/<id>-<basin>.bin one file per pass and basin (format below)
     OUT/data/mosaic/<basin>-<YYYYMMDDHH>.bin
                                    one file per 00/12Z time and basin: the passes of the 12 h around it stitched into one
@@ -17,11 +17,14 @@ newest marine wind data (the `marine-wind-live` branch), and writes the new stat
     OUT/cache/seen.json            passes already handled (key -> id, files), so the hourly run downloads
                                    only what is new
     OUT/cache/rss.json             RSS ASCAT days (YYYYMMDD -> done, satellites posted, last try), see below
+    OUT/cache/nesdis.json          NESDIS Metop-B days (YYYYMMDD -> fetched, tried, n: cells per pseudo-pass key), see below
 
 Sources. NOAA STAR (nwp/nwp/star.py): OSCAT-3 and Metop-B/C coastal ultra-high-resolution ASCAT, posted 3-4 h after the
 pass; the ASCAT is a coastal product, about 9-12% of a basin per 12 h. Remote Sensing Systems (nwp/nwp/rss_ascat.py): daily
 0.25 degree Metop-B and Metop-C maps with full swaths over the open ocean, posted about 2 days after the day ends (lately
-about 5). Winds are the 10 m wind as served, in knots (RSS's is equivalent-neutral, used as STAR's are, no conversion).
+about 5). NESDIS (nwp/nwp/nesdis_ascat.py): Metop-B ASCAT, full swaths, from NOAA AOML's daily 0.25 degree maps through NOAA
+ERDDAP, about 1 h after the pass (Metop-C is not served). Winds are the 10 m wind as served, in knots (RSS's is
+equivalent-neutral, used as STAR's are, no conversion; NESDIS's is the 10 m neutral wind, m/s x 1.94384).
 
 RSS ASCAT. Each UTC day in the 7-day window that is not done (cache/rss.json) is asked for, both satellites, at most once
 every 55 min, until it is 10 days old. When both are posted, or one is and the day is 7 or more days old, the day is used
@@ -34,6 +37,21 @@ cells in a group is dropped. RSS cell centres sit at x.125 degrees, on the corne
 page cell at its north-west corner (lat + 0.125, lon - 0.125, rss_points), one RSS cell to one page cell and none twice, a
 shift of half an RSS cell. The rain bit is the cell's flag. From there the pseudo-passes go through the same pipeline as
 STAR passes (bins, leads, scores, Passes tab, mosaics) and count as ASCAT.
+
+NESDIS Metop-B ASCAT. The dataset has one growing map per UTC day (cells appear as passes are processed, about an hour
+after the flight). Each run asks for today, yesterday, and any other day of the 7-day window that is not final and that RSS
+has not covered with Metop-B (cache/rss.json: done, with b): at most 3 requests a day (the Atlantic box one, the Pacific box
+two, split at the date line), so 6 when nothing is old; a day older than yesterday is asked for at most once an hour. A day is
+final when it is 2 days old and was fetched after it ended; a day the server does not have yet gives nothing and is asked for
+again. The cells become pseudo-passes by the same code as RSS (split_passes): one per (node, synoptic hour, basin), prefix
+nesdis_metopb_AS (_DS), satellite label "Metop-B (NESDIS)". A pass grows as the day fills, so its id does not come from the
+earliest cell: it is <synoptic hour YYYYMMDDTHH00>-<prefix> (<day>T2400 for the cells after 21Z, which come in that day's
+file but are the next 00Z), which stays put (a basin's pseudo-pass is the key
+(id, basin)). A run keeps cache/nesdis.json's cell count per pseudo-pass key and, when a pass has more cells than last time,
+replaces it where it stands: same id and file, scored again against the forecast at its new middle, and the mosaics holding it
+are built again; a pass that did not grow is left alone. When RSS posts the day its Metop-B cells replace the NESDIS ones in
+every mosaic (the passes stay in the list). NESDIS's own node numbers are the other way round from RSS's (RSS node 0 is the
+descending pass; its AS/DS prefixes follow the reader's node, so rss_metop*_AS holds descending cells).
 
 Passes. UHR ASCAT comes as regional chunks of one orbit: files of the same prefix starting <= 20 min apart
 are one pass. An OSCAT-3 file is one half-orbit and is one pass. OSCAT-3 file names carry the time the file
@@ -71,8 +89,8 @@ latest, f24 and f48 in turn uint8 grid[n] (kt rounded, 255 = no forecast) and ui
 
 Mosaics (index `format` 2). For each time V = 00Z and 12Z of the last 7 days (14 per basin) and each basin, every pass
 whose middle is in [V - 6 h, V + 6 h) (the end is excluded, so a pass belongs to one mosaic) is stitched into one map; where
-swaths overlap RSS ASCAT wins over STAR ASCAT, which wins over OSCAT-3, then the pass whose middle is nearest V, a tie goes
-to the newer. A mosaic that gains RSS cells (a day's RSS lands days later) is built again. A mosaic whose
+swaths overlap RSS ASCAT wins over NESDIS Metop-B, which wins over STAR ASCAT, which wins over OSCAT-3, then the pass whose
+middle is nearest V, a tie goes to the newer. A mosaic that gains RSS or NESDIS cells is built again. A mosaic whose
 window closed less than 4 h ago is `open` (STAR posts 3-4 h after a pass): it is shown but left out of the summary.
 
 Each observed cell is scored against the forecast its own pass was given (pick_leads at the pass's middle: the forecast step
@@ -82,7 +100,7 @@ least 80% of the observed cells; the cells of a pass that lacks it are left out 
 `unscored_ascat`) says how many. `score` is the pass score (see above) on the unflagged, scored cells of the whole mosaic,
 `score_ascat` the same on the ASCAT cells only (`n` is the number of cells scored). `peak` has, per lead, the highest
 unflagged observed cell (`all` and `ascat`): idx (global flat index), obs, grid and warn at that cell. `sats` counts
-all observed cells by satellite family (`ASCAT` includes `RSS`, the RSS cells alone), `water` the water cells of the basin box (coverage = n / water). The map lines
+all observed cells by satellite family (`ASCAT` includes `RSS` and `NESDIS`, the cells of those alone; STAR's coastal ASCAT is the rest), `water` the water cells of the basin box (coverage = n / water). The map lines
 are those of V: `vsel` is the run and step picked for V, `fc[lead]` repeats it (null cycle when V has none) and
 `grid_area_box` counts the water cells of the whole box at or above 34/48/64 kt per lead. A mosaic is built again when its
 pass set changes, a pass in it is redone or gains a lead, or V's own forecast changed.
@@ -91,8 +109,8 @@ Summary (index `summary`, basin -> lead -> "ascat" | "all"): the sums over the c
 scores above: `obs`, `grid`, `catch`, `line` at 34/48/64 (observed cells at the threshold, grid cells at it on the same
 cells, observed cells inside the gale|storm|HF lines, scored cells inside them: catch / line is the share of line cells that
 were seen and reached the threshold), `nmos_obs` and `nmos_line` (mosaics with any), `enough` and `enough_line` (at least
-50 cells and 3 mosaics: otherwise no ratio), `mosaics`, `n`, coverage of the basin water per mosaic (`times`, `with_rss` (mosaics with any
-RSS cell), `cov_mean`, `cov_min`, `cov_max`) and `worst`, the 8 highest mosaic peaks of the week (valid, obs, grid at the peak cell, grid_max over
+50 cells and 3 mosaics: otherwise no ratio), `mosaics`, `n`, coverage of the basin water per mosaic (`times`, `with_rss` and `with_nesdis` (mosaics with any
+RSS or NESDIS cell), `cov_mean`, `cov_min`, `cov_max`) and `worst`, the 8 highest mosaic peaks of the week (valid, obs, grid at the peak cell, grid_max over
 the seen cells, warn bits, idx).
 
 Mosaic .bin (gzip, little endian): uint32 n; uint32 idx[n] (global flat index, ascending); uint8 obs[n], dir[n],
@@ -124,7 +142,7 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "nwp"))
-from nwp import rss_ascat, star  # noqa: E402
+from nwp import nesdis_ascat, rss_ascat, star  # noqa: E402
 
 NX, NY = 1440, 721
 BOXES = {"natl": dict(north=67.0, south=18.0, west=-95.0, east=10.0),
@@ -141,11 +159,13 @@ MIN_CELLS = 200
 GROUP_MIN = 20                 # UHR chunks of one pass start at most this far apart
 NOMINAL_MIN = {"uhr": 10, "oscat": 55}   # length of the last file of a pass (minutes)
 SAT = {"oscat3": "OSCAT-3", "UHR_METOP-B": "Metop-B", "UHR_METOP-C": "Metop-C", "rss_metopb": "RSS Metop-B",
-       "rss_metopc": "RSS Metop-C"}
+       "rss_metopc": "RSS Metop-C", "nesdis_metopb": "Metop-B (NESDIS)"}
 RSS_SATS = ("b", "c")
 RSS_RETRY = dt.timedelta(minutes=55)    # an RSS day not posted yet is asked for again after this
 RSS_LATE = dt.timedelta(days=7)         # a day this old is used with only one satellite posted
 RSS_GIVE_UP = dt.timedelta(days=10)     # and not asked for any more after this
+NESDIS_RETRY = dt.timedelta(minutes=55)  # a NESDIS day older than yesterday that failed is asked for again after this
+NESDIS_FINAL = dt.timedelta(days=2)     # a NESDIS day is done when it is this old and was fetched after it ended
 ISO = "%Y-%m-%dT%H:%MZ"
 THRESH = (34, 48, 64)
 LINES = (7, 6, 4)              # warn bits that count for 34, 48, 64 kt
@@ -625,11 +645,15 @@ def rss_points(c):
                 spd=c["spd_kt"].astype(np.float32), q=c["rain"].astype(np.uint8))
 
 
-def rss_passes(sat, day, c, water, inbox):
-    """One satellite-day of RSS cells -> pseudo-passes, one per (node, nearest synoptic hour of the cell time, basin) that
-    has MIN_CELLS water cells inside the OPC box: dict(key, id, prefix, basin, start, end, mid, files [], pts). start and
-    end are the earliest and latest cell time, mid the mean; the id is <earliest cell YYYYMMDDTHHMM>-rss_metop<b|c>_<AS|DS>
-    (AS ascending, DS descending). A pseudo-pass never holds two basins, so its times are those of its own basin."""
+def split_passes(tag, day, c, water, inbox, stable=False):
+    """One satellite-day of cells (nwp.rss_ascat / nwp.nesdis_ascat dict) -> pseudo-passes, one per (node, nearest synoptic
+    hour of the cell time, basin) that has MIN_CELLS water cells inside the OPC box: dict(key, id, prefix, basin, start,
+    end, mid, files [], pts). start and end are the earliest and latest cell time, mid the mean. The prefix is
+    <tag>_<AS|DS> (AS ascending, DS descending). The id is <earliest cell YYYYMMDDTHHMM>-<prefix>, or with `stable` (a
+    day that is still filling) <synoptic hour YYYYMMDDTHH00>-<prefix> (the cells after 21Z, which belong to the 00Z of the next day but come in this
+    day's file, <YYYYMMDDT2400>), which does not move when later cells arrive. The key
+    (<prefix>-<synoptic hour>-<basin>) is the same either way. A pseudo-pass never holds two basins, so its times are
+    those of its own basin."""
     pts = rss_points(c)
     iy = np.round((90 - pts["lat"].astype(np.float64)) * 4).astype(np.int64)
     ix = np.round((pts["lon"].astype(np.float64) + 180) * 4).astype(np.int64) % NX
@@ -647,11 +671,19 @@ def rss_passes(sat, day, c, water, inbox):
                 t = c["t_min"][k].astype(np.float64)
                 start, end = day0 + dt.timedelta(minutes=float(t.min())), day0 + dt.timedelta(minutes=float(t.max()))
                 mid = day0 + dt.timedelta(minutes=round(float(t.mean())))
-                prefix = "rss_metop%s_%s" % (sat, "AS" if node == 0 else "DS")
-                out.append(dict(key="%s-%s-%s" % (prefix, (day0 + dt.timedelta(hours=6 * int(sh))).strftime("%Y%m%dT%H"), basin),
-                                id="%s-%s" % (start.strftime("%Y%m%dT%H%M"), prefix), prefix=prefix, basin=basin,
-                                start=start, end=end, mid=mid, files=[], pts={n: v[k] for n, v in pts.items()}))
+                prefix = "%s_%s" % (tag, "AS" if node == 0 else "DS")
+                # the synoptic stamp: 00, 06, 12, 18Z of the day; the cells after 21Z (syn 4) are 00Z of the next day but their own
+                # pass here (the next day's file holds the other cells of that 00Z), so they are stamped <day>T2400
+                stamp = day0.strftime("%Y%m%dT") + "%02d" % (6 * int(sh))
+                out.append(dict(key="%s-%s-%s" % (prefix, stamp, basin),
+                                id="%s-%s" % (stamp + "00" if stable else start.strftime("%Y%m%dT%H%M"), prefix), prefix=prefix,
+                                basin=basin, start=start, end=end, mid=mid, files=[], pts={n: v[k] for n, v in pts.items()}))
     return out
+
+
+def rss_passes(sat, day, c, water, inbox):
+    """One satellite-day of RSS cells -> pseudo-passes (split_passes), prefix rss_metop<b|c>_<AS|DS>, id from the earliest cell."""
+    return split_passes("rss_metop%s" % sat, day, c, water, inbox)
 
 
 def rss_days(now):
@@ -704,6 +736,93 @@ def fetch_rss(now, rs, water, inbox, fetch=None):
     return new
 
 
+# ---------- NESDIS Metop-B ASCAT (near real time) ----------
+
+def nesdis_done(day, st, now):
+    """NESDIS day state st (cache/nesdis.json: fetched, tried, n) -> is the day final? It is NESDIS_FINAL old and was fetched
+    after it ended (the last cells of a day are in by the time it is over, so no later fetch can add any)."""
+    return bool(st.get("fetched")) and now - day >= NESDIS_FINAL and _t(st["fetched"]) >= day + dt.timedelta(days=1)
+
+
+def nesdis_sig(ns, now):
+    """What counts as a change in cache/nesdis.json: the cell counts and which days are final (not the times asked)."""
+    return json.dumps({k: [v.get("n"), nesdis_done(dt.datetime.strptime(k, "%Y%m%d"), v, now)] for k, v in ns.items()}, sort_keys=True)
+
+
+def rss_covers(rs, key):
+    """Is the day used from RSS with Metop-B in it? Then NESDIS's Metop-B is not needed for it."""
+    st = rs.get(key) or {}
+    return bool(st.get("done")) and "b" in st.get("sats", "")
+
+
+def fetch_nesdis(now, ns, rs, water, inbox, fetch=None):
+    """Ask NESDIS for Metop-B on today, yesterday, and every day of the window that is not final yet and that RSS has not
+    covered, and turn the passes that are new or have more cells than before into pseudo-passes (stable ids, so a pass
+    that grew is replaced where it stands). A day older than yesterday is asked for at most once per NESDIS_RETRY. A day
+    the server does not have gives nothing and is asked for again unless it is final. ns (cache/nesdis.json: YYYYMMDD ->
+    dict(fetched, tried, n {key: cells})) is updated in place; rs is rss.json. At most 1 (Atlantic) + 2 (Pacific, across
+    the date line) requests a day -> new pass dicts."""
+    fetch = fetch or nesdis_ascat.day
+    new = []
+    d0 = (now - dt.timedelta(days=KEEP_DAYS)).replace(hour=0, minute=0, second=0, microsecond=0)
+    days = []
+    while d0 <= now:
+        days.append(d0)
+        d0 += dt.timedelta(days=1)
+    for d in reversed(days):   # newest first
+        key = d.strftime("%Y%m%d")
+        st = ns.get(key, {})
+        if rss_covers(rs, key) or nesdis_done(d, st, now):
+            continue
+        recent = now - d < dt.timedelta(days=2)   # today or yesterday: every run
+        if not recent and st.get("tried") and now - _t(st["tried"]) < NESDIS_RETRY:
+            continue
+        got, failed = {}, False
+        for basin in inbox:
+            b = BOXES[basin]
+            try:
+                c = fetch(d, (b["south"], b["north"], b["west"], b["east"]))
+            except Exception as e:   # network: ask again next run
+                print("NESDIS %s %s failed (%s: %s)" % (basin, key, type(e).__name__, e), file=sys.stderr, flush=True)
+                failed = True
+                continue
+            if c is not None:
+                got[basin] = c
+        st = ns[key] = dict(st, tried=now.strftime(ISO))
+        st.setdefault("n", {})
+        if failed or len(got) < len(inbox):
+            print("NESDIS %s: not there yet" % key if not failed else "NESDIS %s: failed" % key, flush=True)
+            continue
+        st["fetched"] = now.strftime(ISO)
+        ps, grew = [], 0
+        for basin, c in got.items():
+            for p in split_passes("nesdis_metopb", d, c, water, {basin: inbox[basin]}, stable=True):
+                n = int(p["pts"]["lat"].size)
+                if p["start"] <= now - dt.timedelta(days=KEEP_DAYS) or n <= st["n"].get(p["key"], 0):
+                    continue
+                grew += p["key"] in st["n"]
+                st["n"][p["key"]] = n
+                ps.append(p)
+        new += ps
+        print("NESDIS %s: %d passes new or grown (%d of them grown)" % (key, len(ps), grew), flush=True)
+    cut = (now - dt.timedelta(days=KEEP_DAYS + 2)).strftime("%Y%m%d")
+    for k in [k for k in ns if k < cut]:
+        del ns[k]
+    return new
+
+
+def pass_key(p):
+    """What a pass dict (new, or grown) replaces in the entries: its id, or for a pseudo-pass (id, basin) -> predicate."""
+    return (lambda k: k == (p["id"], p["basin"])) if "pts" in p else (lambda k: k[0] == p["id"])
+
+
+def drop_redone(entries, todo):
+    """entries {(id, basin): entry} without those the passes in todo are redone for. A STAR pass holds both basins and
+    replaces both; a pseudo-pass holds one, and its id (a NESDIS one is the synoptic hour) is shared with the other basin's."""
+    gone = [pass_key(p) for p in todo]
+    return {k: e for k, e in entries.items() if not any(f(k) for f in gone)}
+
+
 def pass_mid(p):
     return p.get("mid") or p["start"] + (p["end"] - p["start"]) / 2
 
@@ -740,7 +859,7 @@ def window_entries(entries, basin, v):
 
 def stitch(v, members):
     """members [(entry, unpacked pass)] in mosaic order -> (idx int64, obs, dir, flag, pass index, position of the cell
-    in its pass) of the union of their cells; where passes overlap RSS ASCAT wins over STAR ASCAT, which wins over OSCAT-3
+    in its pass) of the union of their cells; where passes overlap RSS ASCAT wins over NESDIS Metop-B, which wins over STAR ASCAT, which wins over OSCAT-3
     (the better referee: OSCAT-3 reads low at gale force and above, marine-research study 2026-11-12), then the one
     nearest V, a tie the newer."""
     obs = np.full(NX * NY, 255, np.uint8)
@@ -797,6 +916,7 @@ def build_mosaic(basin, v, members, sel, fc, water_box):
     obsf = obs.astype(np.float32)
     ascat = np.array([is_ascat(e["sat"]) for e, _ in members], bool)[pi]
     rss = np.array([is_rss(e["sat"]) for e, _ in members], bool)[pi]
+    nes = np.array([is_nesdis(e["sat"]) for e, _ in members], bool)[pi]
     cell = cell_leads(members, pi, pos)
     blobs = [np.uint32(n).tobytes(), idx.astype("<u4").tobytes(), obs.tobytes(), dr.tobytes(), fl.tobytes(), pi.tobytes()]
     for lead in LEADS:
@@ -830,7 +950,7 @@ def build_mosaic(basin, v, members, sel, fc, water_box):
                obs_max=round(float(obsf[ok].max()), 1) if ok.any() else 0.0, water=int(water_box.sum()),
                box=dict(iy0=iy0, ny=ny, ix0=ix0, nx=nx), fc=fcinfo, vsel=vsel, score=sc, score_ascat=sca, peak=peak,
                unscored=uns, unscored_ascat=uns_a, grid_area_box=area, sig=[pass_sig(e) for e, _ in members],
-               sats={"ASCAT": int(ascat.sum()), "OSCAT-3": int((~ascat).sum()), "RSS": int(rss.sum())})
+               sats={"ASCAT": int(ascat.sum()), "OSCAT-3": int((~ascat).sum()), "RSS": int(rss.sum()), "NESDIS": int(nes.sum())})
     return gzip.compress(b"".join(blobs), 9, mtime=0), ent
 
 
@@ -838,13 +958,17 @@ def is_rss(sat):
     return sat.startswith("RSS")
 
 
+def is_nesdis(sat):
+    return sat.endswith("(NESDIS)")
+
+
 def is_ascat(sat):
     return is_rss(sat) or sat.startswith("Metop")
 
 
 def source_rank(sat):
-    """Overlap priority in the stitch: RSS ASCAT 2, STAR ASCAT 1, OSCAT-3 0."""
-    return 2 if is_rss(sat) else 1 if is_ascat(sat) else 0
+    """Overlap priority in the stitch: RSS ASCAT 3, NESDIS Metop-B 2, STAR ASCAT 1, OSCAT-3 0."""
+    return 3 if is_rss(sat) else 2 if is_nesdis(sat) else 1 if is_ascat(sat) else 0
 
 
 def unpack_mosaic(blob, ent):
@@ -895,7 +1019,7 @@ def update_mosaics(now, entries, prev_mosaics, cycles, fc, water, inbox, pdir, m
             if old and not os.path.exists(dst) and os.path.exists(os.path.join(state_dir, "data", fn)):
                 shutil.copy2(os.path.join(state_dir, "data", fn), dst)
             ids = [e["id"] for e in ws]
-            if (old and old.get("format") == FORMAT and os.path.exists(dst) and old["passes"] == ids and not (set(ids) & touched)
+            if (old and old.get("format") == FORMAT and os.path.exists(dst) and old["passes"] == ids and not (set(ids) & touched) and not any((i, basin) in touched for i in ids)
                     and old.get("vsel") == want_fc and old.get("sig") == [pass_sig(e) for e in ws]):
                 out.append(dict(old, open=is_open))
                 keep.add(os.path.basename(fn))
@@ -922,7 +1046,8 @@ def update_mosaics(now, entries, prev_mosaics, cycles, fc, water, inbox, pdir, m
 def _group_summary(ms, lead, group):
     key = "score_ascat" if group == "ascat" else "score"
     cov = [(m["sats"]["ASCAT"] if group == "ascat" else m["n"]) / m["water"] for m in ms if m["water"]]
-    S = dict(times=len(ms), with_rss=sum(1 for m in ms if (m.get("sats") or {}).get("RSS", 0) > 0), cov_mean=round(float(np.mean(cov)), 4) if cov else None, cov_min=round(min(cov), 4) if cov else None,
+    S = dict(times=len(ms), with_rss=sum(1 for m in ms if (m.get("sats") or {}).get("RSS", 0) > 0),
+             with_nesdis=sum(1 for m in ms if (m.get("sats") or {}).get("NESDIS", 0) > 0), cov_mean=round(float(np.mean(cov)), 4) if cov else None, cov_min=round(min(cov), 4) if cov else None,
              cov_max=round(max(cov), 4) if cov else None, mosaics=0, n=0, obs=[0] * 3, grid=[0] * 3, catch=[0] * 3, line=[0] * 3,
              nmos_obs=[0] * 3, nmos_line=[0] * 3, min_seen=MIN_SEEN, min_mosaics=MIN_MOSAICS)
     worst = []
@@ -1038,6 +1163,9 @@ def main():
     rs = read_json(os.path.join(a.state, "cache", "rss.json"), {})
     rs_done0 = sorted(k for k, v in rs.items() if v.get("done"))
     todo += fetch_rss(now, rs, water, inbox)
+    ns = read_json(os.path.join(a.state, "cache", "nesdis.json"), {})
+    ns0 = nesdis_sig(ns, now)
+    todo += fetch_nesdis(now, ns, rs, water, inbox)
 
     entries = {(e["id"], e["basin"]): e for e in prev["passes"]}
     # f24 and f48 from the forecast records where the cache lacks the cycle: for the new passes and for
@@ -1062,8 +1190,7 @@ def main():
     for p in todo:
         if p["key"] in seen:
             p["id"] = seen[p["key"]]["id"]
-    redo = {p["id"] for p in todo}
-    entries = {k: e for k, e in entries.items() if k[0] not in redo}
+    entries = drop_redone(entries, todo)
 
     def work(p):
         try:
@@ -1080,7 +1207,7 @@ def main():
                 continue
             if "pts" not in p:   # RSS days are tracked in rss.json
                 seen[p["key"]] = dict(id=p["id"], files=len(p["files"]))
-            touched.add(p["id"])
+            touched.add((p["id"], p["basin"]) if "pts" in p else p["id"])
             mid = pass_mid(p)
             sel = pick_leads(cycles, mid)
             for basin, (idx, spd, direction, flag) in res.items():
@@ -1122,13 +1249,16 @@ def main():
         json.dump(seen, f)
     with open(os.path.join(cache, "rss.json"), "w") as f:
         json.dump(rs, f)
+    with open(os.path.join(cache, "nesdis.json"), "w") as f:
+        json.dump(ns, f)
     rs_done = sorted(k for k, v in rs.items() if v.get("done"))
     index = dict(built=now.strftime("%Y-%m-%dT%H:%M:%SZ"), keep_days=KEEP_DAYS,
-                 grid=dict(res=0.25, north=90, west=-180, nx=NX), cycle=live_cycle, format=FORMAT, rss=dict(days=rs_done, through=rs_done[-1] if rs_done else None), passes=kept, mosaics=mosaics,
+                 grid=dict(res=0.25, north=90, west=-180, nx=NX), cycle=live_cycle, format=FORMAT, rss=dict(days=rs_done, through=rs_done[-1] if rs_done else None),
+                 nesdis=dict(newest=max((e["end"] for e in kept if e["sat"].endswith("(NESDIS)")), default=None)), passes=kept, mosaics=mosaics,
                  summary=summarize(mosaics))
     with open(os.path.join(a.out, "data", "index.json"), "w") as f:
         json.dump(index, f, separators=(",", ":"))
-    changed = bool(n_new) or new_cycle or bool(n_fill) or bool(n_rec) or bool(n_mos) or rs_done != rs_done0 or read_json(mp, {}) != misses0
+    changed = bool(n_new) or new_cycle or bool(n_fill) or bool(n_rec) or bool(n_mos) or rs_done != rs_done0 or nesdis_sig(ns, now) != ns0 or read_json(mp, {}) != misses0
     if a.changed_file:
         with open(a.changed_file, "w") as f:
             f.write("true" if changed else "false")
