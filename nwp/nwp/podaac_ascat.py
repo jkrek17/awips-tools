@@ -122,7 +122,7 @@ class EarthdataSession(requests.Session):
 
     def __init__(self, user, password, bearer=None):
         super().__init__()
-        self.auth = (user, password)
+        self.auth = (user, password) if user else None
         self.bearer = bearer
 
     def request(self, method, url, **kw):
