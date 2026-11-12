@@ -10,8 +10,11 @@ own pass (valid V - 6, V or V + 6), not against V; a lead counts for a mosaic wh
 observed cells. `data/mosaic/<basin>-<YYYYMMDDHH>.bin`, rebuilt when its passes change or gain a lead. On top of the
 mosaic tab sits a 7-day summary (`summary` in `index.json`, computed here, the page only formats it): per basin and lead,
 grid area against seen area, line catch, the share of line cells that were seen and reached the threshold, and the week's
-8 highest ASCAT peaks (one per mosaic, clickable). It is ASCAT only by default: OSCAT-3 reads low at high winds, so the
-page keeps it off unless `#oscat=1` (or the button) turns it on, and the headline scores are `score_ascat`.
+8 highest ASCAT peaks (one per mosaic, clickable). It is ASCAT only: OSCAT-3 reads low at high winds, so the page
+never scores it (`score_ascat` is what it uses; `#oscat=1` or the button under "More" only draws OSCAT-3 cells in the wind colours).
+The page answers one question, how the 24 h Best Wind forecast compared with ASCAT: a plain answer for the chosen map
+(areas seen against drawn, and missed storm clusters found in the browser from the mosaic .bin), a right / missed / too much
+map at a chosen level, and a strip of the week's 14 maps. It reads only `index.json` and the .bin files, so no field was added.
 Format and lead rules: the docstring of `build.py`.
 
     python3 build.py --live DIR --state DIR --out DIR [--days 1] [--knmi-days 2] [--knmi-max 30] [--workers 5] [--changed-file F]
