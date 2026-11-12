@@ -24,8 +24,10 @@ Format of `data/index.json` and `data/pass/<id>-<basin>.bin`, how passes, leads 
 
 Things to know
 
-- The marine wind forecasts exist only from the day the cache starts. Right after the first run only `latest` can be
-  filled (from the live run built before the pass); `f24` fills after a day and `f48` after two.
+- `f24` and `f48` use the cached marine wind runs; when the cache lacks the cycle (it starts empty and keeps 4 days of full
+  cycles, then steps 24 and 48 up to 10 days) they come from the marine wind job's `forecast-record-*` artifacts (about
+  90 MB each, `GITHUB_TOKEN` needed, at most `--record-max` 40 downloads a run). Passes already published get the lead filled
+  in on a later run. `latest` always comes from the cache, so it exists only from the first run on.
 - OSCAT-3 file names carry the time the file was made, not the pass time, whenever STAR posts a batch of older orbits (a
   dozen files stamped within seconds). Those passes get a start time from their orbit number (about 100 min per orbit, fitted
   to the files with a good stamp). Pass brackets are [start, last file's start + 10 min (UHR chunk) or 55 min (OSCAT-3 half

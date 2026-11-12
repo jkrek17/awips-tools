@@ -33,6 +33,15 @@ Forecast leads, each with Best Wind (kt) and the warning bits (1 gale, 2 storm, 
             of 6 h nearest to the middle, 6..54, else none
     f24     the run 24 h before the synoptic hour (00/06/12/18) nearest the middle, step 24
     f48     the same, 48 h before, step 48
+When the job's own cache lacks the cycle for f24 or f48 (the cache starts empty and keeps 4 days), the step is
+taken from the marine wind job's forecast record artifact `forecast-record-YYYYMMDDHH-fLLL` (marine_wind/pipeline/
+record.py, kept 14 days, needs GITHUB_TOKEN; about 90 MB each) and stored in the cache as a partial cycle holding
+that step only. Passes already in the index whose f24 or f48 was null are scored again when it turns up (their
+observed winds then come from the stored whole-knot values). A record not found is remembered in
+cache/record_misses.json and asked again after a day; one without `best` (before about 6 Nov 2026) never again.
+At most --record-max downloads a run, newest passes first. Full cycles older than 4 days shrink to steps 24 and 48
+and go at 10 days.
+
 Scores per lead use unflagged cells only: observed and grid area at 34/48/64 kt, highest wind, and the
 warning lines' catch of the observed cells (34 in gale|storm|HF, 48 in storm|HF, 64 in HF) beside the cells
 each line covers. Counts are cells of 0.25 degree.
@@ -49,11 +58,13 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import gzip
+import importlib.util
 import json
 import os
 import re
 import shutil
 import sys
+import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -69,7 +80,11 @@ BOXES = {"natl": dict(north=67.0, south=18.0, west=-95.0, east=10.0),
 STEPS = tuple(range(6, 55, 6))
 LEADS = ("latest", "f24", "f48")
 KEEP_DAYS = 7
-CACHE_DAYS = 4
+CACHE_DAYS = 4                 # full cycles (steps 6..54) are kept this long
+PARTIAL_DAYS = 10              # then steps 24 and 48 only, this long (the record artifacts last 14 days)
+RECORD_MAX = 40                # record downloads per run
+RECORD_RETRY = dt.timedelta(days=1)
+RECORD_LIFE = dt.timedelta(days=14)
 MIN_CELLS = 200
 GROUP_MIN = 20                 # UHR chunks of one pass start at most this far apart
 NOMINAL_MIN = {"uhr": 10, "oscat": 55}   # length of the last file of a pass (minutes)
@@ -95,10 +110,19 @@ def box_cols(key):
     return iy0, ny, ix0, nx
 
 
+# inland water the GFS mask keeps but OPC does not forecast for: (south, north, west, east), lon -180..180
+INLAND = [(51.0, 66.0, -96.0, -77.0),    # Hudson and James Bay
+          (41.0, 49.5, -93.0, -75.5)]    # Great Lakes
+
+
 def box_mask(key):
     iy0, ny, ix0, nx = box_cols(key)
     m = np.zeros((NY, NX), bool)
     m[iy0:iy0 + ny, (ix0 + np.arange(nx)) % NX] = True
+    lat = 90.0 - 0.25 * np.arange(NY)
+    lon = -180.0 + 0.25 * np.arange(NX)
+    for s, n, w, e in INLAND:
+        m[np.ix_((lat >= s) & (lat <= n), (lon >= w) & (lon <= e))] = False
     return m
 
 
@@ -174,12 +198,29 @@ def cache_live(live, cache, now):
             np.savez_compressed(os.path.join(d, k + ".npz"), **arrs[k])
         with open(os.path.join(d, "meta.json"), "w") as f:
             json.dump(dict(cycle=cyc, built=man["built"], best_scale=scale["best"], warn_scale=scale["warn"]), f)
+    prune(cache, now)
+    return cyc, new
+
+
+def prune(cache, now):
+    """Full cycles older than CACHE_DAYS shrink to steps 24 and 48 (what the f24 and f48 leads use); partial
+    cycles go after PARTIAL_DAYS."""
     for name in os.listdir(cache):
         p = os.path.join(cache, name)
-        if os.path.isdir(p) and re.fullmatch(r"\d{10}", name):
-            if dt.datetime.strptime(name, "%Y%m%d%H") < now - dt.timedelta(days=CACHE_DAYS):
-                shutil.rmtree(p)
-    return cyc, new
+        if not (os.path.isdir(p) and re.fullmatch(r"\d{10}", name)):
+            continue
+        age = now - dt.datetime.strptime(name, "%Y%m%d%H")
+        meta = read_json(os.path.join(p, "meta.json"), None)
+        if age > dt.timedelta(days=PARTIAL_DAYS) or meta is None:
+            shutil.rmtree(p)
+        elif age > dt.timedelta(days=CACHE_DAYS) and not meta.get("steps"):
+            for k in BOXES:
+                with np.load(os.path.join(p, k + ".npz")) as z:
+                    keep = {n: z[n] for n in z.files if n[-3:] in ("024", "048")}
+                np.savez_compressed(os.path.join(p, k + ".npz"), **keep)
+            meta["steps"] = [24, 48]
+            with open(os.path.join(p, "meta.json"), "w") as f:
+                json.dump(meta, f)
 
 
 def load_cycles(cache):
@@ -190,7 +231,8 @@ def load_cycles(cache):
         if re.fullmatch(r"\d{10}", name) and os.path.exists(m):
             with open(m) as f:
                 j = json.load(f)
-            out[name] = dict(built=dt.datetime.strptime(j["built"], ISO), best_scale=j["best_scale"], dir=os.path.join(cache, name))
+            out[name] = dict(built=dt.datetime.strptime(j["built"], ISO), best_scale=j["best_scale"], dir=os.path.join(cache, name),
+                             steps=j.get("steps") or list(STEPS), partial=bool(j.get("steps")))
     return out
 
 
@@ -208,22 +250,148 @@ class Forecasts:
         return self._npz[k]["%s%03d" % (name, step)]
 
 
+# ---------- forecast records (f24 and f48 for cycles the cache does not hold) ----------
+
+def _record_module():
+    spec = importlib.util.spec_from_file_location("mw_record", os.path.join(HERE, "..", "pipeline", "record.py"))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def fetch_record(cycle, step):
+    """Best Wind and warning areas of one lead from the forecast record artifact (pipeline/record.py) ->
+    (best uint8 as kt x 2, warn uint8), each [721, 1440]; "none" when there is no live artifact, "nobest" when the
+    record has no `best` field (before about 6 Nov 2026). Raises on network errors."""
+    rec = _record_module()
+    tmp = tempfile.mkdtemp(prefix="record-")
+    try:
+        if not rec._artifact(tmp, cycle, step):
+            return "none"
+        d = os.path.join(tmp, cycle)
+        os.makedirs(d)
+        for ext in (".json", ".npz"):
+            os.replace(os.path.join(tmp, "%s-%s%s" % (cycle, rec._name(step), ext)), os.path.join(d, rec._name(step) + ext))
+        vals, _, _ = rec.load(d, cycle, step)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    if "best" not in vals or "warn" not in vals or np.shape(vals["best"]) != (NY, NX) or np.shape(vals["warn"]) != (NY, NX):
+        return "nobest"
+    best = np.clip(np.round(np.nan_to_num(np.asarray(vals["best"], np.float32)) * 2), 0, 255).astype(np.uint8)
+    return best, np.asarray(vals["warn"]).astype(np.uint8)
+
+
+def store_step(cache, cycle, step, best, warn):
+    """Add one step to cache/<cycle>/ (a partial cycle with that step only when the cycle is not cached)."""
+    d = os.path.join(cache, cycle)
+    meta = read_json(os.path.join(d, "meta.json"), None)
+    if meta is not None and "steps" not in meta:
+        return   # a full cycle already has every step
+    if meta is None:
+        os.makedirs(d, exist_ok=True)
+        meta = dict(cycle=cycle, built=dt.datetime.strptime(cycle, "%Y%m%d%H").strftime(ISO), best_scale=2, warn_scale=1, steps=[])
+    for k in BOXES:
+        p = os.path.join(d, k + ".npz")
+        arrs = {}
+        if os.path.exists(p):
+            with np.load(p) as z:
+                arrs = {n: z[n] for n in z.files}
+        arrs["best%03d" % step], arrs["warn%03d" % step] = crop_box(best, k), crop_box(warn, k)
+        np.savez_compressed(p, **arrs)
+    meta["steps"] = sorted(set(meta["steps"]) | {step})
+    with open(os.path.join(d, "meta.json"), "w") as f:   # meta last: its presence marks a usable cycle
+        json.dump(meta, f)
+
+
+def ensure_records(cache, cycles, wants, now, budget, fetch=None):
+    """wants [(cycle, step)], newest first: fetch the ones neither cached nor recently missed, at most `budget`
+    downloads -> number stored. Misses are kept in cache/record_misses.json."""
+    fetch = fetch or fetch_record
+    mp = os.path.join(cache, "record_misses.json")
+    misses = read_json(mp, {})
+    stored = tries = 0
+    for c, step in dict.fromkeys(wants):
+        key = "%s-f%03d" % (c, step)
+        t = dt.datetime.strptime(c, "%Y%m%d%H")
+        if step in cycles.get(c, {}).get("steps", ()) or now - t > RECORD_LIFE:
+            continue
+        m = misses.get(key)
+        if m and (m["why"] == "nobest" or now - dt.datetime.strptime(m["t"], ISO) < RECORD_RETRY):
+            continue
+        if tries >= budget:
+            print("record budget of %d downloads used; the rest next run" % budget, flush=True)
+            break
+        tries += 1
+        try:
+            r = fetch(c, step)
+        except Exception as e:   # network or a bad zip: try again next run
+            print("record %s failed (%s: %s)" % (key, type(e).__name__, e), file=sys.stderr, flush=True)
+            continue
+        if isinstance(r, str):
+            misses[key] = dict(t=now.strftime(ISO), why=r)
+            print("record %s: %s" % (key, r), flush=True)
+        else:
+            store_step(cache, c, step, *r)
+            misses.pop(key, None)
+            stored += 1
+            print("record %s stored" % key, flush=True)
+    cut = (now - RECORD_LIFE - dt.timedelta(days=2)).strftime(ISO)
+    misses = {k: v for k, v in misses.items() if v["t"] >= cut}
+    with open(mp, "w") as f:
+        json.dump(misses, f)
+    return stored
+
+
+def rescore(entries, cycles, fc, pass_dir, state_dir, cut):
+    """Fill f24 and f48 of entries that have them null where the forecast is cached now: rewrite the pass file
+    (grid and warn bytes of that lead) and the entry. -> number of entries changed."""
+    n = 0
+    for e in entries:
+        if e["start"] < cut or (e["fc"]["f24"] and e["fc"]["f48"]):
+            continue
+        sel = pick_leads(cycles, dt.datetime.strptime(e["mid"], ISO))
+        fill = [l for l in ("f24", "f48") if e["fc"][l] is None and sel[l] is not None]
+        if not fill:
+            continue
+        name = os.path.basename(e["file"])
+        src = next((p for p in (os.path.join(pass_dir, name), os.path.join(state_dir, "data", e["file"])) if os.path.exists(p)), None)
+        if src is None:
+            continue
+        with open(src, "rb") as f:
+            u = unpack_pass(f.read())
+        leads = {l: (v[0].copy(), v[1].copy()) if (v[0] != 255).any() else None for l, v in u["leads"].items()}
+        for l in fill:
+            grid, warn = lead_fields(fc, sel[l], e["basin"], u["idx"].astype(np.int64))
+            leads[l] = (np.clip(np.round(grid), 0, 254).astype(np.uint8), warn)
+            e["fc"][l] = lead_info(sel[l])
+            e["score"][l] = score(u["obs"].astype(np.float32), u["flag"], grid, warn)
+        with open(os.path.join(pass_dir, name), "wb") as f:
+            f.write(pack_raw(u["idx"], u["obs"], u["dir"], u["flag"], leads))
+        n += 1
+    return n
+
+
 def pick_leads(cycles, mid):
     """cycles {name: dict(built=datetime)}, mid datetime -> {lead: (cycle name, step) or None} (see module doc)."""
     out = dict.fromkeys(LEADS)
-    ready = [c for c, v in cycles.items() if v["built"] <= mid]
+    ready = [c for c, v in cycles.items() if v["built"] <= mid and not v.get("partial")]
     if ready:
         c = max(ready)
         h = (mid - dt.datetime.strptime(c, "%Y%m%d%H")).total_seconds() / 3600
         step = int(np.floor(h / 6 + 0.5)) * 6
         if STEPS[0] <= step <= STEPS[-1]:
             out["latest"] = (c, step)
-    v = _nearest_synoptic(mid)
-    for lead, h in (("f24", 24), ("f48", 48)):
-        c = (v - dt.timedelta(hours=h)).strftime("%Y%m%d%H")
-        if c in cycles:
+    for lead, (c, h) in record_cycles(mid).items():
+        if c in cycles and h in cycles[c].get("steps", STEPS):
             out[lead] = (c, h)
     return out
+
+
+def record_cycles(mid):
+    """{lead: (cycle name, step)} that f24 and f48 use for a pass middle: the run 24 and 48 h before the nearest
+    synoptic hour."""
+    v = _nearest_synoptic(mid)
+    return {lead: ((v - dt.timedelta(hours=h)).strftime("%Y%m%d%H"), h) for lead, h in (("f24", 24), ("f48", 48))}
 
 
 def _nearest_synoptic(t):
@@ -381,16 +549,22 @@ def process_pass(p, water, inbox):
 
 def pack_pass(idx, spd, direction, flag, leads):
     """leads {lead: (grid kt, warn) or None} -> gzip bytes (module doc)."""
-    n = idx.size
-    b = [np.uint32(n).tobytes(), idx.astype("<u4").tobytes(),
-         np.clip(np.round(spd), 0, 254).astype(np.uint8).tobytes(),
-         (np.round(direction / 2).astype(np.int64) % 180).astype(np.uint8).tobytes(), flag.astype(np.uint8).tobytes()]
+    raw = {}
     for lead in LEADS:
         f = leads.get(lead)
-        if f is None:
-            b += [np.full(n, 255, np.uint8).tobytes()] * 2
-        else:
-            b += [np.clip(np.round(f[0]), 0, 254).astype(np.uint8).tobytes(), f[1].astype(np.uint8).tobytes()]
+        raw[lead] = None if f is None else (np.clip(np.round(f[0]), 0, 254).astype(np.uint8), f[1].astype(np.uint8))
+    return pack_raw(idx, np.clip(np.round(spd), 0, 254).astype(np.uint8),
+                    (np.round(direction / 2).astype(np.int64) % 180).astype(np.uint8), flag, raw)
+
+
+def pack_raw(idx, obs, dirb, flag, leads):
+    """The same from the stored bytes; leads {lead: (grid uint8, warn uint8) or None}."""
+    n = idx.size
+    b = [np.uint32(n).tobytes(), idx.astype("<u4").tobytes(), obs.astype(np.uint8).tobytes(),
+         dirb.astype(np.uint8).tobytes(), flag.astype(np.uint8).tobytes()]
+    for lead in LEADS:
+        f = leads.get(lead)
+        b += [np.full(n, 255, np.uint8).tobytes()] * 2 if f is None else [f[0].tobytes(), f[1].tobytes()]
     return gzip.compress(b"".join(b), 6, mtime=0)
 
 
@@ -422,6 +596,7 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--days", type=int, default=1, help="days back from today to list (0-8; default 1: today and yesterday)")
     ap.add_argument("--workers", type=int, default=5)
+    ap.add_argument("--record-max", type=int, default=RECORD_MAX, help="most forecast record artifacts to download per run")
     ap.add_argument("--changed-file", help="write 'true' or 'false' here: whether the state gained a pass or a cycle")
     a = ap.parse_args()
     t0 = time.time()
@@ -453,6 +628,21 @@ def main():
     print("%d files, %d passes, %d new or grown" % (len(files), len(passes), len(todo)), flush=True)
 
     entries = {(e["id"], e["basin"]): e for e in prev["passes"]}
+    # f24 and f48 from the forecast records where the cache lacks the cycle: for the new passes and for
+    # entries that have a lead null
+    n_rec = 0
+    mp = os.path.join(cache, "record_misses.json")
+    misses0 = read_json(mp, {})
+    if os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN"):
+        mids = [p["start"] + (p["end"] - p["start"]) / 2 for p in todo]
+        mids += [dt.datetime.strptime(e["mid"], ISO) for e in entries.values() if not (e["fc"]["f24"] and e["fc"]["f48"])]
+        wants = [cs for m in sorted(mids, reverse=True) for cs in record_cycles(m).values()]
+        n_rec = ensure_records(cache, cycles, wants, now, a.record_max)
+        if n_rec:
+            cycles = load_cycles(cache)
+            fc = Forecasts(cycles)
+    else:
+        print("no GITHUB_TOKEN: forecast records not fetched")
     # a pass seen before with more files is redone under its first id
     for p in todo:
         if p["key"] in seen:
@@ -493,8 +683,9 @@ def main():
                 n_new += 1
             print("  %s: %s" % (p["id"], ", ".join("%s %d" % (b, r[0].size) for b, r in res.items()) or "no cells"), flush=True)
 
-    # keep the last week; carry the files over
     cut = (now - dt.timedelta(days=KEEP_DAYS)).strftime(ISO)
+    n_fill = rescore(list(entries.values()), cycles, fc, pdir, a.state, cut)
+    # keep the last week; carry the files over
     kept = sorted((e for e in entries.values() if e["start"] >= cut), key=lambda e: (e["start"], e["basin"]), reverse=True)
     if not same:
         for e in kept:
@@ -513,11 +704,12 @@ def main():
                  grid=dict(res=0.25, north=90, west=-180, nx=NX), cycle=live_cycle, passes=kept)
     with open(os.path.join(a.out, "data", "index.json"), "w") as f:
         json.dump(index, f, separators=(",", ":"))
-    changed = bool(n_new) or new_cycle
+    changed = bool(n_new) or new_cycle or bool(n_fill) or bool(n_rec) or read_json(mp, {}) != misses0
     if a.changed_file:
         with open(a.changed_file, "w") as f:
             f.write("true" if changed else "false")
     size = sum(os.path.getsize(os.path.join(pdir, x)) for x in os.listdir(pdir))
+    print("%d records stored, %d passes given f24/f48" % (n_rec, n_fill))
     print("%d pass entries kept (%d new), cycle %s%s, data/pass %.1f MB, %.0f s" % (
         len(kept), n_new, live_cycle, " (new)" if new_cycle else "", size / 1e6, time.time() - t0))
 

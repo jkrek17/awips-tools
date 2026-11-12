@@ -143,6 +143,7 @@
       }
       out += "<p>Lines caught " + cp.join(", ") + ".</p>";
     }
+    if (p.sat === "OSCAT-3") out += '<p class="warnnote">OSCAT-3 reads low at high winds: against ASCAT it ran about 3 kt low at 20-34 kt, 5 kt low at 34-48 kt and 15-20 kt low above 48 kt (few storms), and saw a tenth of ASCAT\'s storm area (13 Oct-7 Nov 2026). A grid above OSCAT in a storm is not necessarily too high; judge storm and HF by ASCAT.</p>';
     return out;
   }
   function renderDetail() {
@@ -193,7 +194,7 @@
     $("summary").innerHTML = '<p class="sumnote" style="margin-top:8px">' + BASIN[state.basin].name + ", " + plural(ps.length, "pass") + " in the last 7 days, pooled (cells summed over passes, rain-flagged cells left out). Under each figure: observed cells.</p>" +
       '<div class="sw-scroll"><table class="mini" id="sumtab"><tr><th rowspan="2">Forecast</th><th rowspan="2">Satellite</th><th rowspan="2">Passes</th><th colspan="3">Grid / observed area</th><th colspan="3">Line catch</th></tr>' +
       "<tr><th>34</th><th>48</th><th>64</th><th>34</th><th>48</th><th>64</th></tr>" + rows + "</table></div>" +
-      '<p class="sumnote">Ratio above 1 means the grid has more area than the satellite saw. Catch is the share of observed cells (34 kt in any line, 48 kt in a storm or HF line, 64 kt in an HF line). OSCAT-3 not yet checked against ASCAT; read its scores as a guide.</p>';
+      '<p class="sumnote">Ratio above 1 means the grid has more area than the satellite saw. Catch is the share of observed cells (34 kt in any line, 48 kt in a storm or HF line, 64 kt in an HF line). OSCAT-3 reads well below ASCAT at gale force and above (storm area about a tenth of ASCAT\'s, 13 Oct-7 Nov 2026), so its ratios over-state the grid; judge storm and HF by the ASCAT rows.</p>';
   }
 
   function renderLeads() {
