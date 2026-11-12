@@ -238,26 +238,39 @@ def test_rescore_fills_a_null_lead():
         assert b.rescore([e], cycles, fc, pdir, tmp, "2026-11-01T00:00Z") == 0
 
 
-def _entry(pid, sat, mid, basin="natl"):
-    return dict(id=pid, basin=basin, sat=sat, mid=mid, file="pass/%s-%s.bin" % (pid, basin))
+def _fc(*leads):
+    return {l: dict(cycle="2026111100", step=24, valid="2026-11-12T00:00Z") if l in leads else None for l in b.LEADS}
 
 
-def _unp(cells, obs, flag=None):
+def _entry(pid, sat, mid, basin="natl", leads=()):
+    return dict(id=pid, basin=basin, sat=sat, mid=mid, file="pass/%s-%s.bin" % (pid, basin), fc=_fc(*leads))
+
+
+def _unp(cells, obs, flag=None, **leads):
+    """leads: name -> (grid list, warn list); the others are 255."""
     n = len(cells)
+    full = {l: (np.array(leads[l][0], np.uint8), np.array(leads[l][1], np.uint8)) if l in leads else
+            (np.full(n, 255, np.uint8), np.full(n, 255, np.uint8)) for l in b.LEADS}
     return dict(idx=np.array(cells, np.uint32), obs=np.array(obs, np.uint8), dir=np.full(n, 20, np.uint8),
-                flag=np.array(flag if flag is not None else [0] * n, np.uint8))
+                flag=np.array(flag if flag is not None else [0] * n, np.uint8), leads=full)
 
 
-def test_mosaic_window_membership():
+def test_mosaic_window_half_open_and_times():
     v = D(2026, 11, 12, 12, 0)
-    es = [_entry("a", "Metop-B", "2026-11-12T09:00Z"), _entry("b", "OSCAT-3", "2026-11-12T15:00Z"),
-          _entry("c", "Metop-C", "2026-11-12T15:01Z"), _entry("d", "Metop-C", "2026-11-12T08:59Z"),
+    es = [_entry("a", "Metop-B", "2026-11-12T06:00Z"), _entry("b", "OSCAT-3", "2026-11-12T17:59Z"),
+          _entry("c", "Metop-C", "2026-11-12T18:00Z"), _entry("d", "Metop-C", "2026-11-12T05:59Z"),
           _entry("e", "Metop-C", "2026-11-12T12:00Z", "npac"), _entry("f", "Metop-C", "2026-11-12T11:00Z")]
-    assert [e["id"] for e in b.window_entries(es, "natl", v)] == ["a", "f", "b"]   # +-3 h inclusive, by middle time
+    # [V - 6 h, V + 6 h): the start is in, the end is out; by middle time
+    assert [e["id"] for e in b.window_entries(es, "natl", v)] == ["a", "f", "b"]
     assert [e["id"] for e in b.window_entries(es, "npac", v)] == ["e"]
+    # the pass at 18:00 belongs to the next mosaic (V = 00Z on the 13th), the one at 05:59 to the one before
+    assert [e["id"] for e in b.window_entries(es, "natl", D(2026, 11, 13, 0))] == ["c"]
+    assert [e["id"] for e in b.window_entries(es, "natl", D(2026, 11, 12, 0))] == ["d"]
     ts = b.mosaic_times(D(2026, 11, 12, 14, 30))
-    assert ts[0] == D(2026, 11, 12, 12) and ts[1] == D(2026, 11, 12, 6) and len(ts) == 27 and ts[-1] == D(2026, 11, 6, 0)
-    assert len(b.mosaic_times(D(2026, 11, 12, 12, 10))) == 28   # 27 or 28 times: the oldest keeps all its passes
+    assert ts[0] == D(2026, 11, 12, 12) and ts[1] == D(2026, 11, 12, 0) and len(ts) == 14 and ts[-1] == D(2026, 11, 6, 0)
+    assert all(t.hour in (0, 12) for t in ts)
+    assert len(b.mosaic_times(D(2026, 11, 12, 11, 59))) == 13 and b.mosaic_times(D(2026, 11, 12, 11, 59))[0] == D(2026, 11, 12, 0)
+    assert len(b.mosaic_times(D(2026, 11, 12, 0, 10))) == 14
 
 
 def test_mosaic_nearest_to_v_wins_tie_newer():
@@ -266,67 +279,97 @@ def test_mosaic_nearest_to_v_wins_tie_newer():
     near = (_entry("near", "Metop-C", "2026-11-12T11:30Z"), _unp([101, 102, 103], [20, 21, 22]))
     late = (_entry("late", "Metop-C", "2026-11-12T12:30Z"), _unp([102, 103, 104], [30, 31, 32]))
     members = [far, near, late]       # in mid order
-    idx, obs, dr, fl, pi = b.stitch(v, members)
+    idx, obs, dr, fl, pi, pos = b.stitch(v, members)
     assert idx.tolist() == [100, 101, 102, 103, 104]
     # 100: far only; 101: near beats far; 102 and 103: near and late are both 30 min away, the newer (late) wins; 104: late
-    assert obs.tolist() == [10, 20, 30, 31, 32] and pi.tolist() == [0, 1, 2, 2, 2]
+    assert obs.tolist() == [10, 20, 30, 31, 32] and pi.tolist() == [0, 1, 2, 2, 2] and pos.tolist() == [0, 0, 0, 1, 2]
     # ASCAT beats OSCAT-3 where they overlap, even when the OSCAT-3 pass is nearer V
     osc = (_entry("osc", "OSCAT-3", "2026-11-12T12:00Z"), _unp([100, 105], [40, 41]))
-    idx, obs, dr, fl, pi = b.stitch(v, [far, osc])
+    idx, obs, dr, fl, pi, pos = b.stitch(v, [far, osc])
     assert idx.tolist() == [100, 101, 102, 105] and obs.tolist() == [10, 11, 12, 41] and pi.tolist() == [0, 0, 0, 1]
 
 
-def test_mosaic_lead_selection_at_v():
+def _cache_with(tmp, steps):
+    """cache/ with partial cycles {cycle: step}: Best Wind 40 kt (grid byte 80), gale line (warn 1) everywhere."""
+    cache = os.path.join(tmp, "cache")
+    os.makedirs(cache)
+    best = np.full((721, 1440), 80, np.uint8)
+    warn = np.ones((721, 1440), np.uint8)
+    for c, st in steps:
+        b.store_step(cache, c, st, best, warn)
+    return cache
+
+
+def test_mosaic_per_cell_lead_80_percent_and_unscored():
     import tempfile
     with tempfile.TemporaryDirectory() as tmp:
-        cache = os.path.join(tmp, "cache")
-        os.makedirs(cache)
-        full = np.zeros((721, 1440), np.uint8)
-        for c, built in (("2026111200", "2026-11-12T04:00Z"), ("2026111206", "2026-11-12T10:00Z"), ("2026111212", "2026-11-12T16:00Z")):
-            d = os.path.join(cache, c)
-            os.makedirs(d)
-            for k in b.BOXES:
-                np.savez_compressed(os.path.join(d, k + ".npz"), **{"%s%03d" % (n, s): full for n in ("best", "warn") for s in b.STEPS})
-            import json
-            json.dump(dict(cycle=c, built=built, best_scale=2, warn_scale=1), open(os.path.join(d, "meta.json"), "w"))
-        b.store_step(cache, "2026111112", 24, full, full)     # a partial cycle: f24 for V = 12Z on the 12th
+        cache = _cache_with(tmp, [("2026111112", 24)])
         cycles = b.load_cycles(cache)
-        sel = b.pick_leads(cycles, D(2026, 11, 12, 12, 0))
-        # the 06Z run was built at 10Z, before V; the 12Z run only at 16Z: the desk had the 06Z run, step 6
-        assert sel["latest"] == ("2026111206", 6) and sel["f24"] == ("2026111112", 24) and sel["f48"] is None
-        assert b.pick_leads(cycles, D(2026, 11, 12, 18, 0))["latest"] == ("2026111212", 6)
-        assert b.pick_leads(cycles, D(2026, 11, 12, 0, 0))["latest"] is None   # nothing built by 00Z in the cache
+        fc = b.Forecasts(cycles)
+        v = D(2026, 11, 12, 12, 0)
+        iy = (90 - 50) * 1440 + (-30 + 180) * 4
+        wb = b.crop_box(np.ones((721, 1440), bool) & b.box_mask("natl"), "natl")
+        # pass A (ASCAT, 06Z) has f24 (grid 30 kt, storm line) on 8 cells; pass B (ASCAT, 18Z) has f24 only on the pass at 12Z
+        a = (_entry("a", "Metop-B", "2026-11-12T06:30Z", leads=("f24",)),
+             _unp(list(range(iy, iy + 8)), [50] * 8, f24=([30] * 8, [2] * 8)))      
+        c = (_entry("c", "Metop-C", "2026-11-12T12:10Z", leads=("f24",)),
+             _unp(list(range(iy + 8, iy + 10)), [36, 37], f24=([40, 40], [1, 1])))   # grid 40 kt, gale line
+        d = (_entry("d", "Metop-C", "2026-11-12T17:50Z"), _unp([iy + 10], [66]))     # no lead at all
+        sel = b.pick_leads(cycles, v)
+        # 10 of 11 cells have f24 (91%): counts, the unscored 66 kt cell is left out; latest and f48: no pass has them
+        blob, ent = b.build_mosaic("natl", v, [a, c, d], sel, fc, wb)
+        assert ent["format"] == 2 and ent["n"] == 11 and ent["unscored"]["f24"] == 1 and ent["unscored"]["latest"] == 11
+        assert ent["fc"]["latest"] is None and ent["fc"]["f48"] is None and ent["score"]["latest"] is None
+        s = ent["score"]["f24"]
+        assert s["n"] == 10 and s["obs"] == [10, 8, 0] and s["grid"] == [2, 0, 0]      # per cell: pass A's own 30 kt, pass C's 40 kt
+        assert s["catch"] == [10, 8, 0] and s["line"] == [10, 8, 0]   # warn 2 = storm line (also gale), warn 1 = gale only
+        assert ent["peak"]["f24"]["all"] == dict(idx=iy, obs=50, grid=30, warn=2)     # the 66 kt cell is not scored
+        # V's own pick: the 12Z run of the 11th at step 24 (cached): the lines drawn
+        assert ent["vsel"]["f24"] == dict(cycle="2026111112", step=24) and ent["fc"]["f24"] == ent["vsel"]["f24"]
+        assert ent["sig"][0][1] == ["2026111100", 24] and ent["sig"][2] == [None, None, None]
+        u = b.unpack_mosaic(blob, ent)
+        assert u["cell"]["f24"][0].tolist() == [30] * 8 + [40, 40, 255] and u["cell"]["f24"][1].tolist() == [2] * 8 + [1, 1, 255]
+        assert (u["cell"]["latest"][0] == 255).all() and list(u["leads"]) == ["f24"]
+        # 8 of 12 cells (67%) have it: below 80%, the lead does not count; the bytes are still stored per cell
+        d4 = (_entry("d4", "Metop-C", "2026-11-12T17:50Z"), _unp([iy + 10, iy + 11, iy + 12, iy + 13], [66, 50, 50, 50]))
+        blob, ent = b.build_mosaic("natl", v, [a, d4], sel, fc, wb)
+        assert ent["fc"]["f24"] is None and ent["score"]["f24"] is None and ent["score_ascat"]["f24"] is None and ent["peak"]["f24"] is None
+        assert ent["unscored"]["f24"] == 4 and "f24" not in b.unpack_mosaic(blob, ent)["leads"]
+        # exactly 80% counts (8 of 10); 7 of 10 does not
+        e8 = (_entry("e8", "Metop-B", "2026-11-12T06:30Z", leads=("f24",)), _unp(list(range(iy, iy + 8)), [50] * 8, f24=([30] * 8, [2] * 8)))
+        no = (_entry("no", "Metop-C", "2026-11-12T12:10Z"), _unp([iy + 8, iy + 9], [50, 50]))
+        assert b.build_mosaic("natl", v, [e8, no], sel, fc, wb)[1]["fc"]["f24"] is not None
+        e7 = (_entry("e7", "Metop-B", "2026-11-12T06:30Z", leads=("f24",)), _unp(list(range(iy, iy + 7)), [50] * 7, f24=([30] * 7, [2] * 7)))
+        no3 = (_entry("no3", "Metop-C", "2026-11-12T12:10Z"), _unp([iy + 8, iy + 9, iy + 10], [50] * 3))
+        assert b.build_mosaic("natl", v, [e7, no3], sel, fc, wb)[1]["fc"]["f24"] is None
+        # a lead the passes have but V does not: counts, no lines (null cycle, no box bytes)
+        sel2 = dict(sel, f24=None)
+        blob, ent = b.build_mosaic("natl", v, [a, c], sel2, fc, wb)
+        assert ent["fc"]["f24"] == dict(cycle=None, step=None) and ent["grid_area_box"]["f24"] is None and b.unpack_mosaic(blob, ent)["leads"] == {}
 
 
 def test_mosaic_bin_round_trip_and_ascat_only_score():
     import tempfile
     with tempfile.TemporaryDirectory() as tmp:
-        cache = os.path.join(tmp, "cache")
-        os.makedirs(cache)
-        best = np.full((721, 1440), 60, np.uint8)         # 30 kt everywhere ...
-        warn = np.zeros((721, 1440), np.uint8)
-        best[:, :] = 80                                     # ... 40 kt
-        warn[:, :] = 1
-        b.store_step(cache, "2026111112", 24, best, warn)
+        cache = _cache_with(tmp, [("2026111112", 24)])
         cycles = b.load_cycles(cache)
         fc = b.Forecasts(cycles)
         v = D(2026, 11, 12, 12, 0)
         iy = (90 - 50) * 1440 + (-30 + 180) * 4
-        # the ASCAT pass sees 3 cells (50, 36, 20 kt; the last flagged), OSCAT sees 2 others (30 and 52 kt)
-        a = (_entry("asc", "Metop-B", "2026-11-12T11:00Z"), _unp([iy, iy + 1, iy + 2], [50, 36, 20], [0, 0, 1]))
-        o = (_entry("osc", "OSCAT-3", "2026-11-12T12:30Z"), _unp([iy + 3, iy + 4], [30, 52]))
-        water = np.ones((721, 1440), bool)
-        wb = b.crop_box(water & b.box_mask("natl"), "natl")
+        # the ASCAT pass sees 3 cells (50, 36, 20 kt; the last flagged), OSCAT sees 2 others (30 and 52 kt); all grid 40 kt, gale line
+        g3, w3, g2, w2 = [40] * 3, [1] * 3, [40] * 2, [1] * 2
+        a = (_entry("asc", "Metop-B", "2026-11-12T11:00Z", leads=("f24",)), _unp([iy, iy + 1, iy + 2], [50, 36, 20], [0, 0, 1], f24=(g3, w3)))
+        o = (_entry("osc", "OSCAT-3", "2026-11-12T12:30Z", leads=("f24",)), _unp([iy + 3, iy + 4], [30, 52], f24=(g2, w2)))
+        wb = b.crop_box(np.ones((721, 1440), bool) & b.box_mask("natl"), "natl")
         wb[0, 0] = False                                   # one cell of the box is land
-        sel = b.pick_leads(cycles, v)
-        blob, ent = b.build_mosaic("natl", v, [a, o], sel, fc, wb)
+        blob, ent = b.build_mosaic("natl", v, [a, o], b.pick_leads(cycles, v), fc, wb)
         assert ent["passes"] == ["asc", "osc"] and ent["n"] == 5 and ent["flagged"] == 1 and ent["obs_max"] == 52.0
         assert ent["sats"] == {"ASCAT": 3, "OSCAT-3": 2} and ent["water"] == int(wb.sum())
-        assert ent["fc"]["latest"] is None and ent["fc"]["f48"] is None and ent["fc"]["f24"] == dict(cycle="2026111112", step=24)
-        assert ent["score"]["latest"] is None and ent["score_ascat"]["latest"] is None
         s, sa = ent["score"]["f24"], ent["score_ascat"]["f24"]
         assert s["obs"] == [3, 2, 0] and s["grid"] == [4, 0, 0] and s["catch"] == [3, 0, 0]   # unflagged 50, 36, 30, 52 kt; grid 40, gale line only
         assert sa["obs"] == [2, 1, 0] and sa["grid"] == [2, 0, 0] and sa["obs_max"] == 50.0 and sa["grid_max"] == 40.0 and sa["catch"] == [2, 0, 0]
+        assert sa["n"] == 2 and s["n"] == 4
+        assert ent["peak"]["f24"]["ascat"]["obs"] == 50 and ent["peak"]["f24"]["all"]["obs"] == 52 and ent["peak"]["f24"]["all"]["idx"] == iy + 4
         assert ent["grid_area_box"]["f24"] == [int(wb.sum()), 0, 0] and ent["grid_area_box"]["latest"] is None
         u = b.unpack_mosaic(blob, ent)
         assert u["idx"].tolist() == [iy + i for i in range(5)] and u["obs"].tolist() == [50, 36, 20, 30, 52]
@@ -334,6 +377,43 @@ def test_mosaic_bin_round_trip_and_ascat_only_score():
         g, w = u["leads"]["f24"]
         assert g.shape == (ent["box"]["ny"], ent["box"]["nx"]) and g[1, 1] == 40 and w[1, 1] == 1
         assert g[0, 0] == 255 and w[0, 0] == 255               # land: none
+
+
+def _mos(basin, valid, n_ascat, obs, grid, catch, line, peak, water=1000, is_open=False, n_all=None, lead="f24"):
+    """A minimal mosaic entry with one lead: obs/grid/catch/line are lists at 34/48/64 for the ASCAT score; peak the ASCAT obs."""
+    sc = dict(n=n_ascat, obs=obs, grid=grid, catch=catch, line=line, obs_max=float(peak), grid_max=44.0)
+    p = None if peak is None else dict(idx=100, obs=peak, grid=40, warn=3)
+    return dict(basin=basin, valid=valid, open=is_open, water=water, n=n_all or n_ascat, sats={"ASCAT": n_ascat, "OSCAT-3": 0},
+                score={lead: sc}, score_ascat={lead: sc}, peak={lead: dict(all=p, ascat=p)})
+
+
+def test_summary_sums_gate_and_worst_order():
+    ms = []
+    for k in range(10):    # 10 closed Atlantic mosaics: 100 ascat cells, 34 kt: 20 seen, 48 kt: 6 seen, 64 kt: 0
+        ms.append(_mos("natl", "2026-11-%02dT%s:00Z" % (3 + k // 2, "00" if k % 2 == 0 else "12"), 100, [20, 6 if k < 9 else 0, 0], [25, 4, 0],
+                       [15, 3, 0], [40, 12, 0], 30 + k))
+    ms.append(_mos("natl", "2026-11-13T12:00Z", 100, [999, 999, 999], [1, 1, 1], [1, 1, 1], [1, 1, 1], 99, is_open=True))   # open: left out
+    ms.append(_mos("npac", "2026-11-12T00:00Z", 100, [60, 0, 0], [70, 0, 0], [50, 0, 0], [60, 0, 0], 41, water=500))
+    S = b.summarize(ms)["natl"]["f24"]["ascat"]
+    assert S["times"] == 10 and S["mosaics"] == 10 and S["n"] == 1000
+    assert S["obs"] == [200, 54, 0] and S["grid"] == [250, 40, 0] and S["catch"] == [150, 30, 0] and S["line"] == [400, 120, 0]
+    assert S["nmos_obs"] == [10, 9, 0]
+    assert S["enough"] == [True, True, False]                      # 64 kt: no cells seen; 48 kt: 54 cells in 9 mosaics
+    assert S["enough_line"] == [True, True, False]
+    assert S["cov_mean"] == 0.1 and S["cov_min"] == 0.1 and S["cov_max"] == 0.1
+    # the open mosaic (99 kt) is not among the worst; the rest are ordered by observed peak, highest first
+    assert [w["obs"] for w in S["worst"]] == [39, 38, 37, 36, 35, 34, 33, 32] and len(S["worst"]) == b.WORST_N
+    assert S["worst"][0]["valid"] == "2026-11-07T12:00Z" and S["worst"][0]["idx"] == 100 and S["worst"][0]["grid"] == 40
+    # fewer than 50 observed cells, or fewer than 3 mosaics with any: no ratio
+    few = b.summarize([_mos("natl", "2026-11-12T00:00Z", 100, [40, 40, 40], [1, 1, 1], [1, 1, 1], [60, 60, 60], 50),
+                       _mos("natl", "2026-11-11T12:00Z", 100, [40, 40, 40], [1, 1, 1], [1, 1, 1], [60, 60, 60], 50)])["natl"]["f24"]["ascat"]
+    assert few["obs"] == [80, 80, 80] and few["enough"] == [False] * 3 and few["enough_line"] == [False] * 3   # 2 mosaics
+    thin = b.summarize([_mos("natl", "2026-11-1%dT00:00Z" % k, 100, [10, 10, 10], [1, 1, 1], [1, 1, 1], [10, 10, 10], 50) for k in range(3)])
+    assert thin["natl"]["f24"]["ascat"]["obs"] == [30, 30, 30] and thin["natl"]["f24"]["ascat"]["enough"] == [False] * 3   # 30 cells
+    assert thin["natl"]["latest"]["ascat"]["mosaics"] == 0 and thin["npac"]["f24"]["all"]["worst"] == []
+    # the tie goes to the newer mosaic
+    tie = b.summarize([_mos("natl", "2026-11-1%dT00:00Z" % k, 100, [1, 1, 1], [1, 1, 1], [1, 1, 1], [1, 1, 1], 50) for k in range(3)])
+    assert [w["valid"][:10] for w in tie["natl"]["f24"]["ascat"]["worst"]] == ["2026-11-12", "2026-11-11", "2026-11-10"]
 
 
 if __name__ == "__main__":
