@@ -76,3 +76,30 @@ table.mini small { display: block; color: var(--text-3); font-size: 10px; }
   .summary table.mini th, .summary table.mini td { padding: 3px 4px; font-size: 10.5px; }
 }
 .warnnote { font-size: 12px; color: var(--text-2); border-left: 2px solid #f97316; padding-left: 8px; }
+
+/* tabs, time stepper and strip (mosaic view) */
+.tabs { display: flex; gap: 2px; padding: 0 16px; flex: none; border-bottom: 1px solid var(--border); }
+.tabs button { font: 700 12.5px var(--font); padding: 8px 14px 9px; background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--text-3); cursor: pointer; margin-bottom: -1px; }
+.tabs button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+.card-body { border-top: 0; }
+.card[data-tab="mosaic"] .only-passes, .card[data-tab="passes"] .only-mosaic { display: none; }
+.stepper { display: flex; align-items: center; gap: 8px; }
+.stepper .btn { height: 30px; flex: none; }
+.stepper-t { flex: 1; text-align: center; font: 700 13px var(--mono); color: var(--text); }
+.strip { display: flex; gap: 2px; margin-top: 8px; height: 36px; }
+.strip .tick { flex: 1 1 0; min-width: 0; height: 100%; padding: 0; border: 1px solid var(--border); border-radius: 3px; background: transparent; position: relative; cursor: pointer; overflow: hidden; }
+.strip .tick:disabled { opacity: .3; cursor: default; }
+.strip .tick i { position: absolute; left: 0; right: 0; bottom: 0; background: var(--accent); opacity: .65; }
+.strip .tick[aria-current="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.strip .tick[aria-current="true"] i { opacity: 1; }
+.strip .tick.day { border-left: 2px solid var(--text-3); }
+.strip-cap { display: flex; justify-content: space-between; margin-top: 3px; font-size: 10px; color: var(--text-3); }
+.sw-oscat { background: repeating-linear-gradient(135deg, #e8d27a 0 3px, #2f5a8a 3px 6px); }
+.mtable { width: 100%; }
+.mtable td:nth-child(3), .mtable td:nth-child(4) { text-align: right; }
+.covbar { display: flex; height: 8px; border-radius: 3px; overflow: hidden; background: var(--surface-raised); margin: 4px 0 6px; }
+.covbar span { display: block; height: 100%; }
+@media (max-width: 760px) {
+  .tabs { padding: 0 12px; }
+  .strip { height: 40px; }
+}
