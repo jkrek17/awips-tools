@@ -364,7 +364,7 @@ def test_mosaic_bin_round_trip_and_ascat_only_score():
         wb[0, 0] = False                                   # one cell of the box is land
         blob, ent = b.build_mosaic("natl", v, [a, o], b.pick_leads(cycles, v), fc, wb)
         assert ent["passes"] == ["asc", "osc"] and ent["n"] == 5 and ent["flagged"] == 1 and ent["obs_max"] == 52.0
-        assert ent["sats"] == {"ASCAT": 3, "OSCAT-3": 2, "RSS": 0, "NESDIS": 0} and ent["water"] == int(wb.sum())
+        assert ent["sats"] == {"ASCAT": 3, "OSCAT-3": 2, "RSS": 0, "NESDIS": 0, "KNMI": 0} and ent["water"] == int(wb.sum())
         s, sa = ent["score"]["f24"], ent["score_ascat"]["f24"]
         assert s["obs"] == [3, 2, 0] and s["grid"] == [4, 0, 0] and s["catch"] == [3, 0, 0]   # unflagged 50, 36, 30, 52 kt; grid 40, gale line only
         assert sa["obs"] == [2, 1, 0] and sa["grid"] == [2, 0, 0] and sa["obs_max"] == 50.0 and sa["grid_max"] == 40.0 and sa["catch"] == [2, 0, 0]
@@ -503,7 +503,7 @@ def test_overlap_priority_rss_star_oscat():
         a = (_entry("star", "Metop-B", "2026-11-12T11:00Z"), _unp([iy, iy + 1], [50, 36]))
         r = (_entry("rss", "RSS Metop-B", "2026-11-12T12:00Z"), _unp([iy + 1, iy + 2, iy + 3], [40, 41, 42]))
         ent = b.build_mosaic("natl", v, [a, r], b.pick_leads(cycles, v), b.Forecasts(cycles), wb)[1]
-        assert ent["sats"] == {"ASCAT": 4, "OSCAT-3": 0, "RSS": 3, "NESDIS": 0} and ent["n"] == 4
+        assert ent["sats"] == {"ASCAT": 4, "OSCAT-3": 0, "RSS": 3, "NESDIS": 0, "KNMI": 0} and ent["n"] == 4
     ms = [_mos("natl", "2026-11-1%dT00:00Z" % k, 100, [1, 1, 1], [1, 1, 1], [1, 1, 1], [1, 1, 1], 50) for k in range(3)]
     ms[0]["sats"]["RSS"] = 60
     assert b.summarize(ms)["natl"]["f24"]["ascat"]["with_rss"] == 1
@@ -603,7 +603,7 @@ def test_overlap_priority_rss_nesdis_star_oscat():
         o = (_entry("osc", "OSCAT-3", "2026-11-12T12:00Z"), _unp([iy + 4], [30]))
         ent = b.build_mosaic("natl", v, [a, n, r, o], b.pick_leads(cycles, v), b.Forecasts(cycles), wb)[1]
         # cells: star keeps iy; NESDIS keeps iy+1, iy+2; RSS iy+3; OSCAT-3 iy+4
-        assert ent["sats"] == {"ASCAT": 4, "OSCAT-3": 1, "RSS": 1, "NESDIS": 2} and ent["n"] == 5
+        assert ent["sats"] == {"ASCAT": 4, "OSCAT-3": 1, "RSS": 1, "NESDIS": 2, "KNMI": 0} and ent["n"] == 5
     ms = [_mos("natl", "2026-11-1%dT00:00Z" % k, 100, [1, 1, 1], [1, 1, 1], [1, 1, 1], [1, 1, 1], 50) for k in range(3)]
     ms[0]["sats"]["NESDIS"] = 60
     S = b.summarize(ms)["natl"]["f24"]["ascat"]
@@ -696,6 +696,234 @@ def test_nesdis_older_days_final_rss_cover_and_failures():
     ns3 = {"20261101": dict(fetched="2026-11-02T00:00Z", n={}), "20261110": dict(fetched="2026-11-11T00:50Z", n={})}
     b.fetch_nesdis(now, ns3, rs, water, inbox, lambda d, box: None)
     assert "20261101" not in ns3 and "20261110" in ns3
+
+
+# ---------- KNMI Metop-C (NASA PO.DAAC) ----------
+
+def _knmi_cells(lat0, lon0, n, t_min, spd=20.0, deg=270.0, rain=0):
+    """An n x n block of KNMI cells at 0.25 degree centres from (lat0, lon0), t_min after 00 UTC of the granule's start day."""
+    c = _rss_cells(lat0, lon0, n, 0, 0, rain=rain, spd=spd, deg=deg)
+    c["t_min"] = (t_min + np.arange(c["lat"].size) * 0.01).astype(np.float32)
+    return c
+
+
+def _granule(title, start, hours=1.6):
+    return dict(title=title, start=start, end=start + dt.timedelta(hours=hours), url="https://x/%s.nc" % title, size_mb=1.0)
+
+
+def test_knmi_granule_is_one_pass_per_basin_with_its_id_and_label():
+    water, inbox = _water()
+    g = _granule("g1", D(2026, 11, 12, 11, 50))
+    c = _cat(_knmi_cells(40.0, -50.0, 20, 11 * 60 + 55), _knmi_cells(40.0, -45.0, 20, 12 * 60 + 40),   # natl, two stretches
+             _knmi_cells(40.0, 160.0, 20, 13 * 60 + 10),                                               # npac
+             _knmi_cells(40.0, -100.0, 5, 12 * 60))                                                    # 25 cells in neither box: no pass
+    ps = b.knmi_passes(g, c, water, inbox)
+    assert sorted((p["basin"], p["id"], p["key"]) for p in ps) == [
+        ("natl", "20261112T1150-knmi_metopc", "knmi_metopc-20261112T1150-natl"),
+        ("npac", "20261112T1150-knmi_metopc", "knmi_metopc-20261112T1150-npac")]
+    natl = next(p for p in ps if p["basin"] == "natl")
+    npac = next(p for p in ps if p["basin"] == "npac")
+    assert natl["pts"]["lat"].size == 800 and npac["pts"]["lat"].size == 400 and natl["files"] == [] and not natl["check_only"]
+    assert natl["start"] == D(2026, 11, 12, 11, 55) and abs((natl["end"] - D(2026, 11, 12, 12, 44)).total_seconds()) < 30   # the basin's own cells
+    assert npac["start"].hour == 13 and b.pass_mid(natl) == natl["mid"] and natl["start"] < natl["mid"] < natl["end"]
+    assert b.sat_label(natl["prefix"]) == "Metop-C (KNMI)" and b.sat_label("rss_metopb_AS") == "RSS Metop-B"
+    assert b.is_knmi("Metop-C (KNMI)") and b.is_ascat("Metop-C (KNMI)") and not b.is_knmi("Metop-C") and not b.is_rss("Metop-C (KNMI)")
+    # direction FROM 270 (westerly) -> u positive; rain flag carried as q; the pass goes through process_pass
+    assert (natl["pts"]["u"] > 0).all() and abs(natl["pts"]["v"]).max() < 1e-3 and natl["pts"]["spd"][0] == np.float32(20.0)
+    res = b.process_pass(natl, water, inbox)
+    assert list(res) == ["natl"] and res["natl"][0].size >= b.MIN_CELLS and abs(res["natl"][2][0] - 270) < 1e-2
+    # a granule from just before midnight: t_min runs past 1440 and the times stay right
+    g2 = _granule("g2", D(2026, 11, 12, 23, 30))
+    p2 = b.knmi_passes(g2, _knmi_cells(40.0, -50.0, 20, 23 * 60 + 40), water, inbox)[0]
+    p3 = b.knmi_passes(g2, _knmi_cells(40.0, -50.0, 20, 24 * 60 + 20), water, inbox)[0]
+    assert p2["id"] == p3["id"] == "20261112T2330-knmi_metopc" and p3["start"].day == 13 and p3["start"].hour == 0
+
+
+def test_overlap_priority_rss_knmi_nesdis_star_oscat():
+    v = D(2026, 11, 12, 12, 0)
+    star = (_entry("star", "Metop-C", "2026-11-12T12:00Z"), _unp([100, 101, 102, 103, 104], [10, 11, 12, 13, 14]))
+    osc = (_entry("osc", "OSCAT-3", "2026-11-12T12:00Z"), _unp([100, 101, 102, 103, 104, 105], [20, 21, 22, 23, 24, 25]))
+    knm = (_entry("knm", "Metop-C (KNMI)", "2026-11-12T08:00Z"), _unp([101, 102, 103, 104], [30, 31, 32, 33]))
+    nes = (_entry("nes", "Metop-B (NESDIS)", "2026-11-12T11:00Z"), _unp([103, 104], [50, 51]))
+    rss = (_entry("rss", "RSS Metop-C", "2026-11-12T07:00Z"), _unp([102], [40]))
+    members = sorted([star, osc, knm, nes, rss], key=lambda m: m[0]["mid"])
+    idx, obs, dr, fl, pi, pos = b.stitch(v, members)
+    names = [members[i][0]["id"] for i in pi]
+    # 100 STAR over OSCAT-3; 101 KNMI over STAR (4 h away); 102 RSS over KNMI; 103-104 KNMI (equal rank) loses to the nearer NESDIS;
+    # 105 OSCAT-3 alone
+    assert idx.tolist() == [100, 101, 102, 103, 104, 105] and obs.tolist() == [10, 30, 40, 50, 51, 25]
+    assert names == ["star", "knm", "rss", "nes", "nes", "osc"]
+    assert b.source_rank("Metop-C (KNMI)") == b.source_rank("Metop-B (NESDIS)") == 2 > b.source_rank("Metop-C") > b.source_rank("OSCAT-3")
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        cycles = b.load_cycles(_cache_with(tmp, [("2026111112", 24)]))
+        wb = b.crop_box(np.ones((721, 1440), bool) & b.box_mask("natl"), "natl")
+        iy = (90 - 50) * 1440 + (-30 + 180) * 4
+        k = (_entry("knm", "Metop-C (KNMI)", "2026-11-12T12:00Z"), _unp([iy, iy + 1, iy + 2], [40, 41, 42]))
+        o = (_entry("osc", "OSCAT-3", "2026-11-12T12:00Z"), _unp([iy + 2, iy + 3], [30, 31]))
+        ent = b.build_mosaic("natl", v, [k, o], b.pick_leads(cycles, v), b.Forecasts(cycles), wb)[1]
+        assert ent["sats"] == {"ASCAT": 3, "OSCAT-3": 1, "RSS": 0, "NESDIS": 0, "KNMI": 3} and ent["n"] == 4
+    ms = [_mos("natl", "2026-11-1%dT00:00Z" % k, 100, [1, 1, 1], [1, 1, 1], [1, 1, 1], [1, 1, 1], 50) for k in range(3)]
+    ms[1]["sats"]["KNMI"] = 60
+    S = b.summarize(ms)["natl"]["f24"]["ascat"]
+    assert S["with_knmi"] == 1 and S["with_rss"] == 0 and S["with_nesdis"] == 0
+
+
+def test_knmi_without_credentials_is_skipped_with_one_line(capsys=None):
+    import io
+    import contextlib
+    water, inbox = _water()
+    calls = []
+    buf = io.StringIO()
+    kn = {}
+    with contextlib.redirect_stdout(buf):
+        out = b.fetch_knmi(D(2026, 11, 12, 15), kn, {}, water, inbox, env={}, listing=lambda s, e: calls.append(1),
+                           download=lambda u: calls.append(2))
+    assert out == [] and calls == [] and kn == {} and buf.getvalue().count("\n") == 1 and "EARTHDATA_USER" in buf.getvalue()
+    # one of the two is not enough
+    with contextlib.redirect_stdout(io.StringIO()):
+        assert b.fetch_knmi(D(2026, 11, 12, 15), kn, {}, water, inbox, env={"EARTHDATA_USER": "u"}, listing=lambda s, e: calls.append(1)) == []
+    assert calls == []
+
+
+def test_knmi_fetch_cap_state_rss_cover_and_failures():
+    import io
+    import contextlib
+    water, inbox = _water()
+    now = D(2026, 11, 12, 15, 0)
+    env = {"EARTHDATA_USER": "u", "EARTHDATA_PASS": "p"}
+    # 40 granules, 100 min apart, newest 14:00 backwards; the oldest ones are on 9-10 Nov
+    gs = [_granule("g%02d" % i, D(2026, 11, 12, 14, 0) - dt.timedelta(minutes=100 * i)) for i in range(40)]
+    got, asked = [], []
+
+    def listing(s, e):
+        asked.append((s, e))
+        return list(gs)
+
+    def download(url):
+        got.append(url)
+        return url
+
+    cells = {}
+
+    def fake_cells(blob, day=None):
+        return cells.get(blob) or _knmi_cells(40.0, -50.0, 20, 14 * 60)
+    orig = b.podaac_ascat.cells
+    b.podaac_ascat.cells = fake_cells
+    try:
+        kn, rs = {}, {}
+        with contextlib.redirect_stdout(io.StringIO()):
+            new = b.fetch_knmi(now, kn, rs, water, inbox, days=2, cap=30, env=env, listing=listing, download=download)
+        # the 7-day window is asked for; 30 downloads, newest first; a granule is recorded once downloaded
+        assert asked == [(now - dt.timedelta(days=b.KEEP_DAYS), now)] and len(got) == 30 and got[0].endswith("g00.nc") and got[-1].endswith("g29.nc")
+        assert len(kn) == 30 and all(v["done"] for v in kn.values()) and len(new) == 30 and not any(p["check_only"] for p in new)
+        assert new[0]["id"] == "20261112T1400-knmi_metopc" and kn["g00"]["n"] == {"natl": 400}
+        # the next run takes the rest, none twice
+        got.clear()
+        with contextlib.redirect_stdout(io.StringIO()):
+            new2 = b.fetch_knmi(now, kn, rs, water, inbox, days=2, cap=30, env=env, listing=listing, download=download)
+        assert len(got) == 10 and not {u for u in got} & {"https://x/g%02d.nc" % i for i in range(30)} and len(new2) == 10
+        with contextlib.redirect_stdout(io.StringIO()):
+            assert b.fetch_knmi(now, kn, rs, water, inbox, env=env, listing=listing, download=download) == [] and len(got) == 10
+        # RSS Metop-C done for 10-11 Nov: older granules of those days are skipped, those in the last `days` are
+        # downloaded as check_only; a day RSS has with only Metop-B does not cover
+        kn, got = {}, []
+        rs = {"20261110": dict(done=True, sats="bc"), "20261111": dict(done=True, sats="bc"), "20261109": dict(done=True, sats="b")}
+        with contextlib.redirect_stdout(io.StringIO()):
+            new = b.fetch_knmi(now, kn, rs, water, inbox, days=2, cap=100, env=env, listing=listing, download=download)
+        assert {p["id"] for p in new if not p["check_only"]} >= {"20261112T1400-knmi_metopc"}
+        chk = [p for p in new if p["check_only"]]
+        assert chk and all(D.strptime(p["id"][:13], "%Y%m%dT%H%M") >= now - dt.timedelta(days=2) and p["id"][:8] in ("20261110", "20261111")
+                           for p in chk)   # only inside the last 48 h
+        old = [g for g in gs if b.knmi_covered(rs, g) and g["start"] < now - dt.timedelta(days=2)]
+        assert old and not any(g["title"] in kn for g in old) and len(got) == 40 - len(old)   # older covered ones are not downloaded
+        # backfill: days=7 downloads the covered ones too, as check_only
+        kn, got = {}, []
+        with contextlib.redirect_stdout(io.StringIO()):
+            new = b.fetch_knmi(now, kn, rs, water, inbox, days=7, cap=100, env=env, listing=listing, download=download)
+        assert len(got) == 40 and sum(1 for p in new if p["check_only"]) == sum(1 for g in gs if b.knmi_covered(rs, g))
+        # a failing granule counts against itself and is given up on after KNMI_FAILS; others go on
+        kn, got = {}, []
+
+        def flaky(url):
+            if url.endswith("g01.nc"):
+                raise RuntimeError("boom")
+            return url
+        for _ in range(b.KNMI_FAILS + 1):
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                b.fetch_knmi(now, kn, {}, water, inbox, days=2, cap=5, env=env, listing=listing, download=flaky)
+        assert kn["g01"] == dict(start=kn["g01"]["start"], fails=b.KNMI_FAILS) and "done" not in kn["g01"] and kn["g00"]["done"]
+        # a refused login stops the run and records nothing
+        kn = {}
+
+        def refuse(url):
+            raise b.podaac_ascat.AuthError("HTTP 401 from urs.earthdata.nasa.gov")
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            assert b.fetch_knmi(now, kn, {}, water, inbox, env=env, listing=listing, download=refuse) == [] and kn == {}
+        assert err.getvalue().count("login refused") == 1 and "u:p" not in err.getvalue() and "EARTHDATA_PASS" not in err.getvalue()
+        # CMR down: nothing, no state
+        def down(s, e):
+            raise RuntimeError("cmr")
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            assert b.fetch_knmi(now, kn, {}, water, inbox, env=env, listing=down, download=download) == [] and kn == {}
+        # old state is dropped
+        kn = {"old": dict(start="2026-10-01T00:00Z", done=True), "new": dict(start="2026-11-11T00:00Z", done=True)}
+        with contextlib.redirect_stdout(io.StringIO()):
+            b.fetch_knmi(now, kn, {}, water, inbox, env=env, listing=lambda s, e: [], download=download)
+        assert "old" not in kn and "new" in kn
+    finally:
+        b.podaac_ascat.cells = orig
+
+
+def test_knmi_selfcheck_matches_same_satellite_and_judges_direction():
+    import io
+    import contextlib
+    import tempfile
+    water, inbox = _water()
+    g = _granule("g1", D(2026, 11, 12, 11, 50))
+    c = _knmi_cells(40.0, -50.0, 20, 12 * 60, spd=30.0, deg=250.0)
+    p = b.knmi_passes(g, c, water, inbox)[0]
+    res = b.process_pass(p, water, inbox)
+    idx, spd, direction, flag = res["natl"]
+    with tempfile.TemporaryDirectory() as tmp:
+        os.makedirs(os.path.join(tmp, "pass"))
+        # the RSS Metop-C reference over the same cells: 1 kt lower, direction 244 (dir byte = degrees / 2)
+        n = idx.size
+        blob = b.pack_raw(idx, np.full(n, 29), np.full(n, 122), np.zeros(n, np.uint8), {})
+        e = dict(_entry("20261112T1155-rss_metopc_AS", "RSS Metop-C", "2026-11-12T12:00Z"), start="2026-11-12T11:00Z", end="2026-11-12T13:00Z")
+        # one that does not overlap in time and one of the other basin: both ignored
+        e2 = dict(_entry("late", "RSS Metop-C", "2026-11-12T20:00Z"), start="2026-11-12T19:00Z", end="2026-11-12T21:00Z")
+        for x in (e, e2):
+            with open(os.path.join(tmp, x["file"]), "wb") as f:
+                f.write(blob)
+        chk = b.KnmiCheck([tmp])
+        entries = {(x["id"], x["basin"]): x for x in (e, e2)}
+        chk.add(p, res, entries, {"natl": (np.full(n, 28, np.uint8), 12)})
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            chk.report()
+        out = buf.getvalue()
+        assert "RSS Metop-C: n matched %d, speed bias +1.00 kt, SD 0.00 kt" % n in out
+        assert "direction mean abs difference 6.0 deg as read, 174.0 deg if turned 180: direction convention as read is right" in out
+        assert "vs Metop-B (NESDIS): no matched cells" in out
+        assert "marine wind grid (newest run, step 12 h): n %d, speed bias +2.0 kt" % n in out
+        assert "mean zonal wind 30-60N +" in out and "p50 30.0" in out
+        # the same cells with the direction turned the wrong way are called out
+        blob = b.pack_raw(idx, np.full(n, 29), np.full(n, 62), np.zeros(n, np.uint8), {})
+        with open(os.path.join(tmp, e["file"]), "wb") as f:
+            f.write(blob)
+        chk = b.KnmiCheck([tmp])
+        chk.add(p, res, entries)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            chk.report()
+        assert "DIRECTION LOOKS TURNED 180 DEGREES" in buf.getvalue()
+    # nothing processed: nothing printed
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        b.KnmiCheck([]).report()
+    assert buf.getvalue() == ""
 
 
 if __name__ == "__main__":

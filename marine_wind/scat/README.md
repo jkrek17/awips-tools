@@ -1,10 +1,10 @@
 # Scatterometer data (marine_wind/scat)
 
 Builds the data for the scatterometer page (`/scatterometer/`, `marine_wind/scatterometer_page/`): the latest NOAA STAR
-passes (OSCAT-3 and Metop-B/C coastal ultra-high-resolution ASCAT), NESDIS Metop-B open-ocean ASCAT (about 1 h after the pass) and Remote Sensing Systems (RSS) open-ocean ASCAT over the two OPC basins, put on the 0.25 degree grid
+passes (OSCAT-3 and Metop-B/C coastal ultra-high-resolution ASCAT), NESDIS Metop-B open-ocean ASCAT (about 1 h after the pass), KNMI Metop-C open-ocean ASCAT from NASA PO.DAAC (about 2.5-4 h after the pass) and Remote Sensing Systems (RSS) open-ocean ASCAT over the two OPC basins, put on the 0.25 degree grid
 beside the marine wind page's Best Wind and warning lines for the same time, with per-pass scores. The page opens on a
 mosaic: for each 00Z and 12Z of the last 7 days (14 per basin) and each basin, the passes whose middle is in the 12 h
-[V - 6 h, V + 6 h) stitched into one map (where swaths overlap RSS ASCAT wins over NESDIS Metop-B, which wins over STAR ASCAT, which wins over OSCAT-3, then the pass nearest the time),
+[V - 6 h, V + 6 h) stitched into one map (where swaths overlap RSS ASCAT wins over NESDIS Metop-B and KNMI Metop-C (equal rank, the pass nearest the time wins), which win over STAR ASCAT, which wins over OSCAT-3, then the pass nearest the time),
 with Best Wind and warning lines of the whole basin at V. Each observed cell is scored against the forecast hour nearest its
 own pass (valid V - 6, V or V + 6), not against V; a lead counts for a mosaic when the passes that have it hold 80% of the
 observed cells. `data/mosaic/<basin>-<YYYYMMDDHH>.bin`, rebuilt when its passes change or gain a lead. On top of the
@@ -14,7 +14,7 @@ grid area against seen area, line catch, the share of line cells that were seen 
 page keeps it off unless `#oscat=1` (or the button) turns it on, and the headline scores are `score_ascat`.
 Format and lead rules: the docstring of `build.py`.
 
-    python3 build.py --live DIR --state DIR --out DIR [--days 1] [--workers 5] [--changed-file F]
+    python3 build.py --live DIR --state DIR --out DIR [--days 1] [--knmi-days 2] [--knmi-max 30] [--workers 5] [--changed-file F]
     python3 test_build.py                      # offline
 
 `.github/workflows/scatterometer.yml` runs it hourly (minute 50) and after every "Marine wind data" run, and force-pushes `data/` and `cache/` as the single
@@ -27,7 +27,7 @@ here is committed to main.
 - `--days N` lists STAR for today and N days back (0-8). Only passes not already in `cache/seen.json` are downloaded; a pass
   whose file count has grown (late chunks) is redone. About 9 MB per file, 50 files a day; the first run on an empty state
   with the default `--days 1` reads about 1 GB, an hourly run a few files.
-- The readers are `nwp/nwp/star.py` (`passes(day)`, `points(url)`) `nwp/nwp/rss_ascat.py` (`day(sat, date)`) and `nwp/nwp/nesdis_ascat.py` (`day(date, box)`).
+- The readers are `nwp/nwp/star.py` (`passes(day)`, `points(url)`) `nwp/nwp/rss_ascat.py` (`day(sat, date)`) `nwp/nwp/nesdis_ascat.py` (`day(date, box)`) and `nwp/nwp/podaac_ascat.py` (`granules(start, end)`, `cells(path_or_bytes)`).
 - RSS ASCAT: STAR's ASCAT is a coastal product (about 9-12% of a basin per 12 h); RSS has full swaths over the open ocean in
   daily 0.25 degree Metop-B and -C maps, but posts them about 2 days late (lately about 5). Every run asks for each day of the
   window that is not done (`cache/rss.json`; a day not yet posted at most once in 55 min, until 10 days old, at most 16 files a
@@ -47,6 +47,26 @@ here is committed to main.
   replaced under the same id (scored again, its mosaics rebuilt). Priority in the stitch: RSS > NESDIS > STAR ASCAT >
   OSCAT-3, so when RSS posts the day it takes over. Against RSS Metop-B cell for cell: speed bias 0.0 kt, SD 1.0 kt.
   `sats.NESDIS` and `summary.*.with_nesdis`; the page shows the NESDIS, RSS and STAR coastal shares of each mosaic.
+- KNMI Metop-C ASCAT 25 km, near real time: the OSI SAF / KNMI Level 2 product on NASA PO.DAAC (`ASCATC-L2-25km`, one netCDF
+  file of about 1 MB per orbit of about 100 min, listed about 2.5-4 h after the orbit starts; not served by NESDIS, so this
+  is the only near-real-time Metop-C). Each run lists the last 7 days through NASA CMR (public, no login) and downloads, newest
+  first, the granules not yet in `cache/knmi.json` that are in the last `--knmi-days` days (default 2) or on an older day RSS
+  has not covered with Metop-C, at most `--knmi-max` (30) a run. The download needs the Earthdata login, from the environment
+  variables `EARTHDATA_USER` and `EARTHDATA_PASS` (repo secrets, given to the Build step of the workflow only); without them
+  the source is skipped with one log line, so local runs and the tests work. A granule becomes one real pass per basin (like a
+  STAR pass, not split by synoptic hour), id `<granule start YYYYMMDDTHHMM>-knmi_metopc`, label "Metop-C (KNMI)"; the
+  25 km cells are put on the page grid like STAR's points (mean of the cells in a 0.25 degree cell). Cells with a KNMI
+  quality-control fail, variational QC fail, failed inversion, land, ice, beam noise, poor azimuth diversity or too little
+  sigma-0 are dropped; rain-detected cells stay with the rain flag. Wind is KNMI's stress-equivalent 10 m wind in knots; the
+  netCDF direction is oceanographic (the wind blows toward it, ASCAT Wind Product User Manual 5.1.2), so `dir_deg` is
+  `(wind_dir + 180) % 360`. Priority in the stitch: RSS > NESDIS = KNMI (different satellites; the pass nearest V wins) >
+  STAR ASCAT > OSCAT-3. `sats.KNMI`, `summary.*.with_knmi`, `knmi.newest` in the index; the page shows a KNMI share.
+  The log has a "KNMI self-check" at the end of a run: the cell speed percentiles, the mean zonal wind at 30-60N under both
+  direction conventions, speed bias and SD against the marine wind grid, and for cells shared with RSS Metop-C (same
+  satellite) and NESDIS Metop-B (swath overlap) n matched, speed bias, SD and the mean absolute direction difference as read
+  and turned 180 degrees. By hand, `knmi_days` (Run workflow) takes granules also on days RSS has posted, to compare with
+  RSS Metop-C; those are compared and not kept. Not run against real data from the checkout that wrote it (no Earthdata
+  login there): the first Actions run is the test, and the self-check lines are what to read.
 
 Format of `data/index.json` and `data/pass/<id>-<basin>.bin`, how passes, leads and scores are defined: the docstring of
 `build.py`. `cycle` in the index and `fc.*.cycle` are `YYYYMMDDHH` of the marine wind run; times are `YYYY-MM-DDTHH:MMZ`.

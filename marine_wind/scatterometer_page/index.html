@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>Scatterometer</title>
-<meta name="description" content="NOAA STAR scatterometer winds (OSCAT-3, coastal Metop-B and Metop-C ASCAT), NESDIS Metop-B (near real time) and Remote Sensing Systems open-ocean ASCAT over the OPC Atlantic and Pacific, stitched into a map for each 12 h window (00Z and 12Z) and set against the marine wind page's Best Wind and warning lines, with a 7-day summary, a score for each map and each pass.">
+<meta name="description" content="NOAA STAR scatterometer winds (OSCAT-3, coastal Metop-B and Metop-C ASCAT), NESDIS Metop-B and KNMI Metop-C (near real time) and Remote Sensing Systems open-ocean ASCAT over the OPC Atlantic and Pacific, stitched into a map for each 12 h window (00Z and 12Z) and set against the marine wind page's Best Wind and warning lines, with a 7-day summary, a score for each map and each pass.">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0a1120">
 <meta name="color-scheme" content="dark">
@@ -24,7 +24,7 @@
   <header class="topbar">
     <div class="brand">
       <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M4 9l17 4M4 16l17 4M4 23l17 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/><circle cx="26" cy="16" r="3.2" fill="currentColor"/></svg>
-      <div class="brand-text"><h1>Scatterometer</h1><p>NOAA STAR, NESDIS and RSS scatterometer winds against the marine wind grid</p></div>
+      <div class="brand-text"><h1>Scatterometer</h1><p>NOAA STAR, NESDIS, KNMI and RSS scatterometer winds against the marine wind grid</p></div>
     </div>
     <div class="valid" aria-live="polite"><span class="eyebrow" id="validEyebrow">Valid</span><span id="validTime" class="valid-time">&mdash;</span><span id="validRel" class="valid-rel"></span></div>
     <div class="topbar-actions">
@@ -96,7 +96,7 @@
       </details>
       </div>
 
-      <p class="foot">Sources: NESDIS Metop-B ASCAT, full swaths over the open ocean, posted about 1 h after the pass (NOAA AOML, through NOAA ERDDAP); NOAA STAR, posted about 3 to 4 h after the pass (OSCAT-3, and ASCAT, which is a coastal product there); and Remote Sensing Systems (RSS) ASCAT, Metop-B and Metop-C, full swaths over the open ocean, posted about 2 to 5 days after the pass and replacing NESDIS's Metop-B where they overlap. Winds are 10 m as served (likely equivalent-neutral), averaged to 0.25&deg; cells; rain-flagged cells are faded and left out of every score. Best Wind and the warning lines come from the <a href="../marine-wind/">marine wind page</a>; in the mosaic they cover the whole basin at 00Z or 12Z, while the scores count only the cells a satellite saw, each against the forecast hour nearest its own pass; see <a href="../verification/">verification</a> for the longer record.</p>
+      <p class="foot">Sources: NESDIS Metop-B ASCAT, full swaths over the open ocean, posted about 1 h after the pass (NOAA AOML, through NOAA ERDDAP); KNMI Metop-C ASCAT 25 km, full swaths over the open ocean, listed by NASA PO.DAAC about 2.5 to 4 h after the pass; NOAA STAR, posted about 3 to 4 h after the pass (OSCAT-3, and ASCAT, which is a coastal product there); and Remote Sensing Systems (RSS) ASCAT, Metop-B and Metop-C, full swaths over the open ocean, posted about 2 to 5 days after the pass and replacing NESDIS's Metop-B and KNMI's Metop-C where they overlap. Winds are 10 m as served (likely equivalent-neutral), averaged to 0.25&deg; cells; rain-flagged cells are faded and left out of every score. Best Wind and the warning lines come from the <a href="../marine-wind/">marine wind page</a>; in the mosaic they cover the whole basin at 00Z or 12Z, while the scores count only the cells a satellite saw, each against the forecast hour nearest its own pass; see <a href="../verification/">verification</a> for the longer record.</p>
     </div>
   </section>
 
