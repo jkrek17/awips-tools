@@ -364,7 +364,7 @@ def test_mosaic_bin_round_trip_and_ascat_only_score():
         wb[0, 0] = False                                   # one cell of the box is land
         blob, ent = b.build_mosaic("natl", v, [a, o], b.pick_leads(cycles, v), fc, wb)
         assert ent["passes"] == ["asc", "osc"] and ent["n"] == 5 and ent["flagged"] == 1 and ent["obs_max"] == 52.0
-        assert ent["sats"] == {"ASCAT": 3, "OSCAT-3": 2, "RSS": 0} and ent["water"] == int(wb.sum())
+        assert ent["sats"] == {"ASCAT": 3, "OSCAT-3": 2, "RSS": 0, "NESDIS": 0} and ent["water"] == int(wb.sum())
         s, sa = ent["score"]["f24"], ent["score_ascat"]["f24"]
         assert s["obs"] == [3, 2, 0] and s["grid"] == [4, 0, 0] and s["catch"] == [3, 0, 0]   # unflagged 50, 36, 30, 52 kt; grid 40, gale line only
         assert sa["obs"] == [2, 1, 0] and sa["grid"] == [2, 0, 0] and sa["obs_max"] == 50.0 and sa["grid_max"] == 40.0 and sa["catch"] == [2, 0, 0]
@@ -493,7 +493,7 @@ def test_overlap_priority_rss_star_oscat():
     assert idx.tolist() == [100, 101, 102, 103, 104] and obs.tolist() == [10, 30, 31, 32, 33]
     assert names == ["star", "rss", "rss", "rss", "rss"]
     assert b.is_ascat("RSS Metop-B") and b.is_ascat("Metop-C") and not b.is_ascat("OSCAT-3") and b.is_rss("RSS Metop-C") and not b.is_rss("Metop-C")
-    assert [b.source_rank(x) for x in ("RSS Metop-B", "Metop-B", "OSCAT-3")] == [2, 1, 0]
+    assert [b.source_rank(x) for x in ("RSS Metop-B", "Metop-B (NESDIS)", "Metop-B", "OSCAT-3")] == [3, 2, 1, 0]
     # a window gains RSS cells -> its pass list differs, so the mosaic is built again; sats counts them
     import tempfile
     with tempfile.TemporaryDirectory() as tmp:
@@ -503,7 +503,7 @@ def test_overlap_priority_rss_star_oscat():
         a = (_entry("star", "Metop-B", "2026-11-12T11:00Z"), _unp([iy, iy + 1], [50, 36]))
         r = (_entry("rss", "RSS Metop-B", "2026-11-12T12:00Z"), _unp([iy + 1, iy + 2, iy + 3], [40, 41, 42]))
         ent = b.build_mosaic("natl", v, [a, r], b.pick_leads(cycles, v), b.Forecasts(cycles), wb)[1]
-        assert ent["sats"] == {"ASCAT": 4, "OSCAT-3": 0, "RSS": 3} and ent["n"] == 4
+        assert ent["sats"] == {"ASCAT": 4, "OSCAT-3": 0, "RSS": 3, "NESDIS": 0} and ent["n"] == 4
     ms = [_mos("natl", "2026-11-1%dT00:00Z" % k, 100, [1, 1, 1], [1, 1, 1], [1, 1, 1], [1, 1, 1], 50) for k in range(3)]
     ms[0]["sats"]["RSS"] = 60
     assert b.summarize(ms)["natl"]["f24"]["ascat"]["with_rss"] == 1
@@ -548,6 +548,154 @@ def test_rss_day_done_logic_and_retry():
     rs3 = {"20261001": dict(done=True, sats="bc", tried="2026-10-02T00:00Z"), "20261111": dict(done=True, sats="bc", tried="2026-11-12T00:00Z")}
     b.fetch_rss(now, rs3, water, inbox, lambda s, d: None)
     assert "20261001" not in rs3 and "20261111" in rs3
+
+
+# ---- NESDIS Metop-B ASCAT ----
+
+def test_nesdis_pseudo_passes_have_stable_ids_and_a_label():
+    water, inbox = _water()
+    day = D(2026, 11, 12)
+    early = _cat(_rss_cells(40.125, -50.125, 20, 710, 0), _rss_cells(40.125, 160.125, 20, 725, 0))   # 11:50 and 12:05 asc, natl and npac
+    later = _cat(early, _rss_cells(45.125, -50.125, 20, 790, 0))                                   # 13:10: more cells of the same 12Z pass
+    p1 = b.split_passes("nesdis_metopb", day, early, water, inbox, stable=True)
+    p2 = b.split_passes("nesdis_metopb", day, later, water, inbox, stable=True)
+    assert sorted((p["basin"], p["id"], p["key"]) for p in p1) == [
+        ("natl", "20261112T1200-nesdis_metopb_AS", "nesdis_metopb_AS-20261112T12-natl"),
+        ("npac", "20261112T1200-nesdis_metopb_AS", "nesdis_metopb_AS-20261112T12-npac")]
+    assert sorted((p["basin"], p["id"]) for p in p2) == sorted((p["basin"], p["id"]) for p in p1)   # same ids as it grows
+    n1 = {p["basin"]: p["pts"]["lat"].size for p in p1}
+    n2 = {p["basin"]: p["pts"]["lat"].size for p in p2}
+    assert n1 == {"natl": 400, "npac": 400} and n2 == {"natl": 800, "npac": 400}
+    natl = next(p for p in p2 if p["basin"] == "natl")
+    assert natl["start"] == D(2026, 11, 12, 11, 50) and natl["end"] == D(2026, 11, 12, 13, 10)          # the real cell times
+    assert b.SAT[natl["prefix"][:-3]] == "Metop-B (NESDIS)" and natl["files"] == []
+    # cells after 21Z are their own pass, stamped T2400 of the day, so they do not meet the next day's 00Z pass
+    late = b.split_passes("nesdis_metopb", day, _rss_cells(40.125, -50.125, 20, 1400, 1), water, inbox, stable=True)
+    assert [(p["id"], p["key"]) for p in late] == [("20261112T2400-nesdis_metopb_DS", "nesdis_metopb_DS-20261112T24-natl")]
+    nxt = b.split_passes("nesdis_metopb", D(2026, 11, 13), _rss_cells(40.125, -50.125, 20, 10, 1), water, inbox, stable=True)
+    assert nxt[0]["id"] == "20261113T0000-nesdis_metopb_DS" and nxt[0]["id"] != late[0]["id"]
+    # RSS ids still come from the earliest cell
+    assert b.rss_passes("b", day, early, water, inbox)[0]["id"] == "20261112T1150-rss_metopb_AS"
+
+
+def test_overlap_priority_rss_nesdis_star_oscat():
+    v = D(2026, 11, 12, 12, 0)
+    star = (_entry("star", "Metop-B", "2026-11-12T12:00Z"), _unp([100, 101, 102, 103], [10, 11, 12, 13]))
+    osc = (_entry("osc", "OSCAT-3", "2026-11-12T12:00Z"), _unp([100, 101, 102, 103, 104], [20, 21, 22, 23, 24]))
+    nes = (_entry("nes", "Metop-B (NESDIS)", "2026-11-12T08:00Z"), _unp([101, 102, 103, 104], [30, 31, 32, 33]))
+    rss = (_entry("rss", "RSS Metop-B", "2026-11-12T07:00Z"), _unp([102, 103], [40, 41]))
+    members = sorted([star, osc, nes, rss], key=lambda m: m[0]["mid"])
+    idx, obs, dr, fl, pi, pos = b.stitch(v, members)
+    names = [members[i][0]["id"] for i in pi]
+    # 100: STAR over OSCAT-3; 101: NESDIS over STAR and OSCAT-3 although 4 h away; 102-103: RSS over NESDIS; 104: NESDIS over OSCAT-3
+    assert idx.tolist() == [100, 101, 102, 103, 104] and obs.tolist() == [10, 30, 40, 41, 33]
+    assert names == ["star", "nes", "rss", "rss", "nes"]
+    assert b.is_nesdis("Metop-B (NESDIS)") and not b.is_nesdis("Metop-B") and not b.is_nesdis("RSS Metop-B")
+    assert b.is_ascat("Metop-B (NESDIS)") and not b.is_rss("Metop-B (NESDIS)")
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        cycles = b.load_cycles(_cache_with(tmp, [("2026111112", 24)]))
+        wb = b.crop_box(np.ones((721, 1440), bool) & b.box_mask("natl"), "natl")
+        iy = (90 - 50) * 1440 + (-30 + 180) * 4
+        a = (_entry("star", "Metop-B", "2026-11-12T11:00Z"), _unp([iy, iy + 1], [50, 36]))
+        n = (_entry("nes", "Metop-B (NESDIS)", "2026-11-12T12:00Z"), _unp([iy + 1, iy + 2, iy + 3], [40, 41, 42]))
+        r = (_entry("rss", "RSS Metop-B", "2026-11-12T12:30Z"), _unp([iy + 3], [45]))
+        o = (_entry("osc", "OSCAT-3", "2026-11-12T12:00Z"), _unp([iy + 4], [30]))
+        ent = b.build_mosaic("natl", v, [a, n, r, o], b.pick_leads(cycles, v), b.Forecasts(cycles), wb)[1]
+        # cells: star keeps iy; NESDIS keeps iy+1, iy+2; RSS iy+3; OSCAT-3 iy+4
+        assert ent["sats"] == {"ASCAT": 4, "OSCAT-3": 1, "RSS": 1, "NESDIS": 2} and ent["n"] == 5
+    ms = [_mos("natl", "2026-11-1%dT00:00Z" % k, 100, [1, 1, 1], [1, 1, 1], [1, 1, 1], [1, 1, 1], 50) for k in range(3)]
+    ms[0]["sats"]["NESDIS"] = 60
+    S = b.summarize(ms)["natl"]["f24"]["ascat"]
+    assert S["with_nesdis"] == 1 and S["with_rss"] == 0
+
+
+def test_nesdis_day_done_logic():
+    iso = lambda d: d.strftime(b.ISO)   # noqa: E731
+    now = D(2026, 11, 12, 15, 0)
+    st = dict(fetched=iso(D(2026, 11, 12, 14, 0)), n={})
+    assert not b.nesdis_done(D(2026, 11, 12), st, now)                                           # today
+    assert not b.nesdis_done(D(2026, 11, 11), dict(fetched=iso(D(2026, 11, 12, 1, 0))), now)      # yesterday, fetched after it ended: 1 day old
+    assert b.nesdis_done(D(2026, 11, 10), dict(fetched=iso(D(2026, 11, 11, 0, 50))), now)         # 2+ days old, fetched after it ended
+    assert not b.nesdis_done(D(2026, 11, 10), dict(fetched=iso(D(2026, 11, 10, 23, 50))), now)    # fetched before the day was over
+    assert not b.nesdis_done(D(2026, 11, 10), dict(tried=iso(now)), now)                          # never got it
+    assert b.rss_covers({"20261110": dict(done=True, sats="bc")}, "20261110") and b.rss_covers({"20261110": dict(done=True, sats="b")}, "20261110")
+    assert not b.rss_covers({"20261110": dict(done=True, sats="c")}, "20261110") and not b.rss_covers({"20261110": dict(done=False, sats="b")}, "20261110")
+    assert not b.rss_covers({}, "20261110")
+
+
+def test_nesdis_fetch_replace_on_growth_and_request_volume():
+    water, inbox = _water()
+    now = D(2026, 11, 12, 15, 0)
+    calls = []
+    cells = {}
+
+    def fetch(d, box):
+        calls.append((d.strftime("%m%d"), box))
+        return cells.get(d.strftime("%m%d"))
+    # nothing old: today and yesterday only, one Atlantic and one Pacific request each (the real reader makes 3 of the 4 wire
+    # requests by splitting the Pacific box), RSS having covered 5-9 Nov and the first days of the window being final
+    rs = {"202611%02d" % k: dict(done=True, sats="bc") for k in range(5, 11)}
+    ns = {}
+    assert b.fetch_nesdis(now, ns, rs, water, inbox, fetch) == []
+    assert sorted(c[0] for c in calls) == ["1111", "1111", "1112", "1112"]
+    assert calls[0][1] == (18.0, 67.0, -95.0, 10.0) or calls[0][1] == (18.0, 67.0, 135.0, 245.0)
+    assert "fetched" not in ns["20261112"] and ns["20261112"]["tried"] == "2026-11-12T15:00Z"       # not there yet, asked again
+    # today appears: two cell blocks of the 12Z ascending pass in the Atlantic
+    calls.clear()
+    t1 = _cat(_rss_cells(40.125, -50.125, 20, 710, 0), _rss_cells(40.125, 160.125, 20, 710, 0))
+    cells["1112"] = t1
+    new = b.fetch_nesdis(now, ns, rs, water, inbox, fetch)
+    assert sorted((p["basin"], p["id"]) for p in new) == [("natl", "20261112T1200-nesdis_metopb_AS"), ("npac", "20261112T1200-nesdis_metopb_AS")]
+    assert ns["20261112"]["fetched"] == "2026-11-12T15:00Z" and sorted(ns["20261112"]["n"].values()) == [400, 400]
+    # an hour on with the same cells: asked again (today), nothing new
+    assert b.fetch_nesdis(now + dt.timedelta(hours=1), ns, rs, water, inbox, fetch) == []
+    # more cells in natl only: that one pass comes back with the same id; the Pacific one is not redone
+    cells["1112"] = _cat(t1, _rss_cells(45.125, -50.125, 20, 790, 0))
+    grown = b.fetch_nesdis(now + dt.timedelta(hours=2), ns, rs, water, inbox, fetch)
+    assert [(p["basin"], p["id"], p["pts"]["lat"].size) for p in grown] == [("natl", "20261112T1200-nesdis_metopb_AS", 800)]
+    assert ns["20261112"]["n"]["nesdis_metopb_AS-20261112T12-natl"] == 800
+    # the entries it replaces: its own (id, basin) only, not the Pacific pass sharing the id, not another pass
+    ents = {("20261112T1200-nesdis_metopb_AS", "natl"): 1, ("20261112T1200-nesdis_metopb_AS", "npac"): 2, ("other", "natl"): 3}
+    assert b.drop_redone(ents, grown) == {("20261112T1200-nesdis_metopb_AS", "npac"): 2, ("other", "natl"): 3}
+    star = dict(id="x", files=[("u", D(2026, 11, 12))])
+    assert b.drop_redone({("x", "natl"): 1, ("x", "npac"): 2, ("y", "natl"): 3}, [star]) == {("y", "natl"): 3}
+    # shrinking or equal counts change nothing
+    cells["1112"] = t1
+    assert b.fetch_nesdis(now + dt.timedelta(hours=3), ns, rs, water, inbox, fetch) == []
+    assert ns["20261112"]["n"]["nesdis_metopb_AS-20261112T12-natl"] == 800
+
+
+def test_nesdis_older_days_final_rss_cover_and_failures():
+    water, inbox = _water()
+    now = D(2026, 11, 12, 15, 0)
+    calls = []
+
+    def fetch(d, box):
+        calls.append(d.strftime("%m%d"))
+        return _rss_cells(40.125, -50.125, 20, 710, 0) if box[2] == -95.0 else _rss_cells(40.125, 160.125, 20, 710, 0)
+    # 8 Nov: RSS has Metop-B -> skipped; 9 Nov: RSS has only C -> asked; 10 Nov: fetched after it ended, 2 days old -> final, skipped
+    rs = {"20261108": dict(done=True, sats="bc"), "20261109": dict(done=True, sats="c")}
+    ns = {"20261110": dict(fetched="2026-11-11T00:50Z", n={})}
+    new = b.fetch_nesdis(now, ns, rs, water, inbox, fetch)
+    got = sorted(set(calls))
+    assert "1108" not in got and "1110" not in got and {"1109", "1111", "1112", "1105", "1106", "1107"} <= set(got)
+    assert {"20261109", "20261111", "20261112"} <= {p["id"][:8] for p in new} and not {"20261108", "20261110"} & {p["id"][:8] for p in new}
+    assert "20261109" in ns and ns["20261109"]["fetched"] and not b.nesdis_done(D(2026, 11, 9), dict(ns["20261109"], fetched="2026-11-09T20:00Z"), now)
+    assert b.nesdis_done(D(2026, 11, 9), ns["20261109"], now)          # fetched at 15:00 on the 12th: after the day ended, 3 days old
+    # final days are not asked for again; an old day that was just tried is held back for the hour; a day 'recent' always asked
+    calls.clear()
+    b.fetch_nesdis(now + dt.timedelta(minutes=10), ns, rs, water, inbox, fetch)
+    assert sorted(set(calls)) == ["1111", "1112"]
+    # a network failure keeps the day open and keeps the old counts
+    def boom(d, box):
+        raise RuntimeError("down")
+    ns2 = {}
+    assert b.fetch_nesdis(now, ns2, {}, water, inbox, boom) == [] and not any(v.get("fetched") for v in ns2.values())
+    # old keys are dropped
+    ns3 = {"20261101": dict(fetched="2026-11-02T00:00Z", n={}), "20261110": dict(fetched="2026-11-11T00:50Z", n={})}
+    b.fetch_nesdis(now, ns3, rs, water, inbox, lambda d, box: None)
+    assert "20261101" not in ns3 and "20261110" in ns3
 
 
 if __name__ == "__main__":

@@ -26,6 +26,10 @@
 # hour); a day is used once both Metop-B and -C are there (or it is 7 days old) and the
 # mosaics of its window are rebuilt.
 #
+# NESDIS Metop-B ASCAT (NOAA ERDDAP, about 1 h after the pass): today, yesterday and any day of
+# the window not final and not covered by RSS, at most 6 requests of 2-5 MB a run when nothing
+# is old; a pass that gained cells is replaced under its id and its mosaics rebuilt.
+#
 # By hand (Actions > Scatterometer data > Run workflow): `days` lists that many days back
 # (0-8) to fill a gap; the server keeps about a month.
 
