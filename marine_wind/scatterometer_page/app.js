@@ -1,9 +1,10 @@
-/* Scatterometer: NOAA STAR scatterometer winds (OSCAT-3, coastal Metop-B and Metop-C ASCAT), NESDIS Metop-B, KNMI Metop-C (via NASA PO.DAAC) and RSS open-ocean ASCAT over the two OPC basins,
-   set against the marine wind page's Best Wind and warning lines. Two views: "Mosaic" (default), the passes
-   of the 12 h around 00Z or 12Z stitched into one map with the Best Wind and warning lines of the whole basin
-   at that time, one score (each cell against the forecast nearest its own pass) and a 7-day summary of the mosaics;
-   and "Passes", the single-pass view with a score per pass. OSCAT-3 is off by default (hash oscat=1 turns it on). Reads data/index.json,
-   data/mosaic/*.bin and data/pass/*.bin (written by marine_wind/scat/build.py, published with the site).
+/* Scatterometer: ASCAT winds (RSS, NESDIS Metop-B, KNMI Metop-C, STAR coastal) over the two OPC basins, set against the marine wind page's
+   Best Wind grid (34/48/64 kt) and warning lines. The page asks one question, "How did yesterday's Best Wind forecast compare with ASCAT?":
+   a plain 2-3 line answer for the chosen 12 h mosaic (areas seen against drawn, ratio 0.8-1.25 = "about right"; clusters of at least 4
+   seen cells at the level that the cell's own forecast had below it = misses, found here from the mosaic .bin), a map of right / missed /
+   too much at a chosen level (Gale 34, Storm 48, HF 64), a strip of the week's 14 mosaics coloured by the storm-level verdict, and under
+   "More" the single-pass view (Passes) and the OSCAT-3 switch. OSCAT-3 is never scored. The default forecast is the one made 24 h earlier.
+   Reads data/index.json, data/mosaic/*.bin and data/pass/*.bin (written by marine_wind/scat/build.py, published with the site).
    Shared globe kit: ../globe-kit/. Plain ES2020.
 
    Mosaic .bin, index format 2 (gzip, little-endian): uint32 n; uint32 idx[n]; uint8 obs[n], dir[n], flag[n] as below;
@@ -19,14 +20,15 @@
   var K, map = null, ov = null, index = null;
   var $ = function (id) { return document.getElementById(id); };
   var NX = 1440, NY = 721, RES = 0.25, TILE = 256;
-  var LEADS = [["latest", "Latest run"], ["f24", "+24 h"], ["f48", "+48 h"]];
+  var LEADS = [["latest", "Latest run"], ["f24", "24 h earlier"], ["f48", "48 h earlier"]];   // the order of the .bin files: do not reorder
+  var LEADS_UI = ["f24", "latest", "f48"];
   var BASIN = { atl: { name: "Atlantic", start: [-45, 45], mobile: [-45, 42] }, pac: { name: "Pacific", start: [175, 45], mobile: [175, 42] } };
   var LEVELS = [[34, "gale", "#fbbf24", 7], [48, "storm", "#f97316", 6], [64, "HF", "#e879f9", 4]];
   var WIND = { // the marine wind page's 10 m wind scale
     stops: [0, 10, 15, 20, 25, 30, 34, 41, 48, 56, 64, 80],
     colors: ["#1b1d21", "#1f2a36", "#22364b", "#28466a", "#2f5a8a", "#3f74ab", "#e8d27a", "#e8a93f", "#e06f2e", "#c9372c", "#9b1f5e", "#c86fd8"]
   };
-  var state = { tab: "mosaic", basin: "atl", lead: "latest", pass: null, v: null, oscat: false, focus: null, older: false, layers: { scat: true, best: true, warn: true } };
+  var state = { tab: "mosaic", basin: "atl", lead: "f24", level: 48, winds: false, pass: null, v: null, oscat: false, focus: null, older: false, layers: { scat: true, best: true, warn: true } };
 
   // ----------------------------------------------------------------- hash
   function readHash() {
@@ -34,13 +36,15 @@
     state.tab = h.get("tab") === "passes" || (!h.get("tab") && h.get("pass")) ? "passes" : "mosaic";
     state.v = h.get("v") || null;
     state.oscat = h.get("oscat") === "1";
+    state.winds = h.get("winds") === "1";
+    if (["34", "48", "64"].indexOf(h.get("level")) >= 0) state.level = +h.get("level");
     if (BASIN[h.get("basin")]) state.basin = h.get("basin");
     if (LEADS.some(function (l) { return l[0] === h.get("lead"); })) state.lead = h.get("lead");
     state.pass = h.get("pass") || null;
     state.older = h.get("older") === "1";
   }
   function writeHash() {
-    var h = "#tab=" + state.tab + "&basin=" + state.basin + "&lead=" + state.lead + (state.v ? "&v=" + state.v : "") + (state.oscat ? "&oscat=1" : "") +
+    var h = "#tab=" + state.tab + "&basin=" + state.basin + "&lead=" + state.lead + "&level=" + state.level + (state.v ? "&v=" + state.v : "") + (state.winds ? "&winds=1" : "") + (state.oscat ? "&oscat=1" : "") +
       (state.pass ? "&pass=" + encodeURIComponent(state.pass) : "") + (state.older ? "&older=1" : "");
     try { history.replaceState(null, "", h); } catch (e) { /* the hash stays as it was */ }
   }
@@ -59,7 +63,7 @@
     return h < 1 ? Math.max(0, Math.round(h * 60)) + " min ago" : h < 48 ? h.toFixed(1).replace(/\.0$/, "") + " h ago" : Math.round(h / 24) + " days ago";
   }
   function leadWords(l) { return l === "latest" ? "latest-run" : leadName(l); }
-  function leadName(l) { return l === "latest" ? "Latest run" : l === "f24" ? "+24 h" : "+48 h"; }
+  function leadName(l) { return l === "latest" ? "Latest run" : l === "f24" ? "24 h earlier" : "48 h earlier"; }
   function plural(n, w) { return n + " " + (n === 1 ? w : w === "pass" ? "passes" : w + "s"); }
   function num(n) { return Math.round(n).toLocaleString("en-US"); }
   function ratio(g, o) { return o > 0 ? g / o : null; }
@@ -112,7 +116,7 @@
   }
   function loadMosaic(m) {
     if (!cache[m.file]) {
-      cache[m.file] = fetch("data/" + m.file).then(function (r) { if (!r.ok) throw new Error(m.file + " " + r.status); return r.arrayBuffer(); }).then(gunzip).then(function (b) { return decodeM(b, m); });
+      cache[m.file] = fetch("data/" + m.file).then(function (r) { if (!r.ok) throw new Error(m.file + " " + r.status); return r.arrayBuffer(); }).then(gunzip).then(function (b) { var d = decodeM(b, m); decoded[m.file] = d; return d; });
     }
     return cache[m.file].then(function (d) { return d; });
   }
@@ -121,9 +125,10 @@
   var obsD = new Uint8Array(NX * NY).fill(255), dirD = new Uint8Array(NX * NY), flagD = new Uint8Array(NX * NY);
   var gridD = new Uint8Array(NX * NY).fill(255), warnD = new Uint8Array(NX * NY).fill(255);
   var passD = new Uint8Array(NX * NY), posD = new Int32Array(NX * NY);
+  var clsD = new Uint8Array(NX * NY);   // mosaic verdict per cell: 0 none, 1 right, 2 missed, 3 too much, 4 seen below the level
   function clearDense() {
     if (!cur) return;
-    for (var i = 0; i < cur.n; i++) { var k = cur.idx[i]; obsD[k] = 255; flagD[k] = 0; gridD[k] = 255; warnD[k] = 255; }
+    for (var i = 0; i < cur.n; i++) { var k = cur.idx[i]; obsD[k] = 255; flagD[k] = 0; gridD[k] = 255; warnD[k] = 255; clsD[k] = 0; }
     if (cur.boxCells) for (var j = 0; j < cur.boxCells.length; j++) { gridD[cur.boxCells[j]] = 255; warnD[cur.boxCells[j]] = 255; }
   }
   function fillObs() {
@@ -140,9 +145,18 @@
     for (i = 0; i < cur.n; i++) { k = cur.idx[i]; obsD[k] = cur.obs[i]; dirD[k] = cur.dir[i]; flagD[k] = cur.flag[i]; }
   }
   function fillLead() {
-    if (cur.mosaic) { fillBox(); return; }
+    if (cur.mosaic) { fillBox(); fillClass(); return; }
     var L = cur && state.lead && selected() && selected().fc[state.lead] ? cur.leads[state.lead] : null;
     for (var i = 0; i < cur.n; i++) { var k = cur.idx[i]; gridD[k] = L ? L.grid[i] : 255; warnD[k] = L ? L.warn[i] : 255; }
+  }
+  // right / missed / too much at the chosen level, on the cells ASCAT saw (each against the forecast its own pass was given)
+  function fillClass() {
+    var C = cur.entry.fc[state.lead] && cur.entry.fc[state.lead].cycle ? cur.cell[state.lead] : null, T = state.level;
+    for (var i = 0; i < cur.n; i++) {
+      var c = 0;
+      if (C && isScored(cur, i)) { var g = C.grid[i], o = cur.obs[i]; if (g !== 255) c = o >= T ? (g >= T ? 1 : 2) : (g >= T ? 3 : 4); }
+      clsD[cur.idx[i]] = c;
+    }
   }
   // the lead's Best Wind and warning bytes over the whole basin box, into the dense arrays
   function fillBox() {
@@ -172,8 +186,8 @@
     var p = selected(); return !p || !!p.fc[l];
   }
   function curHasLead() { return !!(cur && (cur.mosaic ? cur.entry.fc[state.lead] && cur.entry.fc[state.lead].cycle : selected() && selected().fc[state.lead])); }
-  function mScore(m, L) { return (state.oscat ? m.score : m.score_ascat || m.score)[L]; }
-  function mCoverage(m) { var n = state.oscat ? m.n : (m.sats && m.sats.ASCAT) || 0; return m.water ? n / m.water : 0; }
+  function mScore(m, L) { return (m.score_ascat || m.score)[L]; }   // OSCAT-3 is never scored
+  function mCoverage(m) { var n = (m.sats && m.sats.ASCAT) || 0; return m.water ? n / m.water : 0; }
 
   // ---------------------------------------------------------------- card
   function areaLine(p) {
@@ -210,18 +224,19 @@
     if (!s.obs[0] && !s.grid[0]) out += "<p>No gale-force wind in the observed cells or the grid.</p>";
     else {
       for (var i = 0; i < 3; i++) {
-        var r = ratio(s.grid[i], s.obs[i]);
-        if (r !== null) parts.push("<b>" + r.toFixed(1) + "x</b> the observed " + (i === 0 ? "gale area" : i === 1 ? "storm" : "HF"));
-        else parts.push(s.grid[i] ? "<b>" + plural(s.grid[i], "cell") + "</b> of " + (i === 1 ? "storm" : "HF") + " with none observed" : "no " + (i === 1 ? "storm" : "HF") + " in either");
+        var T = [34, 48, 64][i], r = ratio(s.grid[i], s.obs[i]), nm = i === 0 ? "gale" : i === 1 ? "storm" : "HF";
+        if (r === null) parts.push(s.grid[i] ? "<b>" + plural(s.grid[i], "cell") + "</b> of " + nm + " where none was seen" : "no " + nm + " in either");
+        else if (s.obs[i] < 10) parts.push(nm + ": only " + plural(s.obs[i], "cell") + " seen, too little to judge");
+        else { var v = areaVerdict(Math.max(s.obs[i], MIN_SEEN), s.grid[i] * Math.max(s.obs[i], MIN_SEEN) / s.obs[i]); parts.push("<b>" + nm + "</b> " + (v.k === "ok" ? "about right" : "drawn " + v.words)); }
       }
-      out += "<p>Grid has " + parts.join(", ") + ".</p>";
+      out += "<p>Best Wind: " + parts.join("; ") + ".</p>";
       var cp = [];
       for (var j = 0; j < 3; j++) {
         var o = s.obs[j], c = s.catch[j], lab = j === 0 ? "observed gale cells" : j === 1 ? "storm" : "HF";
         if (!o) { cp.push("no observed " + (j === 0 ? "gale cells" : j === 1 ? "storm" : "HF") + " to catch"); continue; }
         cp.push(o < 10 ? "<b>" + c + " of " + o + "</b> " + lab : "<b>" + Math.round(100 * c / o) + "%</b> of " + lab);
       }
-      out += "<p>Lines caught " + cp.join(", ") + ".</p>";
+      out += "<p>Warning lines covered " + cp.join(", ") + ".</p>";
     }
     return out;
   }
@@ -276,6 +291,165 @@
       '<p class="sumnote">Ratio above 1 means the grid has more area than the satellite saw. Catch is the share of observed cells (34 kt in any line, 48 kt in a storm or HF line, 64 kt in an HF line). OSCAT-3 reads well below ASCAT at gale force and above (storm area about a tenth of ASCAT\'s, 13 Oct-7 Nov 2026), so its ratios over-state the grid; judge storm and HF by the ASCAT rows.</p>';
   }
 
+  // ---- the plain answer: right / missed / too much at a level, clusters of misses, verdict words
+  var MIN_SEEN = 50, MIN_CLUSTER = 4;
+  var NAME = { 34: "gale", 48: "storm", 64: "HF" }, LIDX = { 34: 0, 48: 1, 64: 2 };
+  var scratch = new Uint8Array(NX * NY), posS = new Int32Array(NX * NY);
+  function round5(x) { return Math.max(5, Math.round(x / 5) * 5); }
+  function cap1(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+  function isScored(d, i) { var q = d.members[d.pass[i]]; return !!q && isAscat(q) && !d.flag[i]; }   // ASCAT only, no rain flag: OSCAT-3 is never scored
+  function latLonText(lat, lon) { var w = ((lon + 540) % 360) - 180; return Math.round(Math.abs(lat)) + (lat < 0 ? "S" : "N") + " " + Math.round(Math.abs(w)) + (w < 0 ? "W" : "E"); }
+  // connected clusters (8 neighbours, wrapping at the date line) of the cells ASCAT saw at or above T where the cell's own forecast was below T
+  function missClusters(d, C, T) {
+    var cells = [], i, k, res = [];
+    for (i = 0; i < d.n; i++) {
+      if (!isScored(d, i)) continue;
+      var g = C.grid[i];
+      if (d.obs[i] >= T && g !== 255 && g < T) { k = d.idx[i]; scratch[k] = 1; posS[k] = i; cells.push(i); }
+    }
+    for (var a = 0; a < cells.length; a++) {
+      k = d.idx[cells[a]];
+      if (scratch[k] !== 1) continue;
+      scratch[k] = 2;
+      var stack = [k], n = 0, sy = 0, sx = 0, ix0 = k % NX, pobs = -1, pgrid = 0;
+      while (stack.length) {
+        var c = stack.pop(), iy = (c / NX) | 0, ix = c - iy * NX, dx = ix - ix0;
+        if (dx > NX / 2) dx -= NX; else if (dx < -NX / 2) dx += NX;
+        n++; sy += iy; sx += dx;
+        var pi = posS[c];
+        if (d.obs[pi] > pobs) { pobs = d.obs[pi]; pgrid = C.grid[pi]; }
+        for (var ey = -1; ey <= 1; ey++) {
+          var ny = iy + ey; if (ny < 0 || ny >= NY) continue;
+          for (var ex = -1; ex <= 1; ex++) {
+            if (!ey && !ex) continue;
+            var nk = ny * NX + ((ix + ex + NX) % NX);
+            if (scratch[nk] === 1) { scratch[nk] = 2; stack.push(nk); }
+          }
+        }
+      }
+      if (n >= MIN_CLUSTER) res.push({ n: n, lat: 90 - (sy / n) * RES, lon: (ix0 + sx / n) * RES - 180, peak: pobs, grid: pgrid });
+    }
+    for (a = 0; a < cells.length; a++) scratch[d.idx[cells[a]]] = 0;
+    return res.sort(function (x, y) { return y.n - x.n; });
+  }
+  function analyze(d, lead) {   // null when the mosaic has no such forecast
+    d.an = d.an || {};
+    if (!(lead in d.an)) {
+      var F = d.entry.fc[lead], out = null;
+      if (F && F.cycle) { out = { miss: {} }; [34, 48, 64].forEach(function (T) { out.miss[T] = missClusters(d, d.cell[lead], T); }); }
+      d.an[lead] = out;
+    }
+    return d.an[lead];
+  }
+  function areaVerdict(o, g) {   // seen cells at a level and the Best Wind cells on those same cells
+    if (o < MIN_SEEN) return { k: "few" };
+    var r = g / o;
+    if (r >= 0.8 && r <= 1.25) return { k: "ok", r: r };
+    if (r > 1.25) return { k: "big", r: r, words: r >= 2.5 ? "about " + Math.round(r) + " times as big" : r >= 1.8 ? "about twice as big" : "about " + round5((r - 1) * 100) + "% too big" };
+    return { k: "small", r: r, words: "about " + round5((1 - r) * 100) + "% too small" };
+  }
+  function clause(T, v, first) {   // "Gale area about right", "storm drawn about 40% too big", "too little storm seen to judge"
+    var nm = NAME[T], c;
+    if (v.k === "few") c = "too little " + nm + " seen to judge";
+    else if (v.k === "ok") c = nm + " area about right";
+    else c = nm + " drawn " + v.words;
+    return first ? cap1(c) : c;
+  }
+  function areasSentence(sc) {
+    var Ts = [34, 48, 64], vs = Ts.map(function (T) { return areaVerdict(sc.obs[LIDX[T]], sc.grid[LIDX[T]]); }), parts = [], first = true;
+    var judged = vs.map(function (v, i) { return i < 2 || v.k !== "few"; });   // HF only when there is enough of it
+    if (vs[0].k === "ok" && vs[1].k === "ok") { parts.push("Gale and storm areas about right"); first = false; if (judged[2]) parts.push(clause(64, vs[2], false)); }
+    else Ts.forEach(function (T, i) { if (judged[i]) { parts.push(clause(T, vs[i], first)); first = false; } });
+    var bad = vs.some(function (v, i) { return judged[i] && (v.k === "big" || v.k === "small"); });
+    var good = vs.some(function (v) { return v.k === "ok"; });
+    return { text: parts.join("; ") + ".", tone: bad ? "amber" : good ? "green" : "grey" };
+  }
+  function missSentence(an, sc, T) {
+    var cl = an.miss[T], nm = NAME[T], word = T === 64 ? "HF" : nm;
+    if (!cl.length) return { text: sc.obs[LIDX[T]] ? "Nothing missed at " + (T === 64 ? "HF" : nm + " force") + "." : "No " + (T === 64 ? "HF" : nm + "-force") + " winds seen.", tone: "green" };
+    function one(c) { return latLonText(c.lat, c.lon) + " (" + c.peak + " kt seen, grid " + c.grid + ")"; }
+    if (cl.length === 1) return { text: "Missed one " + word + " area near " + one(cl[0]) + ".", tone: "red" };
+    return { text: "Missed " + cl.length + " " + word + " areas. Biggest near " + one(cl[0]) + (cl[1] ? " and " + one(cl[1]) : "") + ".", tone: "red" };
+  }
+  function leadPhrase(l) { return l === "latest" ? "latest-run forecast" : l === "f24" ? "24-hour forecast" : "48-hour forecast"; }
+  function leadShort(l) { return l === "latest" ? "Latest run" : l === "f24" ? "24 h" : "48 h"; }
+  function mHasLead(m, l) { return !!(m && m.fc[l] && m.fc[l].cycle && (m.score_ascat || m.score || {})[l]); }
+  function curMatches() { var m = selectedM(); return !!(m && cur && cur.mosaic && cur.entry === m); }
+  function renderAnswer() {
+    var box = $("answer"), m = selectedM(), L = state.lead, bn = BASIN[state.basin].name;
+    if (!m) { box.innerHTML = '<p class="a-line">No ' + bn + ' map for this time: no ASCAT pass fell in its 12 hours.</p>'; return; }
+    if (!mHasLead(m, L)) {
+      var alts = LEADS_UI.filter(function (l) { return l !== L && mHasLead(m, l); }).map(function (l) { return [l]; });
+      box.innerHTML = '<p class="a-line"><i class="dot grey"></i>There is no ' + leadPhrase(L) + ' for this map.</p>' +
+        (alts.length ? '<p class="a-alt">Try ' + alts.map(function (l) { return '<button type="button" class="chip" data-lead="' + l[0] + '">' + (l[0] === "latest" ? "the latest run" : "the " + leadShort(l[0]) + " forecast") + "</button>"; }).join(" or ") + ".</p>" : "<p class=\"a-alt\">No forecast was saved for this map.</p>");
+      box.querySelectorAll(".chip").forEach(function (b) { b.addEventListener("click", function () { setLead(b.dataset.lead); }); });
+      return;
+    }
+    var sc = (m.score_ascat || m.score)[L], T = state.level, cov = mCoverage(m);
+    var h = '<p class="a-line a-cov"><i class="dot ' + (cov < 0.2 ? "amber" : "grey") + '"></i>ASCAT saw <b>' + pct(cov) + "%</b> of the " + bn + "." + (m.open ? ' <span class="badge">still filling</span>' : "") + "</p>";
+    var a = areasSentence(sc);
+    h += '<p class="a-line"><i class="dot ' + a.tone + '"></i>' + a.text + "</p>";
+    if (curMatches()) {
+      var an = analyze(cur, L);
+      if (an) { var ms = missSentence(an, sc, T); h += '<p class="a-line"><i class="dot ' + ms.tone + '"></i>' + ms.text + "</p>"; }
+    } else h += '<p class="a-line dim"><i class="dot grey"></i>Looking for misses&hellip;</p>';
+    box.innerHTML = h;
+  }
+
+  // ---- the week: 14 boxes, one per 00Z / 12Z map
+  var decoded = {}, stripFor = null, stripToken = 0;
+  function boxVerdict(m) {   // storm-level verdict (gale when too little storm was seen); null when this map has no such forecast
+    var L = state.lead;
+    if (!mHasLead(m, L)) return { c: "none", why: "no " + leadPhrase(L) + " for this map" };
+    var d = decoded[m.file], sc = (m.score_ascat || m.score)[L];
+    if (!d) return { c: "pend", why: "checking" };
+    var an = analyze(d, L), nm = an.miss[48].length;
+    if (nm) return { c: "red", why: nm === 1 ? "one storm area missed" : nm + " storm areas missed", miss: nm };
+    var v = areaVerdict(sc.obs[1], sc.grid[1]), g = false, nmT = "storm";
+    if (v.k === "few") { v = areaVerdict(sc.obs[0], sc.grid[0]); g = true; nmT = "gale"; }
+    if (v.k === "few") return { c: "grey", why: "too little seen to judge", miss: 0 };
+    return { c: v.k === "ok" ? "green" : "amber", g: g, miss: 0, why: (g ? "too little storm seen; " : "") + nmT + (v.k === "ok" ? " area about right" : " drawn " + v.words) };
+  }
+  function renderStrip() {
+    var ms = basinMosaics(), box = $("strip");
+    var newest = (index.mosaics || []).reduce(function (a, m) { return m.valid > a ? m.valid : a; }, "");
+    $("weekHead").textContent = BASIN[state.basin].name + ", " + leadShort(state.lead) + (state.lead === "latest" ? "" : " forecast") + ", oldest at the left";
+    if (!newest) { box.innerHTML = ""; $("stripKey").innerHTML = ""; return; }
+    var byV = {}; ms.forEach(function (m) { byV[m.valid] = m; });
+    var t0 = new Date(newest).getTime(), html = "", anyOpen = false;
+    for (var i = 13; i >= 0; i--) {
+      var t = new Date(t0 - i * 12 * 3600000), iso = t.toISOString().slice(0, 16) + "Z", m = byV[iso], z = t.getUTCHours() === 0 ? "00" : "12";
+      var vd = m ? boxVerdict(m) : { c: "none", why: "no pass" };
+      if (m && m.open) anyOpen = true;
+      var ttl = dayHour(iso) + ": " + vd.why + (m && m.open ? " (still filling)" : "");
+      html += '<button type="button" class="sb' + (z === "00" ? " day" : "") + (m && m.open ? " open" : "") + '" data-v="' + vKey(iso) + '"' + (m ? "" : " disabled") + ' aria-current="' + (!!m && vKey(iso) === state.v) + '" title="' + ttl + '" aria-label="' + ttl + '">' +
+        '<i class="bx c-' + vd.c + '">' + (vd.g ? "G" : "") + "</i><b>" + z + "Z</b><u>" + t.getUTCDate() + "</u></button>";
+    }
+    box.innerHTML = html;
+    box.querySelectorAll(".sb").forEach(function (b) { b.addEventListener("click", function () { chooseM(b.dataset.v); }); });
+    $("stripKey").innerHTML = '<span><i class="sq c-green"></i>about right</span><span><i class="sq c-amber"></i>too big or small</span><span><i class="sq c-red"></i>storm missed</span><span><i class="sq c-grey"></i>too little seen</span><span class="gnote"><b>G</b> judged on gale</span>' + (anyOpen ? '<span><i class="sq open"></i>filling</span>' : "");
+    renderWeekSentence();
+  }
+  function renderWeekSentence() {
+    var box = $("weekSent"), L = state.lead, S = index.summary && index.summary[basinKey()];
+    S = S && S[L] && S[L].ascat;
+    if (!S || !S.mosaics) { box.innerHTML = "This week: no " + leadPhrase(L) + " scored yet."; return; }
+    function wk(T) {
+      var i = LIDX[T], nm = NAME[T];
+      if (!S.enough[i]) return "too little " + nm + " seen to judge";
+      var v = areaVerdict(S.obs[i], S.grid[i]);
+      return v.k === "ok" ? nm + " area about right" : nm + " drawn too " + (v.k === "big" ? "big" : "small");
+    }
+    var parts = [wk(34), wk(48)], miss = 0, all = true, ms = basinMosaics().filter(function (m) { return !m.open && mHasLead(m, L); });
+    ms.forEach(function (m) { var d = decoded[m.file]; if (!d) { all = false; return; } miss += analyze(d, L).miss[48].length; });
+    if (all) parts.push(miss ? miss + " storm miss" + (miss === 1 ? "" : "es") : "no storm misses");
+    box.innerHTML = "<b>This week:</b> " + parts.join(", ") + ".";
+  }
+  function loadStripData() {
+    var my = ++stripToken, ms = basinMosaics();
+    Promise.all(ms.map(function (m) { return loadMosaic(m).catch(function () { return null; }); })).then(function () { if (my === stripToken && state.tab === "mosaic") { renderStrip(); renderWeek(); } });
+  }
+
   // ---- mosaic card
   function offset(p, v) { return h1(hourDiff(p.mid, v)) + " h from " + K.pad(new Date(v).getUTCHours()) + "Z"; }
   function hrZ(v, d) { return K.pad(new Date(new Date(v).getTime() + d * 3600000).getUTCHours()); }
@@ -283,104 +457,90 @@
   function validLabel(v) { return dayHour(v) + ", passes " + winLabel(v); }
   function basinKey() { return state.basin === "pac" ? "npac" : "natl"; }
   function lineName(w) { return w === 255 ? "no forecast" : (w & 4) ? "HF line" : (w & 2) ? "storm line" : (w & 1) ? "gale line" : "no line"; }
+  function membersOf(m) { return (cur && cur.mosaic && cur.entry === m ? cur.members : m.passes.map(function (id) { return index.passes.filter(function (p) { return p.id === id && basinOf(p) === basinOf(m); })[0] || null; })); }
   function renderMosaicDetail() {
     var m = selectedM(), box = $("mdetail");
-    if (!m) { box.innerHTML = '<p class="empty">No ' + BASIN[state.basin].name + ' mosaic for this time: no pass fell in its 12 hours.</p>'; return; }
-    var L = state.lead, f = m.fc[L], sc = mScore(m, L), cov = mCoverage(m), A = (m.sats.ASCAT || 0) / m.water, O = (m.sats["OSCAT-3"] || 0) / m.water;
-    var R = (m.sats.RSS || 0) / m.water, N = (m.sats.NESDIS || 0) / m.water, K = (m.sats.KNMI || 0) / m.water, AS = A - R - N - K;   // RSS, NESDIS, KNMI, and STAR's coastal ASCAT (what is left of ASCAT)
-    var members = (cur && cur.mosaic && cur.entry === m ? cur.members : m.passes.map(function (id) { return index.passes.filter(function (p) { return p.id === id && basinOf(p) === basinOf(m); })[0] || null; }));
+    if (!m) { box.innerHTML = '<p class="empty">No ' + BASIN[state.basin].name + ' map for this time: no pass fell in its 12 hours.</p>'; return; }
+    var L = state.lead, f = m.fc[L], sc = mScore(m, L), cov = mCoverage(m);
+    var A = (m.sats.ASCAT || 0) / m.water, R = (m.sats.RSS || 0) / m.water, N = (m.sats.NESDIS || 0) / m.water, KN = (m.sats.KNMI || 0) / m.water, AS = A - R - N - KN;   // RSS, NESDIS, KNMI, and STAR's coastal ASCAT (what is left of ASCAT)
+    var members = membersOf(m);
     var h = "<h3>" + BASIN[state.basin].name + ", valid " + validLabel(m.valid) + "</h3>";
-    if (m.open) h += '<p class="warnp">Still filling: STAR posts a pass 3 to 4 h after it flies, so the later passes of these 12 hours are not in yet. Left out of the 7-day summary until the window is complete.</p>';
-    var split = [[N, "NESDIS"], [K, "KNMI Metop-C"], [R, "RSS"], [AS, "STAR coastal"]].filter(function (x) { return x[0] > 0; }).map(function (x) { return "<b>" + pct(x[0]) + "%</b> " + x[1]; }).join(", ") || "<b>0%</b> STAR coastal";
-    h += "<p>" + (state.oscat ? "ASCAT and OSCAT-3 saw <b>" + pct(cov) + "%</b> of the basin water in these 12 hours: " + split + ", <b>" + pct(O) + "%</b> OSCAT-3." :
-      "ASCAT saw <b>" + pct(cov) + "%</b> of the basin water in these 12 hours: " + split + " (OSCAT-3 left out).") + " Unseen water is left uncoloured." +
-      '</p><div class="covbar" aria-hidden="true"><span style="width:' + (100 * R) + '%;background:#c9821a"></span><span style="width:' + (100 * N) + '%;background:#d9a566"></span><span style="width:' + (100 * K) + '%;background:#cf8f6b"></span><span style="width:' + (100 * AS) + '%;background:#e8d27a"></span>' + (state.oscat ? '<span style="width:' + (100 * O) + '%;background:#2f5a8a"></span>' : "") + "</div>" +
-      (R > 0 && !m.open ? "" : '<p class="fine" style="font-size:11px;color:var(--text-3)">' + RSS_NOTE + "</p>");
+    if (m.open) h += '<p class="warnp">Still filling: STAR posts a pass 3 to 4 h after it flies, so the later passes of these 12 hours are not in yet.</p>';
+    var split = [[N, "NESDIS Metop-B"], [KN, "KNMI Metop-C"], [R, "RSS"], [AS, "STAR coastal"]].filter(function (x) { return x[0] > 0; }).map(function (x) { return "<b>" + pct(x[0]) + "%</b> " + x[1]; }).join(", ") || "<b>0%</b> STAR coastal";
+    h += "<p>ASCAT saw <b>" + pct(cov) + "%</b> of the basin&rsquo;s water in these 12 hours (" + num(m.sats.ASCAT || 0) + " of " + num(m.water) + " cells): " + split + ". OSCAT-3 is never scored. Unseen water is left uncoloured.</p>" +
+      '<div class="covbar" aria-hidden="true"><span style="width:' + (100 * R) + '%;background:#c9821a"></span><span style="width:' + (100 * N) + '%;background:#d9a566"></span><span style="width:' + (100 * KN) + '%;background:#cf8f6b"></span><span style="width:' + (100 * AS) + '%;background:#e8d27a"></span></div>' +
+      (R > 0 && !m.open ? "" : '<p class="fine">' + RSS_NOTE + "</p>");
+    if (!f || !sc) {
+      h += '<p class="warnp">No ' + leadPhrase(L) + " score for this map: " + (L === "latest" ? "no saved run built before the passes falls within 6 to 54 h of them" : "that model run was not saved for most of the passes (the saved runs build up over the days)") + ".</p>";
+    } else {
+      var v = m.valid, uns = (m.unscored_ascat || {})[L] || 0, NM = ["gale", "storm", "HF"];
+      h += "<p>Forecast: " + (f.cycle ? "<b>" + dayHour(cycleDate(f.cycle)) + " run</b>" + (L === "latest" ? " (the run the desk had)" : "") + ", +" + f.step + " h, drawn for <b>" + hrZ(v, 0) + "Z</b>" : "none for " + hrZ(v, 0) + "Z") +
+        ". Each cell is scored against the forecast hour nearest its own pass (" + hrZ(v, -6) + ", " + hrZ(v, 0) + " or " + hrZ(v, 6) + "Z).</p>";
+      h += "<ul class=\"wkfa\">" + [0, 1, 2].map(function (i) {
+        return "<li>" + (sc.obs[i] ? "Warning lines covered <b>" + Math.round(100 * sc.catch[i] / sc.obs[i]) + "%</b> of the " + NM[i] + (i < 2 ? "-force" : "") + " winds seen" : "No " + NM[i] + (i < 2 ? "-force" : "") + " winds seen") + "</li>";
+      }).join("") + "</ul>";
+      h += '<table class="mini"><tr><th>Level</th><th>Seen</th><th>Best Wind on those cells</th><th>Caught by lines</th><th>Best Wind, whole basin</th></tr>' +
+        LEVELS.map(function (lv, i) {
+          return "<tr><td>" + lv[0] + " kt</td><td>" + num(sc.obs[i]) + "</td><td>" + num(sc.grid[i]) + "</td><td>" + num(sc.catch[i]) + "</td><td>" + (m.grid_area_box && m.grid_area_box[L] ? num(m.grid_area_box[L][i]) : "&ndash;") + "</td></tr>";
+        }).join("") + '</table><p class="fine">Counts are 0.25&deg; cells (about 550 sq km at 45N) that ASCAT saw, without a rain flag: ' + num(sc.n) + " scored of " + num(m.sats.ASCAT || 0) + " seen" +
+        (uns ? "; " + num(uns) + " more have no " + leadPhrase(L) + " for their pass and are left out" : "") +
+        ". &ldquo;Seen&rdquo; = ASCAT at or above the level; &ldquo;Best Wind on those cells&rdquo; = the grid at or above it on the same cells; &ldquo;caught&rdquo; = seen cells inside the warning line (gale: any line, storm: storm or HF line, HF: HF line). The last column counts the grid&rsquo;s water cells in the whole basin at " + hrZ(v, 0) + "Z, seen or not. Right / missed / too much on the map use the same cells.</p>";
+    }
     h += '<table class="mini mtable"><tr><th>Pass</th><th>Middle</th><th>From ' + hrZ(m.valid, 0) + "Z</th></tr>" +
       members.map(function (p, i) {
         if (!p) return "<tr><td>" + m.passes[i] + "</td><td></td><td></td></tr>";
         var off = (new Date(p.mid) - new Date(m.valid)) / 3600000;
-        return "<tr" + (!state.oscat && p.sat === "OSCAT-3" ? ' style="opacity:.4"' : "") + "><td>" + satShort(p.sat) + "</td><td>" + hhmm(new Date(p.mid)) + "</td><td>" + (off < 0 ? "&minus;" : "+") + h1(Math.abs(off)) + " h</td></tr>";
-      }).join("") + '</table><p class="fine" style="font-size:11px;color:var(--text-3)">Where swaths overlap, RSS ASCAT is shown over NESDIS Metop-B and KNMI Metop-C over STAR ASCAT over OSCAT-3, then the pass nearest the valid time.</p>';
-    if (!f || !sc) {
-      h += '<p class="warnp">No ' + leadWords(L) + ' score for this time: ' + (L === "latest" ? "no saved run built before the passes falls within 6 to 54 h of them" : "that model run was not saved for most of the passes (the saved runs build up over the days)") + ".</p>";
-    } else {
-      var v = m.valid, uns = ((state.oscat ? m.unscored : m.unscored_ascat) || {})[L] || 0;
-      h += "<p>" + (f.cycle ? "Lines drawn for <b>" + hrZ(v, 0) + "Z</b> (<b>" + dayHour(cycleDate(f.cycle)) + " run</b>" + (L === "latest" ? ", the run the desk had" : "") + ", +" + f.step + " h)" : "No " + leadWords(L) + " lines for " + hrZ(v, 0) + "Z") +
-        "; each cell is scored against the forecast hour nearest its pass (" + hrZ(v, -6) + ", " + hrZ(v, 0) + " or " + hrZ(v, 6) + "Z).</p>";
-      h += '<div class="scores">' + scoreWords(sc) + "</div>";
-      var sca = (m.score_ascat || {})[L];
-      if (state.oscat && sca && sc.obs[0] > sca.obs[0]) h += OSCAT_NOTE;
-      h += '<table class="mini"><tr><th></th><th>Observed</th><th>Grid</th><th>In lines</th><th>Caught</th><th>Grid, whole basin</th></tr>' +
-        LEVELS.map(function (lv, i) {
-          return "<tr><td>" + lv[0] + " kt</td><td>" + sc.obs[i] + "</td><td>" + sc.grid[i] + "</td><td>" + sc.line[i] + "</td><td>" + sc.catch[i] + "</td><td>" + (m.grid_area_box && m.grid_area_box[L] ? num(m.grid_area_box[L][i]) : "&ndash;") + "</td></tr>";
-        }).join("") + '</table><p class="fine" style="font-size:11px;color:var(--text-3)">Scores count the 0.25&deg; cells a satellite saw, without a rain flag: ' + num(sc.n) + " of " + num(state.oscat ? m.n : (m.sats.ASCAT || 0)) + " seen cells" + (state.oscat ? "" : ", ASCAT only") +
-        (uns ? "; " + num(uns) + " more have no " + leadWords(L) + " forecast for their pass and are left out" : "") +
-        ". The Best Wind outlines and warning lines are drawn over the whole basin; the last column counts the grid's water cells at each threshold in the whole basin at " + hrZ(v, 0) + "Z, seen or not. Lines: gale = any warning line, storm = storm or HF line, HF = HF line.</p>";
-    }
+        return "<tr" + (p.sat === "OSCAT-3" ? ' style="opacity:.4"' : "") + "><td>" + satShort(p.sat) + (p.sat === "OSCAT-3" ? " (not scored)" : "") + "</td><td>" + hhmm(new Date(p.mid)) + "</td><td>" + (off < 0 ? "&minus;" : "+") + h1(Math.abs(off)) + " h</td></tr>";
+      }).join("") + '</table><p class="fine">Where swaths overlap, RSS ASCAT is shown over NESDIS Metop-B and KNMI Metop-C over STAR ASCAT, then the pass nearest the valid time.</p>';
     box.innerHTML = h;
   }
 
-  // ---- 7-day summary of the mosaics (computed in build.py: index.summary)
+  // ---- 7-day numbers (computed in build.py: index.summary), in the Details fold
   function weekS() {
     var S = index.summary && index.summary[basinKey()];
     S = S && S[state.lead];
-    return S ? S[state.oscat ? "all" : "ascat"] : null;
+    return S ? S.ascat : null;
   }
   function renderWeek() {
-    var box = $("week"), S = weekS(), sat = state.oscat ? "ASCAT and OSCAT-3" : "ASCAT", lw = leadName(state.lead);
-    $("weekHead").textContent = BASIN[state.basin].name + ", " + lw + (state.oscat ? ", all satellites" : ", ASCAT only");
-    if (!S || !S.times) { box.innerHTML = '<p class="sumnote">The summary appears once the first 12 h window of this basin has closed.</p>'; return; }
+    var box = $("week"), S = weekS(), sat = "ASCAT", lw = leadPhrase(state.lead);
+    if (!S || !S.times) { box.innerHTML = '<h4>Last 7 days</h4><p class="sumnote">The week&rsquo;s numbers appear once the first 12 h window of this basin has closed.</p>'; return; }
     var oc = [["RSS ASCAT", S.with_rss], ["NESDIS Metop-B", S.with_nesdis], ["KNMI Metop-C", S.with_knmi]].filter(function (x) { return x[1]; }).map(function (x) { return x[1] + " with " + x[0]; });
-    var h = '<p class="sumnote" style="margin-top:6px"><b>' + sat + " saw on average " + pct(S.cov_mean) + "% of the basin water per 12 h this week</b> (" + S.times + " mosaics, " + pct(S.cov_min) + " to " + pct(S.cov_max) + "%). " +
-      (oc.length ? "Of the " + S.times + " mosaics, " + oc.join(", ") + " (open-ocean swaths); the others have STAR's coastal ASCAT only." : "None of the " + S.times + " mosaics includes RSS, NESDIS or KNMI open-ocean ASCAT yet.") + " " + RSS_NOTE + "</p>";
+    var h = '<h4>Last 7 days, ' + BASIN[state.basin].name + ", " + lw + '</h4><p class="sumnote">ASCAT saw on average <b>' + pct(S.cov_mean) + "%</b> of the basin&rsquo;s water per 12 h (" + S.times + " maps, " + pct(S.cov_min) + " to " + pct(S.cov_max) + "%). " +
+      (oc.length ? "Of the " + S.times + " maps, " + oc.join(", ") + " (open-ocean swaths); the others have STAR&rsquo;s coastal ASCAT only." : "None of the " + S.times + " maps includes RSS, NESDIS or KNMI open-ocean ASCAT yet.") + " " + RSS_NOTE + "</p>";
     if (!S.mosaics) { box.innerHTML = h + '<p class="sumnote">No ' + lw + ' score yet: the saved runs for most of the passes are not there (they build up over the days).</p>'; return; }
-    var NAMES = ["gale", "storm", "HF"], few = '<span class="dim">too few seen</span>';
-    h += '<table class="mini wk"><tr><th>Level</th><th>Grid / seen area</th><th>Lines caught</th></tr>' +
+    var NAMES = ["gale", "storm", "HF"], few = '<span class="dim">too little seen to judge</span>';
+    h += '<table class="mini wk"><tr><th>Level</th><th>Best Wind area</th><th>Lines caught</th></tr>' +
       LEVELS.map(function (lv, i) {
-        var ok = S.enough[i], r = ratio(S.grid[i], S.obs[i]);
-        return "<tr><td>" + lv[0] + " kt</td><td>" + (ok ? "<b>" + r.toFixed(2) + "x</b><small>" + num(S.grid[i]) + " grid / " + num(S.obs[i]) + " seen</small>" : few + "<small>" + num(S.obs[i]) + " seen in " + plural(S.nmos_obs[i], "mosaic") + "</small>") + "</td>" +
+        var ok = S.enough[i], v = areaVerdict(S.obs[i], S.grid[i]);
+        return "<tr><td>" + lv[0] + " kt</td><td>" + (ok ? "<b>" + (v.k === "ok" ? "about right" : "drawn " + v.words) + "</b><small>" + num(S.grid[i]) + " Best Wind / " + num(S.obs[i]) + " seen</small>" : few + "<small>" + num(S.obs[i]) + " seen in " + plural(S.nmos_obs[i], "map") + "</small>") + "</td>" +
           "<td>" + (ok ? "<b>" + Math.round(100 * S.catch[i] / S.obs[i]) + "%</b><small>" + num(S.catch[i]) + " of " + num(S.obs[i]) + "</small>" : few) + "</td></tr>";
       }).join("") + "</table>";
-    h += '<p class="sumnote" style="margin-top:2px">Seen cells are 0.25&deg; cells with no rain flag that the satellite covered; the grid count is on those same cells. Over 1 means the grid has more area than was seen. Caught: share of the seen cells at the level that lie inside a warning line (gale: any line, storm: storm or HF line, HF: HF line).</p>';
-    h += '<h4>Of the line cells ' + sat + " saw, how many reached the level</h4><ul class=\"wkfa\">" + LEVELS.map(function (lv, i) {
-      return "<li>" + (S.enough_line[i] ? "Of " + NAMES[i] + "-line cells " + sat + " saw, <b>" + pct(S.catch[i] / S.line[i]) + "%</b> had " + lv[0] + " kt <small>(" + num(S.catch[i]) + " of " + num(S.line[i]) + ")</small>"
-        : "<span class=\"dim\">" + NAMES[i] + " line: too few cells seen (" + num(S.line[i]) + " in " + plural(S.nmos_line[i], "mosaic") + ")</span>") + "</li>";
+    h += '<p class="sumnote">Cells are 0.25&deg; cells without a rain flag that ASCAT saw; the Best Wind count is on those same cells. Lines caught: the share of the seen cells at the level that lie inside a warning line (gale: any line, storm: storm or HF line, HF: HF line).</p>';
+    h += "<h4>Of the line cells ASCAT saw, how many reached the level</h4><ul class=\"wkfa\">" + LEVELS.map(function (lv, i) {
+      return "<li>" + (S.enough_line[i] ? "Of " + NAMES[i] + "-line cells ASCAT saw, <b>" + pct(S.catch[i] / S.line[i]) + "%</b> had " + lv[0] + " kt <small>(" + num(S.catch[i]) + " of " + num(S.line[i]) + ")</small>"
+        : "<span class=\"dim\">" + NAMES[i] + " line: too little seen (" + num(S.line[i]) + " cells in " + plural(S.nmos_line[i], "map") + ")</span>") + "</li>";
     }).join("") + "</ul>";
-    h += "<h4>Worst seen: the week's highest " + sat + " winds, one per mosaic</h4>";
+    h += "<h4>Strongest winds seen: one per map, top 8 of the week</h4>";
     if (!S.worst.length) h += '<p class="sumnote">None.</p>';
     else {
-      h += '<div class="wlist" role="list"><div class="whead" aria-hidden="true"><span>Mosaic</span><span>Seen</span><span>Grid there</span><span>Line</span></div>' +
+      h += '<div class="wlist" role="list"><div class="whead" aria-hidden="true"><span>Map</span><span>Seen</span><span>Best Wind there</span><span>Line</span></div>' +
         S.worst.map(function (w, i) {
-          return '<button type="button" class="wrow" role="listitem" data-i="' + i + '" title="Show this mosaic and zoom to the peak cell"><span class="t">' + dayHour(w.valid) + "</span><span><b>" + w.obs + " kt</b></span><span>" + w.grid + " <small>(max " + Math.round(w.grid_max) + ")</small></span><span>" + lineName(w.warn) + "</span></button>";
-        }).join("") + '</div><p class="sumnote">Seen: the highest wind in the mosaic. Grid there: Best Wind at that cell for its pass, and in brackets the highest grid over all seen cells. Click a row to jump to the mosaic.</p>';
+          return '<button type="button" class="wrow" role="listitem" data-i="' + i + '" title="Show this map and zoom to the strongest cell"><span class="t">' + dayHour(w.valid) + "</span><span><b>" + w.obs + " kt</b></span><span>" + w.grid + " <small>(max " + Math.round(w.grid_max) + ")</small></span><span>" + lineName(w.warn) + "</span></button>";
+        }).join("") + '</div><p class="sumnote">Best Wind there: the grid at that cell for its pass, and in brackets the highest grid over all seen cells. Click a row to open the map.</p>';
     }
     box.innerHTML = h;
     box.querySelectorAll(".wrow").forEach(function (b) {
       b.addEventListener("click", function () { var w = S.worst[+b.dataset.i]; chooseM(vKey(w.valid), w.idx); });
     });
   }
-  function renderStrip() {
-    var ms = basinMosaics(), box = $("strip");
-    var newest = (index.mosaics || []).reduce(function (a, m) { return m.valid > a ? m.valid : a; }, "");
-    if (!newest) { box.innerHTML = ""; return; }
-    var byV = {}; ms.forEach(function (m) { byV[m.valid] = m; });
-    var t0 = new Date(newest).getTime(), html = "";
-    for (var i = 13; i >= 0; i--) {
-      var t = new Date(t0 - i * 12 * 3600000), iso = t.toISOString().slice(0, 16) + "Z", m = byV[iso], cov = m ? mCoverage(m) : 0, d = t.getUTCHours() === 0;
-      html += '<button type="button" class="tick' + (d ? " day" : "") + '" data-v="' + vKey(iso) + '"' + (m ? "" : " disabled") + ' aria-current="' + (!!m && vKey(iso) === state.v) + '" title="' +
-        dayHour(iso) + (m ? ", " + pct(cov) + "% of the basin water seen" + (m.open ? " (still filling)" : "") : ", no pass") + '">' + (m ? '<i style="height:' + Math.max(2, Math.min(100, cov * 100)) + '%"></i>' : "") + "</button>";
-    }
-    box.innerHTML = html;
-    box.querySelectorAll(".tick").forEach(function (b) { b.addEventListener("click", function () { chooseM(b.dataset.v); }); });
-  }
   function renderStepper() {
     var ms = basinMosaics(), m = selectedM(), i = ms.indexOf(m);
-    $("tLabel").textContent = m ? validLabel(m.valid) : "—";
+    $("tLabel").innerHTML = m ? "<b>" + BASIN[state.basin].name + "</b> &middot; " + dayHour(m.valid) + (m.open ? ' <span class="badge">filling</span>' : "") : "&mdash;";
     $("tPrev").disabled = !m || i >= ms.length - 1;
     $("tNext").disabled = !m || i <= 0;
-    $("timeNote").textContent = ms.length ? ms.length + " times, last 7 days" : "";
     $("oscatBtn").setAttribute("aria-pressed", String(state.oscat));
+    $("windsBtn").setAttribute("aria-pressed", String(state.winds));
+    document.querySelectorAll("#levels button").forEach(function (b) { b.setAttribute("aria-pressed", String(+b.dataset.level === state.level)); });
     renderStrip();
   }
 
@@ -389,40 +549,60 @@
     document.querySelectorAll("#leads button").forEach(function (b) {
       var ok = !p || !!p.fc[b.dataset.lead];
       b.setAttribute("aria-pressed", String(b.dataset.lead === state.lead));
-      b.disabled = !ok;
-      b.title = ok ? b.title.replace(/ \(.*$/, "") : "Not available for this " + (state.tab === "mosaic" ? "time" : "pass") + " (+24 h and +48 h fill in over the two days after the page starts)";
+      b.disabled = !ok && b.dataset.lead !== state.lead;
+      b.title = ok ? b.title.replace(/ \(.*$/, "") : "Not available for this " + (state.tab === "mosaic" ? "map" : "pass") + " (the saved runs build up over the days)";
     });
+    $("leadLabel").textContent = state.tab === "mosaic" ? (state.lead === "latest" ? "Forecast: latest run" : "Forecast made " + leadShort(state.lead) + " earlier") : "Forecast compared";
   }
   function renderTop() {
     var p = selected(), m = selectedM();
-    document.querySelectorAll("#tabs button").forEach(function (b) { b.setAttribute("aria-selected", String(b.dataset.tab === state.tab)); });
     $("card").dataset.tab = state.tab;
     document.querySelectorAll("#basins button").forEach(function (b) { b.setAttribute("aria-checked", String(b.dataset.basin === state.basin)); });
     if (state.tab === "mosaic") {
       $("validEyebrow").textContent = "Valid";
       $("validTime").textContent = m ? dayHour(m.valid) : "—";
       $("validRel").textContent = m ? "passes " + winLabel(m.valid) + " · " + pct(mCoverage(m)) + "% seen" : "";
-      var n = basinMosaics().length;
-      $("cardTitle").textContent = BASIN[state.basin].name + " mosaic" + (n ? " · " + n + " mosaics in 7 days" : "");
+      $("cardTitle").textContent = "How did yesterday’s Best Wind forecast compare with ASCAT?";
       return;
     }
     $("validEyebrow").textContent = "Pass (mid)";
     $("validTime").textContent = p ? K.fmtValid(p.mid).replace(/:00 UTC$/, "") + ":" + K.pad(new Date(p.mid).getUTCMinutes()) + " UTC" : "—";
     $("validRel").textContent = p ? satShort(p.sat) + " · " + ago(p.mid) : "";
-    document.querySelectorAll("#basins button").forEach(function (b) { b.setAttribute("aria-checked", String(b.dataset.basin === state.basin)); });
     var ps = basinPasses();
-    $("cardTitle").textContent = BASIN[state.basin].name + " passes" + (ps.length ? " · " + ps.length + " in 7 days" : "");
+    $("cardTitle").textContent = "Single passes";
+    $("passTitle").textContent = BASIN[state.basin].name + (ps.length ? ", " + ps.length + " in 7 days" : "");
   }
   function renderLegend() {
-    var n = WIND.colors.length, top = 80;
-    $("legend").innerHTML = '<div class="bar">' + WIND.colors.map(function (c, i) { return '<span style="background:' + c + ';flex:' + ((WIND.stops[i + 1] || top) - WIND.stops[i]) + '"></span>'; }).join("") + "</div>" +
-      '<div class="labs">' + [0, 20, 34, 48, 64, 80].map(function (v) { return '<span style="left:' + (v / top * 100) + '%">' + v + "</span>"; }).join("") + "</div>" +
-      '<div class="keys"><span>Observed wind, kt (faded: rain flag)</span><span class="only-mosaic"><i style="border-top:1px solid rgba(255,255,255,.55)"></i>edge of what the satellites saw</span><span><i style="border-top:3px solid #fff"></i>Best Wind 34/48/64 kt, thin to thick</span>' +
-      '<span><i style="border-top:2px dashed ' + LEVELS[0][2] + '"></i>gale <i style="border-top:2px dashed ' + LEVELS[1][2] + '"></i>storm <i style="border-top:2px dashed ' + LEVELS[2][2] + '"></i>HF line</span></div>';
+    var box = $("legend"), T = state.level, nm = NAME[T], lv = LEVELS[LIDX[T]];
+    var windBar = function () {
+      var top = 80;
+      return '<div class="bar">' + WIND.colors.map(function (c, i) { return '<span style="background:' + c + ';flex:' + ((WIND.stops[i + 1] || top) - WIND.stops[i]) + '"></span>'; }).join("") + "</div>" +
+        '<div class="labs">' + [0, 20, 34, 48, 64, 80].map(function (v) { return '<span style="left:' + (v / top * 100) + '%">' + v + "</span>"; }).join("") + "</div>";
+    };
+    if (state.tab === "passes") {
+      box.innerHTML = windBar() + '<div class="keys"><span>Wind seen, kt (faded: rain flag)</span><span><i style="border-top:3px solid #fff"></i>Best Wind 34/48/64 kt, thin to thick</span>' +
+        '<span><i style="border-top:2px dashed ' + LEVELS[0][2] + '"></i>gale <i style="border-top:2px dashed ' + LEVELS[1][2] + '"></i>storm <i style="border-top:2px dashed ' + LEVELS[2][2] + '"></i>HF warning line</span></div>';
+      return;
+    }
+    var line = '<span><i class="ln"></i>' + cap1(nm) + " warning line</span>";
+    if (state.winds) {
+      box.innerHTML = windBar() + '<div class="keys"><span>ASCAT wind, kt (faded: rain flag)</span><span><i style="border-top:3px solid #fff"></i>Best Wind ' + T + ' kt</span>' + line.replace('class="ln"', 'class="ln" style="border-top-color:' + lv[2] + '"') + "</div>";
+      return;
+    }
+    box.innerHTML = '<ul class="lk">' +
+      '<li><i class="sq k-right"></i><b>Right</b> ASCAT and Best Wind both ' + T + ' kt or more</li>' +
+      '<li><i class="sq k-miss"></i><b>Missed</b> ASCAT ' + T + ' kt or more, Best Wind lower</li>' +
+      '<li><i class="sq k-much"></i><b>Too much</b> Best Wind ' + T + ' kt or more, ASCAT lower</li>' +
+      '<li><i class="sq k-below"></i>ASCAT saw it, below ' + T + ' kt</li>' +
+      "<li>" + line.replace(/^<span>|<\/span>$/g, "") + "</li>" +
+      '<li class="dim">No colour: ASCAT did not see it</li></ul>';
   }
   function renderAll() {
-    renderTop(); renderLeads();
-    if (state.tab === "mosaic") { renderStepper(); renderWeek(); renderMosaicDetail(); } else { renderList(); renderDetail(); renderSummary(); }
+    renderTop(); renderLeads(); renderLegend();
+    if (state.tab === "mosaic") {
+      renderStepper(); renderAnswer(); renderWeek(); renderMosaicDetail();
+      if (stripFor !== state.basin && index) { stripFor = state.basin; loadStripData(); }
+    } else { renderList(); renderDetail(); renderSummary(); }
   }
 
   // -------------------------------------------------------------- choosing
@@ -444,8 +624,8 @@
     if (j >= 0 && j < ms.length) chooseM(vKey(ms[j].valid));
   }
   function pickM() {   // the named time if this basin has it, else the newest
-    var ms = basinMosaics();
-    if (!selectedM()) state.v = ms.length ? vKey(ms[0].valid) : null;
+    var ms = basinMosaics(), closed = ms.filter(function (m) { return !m.open; });   // the newest finished map; the one still filling is a click away
+    if (!selectedM()) state.v = ms.length ? vKey((closed[0] || ms[0]).valid) : null;
   }
   function setTab(t) {
     if (t === state.tab) return;
@@ -471,7 +651,16 @@
   }
   function setOscat(on) {
     state.oscat = on; writeHash();
-    if (cur && cur.mosaic) { fillObs(); }
+    if (cur && cur.mosaic) { fillObs(); fillClass(); }
+    renderAll(); updateMap(false);
+  }
+  function setLevel(t) {
+    state.level = t; writeHash();
+    if (cur && cur.mosaic) fillClass();
+    renderAll(); updateMap(false);
+  }
+  function setWinds(on) {
+    state.winds = on; writeHash();
     renderAll(); updateMap(false);
   }
   function apply(fit) {
@@ -505,7 +694,7 @@
   }
 
   // ------------------------------------------------------------------ map
-  var paintVersion = 0, landRings = null, tileCanvas = null, colTab = null, colTabFlag = null;
+  var paintVersion = 0, landRings = null, tileCanvas = null, colTab = null, colTabFlag = null, clsTab = null;
   function hex(c) { return [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)]; }
   function makeTables() {
     var cols = WIND.colors.map(hex);
@@ -515,9 +704,11 @@
       colTab.set([cols[k][0], cols[k][1], cols[k][2], 235], b * 4);
       colTabFlag.set([cols[k][0], cols[k][1], cols[k][2], 70], b * 4);
     }
+    clsTab = new Uint8ClampedArray(5 * 4);   // right, missed, too much, seen below the level
+    clsTab.set([34, 197, 94, 240, 225, 29, 72, 245, 255, 166, 43, 235, 71, 85, 105, 110], 4);
   }
   function fieldTile(z, x, y) {
-    var d = new Uint8ClampedArray(TILE * TILE * 4), n = Math.pow(2, z), col = new Int32Array(TILE);
+    var d = new Uint8ClampedArray(TILE * TILE * 4), n = Math.pow(2, z), col = new Int32Array(TILE), byVerdict = state.tab === "mosaic" && !state.winds;
     for (var p = 0; p < TILE; p++) {
       var lon = ((x + (p + 0.5) / TILE) / n) * 360 - 180;
       col[p] = ((Math.round((lon + 180) / RES) % NX) + NX) % NX;
@@ -529,6 +720,7 @@
       var base = j * NX, o = q * TILE * 4;
       for (var r = 0; r < TILE; r++, o += 4) {
         var k = base + col[r], v = obsD[k];
+        if (byVerdict) { var cc = clsD[k]; if (cc) { var ct = cc * 4; d[o] = clsTab[ct]; d[o + 1] = clsTab[ct + 1]; d[o + 2] = clsTab[ct + 2]; d[o + 3] = clsTab[ct + 3]; } continue; }
         if (v === 255) continue;
         var t = v * 4, tab = flagD[k] ? colTabFlag : colTab;
         d[o] = tab[t]; d[o + 1] = tab[t + 1]; d[o + 2] = tab[t + 2]; d[o + 3] = tab[t + 3];
@@ -604,11 +796,12 @@
     var cells = cur && cur.mosaic ? cur.boxCells : undefined, known = cur && cur.mosaic ? function (k) { return gridD[k] !== 255; } : undefined;
     if (curHasLead()) {
       LEVELS.forEach(function (lv, i) {
-        best.push(feature(outline(function (k) { return gridD[k] !== 255 && gridD[k] >= lv[0]; }, cells, known), { thr: lv[0] }));
-        warn.push(feature(outline(function (k) { return warnD[k] !== 255 && (warnD[k] & lv[3]) !== 0; }, cells, known), { level: lv[1], color: lv[2] }));
+        if (cur.mosaic && lv[0] !== state.level) return;   // the mosaic draws the chosen level only
+        if (!cur.mosaic || state.winds) best.push(feature(outline(function (k) { return gridD[k] !== 255 && gridD[k] >= lv[0]; }, cells, known), { thr: lv[0] }));
+        warn.push(feature(outline(function (k) { return warnD[k] !== 255 && (warnD[k] & lv[3]) !== 0; }, cells, known), { level: lv[1], color: cur.mosaic && !state.winds ? "#ffffff" : lv[2] }));
       });
     }
-    if (cur && cur.mosaic && curHasLead()) {   // the edge of what the satellites saw, where unseen water lies beyond it
+    if (cur && cur.mosaic && state.winds && curHasLead()) {   // the edge of what the satellites saw, where unseen water lies beyond it
       edge.push(feature(outline(function (k) { return obsD[k] !== 255; }, cur.idx, function (k) { return gridD[k] !== 255; }), {}));
     }
     var sb = map.getSource("best"), sw = map.getSource("warn"), se = map.getSource("edge");
@@ -657,7 +850,7 @@
     }
   }
   function applyVisibility() {
-    var L = state.layers;
+    var L = state.tab === "mosaic" ? { scat: true, best: state.winds, warn: true } : state.layers;
     [["scat", L.scat], ["edge", L.scat], ["best-halo", L.best], ["best", L.best], ["warn-halo", L.warn], ["warn", L.warn]].forEach(function (a) {
       if (map.getLayer(a[0])) map.setLayoutProperty(a[0], "visibility", a[1] ? "visible" : "none");
     });
@@ -686,7 +879,7 @@
   function drawOverlay() {
     if (!ov || !map) return;
     ov.clear();
-    if (!cur || !state.layers.scat || map.getZoom() < 4.2) return;
+    if (!cur || !(state.tab === "mosaic" ? state.winds : state.layers.scat) || map.getZoom() < 4.2) return;
     var c = map.getCenter(), z = map.getZoom(), b = map.getBounds();
     var p0 = map.project([c.lng, c.lat]), p1 = map.project([c.lng + RES, c.lat]);
     var cellPx = Math.max(1, Math.abs(p1.x - p0.x)), step = Math.max(1, Math.ceil(30 / cellPx));
@@ -707,24 +900,28 @@
   }
 
   // --------------------------------------------------------------- readout
+  function insidePlain(w) { return w === 255 ? "" : (w & 4) ? "inside HF line" : (w & 2) ? "inside storm line" : (w & 1) ? "inside gale line" : "outside the warning lines"; }
+  function hoverLine(who, o, dirDeg, g, w) {   // "ASCAT 52 kt from 280 · Best Wind 44 kt · inside storm line"
+    var parts = [o == null ? "Not seen by ASCAT" : who + " <b>" + o + " kt</b> from " + ("00" + dirDeg).slice(-3), "Best Wind " + (g === 255 ? "none" : "<b>" + g + " kt</b>")];
+    var ins = insidePlain(w); if (ins) parts.push(ins);
+    return '<div class="h">' + parts.join(" &middot; ") + "</div>";
+  }
+  function verdictNote(o, g) {   // the chosen level, only where the cell matters to it
+    var T = state.level, nm = NAME[T] + " (" + T + " kt)";
+    if (g === 255) return "";
+    if (o >= T) return g >= T ? '<div class="note-line v-right">Right: both ' + T + ' kt or more</div>' : '<div class="note-line v-miss">Missed ' + nm + ": Best Wind is " + g + " kt</div>";
+    return g >= T ? '<div class="note-line v-much">Too much ' + nm + ": ASCAT saw " + o + " kt</div>" : "";
+  }
   function hoverAt(pt, ll) {
     var box = $("readout");
-    if (!cur || !state.layers.scat && !state.layers.best && !state.layers.warn || !map.transform.isPointOnMapSurface(pt)) { box.hidden = true; return; }
+    if (!cur || state.tab === "passes" && !state.layers.scat && !state.layers.best && !state.layers.warn || !map.transform.isPointOnMapSurface(pt)) { box.hidden = true; return; }
     var lon = K.wrapLon(ll.lng), iy = Math.round((90 - ll.lat) / RES), ix = ((Math.round((lon + 180) / RES) % NX) + NX) % NX;
     if (iy < 0 || iy >= NY) { box.hidden = true; return; }
-    var k = iy * NX + ix;
-    if (cur.mosaic) { hoverMosaic(box, pt, k, iy, ix); return; }
+    var k = iy * NX + ix, here = '<div class="where">' + K.latText(90 - iy * RES, 2) + " " + K.lonText(ix * RES - 180, 2) + "</div>";
+    if (cur.mosaic) { hoverMosaic(box, pt, k, here); return; }
     if (obsD[k] === 255) { box.hidden = true; return; }
-    var p = selected(), g = gridD[k], w = warnD[k], dirDeg = dirD[k] * 2;
-    var ins = inside(w);
-    var h = '<div class="h"><b>' + obsD[k] + " kt</b> from " + ("00" + dirDeg).slice(-3) + "&deg;</div><table>" +
-      "<tr><td>" + K.latText(90 - iy * RES, 2) + " " + K.lonText(ix * RES - 180, 2) + "</td><td>" + satShort(p.sat) + "</td></tr>" +
-      "<tr><td>Observed (cell mean)</td><td>" + obsD[k] + " kt, " + dirDeg + "&deg;</td></tr>" +
-      "<tr class=\"sep\"><td>Best Wind, " + leadName(state.lead) + "</td><td>" + (g === 255 ? "none" : g + " kt") + "</td></tr>" +
-      (g !== 255 ? "<tr><td>Grid minus observed</td><td>" + (g - obsD[k] > 0 ? "+" : "") + (g - obsD[k]) + " kt</td></tr>" : "") +
-      (ins ? "<tr><td>Inside</td><td>" + ins + "</td></tr>" : "") + "</table>" +
-      (flagD[k] ? '<div class="note-line">Rain flag: likely rain-affected, left out of the scores</div>' : "");
-    place(box, h, pt);
+    var p = selected();
+    place(box, hoverLine(satShort(p.sat), obsD[k], dirD[k] * 2, gridD[k], warnD[k]) + here + (flagD[k] ? '<div class="note-line">Rain flag: likely rain-affected, left out of the scores</div>' : ""), pt);
   }
   function place(box, h, pt) {
     box.innerHTML = h; box.hidden = false;
@@ -733,26 +930,18 @@
     box.style.top = Math.max(8, Math.min(pt.y + 16, H - bh - 8)) + "px";
     if (pt.y + 16 + bh > H - 8) box.style.top = Math.max(8, pt.y - bh - 12) + "px";
   }
-  function inside(w) { return w === 255 ? null : (w & 4) ? "HF warning line" : (w & 2) ? "Storm warning line" : (w & 1) ? "Gale warning line" : "outside the warning lines"; }
-  function hoverMosaic(box, pt, k, iy, ix) {
+  function hoverMosaic(box, pt, k, here) {
     var seen = obsD[k] !== 255, g = gridD[k], w = warnD[k], L = state.lead;
     if (!seen && g === 255) { box.hidden = true; return; }
-    var m = cur.entry, pp = seen ? cur.members[passD[k]] : null, here = K.latText(90 - iy * RES, 2) + " " + K.lonText(ix * RES - 180, 2);
-    var i = posD[k], cg = seen && m.fc[L] ? cur.cell[L].grid[i] : 255, cw = seen && m.fc[L] ? cur.cell[L].warn[i] : 255;
-    var fv = pp && pp.fc && pp.fc[L] ? pp.fc[L].valid : null, ins = inside(seen ? cw : w);
-    var h = '<div class="h">' + (seen ? "<b>" + obsD[k] + " kt</b> from " + ("00" + dirD[k] * 2).slice(-3) + "&deg;" : "Not seen by a satellite") + "</div><table>" +
-      "<tr><td>" + here + "</td><td>" + (pp ? satShort(pp.sat) : "") + "</td></tr>" +
-      (seen ? "<tr><td>Observed (cell mean)</td><td>" + obsD[k] + " kt, " + dirD[k] * 2 + "&deg;</td></tr>" : "") +
-      (pp ? "<tr><td>Pass</td><td>" + satShort(pp.sat) + " " + hhmm(new Date(pp.mid)) + ", " + offset(pp, m.valid) + "</td></tr>" : "");
+    var m = cur.entry, pp = seen ? cur.members[passD[k]] : null, h;
     if (seen) {
-      h += '<tr class="sep"><td>Best Wind, ' + leadName(L) + (fv ? ", valid " + K.pad(new Date(fv).getUTCHours()) + "Z" : "") + "</td><td>" + (cg === 255 ? "none for this pass" : cg + " kt") + "</td></tr>" +
-        (cg !== 255 ? "<tr><td>Grid minus observed</td><td>" + (cg - obsD[k] > 0 ? "+" : "") + (cg - obsD[k]) + " kt</td></tr>" : "") +
-        (ins ? "<tr><td>Inside (that forecast)</td><td>" + ins + "</td></tr>" : "") +
-        (g !== 255 && g !== cg ? "<tr><td>Best Wind drawn, " + hrZ(m.valid, 0) + "Z</td><td>" + g + " kt</td></tr>" : "");
-    } else {
-      h += '<tr class="sep"><td>Best Wind, ' + leadName(L) + ", " + hrZ(m.valid, 0) + "Z</td><td>" + (g === 255 ? "none" : g + " kt") + "</td></tr>" + (ins ? "<tr><td>Inside</td><td>" + ins + "</td></tr>" : "");
-    }
-    h += "</table>" + (seen && flagD[k] ? '<div class="note-line">Rain flag: likely rain-affected, left out of the scores</div>' : "");
+      var i = posD[k], cg = m.fc[L] ? cur.cell[L].grid[i] : 255, cw = m.fc[L] ? cur.cell[L].warn[i] : 255, asc = pp && isAscat(pp);
+      h = hoverLine(pp && !isAscat(pp) ? "OSCAT-3" : "ASCAT", obsD[k], dirD[k] * 2, cg, cw) + here;
+      if (asc && !flagD[k]) h += verdictNote(obsD[k], cg);
+      if (pp) h += '<div class="note-line">' + satShort(pp.sat) + " " + hhmm(new Date(pp.mid)) + (g !== 255 && g !== cg ? " &middot; Best Wind drawn for " + hrZ(m.valid, 0) + "Z: " + g + " kt" : "") + "</div>";
+      if (!asc) h += '<div class="note-line">OSCAT-3 is never scored</div>';
+      else if (flagD[k]) h += '<div class="note-line">Rain flag: likely rain-affected, left out of the scores</div>';
+    } else h = hoverLine("", null, 0, g, w) + here;
     place(box, h, pt);
   }
 
@@ -805,14 +994,17 @@
         if (mapReady) applyVisibility();
       });
     });
-    document.querySelectorAll("#tabs button").forEach(function (b) { b.addEventListener("click", function () { if (index) setTab(b.dataset.tab); }); });
+    document.querySelectorAll("#levels button").forEach(function (b) { b.addEventListener("click", function () { setLevel(+b.dataset.level); }); });
+    $("windsBtn").addEventListener("click", function () { setWinds(!state.winds); });
+    $("passesBtn").addEventListener("click", function () { if (index) setTab("passes"); });
+    $("backBtn").addEventListener("click", function () { if (index) setTab("mosaic"); });
     $("tPrev").addEventListener("click", function () { stepM(-1); });
     $("tNext").addEventListener("click", function () { stepM(1); });
     $("oscatBtn").addEventListener("click", function () { setOscat(!state.oscat); });
     $("older").addEventListener("click", function () { state.older = !state.older; writeHash(); renderList(); });
     $("cardToggle").addEventListener("click", function () {
       var closed = $("card").classList.toggle("closed");
-      this.textContent = closed ? "Show passes" : "Hide"; this.setAttribute("aria-expanded", String(!closed));
+      this.textContent = closed ? "Show" : "Hide"; this.setAttribute("aria-expanded", String(!closed));
     });
     window.addEventListener("hashchange", function () { if (!index) return; readHash(); var sel = selected(); if (!sel) { var ps = basinPasses(); state.pass = ps.length ? ps[0].id : null; } pickM(); apply(true); });
     window.addEventListener("keydown", function (e) {
@@ -847,9 +1039,10 @@
     }, function () {
       index = { passes: [], mosaics: [] };
       $("cardTitle").textContent = "No scatterometer data yet";
+      $("answer").innerHTML = '<p class="a-line">No ASCAT data yet. Check back after the next hour.</p>';
       $("mdetail").innerHTML = '<p class="empty">The mosaics are written by an hourly job that starts after the first STAR files are processed. Nothing is published yet; check back after the next hour.</p>';
       $("passes").innerHTML = '<p class="empty">The pass list is written by an hourly job that starts after the first STAR files are processed. Nothing is published yet; check back after the next hour.</p>';
-      $("summaryBox").hidden = true; $("weekBox").hidden = true;
+      $("summaryBox").hidden = true; $("detailsBox").hidden = true; $("moreBox").hidden = true;
     });
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
