@@ -5,7 +5,8 @@
 # +24 to +120 h, each hour from the same-hour runs.
 #
 # Daily, it scores the day two days back (so the RSS ASCAT day is complete)
-# plus any of the 7 days before it that are missing, per (basin, hour). By hand, give a start and
+# plus any of the 7 days before it that are missing or have no ASCAT rows yet
+# (RSS can post days late), per (basin, hour). By hand, give a start and
 # end date to backfill: the days are split into chunks scored in parallel
 # jobs (AWS holds every page model from March 2025; the AIFS ensemble from
 # August 2025).
@@ -79,7 +80,12 @@ jobs:
           have = set()
           if os.path.exists("/tmp/scores.csv.gz"):
               with gzip.open("/tmp/scores.csv.gz", "rt") as f:
-                  have = {(r["valid"], r["basin"], int(r["hour"]) if r.get("hour") else old[r["basin"]]) for r in csv.DictReader(f)}
+                  have = set()
+                  for r in csv.DictReader(f):
+                      # a day counts as done only once it has ASCAT rows: RSS can post days late
+                      # (outage 12 Oct-10 Nov 2026, lag ~5 d after), and those days are scored again
+                      if r.get("referee") == "ascat":
+                          have.add((r["valid"], r["basin"], int(r["hour"]) if r.get("hour") else old[r["basin"]]))
           if os.environ.get("START"):
               d0 = dt.datetime.strptime(os.environ["START"], "%Y%m%d").date()
               days = [d0 + dt.timedelta(days=i) for i in range((end - d0).days + 1)]
