@@ -7,7 +7,9 @@
 # yesterday, downloads only the passes not already handled (the previous state is the
 # branch itself), reads the newest marine wind run from marine-wind-live and keeps its Best
 # Wind and warning areas (steps 6-54, two basin boxes) for 4 days so each pass is scored
-# against the run the desk had and the runs 24 and 48 h earlier. If no pass and no marine
+# against the run the desk had and the runs 24 and 48 h earlier. It also stitches the passes
+# within +-3 h of each synoptic time (00/06/12/18Z) of the last 7 days into one mosaic per
+# basin (data/mosaic/), with the Best Wind and warning areas of the whole basin and one score. If no pass and no marine
 # wind run is new, the run stops without pushing. Otherwise data/ and cache/ are the single
 # commit of the orphan branch scatterometer-data, force-pushed (about 1-2 MB for the week),
 # and Publish public site serves data/ at /scatterometer/data/. Main is never touched.

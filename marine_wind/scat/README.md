@@ -2,7 +2,12 @@
 
 Builds the data for the scatterometer page (`/scatterometer/`, `marine_wind/scatterometer_page/`): the latest NOAA STAR
 passes (OSCAT-3 and Metop-B/C coastal ultra-high-resolution ASCAT) over the two OPC basins, put on the 0.25 degree grid
-beside the marine wind page's Best Wind and warning lines for the same time, with per-pass scores.
+beside the marine wind page's Best Wind and warning lines for the same time, with per-pass scores. The page opens on a
+mosaic: for each synoptic time (00/06/12/18Z) of the last 7 days and each basin, the passes within +-3 h stitched into
+one map (where swaths overlap ASCAT wins over OSCAT-3, then the pass nearest the time), with Best Wind and warning lines over the whole basin and
+one score for the observed cells; `data/mosaic/<basin>-<YYYYMMDDHH>.bin`, rebuilt when its passes change or a lead turns up.
+Format and lead rules: the docstring of `build.py`. ASCAT wins every overlap with OSCAT-3, so the ASCAT-only scores
+(`score_ascat`) see every ASCAT cell in the window.
 
     python3 build.py --live DIR --state DIR --out DIR [--days 1] [--workers 5] [--changed-file F]
     python3 test_build.py                      # offline
