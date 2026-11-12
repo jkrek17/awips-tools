@@ -1,9 +1,11 @@
 # Data for the scatterometer page (/scatterometer/, marine_wind/scat/build.py): the latest
 # NOAA STAR scatterometer passes (OSCAT-3, Metop-B and -C coastal ultra-high-resolution
-# ASCAT) over the two OPC basins, gridded at 0.25 degree, with the marine wind page's Best
-# Wind and warning lines for the same time and per-pass scores.
+# ASCAT) and Remote Sensing Systems (RSS) open-ocean ASCAT over the two OPC basins, gridded
+# at 0.25 degree, with the marine wind page's Best Wind and warning lines for the same time
+# and per-pass scores.
 #
-# Hourly at :50 (STAR posts passes 3-4 h after they are observed): lists today and
+# Hourly at :50 (STAR posts passes 3-4 h after they are observed) and after every "Marine
+# wind data" run (the cron alone has not fired on schedule): lists today and
 # yesterday, downloads only the passes not already handled (the previous state is the
 # branch itself), reads the newest marine wind run from marine-wind-live and keeps its Best
 # Wind and warning areas (steps 6-54, two basin boxes) for 4 days so each pass is scored
@@ -19,6 +21,11 @@
 # first run fills in over a few hours), and passes already published get those leads
 # filled in later.
 #
+# RSS ASCAT is posted about 2-5 days after the day ends, one file per satellite and day
+# (1-3 MB gzipped, at most about 20 asked for per run, a day not posted yet at most once an
+# hour); a day is used once both Metop-B and -C are there (or it is 7 days old) and the
+# mosaics of its window are rebuilt.
+#
 # By hand (Actions > Scatterometer data > Run workflow): `days` lists that many days back
 # (0-8) to fill a gap; the server keeps about a month.
 
@@ -27,6 +34,9 @@ name: Scatterometer data
 on:
   schedule:
     - cron: '50 * * * *'
+  workflow_run:
+    workflows: ['Marine wind data']
+    types: [completed]
   workflow_dispatch:
     inputs:
       days:
@@ -44,6 +54,8 @@ concurrency:
 
 jobs:
   build:
+    # after a marine wind run, only when that run succeeded (it is the run that moves marine-wind-live)
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 50
     steps:

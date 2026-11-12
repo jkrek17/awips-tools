@@ -364,7 +364,7 @@ def test_mosaic_bin_round_trip_and_ascat_only_score():
         wb[0, 0] = False                                   # one cell of the box is land
         blob, ent = b.build_mosaic("natl", v, [a, o], b.pick_leads(cycles, v), fc, wb)
         assert ent["passes"] == ["asc", "osc"] and ent["n"] == 5 and ent["flagged"] == 1 and ent["obs_max"] == 52.0
-        assert ent["sats"] == {"ASCAT": 3, "OSCAT-3": 2} and ent["water"] == int(wb.sum())
+        assert ent["sats"] == {"ASCAT": 3, "OSCAT-3": 2, "RSS": 0} and ent["water"] == int(wb.sum())
         s, sa = ent["score"]["f24"], ent["score_ascat"]["f24"]
         assert s["obs"] == [3, 2, 0] and s["grid"] == [4, 0, 0] and s["catch"] == [3, 0, 0]   # unflagged 50, 36, 30, 52 kt; grid 40, gale line only
         assert sa["obs"] == [2, 1, 0] and sa["grid"] == [2, 0, 0] and sa["obs_max"] == 50.0 and sa["grid_max"] == 40.0 and sa["catch"] == [2, 0, 0]
@@ -414,6 +414,140 @@ def test_summary_sums_gate_and_worst_order():
     # the tie goes to the newer mosaic
     tie = b.summarize([_mos("natl", "2026-11-1%dT00:00Z" % k, 100, [1, 1, 1], [1, 1, 1], [1, 1, 1], [1, 1, 1], 50) for k in range(3)])
     assert [w["valid"][:10] for w in tie["natl"]["f24"]["ascat"]["worst"]] == ["2026-11-12", "2026-11-11", "2026-11-10"]
+
+
+# ---- RSS ASCAT ----
+
+def _rss_cells(lat0, lon0, n, t_min, node, rain=0, spd=20.0, deg=270.0):
+    """An n x n block of RSS cells (centres at x.125) from (lat0, lon0) northward and eastward, lon 0..360 as served."""
+    la, lo = np.meshgrid(lat0 + 0.25 * np.arange(n), lon0 + 0.25 * np.arange(n), indexing="ij")
+    k = la.size
+    return dict(lat=la.ravel().astype(np.float32), lon=(((lo.ravel() + 180) % 360) - 180).astype(np.float32),
+                spd_kt=np.full(k, spd, np.float32), dir_deg=np.full(k, deg, np.float32), t_min=np.full(k, t_min, np.int16),
+                rain=np.full(k, rain, np.uint8), node=np.full(k, node, np.uint8))
+
+
+def _cat(*parts):
+    return {k: np.concatenate([p[k] for p in parts]) for k in parts[0]}
+
+
+def test_rss_grid_mapping_is_one_to_one_northwest():
+    c = _rss_cells(50.125, -30.125, 4, 0, 0)
+    pts = b.rss_points(c)
+    idx, spd, d, flag = b.grid_points(pts)
+    assert idx.size == 16 and np.unique(idx).size == 16                      # no page cell gets two RSS cells, none lost
+    # the RSS cell centred 50.125N 30.125W covers 50.0-50.25N, 30.25-30.0W: it goes to the page cell centred on its
+    # north-west corner, 50.25N 30.25W (iy = (90 - 50.25) * 4 = 159, ix = (-30.25 + 180) * 4 = 599); the block's far
+    # corner, centred 50.875N 29.375W, goes to 51.0N 29.5W (iy 156, ix 602)
+    assert idx[0] == 156 * 1440 + 599 and idx[-1] == 159 * 1440 + 602
+    assert np.allclose(spd, 20) and np.allclose(d, 270, atol=1e-3) and flag.sum() == 0   # direction FROM the west survives u, v
+    # the lon 0..360 seam: RSS 359.875 (= -0.125) goes to -0.25 (ix 719), 0.125 to 0.0 (ix 720)
+    s = b.grid_points(b.rss_points(_cat(_rss_cells(40.125, 359.875, 1, 0, 0), _rss_cells(40.125, 0.125, 1, 0, 0))))[0]
+    iy = int(round((90 - 40.25) * 4)) * 1440
+    assert s.tolist() == [iy + 719, iy + 720]
+    # rain bit -> flag
+    assert b.grid_points(b.rss_points(_rss_cells(40.125, 10.125, 2, 0, 0, rain=1)))[3].tolist() == [1] * 4
+
+
+def _water():
+    return np.ones((b.NY, b.NX), bool), {k: b.box_mask(k) for k in b.BOXES}
+
+
+def test_rss_pseudo_passes_split_by_node_synoptic_hour_basin():
+    water, inbox = _water()
+    day = D(2026, 11, 7)
+    c = _cat(_rss_cells(40.125, -50.125, 20, 100, 0),            # 01:40 asc, natl -> synoptic 00Z
+             _rss_cells(40.125 + 5, -50.125, 20, 170, 0),        # 02:50 asc: still 00Z, same pass as above
+             _rss_cells(40.125, -50.125 + 6, 20, 190, 0),        # 03:10 asc: 06Z
+             _rss_cells(40.125, -50.125 + 12, 20, 100, 1),       # 01:40 desc, natl: 00Z, its own pass
+             _rss_cells(40.125, 160.125, 20, 100, 0),            # 01:40 asc, npac: its own pass (another basin)
+             _rss_cells(40.125, -50.125 + 18, 20, 1430, 1),      # 23:50 desc: 00Z of the next day
+             _rss_cells(40.125, -20.125, 5, 700, 0),             # 25 cells: under MIN_CELLS, dropped
+             _rss_cells(10.125, -50.125, 20, 700, 0))            # south of 15N and of the box: not here at all
+    ps = b.rss_passes("b", day, c, water, inbox)
+    got = sorted((p["prefix"], p["basin"], p["start"].strftime("%d %H:%M"), p["end"].strftime("%d %H:%M"), p["mid"].strftime("%H:%M")) for p in ps)
+    assert got == [("rss_metopb_AS", "natl", "07 01:40", "07 02:50", "02:15"),     # mean of 400 cells at 100 and 400 at 170
+                   ("rss_metopb_AS", "natl", "07 03:10", "07 03:10", "03:10"),
+                   ("rss_metopb_AS", "npac", "07 01:40", "07 01:40", "01:40"),
+                   ("rss_metopb_DS", "natl", "07 01:40", "07 01:40", "01:40"),
+                   ("rss_metopb_DS", "natl", "07 23:50", "07 23:50", "23:50")]
+    p = next(p for p in ps if p["start"] == D(2026, 11, 7, 1, 40) and p["prefix"].endswith("AS") and p["basin"] == "natl")
+    assert p["id"] == "20261107T0140-rss_metopb_AS" and p["files"] == [] and p["pts"]["lat"].size == 800
+    assert b.SAT[p["prefix"][:-3]] == "RSS Metop-B" and b.SAT["rss_metopc"] == "RSS Metop-C"
+    # land is left out: a water mask with the whole block dry leaves no pass
+    assert b.rss_passes("c", day, c, np.zeros((b.NY, b.NX), bool), inbox) == []
+    # process_pass grids a pseudo-pass for its own basin only
+    res = b.process_pass(p, water, inbox)
+    assert list(res) == ["natl"] and res["natl"][0].size == 800 and abs(res["natl"][1][0] - 20) < 1e-4
+
+
+def test_overlap_priority_rss_star_oscat():
+    v = D(2026, 11, 12, 12, 0)
+    star_near = (_entry("star", "Metop-B", "2026-11-12T12:00Z"), _unp([100, 101, 102], [10, 11, 12]))
+    osc_near = (_entry("osc", "OSCAT-3", "2026-11-12T12:00Z"), _unp([100, 101, 102, 103], [20, 21, 22, 23]))
+    rss_far = (_entry("rss", "RSS Metop-C", "2026-11-12T07:00Z"), _unp([101, 102, 103, 104], [30, 31, 32, 33]))
+    members = sorted([star_near, osc_near, rss_far], key=lambda m: m[0]["mid"])      # in mosaic (mid) order
+    idx, obs, dr, fl, pi, pos = b.stitch(v, members)
+    names = [members[i][0]["id"] for i in pi]
+    # 100: STAR over OSCAT-3 although both are at V; 101-102: RSS over both although 5 h away; 103: RSS over OSCAT-3
+    assert idx.tolist() == [100, 101, 102, 103, 104] and obs.tolist() == [10, 30, 31, 32, 33]
+    assert names == ["star", "rss", "rss", "rss", "rss"]
+    assert b.is_ascat("RSS Metop-B") and b.is_ascat("Metop-C") and not b.is_ascat("OSCAT-3") and b.is_rss("RSS Metop-C") and not b.is_rss("Metop-C")
+    assert [b.source_rank(x) for x in ("RSS Metop-B", "Metop-B", "OSCAT-3")] == [2, 1, 0]
+    # a window gains RSS cells -> its pass list differs, so the mosaic is built again; sats counts them
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        cycles = b.load_cycles(_cache_with(tmp, [("2026111112", 24)]))
+        wb = b.crop_box(np.ones((721, 1440), bool) & b.box_mask("natl"), "natl")
+        iy = (90 - 50) * 1440 + (-30 + 180) * 4
+        a = (_entry("star", "Metop-B", "2026-11-12T11:00Z"), _unp([iy, iy + 1], [50, 36]))
+        r = (_entry("rss", "RSS Metop-B", "2026-11-12T12:00Z"), _unp([iy + 1, iy + 2, iy + 3], [40, 41, 42]))
+        ent = b.build_mosaic("natl", v, [a, r], b.pick_leads(cycles, v), b.Forecasts(cycles), wb)[1]
+        assert ent["sats"] == {"ASCAT": 4, "OSCAT-3": 0, "RSS": 3} and ent["n"] == 4
+    ms = [_mos("natl", "2026-11-1%dT00:00Z" % k, 100, [1, 1, 1], [1, 1, 1], [1, 1, 1], [1, 1, 1], 50) for k in range(3)]
+    ms[0]["sats"]["RSS"] = 60
+    assert b.summarize(ms)["natl"]["f24"]["ascat"]["with_rss"] == 1
+
+
+def test_rss_day_done_logic_and_retry():
+    water, inbox = _water()
+    now = D(2026, 11, 12, 15, 0)
+    assert [d.strftime("%m%d") for d in b.rss_days(now)] == ["1105", "1106", "1107", "1108", "1109", "1110", "1111", "1112"]
+    assert b.rss_days(D(2026, 11, 20, 0, 0)) == [D(2026, 11, 13 + k) for k in range(8)]      # 10 days old at most
+    assert b.rss_ready("bc", D(2026, 11, 10), now) and not b.rss_ready("b", D(2026, 11, 10), now) and not b.rss_ready("", D(2026, 11, 1), now)
+    assert b.rss_ready("c", D(2026, 11, 5), now) and not b.rss_ready("c", D(2026, 11, 6), now)       # 5 Nov 00Z is 7.6 days old, 6 Nov 6.6
+
+    posted = {}
+    calls = []
+
+    def fetch(s, d):
+        calls.append((s, d.strftime("%m%d")))
+        return posted.get((s, d.strftime("%m%d")))
+    blk = {"b": _rss_cells(40.125, -50.125, 20, 100, 0), "c": _rss_cells(40.125, -50.125, 20, 700, 1)}
+    late = _rss_cells(40.125, -50.125, 20, 1300, 0)                  # 21:40: inside the window on 5 Nov (the cut is 15:00)
+    early = _rss_cells(40.125, -50.125, 20, 100, 0)                  # 01:40 on 5 Nov: before the cut, no pass kept
+    posted.update({("b", "1107"): blk["b"], ("c", "1107"): blk["c"], ("b", "1108"): blk["b"], ("b", "1105"): _cat(late, early)})
+    rs = {}
+    new = b.fetch_rss(now, rs, water, inbox, fetch)
+    # 7 Nov: both posted -> done, 2 pseudo-passes; 8 Nov: one satellite, 4 days old -> not used, not done; 5 Nov: only B but 7+ days old -> used
+    assert rs["20261107"]["done"] and rs["20261107"]["sats"] == "bc" and rs["20261105"]["done"] and rs["20261105"]["sats"] == "b"
+    assert not rs["20261108"]["done"] and rs["20261108"]["sats"] == "b" and not rs["20261109"]["done"] and rs["20261109"]["sats"] == ""
+    assert sorted(p["id"][:8] for p in new) == ["20261105", "20261107", "20261107"] and len(calls) == 16
+    # within the hour nothing is asked again; done days never are; an hour on, the open days are
+    calls.clear()
+    assert b.fetch_rss(now + dt.timedelta(minutes=30), rs, water, inbox, fetch) == [] and calls == []
+    posted[("c", "1108")] = blk["c"]
+    new = b.fetch_rss(now + dt.timedelta(minutes=56), rs, water, inbox, fetch)
+    assert len(calls) == 12 and [p["id"][:8] for p in new] == ["20261108", "20261108"] and rs["20261108"]["done"]
+    # a network failure leaves the day open
+    def boom(s, d):
+        raise RuntimeError("down")
+    rs2 = {}
+    assert b.fetch_rss(now, rs2, water, inbox, boom) == [] and not any(v["done"] for v in rs2.values())
+    # days older than 10 days are given up, and old keys are dropped
+    rs3 = {"20261001": dict(done=True, sats="bc", tried="2026-10-02T00:00Z"), "20261111": dict(done=True, sats="bc", tried="2026-11-12T00:00Z")}
+    b.fetch_rss(now, rs3, water, inbox, lambda s, d: None)
+    assert "20261001" not in rs3 and "20261111" in rs3
 
 
 if __name__ == "__main__":

@@ -19,6 +19,12 @@ north-up, lon 0..360, float32.
     nwp.get(url, rng) / nwp.exists(url) / nwp.decode(blob, crop) / nwp.sources.gfs(...)
     from nwp import star                                         # NOAA STAR scatterometer passes (OSCAT-3, Metop-B/C ASCAT)
     star.passes(day)  -> [(prefix, url, start)];  star.points(url) -> {lat, lon (-180..180), u, v, spd (kt), q}
+    from nwp import rss_ascat                                    # Remote Sensing Systems ASCAT, daily 0.25 deg, full swaths
+    rss_ascat.day("b", date) -> {lat, lon (-180..180), spd_kt, dir_deg (from), t_min (after 00 UTC), rain, node} or None (404)
+
+RSS ASCAT (`rss_ascat.day(sat, date)`, sat `b` or `c`) is the open-ocean ASCAT that STAR's coastal product lacks: one
+1-3 MB file per satellite and UTC day, posted about 2 days late (lately about 5); cell centres sit at x.125 degrees. Winds are
+RSS's equivalent-neutral 10 m wind in knots, used as STAR winds are (no conversion). Format: the module docstring.
 
 `crop=(IY, IX)` is applied as `v[IY, IX].copy()`; without it the full grid is returned.
 `get` returns None on 403/404, retries S3 503 quickly, backs off otherwise, and raises
