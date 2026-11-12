@@ -103,3 +103,26 @@ table.mini small { display: block; color: var(--text-3); font-size: 10px; }
   .tabs { padding: 0 12px; }
   .strip { height: 40px; }
 }
+
+/* 7-day summary (mosaic tab) */
+.week { margin-top: 12px; padding: 8px 10px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-raised); }
+.week summary { cursor: pointer; font-weight: 700; font-size: 12.5px; color: var(--text); }
+.week summary span { font-weight: 600; font-size: 11.5px; color: var(--text-3); margin-left: 6px; }
+.week h4 { font-size: 11px; color: var(--text-2); margin: 10px 0 4px; font-weight: 600; }
+.week .sumnote { font-size: 11.5px; line-height: 1.45; color: var(--text-2); margin: 4px 0 0; }
+.week table.wk td { vertical-align: top; }
+.week table.wk td b { color: var(--text); font-weight: 700; }
+.week .dim { color: var(--text-3); font-family: var(--font); }
+.wkfa { list-style: none; margin: 0; padding: 0; font-size: 12px; line-height: 1.5; color: var(--text-2); }
+.wkfa li { padding: 2px 0 2px 8px; border-left: 2px solid var(--border); margin-bottom: 3px; }
+.wkfa b { color: var(--text); }
+.wkfa small, .wrow small { color: var(--text-3); font-size: 10.5px; }
+.wlist { display: grid; gap: 2px; }
+.whead, .wrow { display: grid; grid-template-columns: minmax(0, 1.6fr) .8fr 1fr 1fr; gap: 6px; align-items: baseline; padding: 4px 8px; font: 11.5px var(--mono); text-align: left; }
+.whead { font: 600 10.5px var(--font); color: var(--text-3); padding-bottom: 2px; }
+.wrow { width: 100%; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--text-2); cursor: pointer; }
+.wrow:hover { background: var(--surface-hover); border-color: var(--border); }
+.wrow:focus-visible { outline: 2px solid var(--accent); }
+.wrow b { color: var(--text); }
+.stepper-t { font-size: 12px; line-height: 1.25; }
+@media (max-width: 760px) { .whead, .wrow { font-size: 10.5px; padding: 4px 4px; gap: 4px; } }

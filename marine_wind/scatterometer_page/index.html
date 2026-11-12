@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>Scatterometer</title>
-<meta name="description" content="NOAA STAR scatterometer winds (OSCAT-3, Metop-B and Metop-C ASCAT) over the OPC Atlantic and Pacific, stitched into a map for each synoptic time and set against the marine wind page's Best Wind and warning lines, with a score for each map and each pass.">
+<meta name="description" content="NOAA STAR scatterometer winds (OSCAT-3, Metop-B and Metop-C ASCAT) over the OPC Atlantic and Pacific, stitched into a map for each 12 h window (00Z and 12Z) and set against the marine wind page's Best Wind and warning lines, with a 7-day summary, a score for each map and each pass.">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0a1120">
 <meta name="color-scheme" content="dark">
@@ -48,6 +48,10 @@
       <button type="button" role="tab" data-tab="passes" aria-selected="false">Passes</button>
     </div>
     <div class="card-body" id="cardBody">
+      <details class="week only-mosaic" id="weekBox" open>
+        <summary>7-day summary <span id="weekHead"></span></summary>
+        <div id="week"></div>
+      </details>
       <div class="only-mosaic" id="timeBlock">
         <div class="row-label">Valid time <span id="timeNote"></span></div>
         <div class="stepper">
@@ -55,7 +59,7 @@
           <span class="stepper-t" id="tLabel" aria-live="polite">&mdash;</span>
           <button type="button" class="btn btn-ghost" id="tNext" aria-label="Later time (right arrow)">Later &rsaquo;</button>
         </div>
-        <div class="strip" id="strip" role="group" aria-label="Synoptic times, newest at the right; the bar is the share of basin water seen"></div>
+        <div class="strip" id="strip" role="group" aria-label="The 00Z and 12Z windows of the week, newest at the right; the bar is the share of basin water seen"></div>
         <div class="strip-cap"><span>Oldest</span><span>Bar: share of the basin's water seen</span><span>Newest</span></div>
       </div>
       <div class="row-label">Forecast compared</div>
@@ -71,7 +75,7 @@
         <button type="button" data-layer="warn" aria-pressed="true"><i class="sw sw-warn"></i>Warning lines</button>
       </div>
       <div class="toggles only-mosaic" id="oscatRow">
-        <button type="button" id="oscatBtn" aria-pressed="true" title="Off: OSCAT-3 cells are hidden and the score uses the ASCAT cells only"><i class="sw sw-oscat"></i>Include OSCAT-3</button>
+        <button type="button" id="oscatBtn" aria-pressed="false" title="Off (default): OSCAT-3 cells are hidden and the scores and the 7-day summary use ASCAT only. On: OSCAT-3 is drawn and scored; it reads low at high winds."><i class="sw sw-oscat"></i>Include OSCAT-3</button>
       </div>
       <div class="legend-inline" id="legend"></div>
 
@@ -92,7 +96,7 @@
       </details>
       </div>
 
-      <p class="foot">Source: NOAA STAR, posted about 3 to 4 h after the pass. Winds are 10 m as served (likely equivalent-neutral), averaged to 0.25&deg; cells; rain-flagged cells are faded and left out of every score. Best Wind and the warning lines come from the <a href="../marine-wind/">marine wind page</a>; in the mosaic they cover the whole basin, while the scores count only the cells a satellite saw; see <a href="../verification/">verification</a> for the longer record.</p>
+      <p class="foot">Source: NOAA STAR, posted about 3 to 4 h after the pass. Winds are 10 m as served (likely equivalent-neutral), averaged to 0.25&deg; cells; rain-flagged cells are faded and left out of every score. Best Wind and the warning lines come from the <a href="../marine-wind/">marine wind page</a>; in the mosaic they cover the whole basin at 00Z or 12Z, while the scores count only the cells a satellite saw, each against the forecast hour nearest its own pass; see <a href="../verification/">verification</a> for the longer record.</p>
     </div>
   </section>
 

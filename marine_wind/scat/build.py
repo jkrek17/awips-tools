@@ -6,8 +6,9 @@ newest marine wind data (the `marine-wind-live` branch), and writes the new stat
     OUT/data/index.json            the pass list with scores (the page reads this)
     OUT/data/pass/<id>-<basin>.bin one file per pass and basin (format below)
     OUT/data/mosaic/<basin>-<YYYYMMDDHH>.bin
-                                   one file per synoptic time and basin: the passes of +-3 h stitched into one map,
-                                   with the Best Wind and warning areas of the whole basin box (format below)
+                                   one file per 00/12Z time and basin: the passes of the 12 h around it stitched into one
+                                   map, scored cell by cell, with the Best Wind and warning areas of the whole basin box
+                                   at that time (format below)
     OUT/cache/<YYYYMMDDHH>/{natl,npac}.npz + meta.json
                                    Best Wind and warning areas of every marine wind cycle seen, steps 6..54,
                                    cut to the OPC boxes (uint8 as served), kept 4 days: the passes are scored
@@ -53,22 +54,37 @@ Pass .bin (gzip, little endian): uint32 n; uint32 idx[n] (global flat index iy *
 uint8 obs[n] (kt, rounded, at most 254); uint8 dir[n] (degrees / 2, rounded, 0-179); uint8 flag[n]; then for
 latest, f24 and f48 in turn uint8 grid[n] (kt rounded, 255 = no forecast) and uint8 warn[n] (bits, 255 = none).
 
-Mosaics. For each synoptic time V (00/06/12/18Z) of the last 7 days and each basin, every pass whose middle is within
-+-3 h of V (both ends included) is stitched into one map; where swaths overlap ASCAT wins over OSCAT-3, then the pass
-whose middle is nearest V, a tie goes to the newer. Leads for V, as for a pass whose middle is V: `latest` is the newest cached full run
-built at or before V (what the desk had at V) at step V - cycle in 6..54; f24 and f48 are the runs 24 and 48 h
-before V at steps 24 and 48 (full or partial cycle). A mosaic is built again when its pass set changes or a pass in it
-is redone, or when a lead has turned up since. Scores are those of a pass (see above) on the unflagged observed cells
-of the whole mosaic, `score_ascat` the same on the ASCAT cells only. `sats` counts all observed cells by satellite
-family, `water` the water cells of the basin box (coverage = n / water), `grid_area_box` the water cells of the whole box at
-or above 34/48/64 kt per lead (the score's grid area counts the observed cells only).
+Mosaics (index `format` 2). For each time V = 00Z and 12Z of the last 7 days (14 per basin) and each basin, every pass
+whose middle is in [V - 6 h, V + 6 h) (the end is excluded, so a pass belongs to one mosaic) is stitched into one map; where
+swaths overlap ASCAT wins over OSCAT-3, then the pass whose middle is nearest V, a tie goes to the newer. A mosaic whose
+window closed less than 4 h ago is `open` (STAR posts 3-4 h after a pass): it is shown but left out of the summary.
+
+Each observed cell is scored against the forecast its own pass was given (pick_leads at the pass's middle: the forecast step
+nearest to that pass, so valid at V - 6, V or V + 6), not against V. The mosaic keeps, per observed cell, the grid and
+warning bytes of the three leads. A lead counts for the mosaic (`fc[lead]` not null) when the passes that have it hold at
+least 80% of the observed cells; the cells of a pass that lacks it are left out of that lead's score, and `unscored` (and
+`unscored_ascat`) says how many. `score` is the pass score (see above) on the unflagged, scored cells of the whole mosaic,
+`score_ascat` the same on the ASCAT cells only (`n` is the number of cells scored). `peak` has, per lead, the highest
+unflagged observed cell (`all` and `ascat`): idx (global flat index), obs, grid and warn at that cell. `sats` counts
+all observed cells by satellite family, `water` the water cells of the basin box (coverage = n / water). The map lines
+are those of V: `vsel` is the run and step picked for V, `fc[lead]` repeats it (null cycle when V has none) and
+`grid_area_box` counts the water cells of the whole box at or above 34/48/64 kt per lead. A mosaic is built again when its
+pass set changes, a pass in it is redone or gains a lead, or V's own forecast changed.
+
+Summary (index `summary`, basin -> lead -> "ascat" | "all"): the sums over the closed mosaics of the week of the
+scores above: `obs`, `grid`, `catch`, `line` at 34/48/64 (observed cells at the threshold, grid cells at it on the same
+cells, observed cells inside the gale|storm|HF lines, scored cells inside them: catch / line is the share of line cells that
+were seen and reached the threshold), `nmos_obs` and `nmos_line` (mosaics with any), `enough` and `enough_line` (at least
+50 cells and 3 mosaics: otherwise no ratio), `mosaics`, `n`, coverage of the basin water per mosaic (`times`, `cov_mean`,
+`cov_min`, `cov_max`) and `worst`, the 8 highest mosaic peaks of the week (valid, obs, grid at the peak cell, grid_max over
+the seen cells, warn bits, idx).
 
 Mosaic .bin (gzip, little endian): uint32 n; uint32 idx[n] (global flat index, ascending); uint8 obs[n], dir[n],
-flag[n] (as in a pass file); uint8 pass[n] (index into the entry's `passes` list in index.json); then for each lead
-the index entry has in `fc` (latest, f24, f48 in that order) uint8 grid[ny*nx] (whole kt, 255 = none: land and
-water the OPC does not forecast) and uint8 warn[ny*nx] (bits as above, 255 = none) over the basin box (`box` in the
-index entry: iy0, ny, ix0, nx; rows north first, columns west first, see box_cols). A lead that is null in `fc` has
-no bytes.
+flag[n] (as in a pass file); uint8 pass[n] (index into the entry's `passes` list in index.json); then for latest, f24 and
+f48 in turn uint8 grid[n] and warn[n] of the cell's own pass (255 = pass has no such forecast); then for each lead whose
+`fc` entry has a cycle (latest, f24, f48 in that order) uint8 grid[ny*nx] (whole kt, 255 = none: land and water the OPC does
+not forecast) and uint8 warn[ny*nx] (bits as above, 255 = none) over the basin box (`box` in the index entry: iy0, ny, ix0,
+nx; rows north first, columns west first, see box_cols) at V.
 
     python3 build.py --live DIR --state DIR --out DIR [--days 1] [--workers 5]
         --live   a checkout holding latest/global/ of marine-wind-live (manifest.json, fSSS/best.gz, warn.gz)
@@ -112,6 +128,11 @@ SAT = {"oscat3": "OSCAT-3", "UHR_METOP-B": "Metop-B", "UHR_METOP-C": "Metop-C"}
 ISO = "%Y-%m-%dT%H:%MZ"
 THRESH = (34, 48, 64)
 LINES = (7, 6, 4)              # warn bits that count for 34, 48, 64 kt
+MIN_LEAD_SHARE = (4, 5)        # a lead counts for a mosaic when passes with it hold at least 4/5 of the observed cells
+MIN_SEEN = 50                  # summary: fewer observed cells than this at a threshold, no ratio
+MIN_MOSAICS = 3                # ... and fewer mosaics contributing than this
+WORST_N = 8                    # summary: peaks listed
+FORMAT = 2
 
 
 def utcnow():
@@ -444,8 +465,8 @@ def score(obs, flag, grid, warn):
     o, g, w = obs[k], grid[k], warn[k]
     if not o.size:
         z = [0, 0, 0]
-        return dict(obs=z, grid=list(z), obs_max=0.0, grid_max=0.0, catch=list(z), line=list(z))
-    return dict(obs=[int((o >= t).sum()) for t in THRESH], grid=[int((g >= t).sum()) for t in THRESH],
+        return dict(n=0, obs=z, grid=list(z), obs_max=0.0, grid_max=0.0, catch=list(z), line=list(z))
+    return dict(n=int(o.size), obs=[int((o >= t).sum()) for t in THRESH], grid=[int((g >= t).sum()) for t in THRESH],
                 obs_max=round(float(o.max()), 1), grid_max=round(float(g.max()), 1),
                 catch=[int(((o >= t) & ((w & b) > 0)).sum()) for t, b in zip(THRESH, LINES)],
                 line=[int(((w & b) > 0).sum()) for b in LINES])
@@ -567,19 +588,21 @@ def process_pass(p, water, inbox):
 
 # ---------- mosaics ----------
 
-MOSAIC_HALF = dt.timedelta(hours=3)
+MOSAIC_HALF = dt.timedelta(hours=6)     # a mosaic holds the passes in [V - 6 h, V + 6 h)
+MOSAIC_HOURS = 12                       # V = 00Z and 12Z
+SETTLE = dt.timedelta(hours=4)          # STAR posts a pass 3-4 h after it flew
 
 
 def mosaic_times(now):
-    """Synoptic times V (00/06/12/18Z) from the last KEEP_DAYS, not after `now`, newest first. The oldest is at least
-    4 h inside the window so that every pass of its +-3 h is still kept."""
+    """Times V (00Z and 12Z) from the last KEEP_DAYS, not after `now`, newest first. The oldest is at least 7 h
+    inside the window so that every pass of its [V - 6 h, V + 6 h) is still kept."""
     t = now.replace(minute=0, second=0, microsecond=0)
-    t = t.replace(hour=t.hour // 6 * 6)
-    first = now - dt.timedelta(days=KEEP_DAYS) + dt.timedelta(hours=4)
+    t = t.replace(hour=t.hour // MOSAIC_HOURS * MOSAIC_HOURS)
+    first = now - dt.timedelta(days=KEEP_DAYS) + MOSAIC_HALF + dt.timedelta(hours=1)
     out = []
     while t >= first:
         out.append(t)
-        t -= dt.timedelta(hours=6)
+        t -= dt.timedelta(hours=MOSAIC_HOURS)
     return out
 
 
@@ -588,61 +611,101 @@ def _t(s):
 
 
 def window_entries(entries, basin, v):
-    """Pass entries of a basin whose middle is within +-3 h of V, ordered by middle time (the mosaic's pass order)."""
-    return sorted((e for e in entries if e["basin"] == basin and abs(_t(e["mid"]) - v) <= MOSAIC_HALF),
+    """Pass entries of a basin whose middle is in [V - 6 h, V + 6 h), ordered by middle time (the mosaic's pass order)."""
+    return sorted((e for e in entries if e["basin"] == basin and v - MOSAIC_HALF <= _t(e["mid"]) < v + MOSAIC_HALF),
                   key=lambda e: (e["mid"], e["id"]))
 
 
 def stitch(v, members):
-    """members [(entry, unpacked pass)] in mosaic order -> (idx int64, obs, dir, flag, pass index) of the union of
-    their cells; where passes overlap ASCAT wins over OSCAT-3 (the better referee: OSCAT-3 reads low at gale force and
-    above, marine-research study 2026-11-12), then the one nearest V, a tie the newer."""
+    """members [(entry, unpacked pass)] in mosaic order -> (idx int64, obs, dir, flag, pass index, position of the cell
+    in its pass) of the union of their cells; where passes overlap ASCAT wins over OSCAT-3 (the better referee: OSCAT-3
+    reads low at gale force and above, marine-research study 2026-11-12), then the one nearest V, a tie the newer."""
     obs = np.full(NX * NY, 255, np.uint8)
     dr, fl, pi = (np.zeros(NX * NY, np.uint8) for _ in range(3))
+    pos = np.zeros(NX * NY, np.int32)
     order = sorted(range(len(members)), key=lambda i: (is_ascat(members[i][0]["sat"]), -abs(_t(members[i][0]["mid"]) - v),
                                                        members[i][0]["mid"]))
     for i in order:   # the winner is written last
         u = members[i][1]
         k = u["idx"].astype(np.int64)
-        obs[k], dr[k], fl[k], pi[k] = u["obs"], u["dir"], u["flag"], i
+        obs[k], dr[k], fl[k], pi[k], pos[k] = u["obs"], u["dir"], u["flag"], i, np.arange(k.size)
     idx = np.nonzero(obs != 255)[0]
-    return idx, obs[idx], dr[idx], fl[idx], pi[idx]
+    return idx, obs[idx], dr[idx], fl[idx], pi[idx], pos[idx]
 
 
 def _score_on(sel_cells, obs, flag, g, w):
     return score(obs[sel_cells], flag[sel_cells], g[sel_cells], w[sel_cells])
 
 
+def cell_leads(members, pi, pos):
+    """Per observed cell the grid and warning bytes of its own pass -> {lead: (grid, warn, has)}; has is False where the
+    pass lacks the lead (bytes 255)."""
+    n = pi.size
+    out = {}
+    for lead in LEADS:
+        g, w, has = np.full(n, 255, np.uint8), np.full(n, 255, np.uint8), np.zeros(n, bool)
+        for i, (e, u) in enumerate(members):
+            if not (e.get("fc") or {}).get(lead):
+                continue
+            k = pi == i
+            g[k], w[k], has[k] = u["leads"][lead][0][pos[k]], u["leads"][lead][1][pos[k]], True
+        out[lead] = (g, w, has)
+    return out
+
+
+def peak_cell(idx, obs, flag, g, w, sel):
+    """The highest unflagged observed cell among `sel` (the first on a tie) -> dict(idx, obs, grid, warn) or None."""
+    k = np.nonzero(sel & (flag == 0))[0]
+    if not k.size:
+        return None
+    j = k[int(np.argmax(obs[k]))]
+    return dict(idx=int(idx[j]), obs=int(obs[j]), grid=int(g[j]), warn=int(w[j]))
+
+
+def pass_sig(e):
+    return [[e["fc"][l]["cycle"], e["fc"][l]["step"]] if e["fc"].get(l) else None for l in LEADS]
+
+
 def build_mosaic(basin, v, members, sel, fc, water_box):
-    """-> (gzip bytes, index entry minus `file`). sel = pick_leads(cycles, v); water_box bool [ny, nx]."""
-    idx, obs, dr, fl, pi = stitch(v, members)
+    """-> (gzip bytes, index entry minus `file`). sel = pick_leads(cycles, v) (the lines drawn); water_box bool [ny, nx]."""
+    idx, obs, dr, fl, pi, pos = stitch(v, members)
+    n = int(idx.size)
     iy0, ny, ix0, nx = box_cols(basin)
-    r, c = box_pos(basin, idx)
     obsf = obs.astype(np.float32)
     ascat = np.array([is_ascat(e["sat"]) for e, _ in members], bool)[pi]
-    allc = np.ones(idx.size, bool)
-    blobs = [np.uint32(idx.size).tobytes(), idx.astype("<u4").tobytes(), obs.tobytes(), dr.tobytes(), fl.tobytes(), pi.tobytes()]
-    fcinfo, sc, sca, area = {}, {}, {}, {}
+    cell = cell_leads(members, pi, pos)
+    blobs = [np.uint32(n).tobytes(), idx.astype("<u4").tobytes(), obs.tobytes(), dr.tobytes(), fl.tobytes(), pi.tobytes()]
     for lead in LEADS:
+        blobs += [cell[lead][0].tobytes(), cell[lead][1].tobytes()]
+    fcinfo, sc, sca, area, peak, uns, uns_a, vsel = {}, {}, {}, {}, {}, {}, {}, {}
+    for lead in LEADS:
+        g, w, has = cell[lead]
         s = sel.get(lead)
-        fcinfo[lead] = None if s is None else dict(cycle=s[0], step=s[1])
-        if s is None:
-            sc[lead] = sca[lead] = area[lead] = None
+        vsel[lead] = None if s is None else dict(cycle=s[0], step=s[1])
+        uns[lead], uns_a[lead] = int((~has).sum()), int((ascat & ~has).sum())
+        if has.sum() * MIN_LEAD_SHARE[1] < n * MIN_LEAD_SHARE[0]:
+            fcinfo[lead] = sc[lead] = sca[lead] = area[lead] = peak[lead] = None
             continue
+        gf = g.astype(np.float32)
+        sc[lead] = _score_on(has, obsf, fl, gf, w)
+        sca[lead] = _score_on(has & ascat, obsf, fl, gf, w)
+        peak[lead] = dict(all=peak_cell(idx, obsf, fl, g, w, has), ascat=peak_cell(idx, obsf, fl, g, w, has & ascat))
+        if s is None:
+            fcinfo[lead], area[lead] = dict(cycle=None, step=None), None
+            continue
+        fcinfo[lead] = dict(vsel[lead])
         cyc, step = s
         best = fc.field(cyc, basin, "best", step).astype(np.float32) / fc.cycles[cyc]["best_scale"]
         warn = fc.field(cyc, basin, "warn", step)
-        g, w = best[r, c], warn[r, c]
-        sc[lead] = _score_on(allc, obsf, fl, g, w)
-        sca[lead] = _score_on(ascat, obsf, fl, g, w)
         area[lead] = [int(((best >= t) & water_box).sum()) for t in THRESH]
         gb = np.where(water_box, np.clip(np.round(best), 0, 254), 255).astype(np.uint8)
         wb = np.where(water_box, warn, 255).astype(np.uint8)
         blobs += [gb.tobytes(), wb.tobytes()]
     ok = fl == 0
-    ent = dict(basin=basin, valid=v.strftime(ISO), passes=[e["id"] for e, _ in members], n=int(idx.size), flagged=int((~ok).sum()),
+    ent = dict(format=FORMAT, basin=basin, valid=v.strftime(ISO), passes=[e["id"] for e, _ in members], n=n, flagged=int((~ok).sum()),
                obs_max=round(float(obsf[ok].max()), 1) if ok.any() else 0.0, water=int(water_box.sum()),
-               box=dict(iy0=iy0, ny=ny, ix0=ix0, nx=nx), fc=fcinfo, score=sc, score_ascat=sca, grid_area_box=area,
+               box=dict(iy0=iy0, ny=ny, ix0=ix0, nx=nx), fc=fcinfo, vsel=vsel, score=sc, score_ascat=sca, peak=peak,
+               unscored=uns, unscored_ascat=uns_a, grid_area_box=area, sig=[pass_sig(e) for e, _ in members],
                sats={"ASCAT": int(ascat.sum()), "OSCAT-3": int((~ascat).sum())})
     return gzip.compress(b"".join(blobs), 9, mtime=0), ent
 
@@ -652,7 +715,8 @@ def is_ascat(sat):
 
 
 def unpack_mosaic(blob, ent):
-    """Inverse of build_mosaic's bytes -> dict(idx, obs, dir, flag, pass, leads {lead: (grid, warn) [ny, nx]})."""
+    """Inverse of build_mosaic's bytes -> dict(idx, obs, dir, flag, pass_, cell {lead: (grid, warn) [n]},
+    leads {lead: (grid, warn) [ny, nx]} at V)."""
     raw = gzip.decompress(blob)
     n = int(np.frombuffer(raw, "<u4", 1)[0])
     o = 4
@@ -660,18 +724,23 @@ def unpack_mosaic(blob, ent):
     take = []
     for _ in range(4):
         take.append(np.frombuffer(raw, np.uint8, n, o)); o += n
+    cell = {}
+    for lead in LEADS:
+        g = np.frombuffer(raw, np.uint8, n, o); o += n
+        w = np.frombuffer(raw, np.uint8, n, o); o += n
+        cell[lead] = (g, w)
     ny, nx = ent["box"]["ny"], ent["box"]["nx"]
     leads = {}
     for lead in LEADS:
-        if ent["fc"].get(lead):
+        if (ent["fc"].get(lead) or {}).get("cycle"):
             g = np.frombuffer(raw, np.uint8, ny * nx, o).reshape(ny, nx); o += ny * nx
             w = np.frombuffer(raw, np.uint8, ny * nx, o).reshape(ny, nx); o += ny * nx
             leads[lead] = (g, w)
-    return dict(idx=idx, obs=take[0], dir=take[1], flag=take[2], pass_=take[3], leads=leads)
+    return dict(idx=idx, obs=take[0], dir=take[1], flag=take[2], pass_=take[3], cell=cell, leads=leads)
 
 
 def update_mosaics(now, entries, prev_mosaics, cycles, fc, water, inbox, pdir, mdir, state_dir, touched):
-    """Build or rebuild the mosaic of every synoptic time that needs one (module doc) from the pass files in pdir ->
+    """Build or rebuild the mosaic of every time that needs one (module doc) from the pass files in pdir ->
     (index entries newest first, number built)."""
     prev = {(m["basin"], m["valid"]): m for m in prev_mosaics}
     entries = [e for e in entries if os.path.exists(os.path.join(pdir, os.path.basename(e["file"])))]
@@ -681,6 +750,7 @@ def update_mosaics(now, entries, prev_mosaics, cycles, fc, water, inbox, pdir, m
     for v in mosaic_times(now):
         sel = pick_leads(cycles, v)
         want_fc = {l: None if sel[l] is None else dict(cycle=sel[l][0], step=sel[l][1]) for l in LEADS}
+        is_open = now < v + MOSAIC_HALF + SETTLE
         for basin in BOXES:
             ws = window_entries(entries, basin, v)
             if not ws:
@@ -692,9 +762,9 @@ def update_mosaics(now, entries, prev_mosaics, cycles, fc, water, inbox, pdir, m
             if old and not os.path.exists(dst) and os.path.exists(os.path.join(state_dir, "data", fn)):
                 shutil.copy2(os.path.join(state_dir, "data", fn), dst)
             ids = [e["id"] for e in ws]
-            if (old and os.path.exists(dst) and old["passes"] == ids and not (set(ids) & touched)
-                    and {l: (old["fc"].get(l) and dict(cycle=old["fc"][l]["cycle"], step=old["fc"][l]["step"])) for l in LEADS} == want_fc):
-                out.append(old)
+            if (old and old.get("format") == FORMAT and os.path.exists(dst) and old["passes"] == ids and not (set(ids) & touched)
+                    and old.get("vsel") == want_fc and old.get("sig") == [pass_sig(e) for e in ws]):
+                out.append(dict(old, open=is_open))
                 keep.add(os.path.basename(fn))
                 continue
             members = []
@@ -703,7 +773,7 @@ def update_mosaics(now, entries, prev_mosaics, cycles, fc, water, inbox, pdir, m
                     members.append((e, unpack_pass(f.read())))
             wb = crop_box(water & inbox[basin], basin)
             blob, ent = build_mosaic(basin, v, members, sel, fc, wb)
-            ent["file"] = fn
+            ent["file"], ent["open"] = fn, is_open
             with open(dst, "wb") as f:
                 f.write(blob)
             out.append(ent)
@@ -714,6 +784,41 @@ def update_mosaics(now, entries, prev_mosaics, cycles, fc, water, inbox, pdir, m
             os.remove(os.path.join(mdir, fn))
     out.sort(key=lambda m: (m["valid"], m["basin"]), reverse=True)
     return out, built
+
+
+def _group_summary(ms, lead, group):
+    key = "score_ascat" if group == "ascat" else "score"
+    cov = [(m["sats"]["ASCAT"] if group == "ascat" else m["n"]) / m["water"] for m in ms if m["water"]]
+    S = dict(times=len(ms), cov_mean=round(float(np.mean(cov)), 4) if cov else None, cov_min=round(min(cov), 4) if cov else None,
+             cov_max=round(max(cov), 4) if cov else None, mosaics=0, n=0, obs=[0] * 3, grid=[0] * 3, catch=[0] * 3, line=[0] * 3,
+             nmos_obs=[0] * 3, nmos_line=[0] * 3, min_seen=MIN_SEEN, min_mosaics=MIN_MOSAICS)
+    worst = []
+    for m in ms:
+        s = (m.get(key) or {}).get(lead)
+        if s is None:
+            continue
+        S["mosaics"] += 1
+        S["n"] += s["n"]
+        for i in range(3):
+            for k in ("obs", "grid", "catch", "line"):
+                S[k][i] += s[k][i]
+            S["nmos_obs"][i] += s["obs"][i] > 0
+            S["nmos_line"][i] += s["line"][i] > 0
+        p = ((m.get("peak") or {}).get(lead) or {}).get(group)
+        if p:
+            worst.append(dict(valid=m["valid"], obs=p["obs"], grid=p["grid"], grid_max=s["grid_max"], warn=p["warn"], idx=p["idx"]))
+    worst.sort(key=lambda x: (x["obs"], x["valid"]), reverse=True)
+    S["worst"] = worst[:WORST_N]
+    S["enough"] = [S["obs"][i] >= MIN_SEEN and S["nmos_obs"][i] >= MIN_MOSAICS for i in range(3)]
+    S["enough_line"] = [S["line"][i] >= MIN_SEEN and S["nmos_line"][i] >= MIN_MOSAICS for i in range(3)]
+    return S
+
+
+def summarize(mosaics):
+    """The week's sums over the closed mosaics (module doc) -> {basin: {lead: {"ascat": ..., "all": ...}}}."""
+    closed = [m for m in mosaics if not m.get("open")]
+    return {b: {lead: {g: _group_summary([m for m in closed if m["basin"] == b], lead, g) for g in ("ascat", "all")}
+                for lead in LEADS} for b in BOXES}
 
 
 # ---------- output ----------
@@ -807,9 +912,9 @@ def main():
     if os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN"):
         mids = [p["start"] + (p["end"] - p["start"]) / 2 for p in todo]
         mids += [dt.datetime.strptime(e["mid"], ISO) for e in entries.values() if not (e["fc"]["f24"] and e["fc"]["f48"])]
-        # and for the synoptic times that have a mosaic (their leads are those of a pass at V)
+        # and for the times that have a mosaic (the lines drawn are those of V)
         allmid = [dt.datetime.strptime(e["mid"], ISO) for e in entries.values()] + [p["start"] + (p["end"] - p["start"]) / 2 for p in todo]
-        mids += [v for v in mosaic_times(now) if any(abs(m - v) <= MOSAIC_HALF for m in allmid)]
+        mids += [v for v in mosaic_times(now) if any(v - MOSAIC_HALF <= m < v + MOSAIC_HALF for m in allmid)]
         wants = [cs for m in sorted(mids, reverse=True) for cs in record_cycles(m).values()]
         n_rec = ensure_records(cache, cycles, wants, now, a.record_max)
         if n_rec:
@@ -879,7 +984,8 @@ def main():
     with open(os.path.join(cache, "seen.json"), "w") as f:
         json.dump(seen, f)
     index = dict(built=now.strftime("%Y-%m-%dT%H:%M:%SZ"), keep_days=KEEP_DAYS,
-                 grid=dict(res=0.25, north=90, west=-180, nx=NX), cycle=live_cycle, passes=kept, mosaics=mosaics)
+                 grid=dict(res=0.25, north=90, west=-180, nx=NX), cycle=live_cycle, format=FORMAT, passes=kept, mosaics=mosaics,
+                 summary=summarize(mosaics))
     with open(os.path.join(a.out, "data", "index.json"), "w") as f:
         json.dump(index, f, separators=(",", ":"))
     changed = bool(n_new) or new_cycle or bool(n_fill) or bool(n_rec) or bool(n_mos) or read_json(mp, {}) != misses0
