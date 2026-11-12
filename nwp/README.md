@@ -17,6 +17,8 @@ north-up, lon 0..360, float32.
     nwp.newest_cycle(nwp.cycle_list(), lambda c: [url, ...])     # first cycle with all files posted
     nwp.wait_for_quiet(index_url)                                # opt-in; never in live jobs
     nwp.get(url, rng) / nwp.exists(url) / nwp.decode(blob, crop) / nwp.sources.gfs(...)
+    from nwp import star                                         # NOAA STAR scatterometer passes (OSCAT-3, Metop-B/C ASCAT)
+    star.passes(day)  -> [(prefix, url, start)];  star.points(url) -> {lat, lon (-180..180), u, v, spd (kt), q}
 
 `crop=(IY, IX)` is applied as `v[IY, IX].copy()`; without it the full grid is returned.
 `get` returns None on 403/404, retries S3 503 quickly, backs off otherwise, and raises

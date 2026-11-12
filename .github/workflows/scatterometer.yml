@@ -1,0 +1,97 @@
+# Data for the scatterometer page (/scatterometer/, marine_wind/scat/build.py): the latest
+# NOAA STAR scatterometer passes (OSCAT-3, Metop-B and -C coastal ultra-high-resolution
+# ASCAT) over the two OPC basins, gridded at 0.25 degree, with the marine wind page's Best
+# Wind and warning lines for the same time and per-pass scores.
+#
+# Hourly at :50 (STAR posts passes 3-4 h after they are observed): lists today and
+# yesterday, downloads only the passes not already handled (the previous state is the
+# branch itself), reads the newest marine wind run from marine-wind-live and keeps its Best
+# Wind and warning areas (steps 6-54, two basin boxes) for 4 days so each pass is scored
+# against the run the desk had and the runs 24 and 48 h earlier. If no pass and no marine
+# wind run is new, the run stops without pushing. Otherwise data/ and cache/ are the single
+# commit of the orphan branch scatterometer-data, force-pushed (about 1-2 MB for the week),
+# and Publish public site serves data/ at /scatterometer/data/. Main is never touched.
+#
+# By hand (Actions > Scatterometer data > Run workflow): `days` lists that many days back
+# (0-8) to fill a gap; the server keeps about a month.
+
+name: Scatterometer data
+
+on:
+  schedule:
+    - cron: '50 * * * *'
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Days back from today to list (0-8)'
+        required: false
+        default: '1'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: scatterometer-data
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: marine_wind/scat/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r marine_wind/scat/requirements.txt
+
+      - name: Fetch the previous state and the marine wind run
+        run: |
+          state="$RUNNER_TEMP/state"
+          live="$RUNNER_TEMP/live"
+          rm -rf "$state" "$live"
+          mkdir -p "$state" "$live"
+          if git fetch -q --depth 1 origin scatterometer-data 2>/dev/null; then
+            git --work-tree="$state" checkout FETCH_HEAD -- . 2>/dev/null || true
+            git reset -q
+          else
+            echo "no scatterometer-data branch yet"
+          fi
+          if git fetch -q --depth 1 origin marine-wind-live 2>/dev/null; then
+            git --work-tree="$live" checkout FETCH_HEAD -- 'latest/global/manifest.json' 'latest/global/f*/best.gz' 'latest/global/f*/warn.gz'
+            git reset -q
+          fi
+          test -f "$live/latest/global/manifest.json" || { echo "::error::no marine wind run on marine-wind-live"; exit 1; }
+
+      - name: Build
+        env:
+          DAYS: ${{ github.event.inputs.days || '1' }}
+        run: |
+          python3 marine_wind/scat/test_build.py
+          python3 marine_wind/scat/build.py --live "$RUNNER_TEMP/live" --state "$RUNNER_TEMP/state" \
+            --out "$RUNNER_TEMP/out" --days "$DAYS" --changed-file "$RUNNER_TEMP/changed"
+          du -sh "$RUNNER_TEMP/out/data" "$RUNNER_TEMP/out/cache"
+
+      - name: Publish to the scatterometer-data branch
+        env:
+          REMOTE: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
+        run: |
+          if [ "$(cat "$RUNNER_TEMP/changed")" != "true" ]; then
+            echo "No new pass and no new marine wind run; nothing to publish."
+            exit 0
+          fi
+          cd "$RUNNER_TEMP/out"
+          git init -q
+          git checkout -q --orphan scatterometer-data
+          git config user.name "scatterometer-data"
+          git config user.email "scatterometer-data@users.noreply.github.com"
+          git add data cache
+          git commit -q -m "Scatterometer data $(date -u +%Y-%m-%dT%H:%MZ), $(python3 -c 'import json; d=json.load(open("data/index.json")); print(len(d["passes"]), "passes, marine wind run", d["cycle"])')"
+          git push -q -f "$REMOTE" scatterometer-data

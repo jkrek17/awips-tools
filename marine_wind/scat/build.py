@@ -1,0 +1,526 @@
+"""Scatterometer passes over the two OPC basins, gridded and scored against the marine wind page.
+
+Each hour the workflow runs this against the previous state (the `scatterometer-data` branch) and the
+newest marine wind data (the `marine-wind-live` branch), and writes the new state:
+
+    OUT/data/index.json            the pass list with scores (the page reads this)
+    OUT/data/pass/<id>-<basin>.bin one file per pass and basin (format below)
+    OUT/cache/<YYYYMMDDHH>/{natl,npac}.npz + meta.json
+                                   Best Wind and warning areas of every marine wind cycle seen, steps 6..54,
+                                   cut to the OPC boxes (uint8 as served), kept 4 days: the passes are scored
+                                   against the run the desk had at the time, and the runs 24 and 48 h earlier
+    OUT/cache/mask.npz             water mask (GFS land and ice at 0.25 deg), refreshed daily
+    OUT/cache/seen.json            passes already handled (key -> id, files), so the hourly run downloads
+                                   only what is new
+
+Source: NOAA STAR (nwp/nwp/star.py): OSCAT-3 and Metop-B/C coastal ultra-high-resolution ASCAT, posted 3-4 h
+after the pass. Winds are the 10 m wind as served, in knots.
+
+Passes. UHR ASCAT comes as regional chunks of one orbit: files of the same prefix starting <= 20 min apart
+are one pass. An OSCAT-3 file is one half-orbit and is one pass. OSCAT-3 file names carry the time the file
+was made, not the time of the pass, when STAR catches up (a run of files stamped within minutes of each
+other, orbits apart): those get a start time from their orbit number (a line through the files with a good
+stamp). A pass's time is a bracket [start, end]: the first file's start to the last file's start plus a
+nominal length (UHR chunk 10 min, OSCAT-3 half-orbit 55 min).
+
+Each pass is put on the global 0.25 degree grid (iy = round((90 - lat) * 4), ix = round((lon + 180) * 4) % 1440):
+per cell the mean speed of the unflagged points (all flagged: the mean of all, flag 1), direction from the
+vector mean (degrees the wind blows from). Only water cells (GFS land < 0.5 and ice < 0.15) inside an OPC box
+are kept (natl 18-67N 95W-10E, npac 18-67N 135E-115W); a basin with under 200 cells is dropped.
+
+Forecast leads, each with Best Wind (kt) and the warning bits (1 gale, 2 storm, 4 hurricane force):
+    latest  the newest cached run built before the pass's middle (the run the desk had), step the multiple
+            of 6 h nearest to the middle, 6..54, else none
+    f24     the run 24 h before the synoptic hour (00/06/12/18) nearest the middle, step 24
+    f48     the same, 48 h before, step 48
+Scores per lead use unflagged cells only: observed and grid area at 34/48/64 kt, highest wind, and the
+warning lines' catch of the observed cells (34 in gale|storm|HF, 48 in storm|HF, 64 in HF) beside the cells
+each line covers. Counts are cells of 0.25 degree.
+
+Pass .bin (gzip, little endian): uint32 n; uint32 idx[n] (global flat index iy * 1440 + ix, ascending);
+uint8 obs[n] (kt, rounded, at most 254); uint8 dir[n] (degrees / 2, rounded, 0-179); uint8 flag[n]; then for
+latest, f24 and f48 in turn uint8 grid[n] (kt rounded, 255 = no forecast) and uint8 warn[n] (bits, 255 = none).
+
+    python3 build.py --live DIR --state DIR --out DIR [--days 1] [--workers 5]
+        --live   a checkout holding latest/global/ of marine-wind-live (manifest.json, fSSS/best.gz, warn.gz)
+        --state  the previous state (the scatterometer-data branch checked out; may be empty or missing)"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import gzip
+import json
+import os
+import re
+import shutil
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
+
+import numpy as np
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(HERE, "..", "..", "nwp"))
+from nwp import star  # noqa: E402
+
+NX, NY = 1440, 721
+BOXES = {"natl": dict(north=67.0, south=18.0, west=-95.0, east=10.0),
+         "npac": dict(north=67.0, south=18.0, west=135.0, east=245.0)}
+STEPS = tuple(range(6, 55, 6))
+LEADS = ("latest", "f24", "f48")
+KEEP_DAYS = 7
+CACHE_DAYS = 4
+MIN_CELLS = 200
+GROUP_MIN = 20                 # UHR chunks of one pass start at most this far apart
+NOMINAL_MIN = {"uhr": 10, "oscat": 55}   # length of the last file of a pass (minutes)
+SAT = {"oscat3": "OSCAT-3", "UHR_METOP-B": "Metop-B", "UHR_METOP-C": "Metop-C"}
+ISO = "%Y-%m-%dT%H:%MZ"
+THRESH = (34, 48, 64)
+LINES = (7, 6, 4)              # warn bits that count for 34, 48, 64 kt
+
+
+def utcnow():
+    return dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
+
+
+# ---------- the grid and the boxes ----------
+
+def box_cols(key):
+    """(iy0, ny, ix0, nx) of an OPC box on the global grid; columns run west to east from ix0, wrapping."""
+    b = BOXES[key]
+    iy0 = int(round((90 - b["north"]) * 4))
+    ny = int(round((b["north"] - b["south"]) * 4)) + 1
+    ix0 = int(round((b["west"] + 180) * 4)) % NX
+    nx = int(round((b["east"] - b["west"]) * 4)) + 1
+    return iy0, ny, ix0, nx
+
+
+def box_mask(key):
+    iy0, ny, ix0, nx = box_cols(key)
+    m = np.zeros((NY, NX), bool)
+    m[iy0:iy0 + ny, (ix0 + np.arange(nx)) % NX] = True
+    return m
+
+
+def box_pos(key, idx):
+    """Flat global indices -> (row, col) in the box arrays."""
+    iy0, _, ix0, _ = box_cols(key)
+    return idx // NX - iy0, (idx % NX - ix0) % NX
+
+
+def grid_points(p, lat_range=(15.0, 70.0)):
+    """Points dict (nwp.star) -> per 0.25 degree cell (idx, spd kt, dir deg from, flag), idx ascending."""
+    k = (p["lat"] >= lat_range[0]) & (p["lat"] <= lat_range[1])
+    if not k.any():
+        return (np.zeros(0, np.int64), np.zeros(0, np.float32), np.zeros(0, np.float32), np.zeros(0, np.uint8))
+    iy = np.round((90 - p["lat"][k]) * 4).astype(np.int64)
+    ix = np.round((p["lon"][k].astype(np.float64) + 180) * 4).astype(np.int64) % NX
+    flat = iy * NX + ix
+    cells, inv = np.unique(flat, return_inverse=True)
+    n = cells.size
+    good = (p["q"][k] != 1)
+    spd, u, v = p["spd"][k].astype(np.float64), p["u"][k].astype(np.float64), p["v"][k].astype(np.float64)
+
+    wg = good.astype(np.float64)
+    ng = np.bincount(inv, wg, n)
+    na = np.bincount(inv, None, n).astype(np.float64)
+    use_good = ng > 0
+    # weights per point: the unflagged ones where the cell has any, else all
+    w = np.where(use_good[inv], wg, 1.0)
+    den = np.where(use_good, ng, na)
+    ms = np.bincount(inv, w * spd, n) / den
+    mu = np.bincount(inv, w * u, n) / den
+    mv = np.bincount(inv, w * v, n) / den
+    direction = np.degrees(np.arctan2(-mu, -mv)) % 360
+    return cells, ms.astype(np.float32), direction.astype(np.float32), (~use_good).astype(np.uint8)
+
+
+# ---------- the marine wind cache ----------
+
+def decode_field(blob, scale):
+    """OUT/fSSS/NAME.gz of the marine wind data: gzip of uint8 rows [721 x 1440] as differences from the cell to
+    the west -> the raw uint8 bytes (cumulative sum along each row, mod 256) and value = byte / scale."""
+    a = np.frombuffer(gzip.decompress(blob), np.uint8).reshape(NY, NX)
+    return np.cumsum(a, axis=1, dtype=np.uint8)
+
+
+def crop_box(a, key):
+    iy0, ny, ix0, nx = box_cols(key)
+    return np.ascontiguousarray(a[iy0:iy0 + ny][:, (ix0 + np.arange(nx)) % NX])
+
+
+def cyc_name(manifest_cycle):
+    return dt.datetime.strptime(manifest_cycle, ISO).strftime("%Y%m%d%H")
+
+
+def cache_live(live, cache, now):
+    """Save the live cycle to cache/<YYYYMMDDHH>/ unless it is there; prune. -> (cycle name, new?)"""
+    with open(os.path.join(live, "latest", "global", "manifest.json")) as f:
+        man = json.load(f)
+    scale = {f["name"]: f["scale"] for f in man["fields"]}
+    cyc = cyc_name(man["cycle"])
+    d = os.path.join(cache, cyc)
+    new = not os.path.exists(os.path.join(d, "meta.json"))
+    if new:
+        os.makedirs(d, exist_ok=True)
+        arrs = {k: {} for k in BOXES}
+        for step in STEPS:
+            for name in ("best", "warn"):
+                with open(os.path.join(live, "latest", "global", "f%03d" % step, name + ".gz"), "rb") as f:
+                    a = decode_field(f.read(), scale[name])
+                for k in BOXES:
+                    arrs[k]["%s%03d" % (name, step)] = crop_box(a, k)
+        for k in BOXES:
+            np.savez_compressed(os.path.join(d, k + ".npz"), **arrs[k])
+        with open(os.path.join(d, "meta.json"), "w") as f:
+            json.dump(dict(cycle=cyc, built=man["built"], best_scale=scale["best"], warn_scale=scale["warn"]), f)
+    for name in os.listdir(cache):
+        p = os.path.join(cache, name)
+        if os.path.isdir(p) and re.fullmatch(r"\d{10}", name):
+            if dt.datetime.strptime(name, "%Y%m%d%H") < now - dt.timedelta(days=CACHE_DAYS):
+                shutil.rmtree(p)
+    return cyc, new
+
+
+def load_cycles(cache):
+    """cache/ -> {cycle name: dict(built datetime, best_scale, dir)}"""
+    out = {}
+    for name in sorted(os.listdir(cache)) if os.path.isdir(cache) else []:
+        m = os.path.join(cache, name, "meta.json")
+        if re.fullmatch(r"\d{10}", name) and os.path.exists(m):
+            with open(m) as f:
+                j = json.load(f)
+            out[name] = dict(built=dt.datetime.strptime(j["built"], ISO), best_scale=j["best_scale"], dir=os.path.join(cache, name))
+    return out
+
+
+class Forecasts:
+    """Lazy reader of the cached cycles."""
+
+    def __init__(self, cycles):
+        self.cycles, self._npz = cycles, {}
+
+    def field(self, cyc, basin, name, step):
+        k = (cyc, basin)
+        if k not in self._npz:
+            with np.load(os.path.join(self.cycles[cyc]["dir"], basin + ".npz")) as z:
+                self._npz[k] = {n: z[n] for n in z.files}
+        return self._npz[k]["%s%03d" % (name, step)]
+
+
+def pick_leads(cycles, mid):
+    """cycles {name: dict(built=datetime)}, mid datetime -> {lead: (cycle name, step) or None} (see module doc)."""
+    out = dict.fromkeys(LEADS)
+    ready = [c for c, v in cycles.items() if v["built"] <= mid]
+    if ready:
+        c = max(ready)
+        h = (mid - dt.datetime.strptime(c, "%Y%m%d%H")).total_seconds() / 3600
+        step = int(np.floor(h / 6 + 0.5)) * 6
+        if STEPS[0] <= step <= STEPS[-1]:
+            out["latest"] = (c, step)
+    v = _nearest_synoptic(mid)
+    for lead, h in (("f24", 24), ("f48", 48)):
+        c = (v - dt.timedelta(hours=h)).strftime("%Y%m%d%H")
+        if c in cycles:
+            out[lead] = (c, h)
+    return out
+
+
+def _nearest_synoptic(t):
+    base = t.replace(hour=0, minute=0, second=0, microsecond=0)
+    h = (t - base).total_seconds() / 3600
+    return base + dt.timedelta(hours=6 * int(np.floor(h / 6 + 0.5)))
+
+
+def lead_info(sel):
+    if sel is None:
+        return None
+    c, step = sel
+    valid = dt.datetime.strptime(c, "%Y%m%d%H") + dt.timedelta(hours=step)
+    return dict(cycle=c, step=step, valid=valid.strftime(ISO))
+
+
+def lead_fields(fc, sel, basin, idx):
+    """-> (grid kt float32 [n], warn uint8 [n]) for the cells idx, or None when the lead is missing."""
+    if sel is None:
+        return None
+    c, step = sel
+    r, col = box_pos(basin, idx)
+    best = fc.field(c, basin, "best", step)[r, col].astype(np.float32) / fc.cycles[c]["best_scale"]
+    return best, fc.field(c, basin, "warn", step)[r, col]
+
+
+def score(obs, flag, grid, warn):
+    """Scores of one lead on the unflagged cells (see module doc)."""
+    k = flag == 0
+    o, g, w = obs[k], grid[k], warn[k]
+    if not o.size:
+        z = [0, 0, 0]
+        return dict(obs=z, grid=list(z), obs_max=0.0, grid_max=0.0, catch=list(z), line=list(z))
+    return dict(obs=[int((o >= t).sum()) for t in THRESH], grid=[int((g >= t).sum()) for t in THRESH],
+                obs_max=round(float(o.max()), 1), grid_max=round(float(g.max()), 1),
+                catch=[int(((o >= t) & ((w & b) > 0)).sum()) for t, b in zip(THRESH, LINES)],
+                line=[int(((w & b) > 0).sum()) for b in LINES])
+
+
+# ---------- water mask ----------
+
+def load_mask(cache, now):
+    """cache/mask.npz (water, made), refreshed when older than a day from the newest GFS cycle that has it."""
+    p = os.path.join(cache, "mask.npz")
+    old = None
+    if os.path.exists(p):
+        with np.load(p) as z:
+            old = dict(water=z["water"], made=dt.datetime.strptime(str(z["made"]), ISO))
+        if now - old["made"] < dt.timedelta(days=1):
+            return old["water"]
+    import nwp
+    t = now.replace(minute=0, second=0, microsecond=0)
+    t = t.replace(hour=t.hour // 6 * 6)
+    for k in range(9):
+        c = t - dt.timedelta(hours=6 * k)
+        f = nwp.ncep(nwp.sources.gfs(c.strftime("%Y%m%d"), c.strftime("%H"), 0), {"LAND:surface": "land", "ICEC:surface": "ice"})
+        if f is not None:
+            land, ice = (np.roll(np.nan_to_num(f[n], nan=0.0), NX // 2, axis=1) for n in ("land", "ice"))   # 0..360 -> -180..179.75
+            water = (land < 0.5) & (ice < 0.15)
+            os.makedirs(cache, exist_ok=True)
+            np.savez_compressed(p, water=water, made=np.str_(now.strftime(ISO)))
+            return water
+    if old is not None:
+        print("warning: no GFS cycle with LAND/ICEC; keeping the old mask", file=sys.stderr)
+        return old["water"]
+    raise SystemExit("no GFS land/ice mask available")
+
+
+# ---------- passes ----------
+
+def _orbit(url):
+    m = re.search(r"oscat3_\d{7}_(\d+)_\d+_", url)
+    return int(m.group(1)) if m else None
+
+
+def fix_oscat_times(files):
+    """files [(prefix, url, start)] -> same with OSCAT-3 starts replaced by an estimate from the orbit number where
+    the stamp is a catch-up time: two or more files of the prefix stamped within 3 minutes of each other (they are
+    different orbits), or a stamp more than 8 minutes off the line through the others (orbit number against time).
+    Files with no estimate possible (under 4 good stamps) are dropped."""
+    out = [f for f in files if not f[0].startswith("oscat3")]
+    for prefix in sorted({f[0] for f in files if f[0].startswith("oscat3")}):
+        fs = sorted((f for f in files if f[0] == prefix), key=lambda f: f[2])
+        t = np.array([(f[2] - dt.datetime(2000, 1, 1)).total_seconds() / 60 for f in fs])
+        n = np.array([_orbit(f[1]) for f in fs], float)
+        good = np.array([((np.abs(t - t[i]) <= 3) & (n != n[i])).sum() == 0 for i in range(len(fs))])
+        for _ in range(2):
+            if good.sum() < 4:
+                break
+            # local fit: the 12 good orbits nearest in number
+            res = np.full(len(fs), np.inf)
+            for i in range(len(fs)):
+                j = np.nonzero(good & (np.arange(len(fs)) != i))[0]
+                j = j[np.argsort(np.abs(n[j] - n[i]))[:12]]
+                if len(j) >= 3:
+                    res[i] = t[i] - np.polyval(np.polyfit(n[j], t[j], 1), n[i])
+            good &= np.abs(res) <= 8
+        for i, f in enumerate(fs):
+            if good[i]:
+                out.append(f)
+            elif good.sum() >= 4:
+                j = np.nonzero(good)[0]
+                j = j[np.argsort(np.abs(n[j] - n[i]))[:12]]
+                est = float(np.polyval(np.polyfit(n[j], t[j], 1), n[i]))
+                out.append((f[0], f[1], dt.datetime(2000, 1, 1) + dt.timedelta(minutes=round(est))))
+    return sorted(out, key=lambda f: (f[0], f[2]))
+
+
+def group_passes(files):
+    """files [(prefix, url, start)] -> passes [dict(key, id, prefix, start, end, files [(url, start)])], newest first."""
+    out = []
+    for prefix in sorted({f[0] for f in files}):
+        fs = sorted((f for f in files if f[0] == prefix), key=lambda f: f[2])
+        oscat = prefix.startswith("oscat3")
+        groups = [[f] for f in fs] if oscat else []
+        if not oscat:
+            for f in fs:
+                if groups and f[2] - groups[-1][-1][2] <= dt.timedelta(minutes=GROUP_MIN):
+                    groups[-1].append(f)
+                else:
+                    groups.append([f])
+        for g in groups:
+            start, last = g[0][2], g[-1][2]
+            end = last + dt.timedelta(minutes=NOMINAL_MIN["oscat" if oscat else "uhr"])
+            key = ("%s-%s-%s" % (prefix, _orbit(g[0][1]), "x") if oscat else "%s-%s" % (prefix, g[0][2].strftime("%Y%m%dT%H%M%S")))
+            out.append(dict(key=key, id="%s-%s" % (start.strftime("%Y%m%dT%H%M"), prefix), prefix=prefix, start=start,
+                            end=end, files=[(f[1], f[2]) for f in g]))
+    return sorted(out, key=lambda p: p["start"], reverse=True)
+
+
+def merge_points(parts):
+    keys = ("lat", "lon", "u", "v", "spd", "q")
+    return {k: np.concatenate([p[k] for p in parts]) for k in keys}
+
+
+def process_pass(p, water, inbox):
+    """Download and grid one pass -> {basin: (idx, spd, dir, flag)} for the basins with enough water cells."""
+    parts = []
+    for url, _ in p["files"]:
+        pts = star.points(url)
+        if pts is not None and pts["lat"].size:
+            parts.append(pts)
+    if not parts:
+        return {}
+    idx, spd, direction, flag = grid_points(merge_points(parts))
+    out = {}
+    for b, m in inbox.items():
+        k = (m & water).ravel()[idx]
+        if k.sum() >= MIN_CELLS:
+            out[b] = (idx[k], spd[k], direction[k], flag[k])
+    return out
+
+
+# ---------- output ----------
+
+def pack_pass(idx, spd, direction, flag, leads):
+    """leads {lead: (grid kt, warn) or None} -> gzip bytes (module doc)."""
+    n = idx.size
+    b = [np.uint32(n).tobytes(), idx.astype("<u4").tobytes(),
+         np.clip(np.round(spd), 0, 254).astype(np.uint8).tobytes(),
+         (np.round(direction / 2).astype(np.int64) % 180).astype(np.uint8).tobytes(), flag.astype(np.uint8).tobytes()]
+    for lead in LEADS:
+        f = leads.get(lead)
+        if f is None:
+            b += [np.full(n, 255, np.uint8).tobytes()] * 2
+        else:
+            b += [np.clip(np.round(f[0]), 0, 254).astype(np.uint8).tobytes(), f[1].astype(np.uint8).tobytes()]
+    return gzip.compress(b"".join(b), 6, mtime=0)
+
+
+def unpack_pass(blob):
+    """Inverse of pack_pass -> dict(idx, obs, dir, flag, leads {lead: (grid, warn)}) (raw bytes as stored)."""
+    raw = gzip.decompress(blob)
+    n = int(np.frombuffer(raw, "<u4", 1)[0])
+    o = 4
+    idx = np.frombuffer(raw, "<u4", n, o); o += 4 * n
+    take = []
+    for _ in range(3 + 2 * len(LEADS)):
+        take.append(np.frombuffer(raw, np.uint8, n, o)); o += n
+    return dict(idx=idx, obs=take[0], dir=take[1], flag=take[2],
+                leads={l: (take[3 + 2 * i], take[4 + 2 * i]) for i, l in enumerate(LEADS)})
+
+
+def read_json(path, default):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return default
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--live", required=True)
+    ap.add_argument("--state", required=True)
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--days", type=int, default=1, help="days back from today to list (0-8; default 1: today and yesterday)")
+    ap.add_argument("--workers", type=int, default=5)
+    ap.add_argument("--changed-file", help="write 'true' or 'false' here: whether the state gained a pass or a cycle")
+    a = ap.parse_args()
+    t0 = time.time()
+    now = utcnow()
+    days = max(0, min(8, a.days))
+    same = os.path.exists(a.out) and os.path.exists(a.state) and os.path.samefile(a.state, a.out)
+    os.makedirs(os.path.join(a.out, "data", "pass"), exist_ok=True)
+    os.makedirs(os.path.join(a.out, "cache"), exist_ok=True)
+    if not same and os.path.isdir(os.path.join(a.state, "cache")):
+        shutil.copytree(os.path.join(a.state, "cache"), os.path.join(a.out, "cache"), dirs_exist_ok=True)
+    cache = os.path.join(a.out, "cache")
+
+    live_cycle, new_cycle = cache_live(a.live, cache, now)
+    cycles = load_cycles(cache)
+    fc = Forecasts(cycles)
+    water = load_mask(cache, now)
+    inbox = {k: box_mask(k) for k in BOXES}
+
+    prev = read_json(os.path.join(a.state, "data", "index.json"), {"passes": []})
+    seen = read_json(os.path.join(a.state, "cache", "seen.json"), {})
+    files = []
+    for k in range(days + 1):
+        files += star.passes(now - dt.timedelta(days=k))
+    files = sorted(set(files), key=lambda f: (f[0], f[2]))
+    files = fix_oscat_times(files)
+    passes = group_passes(files)
+    todo = [p for p in passes if seen.get(p["key"], {}).get("files") != len(p["files"])
+            and p["start"] > now - dt.timedelta(days=KEEP_DAYS)]
+    print("%d files, %d passes, %d new or grown" % (len(files), len(passes), len(todo)), flush=True)
+
+    entries = {(e["id"], e["basin"]): e for e in prev["passes"]}
+    # a pass seen before with more files is redone under its first id
+    for p in todo:
+        if p["key"] in seen:
+            p["id"] = seen[p["key"]]["id"]
+    redo = {p["id"] for p in todo}
+    entries = {k: e for k, e in entries.items() if k[0] not in redo}
+
+    def work(p):
+        try:
+            return p, process_pass(p, water, inbox)
+        except Exception as e:   # one bad file must not stop the rest
+            print("failed %s: %s" % (p["id"], e), file=sys.stderr)
+            return p, None
+    n_new = 0
+    pdir = os.path.join(a.out, "data", "pass")
+    with ThreadPoolExecutor(max(1, a.workers)) as ex:
+        for p, res in ex.map(work, todo):
+            if res is None:
+                continue
+            seen[p["key"]] = dict(id=p["id"], files=len(p["files"]))
+            mid = p["start"] + (p["end"] - p["start"]) / 2
+            sel = pick_leads(cycles, mid)
+            for basin, (idx, spd, direction, flag) in res.items():
+                leads, fcinfo, sc = {}, {}, {}
+                for lead in LEADS:
+                    leads[lead] = lead_fields(fc, sel[lead], basin, idx)
+                    fcinfo[lead] = lead_info(sel[lead])
+                    sc[lead] = None if leads[lead] is None else score(spd, flag, leads[lead][0], leads[lead][1])
+                name = "%s-%s" % (p["id"], basin)
+                with open(os.path.join(pdir, name + ".bin"), "wb") as f:
+                    f.write(pack_pass(idx, spd, direction, flag, leads))
+                ok = flag == 0
+                entries[(p["id"], basin)] = dict(
+                    id=p["id"], basin=basin, sat=SAT[p["prefix"][:-3]], prefix=p["prefix"],
+                    start=p["start"].strftime(ISO), end=p["end"].strftime(ISO), mid=mid.strftime(ISO),
+                    n=int(idx.size), flagged=int((~ok).sum()), obs_max=round(float(spd[ok].max()), 1) if ok.any() else 0.0,
+                    fc=fcinfo, score=sc, file="pass/%s.bin" % name)
+                n_new += 1
+            print("  %s: %s" % (p["id"], ", ".join("%s %d" % (b, r[0].size) for b, r in res.items()) or "no cells"), flush=True)
+
+    # keep the last week; carry the files over
+    cut = (now - dt.timedelta(days=KEEP_DAYS)).strftime(ISO)
+    kept = sorted((e for e in entries.values() if e["start"] >= cut), key=lambda e: (e["start"], e["basin"]), reverse=True)
+    if not same:
+        for e in kept:
+            dst = os.path.join(a.out, "data", e["file"])
+            src = os.path.join(a.state, "data", e["file"])
+            if not os.path.exists(dst) and os.path.exists(src):
+                shutil.copy2(src, dst)
+    live_files = {os.path.basename(e["file"]) for e in kept}
+    for fn in os.listdir(pdir):
+        if fn not in live_files:
+            os.remove(os.path.join(pdir, fn))
+    seen = {k: v for k, v in seen.items() if v["id"][:8] >= (now - dt.timedelta(days=KEEP_DAYS + 1)).strftime("%Y%m%d")}
+    with open(os.path.join(cache, "seen.json"), "w") as f:
+        json.dump(seen, f)
+    index = dict(built=now.strftime("%Y-%m-%dT%H:%M:%SZ"), keep_days=KEEP_DAYS,
+                 grid=dict(res=0.25, north=90, west=-180, nx=NX), cycle=live_cycle, passes=kept)
+    with open(os.path.join(a.out, "data", "index.json"), "w") as f:
+        json.dump(index, f, separators=(",", ":"))
+    changed = bool(n_new) or new_cycle
+    if a.changed_file:
+        with open(a.changed_file, "w") as f:
+            f.write("true" if changed else "false")
+    size = sum(os.path.getsize(os.path.join(pdir, x)) for x in os.listdir(pdir))
+    print("%d pass entries kept (%d new), cycle %s%s, data/pass %.1f MB, %.0f s" % (
+        len(kept), n_new, live_cycle, " (new)" if new_cycle else "", size / 1e6, time.time() - t0))
+
+
+if __name__ == "__main__":
+    main()
