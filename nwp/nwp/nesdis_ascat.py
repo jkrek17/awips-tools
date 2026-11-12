@@ -19,15 +19,20 @@ arrays. Compared with RSS Metop-B on 7 Nov 2026 (46,000 cells, same pass): speed
 mean absolute difference 7 degrees. (RSS's own node numbers are the other way round: its node 0 is NESDIS's descending
 pass.)
 
-csv rather than netCDF: nothing in the requirements reads netCDF. NaN marks no data."""
+csv rather than netCDF: nothing in the requirements reads netCDF. NaN marks no data.
+
+Two routes to the same file: ERDDAP first; if ERDDAP refuses (403, as it may for some cloud addresses) or fails, the
+source THREDDS server's OPeNDAP ASCII answer (same grid: lat -89.875 + 0.25 i, lon -179.875 + 0.25 j, one time step per
+day). `day` prints which route served it when ERDDAP did not."""
 from __future__ import annotations
 
+import datetime as dt
 import io
 import urllib.parse
 
 import numpy as np
 
-from .http import get
+from .http import get, _session
 
 ERDDAP = "https://upwell.pfeg.noaa.gov/erddap/griddap/noaa_aoml_8c7c_16cc_8cde.csv"
 KT = 1.94384                   # m/s to knots
@@ -73,13 +78,98 @@ def cells(text):
     return {k: np.concatenate([q[k] for q in parts]) for k in parts[0]}
 
 
+THREDDS = "https://cwcgom.aoml.noaa.gov/thredds/dodsC/ASCAT/METOPB.nc"
+_times = None
+
+
+def _status(u):
+    """HTTP status of a GET (for the log), or the exception name."""
+    try:
+        return _session.get(u, timeout=60).status_code
+    except Exception as e:  # noqa: BLE001
+        return type(e).__name__
+
+
+def time_index(date, times):
+    """Index of the day's time step (stamped 12 UTC, seconds since 1970) in times, or None."""
+    t = (dt.datetime(date.year, date.month, date.day, 12, tzinfo=dt.timezone.utc).timestamp())
+    k = np.nonzero(np.abs(np.asarray(times) - t) < 3600)[0]
+    return int(k[0]) if k.size else None
+
+
+def parse_ascii(text):
+    """OPeNDAP ASCII answer -> {name: 2-d array} for each grid array (time dimension of 1 dropped)."""
+    out, name, rows = {}, None, []
+    for line in text.splitlines():
+        line = line.strip()
+        if "." in line and line.endswith("]") and line.split("[")[0].count(".") == 1 and not line.startswith("["):
+            a, b = line.split("[")[0].split(".")
+            if name and rows:
+                out[name] = np.array(rows, float)
+            name, rows = (a if a == b else None), []
+        elif line.startswith("[") and name:
+            rows.append([float(x) for x in line.split(",")[1:]])
+        elif not line and name and rows:
+            out[name] = np.array(rows, float)
+            name, rows = None, []
+    if name and rows:
+        out[name] = np.array(rows, float)
+    return out
+
+
+def ascii_url(k, south, north, west, east):
+    i0, i1 = int(round((south + 89.875) / 0.25)), int(round((north + 89.875) / 0.25))
+    j0, j1 = int(round((west + 179.875) / 0.25)), int(round((east + 179.875) / 0.25))
+    i0, j0, i1, j1 = max(i0, 0), max(j0, 0), min(i1, 719), min(j1, 1439)
+    q = ",".join("%s_%s[%d][%d:1:%d][%d:1:%d]" % (v, n, k, i0, i1, j0, j1) for v in VARS for n in NODES)
+    return THREDDS + ".ascii?" + urllib.parse.quote(q, safe=",=:"), (i0, i1, j0, j1)
+
+
+def thredds_cells(date, south, north, west, east):
+    """The same cells as `cells`, read from the THREDDS server; None when the day is not there."""
+    global _times
+    if _times is None:
+        r = get(THREDDS + ".ascii?time", tries=TRIES)
+        if r is None:
+            return None
+        _times = [float(x) for x in r.text.split("time[")[-1].split("\n", 1)[1].replace("\n", ",").split(",") if x.strip()]
+    k = time_index(date, _times)
+    if k is None:
+        return None
+    u, (i0, i1, j0, j1) = ascii_url(k, south, north, west, east)
+    r = get(u, tries=TRIES)
+    if r is None:
+        return None
+    g = parse_ascii(r.text)
+    lat = -89.875 + 0.25 * np.arange(i0, i1 + 1)
+    lon = -179.875 + 0.25 * np.arange(j0, j1 + 1)
+    la, lo = np.meshgrid(lat, lon, indexing="ij")
+    cols = [la.ravel(), lo.ravel()] + [g["%s_%s" % (v, n)].ravel() for v in VARS for n in NODES]
+    a = np.column_stack(cols)
+    a[a <= -999] = np.nan
+    buf = io.StringIO()
+    buf.write("h\nu\n")
+    np.savetxt(buf, np.column_stack([np.zeros(len(a)), a]), delimiter=",", fmt="%.6g")
+    return cells(buf.getvalue())
+
+
 def day(date, box):
     """The valid cells of a UTC day (date or datetime) inside box (module doc) -> dict; None when the day is not there."""
     south, north, west, east = box
     got = []
     for w, e in pieces(west, east):
-        r = get(url(date, south, north, w, e), tries=TRIES)
-        if r is None:
+        u = url(date, south, north, w, e)
+        try:
+            r = get(u, tries=TRIES)
+        except RuntimeError:
+            r = None
+        if r is not None:
+            got.append(cells(r.text))
+            continue
+        c = thredds_cells(date, south, north, w, e)
+        print("NESDIS %s: ERDDAP answered %s; THREDDS %s" % (date, _status(u), "used" if c is not None else "has no such day"),
+              flush=True)
+        if c is None:
             return None
-        got.append(cells(r.text))
+        got.append(c)
     return {k: np.concatenate([g[k] for g in got]) for k in got[0]}

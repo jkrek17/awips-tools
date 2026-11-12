@@ -60,6 +60,8 @@ def test_day_requests_and_none(monkeypatch):
         seen.append(urllib.parse.unquote(u))
         return None if "2026-11-09" in u else R(synthetic())
     monkeypatch.setattr(nes, "get", g)
+    monkeypatch.setattr(nes, "thredds_cells", lambda *a: None)     # the fallback route has no such day either
+    monkeypatch.setattr(nes, "_status", lambda u: 404)
     c = nes.day(dt.datetime(2026, 11, 6, 15), (18, 67, 135, 245))
     assert c["lat"].size == 4                                  # two pieces, two cells each
     assert len(seen) == 2 and all("(2026-11-06T12:00:00Z)" in u for u in seen)
@@ -67,3 +69,43 @@ def test_day_requests_and_none(monkeypatch):
     assert "WSPD_Ascending" in seen[0] and "Time_Descending" in seen[0] and seen[0].count(",") == 9
     assert nes.day(dt.date(2026, 11, 9), (18, 67, -95, 10)) is None
     assert len(seen) == 3
+
+
+ASCII = """Dataset {
+} ASCAT/METOPB.nc;
+---------------------------------------------
+WSPD_Ascending.WSPD_Ascending[1][2][3]
+[0][0], 11.5, NaN, 10.0
+[0][1], 9.0, 8.0, -9999.0
+
+WSPD_Ascending.time[1]
+1.7944848E9
+
+WSPD_Ascending.lat[2]
+35.125, 35.375
+
+Time_Ascending.Time_Ascending[1][2][3]
+[0][0], 1408.0, 1408.0, 1408.0
+[0][1], 1408.0, 1408.0, 1408.0
+"""
+
+
+def test_parse_ascii_and_index():
+    g = nes.parse_ascii(ASCII)
+    assert set(g) == {"WSPD_Ascending", "Time_Ascending"}
+    assert g["WSPD_Ascending"].shape == (2, 3) and g["WSPD_Ascending"][1, 0] == 9.0
+    t = dt.datetime(2026, 11, 12, 12, tzinfo=dt.timezone.utc).timestamp()
+    assert nes.time_index(dt.date(2026, 11, 12), [t - 86400, t]) == 1
+    assert nes.time_index(dt.date(2026, 11, 13), [t - 86400, t]) is None
+    u, (i0, i1, j0, j1) = nes.ascii_url(2080, 35.125, 35.375, -49.875, -49.125)
+    assert (i0, i1, j0, j1) == (500, 501, 520, 523)
+
+
+def test_day_falls_back_to_thredds(monkeypatch):
+    monkeypatch.setattr(nes, "get", lambda u, rng=None, tries=8: None)
+    monkeypatch.setattr(nes, "_status", lambda u: 403)
+    one = nes.cells(HEAD + "2026-11-06T12:00:00Z,40.125,-30.125,10,NaN,0,NaN,-10,NaN,0,NaN,100,NaN\n")
+    monkeypatch.setattr(nes, "thredds_cells", lambda *a: one)
+    assert nes.day(dt.date(2026, 11, 6), (18, 67, -95, 10))["lat"].size == 1
+    monkeypatch.setattr(nes, "thredds_cells", lambda *a: None)
+    assert nes.day(dt.date(2026, 11, 6), (18, 67, -95, 10)) is None
