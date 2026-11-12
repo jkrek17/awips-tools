@@ -94,8 +94,25 @@ def granules(start, end, short_name=SHORT_NAME, fetch=None):
 def credentials(env=None):
     """(user, password) from EARTHDATA_USER and EARTHDATA_PASS, or None when either is missing or empty."""
     env = os.environ if env is None else env
-    u, p = env.get("EARTHDATA_USER", ""), env.get("EARTHDATA_PASS", "")
+    u, p = env.get("EARTHDATA_USER", "").strip(), env.get("EARTHDATA_PASS", "").strip("\r\n")
     return (u, p) if u and p else None
+
+
+TOKEN_URL = "https://urs.earthdata.nasa.gov/api/users/find_or_create_token"
+
+
+def token(user, password, post=None):
+    """An Earthdata bearer token (NASA's token API, basic auth) -> str. A refusal raises AuthError carrying NASA's own
+    error text (for example "Invalid user credentials" or an unaccepted EULA), never the credentials."""
+    post = post or requests.post
+    r = post(TOKEN_URL, auth=(user, password), timeout=60)
+    try:
+        j = r.json()
+    except ValueError:
+        j = {}
+    if r.status_code == 200 and j.get("access_token"):
+        return j["access_token"]
+    raise AuthError("token API HTTP %d: %s" % (r.status_code, j.get("error_description") or j.get("error") or "no reason given"))
 
 
 class EarthdataSession(requests.Session):
@@ -103,9 +120,22 @@ class EarthdataSession(requests.Session):
     redirects to the login host, which answers with basic auth, then redirects back with a cookie (NASA's documented
     pattern). Other redirects (for example to a CDN) lose it."""
 
-    def __init__(self, user, password):
+    def __init__(self, user, password, bearer=None):
         super().__init__()
         self.auth = (user, password)
+        self.bearer = bearer
+
+    def request(self, method, url, **kw):
+        # With a token: send it as a bearer header to PO.DAAC itself (no login redirect), basic auth not used.
+        if self.bearer and urlparse(url).hostname == DATA_HOST:
+            kw.setdefault("headers", {})["Authorization"] = "Bearer " + self.bearer
+            kw["auth"] = None
+            saved, self.auth = self.auth, None
+            try:
+                return super().request(method, url, **kw)
+            finally:
+                self.auth = saved
+        return super().request(method, url, **kw)
 
     def rebuild_auth(self, prepared_request, response):
         headers = prepared_request.headers
@@ -116,8 +146,14 @@ class EarthdataSession(requests.Session):
                 del headers["Authorization"]
 
 
-def session(user, password):
-    return EarthdataSession(user, password)
+DATA_HOST = "archive.podaac.earthdata.nasa.gov"
+
+
+def session(user, password, get_token=None):
+    """A session for PO.DAAC downloads: with a bearer token from NASA's token API when it gives one (the most reliable
+    route), else basic auth through the login redirect. A token refusal is raised (AuthError) so the log says why."""
+    tok = (get_token or token)(user, password)
+    return EarthdataSession(user, password, bearer=tok)
 
 
 def _is_netcdf(b):

@@ -888,7 +888,14 @@ def fetch_knmi(now, kn, rs, water, inbox, days=KNMI_DAYS, cap=KNMI_MAX, env=None
         return []
     listing = listing or podaac_ascat.granules
     if download is None:
-        sess = podaac_ascat.session(*creds)
+        try:
+            sess = podaac_ascat.session(*creds)
+        except podaac_ascat.AuthError as e:
+            print("KNMI Metop-C: Earthdata login refused (%s)" % e, file=sys.stderr, flush=True)
+            return []
+        except Exception as e:   # token API down: next run
+            print("KNMI Metop-C: Earthdata token failed (%s)" % type(e).__name__, file=sys.stderr, flush=True)
+            return []
         download = lambda url: podaac_ascat.download(url, sess)   # noqa: E731
     try:
         gs = listing(now - dt.timedelta(days=KEEP_DAYS), now)

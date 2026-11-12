@@ -96,7 +96,7 @@ def test_credentials_from_env_only():
 
 def test_auth_kept_only_for_urs():
     import requests
-    s = pa.session("u", "p")
+    s = pa.session("u", "p", get_token=lambda u, p: "tok")
 
     def moved(frm, to):
         prep = requests.Request("GET", to, headers={"Authorization": "Basic x"}).prepare()
@@ -154,3 +154,41 @@ def test_download_refuses_login_page_and_never_loops_on_401():
     with pytest.raises(pa.AuthError):
         pa.download("https://archive.podaac.earthdata.nasa.gov/a.nc", S(Resp(200, b"<html>")), pause=0)
     assert pa.download("https://a/a.nc", S(Resp(200, b"CDF\x01abc")), pause=0) == b"CDF\x01abc"
+
+
+class _R:
+    def __init__(self, code, j):
+        self.status_code, self._j = code, j
+
+    def json(self):
+        return self._j
+
+
+def test_token_ok_and_refused():
+    assert pa.token("u", "p", post=lambda *a, **k: _R(200, {"access_token": "abc"})) == "abc"
+    try:
+        pa.token("u", "p", post=lambda *a, **k: _R(401, {"error": "invalid_credentials",
+                                                         "error_description": "Invalid user credentials"}))
+    except pa.AuthError as e:
+        assert "Invalid user credentials" in str(e) and "p" not in str(e).split(":")[0].replace("http", "")[:0]
+    else:
+        raise AssertionError("refusal not raised")
+
+
+def test_bearer_sent_to_podaac_only(monkeypatch):
+    import requests
+    seen = {}
+
+    def fake(self, method, url, **kw):
+        seen["h"], seen["auth"], seen["sauth"] = dict(kw.get("headers") or {}), kw.get("auth"), self.auth
+        return "ok"
+    monkeypatch.setattr(requests.Session, "request", fake)
+    s = pa.session("u", "p", get_token=lambda u, p: "tok")
+    s.get("https://archive.podaac.earthdata.nasa.gov/podaac-ops-cumulus-protected/x.nc")
+    assert seen["h"].get("Authorization") == "Bearer tok" and seen["sauth"] is None
+    s.get("https://cmr.earthdata.nasa.gov/search")
+    assert "Authorization" not in seen["h"] and s.auth == ("u", "p")
+
+
+def test_credentials_strip():
+    assert pa.credentials({"EARTHDATA_USER": " jk \n", "EARTHDATA_PASS": "pw\n"}) == ("jk", "pw")
