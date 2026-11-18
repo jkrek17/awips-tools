@@ -28,7 +28,8 @@ model-written draft on `/high-seas/` and never reads it.
 - **Copy:** Warnings box, Synopsis box (no header lines) and all, rejoined and wrapped at 66
   characters as the Apps Script's "Show Text to Send" does.
 - **Wrap as you type:** the paragraph being edited rewraps at 66 characters (the send width) on every
-  edit, with a faint rule at column 66; header and valid-time lines are left alone.
+  edit, and a paste or drop rewraps every forecast paragraph; a faint rule marks column 66; header and
+  valid-time lines are left alone.
 - **Draft:** kept in the browser (localStorage), one per basin.
 
 ## Files

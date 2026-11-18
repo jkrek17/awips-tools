@@ -180,6 +180,33 @@
     reflowing = false;
   }
 
+  // after a paste or a drop: rewrap every forecast paragraph, so pasted text lands at the send width
+  // wherever the cursor ends up (the cursor again keeps its place among the words)
+  function reflowAll() {
+    var v = ed.value, c = ed.selectionEnd, lines = v.split("\n"), out = [], i = 0;
+    var PSTART = /^\s*\.(?!\.)/;
+    while (i < lines.length) {
+      if (!PSTART.test(lines[i]) || isHeader(lines[i])) { out.push(lines[i]); i++; continue; }
+      var b = i;
+      while (b + 1 < lines.length && lines[b + 1].trim() && !PSTART.test(lines[b + 1]) && !isHeader(lines[b + 1])) b++;
+      var old = lines.slice(i, b + 1).join("\n"), tail = /[ \t]+$/.exec(old);
+      out.push(wrapWords(old.split(/\s+/).filter(Boolean)) + (tail ? " " : ""));
+      i = b + 1;
+    }
+    var neu = out.join("\n");
+    if (neu === v) return;
+    var before = v.slice(0, c), k = before.replace(/\s+/g, "").length, sp = /\s$/.test(before), at = 0, n = 0;
+    while (at < neu.length && n < k) { if (!/\s/.test(neu[at])) n++; at++; }
+    if (sp && at < neu.length && /\s/.test(neu[at])) at++;
+    reflowing = true;
+    ed.setSelectionRange(0, v.length);
+    var ok = false;
+    try { ok = document.execCommand("insertText", false, neu); } catch (e) { ok = false; }   // keeps undo
+    if (!ok || ed.value !== neu) ed.value = neu;
+    ed.setSelectionRange(at, at);
+    reflowing = false;
+  }
+
   // ---------------------------------------------------------------- read, check, draw
   function schedule() {
     clearTimeout(timer); timer = setTimeout(update, 180);
@@ -264,7 +291,9 @@
   }
   ["keyup", "click", "select"].forEach(function (ev) { ed.addEventListener(ev, function () { followCursor(false); }); });
   ed.addEventListener("input", function (e) {
-    if (!reflowing && (!e.inputType || /^(insert|delete)/.test(e.inputType)) && e.inputType !== "insertLineBreak") reflow();
+    if (reflowing) return schedule();
+    if (/^insertFrom(Paste|Drop)/.test(e.inputType || "")) reflowAll();
+    else if ((!e.inputType || /^(insert|delete)/.test(e.inputType)) && e.inputType !== "insertLineBreak") reflow();
     schedule();
   });
 
