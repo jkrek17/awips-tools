@@ -603,8 +603,13 @@
   }
   var FRONT_RE = new RegExp("(?:(?:COLD |WARM |OCCLUDED |STATIONARY )?FRONT|TROUGH|LINE) (?:TO |WILL )?(?:EXT?EN(?:D|DS|DING) )?FROM (" + PLIST + ")", "g");
 
+  // letter O typed for a zero inside a number or position ("2O TO 30 KT", "5ON150W"): read as meant
+  // (the checks list each one). A token counts only if it has a digit and an O next to a digit.
+  var LETTER_O_RE = /\b(?=[\dONSEW.]*\d)(?=[\dONSEW.]*(?:\dO|O\d))[\dONSEW.]+\b/g;
+  function zeroForO(s) { return s.replace(LETTER_O_RE, function (w) { return w.replace(/O/g, "0"); }); }
+
   function readPara(p, B, sysLows, hourDefault) {
-    var flat = p.replace(/…/g, "...").replace(/\s+/g, " ").trim().toUpperCase();
+    var flat = zeroForO(p.replace(/…/g, "...").replace(/\s+/g, " ").trim().toUpperCase());
     flat = flat.replace(/\bNEAR (\d+(?:\.\d+)?[NS]) (\d+(?:\.\d+)?[EW])/g, "NEAR $1$2")
       .replace(/\b(\d+\.\d+[NS]) (\d+(?:\.\d+)?[EW])\b/g, "$1$2")
       .replace(/(\d MB)\.(?=[A-Z])/g, "$1. ");
@@ -766,7 +771,7 @@
   // the official limits text of each basin and its outline
   function boundary(basin) { return { text: BOUNDARY_TEXT[basin], outline: OUTLINES[basin].slice() }; }
 
-  return { read: read, boundary: boundary, areaOf: areaOf, OUTLINES: OUTLINES, _areaGeom: function (s, basin, lows) {
+  return { read: read, LETTER_O_RE: LETTER_O_RE, zeroForO: zeroForO, boundary: boundary, areaOf: areaOf, OUTLINES: OUTLINES, _areaGeom: function (s, basin, lows) {
     var B = new Basin(basin); return areaGeom(s, { B: B, lows: lows || [], line: null });
   } };
 });

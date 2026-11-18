@@ -12,8 +12,11 @@ model-written draft on `/high-seas/` and never reads it.
   Click an area to select its paragraph. Each warning block's main low is drawn as a track through
   its forecast hours, so a mistyped position shows as a jump.
 - **Slips read as meant:** a misspelled QUADRANT or SEMICIRCLE, `LINE FROM a AND b`, `FROM 128W AND
-  170W`, `AMD`, `MM`, a missing `NM`, `54O`, `60M` are drawn the way they were meant, and each is still
-  listed as "Mapped as ..." so it gets fixed in the text.
+  170W`, `AMD`, `MM`, a missing `NM`, `60M` are drawn the way they were meant, and each is still
+  listed as "Mapped as ..." so it gets fixed in the text. A letter O typed for a zero anywhere in a
+  number or position (`2O TO 30 KT`, `24O NM`, `5ON150W`) is read as a zero and listed as an error;
+  before 18 Nov 2026 one in a wind range dropped the area off the map with no note (32 such slips in
+  5,848 issued products, Jan 2025 to Oct 2026, every one real).
 - **Checks:** every check of Jason's Apps Script "OPC High Seas Forecast Validator", with the fixes
   of 11 Nov 2026, plus coordinates out of range, seas in KT, and the map's own notes: an area it could
   not read, one that falls outside the forecast waters, or one with no latitude (or longitude) limits

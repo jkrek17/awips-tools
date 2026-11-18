@@ -129,4 +129,22 @@ test("fog and freezing spray paragraphs are drawn", function () {
   assert(r.paras.every(function (p) { return !p.blocks.length; }), "fog or spray read as wind");
 });
 
+test("Letter O typed for a zero: flagged, and the area still mapped as meant", function () {
+  // issued 1630 UTC 18 Jul 2026 HSFEP1 had "WINDS 2O TO 30 KT"; the area used to drop off the map unflagged
+  var t = ".WARNINGS.\n\n...GALE WARNING...\n.LOW 57N162W 1003 MB. FROM 49N TO 59N BETWEEN 144W AND 170W WINDS 2O TO 3O\nKT. SEAS TO 3 M.\n" +
+    ".24 HOUR FORECAST LOW 5ON150W 1000 MB. WITHIN 18O NM S SEMICIRCLE WINDS 30 TO 40 KT. SEAS 2.5 TO 4 M.\n";
+  var r = R.read(t, "pac"), b = r.paras[0].blocks;
+  assert.strictEqual(b.length, 1, "block read");
+  assert.deepStrictEqual(b[0].wind, [20, 30]);
+  assert(b[0].ok, "area mapped");
+  var p1 = r.paras[1];
+  assert.deepStrictEqual([p1.lows[0].lat, p1.lows[0].lon], [50, 210]);
+  assert(p1.blocks[0].ok && p1.blocks[0].wind[1] === 40, "18O NM read as 180");
+  var is = C.check(t, r).filter(function (i) { return /Letter O/.test(i.msg); });
+  assert.deepStrictEqual(is.map(function (i) { return i.word; }), ["2O", "3O", "5ON150W", "18O"]);
+  is.forEach(function (i) { assert.strictEqual(t.slice(i.at, i.end), i.word); assert.strictEqual(i.sev, "error"); });
+  // words with an O and no digit are left alone
+  assert(!C.check(t.replace("GALE", "GALE"), r).some(function (i) { return /Letter O/.test(i.msg) && /^[A-Z]+$/.test(i.word); }));
+});
+
 console.log(n + " tests passed");

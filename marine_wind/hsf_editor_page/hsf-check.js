@@ -75,6 +75,13 @@
     }
     var A = blk.a, B = blk.b, m;
 
+    // ---- letter O typed for a zero ("2O TO 30 KT"): flag it, then check the rest as meant
+    // (the replacement keeps every character offset)
+    each(/\b(?=[\dONSEWonsew.]*\d)(?=[\dONSEWonsew.]*(?:\d[Oo]|[Oo]\d))[\dONSEWonsew.]+\b/g, t, A, B, function (m) {
+      issue(out, "error", "Numbers", "Letter O typed for a zero (" + m[0] + " should be " + m[0].replace(/[Oo]/g, "0") + ")", m[0], m.index, m.index + m[0].length);
+    });
+    t = t.replace(/\b(?=[\dONSEWonsew.]*\d)(?=[\dONSEWonsew.]*(?:\d[Oo]|[Oo]\d))[\dONSEWonsew.]+\b/g, function (w) { return w.replace(/[Oo]/g, "0"); });
+
     // ---- coordinates (any token mixing digits and N/S/E/W)
     each(/\b(?=[A-Za-z]*\d)(?=\d*[NSEWnsew])[\dNSEWnsew]{2,}\b/g, t, A, B, function (m) {
       var tok = m[0];
