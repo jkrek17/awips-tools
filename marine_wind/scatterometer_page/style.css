@@ -1,5 +1,5 @@
 /* Scatterometer page: the card, pass list, toggles and summary. The look comes from ../globe-kit/globe-kit.css. */
-:root { --card-w: 460px; --gale: #fbbf24; --storm: #f97316; --hf: #e879f9; }
+:root { --card-w: 460px; --gale: #fbbf24; --storm: #f97316; --hf: #f0679a; }
 .card { position: absolute; z-index: 15; top: calc(var(--gap) * 2 + var(--topbar-h)); left: var(--gap); bottom: var(--gap);
   width: min(var(--card-w), calc(100% - var(--gap) * 2)); display: flex; flex-direction: column; overflow: hidden;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow);
@@ -19,7 +19,7 @@
 .seg-row button[aria-pressed="true"]:disabled { opacity: .55; }
 .toggles button[aria-pressed="false"] .sw { opacity: .35; }
 .sw { width: 16px; height: 10px; border-radius: 2px; flex: none; display: inline-block; }
-.sw-scat { background: linear-gradient(90deg, #2f5a8a, #e8d27a, #e06f2e, #9b1f5e); }
+.sw-scat { background: linear-gradient(90deg, #2f5a8a, #e8d27a, #e06f2e, #b03454); }
 .sw-best { height: 0; border-radius: 0; border-top: 3px solid #fff; box-shadow: 0 0 0 1px rgba(5,10,20,.8); }
 .sw-warn { height: 0; border-radius: 0; border-top: 2px dashed var(--storm); }
 .legend-inline { margin-top: 8px; font-size: 11px; color: var(--text-2); }

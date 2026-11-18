@@ -23,10 +23,10 @@
   var LEADS = [["latest", "Latest run"], ["f24", "24 h earlier"], ["f48", "48 h earlier"]];   // the order of the .bin files: do not reorder
   var LEADS_UI = ["f24", "latest", "f48"];
   var BASIN = { atl: { name: "Atlantic", start: [-45, 45], mobile: [-45, 42] }, pac: { name: "Pacific", start: [175, 45], mobile: [175, 42] } };
-  var LEVELS = [[34, "gale", "#fbbf24", 7], [48, "storm", "#f97316", 6], [64, "HF", "#e879f9", 4]];
+  var LEVELS = [[34, "gale", "#fbbf24", 7], [48, "storm", "#f97316", 6], [64, "HF", "#f0679a", 4]];
   var WIND = { // the marine wind page's 10 m wind scale
     stops: [0, 10, 15, 20, 25, 30, 34, 41, 48, 56, 64, 80],
-    colors: ["#1b1d21", "#1f2a36", "#22364b", "#28466a", "#2f5a8a", "#3f74ab", "#e8d27a", "#e8a93f", "#e06f2e", "#c9372c", "#9b1f5e", "#c86fd8"]
+    colors: ["#1b1d21", "#1f2a36", "#22364b", "#28466a", "#2f5a8a", "#3f74ab", "#e8d27a", "#f5ab2a", "#e06f2e", "#c9372c", "#b03454", "#c86fd8"]
   };
   var state = { tab: "mosaic", basin: "atl", lead: "f24", level: 48, winds: false, pass: null, v: null, oscat: false, focus: null, older: false, layers: { scat: true, best: true, warn: true } };
 
