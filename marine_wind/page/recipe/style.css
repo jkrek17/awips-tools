@@ -3,7 +3,7 @@
 :root {
   --bg: #f7f8fa; --card: #fff; --text: #1c2330; --muted: #5b6575; --rule: #dfe3ea;
   --accent: #0b5fa5;
-  --gale: #fbbf24; --storm: #f97316; --hf: #e879f9;
+  --gale: #fbbf24; --storm: #f97316; --hf: #f0679a;
   --gale-ink: #8a6100; --storm-ink: #b4470a; --hf-ink: #9b2fae;
 }
 * { box-sizing: border-box; }
@@ -45,7 +45,7 @@ b { font-variant-numeric: tabular-nums; }
 .layers { list-style: none; margin: 0 0 10px; padding: 0; }
 .layers li { display: grid; grid-template-columns: 44px 1fr; gap: 10px; align-items: center; margin: 0 0 10px; }
 .sw { display: block; width: 44px; height: 22px; border-radius: 4px; }
-.sw-wind { background: linear-gradient(90deg, #3f74ab 0 25%, #e8d27a 25% 50%, #e06f2e 50% 75%, #9b1f5e 75%); }
+.sw-wind { background: linear-gradient(90deg, #3f74ab 0 25%, #e8d27a 25% 50%, #e06f2e 50% 75%, #b03454 75%); }
 .sw-warn { border: 2px dashed var(--storm); }
 .sw-poss { border: 1px solid var(--storm); }
 .sw-track { height: 0; border-top: 2px dashed var(--text); border-radius: 0; }

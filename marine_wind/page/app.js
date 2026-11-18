@@ -27,7 +27,7 @@
   var WIND = {
     stops: [0, 10, 15, 20, 25, 30, 34, 41, 48, 56, 64, 80],
     colors: ["#1b1d21", "#1f2a36", "#22364b", "#28466a", "#2f5a8a", "#3f74ab",
-             "#e8d27a", "#e8a93f", "#e06f2e", "#c9372c", "#9b1f5e", "#c86fd8"],
+             "#e8d27a", "#f5ab2a", "#e06f2e", "#c9372c", "#b03454", "#c86fd8"],
     unit: "kt", title: "10 m wind (kt)"
   };
   var PROB = {
@@ -60,9 +60,9 @@
     unit: "%", title: "Storm core chance (%)"
   };
   // the storm layers' "members agree" lines (hazard bits 1, 2, 4; called "possible" before 29 Oct 2026)
-  var HAZARD = [[1, "Gale, members agree", "#fbbf24"], [2, "Storm, members agree", "#f97316"], [4, "HF, members agree", "#e879f9"]];
+  var HAZARD = [[1, "Gale, members agree", "#fbbf24"], [2, "Storm, members agree", "#f97316"], [4, "HF, members agree", "#f0679a"]];
   // the warning areas, drawn dashed beside them (field warn, same bits and colours)
-  var WARN = [[1, "Gale warning area", "#fbbf24"], [2, "Storm warning area", "#f97316"], [4, "HF warning area", "#e879f9"]];
+  var WARN = [[1, "Gale warning area", "#fbbf24"], [2, "Storm warning area", "#f97316"], [4, "HF warning area", "#f0679a"]];
 
   var LAYERS = [
     ["Forecast"],
