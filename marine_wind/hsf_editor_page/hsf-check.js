@@ -202,6 +202,21 @@
       });
     });
 
+    // fog and freezing spray areas the map could not read
+    if (read && read.paras) read.paras.forEach(function (p) {
+      (p.hazards || []).forEach(function (h) {
+        (h.guessed || []).forEach(function (g) {
+          var w = locate(t, g.from, p.start, p.end);
+          issue(out, "warning", "Map", "Mapped as " + g.to, g.from, w[0], w[1]);
+        });
+        if (h.ok) return;
+        var words = (h.unread || []).join(" ").trim();
+        var where = locate(t, words || h.area_text, p.start, p.end);
+        issue(out, "info", "Map", words ? "The map could not read this part of the " + (h.kind === "fog" ? "fog" : "freezing spray") + " area"
+          : "The map could not draw this " + (h.kind === "fog" ? "fog" : "freezing spray") + " area", short(words || h.area_text), where[0], where[1]);
+      });
+    });
+
     var order = { error: 0, warning: 1, info: 2 };
     out.sort(function (a, b) { return order[a.sev] - order[b.sev] || a.at - b.at; });
     return out;
