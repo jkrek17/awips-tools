@@ -498,7 +498,9 @@
     [/\b(\d+)O\b/g, "$10"],
     [/\b(\d{2,4}) N (?=(?:NE|NW|SE|SW|N|E|S|W)\b)/g, "$1 NM "],
     [/\b(\d{2,4}) (?=(?:NE|NW|SE|SW|N|E|S|W) (?:QUADRANTS?|SEMICIRCLES?)\b)/g, "$1 NM "],
-    [/\b(FROM|TO) (\d{1,2})M\b/g, "$1 $2N"]
+    [/\b(FROM|TO) (\d{1,2})M\b/g, "$1 $2N"],
+    [/\b(\d{2,4}) ?NM WITHIN (?:THE )?(GREENLAND|COAST)\b/g, "WITHIN $1 NM OF $2"],
+    [/\b(\d{2,4})NM\b/g, "$1 NM"]
   ];
   function fixSlips(s, out) {
     SLIPS.forEach(function (f) {
@@ -558,8 +560,21 @@
         cur.kinds[hit.kind] = 1;
         groups.push(cur);
       } else {
-        cur.geom = cur.geom && hit.geom ? inter(cur.geom, hit.geom) : (cur.geom || hit.geom);
-        cur.kinds[hit.kind] = 1;
+        var both = cur.geom && cur.geom.length && hit.geom && hit.geom.length ? inter(cur.geom, hit.geom) : null;
+        if (andSep) { cur.beforeAnd = cur.geom; cur.sinceAnd = hit.geom; }
+        else if (cur.sinceAnd) cur.sinceAnd = cur.sinceAnd.length && hit.geom && hit.geom.length ? inter(cur.sinceAnd, hit.geom) : (cur.sinceAnd || hit.geom);
+        if (both && !both.length && cur.op === "add" && cur.beforeAnd && cur.beforeAnd.length && cur.sinceAnd && cur.sinceAnd.length) {
+          // a plain AND whose pieces leave nothing in common lists another area:
+          // "W OF A LINE FROM 61N65W TO 67N53W AND N OF 64N E OF GREENLAND"
+          var rest = cur.sinceAnd;
+          cur.geom = cur.beforeAnd; cur.beforeAnd = cur.sinceAnd = null;
+          cur = { geom: rest, kinds: {}, op: "add", names: [] };
+          cur.kinds[hit.kind] = 1;
+          groups.push(cur);
+        } else {
+          cur.geom = both || cur.geom || hit.geom;
+          cur.kinds[hit.kind] = 1;
+        }
       }
       cur.names.push(hit.name);
       pos = hit.end;
@@ -685,12 +700,14 @@
       area = area.replace(/[\s.,]+$/, "").trim();
       if (!area) return;
       var a = areaGeom(area, ctx);
-      out.push({ kind: kind, level: lvl, words: words, area_text: area, geom: a.geom, draw: a.geom, ok: a.ok && a.geom.length > 0, unread: a.unread });
+      out.push({ kind: kind, level: lvl, words: words, area_text: area, geom: a.geom, draw: a.geom, ok: a.ok && a.geom.length > 0, unread: a.unread, guessed: a.guessed });
     };
     if ((m = /^DENSE FOG\b\.?\s*(?:VSBY\s+(?:OCCASIONALLY\s+)?(?:LESS THAN|BELOW|UNDER)\s+\d+(?:\.\d+)?\s*NM\.?\s*)?([\s\S]*)$/.exec(body))) {
       one("fog", "dense", "DENSE FOG", m[1]);
     } else if (/^(?:AREAS OF\s+)?(?:LIGHT|MODERATE|HEAVY)\b[A-Z ]*?FREEZING SPRAY\b/.test(body)) {
-      body.split(/\.?\s*\bELSEWHERE\s+/).forEach(function (part) {
+      // each level starts its own area: "... W OF 58W. LIGHT TO MODERATE FREEZING SPRAY N OF 58N ..."
+      // (with or without ELSEWHERE in front)
+      body.split(/(?:^|\.?\s*\bELSEWHERE\s+|\.\s+|\.\.\.\s*)(?=(?:AREAS OF\s+)?(?:LIGHT|MODERATE|HEAVY)(?:\s+TO\s+(?:MODERATE|HEAVY))?\s+FREEZING SPRAY\b)/).forEach(function (part) {
         var k = /^((?:AREAS OF\s+)?(?:LIGHT|MODERATE|HEAVY)(?:\s+TO\s+(?:MODERATE|HEAVY))?)\s+FREEZING SPRAY\s*([\s\S]*)$/.exec(part.trim());
         if (!k) return;
         one("spray", /HEAVY/.test(k[1]) ? "heavy" : /MODERATE/.test(k[1]) ? "moderate" : "light", k[1] + " FREEZING SPRAY", k[2]);

@@ -84,6 +84,20 @@ test("US East Coast", function () {
   ["WITHIN 120 NM OF THE E COAST OF THE US", "WITHIN 60 NM OF THE NEW ENGLAND COAST"].forEach(function (s) { assert(R._areaGeom(s, "atl", []).ok, s); });
 });
 
+test("freezing spray: each level its own area, without ELSEWHERE", function () {
+  var t = ".WARNINGS.\n\n...HEAVY FREEZING SPRAY WARNING...\n.MODERATE TO HEAVY FREEZING SPRAY N OF 62N W OF 58W. LIGHT TO\nMODERATE FREEZING SPRAY N OF 58N AND W OF 41W.\n" +
+    ".48 HOUR FORECAST HEAVY FREEZING SPRAY W OF 57W FROM 67N TO 62N.\nLIGHT TO MODERATE FREEZING SPRAY W OF 50W AND N OF 50N...60NM\nWITHIN GREENLAND W OF 41W.\n\n.SYNOPSIS AND FORECAST.\n";
+  var r = R.read(t, "atl"), hz = [].concat.apply([], r.paras.map(function (p) { return p.hazards || []; }));
+  assert.strictEqual(hz.length, 4, "four spray areas");
+  hz.forEach(function (h) {
+    var ys = [];
+    JSON.stringify(h.geom).replace(/\[(-?[\d.]+),(-?[\d.]+)\]/g, function (m, x, y) { ys.push(+y); });
+    assert(h.ok && Math.min.apply(0, ys) >= 50, h.area_text + " stays north: " + Math.min.apply(0, ys));
+  });
+  // an AND whose pieces share nothing lists two areas
+  assert(R.areaOf(R._areaGeom("W OF A LINE FROM 61N65W TO 67N53W AND N OF 64N E OF GREENLAND", "atl", []).geom) > 30);
+});
+
 test("Pacific areas across the date line stay in 0-360", function () {
   var g = R._areaGeom("WITHIN 300 NM OF 50N180W", "pac", []).geom;
   g.forEach(function (p) { p[0].forEach(function (q) { assert(q[0] >= 172 && q[0] <= 190, q[0]); }); });
