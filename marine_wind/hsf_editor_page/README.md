@@ -61,7 +61,8 @@ Where both readers draw an area, 90% of the shapes agree (overlap over 0.9 of th
 what is still not drawn is real slips in the issued text (`60M`, `3746W`, `54O NM`, `AMD`, a missing
 `NM`), which the page lists as map notes, plus rare wording: lines run to the Alaska coast or
 peninsula, Bristol Bay, Cook Inlet. Named outer coasts are drawn from a 0.5 deg sketch: California,
-Oregon, Washington, Vancouver Island, British Columbia, Alaska, the Alaska Peninsula, Nova Scotia,
+Oregon, Washington, Vancouver Island, British Columbia, Alaska, the Alaska Peninsula, the US East Coast
+("USA E COAST", "E COAST OF THE US", "NEW ENGLAND COAST"), Nova Scotia,
 Newfoundland, Labrador; Greenland from Natural Earth; Hecate Strait as a box. Run `node tests/coverage.js 400 30` to see the commonest misses.
 
 Shape rules: quadrant = bearing +-45 deg about the named direction, semicircle +-90; `<dirs> OF A

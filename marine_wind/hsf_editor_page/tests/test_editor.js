@@ -73,6 +73,17 @@ test("named coasts and Hecate Strait", function () {
   assert(R._areaGeom("WITHIN 60 NM OF THE LABRADOR COAST", "atl", []).ok, "Labrador");
 });
 
+test("US East Coast", function () {
+  var t = ".WARNINGS.\n\n...GALE WARNING...\n.12 HOUR FORECAST WITHIN 240 NM OF THE USA E COAST FROM 34N TO\n31N...AND W OF 64W BETWEEN 40N AND 34N WINDS 20 TO 35 KT. NE\nWINDS. SEAS 3 TO 4.5 M.\n";
+  var r = R.read(t, "atl"), b = r.paras[0].blocks[0], is = C.check(t, r);
+  assert(b.ok, "USA E COAST read: " + b.unread);
+  assert(!is.some(function (i) { return /No longitude limits|Unrecognized word|could not/.test(i.msg); }), JSON.stringify(is.map(function (i) { return i.msg; })));
+  var g = R._areaGeom("WITHIN 240 NM OF THE USA E COAST FROM 34N TO 31N", "atl", []).geom, xs = [];
+  JSON.stringify(g).replace(/\[(-?[\d.]+),(-?[\d.]+)\]/g, function (m, x) { xs.push(+x); });
+  assert(Math.max.apply(0, xs) < -70 && Math.max.apply(0, xs) > -73, "240 NM off the Carolinas reaches about 71W: " + Math.max.apply(0, xs));
+  ["WITHIN 120 NM OF THE E COAST OF THE US", "WITHIN 60 NM OF THE NEW ENGLAND COAST"].forEach(function (s) { assert(R._areaGeom(s, "atl", []).ok, s); });
+});
+
 test("Pacific areas across the date line stay in 0-360", function () {
   var g = R._areaGeom("WITHIN 300 NM OF 50N180W", "pac", []).geom;
   g.forEach(function (p) { p[0].forEach(function (q) { assert(q[0] >= 172 && q[0] <= 190, q[0]); }); });

@@ -57,6 +57,8 @@
     pac: [[244.2, 30], [242.9, 32.5], [241.5, 34], [239.5, 34.45], [239, 35.5], [238.1, 36.6], [237.5, 37.8], [237, 38.3], [236.3, 39], [235.6, 40.4], [235.8, 41.7], [235.5, 42.8], [235.9, 44], [236, 46.2], [235.6, 47.5], [235.3, 48.4], [235, 48.6], [234.2, 49], [233.4, 49.6], [232.5, 50.1], [231.6, 50.8], [232, 51.5], [231, 52.5], [229.7, 53.5], [229.4, 54.7], [226.5, 55.5], [225.2, 56.5], [224, 57.5], [223.2, 58.2], [221.5, 59], [219, 59.8], [216.5, 60.1], [214, 60.3], [210.5, 59.5], [208.3, 59.1], [206, 57.5], [201.5, 56], [198, 55], [195.5, 54.5]],
     atl: [[-65.7, 43.4], [-63.5, 44.5], [-61, 45.3], [-59.8, 46], [-53.1, 46.6], [-52.7, 47.6], [-53.6, 49], [-55.5, 50], [-55.5, 51.6], [-55.7, 52.5], [-55.8, 53.5], [-57.5, 54.5], [-59.5, 55.5], [-61.5, 56.5], [-61.8, 57.5], [-62.8, 58.5], [-64, 59.5], [-64.6, 60.3]]
   };
+  // the US East Coast, Florida-Georgia line to the Bay of Fundy (its own line: it overlaps Nova Scotia in latitude)
+  var US_EAST = [[-81.4, 30.7], [-81.1, 31.5], [-80.8, 32], [-79.8, 32.8], [-78.4, 33.8], [-76.6, 34.6], [-75.5, 35.2], [-75.8, 36.5], [-75.6, 37.5], [-75, 38.5], [-74.2, 39.5], [-73.9, 40.5], [-72.5, 40.8], [-71.8, 41.1], [-70.5, 41.4], [-69.9, 41.7], [-70.6, 42.7], [-70.2, 43.6], [-68.5, 44.3], [-67, 44.8], [-66.9, 45.1]];
   var COAST_NAMES = {
     pac: { CALIFORNIA: [32.5, 42], OREGON: [42, 46.25], WASHINGTON: [46.25, 48.5], "VANCOUVER ISLAND": [48.3, 50.9],
       "BRITISH COLUMBIA": [48.3, 54.8], ALASKA: [54.7, 61], "ALASKA PENINSULA": [54, 59.2], "": [0, 90] },
@@ -275,7 +277,7 @@
   add("circle", "WITHIN (\\d+) NM (?:OF|FROM) (?:THE |BOTH )?(?:(" + LL + ")|" + ORD + "(?:LOW|CENTER|CYCLONE|CENTERS)(?: CENTER)?(?: (" + LL + "))?)(?! TO)", "shape");
   add("dirlow", "WITHIN (\\d+) NM (" + DLIST + ") OF (" + CREF + "|" + LL + ")(?! TO)", "shape");
   add("coast", "WITHIN (\\d+) NM (?:(" + D + ") )?OF (?:THE )?(?:(" + D + ") )?(?:COAST OF )?GREENLAND(?: COAST)?", "shape");
-  add("coast2", "WITHIN (\\d+) NM (?:(" + D + ") )?OF (?:THE )?(?:(" + D + ") )?(?:(?:COAST|COASTS) OF )?(?:(CALIFORNIA|OREGON|WASHINGTON|VANCOUVER ISLAND|BRITISH COLUMBIA|ALASKA PENINSULA|ALASKA|NOVA SCOTIA|NEWFOUNDLAND|LABRADOR)(?: (?:COAST|COASTS|COASTLINE))?|(COAST|COASTLINE))\\b", "shape");
+  add("coast2", "WITHIN (\\d+) NM (?:(" + D + ") )?OF (?:THE )?(?:(" + D + ") )?(?:(?:COAST|COASTS) OF )?(?:(CALIFORNIA|OREGON|WASHINGTON|VANCOUVER ISLAND|BRITISH COLUMBIA|ALASKA PENINSULA|ALASKA|NOVA SCOTIA|NEWFOUNDLAND|LABRADOR)(?: (?:COAST|COASTS|COASTLINE))?|(COAST|COASTLINE)|(?:THE )?(?:(U\\.?S\\.?A?\\.?|UNITED STATES|NEW ENGLAND)(?: (?:E|EAST))?(?: (?:COAST|COASTLINE))?))(?=$|[^A-Z])", "shape");
   add("hecate", "(?:(?:IN|WITHIN|OVER|INCLUDING) )?(?:THE )?HECATE STRAIT", "region");
   add("linebuf_side", "(?:WITHIN )?(\\d+) NM (" + DLIST + ") OF (?:" + LINEKW + ")?\\s*(?:(?:FROM )?(" + PLIST + "))?", "shape");
   add("linebuf", "WITHIN (\\d+) NM (?:ON )?(?:EITHER SIDE )?OF (?:" + LINEKW + ")\\s*(?:(?:FROM )?(" + PLIST + "))?", "shape");
@@ -365,10 +367,14 @@
         return g;
       }
       case "coast2": {
+        var usBuf = B.name === "atl" ? coastBuffer(US_EAST, +m[1], B) : null;
+        if (m[6] === "NEW ENGLAND") return coastBuffer(US_EAST.filter(function (q) { return q[1] >= 40.7; }), +m[1], B);
+        if (m[6]) return usBuf;   // "USA E COAST", "E COAST OF THE US"
         var rng = COAST_NAMES[B.name][m[4] || ""];
         if (!rng) return null;
         var cp = COASTS[B.name].filter(function (q) { return q[1] >= rng[0] - 0.6 && q[1] <= rng[1] + 0.6; });
-        return cp.length >= 2 ? coastBuffer(cp, +m[1], B) : null;
+        var g2 = cp.length >= 2 ? coastBuffer(cp, +m[1], B) : null;
+        return !m[4] && usBuf ? union([g2, usBuf].filter(Boolean)) : g2;   // a bare "THE COAST": every coast
       }
       case "hecate": return B.name === "pac" ? poly(HECATE_STRAIT) : null;
       case "linebuf_side":
