@@ -46,7 +46,7 @@ class Rules:
     extra_weight: float = 0.6     # penalty per unit of empty sea added (as share of candidate)
     box_margin: float = 0.08      # a non-box form must beat the box by this much
     attach_nm: float = 900.0      # a region within this of a low belongs to that low
-    name_nm: float = 350.0        # a step names its low only when its winds come within this of it
+    name_nm: float = 450.0        # a step names its low only when its winds come within this of it (= own_in_nm)
     hi_from: str = "max"          # top of the wind range from the region's max ("few pixels" rule)
     hi_add: float = 0.0           # kt added to the grid peak before picking the range
     hi_pct: float = 99.0          # percentile used when hi_from == "pct"
@@ -477,6 +477,23 @@ def cap_reach(owned, rest, lows, dists, root, outside, rules, wind=None):
     off = rules.draw_offset if isinstance(rules.draw_offset, (int, float)) else rules.draw_offset.get(rules.levels[0], 0.0)
     gale = None if wind is None else wind >= rules.levels[0] - off
 
+    def units(reg):
+        """The pieces judged one by one: each connected gale-drawn patch (a far gale joined to the
+        low's own winds only by a 25 kt band is still its own patch: 24N84W carried a gale at
+        34N64W, 1,100 nm away, through the band), and each connected piece with no gale in it."""
+        st = np.ones((3, 3))
+        out = []
+        if gale is not None and (reg & gale).sum() >= rules.min_cells:
+            lab, n = ndimage.label(reg & gale, structure=st)
+            out += [lab == j for j in range(1, n + 1)]
+            # and the pieces of the region with no gale in them (a 20 TO 30 area far from the low)
+            lab, n = ndimage.label(reg, structure=st)
+            out += [lab == j for j in range(1, n + 1) if not (gale & (lab == j)).any()]
+        else:   # no gale worth drawing: the 25 kt pieces are what gets written
+            lab, n = ndimage.label(reg, structure=st)
+            out += [lab == j for j in range(1, n + 1)]
+        return out
+
     def key_part(piece):
         if gale is None:
             return piece
@@ -489,9 +506,7 @@ def cap_reach(owned, rest, lows, dists, root, outside, rules, wind=None):
         if not members:
             continue
         main = idx_of[id(members[0])]
-        lab, n = ndimage.label(reg, structure=np.ones((3, 3)))
-        for j in range(1, n + 1):
-            piece = lab == j
+        for piece in units(reg):
             if float(dists[main][key_part(piece)].min()) <= cap(lows[main]):
                 continue
             owned[k][1] = owned[k][1] & ~piece

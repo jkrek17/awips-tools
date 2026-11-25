@@ -85,7 +85,7 @@ storm and hurricane force for each, issued, draft and both. The page shows it un
   paragraph whose own low has nothing left takes that paragraph over (redevelopment, or a gale the
   lows hand on), and the synopsis motion follows it: one warning, not "LOW DISSIPATED" beside a
   "NEW LOW" over the same gale (Jason 11-11, 06Z 11 Nov Atlantic, 61N68W then 61N63W). A step names
-  a low inside the area only when its winds come within 350 nm of it (`Rules.name_nm`); otherwise it
+  a low inside the area only when its winds come within 450 nm of it (`Rules.name_nm`, 350 before 11-25; the same limit as below); otherwise it
   reads ".24 HOUR FORECAST FROM 62N TO 66N ..." (the Davis Strait gale was written under a 1011 MB
   low 600 nm east). A paragraph ends at its first
   "CONDITIONS DIMINISHED" or "DISSIPATED"; its heading counts only the times it shows. Quadrants
