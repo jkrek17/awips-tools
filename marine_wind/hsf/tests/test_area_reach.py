@@ -97,5 +97,18 @@ check("no area written more than 650 nm from its named low",
       all(p["low"] is None or not p["tiers"] or
           far_nm(p["low"], p["tiers"][0].mask) <= R.own_out_nm for p in dbg["pieces"]))
 
+# 4. a gale that shows only at 12 and 18 h (gone by 24 h) is not written as a warning; one that
+# lasts to 24 h is (Jason 11-25)
+def run(hours_on):
+    f = {}
+    for h in range(0, 49, 6):
+        w = np.full(LAT.shape, 10.0)
+        if h in hours_on:
+            w = np.maximum(w, blob(45.0, 200.0, 1.5, 42.0))
+        f[h] = dict(wind=w, msl=np.full(LAT.shape, 1016.0), hs=np.full(LAT.shape, 4.0))
+    return write_product(f, grid, np.ones(LAT.shape, bool), R)[0]
+check("gale only at 12-18 h: no warning", "WARNING" not in run((12, 18)), run((12, 18)))
+check("gale 12-24 h: a gale warning", "GALE WARNING" in run((12, 18, 24)), run((12, 18, 24)))
+
 print("\n%d failed" % len(FAIL) if FAIL else "\nall passed")
 sys.exit(1 if FAIL else 0)

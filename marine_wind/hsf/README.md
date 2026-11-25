@@ -76,7 +76,10 @@ storm and hurricane force for each, issued, draft and both. The page shows it un
   its own paragraph), or stands alone with no low. Deep lows over land are followed when within
   600 nm of the area (`Rules.land_low_nm`) and named "LOW W OF AREA" when more than 3 degrees from
   it: the 939 MB Kamchatka low at 60N163E now carries the Bering Sea storm it drives, which the
-  12Z 24 Nov draft wrote under a complex low 1,140 nm away. Test: `tests/test_area_reach.py`.
+  12Z 24 Nov draft wrote under a complex low 1,140 nm away. A warning whose winds show only at
+  in-between hours (6, 18, 30, 36, 42 h), gone by the next 24 or 48 h step, is not written
+  (`Rules.drop_between_only`; Jason 11-25; the desk issues that for 0.4% / 1.2% of its warnings).
+  Test: `tests/test_area_reach.py`.
   Low tracks (Jason 11-11, "the low tracking has not been working great"): each 6 h step is matched
   as a whole, each track against where its last motion points; a low moves at most 60 kt, 40 kt
   when both ends are 995 MB or weaker; a track may skip one step only to a centre within 240 nm and

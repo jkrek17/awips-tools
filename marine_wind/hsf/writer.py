@@ -69,6 +69,7 @@ class Rules:
     absorb_cells: int = 200       # under this many cells (~12 sq deg), joins that area
     warn_tiers_only: bool = True  # warnings carry their categories only, no 20 TO 30 area (desk habit)
     storm_cap: int = 55           # a storm range tops out at 40 TO 55
+    drop_between_only: bool = True   # no warning whose winds show only at in-between hours
     between_steps: bool = True    # add a 6-hourly step where a low's category rises (its worst area only)
 
 
@@ -1036,6 +1037,7 @@ def write_product(fields, grid, sea, rules=Rules(), hours=None):
         first_seen = min([h for h in shown if h in ent] or [min(ent)])   # first time the text shows it
         prev_present = False
         prev_n = None
+        n_pieces = len(pieces)
         for h in shown:
             if h in ent and ent[h]["tiers"]:
                 # NEW only for a low that forms after the synopsis, not one that was already on
@@ -1112,6 +1114,14 @@ def write_product(fields, grid, sea, rules=Rules(), hours=None):
                     pieces.append(dict(key=key, hour=h, text=out[-1], top=top, tiers=[], low=None))
                 prev_present = False
                 break
+        # a warning whose winds show only at in-between hours (6, 18, 30, 36, 42 h), gone again by
+        # the next 24 or 48 h step, is not written: the desk issues that for 0.4% (Pacific) / 1.2%
+        # (Atlantic) of its warnings, and once the areas stayed near their own lows the drafts
+        # carried ~3 of them each (Jason 11-25: "Drop gales seen only in-between")
+        if rules.drop_between_only and top >= 34 and \
+                all(p_["hour"] % 24 for p_ in pieces[n_pieces:] if p_["tiers"]):
+            del pieces[n_pieces:]
+            out = []
         if out:
             paras[key] = (top, out)
     # lows already there at the synopsis first, then NEW ones by the hour they start
