@@ -67,6 +67,19 @@ storm and hurricane force for each, issued, draft and both. The page shows it un
   winds within 300 nm of it when they are a small part of another system's wind area. A complex
   low's main centre is its deepest centre inside the area, and every other centre lies within
   600 nm of it (no chains). Stray wind goes to the nearest system sharing its wind area.
+- How far an area may sit from its low (Jason 11-25, "the hazard areas do not always group with
+  the closest low"): each connected wind area lies within 450 nm of the low that names it when
+  that low is in the forecast area, 650 nm when it is outside (`Rules.own_in_nm`, `own_out_nm`;
+  the issued HSFEP1/HSFAT1, last 1,600 each: 95% of first warning areas within 225/300 nm of an
+  in-area low, ~1% beyond 450; 95% within 630/570 nm of a "W OF AREA" low). A piece beyond that
+  goes to the nearest low within its own limit (a far secondary centre of a complex low then gets
+  its own paragraph), or stands alone with no low. Deep lows over land are followed when within
+  600 nm of the area (`Rules.land_low_nm`) and named "LOW W OF AREA" when more than 3 degrees from
+  it: the 939 MB Kamchatka low at 60N163E now carries the Bering Sea storm it drives, which the
+  12Z 24 Nov draft wrote under a complex low 1,140 nm away. A warning whose winds show only at
+  in-between hours (6, 18, 30, 36, 42 h), gone by the next 24 or 48 h step, is not written
+  (`Rules.drop_between_only`; Jason 11-25; the desk issues that for 0.4% / 1.2% of its warnings).
+  Test: `tests/test_area_reach.py`.
   Low tracks (Jason 11-11, "the low tracking has not been working great"): each 6 h step is matched
   as a whole, each track against where its last motion points; a low moves at most 60 kt, 40 kt
   when both ends are 995 MB or weaker; a track may skip one step only to a centre within 240 nm and
@@ -75,7 +88,7 @@ storm and hurricane force for each, issued, draft and both. The page shows it un
   paragraph whose own low has nothing left takes that paragraph over (redevelopment, or a gale the
   lows hand on), and the synopsis motion follows it: one warning, not "LOW DISSIPATED" beside a
   "NEW LOW" over the same gale (Jason 11-11, 06Z 11 Nov Atlantic, 61N68W then 61N63W). A step names
-  a low inside the area only when its winds come within 350 nm of it (`Rules.name_nm`); otherwise it
+  a low inside the area only when its winds come within 450 nm of it (`Rules.name_nm`, 350 before 11-25; the same limit as below); otherwise it
   reads ".24 HOUR FORECAST FROM 62N TO 66N ..." (the Davis Strait gale was written under a 1011 MB
   low 600 nm east). A paragraph ends at its first
   "CONDITIONS DIMINISHED" or "DISSIPATED"; its heading counts only the times it shows. Quadrants

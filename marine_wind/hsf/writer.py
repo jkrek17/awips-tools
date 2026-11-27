@@ -46,19 +46,30 @@ class Rules:
     extra_weight: float = 0.6     # penalty per unit of empty sea added (as share of candidate)
     box_margin: float = 0.08      # a non-box form must beat the box by this much
     attach_nm: float = 900.0      # a region within this of a low belongs to that low
-    name_nm: float = 350.0        # a step names its low only when its winds come within this of it
+    name_nm: float = 450.0        # a step names its low only when its winds come within this of it (= own_in_nm)
     hi_from: str = "max"          # top of the wind range from the region's max ("few pixels" rule)
     hi_add: float = 0.0           # kt added to the grid peak before picking the range
     hi_pct: float = 99.0          # percentile used when hi_from == "pct"
     hi_round: str = "up"          # round the grid peak up to 5 kt (matches the desk: top ~ GFS max rounded up)
     complex_nm: float = 600.0     # lows this close that share one 25 kt+ area form one complex low
     share_nm: float = 300.0       # a low "touches" a wind area when the area comes this close to it
-    area_buffer_deg: float = 3.0  # lows over land count only this close to the area (ocean lows: anywhere)
+    area_buffer_deg: float = 3.0  # lows over land this close to the area are written as in the area
+    # how far a wind area may lie from the low that names it (nearest point of the area). Issued
+    # HSFEP1/HSFAT1, last 1,600 products each, named low to its first warning area: low in the
+    # area 95% within 225 (Pac) / 300 (Atl) nm, ~1% beyond 450; low outside the area ("LOW W OF
+    # AREA") 95% within 630 / 570 nm. Farther, the area goes to a nearer low or stands alone
+    # (Jason 11-25: a 58N146W complex low carried a storm area at 55N176E, 1,140 nm away)
+    own_in_nm: float = 450.0
+    own_out_nm: float = 650.0
+    # deep lows over land are followed when this close to the area and written "LOW W OF AREA":
+    # the 939 MB Kamchatka low at 60N163E drove the Bering Sea storm (12Z 24 Nov Pacific draft)
+    land_low_nm: float = 600.0
     seas_peak_ratio: float = 2.0  # seas range wider than this (high over low): say where the highest are
     absorb_share: float = 0.25    # a gale core under this share of the area round it, and
     absorb_cells: int = 200       # under this many cells (~12 sq deg), joins that area
     warn_tiers_only: bool = True  # warnings carry their categories only, no 20 TO 30 area (desk habit)
     storm_cap: int = 55           # a storm range tops out at 40 TO 55
+    drop_between_only: bool = True   # no warning whose winds show only at in-between hours
     between_steps: bool = True    # add a 6-hourly step where a low's category rises (its worst area only)
 
 
@@ -110,9 +121,10 @@ def ocean_mask(hs):
     return lab == (np.argmax(ndimage.sum(wet, lab, range(1, n + 1))) + 1)
 
 
-def area_side(sea, ocean, grid, inside_nm=30.0):
+def area_side(sea, ocean, grid, inside_nm=30.0, land_nm=None):
     """side(lat, lon) -> "W", "NW", ... for a low over the ocean outside the forecast area, None
-    for a low in the area or over land. W / E when the area lies east / west of the low along
+    for a low in the area or over land (over land farther than land_nm from the area, when
+    given, it is outside too: a deep low over Kamchatka is "LOW W OF AREA"). W / E when the area lies east / west of the low along
     its own latitude (the desk's "LOW W OF AREA 51N173E", even beside the slanted 172E-180W
     edge); N / S (NW, SE ...) when the low is beyond the area's north or south edge; otherwise
     the bearing from the nearest area cell."""
@@ -125,7 +137,9 @@ def area_side(sea, ocean, grid, inside_nm=30.0):
 
     def side(lat, lon):
         y, x = grid.cell(lat, lon)
-        if sea[y, x] or not ocean[y, x] or dist[y, x] * grid.dlat * 60 <= inside_nm:
+        if sea[y, x] or dist[y, x] * grid.dlat * 60 <= inside_nm:
+            return None
+        if not ocean[y, x] and (land_nm is None or grid.dist_bearing(lat, lon)[0][sea].min() <= land_nm):
             return None
         row = np.nonzero(sea[y])[0]
         if row.size:
@@ -450,6 +464,77 @@ def clean(mask, sea, rules, min_cells=None):
     return keep
 
 
+def cap_reach(owned, rest, lows, dists, root, outside, rules, wind=None):
+    """No wind area lies farther from the low that names it than own_in_nm (a low in the area)
+    or own_out_nm (a low outside it), measured to the nearest point of each connected piece's
+    warning-level part (the cells drawn as gale, when it has any; the desk figures are measured to
+    the first warning area, not to the 25 kt fringe).
+    A piece beyond that goes to the nearest low that is within its own limit: into that low's
+    system when the system's main centre is within the limit too, else as that low's own system
+    (a secondary centre of a complex low gets its own paragraph). With no low near enough the
+    piece stands alone ("FROM 51N TO 58N ..." with no low, the desk's form). Changes owned in
+    place; returns the stand-alone cells."""
+    cap = lambda l: rules.own_out_nm if outside(l) else rules.own_in_nm
+    off = rules.draw_offset if isinstance(rules.draw_offset, (int, float)) else rules.draw_offset.get(rules.levels[0], 0.0)
+    gale = None if wind is None else wind >= rules.levels[0] - off
+
+    def units(reg):
+        """The pieces judged one by one: each connected gale-drawn patch (a far gale joined to the
+        low's own winds only by a 25 kt band is still its own patch: 24N84W carried a gale at
+        34N64W, 1,100 nm away, through the band), and each connected piece with no gale in it."""
+        st = np.ones((3, 3))
+        out = []
+        if gale is not None and (reg & gale).sum() >= rules.min_cells:
+            lab, n = ndimage.label(reg & gale, structure=st)
+            out += [lab == j for j in range(1, n + 1)]
+            # and the pieces of the region with no gale in them (a 20 TO 30 area far from the low)
+            lab, n = ndimage.label(reg, structure=st)
+            out += [lab == j for j in range(1, n + 1) if not (gale & (lab == j)).any()]
+        else:   # no gale worth drawing: the 25 kt pieces are what gets written
+            lab, n = ndimage.label(reg, structure=st)
+            out += [lab == j for j in range(1, n + 1)]
+        return out
+
+    def key_part(piece):
+        if gale is None:
+            return piece
+        g = piece & gale
+        return g if g.any() else piece
+    idx_of = {id(l): i for i, l in enumerate(lows)}
+    moves = []
+    for k in list(owned):
+        members, reg = owned[k]
+        if not members:
+            continue
+        main = idx_of[id(members[0])]
+        for piece in units(reg):
+            if float(dists[main][key_part(piece)].min()) <= cap(lows[main]):
+                continue
+            owned[k][1] = owned[k][1] & ~piece
+            moves.append(piece)
+    for piece in moves:
+        kp = key_part(piece)
+        dd = sorted((float(dists[i][kp].min()), i) for i in range(len(lows)))
+        tgt = next((i for d, i in dd if d <= cap(lows[i])), None)
+        if tgt is None:
+            rest = rest | piece
+            continue
+        gk = ("g", root(tgt))
+        if gk in owned and owned[gk][0]:
+            m0 = idx_of[id(owned[gk][0][0])]
+            if float(dists[m0][kp].min()) <= cap(lows[m0]):
+                owned[gk][1] = owned[gk][1] | piece
+                continue
+        sk = ("s", tgt)
+        if sk in owned:
+            owned[sk][1] = owned[sk][1] | piece
+        else:
+            owned[sk] = [[lows[tgt]], piece]
+    for k in [k for k in owned if owned[k][0] and owned[k][1].sum() < rules.min_cells]:
+        rest = rest | owned.pop(k)[1]
+    return rest
+
+
 def areas_for_time(wind, hs, sea, grid, lows, rules=Rules()):
     """lows: list of (lat, lon, mb, motion, id). Returns list of dict(low, tiers[Tier], top, region).
     Each low owns the wind regions closest to it (within attach_nm); regions with no low near
@@ -460,9 +545,13 @@ def areas_for_time(wind, hs, sea, grid, lows, rules=Rules()):
     room = ocean_mask(hs) | sea   # where a quadrant is plotted: the area and open ocean round it
     edge = ndimage.binary_dilation(sea, iterations=2)
 
-    def outside(l):   # a low over the ocean beyond the forecast area
+    far_nm = rules.area_buffer_deg * 60.0
+
+    def outside(l):   # a low beyond the forecast area: over the ocean, or over land beyond the buffer
         y, x = grid.cell(l[0], l[1])
-        return bool(wet[y, x] and not edge[y, x])
+        if edge[y, x]:
+            return False
+        return bool(wet[y, x]) or (bool(sea.any()) and float(grid.dist_bearing(l[0], l[1])[0][sea].min()) > far_nm)
     # complex lows: lows that touch the same wind area and lie within complex_nm of each other
     dists = [grid.dist_bearing(l[0], l[1])[0] for l in lows]
     parent = list(range(len(lows)))
@@ -484,12 +573,7 @@ def areas_for_time(wind, hs, sea, grid, lows, rules=Rules()):
     # one part of the complex, so the low that crossed 180W was "ABSORBED" at 48 h while the desk
     # kept it as its own low with the storm area behind it (issued HSFEP1 12Z 7 Nov:
     # ".48 HOUR FORECAST LOW 48N163W 970 MB")
-    hs_ok = np.isfinite(hs)
-    edge0 = ndimage.binary_dilation(sea, iterations=2)
-
-    def out0(l):
-        y, x = grid.cell(l[0], l[1])
-        return bool(hs_ok[y, x] and not edge0[y, x])
+    out0 = outside
     for idx in list(groups.values()):
         left = sorted(idx, key=lambda i: (out0(lows[i]), lows[i][2]))
         while left:
@@ -561,6 +645,7 @@ def areas_for_time(wind, hs, sea, grid, lows, rules=Rules()):
                     owned[k][1] = owned[k][1] & ~piece
             if owned[k][1].sum() < rules.min_cells:
                 del owned[k]
+        rest = cap_reach(owned, rest, lows, dists, root, outside, rules, wind)
     else:
         rest = allw
     # stand-alone areas within about a degree of each other form one paragraph
@@ -816,12 +901,13 @@ def write_product(fields, grid, sea, rules=Rules(), hours=None):
     # no low or a "NEW LOW" (Jason 11-07, 12Z 7 Nov Pacific NDFD draft along 180W). Lows over
     # land still count only near the area; inland water (Great Lakes) is not open ocean.
     ocean = ocean_mask(fields[hours[0]]["hs"]) | sea
-    side = area_side(sea, ocean, grid)
+    side = area_side(sea, ocean, grid, land_nm=rules.area_buffer_deg * 60.0)
     lows = {}
     for h in hours:
         if h in fields:
             lows[h] = [l for l in find_lows(fields[h]["msl"], sea, grid)
-                       if (lambda y, x: near[y, x] or ocean[y, x])(*grid.cell(l[3], l[4]))]
+                       if (lambda y, x: near[y, x] or ocean[y, x])(*grid.cell(l[3], l[4]))
+                       or (sea.any() and grid.dist_bearing(l[3], l[4])[0][sea].min() <= rules.land_low_nm)]
     tracks = link_tracks(lows)
     born = {}   # track id -> the first hour its low is seen anywhere in the grid
     for h in sorted(tracks):
@@ -951,6 +1037,7 @@ def write_product(fields, grid, sea, rules=Rules(), hours=None):
         first_seen = min([h for h in shown if h in ent] or [min(ent)])   # first time the text shows it
         prev_present = False
         prev_n = None
+        n_pieces = len(pieces)
         for h in shown:
             if h in ent and ent[h]["tiers"]:
                 # NEW only for a low that forms after the synopsis, not one that was already on
@@ -1027,6 +1114,14 @@ def write_product(fields, grid, sea, rules=Rules(), hours=None):
                     pieces.append(dict(key=key, hour=h, text=out[-1], top=top, tiers=[], low=None))
                 prev_present = False
                 break
+        # a warning whose winds show only at in-between hours (6, 18, 30, 36, 42 h), gone again by
+        # the next 24 or 48 h step, is not written: the desk issues that for 0.4% (Pacific) / 1.2%
+        # (Atlantic) of its warnings, and once the areas stayed near their own lows the drafts
+        # carried ~3 of them each (Jason 11-25: "Drop gales seen only in-between")
+        if rules.drop_between_only and top >= 34 and \
+                all(p_["hour"] % 24 for p_ in pieces[n_pieces:] if p_["tiers"]):
+            del pieces[n_pieces:]
+            out = []
         if out:
             paras[key] = (top, out)
     # lows already there at the synopsis first, then NEW ones by the hour they start
